@@ -36,7 +36,7 @@ async def _agent_deployment(project):
                   requirements=[RequirementSpec(kind="credential", name="stripe", vars=["STRIPE_KEY"])])
     await agent.save()
     deployment = await make_deployment("production", name="placed")
-    deployment.parent_type_id = str(agent.typeid)
+    deployment.parent_type_id, deployment.main_agent_id = str(project.typeid), str(agent.typeid)
     await deployment.save()
     return deployment
 
@@ -120,7 +120,7 @@ async def test_a_placed_name_is_declared_from_its_shipped_template(home, project
                   requirements=[RequirementSpec(kind="credential", name="telegram", vars=["TELEGRAM_BOT_TOKEN"])])
     await agent.save()
     deployment = await make_deployment("production", name="bot")
-    deployment.parent_type_id = str(agent.typeid)
+    deployment.parent_type_id, deployment.main_agent_id = str(project.typeid), str(agent.typeid)
     await deployment.save()
 
     outcome = await place_values(str(deployment.id), str(project.id), _drop({"TELEGRAM_BOT_TOKEN": "123:abc"}))

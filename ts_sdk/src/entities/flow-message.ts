@@ -1,4 +1,5 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import type { InvitationState } from './invitation';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
@@ -52,7 +53,13 @@ export enum FlowMessageKind {
   SESSION_EVENT = 'session_event',
   /** Secured transfer: the quiet, automatic line of a key exchange in the share's thread (a slim line). */
   SEALED_NOTE = 'sealed_note',
+  /** Ask for help: a person's request, sent like any message; its context rides as ordinary files. */
+  HELP_REQUEST = 'help_request',
 }
+
+/** The file every help request carries -- what marks it as one on every machine (the hub drops ``kind``).
+ *  Mirrors flow_sdk.builtin.flow_message.HELP_REQUEST_FILE. Plumbing: never shown as an attachment. */
+export const HELP_REQUEST_FILE = 'help_request.value.json';
 
 /** Single source of truth for the body filename on the hub blob store.
  *  Must match flow_sdk.builtin.flow_message.BODY_FILENAME exactly — the
@@ -167,6 +174,17 @@ export enum ConversationEvents {
   ACK = 'ack',
 }
 
+/** What an invite message carries (``flow_sdk/schema/data_spec/message_invite_spec.py``). */
+export interface IMessageInvite {
+  invitation_id: string;
+  state: InvitationState;
+  target_type: string;
+  target_id: string;
+  target_name?: string | null;
+  roles?: string[];
+  resolved_at?: string | null;
+}
+
 export interface IFlowMessage extends IEntity {
   text?: string;
   instruction?: string | null;
@@ -205,6 +223,9 @@ export interface IFlowMessage extends IEntity {
    *  Invitation as the first row of a conversation. The invitation TypeId
    *  lives in ``context_entities``. */
   kind?: FlowMessageKind;
+  /** On an invite message (``kind=invitation``): the share it carries and what became of it. The hub
+   *  updates ``state`` in place, so the card always reads the current answer. */
+  invite?: IMessageInvite | null;
   /** This machine wrote it to send (the outbox's "mine"). Local only. */
   outbound?: boolean;
   /** Why the hub does not have it yet — set on a failed attempt, cleared when it lands. Local only. */
@@ -306,6 +327,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   sent_at?: string | null;
   is_draft?: boolean;
   kind?: FlowMessageKind;
+  invite?: IMessageInvite | null;
   body_status?: BodyStatus;
   body_error?: string | null;
   outbound?: boolean;
@@ -356,6 +378,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.sent_at = entity.sent_at ?? null;
     this.is_draft = entity.is_draft ?? false;
     this.kind = entity.kind ?? FlowMessageKind.USER;
+    this.invite = entity.invite ?? null;
     this.body_status = entity.body_status ?? BodyStatus.NA;
     this.body_error = entity.body_error ?? null;
     this.outbound = entity.outbound ?? false;

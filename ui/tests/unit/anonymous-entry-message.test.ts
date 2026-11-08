@@ -14,3 +14,10 @@ it('nothing else under it, and no other page, renders signed out', () => {
   expect(isAnonymousEntryPath(`/dock/conversation/${ID}`)).toBe(false);
   expect(isAnonymousEntryPath('/launch')).toBe(true);
 });
+
+it("an agent's public-deployment page renders signed out, and only for an id", () => {
+  expect(isAnonymousEntryPath(`/open-pc/${ID}`)).toBe(true);
+  expect(isAnonymousEntryPath(`/open-pc/${ID}/`)).toBe(true);
+  expect(isAnonymousEntryPath('/open-pc/not-an-id')).toBe(false);
+  expect(isAnonymousEntryPath(`/open-pc/${ID}/more`)).toBe(false);
+});

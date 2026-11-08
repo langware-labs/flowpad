@@ -215,7 +215,7 @@ The filesystem scan layer: `FSRecord.discover(type)` (O(N) directory scan over `
 
 ### [Gitignore-Aware Walk](data-management/gitignore-walk.md)
 
-The single shared filesystem traversal (`gitignore_walk()`) used by the indexer's folder walkers, the asset-menu walk, and the LLM index scanner. Covers the hardcoded `_WALK_IGNORED` denylist, the per-directory `.gitignore` stack (last-match-wins, deliberately monotonic — child `!` re-includes of ancestor-ignored paths are not honored), the `.claude/` force-include with the `.claude/worktrees` carve-out, symlink policy, and the `IndexerOptions.gitignore` flag.
+The single shared filesystem traversal (`gitignore_walk()`) used by the indexer's folder walkers, the asset-menu walk, and the LLM index scanner. Covers the hardcoded `_WALK_IGNORED` denylist, the per-directory `.gitignore` and `.flowignore` stack (matched exactly as git matches; `.flowignore` decides first and applies from every folder above a path), the `.claude/` force-include with the `.claude/worktrees` carve-out, symlink policy, and the `IndexerOptions.gitignore` flag.
 
 **Key source files:** `flow_sdk/fs_store/indexer/walk.py`, `flow_sdk/fs_store/gitignore.py`
 

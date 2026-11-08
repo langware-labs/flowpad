@@ -297,7 +297,10 @@ export function describeFailedCall(error: unknown): FailedCallDetail | undefined
       status: e.response?.status,
       message: answerOf(data),
       body: body && body.length > MAX_BODY_CHARS ? `${body.slice(0, MAX_BODY_CHARS)}…` : (body ?? e.message),
-      errorCode: str((data as { data?: { error_code?: unknown } } | undefined)?.data?.error_code),
+      // Both places a code lives, in `describeApiError`'s order: routes use `error_code`, entity actions `code`.
+      errorCode:
+        str((data as { data?: { error_code?: unknown } } | undefined)?.data?.error_code) ??
+        str((data as { data?: { code?: unknown } } | undefined)?.data?.code),
       requestId: str(headers['x-flow-request-id']) ?? str(headers['x-request-id']),
     },
   };

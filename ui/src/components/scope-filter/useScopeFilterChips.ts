@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   allScope,
+  dependenciesScope,
   filterScope,
   projectScope,
   scopeProjectIds,
@@ -11,12 +12,15 @@ import {
 /**
  * Single source of truth for the scope-filter behavior, shared by the pill
  * ScopeFilterBar and the icon ScopeFilterIconBar. Strict single-select over
- * four mutually-exclusive modes — whatever is marked is active, no cross
- * logic between modes:
+ * mutually-exclusive modes — whatever is marked is active, no cross logic
+ * between modes:
  *
- *   "all"      → everything ({mode:'all'})
- *   "user"     → user assets only ({mode:'user'})
- *   "project"  → the current project only ({mode:'project', activeProjectId})
+ *   "all"          → everything ({mode:'all'})
+ *   "user"         → my (user-scope) assets only ({mode:'user'})
+ *   "project"      → the current project only ({mode:'project', activeProjectId})
+ *   "dependencies" → the current project + its dependency closure
+ *                    ({mode:'dependencies', activeProjectId}); offered only where
+ *                    the surface lists dependency assets (the Assets sidebar)
  *   "selected" → explicitly-picked projects ({mode:'filter', projects:[...]})
  *
  * The active chip reads straight off `scope.mode` — `filter` surfaces as the
@@ -24,7 +28,7 @@ import {
  * active-project context) and "Selected" (an ad-hoc pick of one project) never
  * get confused, even when they select the same single project.
  */
-export type ScopeMode = 'all' | 'user' | 'project' | 'selected';
+export type ScopeMode = 'all' | 'user' | 'project' | 'dependencies' | 'selected';
 
 function modeFor(scope: ScopeFilter): ScopeMode {
   return scope.mode === 'filter' ? 'selected' : scope.mode;
@@ -40,7 +44,7 @@ export interface UseScopeFilterChips {
   activeMode: ScopeMode;
   /** Count of explicitly-selected projects (for the "Selected" badge). */
   selectedCount: number;
-  /** "Project" mode needs a current project to point at. */
+  /** "Project" / "Dependencies" modes need a current project to point at. */
   projectDisabled: boolean;
   /** Single-select handler. `selected` opens the picker instead of applying. */
   handleSelect: (mode: ScopeMode) => void;
@@ -70,6 +74,9 @@ export function useScopeFilterChips({
         return;
       case 'project':
         if (currentProjectId) onScopeChange(projectScope(currentProjectId));
+        return;
+      case 'dependencies':
+        if (currentProjectId) onScopeChange(dependenciesScope(currentProjectId));
         return;
       case 'selected':
         // Pick which projects first; scope applies on confirm.

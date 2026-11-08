@@ -81,13 +81,16 @@ async def _walk(
     path: tuple[str, ...],
     chain: tuple[str, ...],
     required: bool,
-) -> None:
+) -> bool:
+    """Collect reachable early questions; return whether a result boundary deferred the rest."""
     for step in spec.steps:
         # Typed inputs are resolved and validated when the step is reached. Asking early
         # could execute a check before validation or before the producing step exists.
         if step.input_from is not None or "input_value" in step.model_fields_set:
             if step.bind:
                 produced.add(step.bind)
+            if step.on_result:
+                return True
             continue
         # A ``when`` that waits on a produced value is not known yet, so nothing under it is planned.
         if not (set(step.when) & produced) and not _unmatched(values, step):
@@ -97,10 +100,11 @@ async def _walk(
                 above = (*chain, spec.name or "")
                 callee = await _trusted(plan, plan.resolve_wizard, step.ref)
                 if callee is not None and step.ref not in above and len(above) <= MAX_WIZARD_DEPTH:
-                    await _walk(
+                    if await _walk(
                         plan, callee, values=scope, produced=late, path=(*path, step.id), chain=above,
                         required=required and step.required,
-                    )
+                    ):
+                        return True
             else:
                 op = await _trusted(plan, plan.resolve_op, step.ref)
                 if op is not None and _askable_early(op, late, kept=bool(step.bind or spec.output or spec.output_from == step.id)):
@@ -123,6 +127,11 @@ async def _walk(
                             plan.timeout = max(plan.timeout, exe.timeout())
         if step.bind:
             produced.add(step.bind)
+        # A result can end the run before any later question is reached. Those questions
+        # stay in place, including when the boundary is inside a nested wizard.
+        if step.on_result:
+            return True
+    return False
 
 
 async def _trusted(plan: _Plan, resolver: Any, ref: str) -> Any:

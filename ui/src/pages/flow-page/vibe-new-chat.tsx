@@ -2,11 +2,10 @@ import { SessionInput } from '@src/components/session-input/session-input';
 import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
 import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
-import { AssetCounterChips, AssetCounterRow } from '@src/components/asset-counters/AssetCounterRow';
-import { agentCounterGroup } from '@src/components/asset-counters/agent-counters';
-import { IssuesSummaryChip } from '@src/components/asset-counters/issue-counters';
+import { AssetCounterRow } from '@src/components/asset-counters/AssetCounterRow';
 import { appCounterGroup } from '@src/components/asset-counters/app-counters';
-import { skillCounterGroup } from '@src/components/asset-counters/skill-counters';
+import { ItemsSection } from '@src/components/items/ItemsSection';
+import { DESK_TABS } from '@src/components/items/home-tabs';
 import { useAuth } from '@sdk/react/hooks';
 import { useState } from 'react';
 import { QuickCreateNewSection } from '@src/components/quick-create';
@@ -70,16 +69,11 @@ export function VibeNewChat() {
         {installDialog}
         <ProjectActionsRow className="w-full self-start" />
         <QuickCreateNewSection testId="vibe-home-new" />
-        <ProjectAgentsStrip
-          startsNew
-          className="w-full self-start"
-          headerExtra={<AssetCounterChips group={agentCounterGroup} />}
-          fallback={<AssetCounterRow group={agentCounterGroup} />}
-        />
+        <ProjectAgentsStrip startsNew className="w-full self-start" />
         <AssetCounterRow group={appCounterGroup} />
-        <AssetCounterRow group={skillCounterGroup} />
-        <div className="flex w-full self-start">
-          <IssuesSummaryChip />
+        {/* The same items section, card and filters as the hub home — only the tab list is the desk's. */}
+        <div className="w-full self-start text-left">
+          <ItemsSection tabs={DESK_TABS} onCreate={() => startVibe(t`Make me an agent`, [], model)} prefKey="desk-home" />
         </div>
       </div>
     </div>

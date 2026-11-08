@@ -1,4 +1,5 @@
-import { Deployment, type AgentPlace, type AutomationPlace } from '@sdk';
+import { Deployment, type AutomationPlace } from '@sdk';
+import type { AgentPlace } from './use-agent-places';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback } from 'react';
 import { Cloud, Laptop, type LucideIcon } from 'lucide-react';

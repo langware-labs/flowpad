@@ -73,6 +73,11 @@ export interface IRemoteWorkerSession extends IEntity {
   approved_at?: string | null;
   /** 'manual' | 'standing_grant'. */
   approved_via?: string | null;
+  /** Prompts this session may run: 1 = a prompt request (the host ends it after
+   *  the answered prompt); null = a live session, no limit. */
+  prompt_limit?: number | null;
+  /** Turns answered so far (host-authoritative). */
+  prompts_used?: number;
 }
 
 @registerEntity
@@ -95,6 +100,8 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
   reply_policy: string | null = null;
   approved_at: string | null = null;
   approved_via: string | null = null;
+  prompt_limit: number | null = null;
+  prompts_used: number = 0;
 
   constructor(entity: Partial<IRemoteWorkerSession> = {}) {
     super(entity as IEntity);
@@ -112,6 +119,11 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
     if (this.isHost(cloudUserId) || !!this.host_process_id) return 'host';
     if (this.guest_user_id && this.guest_user_id === cloudUserId) return 'guest';
     return 'observer';
+  }
+
+  /** A prompt request — one prompt, shown as a prompt row — rather than a live session. */
+  get isPromptRequest(): boolean {
+    return this.prompt_limit != null;
   }
 
   /** Effective reply policy — null/garbage reads as auto. */

@@ -1,8 +1,9 @@
 import { Trans } from '@lingui/react/macro';
+import { EntityCard } from '@src/components/entity-card/EntityCard';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useState } from 'react';
-import { CounterTable, NoRows, QuickSearchInput, useQuickSearch } from './AssetItems';
+import { NoRows, QuickSearchInput, useQuickSearch } from './AssetItems';
 import { counterAt, counterKey, selectionOf } from './axes';
 import { findCounterGroup } from './registry';
 import { CounterAxes } from './StatChips';
@@ -53,18 +54,27 @@ function AssetListBody<T>({ group, selectedKey }: { group: AssetCounterGroup<T>;
 
       <QuickSearchInput value={query} onChange={setQuery} className="mb-3 max-w-sm" testId="asset-list-search" />
 
-      <div className="rounded-lg border border-border">
-        <CounterTable
-          group={group}
-          rows={rows}
-          onOpen={(item) => {
-            const pointer = group.itemPointer(item);
-            if (pointer) navigation.openDockOnThisPage(pointer);
-          }}
-          empty={active && !active.isLoading && <NoRows hasItems={active.items.length > 0} query={query} />}
-          rowTestId="asset-list-row"
-        />
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {rows.map((item) => {
+          const id = group.itemKey(item);
+          return (
+            <div key={id} className="rounded-lg border border-border bg-card" data-testid="asset-list-row">
+              <EntityCard type={group.type} id={id} fallbackName={(item as { name?: string }).name ?? id} />
+              <button
+                type="button"
+                className="m-2 rounded-md border border-border px-3 py-1 text-sm hover:bg-muted"
+                onClick={() => {
+                  const pointer = group.itemPointer(item);
+                  if (pointer) navigation.openDockOnThisPage(pointer);
+                }}
+              >
+                <Trans>Open</Trans>
+              </button>
+            </div>
+          );
+        })}
       </div>
+      {rows.length === 0 && active && !active.isLoading && <NoRows hasItems={active.items.length > 0} query={query} />}
     </div>
   );
 }

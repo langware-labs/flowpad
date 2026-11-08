@@ -191,6 +191,8 @@ export interface AutomationSummary {
   agent_type_id?: string | null;
   /** What the rule belongs to — an agent's own schedule names that agent. */
   parent_type_id?: string | null;
+  /** That parent's name — the header the list groups its rules under. */
+  parent_name?: string | null;
   /** Which store the row lives in; absent = local. */
   source?: AutomationSource;
 }

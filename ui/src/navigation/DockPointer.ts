@@ -3,7 +3,7 @@ import {
   automationsPointer,
   type AutomationsRoute,
 } from '@src/components/automations/automations-pointer';
-import { pointerForWebUrl, webUrlFromPointer } from '@sdk';
+import { PROJECT_DEPLOY_MAIN_AGENT_PARAM, PROJECT_DEPLOYMENT_PARAM, pointerForWebUrl, webUrlFromPointer } from '@sdk';
 import {
   Agent,
   AgenticProcess,
@@ -12,9 +12,11 @@ import {
   CredentialsSubview,
   GraphWorkflow,
   Layout,
+  MachineSubview,
   PageId,
   Project,
   RemoteWorkerSession,
+  Conversation,
   Shell,
   TypeId,
   VFSPath,
@@ -170,7 +172,6 @@ export const CHILD_SECTIONS = [
   'mcp',
   'skill',
   'doc',
-  'deployment',
   'credential',
 ] as const;
 export type ChildSection = (typeof CHILD_SECTIONS)[number];
@@ -245,6 +246,17 @@ export const LANG_PARAM = 'lang';
  * `withPageBefore()`; the stream inbox reads it to build its page query.
  */
 export const PAGE_BEFORE_PARAM = 'before';
+
+/**
+ * URL query-param keys for the stream inbox's filters (stream inbox only): the view pill (`unread` /
+ * `archived`; absent = all) and the search text. Ride in `options` like `before`, so back/forward
+ * and a revisit restore them and they never open a tab. Pairs with `streamInboxView` / `streamInboxSearch` /
+ * `withStreamInboxFilters()`.
+ */
+export const STREAM_INBOX_VIEW_PARAM = 'view';
+export const STREAM_INBOX_SEARCH_PARAM = 'q';
+/** The stream inbox's picked channel marks — the same `channel` key `forAgentStreamInbox` writes. */
+export const STREAM_INBOX_CHANNEL_PARAM = 'channel';
 
 /**
  * URL query-param key carrying the ACTIVE USER JOURNEY across the app. Null by
@@ -666,6 +678,41 @@ export class DockPointer implements IDockPointer {
     return this.withOption(PAGE_BEFORE_PARAM, before);
   }
 
+  /** The stream inbox's view pill, or 'all' when the URL names none (or an unknown one). */
+  get streamInboxView(): 'all' | 'unread' | 'archived' | 'invites' {
+    const v = this.options?.[STREAM_INBOX_VIEW_PARAM];
+    return v === 'unread' || v === 'archived' || v === 'invites' ? v : 'all';
+  }
+
+  /** The stream inbox's picked channel marks (`?channel=a,b`): null when the URL names none (the view's
+   *  own default applies), an empty list for an explicit "every channel" (`channel=all`). */
+  get streamInboxChannels(): string[] | null {
+    const v = this.options?.[STREAM_INBOX_CHANNEL_PARAM];
+    if (v === undefined) return null;
+    return v === 'all' ? [] : v.split(',').filter(Boolean);
+  }
+
+  /** Clone with these channel marks picked; `[]` = every channel, which a view with a default channel
+   *  (an agent's mailbox) must say out loud, so it is written as `all`. A new pick starts at now. */
+  withStreamInboxChannels(keys: readonly string[], hasDefault = false): DockPointer {
+    const value = keys.length ? [...keys].sort().join(',') : hasDefault ? 'all' : null;
+    return this.withPageBefore(null).withOption(STREAM_INBOX_CHANNEL_PARAM, value);
+  }
+
+  /** The stream inbox's search text, or '' for none. */
+  get streamInboxSearch(): string {
+    return this.options?.[STREAM_INBOX_SEARCH_PARAM] ?? '';
+  }
+
+  /** Clone with the given stream inbox filters set ('all' / '' clear them). A page is a page of ONE filter
+   *  set, so any change also goes back to now. */
+  withStreamInboxFilters(f: { view?: 'all' | 'unread' | 'archived' | 'invites'; search?: string }): DockPointer {
+    let next = this.withPageBefore(null);
+    if (f.view !== undefined) next = next.withOption(STREAM_INBOX_VIEW_PARAM, f.view === 'all' ? null : f.view);
+    if (f.search !== undefined) next = next.withOption(STREAM_INBOX_SEARCH_PARAM, f.search || null);
+    return next;
+  }
+
   /**
    * The user journey this dock is showing, or null. URL-carried (reload- and
    * back-safe) and excluded from `tabHash`, so a journey overlays the current
@@ -815,6 +862,11 @@ export class DockPointer implements IDockPointer {
    */
   static forTab(viewType: ViewType, options?: Record<string, string>, layout: Layout = Layout.DOCK): DockPointer {
     return new DockPointer(viewType, undefined, options || {}, layout);
+  }
+
+  /** A machine's page: `nodeId` names it (a machine shared with you), null = the machine you are on. */
+  static forMachine(nodeId: string | null, subview?: MachineSubview, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.MACHINE, subview ?? '', nodeId ? { [NODE_PARAM]: nodeId } : undefined, layout);
   }
 
   /**
@@ -1191,6 +1243,24 @@ export class DockPointer implements IDockPointer {
   static forProjectSetup(projectId: string, layout: Layout = Layout.DOCK): DockPointer {
     return DockPointer.rebaseAssetsOntoProject(
       new DockPointer(ViewType.ASSETS, AssetMode.PROJECT_SETUP, undefined, layout),
+      projectId,
+    );
+  }
+
+  /**
+   * The project's Deployments page, rebased onto `/dock/project/<projectId>/project-deployments`: on one
+   * deployment (`deploymentId`), or with New deployment open and `mainAgentId` (an agent id) preset as main.
+   */
+  static forProjectDeployments(
+    projectId: string,
+    opts: { deploymentId?: string | null; mainAgentId?: string | null } = {},
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const options: Record<string, string> = {};
+    if (opts.deploymentId) options[PROJECT_DEPLOYMENT_PARAM] = opts.deploymentId;
+    if (opts.mainAgentId) options[PROJECT_DEPLOY_MAIN_AGENT_PARAM] = opts.mainAgentId;
+    return DockPointer.rebaseAssetsOntoProject(
+      new DockPointer(ViewType.ASSETS, AssetMode.PROJECT_DEPLOYMENTS, Object.keys(options).length ? options : undefined, layout),
       projectId,
     );
   }
@@ -2434,15 +2504,11 @@ export class DockPointer implements IDockPointer {
         tabHash: this.tabHash,
       });
     }
-    // Scope-keyed identity is the SCOPE, not the sub-pointer. Normalize the pointer to
-    // '' and persist the scope (options) + the computed tabHash so: (a) the stored
-    // JSON is constant for a given scope regardless of which type was last viewed
-    // → the backend mints ONE Tab row per scope; (b) `Tab.dockPointer` rebuilds the
-    // same tabHash directly from the stored field; (c) clicking the chip reopens the
-    // scoped browser root. Preserve only whether the live Assets URL addresses
-    // content: the backend needs that URL-owned fact to validate a workspace
-    // parent edge after the sub-pointer itself is folded out of tab identity.
-    // It does not change tabHash, so editor/list URLs still share one row.
+    // Scope-keyed identity is the SCOPE, not the sub-pointer. Persist the scope
+    // and tabHash for dedup; top-level chips reopen the scoped browser root.
+    // Workspace children retain their content destination so reopening one does
+    // not navigate away to that root. workspaceContent lets the backend validate
+    // the parent edge even for older rows whose sub-pointer was folded away.
     if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
       // A dock rebuilt from stored JSON has already had its sub-pointer folded
       // to '' (and `fromUrl` supplied a default), so re-deriving the bit there
@@ -2453,7 +2519,9 @@ export class DockPointer implements IDockPointer {
           (this.pointer?.startsWith(`${AssetMode.EDITOR}/`) || this.pointer?.startsWith(`${AssetMode.WIKI}/`)));
       return JSON.stringify({
         viewType: this.viewType,
-        pointer: '',
+        // A workspace child reopens its content, while a top-level scope tab
+        // reopens the browser. tabHash still owns identity in both cases.
+        pointer: this.workspaceHost ? this.pointer : '',
         options: this.scopeFilter ? scopeFilterToDockOptions(this.scopeFilter) : undefined,
         tabHash: this.tabHash,
         workspaceContent: workspaceContent || undefined,
@@ -2562,6 +2630,14 @@ export class DockPointer implements IDockPointer {
     // target, leaving it untitled and projectless (Global-scoped). Puts the
     // session on the same entity rail as every other tab: the mint resolves its
     // title (host/guest) and the loader its project.
+    // A conversation dock targets its conversation — also from a message deep
+    // link (`<conversationId>/message/<id>`), which the generic fallback below
+    // rejects for its `/`. Without the target, the tab took the project it was
+    // opened in rather than the conversation's own.
+    if (this.viewType === ViewType.CONVERSATION) {
+      const { conversationId } = DockPointer.parseConversationPointer(pointer);
+      return conversationId ? DockPointer.tryTypeId(Conversation.type, conversationId) : null;
+    }
     if (this.viewType === ViewType.LIVE_SESSION) {
       return DockPointer.tryTypeId(RemoteWorkerSession.type, pointer);
     }

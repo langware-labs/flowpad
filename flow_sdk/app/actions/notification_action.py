@@ -501,6 +501,9 @@ async def _link_message_into_context_entities(
 #: The sidecar on a conversation's context entry that marks a process as THE conversation's session
 #: (a session it was started from or that wrote into it) — not a session shared as an attachment.
 SESSION_ROLE = {"role": "session"}
+#: The sidecar that marks a linked process as a message's plan-implementation session, with the message it
+#: implements (``message_id``). Mirrors the frontend ``PLAN_ROLE``.
+PLAN_ROLE = {"role": "plan"}
 
 
 async def link_origin_session(
@@ -531,6 +534,35 @@ async def link_origin_session(
     except Exception as e:  # noqa: BLE001
         logger.warning("[link_origin_session] %s → conversation %s failed (non-fatal): %s",
                        process_id, conversation_id, e, exc_info=True)
+
+
+@action.post(action_name="index-plan-sessions", types=["conversation"])
+async def index_plan_sessions(self: Conversation) -> ApiResponse:
+    """Link this thread's plan sessions that predate the ``PLAN_ROLE`` link, once; the stamp keeps it from rerunning.
+    A process the conversation already gives a role (its own session) keeps that role."""
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+    if self.plan_sessions_indexed_at is not None:
+        return ApiSuccessResponse(data={"linked": 0, "indexed_at": self.plan_sessions_indexed_at})
+    thread = {ref.id for ref in self.message_refs()}
+    linked = 0
+    if thread:
+        # One pattern, not one per message: the few visible processes naming any message, narrowed below.
+        match = {"op": "$AND", "operands": [
+            {"op": "$EQ", "operands": ["visible", True]},
+            {"op": "$LIKE", "operands": ["shared_context_entities", "flow_message-"]},
+        ]}
+        for proc in await AgenticProcess.get_all(QueryFilter.parse({"match": match}, AgenticProcess.get_type())):
+            tid = TypeId(f"agentic_process-{proc.id}")
+            message_id = next((t.id for t in proc.shared_context_entities if t.type == "flow_message" and t.id in thread), None)
+            if message_id and not self.get_context_entry_data(tid) and self.add_shared_context_entities(
+                tid, data={**PLAN_ROLE, "message_id": message_id}
+            ):
+                linked += 1
+    self.plan_sessions_indexed_at = datetime.now(timezone.utc)
+    await self.save()
+    return ApiSuccessResponse(data={"linked": linked, "indexed_at": self.plan_sessions_indexed_at})
 
 
 def message_header_kwargs(reply_fm: "FlowMessage") -> dict:
@@ -945,7 +977,11 @@ async def handle_add_message(
     # (uuid4; the host validates-on-adopt) and the opening proposal (reply
     # policy) rides the start marker on the carrier attachment. A prompt WITH a
     # session id is a follow-up turn.
-    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
+    from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+        RemoteWorkerSession,
+        RemoteWorkerSessionStatus,
+        can_transition,
+    )
     from flow_sdk.schema.data_spec.session_spec import SessionStartSettings  # noqa: PLC0415
 
     is_prompt_send = bool(prompt_text_preview or prompt_files_preview)
@@ -962,7 +998,8 @@ async def handle_add_message(
         from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
         remote_worker_session_id = mint_uuid()
-        start_settings = SessionStartSettings(reply_policy=reply_policy)
+        # A prompt with no open live session is a prompt request: one prompt, then the host ends it.
+        start_settings = SessionStartSettings(reply_policy=reply_policy, prompt_limit=1)
     elif remote_worker_session_id and is_prompt_send:
         existing_session = await RemoteWorkerSession.resolve_state(remote_worker_session_id)
         if existing_session is not None and not existing_session.is_open:
@@ -970,6 +1007,24 @@ async def handle_add_message(
                 message="this live session has ended — send a new prompt to start another",
                 status_code=409,
             )
+        if existing_session is not None and not is_draft:
+            # A follow-up prompt is activity, and the sender's Live chip reads its
+            # direction from the status: RUNNING = a prompt went out. The host's
+            # next snapshot replaces it with the real state.
+            # Only an approved session: PENDING→RUNNING is the host's pre-granted
+            # fast path, never the guest's to claim before the host answered.
+            next_status = (
+                RemoteWorkerSessionStatus.RUNNING
+                if existing_session.status
+                in (RemoteWorkerSessionStatus.IDLE, RemoteWorkerSessionStatus.ERROR)
+                and can_transition(existing_session.status, RemoteWorkerSessionStatus.RUNNING)
+                else None
+            )
+            # Never while PENDING: stamping the guest's clock there makes the host's
+            # approval snapshot look stale, so the guest would ignore it until the reply.
+            if next_status is not None:
+                existing_session.mark_activity(next_status)
+                await existing_session.save(someone_typeid)
 
     if not conversation_id:
         return ApiFailResponse(message="conversation_id is required")
@@ -1101,6 +1156,7 @@ async def handle_add_message(
             host_user_id=peer_id,
             host_name=peer_name,
             reply_policy=start_settings.reply_policy,
+            prompt_limit=start_settings.prompt_limit,
             status=RemoteWorkerSessionStatus.DRAFT if is_draft else RemoteWorkerSessionStatus.PENDING,
         )
         guest_session.mark_activity()
@@ -1206,7 +1262,7 @@ async def handle_add_message(
 
                 from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY  # noqa: PLC0415
 
-                marker = _json.dumps({SESSION_START_MARKER_KEY: start_settings.model_dump()})
+                marker = _json.dumps({SESSION_START_MARKER_KEY: start_settings.model_dump(exclude_none=True)})
             reply_fm.attachment = [
                 *(reply_fm.attachment or []),
                 Attachment(attachment_type=AttachmentType.TYPE_ID, data=session_att_data, prompt_preview=marker),
@@ -1368,7 +1424,7 @@ async def _start_live_session_locked(conversation_id: str, body: dict, someone_t
         someone_typeid,
         # Read on BOTH sides (the guest's session view shows it too): no "your".
         text=f"{sender_name or 'Your collaborator'} asks {host_name or 'the host'} for a live session",
-        marker_extra={SESSION_START_MARKER_KEY: SessionStartSettings(reply_policy=reply_policy).model_dump()},
+        marker_extra={SESSION_START_MARKER_KEY: SessionStartSettings(reply_policy=reply_policy).model_dump(exclude_none=True)},
     )
     return ApiSuccessResponse(data=session.model_dump(mode="json"))
 

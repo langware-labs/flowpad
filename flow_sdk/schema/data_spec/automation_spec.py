@@ -250,6 +250,8 @@ class AutomationSummary(DataSpec):
     agent_type_id: Optional[str] = None
     #: What the rule belongs to (an agent's own schedule: that agent), when anything.
     parent_type_id: Optional[str] = None
+    #: That parent's name — the header the list groups its rules under.
+    parent_name: Optional[str] = None
     source: AutomationSource = "local"
 
 

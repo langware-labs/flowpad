@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, Loader2, TriangleAlert, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { credentialsService, type Agent, type AgentReadiness, type AgentReadinessItem, type Deployment } from '@sdk';
+import { credentialsService, type AgentReadiness, type AgentReadinessItem, type Deployment, type Project } from '@sdk';
 
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
@@ -37,7 +37,8 @@ export function BusyButton({ label, testId, busy, disabled, onClick, variant = '
 }
 
 interface DeploymentSecretsGateProps {
-  agent: Agent;
+  /** The project the deployment places — its readiness is asked there. */
+  project: Project;
   /** The placement the readiness is about — its fixes go there. */
   deployment: Deployment;
   readiness: AgentReadiness;
@@ -50,7 +51,7 @@ interface DeploymentSecretsGateProps {
  * placement's store (machine → hub, never through this page), `authorize` lets the placement's
  * machine use the connection. A credential's missing value can also be typed here. Each fix re-asks readiness once, so the list is always the hub's answer.
  */
-export function DeploymentSecretsGate({ agent, deployment, readiness, onChange }: DeploymentSecretsGateProps) {
+export function DeploymentSecretsGate({ project, deployment, readiness, onChange }: DeploymentSecretsGateProps) {
   const { t } = useLingui();
   const [busy, setBusy] = useState<string | null>(null);
   const [notHere, setNotHere] = useState<string[]>([]);
@@ -65,7 +66,7 @@ export function DeploymentSecretsGate({ agent, deployment, readiness, onChange }
     setBusy(key);
     try {
       await run();
-      const next = await agent.readiness(deployment.id);
+      const next = await project.readiness(deployment.id, deployment.main_agent_id);
       if (next) onChange(next);
     } catch (e) {
       notify.error({ title: t`Could not fix ${key}`, message: errorMessage(e, t`It failed.`), forceToast: true });
@@ -80,7 +81,7 @@ export function DeploymentSecretsGate({ agent, deployment, readiness, onChange }
     const key = item.requirement.name;
     const values = Object.fromEntries(item.missing.map((name) => [name, typed[name] ?? '']));
     const save = () =>
-      credentialsService.setByName(key, values, agent.project_id ?? null, deployment.id).then(() => {
+      credentialsService.setByName(key, values, project.id, deployment.id).then(() => {
         setTyped({});
       });
     return (

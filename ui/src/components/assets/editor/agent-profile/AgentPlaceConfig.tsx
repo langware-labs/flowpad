@@ -1,4 +1,9 @@
-import { Agent, AGENT_PLACE_FIELDS, type AgentPlaceField, type AgentPlaceOverrides } from '@sdk';
+import {
+  MAIN_AGENT_OVERRIDE_FIELDS as AGENT_PLACE_FIELDS,
+  type Agent,
+  type Deployment,
+  type MainAgentOverrideField as AgentPlaceField,
+} from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
@@ -11,9 +16,9 @@ import { Input } from '@src/components/ui/input';
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
 
 interface AgentPlaceConfigProps {
+  /** The deployment's main agent — its definition is what an override overrides. */
   agent: Agent;
-  deploymentId: string;
-  overrides: AgentPlaceOverrides;
+  deployment: Deployment;
   onChanged: () => void | Promise<void>;
 }
 
@@ -33,9 +38,10 @@ function show(value: unknown): string {
 /**
  * How this deployment runs: every setting with the value in effect — its own override, else the
  * agent's (the definition). "Change" makes an override for this deployment only; "Reset" drops it.
- * Overrides are written into agent.json under `places`.
+ * Overrides are stored on the deployment row (`main_agent_overrides`), never in git.
  */
-export function AgentPlaceConfig({ agent, deploymentId, overrides, onChanged }: AgentPlaceConfigProps) {
+export function AgentPlaceConfig({ agent, deployment, onChanged }: AgentPlaceConfigProps) {
+  const overrides = deployment.main_agent_overrides;
   const { t } = useLingui();
   const [editing, setEditing] = useState<{ field: AgentPlaceField; draft: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -62,7 +68,7 @@ export function AgentPlaceConfig({ agent, deploymentId, overrides, onChanged }: 
   const write = async (field: AgentPlaceField, value: string | string[] | null) => {
     setBusy(true);
     try {
-      await agent.setPlaceOverride(deploymentId, field, value);
+      await deployment.setMainAgentOverride(field, value);
       setEditing(null);
       await onChanged();
     } catch (e) {
@@ -143,7 +149,7 @@ export function AgentPlaceConfig({ agent, deploymentId, overrides, onChanged }: 
         <div className="flex flex-wrap items-center gap-2" data-testid="agent-place-override-editor">
           <span className="text-sm font-medium">{labels[editing.field]}</span>
           <Input
-            id={`place-override-${deploymentId}-${editing.field}`}
+            id={`place-override-${deployment.id}-${editing.field}`}
             autoFocus
             className="h-8 min-w-[10rem] flex-1 text-sm"
             list={editing.field === 'mcp_servers' ? undefined : `place-override-options-${editing.field}`}

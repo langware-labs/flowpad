@@ -121,6 +121,8 @@ export interface IConversation extends IEntity {
   /** How this conversation is interpreted. Defaults to ``direct``; the hub sets
    *  ``helpdesk`` for guest-opened support tickets. */
   kind?: ConversationKind;
+  /** The hub stamps it on the 1:1 conversation holding invite messages; the Invites view queries it. */
+  carries_invite?: boolean;
   /** Settlement state of a ticket. Hub-authoritative, mirrored locally by
    *  ``settleTicket`` and the hub-metadata upsert. Defaults to ``open``. */
   status?: ConversationStatus;
@@ -175,6 +177,7 @@ export interface IConversation extends IEntity {
    *  the row when set; auto-revives when a FlowMessage newer than this stamp
    *  arrives. Per-message ``FlowMessage.is_read`` remains independent. */
   archived_at?: string | Date | null;
+  plan_sessions_indexed_at?: string | Date | null;
   /** Whose stream inbox lists this conversation — a user or agent typeid string;
    *  null on rows written before the field existed (the local user's). */
   owner?: string | null;
@@ -204,6 +207,7 @@ export interface Conversation extends EntityMerge<IConversation> {}
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
   kind?: ConversationKind;
+  carries_invite?: boolean;
   status?: ConversationStatus;
   project_id?: string | null;
   remote_project_id?: string | null;
@@ -226,6 +230,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   git_sharing_enabled?: boolean;
   dismissed_at?: string | Date | null;
   archived_at?: string | Date | null;
+  /** When old plan sessions were last linked into the context (`index-plan-sessions`); null = never. */
+  plan_sessions_indexed_at?: string | Date | null;
   owner?: string | null;
   initiated_by?: string | null;
   is_unread?: boolean;
@@ -236,6 +242,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   constructor(entity: Partial<IConversation> = {}) {
     super(entity);
     this.kind = entity.kind ?? ConversationKind.DIRECT;
+    this.carries_invite = entity.carries_invite ?? false;
     this.status = entity.status ?? ConversationStatus.OPEN;
     this.project_id = entity.project_id;
     this.remote_project_id = entity.remote_project_id;
@@ -256,6 +263,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.git_sharing_enabled = entity.git_sharing_enabled ?? false;
     this.dismissed_at = entity.dismissed_at ?? null;
     this.archived_at = entity.archived_at ?? null;
+    this.plan_sessions_indexed_at = entity.plan_sessions_indexed_at ?? null;
     this.owner = entity.owner ?? null;
     this.initiated_by = entity.initiated_by ?? null;
     this.is_unread = entity.is_unread;
@@ -313,6 +321,14 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
    *  channel, not on the Flowpad roster, and a reply leaves through its data source. Flowpad's own chat is not. */
   get isChannel(): boolean {
     return this.channel_spec?.transport === ChannelTransport.Source;
+  }
+
+  /** Link the plan sessions that predate the conversation's `PLAN_ROLE` link (`index-plan-sessions`).
+   *  Runs once per conversation: the backend stamps `plan_sessions_indexed_at` and the row update arrives
+   *  over the socket. */
+  async indexPlanSessions(): Promise<void> {
+    if (!this.id || this.plan_sessions_indexed_at) return;
+    await dataManager.callAction(new ActionInfo('index-plan-sessions', Conversation.type, this.id, 'POST'));
   }
 
   /** Run one of the channel's conversation verbs (`channel_spec.actions`). A refusal throws with

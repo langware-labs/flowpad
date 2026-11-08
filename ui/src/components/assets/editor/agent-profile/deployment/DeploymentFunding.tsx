@@ -4,7 +4,7 @@
  * that size is, and why the next turn would be refused. A refusal is never a silent empty state: the
  * card turns red and the user is notified once.
  */
-import type { Agent, AgentTokenAllocation, Deployment, DeploymentFunding } from '@sdk';
+import type { Agent, AgentTokenAllocation, Deployment, DeploymentFunding, Project } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
@@ -52,7 +52,16 @@ export function FundedBy({ deployment }: { deployment: Deployment }) {
   );
 }
 
-export function DeploymentFundingCard({ agent, deployment }: { agent: Agent; deployment: Deployment }) {
+export function DeploymentFundingCard({
+  project,
+  agent,
+  deployment,
+}: {
+  project: Project;
+  /** Its main agent, when it has one. */
+  agent: Agent | null;
+  deployment: Deployment;
+}) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { data, error } = useDeploymentFunding(deployment);
@@ -93,7 +102,7 @@ export function DeploymentFundingCard({ agent, deployment }: { agent: Agent; dep
           {data.size ? `${data.size} → ${data.model}` : data.model}
         </span>
       )}
-      <ChangeAllocation agent={agent} deployment={deployment} funding={data ?? null} />
+      <ChangeAllocation project={project} agent={agent} deployment={deployment} funding={data ?? null} />
       {problem && (
         <span className="w-full text-destructive" data-testid="deployment-funding-problem">
           {problem}
@@ -105,11 +114,13 @@ export function DeploymentFundingCard({ agent, deployment }: { agent: Agent; dep
 
 /** Give the deployment its own sub-budget (or a new one): a source, a daily cap and a size or model. */
 function ChangeAllocation({
+  project,
   agent,
   deployment,
   funding,
 }: {
-  agent: Agent;
+  project: Project;
+  agent: Agent | null;
   deployment: Deployment;
   funding: DeploymentFunding | null;
 }) {
@@ -142,7 +153,13 @@ function ChangeAllocation({
     setBusy(true);
     try {
       // Names this deployment: without its id the hub plans a new one and this one keeps its old allocation.
-      await agent.planDeployment(deployment.environment, deployment.target.provider, value, deployment.id);
+      await project.planDeployment({
+        environment: deployment.environment,
+        provider: deployment.target.provider,
+        tokenAllocation: value,
+        deploymentId: deployment.id,
+        mainAgentId: deployment.main_agent_id,
+      });
       notify.success({ title: value ? t`Allocation saved` : t`Back on the owner's default` });
       close();
       await queryClient.invalidateQueries({ queryKey: ['deployment', deployment.id, 'funding'] });
@@ -174,7 +191,8 @@ function ChangeAllocation({
         </span>
       ) : (
         <TokenAllocationField
-          agent={agent}
+          project={project}
+          mainAgent={agent}
           environment={deployment.environment}
           provider={deployment.target.provider}
           deploymentId={deployment.id}

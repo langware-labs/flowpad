@@ -14,7 +14,6 @@ name = "flowpad-diskio-scan"
 path = "src/main.rs"
 
 [dependencies]
-regex = "1"
 serde_json = "1"
 
 [target.'cfg(unix)'.dependencies]

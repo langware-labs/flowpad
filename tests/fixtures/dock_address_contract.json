@@ -1028,6 +1028,12 @@
       "url": "/dock/assets/project-setup"
     },
     {
+      "name": "assets project-deployments",
+      "view_type": "assets",
+      "pointer": "project-deployments",
+      "url": "/dock/assets/project-deployments"
+    },
+    {
       "name": "lens transcript",
       "view_type": "lens",
       "pointer": "claude/transcript/6ba7b810-9dad-41d1-80b4-00c04fd430c8",

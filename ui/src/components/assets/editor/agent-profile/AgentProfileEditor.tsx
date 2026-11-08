@@ -3,13 +3,15 @@ import { useAgentPlaces } from './use-agent-places';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, MessageCircle, Trash2 } from 'lucide-react';
+import { Loader2, MessageCircle, Plus, Trash2 } from 'lucide-react';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { errorMessage } from '@src/lib/error-message';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
+import { RoleChip, useItemTime } from '@src/components/items/ItemCard';
+import { roleOf } from '@src/components/items/role';
 import { AgentAvatarPicker } from '@src/components/ui/agent-avatar-picker';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { prepareAvatarImage } from '@src/lib/prepare-avatar-image';
@@ -30,6 +32,7 @@ import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfil
 import { AgentAssistantSkillsField } from './AgentAssistantSkillsField';
 import { AgentModelSizeField } from './AgentModelSizeField';
 import { AgentVisibilitySection } from './AgentVisibilitySection';
+import { AgentAutoLaunchTab } from './AgentAutoLaunchTab';
 import { useAgentMcpSync } from './use-agent-mcp-sync';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import type { AgentDocumentPatch } from './agent-fields';
@@ -86,7 +89,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const contentRef = useRef(content);
   contentRef.current = content;
   const profile = content.typedFields as Partial<Agent>;
-  const title = content.fields.title ?? '';
+  // A hub serves no agent document, so its draft title is empty: the agent's own name is the title then.
+  const title = content.fields.title || (hub || content.loadError ? agent.displayName : '') || '';
+  const agentTime = useItemTime({ date: agent.updated_date });
   const description = content.fields.description ?? '';
   const prompt = content.body;
   const intro = content.fields.intro ?? '';
@@ -102,6 +107,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     rows: channelRows,
     specFor: channelSpecFor,
     offers: channelOffers,
+    builtInOffered,
   } = useAttachedChannels(hub ? null : channelsOwner);
   const openChannel = useCallback(
     (key: string) => navigation.openDock(DockPointer.forAgentStreamInbox(agent.id, { channel: key })),
@@ -126,9 +132,17 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
 
   // A deploy publishes the agent without touching its row, so the header follows the deployments too:
   // without this it still said "Not published yet" after a cloud deploy, until the page was reopened.
-  const { places } = useAgentPlaces(hub ? null : agent);
+  const { places } = useAgentPlaces(agent);
+  const cloudPlaces = places?.filter((p) => !p.is_local).length ?? 0;
+  const localPlace = places?.find((p) => p.is_local) ?? null;
+  const deployPage = agent.deployPagePointer;
   const placesKey = places
-    ? places.map((p) => `${p.deployment.id}:${String(p.deployment.status ?? '')}:${p.behind ?? ''}`).join(',')
+    ? places
+        .map(
+          (p) =>
+            `${p.deployment.id}:${p.deployment.status?.provider_state ?? ''}:${p.deployment.source_revision ?? ''}`,
+        )
+        .join(',')
     : '';
   useEffect(() => {
     void loadVersion();
@@ -300,6 +314,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
             className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
             data-testid="agent-version"
           >
+            {/* The same role chip and time line as the agent's card (components/items). */}
+            <RoleChip role={roleOf(agent)} />
+            {agentTime && <span data-testid="item-time">{agentTime}</span>}
             {hub ? (
               <Trans>Published version — edit it on the author's computer</Trans>
             ) : !version ? null : version.published ? (
@@ -348,6 +365,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 rows={channelRows}
                 specFor={channelSpecFor}
                 offers={channelOffers}
+                builtInOffered={builtInOffered}
                 onMarkPress={openChannel}
               />
             </div>
@@ -370,17 +388,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
 
       {/* ── body: the definition on the left, where it runs on the right ── */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <section
-          className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
-          aria-labelledby="agent-definition"
-        >
+        <section className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5" aria-label={t`Agent`}>
           {/* On the hub this is the PUBLISHED definition: read it here, edit it on the author's computer. */}
           <fieldset disabled={hub || !!definitionError} className="contents" data-testid="agent-definition-fields">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 id="agent-definition" className="text-sm font-semibold">
-                <Trans>Definition</Trans>
-              </h2>
-            </div>
             {definitionError && (
               <div
                 role="alert"
@@ -393,11 +403,14 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
           </fieldset>
 
           <Tabs
-            defaultValue="instructions"
+            defaultValue="summary"
             className="flex min-h-0 flex-1 flex-col"
             onValueChange={(v) => v === 'settings' && setMoreOpened(true)}
           >
             <TabsList className="self-start">
+              <TabsTrigger value="summary" data-testid="agent-tab-summary">
+                <Trans>Summary</Trans>
+              </TabsTrigger>
               <TabsTrigger value="instructions" data-testid="agent-tab-instructions">
                 <Trans>Instructions</Trans>
               </TabsTrigger>
@@ -415,6 +428,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   </span>
                 )}
               </TabsTrigger>
+              {!hub && (
+                <TabsTrigger value="autolaunch" data-testid="agent-tab-autolaunch">
+                  <Trans>Auto-launch</Trans>
+                </TabsTrigger>
+              )}
             </TabsList>
             <TabsContent
               value="instructions"
@@ -433,6 +451,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 {!promptFull &&
                   promptEditor(<FullScreenButton className="ms-auto" onClick={() => setPromptFull(true)} />)}
               </div>
+              {!hub && <AgentChannelsBlock agent={agent} />}
               <FullScreenView
                 open={promptFull}
                 onExit={() => {
@@ -684,13 +703,83 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 )}
               </div>
             </TabsContent>
+            <TabsContent value="summary" className="mt-3 flex flex-col gap-4" data-testid="agent-summary">
+              <p className="whitespace-pre-wrap text-sm">
+                {description || <span className="text-muted-foreground">{t`No description yet.`}</span>}
+              </p>
+              {!hub && places !== null && (
+                <p className="text-xs text-muted-foreground" data-testid="agent-summary-local">
+                  {localPlace ? (
+                    <Trans>Runs on this computer as its project's main agent</Trans>
+                  ) : (
+                    <Trans>Not running on this computer</Trans>
+                  )}
+                </p>
+              )}
+              <div className="flex items-center gap-3 text-sm">
+                <span data-testid="agent-summary-deployments">
+                  {places === null ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : cloudPlaces === 1 ? (
+                    t`1 cloud deployment`
+                  ) : (
+                    t`${cloudPlaces} cloud deployments`
+                  )}
+                </span>
+                {deployPage && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigation.openDock(deployPage)}
+                    data-testid="agent-summary-new-deployment"
+                  >
+                    <Plus className="me-1.5 h-3.5 w-3.5" />
+                    <Trans>Deploy</Trans>
+                  </Button>
+                )}
+              </div>
+            </TabsContent>
             <TabsContent value="deployments" className="mt-3">
               <AgentPlacesColumn agent={agent} />
             </TabsContent>
+            {/* Not force-mounted: read on first open, and its 10s poll stops when another tab is shown. */}
+            {!hub && (
+              <TabsContent value="autolaunch" className="mt-3">
+                <AgentAutoLaunchTab agent={agent} version={version} />
+              </TabsContent>
+            )}
           </Tabs>
         </section>
       </div>
       {!hub && <AgentRequestLine agent={agent} displayName={title || (agent.name ?? '')} />}
+    </div>
+  );
+}
+
+/** What Flowpad adds to the agent's instructions about its channels — read-only, so a person sees exactly
+ *  what the agent is told (its address, how it sends, who it hears from). Nothing without a built-in email. */
+function AgentChannelsBlock({ agent }: { agent: Agent }) {
+  const [text, setText] = useState('');
+  useEffect(() => {
+    let live = true;
+    void agent
+      .channelsBlock()
+      .then((next) => live && setText(next))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [agent]);
+  if (!text) return null;
+  return (
+    <div
+      className="mt-3 rounded-md border border-border bg-card/50 px-3 py-2 text-xs"
+      data-testid="agent-channels-block"
+    >
+      <div className="mb-1 font-medium text-muted-foreground">
+        <Trans>Channels — added by Flowpad, read-only</Trans>
+      </div>
+      <pre className="whitespace-pre-wrap font-sans">{text.replace(/^## .*\n/, '')}</pre>
     </div>
   );
 }

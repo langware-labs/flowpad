@@ -1,6 +1,7 @@
 import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateTo } from '../commands';
+import { useAlertStore } from '../alerts-store';
 import { useDiagnoseErrorStore } from './diagnose-error-store';
 
 /**
@@ -15,13 +16,23 @@ export function DiagnoseErrorModal() {
   const detail = useDiagnoseErrorStore((s) => s.detail);
   const kind = useDiagnoseErrorStore((s) => s.kind);
   const watching = useDiagnoseErrorStore((s) => s.watching);
+  const alertId = useDiagnoseErrorStore((s) => s.alertId);
   const close = useDiagnoseErrorStore((s) => s.close);
 
   return (
     <DiagnoseModal
       open={detail !== null || watching}
       onClose={close}
-      seed={detail !== null ? { detail, kind } : null}
+      seed={
+        detail !== null
+          ? {
+              detail,
+              kind,
+              // Opened from a warnings-list entry: a repair is marked on that entry.
+              onFixed: alertId ? (summary) => useAlertStore.getState().markFixed(alertId, summary) : undefined,
+            }
+          : null
+      }
       onViewDiagnosis={({ diagnosisId }) => {
         close();
         navigateTo(DockPointer.forDiagnosis(diagnosisId).toUrl());

@@ -1,14 +1,19 @@
-import { Agent, ComputeNode, Deployment, ExecutionEnvironmentStatus, QueryRequest } from '@sdk';
+import { Agent, ComputeNode, Deployment, ExecutionEnvironmentStatus, PageId, ViewType, isHubOnly } from '@sdk';
+import { DockPointer, NODE_PARAM } from '@src/navigation/DockPointer';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
-import type { ReactNode } from 'react';
 import { useMemo } from 'react';
 import { isLaunched, useSandboxes } from '@src/hooks/use-sandboxes';
-import { ALL_DEPLOYMENTS, DeploymentBadges, deploymentsByAgent, toAgentRows, type AgentRow } from './agent-counters';
+import { ALL_AGENTS, ALL_DEPLOYMENTS, DEPLOYMENTS_WITH_ROLES, DeploymentBadges, agentCard, deploymentsByAgent, toAgentRows, type AgentRow } from './agent-counters';
 import { crossCounters } from './axes';
 import { isLiveDeployment, isRunning, runPauseStatuses } from './placement';
 import { StatusDot } from './AssetItems';
 import type { AssetCounterGroup } from './types';
+import { DeploymentContextLine } from '@src/components/project-deployments/DeploymentContext';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { deploymentState, type ItemState } from '@src/components/items/item-state';
+import { StatePill } from '@src/components/items/ItemCard';
+import { roleOf } from '@src/components/items/role';
 import { FundedBy } from '@src/components/assets/editor/agent-profile/deployment/DeploymentFunding';
 
 /**
@@ -16,7 +21,6 @@ import { FundedBy } from '@src/components/assets/editor/agent-profile/deployment
  * hub has no "current project" to count within, only what the caller can reach.
  */
 
-const HUB_AGENTS = new QueryRequest({ type: Agent.type, scope: [], query: null, name: 'hubCounters:agents' });
 
 /** A machine plus its probed status (absent until probed, or never launched). */
 export interface MachineRow {
@@ -30,25 +34,30 @@ export function isActiveMachine(row: MachineRow): boolean {
 
 const isPausedMachine = (row: MachineRow) => row.status === ExecutionEnvironmentStatus.PAUSED;
 
-const MACHINE_STATUS_LABEL: Record<ExecutionEnvironmentStatus, ReactNode> = {
-  [ExecutionEnvironmentStatus.READY]: <Trans>Running</Trans>,
-  [ExecutionEnvironmentStatus.PAUSED]: <Trans>Paused</Trans>,
-  [ExecutionEnvironmentStatus.NOT_FOUND]: <Trans>Not found</Trans>,
-  [ExecutionEnvironmentStatus.ERROR]: <Trans>Unreachable</Trans>,
-  [ExecutionEnvironmentStatus.NEW]: <Trans>New</Trans>,
-  [ExecutionEnvironmentStatus.DISCONNECTED]: <Trans>Disconnected</Trans>,
-};
-
-function machineStatusLabel(row: MachineRow): ReactNode {
-  if (row.status) return MACHINE_STATUS_LABEL[row.status];
-  return isLaunched(row.node) ? <Trans>Checking…</Trans> : <Trans>Not started</Trans>;
+/** A machine in the shared state words: unreachable or disconnected asks for you. */
+function machineState(row: MachineRow): ItemState {
+  switch (row.status) {
+    case ExecutionEnvironmentStatus.READY:
+      return 'running';
+    case ExecutionEnvironmentStatus.PAUSED:
+      return 'paused';
+    case ExecutionEnvironmentStatus.NEW:
+      return 'starting';
+    case ExecutionEnvironmentStatus.ERROR:
+    case ExecutionEnvironmentStatus.DISCONNECTED:
+    case ExecutionEnvironmentStatus.NOT_FOUND:
+      return 'attention';
+    default:
+      return isLaunched(row.node) ? 'starting' : 'off';
+  }
 }
+
 
 export const hubAgentCounterGroup: AssetCounterGroup<AgentRow> = {
   id: 'hub-agents',
   type: Agent.type,
   useCounters: () => {
-    const { data: agents = [], isLoading } = useEntitiesQuery<Agent>(HUB_AGENTS);
+    const { data: agents = [], isLoading } = useEntitiesQuery<Agent>(ALL_AGENTS);
     const { data: deployments = [], isLoading: deploymentsLoading } = useEntitiesQuery<Deployment>(ALL_DEPLOYMENTS);
     const rows = useMemo(() => toAgentRows(agents, deploymentsByAgent(deployments)), [agents, deployments]);
     return useMemo(
@@ -65,16 +74,8 @@ export const hubAgentCounterGroup: AssetCounterGroup<AgentRow> = {
   itemKey: (row) => row.agent.id,
   searchText: ({ agent }) => [agent.displayName, agent.description].filter(Boolean).join(' '),
   itemPointer: (row) => row.agent.dockPointer,
-  card: (row) => {
-    const active = isRunning(row);
-    return {
-      title: row.agent.displayName,
-      description: row.agent.description,
-      status: { label: active ? <Trans>Active</Trans> : <Trans>Idle</Trans>, active },
-      // No deployment yet: the Idle badge already says so, a bare dash adds nothing.
-      footer: row.deployments.length > 0 ? <DeploymentBadges deployments={row.deployments} /> : undefined,
-    };
-  },
+  card: agentCard,
+  role: (row) => roleOf(row.agent),
   columns: [
     {
       key: 'agent',
@@ -119,11 +120,22 @@ export const hubMachineCounterGroup: AssetCounterGroup<MachineRow> = {
   },
   itemKey: (row) => row.node.id,
   searchText: ({ node }) => node.name ?? '',
-  itemPointer: (row) => row.node.dockPointer,
+  // Hub: its Machines screen (open, resume, share). Desk: the machine page for that node.
+  itemPointer: (row) =>
+    isHubOnly()
+      ? new DockPointer(ViewType.MACHINES, '', undefined, undefined, PageId.HUB)
+      : new DockPointer(ViewType.MACHINE, '', { [NODE_PARAM]: row.node.id }),
   card: (row) => ({
     title: row.node.name,
-    status: { label: machineStatusLabel(row), active: isActiveMachine(row) },
+    icon: iconForType(ComputeNode.type),
+    state: machineState(row),
+    role: roleOf(row.node),
+    warning: isLaunched(row.node) && !row.node.logged_in_user ? <Trans>Signed out — running with no identity</Trans> : undefined,
+    description: row.node.logged_in_user ? <Trans>Signed in as {row.node.logged_in_user}</Trans> : undefined,
+    chips: [row.node.node_size, row.node.node_provider_type].filter(Boolean) as string[],
+    at: { date: row.node.created_date, verb: 'started' },
   }),
+  role: (row) => roleOf(row.node),
   columns: [
     {
       key: 'machine',
@@ -134,7 +146,7 @@ export const hubMachineCounterGroup: AssetCounterGroup<MachineRow> = {
     {
       key: 'status',
       header: <Trans>Status</Trans>,
-      cell: (row) => <StatusDot active={isActiveMachine(row)}>{machineStatusLabel(row)}</StatusDot>,
+      cell: (row) => <StatePill state={machineState(row)} />,
     },
   ],
 };
@@ -143,7 +155,7 @@ export const hubDeploymentCounterGroup: AssetCounterGroup<Deployment> = {
   id: 'hub-deployments',
   type: Deployment.type,
   useCounters: () => {
-    const { data: deployments = [], isLoading } = useEntitiesQuery<Deployment>(ALL_DEPLOYMENTS);
+    const { data: deployments = [], isLoading } = useEntitiesQuery<Deployment>(DEPLOYMENTS_WITH_ROLES);
     return useMemo(
       () =>
         crossCounters({
@@ -157,30 +169,39 @@ export const hubDeploymentCounterGroup: AssetCounterGroup<Deployment> = {
   },
   itemKey: (d) => d.id,
   searchText: (d) => [d.name, d.target.provider].filter(Boolean).join(' '),
-  // Its own page (funding, threads, health) when it places an agent; else where it sits in the world view.
-  itemPointer: (d) => d.agentPagePointer ?? d.dockPointer,
-  card: (d) => {
-    const live = isLiveDeployment(d);
-    return {
-      title: d.name,
-      status: { label: live ? <Trans>Live</Trans> : <Trans>Paused</Trans>, active: live },
-      description: <FundedBy deployment={d} />,
-      footer: d.target.provider || d.status.provider_state || undefined,
-    };
-  },
+  // Its own page in its project's Deployments (funding, threads, health); else where it sits in the world view.
+  itemPointer: (d) => d.projectPagePointer ?? d.dockPointer,
+  card: (d) => ({
+    title: d.name,
+    icon: iconForType(Deployment.type),
+    state: deploymentState(d.status?.provider_state),
+    role: roleOf(d),
+    description: (
+      <span className="flex min-w-0 flex-col">
+        <DeploymentContextLine deployment={d} />
+        <FundedBy deployment={d} />
+      </span>
+    ),
+    chips: [d.target.provider, d.environment].filter(Boolean),
+    at: { date: d.updated_date },
+  }),
+  role: roleOf,
   columns: [
     {
       key: 'deployment',
       header: <Trans>Deployment</Trans>,
-      cell: (d) => <span className="truncate font-medium text-foreground">{d.name}</span>,
+      cell: (d) => (
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate font-medium text-foreground">{d.name}</span>
+          <DeploymentContextLine deployment={d} />
+        </div>
+      ),
       className: 'w-[45%] max-w-0',
     },
     {
       key: 'status',
       header: <Trans>Provider</Trans>,
-      cell: (d) => (
-        <StatusDot active={isLiveDeployment(d)}>{d.target.provider || d.status.provider_state || '—'}</StatusDot>
-      ),
+      cell: (d) => <StatePill state={deploymentState(d.status?.provider_state)} />,
     },
     {
       key: 'funding',

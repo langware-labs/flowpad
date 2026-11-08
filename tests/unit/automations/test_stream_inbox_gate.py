@@ -308,3 +308,23 @@ def test_an_attachment_only_message_still_says_what_it_carried():
         ],
     )
     assert state_of(fm, set()).files == ["claude_session", "screenshot.png"]
+
+
+async def test_negative_test_run_does_not_launch_or_spend_fire_once(initialize_test_db, decision_double, mock_driver):
+    driver = mock_driver(lambda turn: "must not run")
+    decision_double["answers"]["match"] = 0.1
+    source, agent = await _source(), await _agent()
+    rule = await _rule(source, agent, enabled=False)
+    rule.fire_once = True
+    await rule.update()
+    _, message = await _message(source, "No refund wanted.")
+    from tests.unit.automations._helpers import settle
+    try:
+        started = await run_once(rule, message_id=message.id)
+        await settle()
+    finally:
+        tag_triggers.unregister_tag_trigger(rule.id)
+    (row,) = history(rule)
+    assert row["id"] == started.run_id and row["is_test"]
+    assert row["reason_code"] == "decision_no" and row["wizard"]["exit_code"] == 3
+    assert not driver.received_prompts and (await Trigger.get_by_id(rule.id)).counter == 0

@@ -623,19 +623,17 @@ class ClaudeDriver:
         """Path to the Claude session JSONL — None when no session_id yet."""
         if not process.session_id:
             return None
-        from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import find_claude_session_path
 
-        record = get_claude_session(process.session_id)
-        if record and record.jsonl_path:
-            path = Path(record.jsonl_path)
-            if path.exists():
-                return TranscriptDescriptor(
-                    path=path,
-                    format=TranscriptFormat.CLAUDE_JSONL,
-                    source=TranscriptSource.WORKER_SESSION,
-                    session_id=process.session_id,
-                )
-        return None
+        path = find_claude_session_path(process.session_id, process.workdir)
+        if path is None:
+            return None
+        return TranscriptDescriptor(
+            path=path,
+            format=TranscriptFormat.CLAUDE_JSONL,
+            source=TranscriptSource.WORKER_SESSION,
+            session_id=process.session_id,
+        )
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
@@ -675,10 +673,10 @@ class ClaudeDriver:
         )
         return roots
 
-    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str]) -> bool:
+    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str], own: Sequence[str] = ()) -> bool:
         from flow_sdk.assets.process_projection import link_mounted_skills
 
-        return link_mounted_skills(assets_dir, add_dirs, native_mount=".claude/skills")
+        return link_mounted_skills(assets_dir, add_dirs, native_mount=".claude/skills", own=own)
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
         """Claude discovers skills from ``.claude/skills`` under the mounted

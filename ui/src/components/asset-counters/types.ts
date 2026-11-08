@@ -1,6 +1,8 @@
 import type { IDockPointer } from '@sdk';
 import type { ReactNode } from 'react';
 import type { AxisOption } from './axes';
+import type { ItemCardValue } from '@src/components/items/ItemCard';
+import type { ItemRole } from '@src/components/items/role';
 
 /**
  * One counter's value: the LIST behind the number. The home box shows
@@ -46,12 +48,9 @@ export interface AssetCounterGroup<T> {
   searchText: (item: T) => string;
   /** How one item reads as a card (the hub home grid). Absent → the group has no card view. */
   card?: (item: T) => AssetCard;
+  /** The signed-in person's role on the item — what the card's chip and the Mine / Shared filter read. */
+  role?: (item: T) => ItemRole | undefined;
 }
 
-/** One item as a card: title and status on top, a two-line description, a type-specific footer. */
-export interface AssetCard {
-  title: ReactNode;
-  description?: ReactNode;
-  status?: { label: ReactNode; active: boolean };
-  footer?: ReactNode;
-}
+/** One item as a card — the shared item value (`components/items/ItemCard.tsx`). */
+export type AssetCard = ItemCardValue;

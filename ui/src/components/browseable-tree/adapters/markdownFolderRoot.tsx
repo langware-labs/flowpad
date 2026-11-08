@@ -5,7 +5,7 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import { documentsTreeType, isDocumentFilePath, isMarkdownDocumentPath } from '@src/lib/markdown-path';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import apiClient from '@sdk/client';
-import { RecordType, TypeId } from '@sdk';
+import { isPathUnderRoot, RecordType, TypeId } from '@sdk';
 import { subscribeToEntityOps } from '@sdk/FlowSync/entity-ops';
 import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
 import { RagToggleGlyph } from '@src/components/rag/RagToggleGlyph';
@@ -22,7 +22,13 @@ import type {
 import { AssetTypeCountBadge, parseAssetPointer } from './assetTypeRoot';
 import { onFsFoldersChanged, withFsOps, type FsOpsCtx, type FsOpsHost } from './fsFileOps';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
-import { isAllScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
+import {
+  isAllScope,
+  scopeIncludesDependencies,
+  scopeIncludesUser,
+  scopeProjectIds,
+  type ScopeFilter,
+} from '@src/lib/scope-filter';
 import { DEFAULT_ASSET_FILTER } from '@src/components/assets/assetFilter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 
@@ -47,6 +53,11 @@ export interface MarkdownFolderRootDeps {
    *  actions (toolbar, right-click, keys, drag move/copy, upload) — see
    *  `fsFileOps`. */
   fileOps?: FsOpsHost;
+  /** The scoped project's dependency folders that hold documents — canonical paths,
+   *  transitive (the asset menu's walk). Under the Dependencies scope a vault at or
+   *  under one of these is listed, so the Documents tree shows the same documents
+   *  its badge counts. */
+  dependencyRoots?: ReadonlySet<string>;
 }
 
 export interface MarkdownDragItem extends BrowseableDragData {
@@ -355,9 +366,12 @@ function folderBrowseable(args: {
  *  `sf.user`; a project vault is kept iff its Project id or legacy
  *  record_project_id is selected. Empty `projects` means no project vaults —
  *  except in the `all` scope, which selects no SPECIFIC project yet means
- *  every vault. */
-function keepVault(v: AssetTypeVault, filter: AssetFilter): boolean {
+ *  every vault. Under the Dependencies scope, a vault inside the project's
+ *  dependency closure is kept too — a dependency Project's vault, or a plain
+ *  dependency folder's (`scope: 'dependency'`), which no other scope lists. */
+function keepVault(v: AssetTypeVault, filter: AssetFilter, dependencyRoots?: ReadonlySet<string>): boolean {
   if (isAllScope(filter.scope)) return true;
+  if (scopeIncludesDependencies(filter.scope) && dependencyRoots && underAnyRoot(v.absPath, dependencyRoots)) return true;
   if (v.scope === 'user') return scopeIncludesUser(filter.scope);
   if (v.scope === 'project') {
     const selected = new Set(scopeProjectIds(filter.scope));
@@ -365,6 +379,11 @@ function keepVault(v: AssetTypeVault, filter: AssetFilter): boolean {
       (!!v.project_id && selected.has(v.project_id)) || (!!v.record_project_id && selected.has(v.record_project_id))
     );
   }
+  return false;
+}
+
+function underAnyRoot(path: string, roots: ReadonlySet<string>): boolean {
+  for (const root of roots) if (isPathUnderRoot(path, root)) return true;
   return false;
 }
 
@@ -479,7 +498,7 @@ export function markdownFolderRoot(type: AssetTypeInfo, deps: MarkdownFolderRoot
     icon: vaultIcon(v),
   });
 
-  const visibleVaults = vaults.filter((v) => keepVault(v, filter));
+  const visibleVaults = vaults.filter((v) => keepVault(v, filter, deps.dependencyRoots));
   // STABLE id, like assetTypeRoot's: a scope or vault-list change must not
   // remount the root (dropping its children — the sidebar blink). Those changes
   // re-list it through an invalidate instead: the scope-change effect in

@@ -1,0 +1,8 @@
+{
+  "name": "automation-decide",
+  "subkind": "python",
+  "exe_data": {},
+  "input": "automation.prepared",
+  "output": "automation.prepared",
+  "id": "876016a0-7228-468c-85bc-b76b24bbce7d"
+}

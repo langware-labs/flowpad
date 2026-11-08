@@ -37,7 +37,7 @@ ALL_WORKERS = [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT, Wor
 FIELDS = ("worker_status", "worker_status_detail", "busy", "ready_for_input")
 
 _RESOLVERS = [
-    (_claude_sessions, "get_claude_session"),
+    (_claude_sessions, "find_claude_session_path"),
     (_codex_driver, "find_codex_resumable_session"),
     (_codex_driver, "find_codex_session_jsonl"),
     (_codex_driver, "find_latest_codex_session_jsonl"),
@@ -146,3 +146,19 @@ def test_list_of_stopped_processes_is_searched_once(decoys, searches):
     first, second = _serialize_twice(processes, searches)
     assert first >= len(processes)
     assert second == 0, f"re-serializing a 200-process list searched {second} times"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_stopped_process_reads_its_transcript_tail_once(decoys, monkeypatch):
+    """A finished worker writes nothing more: its status is read once, not on every serialization (a
+    1,284-process list re-read 1,205 stopped tails per response). A live one is read every time."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude.driver import ClaudeDriver
+
+    reads = _spy(monkeypatch, ClaudeDriver, "tail_status")
+    stopped = _with_transcript(WorkerType.CLAUDE_CODE, decoys, "stopped")
+    running = _with_transcript(WorkerType.CLAUDE_CODE, decoys, "running")
+    assert view(stopped) == view(stopped)
+    assert len(reads) == 1
+    reads.clear()
+    view(running), view(running)
+    assert len(reads) == 2

@@ -15,7 +15,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from flow_sdk.core.display_target import DisplayTargetKind, resolve_display_target
+from flow_sdk.core.display_target import resolve_display_target
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.type_id import TypeId, is_named_id
 from flow_sdk.responses.response import ApiSuccessResponse
@@ -117,7 +117,9 @@ async def navigate_entity(req: NavigateEntityRequest):
         return _error(400, "INVALID_TYPEID", f"Missing id in typeid '{req.typeid}'")
     if await _lookup_entity(typeid.type, typeid.id) is None:
         return _answer(NavigateResult.not_found(f"No {typeid.type} {typeid.id}.", verdict="not_found"))
-    target = {"kind": DisplayTargetKind.ENTITY, "type": typeid.type, "id": typeid.id}
+    # The same resolver `flow show entity` uses, so a kind with no editor (a session,
+    # a terminal, a project) lands on its own view here too.
+    target = await resolve_display_target(typeid=req.typeid)
     return _answer(await show_target(target, connection_id=req.connection_id))
 
 

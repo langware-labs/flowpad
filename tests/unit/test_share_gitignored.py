@@ -184,6 +184,18 @@ def test_the_folder_zip_for_a_compute_node_leaves_excluded_files(tmp_path):
         assert sorted(zf.namelist()) == [".gitignore", "main.md"]
 
 
+def test_the_folder_zip_keeps_a_git_checkout_a_repository(tmp_path):
+    """A detached checkout's ``.git/refs`` holds only empty folders; dropped, the copy is no repository."""
+    from flow_sdk.builtin.faas.compute_node import build_dir_zip
+
+    root = tmp_path / "checkout"
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    out = tmp_path / "copy"
+    with zipfile.ZipFile(build_dir_zip(str(root))) as zf:
+        zf.extractall(out)
+    assert subprocess.run(["git", "-C", str(out), "rev-parse", "--git-dir"], capture_output=True).returncode == 0
+
+
 def test_the_publish_mirror_leaves_excluded_files(tmp_path):
     from flow_sdk.assets.hub_repo_sync import _replace
 

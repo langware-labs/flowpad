@@ -7,7 +7,7 @@ import {
   Task,
   TypeId,
   User,
-  acceptInvitation,
+  answerInvitation,
   dismissConversation,
   fetchConversations,
   isInvitationGoneError,
@@ -208,7 +208,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   const handleAcceptInvitation = async (invId: string) => {
     setAcceptingId(invId);
     try {
-      await acceptInvitation({ invitation_id: invId });
+      await answerInvitation(invId, 'accept');
       await refetch();
     } catch (e) {
       if (isInvitationGoneError(e)) {

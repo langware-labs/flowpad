@@ -54,6 +54,9 @@ export enum AssetMode {
   // The project's setup page (Project Home ☰ → Project setup): every setup step, its state, Edit/Run/Rerun.
   // A surface like the landing, so the asset loader no-ops it too.
   PROJECT_SETUP = 'project-setup',
+  // The project's deployments (Project Home ☰ → Deployments, an agent's "Deploy"): every placement of the
+  // project, New deployment, and one deployment's page (`?deployment=<id>`). Value = `PROJECT_DEPLOYMENTS_PAGE`.
+  PROJECT_DEPLOYMENTS = 'project-deployments',
 }
 
 /** Default wiki space (the local compute node). */
@@ -105,6 +108,7 @@ export interface ProjectLandingPage {
 export const PROJECT_LANDING_PAGES: Record<string, ProjectLandingPage> = {
   [AssetMode.PROJECT_HOME]: { label: msg`Home`, underProjectDock: false },
   [AssetMode.PROJECT_SETUP]: { label: msg`Project setup`, underProjectDock: true },
+  [AssetMode.PROJECT_DEPLOYMENTS]: { label: msg`Deployments`, underProjectDock: true },
 };
 
 /** The Project Home page `pointer` addresses under the given dock, else null. */

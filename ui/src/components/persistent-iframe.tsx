@@ -41,6 +41,16 @@ const APP_SANDBOX =
 const APP_ALLOW =
   'accelerometer; autoplay; camera; encrypted-media; fullscreen; geolocation; gyroscope; microphone; midi; clipboard-read; clipboard-write; payment; usb; xr-spatial-tracking; screen-wake-lock; magnetometer; gamepad; picture-in-picture; display-capture';
 
+/** The highest z-index among an element's ancestors: the level its top stacking context paints at. */
+function stackLevelOf(el: HTMLElement): string {
+  let level = 0;
+  for (let e: HTMLElement | null = el; e; e = e.parentElement) {
+    const z = parseInt(getComputedStyle(e).zIndex, 10);
+    if (!Number.isNaN(z)) level = Math.max(level, z);
+  }
+  return level ? String(level) : '';
+}
+
 // Global iframe registry that keeps iframes in fixed DOM locations
 class IframeRegistry {
   private static instance: IframeRegistry;
@@ -224,6 +234,10 @@ class IframeRegistry {
 
       // Position iframe over the target
       this.updateIframePosition(src, targetElement);
+
+      // The frame lives in a body-level portal, so it must take the stacking level of the
+      // slot it covers — inside a dialog (z-50) it would otherwise paint under the dialog.
+      if (container.parentElement) container.parentElement.style.zIndex = stackLevelOf(targetElement);
 
       // Show iframe
       container.className = SHOWN_CLASS;

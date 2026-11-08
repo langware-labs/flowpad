@@ -1,4 +1,4 @@
-import type { AgentPlace } from '@sdk';
+import type { AgentPlace } from './use-agent-places';
 
 /**
  * Where a schedule runs: this computer, one of the agent's cloud machines (a local row with `runs_on`), or

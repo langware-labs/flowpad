@@ -4,6 +4,7 @@ import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitC
 import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
 import { ProjectHomeMenu } from '@src/components/project-home/ProjectHomeMenu';
 import { ProjectSetupPage } from '@src/components/project-setup/ProjectSetupPage';
+import { ProjectDeploymentsPage } from '@src/components/project-deployments/ProjectDeploymentsPage';
 import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
 import { ProjectGitShareToggle } from '@src/components/project-home/ProjectGitShareToggle';
 import { ProjectPublishedButton } from '@src/components/project-home/ProjectPublishedButton';
@@ -43,6 +44,8 @@ interface ProjectHomeProps {
   createOnly?: boolean;
   /** Show the project's setup page (`…/project-setup`) under the header instead of Overview/Customize. */
   setupPage?: boolean;
+  /** Draw the project's Deployments page (`/dock/project/<id>/project-deployments`). */
+  deploymentsPage?: boolean;
   /** Hub-owned body rendered inside the shared Project Home shell. When set,
    *  local Git/setup/create controls are omitted; the Hub body owns content. */
   cloudContent?: React.ReactNode;
@@ -146,6 +149,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({
   spawnProjectId,
   createOnly = false,
   setupPage = false,
+  deploymentsPage = false,
   cloudContent,
 }) => {
   const dataCtx = useDataContext();
@@ -258,6 +262,8 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({
             cloudContent
           ) : createOnly ? (
             overview
+          ) : deploymentsPage && resolvedProject ? (
+            <ProjectDeploymentsPage project={resolvedProject} />
           ) : setupPage && projectId ? (
             <ProjectSetupPage projectId={projectId} projectName={resolvedProject?.name ?? project?.name ?? ''} />
           ) : (

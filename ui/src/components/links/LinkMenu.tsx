@@ -5,7 +5,6 @@ import {
   Check,
   Copy,
   ExternalLink,
-  Globe,
   MessageSquare,
   Monitor,
   PanelTop,
@@ -40,7 +39,8 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { BrowserProfileItems, ProfileLabel } from './BrowserProfileItems';
-import { useBrowserProfiles } from '@src/lib/browser-profiles';
+import { browserProfileManager, useBrowserProfiles } from '@src/lib/browser-profiles';
+import { BrowserProfileMenu } from './BrowserProfileMenu';
 import { commandOf, lightboxMediaName, linkKind } from '@src/lib/link-kind';
 import { COMMAND_MODES, linkActions, type CommandMode, type LinkActionId, type LinkSurface } from './link-actions';
 import type { LinkHandlers, LinkSource } from './link-events';
@@ -68,7 +68,7 @@ const lastMode = (): CommandMode => {
 const DEFAULT_BROWSER = 'default';
 /** A Select value per profile; the default is its own key. */
 const browserKeyOf = (choice: CommandBrowser): string => (choice ? `${choice.browser}/${choice.profile}` : DEFAULT_BROWSER);
-const commandBrowser = (): CommandBrowser => (instancePreferences.get(PrefKey.COMMAND_LINK_BROWSER) as CommandBrowser) ?? null;
+const commandBrowser = (): CommandBrowser => browserProfileManager.selected;
 
 /** The source's machine is the user's own (or it names none): its windows and browsers are on this screen. */
 function onLocalNode(source: { computeNodeTypeId?: { id: string } | null } | null): boolean {
@@ -202,7 +202,7 @@ const CommandConfirm = forwardRef<CommandConfirmHandle>(function CommandConfirm(
       const choice = browsers
         .flatMap((b) => b.profiles.map((p) => ({ browser: b.id, profile: p.id })))
         .find((c) => browserKeyOf(c) === browserKey);
-      instancePreferences.set(PrefKey.COMMAND_LINK_BROWSER, choice ?? null);
+      browserProfileManager.select(choice ?? null);
     }
     state?.resolve(ok);
     setState(null);
@@ -305,8 +305,6 @@ const LinkMenu = forwardRef<LinkMenuHandle, { onRun: (action: LinkAction, link: 
   if (!state) return null;
   const { link, x, y, items, primary, id } = state;
   const command = linkKind(link, window.location.origin) === 'command';
-  const chosenBrowser = commandBrowser();
-  const pickBrowser = (choice: CommandBrowser) => instancePreferences.set(PrefKey.COMMAND_LINK_BROWSER, choice);
   return (
     <DropdownMenu key={id} open modal={false} onOpenChange={(open) => !open && setState(null)}>
       <DropdownMenuTrigger asChild>
@@ -321,26 +319,7 @@ const LinkMenu = forwardRef<LinkMenuHandle, { onRun: (action: LinkAction, link: 
           if (item === 'preview') return null;
           if (item === 'command-browser') {
             return (
-              <DropdownMenuSub key={item}>
-                <DropdownMenuSubTrigger data-testid="link-menu-command-browser">
-                  <Globe className="mr-2 h-4 w-4" />
-                  {t`Browser`}
-                </DropdownMenuSubTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuSubContent className="max-w-xs">
-                    <DropdownMenuItem onSelect={() => pickBrowser(null)} data-testid="link-menu-command-browser-default">
-                      <Check className={`mr-2 h-4 w-4 ${chosenBrowser ? 'invisible' : ''}`} />
-                      {t`System default`}
-                    </DropdownMenuItem>
-                    <BrowserProfileItems
-                      browsers={browsers}
-                      onSelect={(browser, profile) => pickBrowser({ browser, profile })}
-                      isSelected={(browser, profile) => chosenBrowser?.browser === browser && chosenBrowser.profile === profile}
-                      testIdPrefix="link-menu-command-browser"
-                    />
-                  </DropdownMenuSubContent>
-                </DropdownMenuPortal>
-              </DropdownMenuSub>
+              <BrowserProfileMenu key={item} browsers={browsers} testIdPrefix="link-menu-command-browser" />
             );
           }
           if (item === 'browser-profile') {

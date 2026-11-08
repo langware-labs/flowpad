@@ -105,7 +105,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const displayStack = useMemo(() => persistedProcess?.displayStack ?? [], [persistedProcess]);
   // A session opened as an Agent shows that agent's own starters; any other session the
   // generic ones. Resolved to strings once: each is the chip's label, key and prompt alike.
-  const launchingAgent = useLaunchingAgent(persistedProcess?.deployment_id);
+  const launchingAgent = useLaunchingAgent(persistedProcess);
   const starterPrompts = useMemo(
     () =>
       launchingAgent?.starter_prompts?.length

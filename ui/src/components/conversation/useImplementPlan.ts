@@ -1,18 +1,22 @@
 import { t } from '@lingui/core/macro';
-import { useCallback, useMemo, useState } from 'react';
-import { AgenticProcess, type DockPointerData, FlowMessage, QueryRequest, Task, TypeId } from '@sdk';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AgenticProcess, type Conversation, type DockPointerData, FlowMessage, Task, TypeId } from '@sdk';
+import { newestBy, useLinkedSessions } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { ClaudeAgentOptions } from '@sdk/cli_workers/claude-cli';
-import { useEntitiesQuery } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessagePointer } from '@sdk/entities/conversation';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { resolveWorkdir } from './apply-project-choice';
 import { buildReceiverContextPrompt } from './useMyProcess';
+import { PLAN_ROLE, planSessionEntries } from './conversation-session-role';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 
 interface UseImplementPlanOptions {
   task: ITask | null | undefined;
   conversationId: string;
+  /** The conversation entity: its context links each plan session (`PLAN_ROLE`) to the message it implements. */
+  conversation: Conversation | null | undefined;
   /** Pointer list from `conversation.conversationMessageIds`. The hook scans
    *  these to figure out whether *any* message in the thread already has a
    *  plan-implementation session (live or in-flight). Reference-stable while
@@ -46,16 +50,17 @@ interface UseImplementPlanResult {
  *      receiver-context prompt and stamps the FlowMessage TypeId into the
  *      AP's `context_entities` so the new session shows up in Private Context
  *      and the bubble's chip flips to "Open Plan Implementation Session".
- *   2. **openPlanSession** — derived from a live `AgenticProcess` query plus
+ *   2. **openPlanSession** — derived from the plan sessions the conversation
+ *      links in its context (`PLAN_ROLE` + message id, fetched by id) plus
  *      a local "pending pointers" map for optimistic immediate flips. Picks
- *      the most-recent visible AP whose context_entities include any
- *      FlowMessage from this thread; falls back to a pending pointer when the
+ *      the most-recent visible linked AP; falls back to a pending pointer when the
  *      WS create round-trip hasn't landed yet. One session per conversation,
  *      so every bubble points at the same `openPlanSession` callback.
  */
 export function useImplementPlan({
   task,
   conversationId,
+  conversation,
   pointers,
   ensureMapped,
 }: UseImplementPlanOptions): UseImplementPlanResult {
@@ -92,6 +97,10 @@ export function useImplementPlan({
             visible: true,
             shared_context_entities: [fmTypeIdString],
           }).save();
+          // The conversation learns its plan session — the link the reader below resolves by id.
+          await conversation?.shareContextEntities(new TypeId(AgenticProcess.type, proc.id), {
+            data: { ...PLAN_ROLE, message_id: messageId },
+          });
           setPendingPlanPointers((prev) => {
             const next = new Map(prev);
             next.set(messageId, proc.terminalDockPointer);
@@ -107,42 +116,23 @@ export function useImplementPlan({
       if (ensureMapped) ensureMapped(run);
       else void run();
     },
-    [task, conversationId, ensureMapped],
+    [task, conversationId, conversation, ensureMapped],
   );
 
-  // Watched query — any AgenticProcess whose `context_entities` references a
-  // FlowMessage in this thread is treated as that message's plan-implementation
-  // session. Only visible PTYs qualify (their terminal dock pointer is the
-  // only one that's meaningful here); for a tie we keep the most recently
-  // created so users land in the latest run after re-clicks.
-  const planSessionsQuery = useMemo(
-    () =>
-      new QueryRequest({
-        type: AgenticProcess.type,
-        scope: [],
-        name: `conv-plan-sessions:${conversationId}`,
-        query: undefined,
-      }),
-    [conversationId],
-  );
-  const { data: planSessionCandidates = [] } = useEntitiesQuery<AgenticProcess>(planSessionsQuery, {
-    enabled: !!conversationId,
-  });
-
+  // The plan sessions the conversation links (`PLAN_ROLE` + message id), fetched by id — never a scan of
+  // every process (an unfiltered watch here froze the backend on every conversation open). Only visible
+  // PTYs qualify; the newest per message wins.
+  const planSessions = useLinkedSessions(conversationId, PLAN_ROLE.role);
   const planSessionByMessageId = useMemo(() => {
-    const map = new Map<string, AgenticProcess>();
-    for (const p of planSessionCandidates) {
-      if (!p.visible) continue;
-      for (const tid of p.sharedContextEntities ?? []) {
-        if (tid.type !== FlowMessage.type) continue;
-        const existing = map.get(tid.id);
-        if (!existing || toMs(p.created_date) > toMs(existing.created_date)) {
-          map.set(tid.id, p);
-        }
-      }
-    }
-    return map;
-  }, [planSessionCandidates]);
+    const messageOf = new Map(
+      (conversation ? planSessionEntries(conversation) : []).map((e) => [e.processId, e.messageId]),
+    );
+    const messageIds = (p: AgenticProcess) => {
+      const messageId = messageOf.get(String(p.id));
+      return messageId ? [messageId] : [];
+    };
+    return newestBy(planSessions, messageIds, (p) => !!p.visible);
+  }, [planSessions, conversation]);
 
   // One session per conversation: as soon as ANY thread message has a session
   // (live or pending), every spec-bearing bubble flips to point at it. Live

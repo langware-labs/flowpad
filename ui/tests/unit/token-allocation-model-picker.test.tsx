@@ -7,7 +7,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Agent, type AgentTokenAllocation } from '@sdk';
+import { Agent, Project, type AgentTokenAllocation } from '@sdk';
 
 const SOURCE_ID = 'a8473a10-74e5-4ce1-9fda-2babd551a399';
 const SOURCE = `llm_endpoint-${SOURCE_ID}`;
@@ -55,11 +55,12 @@ afterEach(() => {
   h.chain.mockReturnValue({ data: undefined });
 });
 
+const project = new Project({ id: '66666666-6666-4666-8666-666666666666', name: 'proj' } as never);
 const agent = new Agent({ id: '33333333-3333-4333-8333-333333333333', name: 'brief', enabled: true });
 
 function renderField(value: AgentTokenAllocation) {
   const onChange = vi.fn();
-  render(<TokenAllocationField agent={agent} environment="production" value={value} onChange={onChange} />);
+  render(<TokenAllocationField project={project} mainAgent={agent} environment="production" value={value} onChange={onChange} />);
   return onChange;
 }
 
@@ -132,11 +133,12 @@ describe('Token allocation model', () => {
 describe('Configure', () => {
   async function configure(deploymentId: string | null) {
     h.models.mockReturnValue(offered('openai/gpt-5'));
-    const post = vi.spyOn(agent as unknown as { post: () => Promise<unknown> }, 'post').mockResolvedValue({});
+    const post = vi.spyOn(project as unknown as { post: () => Promise<unknown> }, 'post').mockResolvedValue({});
     try {
       render(
         <TokenAllocationField
-          agent={agent}
+          project={project}
+          mainAgent={agent}
           environment="production"
           provider="e2b"
           deploymentId={deploymentId}

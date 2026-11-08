@@ -23,6 +23,7 @@ from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
+from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -110,6 +111,10 @@ class FlowMessageKind(str, Enum):
     #: The quiet, automatic line of that exchange ("Bob shared public key for secured transfer") — a real local row,
     #: rendered as a slim line in the share's thread.
     SEALED_NOTE = "sealed_note"
+    #: Ask for help: a person's request, sent like any message. Its attachments (the diagnosis, the screen and
+    #: session) are ordinary files; the hub may strip this field, so receivers re-derive it from the
+    #: ``help_request.value.json`` carrier (:func:`derive_help_request_kind`).
+    HELP_REQUEST = "help_request"
 
     @classmethod
     def hub_only(cls, value: "str | None") -> bool:
@@ -121,8 +126,8 @@ class FlowMessageKind(str, Enum):
         """The kind a caller may set via ``add_message``, or None to fall back
         to USER. USER is implicit; INVITATION is a local-only first-row
         placeholder no caller mints; SESSION_EVENT and SEALED_NOTE are the
-        explicitly sendable non-default kinds."""
-        return next((k for k in (cls.SESSION_EVENT, cls.SEALED_NOTE) if value == k.value), None)
+        explicitly sendable non-default kinds, and HELP_REQUEST is Ask for help's."""
+        return next((k for k in (cls.SESSION_EVENT, cls.SEALED_NOTE, cls.HELP_REQUEST) if value == k.value), None)
 
 
 class DeliveryStatus(str, Enum):
@@ -246,8 +251,9 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
     #
     # ``process_call`` / ``returned_value`` are a call on a message and its answer
     # (``process_call_spec``): the value IS the header ``prompt_preview``, never a row.
+    # ``message_form`` / ``form_answers`` likewise: a form on a message and its answers (``message_form_spec``).
     {"conversation", "flow_message", "task", "remote_worker_session", "project", "prompt_completion",
-     "process_call", "returned_value"}
+     "process_call", "returned_value", "message_form", "form_answers"}
 )
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder
@@ -364,6 +370,28 @@ def derive_session_fields(fm: "FlowMessage") -> None:
         if fm.kind == FlowMessageKind.USER and (_carrier_marker(fm) or {}).get(LIVE_SESSION_EVENT_MARKER_KEY):
             fm.kind = FlowMessageKind.SESSION_EVENT
         break
+
+
+#: The file a help request carries (a ``help.request`` value): what marks the message as one on every machine.
+HELP_REQUEST_FILE = "help_request.value.json"
+
+
+def carrier_attachment(fm: "FlowMessage") -> "Attachment | None":
+    """A help request's carrier file (``help_request.value.json``) among its attachments, or None."""
+    return next(
+        (
+            a
+            for a in fm.attachment or []
+            if a.attachment_type == AttachmentType.FILE and (a.data or "").rsplit("/", 1)[-1] == HELP_REQUEST_FILE
+        ),
+        None,
+    )
+
+
+def derive_help_request_kind(fm: "FlowMessage") -> None:
+    """Refill ``kind=help_request`` the hub may have stripped, from its carrier file. Idempotent."""
+    if fm.kind == FlowMessageKind.USER and carrier_attachment(fm) is not None:
+        fm.kind = FlowMessageKind.HELP_REQUEST
 
 
 def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
@@ -683,6 +711,10 @@ class FlowMessage(Entity):
     # ``context_entities`` carry the backing Invitation TypeId so the UI
     # can read invitation_id off it for the Accept action.
     kind: FlowMessageKind = APIField(default=FlowMessageKind.USER)
+    # An invite message (``kind=invitation``) names the share it carries and what became of it. The hub
+    # writes it and updates ``state`` in place (accepted / declined / revoked), so the card in the
+    # conversation always reads the current answer. None on every other message.
+    invite: Optional[MessageInvite] = APIField(default=None)
     # Body-bundle lifecycle on the hub. NA when the message has no body
     # (text-only, or only URL/REPO/inline-PROMPT attachments). UPLOADING is
     # stamped at hub-side add_message time when the incoming FM's attachments

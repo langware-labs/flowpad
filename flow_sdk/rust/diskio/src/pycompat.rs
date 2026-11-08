@@ -66,23 +66,6 @@ pub fn py_cmp_paths(a: &Path, b: &Path) -> Ordering {
     }
 }
 
-/// A name as text for pattern matching. A byte that is not UTF-8 becomes ONE
-/// private-use character, as it is one (surrogate) character in Python.
-pub fn match_text(name: &OsStr) -> Cow<'_, str> {
-    if let Some(s) = name.to_str() {
-        return Cow::Borrowed(s);
-    }
-    let b = os_bytes(name);
-    let mut out = String::with_capacity(b.len());
-    for c in b.utf8_chunks() {
-        out.push_str(c.valid());
-        for &x in c.invalid() {
-            out.push(char::from_u32(0xF700 + x as u32).unwrap());
-        }
-    }
-    Cow::Owned(out)
-}
-
 /// `str.lower()` of a name.
 pub fn lower(name: &OsStr) -> String {
     name.to_string_lossy().to_lowercase()

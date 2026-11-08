@@ -1,6 +1,6 @@
 /**
  * The agent's credentials, in its resources menu and nested in its editor: what its runs resolve —
- * the project's first, then the user's — read from the same status the Connections screen reads.
+ * the project's only (the user's personal ones are not the agent's) — read from the same status the Connections screen reads.
  * A row only navigates (URL-first); the nested page shows scope, store, state and each variable,
  * never a value.
  */
@@ -54,7 +54,7 @@ afterEach(() => {
 });
 
 describe('agent credentials', () => {
-  it("lists the project's first, then the user's, each saying its scope and state", () => {
+  it("lists only the project's, each saying its scope and state — never the user's", () => {
     creds.status = status([
       row({}),
       row({ typeid: 'credential-22222222-2222-4222-8222-222222222222', name: 'stripe', title: 'Stripe', scope: 'project', project_id: 'p1', state: 'missing',
@@ -63,16 +63,15 @@ describe('agent credentials', () => {
     render(<AgentCredentialsSection />);
     fireEvent.click(screen.getByTestId('navigator-section-credentials'));
     const rows = screen.getAllByTestId(/^agent-resource-credential-/);
-    expect(rows.map((r) => r.getAttribute('data-testid'))).toEqual(['agent-resource-credential-project-stripe', 'agent-resource-credential-user-openai']);
+    expect(rows.map((r) => r.getAttribute('data-testid'))).toEqual(['agent-resource-credential-project-stripe']);
     expect(rows[0]).toHaveTextContent('project · 1 missing');
-    expect(rows[1]).toHaveTextContent('user · set');
   });
 
   it('a row opens the credential nested in the agent — it only navigates', () => {
-    creds.status = status([row({})]);
+    creds.status = status([row({ scope: 'project', project_id: 'p1' })]);
     render(<AgentCredentialsSection />);
     fireEvent.click(screen.getByTestId('navigator-section-credentials'));
-    fireEvent.click(screen.getByTestId('agent-resource-credential-user-openai'));
+    fireEvent.click(screen.getByTestId('agent-resource-credential-project-openai'));
     expect(nav.openDock).toHaveBeenCalledTimes(1);
     expect(nav.openDock.mock.calls[0][0].child).toEqual({ section: 'credential', typeId: 'credential-11111111-1111-4111-8111-111111111111' });
     expect(creds.remove).not.toHaveBeenCalled();
@@ -96,14 +95,14 @@ describe('agent credentials', () => {
   it('an either-or group with nothing set counts as one thing missing, and each member warns', () => {
     const v = row({}).vars[0];
     creds.status = status([
-      row({ state: 'missing', vars: [
+      row({ scope: 'project', project_id: 'p1', state: 'missing', vars: [
         { ...v, env_var: 'KEY_FILE', required: 'ONE_OF', kind: 'file', present: false },
         { ...v, env_var: 'GCLOUD_ADC', required: 'ONE_OF', kind: 'cli', store: 'cli', present: false, found_in: null, login: 'gcloud auth application-default login' },
       ] }),
     ]);
     render(<AgentCredentialsSection />);
     fireEvent.click(screen.getByTestId('navigator-section-credentials'));
-    expect(screen.getByTestId('agent-resource-credential-user-openai')).toHaveTextContent('user · 1 missing');
+    expect(screen.getByTestId('agent-resource-credential-project-openai')).toHaveTextContent('project · 1 missing');
 
     render(<CredentialView typeid="credential-11111111-1111-4111-8111-111111111111" onGone={() => undefined} />);
     expect(screen.getByTestId('credential-var-state-KEY_FILE')).toHaveTextContent('one of · not set');

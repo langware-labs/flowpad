@@ -38,12 +38,6 @@ const mocks = vi.hoisted(() => ({
   publishButton: vi.fn(),
 }));
 
-vi.mock('@sdk/react/hooks', () => ({
-  useProject: () => ({ project: mocks.project, isLoading: mocks.project === null }),
-}));
-vi.mock('@src/components/assets/editor/agent-profile/AgentProjectPicker', () => ({
-  AgentProjectPicker: () => <div data-testid="agent-deploy-action-project" />,
-}));
 
 vi.mock('@src/hooks/use-cloud-authed', () => ({ useCloudAuthed: () => mocks.cloudAuthed }));
 vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => mocks.requireCloudLogin }));
@@ -74,7 +68,9 @@ const status = (id: string) => screen.getByTestId(`agent-deploy-step-${id}`).get
 const actionIds = () => screen.queryAllByTestId(/^agent-deploy-action-/).map((el) => el.getAttribute('data-testid'));
 
 async function renderChecklist(onReadiness = vi.fn(), subject: never = agent) {
-  const result = render(<AgentDeployChecklist agent={subject} onReadinessChange={onReadiness} />);
+  const result = render(
+    <AgentDeployChecklist project={mocks.project as never} agent={subject} onReadinessChange={onReadiness} />,
+  );
   // The version read is async; let it settle before asserting a row's status.
   await screen.findByTestId('agent-deploy-checklist');
   await vi.waitFor(() => expect(status('version')).not.toBe('loading'));
@@ -204,29 +200,20 @@ describe('AgentDeployChecklist', () => {
     expect(screen.getByTestId('agent-deploy-step-version')).toHaveTextContent('Published when you deploy');
   });
 
-  it('stays undecided while the project has not loaded, so the host keeps Deploy enabled', async () => {
-    mocks.project = null;
+  it('a deployment with no main agent has no version to read: it never blocks the host', async () => {
     const onReadiness = vi.fn();
-    render(<AgentDeployChecklist agent={agent} onReadinessChange={onReadiness} />);
+    render(<AgentDeployChecklist project={mocks.project as never} agent={null} onReadinessChange={onReadiness} />);
     await screen.findByTestId('agent-deploy-checklist');
-
     await vi.waitFor(() => expect(onReadiness).toHaveBeenCalled());
     expect(onReadiness.mock.calls.every(([ready]) => ready !== false)).toBe(true);
-    expect(status('project')).toBe('loading');
+    expect(mocks.versionState).not.toHaveBeenCalled();
   });
 
   it('renders nothing on the hub, which has no local project to check', () => {
     mocks.hubOnly = true;
-    render(<AgentDeployChecklist agent={agent} />);
+    render(<AgentDeployChecklist project={mocks.project as never} agent={agent} />);
 
     expect(screen.queryByTestId('agent-deploy-checklist')).not.toBeInTheDocument();
-  });
-
-  it('an agent in no project offers a project, and blocks Launch, instead of spinning', async () => {
-    const { onReadiness } = await renderChecklist(vi.fn(), { ...(agent as object), project_id: null } as never);
-    expect(status('project')).not.toBe('loading');
-    expect(actionIds()).toEqual(['agent-deploy-action-project']);
-    expect(onReadiness).toHaveBeenLastCalledWith(false);
   });
 
   it('a git checkout with uncommitted work commits and pushes from the row, and blocks Launch until then', async () => {

@@ -85,3 +85,20 @@ async def test_a_desk_ask_with_no_desk_known_yet_is_kept_for_delivery():
 async def test_a_person_needs_an_address():
     response = await _ask({"recipient": {"kind": "person"}, "text": "to whom?"})
     assert response.status_code == 400
+
+
+async def test_a_conversation_already_on_the_hub_is_never_opened_again():
+    """A stale copy can bring ``awaits_hub`` back after stage 0 finished (``remote`` is set). Opening again
+    re-shares with people who already joined -- the hub answers "User has already accepted" and every later
+    message is held back. Delivery clears the flag instead and sends what is owed."""
+    someone = (await get_or_create_local_user()).typeid
+    conv = Conversation(title="already there", members=[{"email": "dana@x.test"}])
+    conv.awaits_hub = True
+    conv.remote = True
+    conv = await conv.save(someone)
+
+    with patch.object(afh, "open_on_hub", AsyncMock()) as opened:
+        await conv.deliver(bodies=False)
+
+    opened.assert_not_awaited()
+    assert not (await Conversation.get_one({"id": conv.id})).awaits_hub

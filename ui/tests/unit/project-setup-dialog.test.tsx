@@ -450,3 +450,57 @@ describe('ProjectSetupDialog — one row id per requirement', () => {
     expect(screen.getByTestId('project-setup-req-source-google-cloud')).toBeInTheDocument();
   });
 });
+
+describe('ProjectSetupDialog — recommended automations', () => {
+  const RULE: ProjectSetupRequirement = {
+    kind: 'automation',
+    name: 'Team code review: answer and review',
+    title: 'Team code review: answer and review',
+    typeid: 'trigger-0b5c7a1e-3d2f-4c6b-9a8e-1f2d3c4b5a69',
+    used_by: ['project'],
+    note: '',
+    needed_for: 'Answers Available for you when a review request names you.',
+    required: true,
+    skipped: null,
+    can_skip_always: false,
+    why_not_always: '',
+    vars: [],
+  };
+
+  it('a recommended automation is a choice in its own section: Enable decides it here, and there is nothing to Start', async () => {
+    vi.spyOn(Project, 'setupRequirements').mockResolvedValue({ project_id: 'p1', ready: false, to_do: [RULE], gaps: [] });
+    vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: RUN, running: false, tree: null });
+    const decide = vi.spyOn(Project, 'decideAutomation').mockResolvedValue({ project_id: 'p1', ready: true, to_do: [], gaps: [] });
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={vi.fn()} />);
+
+    const section = await screen.findByTestId('project-setup-automations');
+    expect(section).toHaveTextContent('Team code review: answer and review');
+    expect(screen.queryByTestId('project-setup-requirements')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('project-setup-start')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Enable'));
+    await waitFor(() => expect(decide).toHaveBeenCalledWith('p1', RULE.typeid, true));
+    expect(await screen.findByTestId('project-setup-ready')).toBeInTheDocument();
+  });
+});
+
+describe('ProjectSetupDialog — a package is one step', () => {
+  const STEP: ProjectSetupRequirement = {
+    kind: 'automation', name: 'Team code review', title: 'Team code review', typeid: 'agent-8caeb94a-84d7-4d78-9f4b-0e41226380f4',
+    used_by: ['project'], note: '', needed_for: 'Reviews PRs.', required: true, skipped: null, can_skip_always: false,
+    why_not_always: '', vars: [], satisfied: false,
+  };
+
+  it('has one Enable / Disable and nothing to expand; Enable decides the whole package here', async () => {
+    vi.spyOn(Project, 'setupRequirements').mockResolvedValue({ project_id: 'p1', ready: false, to_do: [STEP], gaps: [] });
+    vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: RUN, running: false, tree: null });
+    const decide = vi.spyOn(Project, 'decideAutomation').mockResolvedValue({ project_id: 'p1', ready: true, to_do: [], gaps: [] });
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={vi.fn()} />);
+
+    await screen.findByTestId('project-setup-automations');
+    expect(screen.queryByText(/^[0-9]+ automations?$/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('Enable')).toHaveLength(1);
+    fireEvent.click(screen.getByText('Enable'));
+    await waitFor(() => expect(decide).toHaveBeenCalledWith('p1', STEP.typeid, true));
+  });
+});

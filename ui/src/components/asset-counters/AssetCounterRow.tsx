@@ -1,31 +1,24 @@
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useState } from 'react';
-import { type AxisSelection, counterKey, selectionOf } from './axes';
+import { counterKey, selectionOf } from './axes';
 import { CounterAxes } from './StatChips';
 import type { AssetCounterGroup } from './types';
 
 /**
- * A group's Scope and Status toggles. Picking an option changes the counts shown here (local view
- * state, not what the dock shows); picking the option that is already selected opens its list —
- * URL-first, the table view reads group + counter from the URL.
+ * A group's Scope and Status links. Every click opens the selected list;
+ * the table view reads group + counter from the URL.
  */
 export function AssetCounterChips<T>({ group, className }: { group: AssetCounterGroup<T>; className?: string }) {
   const { navigation } = useDockNavigation();
   const counters = group.useCounters();
-  const [picked, setPicked] = useState<AxisSelection | null>(null);
-  const selection = picked ?? selectionOf(counters);
+  const selection = selectionOf(counters);
 
   return (
     <CounterAxes
       counters={counters}
       selection={selection}
-      onSelect={(next) => {
-        if (next.scope === selection.scope && next.status === selection.status)
-          navigation.openAssetList(group.id, counterKey(next.scope, next.status));
-        else setPicked(next);
-      }}
+      onSelect={(next) => navigation.openAssetList(group.id, counterKey(next.scope, next.status))}
       className={className}
     />
   );

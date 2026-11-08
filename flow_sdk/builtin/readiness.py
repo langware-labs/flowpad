@@ -344,20 +344,31 @@ def _values_item(
     return ReadinessItemSpec(requirement=req, status=STATUS_DECLARED, where=where, vars=list(names))
 
 
-async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -> ReadinessSpec:
-    """Does ``deployment`` (default: this computer) satisfy ``agent``'s requirements?"""
+async def readiness(
+    agent: Optional["Agent"], deployment: Optional["Deployment"] = None, *, project: Any = None
+) -> ReadinessSpec:
+    """Does ``deployment`` (default: this computer) satisfy what it runs: its project's own credentials
+    and its main ``agent``'s requirements (``None``: a deployment with no agent)?"""
     import asyncio  # noqa: PLC0415
 
     from flow_sdk import permissions  # noqa: PLC0415
     from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
 
     deployment_id = str(deployment.id) if deployment is not None else ""
-    project = await project_of(agent)
+    project = project if project is not None else (await project_of(agent) if agent is not None else None)
     # A cloud machine uses a connection only through the owner's authorization for THAT deployment;
     # holding the connection on this computer is not enough.
     cloud = deployment is not None and deployment.remote and not deployment.is_local
 
-    status, wanted = await asyncio.gather(credentials_status(project, deployment_id), requirements(agent, project))
+    status = await credentials_status(project, deployment_id)
+    wanted = await requirements(agent, project) if agent is not None else []
+    # The project's own credentials are the deployment's too: the whole project runs on the box.
+    named = {r.name for r in wanted}
+    wanted += [
+        RequirementSpec(kind=REQUIREMENT_CREDENTIAL, name=row.name, derived=True)
+        for row in status.credentials
+        if row.scope == "project" and row.name not in named and _needed_names(row)
+    ]
     # Asked only when something is granted through a connection: most agents need no hub round trip.
     authorized = (
         {str(a.get("provider")) for a in await deployment.authorizations()}
@@ -401,11 +412,14 @@ async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -
             fix="no grant for this permission here yet" if mapping else "no asset declares this permission",
         )
 
-    funding = _funding_item(deployment) if cloud else _local_funding_item(agent, project)
-    asked = [item(req) for req in wanted] + [funding]
+    if agent is None:
+        funding = None
+    else:
+        funding = _funding_item(deployment) if cloud else _local_funding_item(agent, project)
+    asked = [item(req) for req in wanted] + ([funding] if funding is not None else [])
     items = [i for i in await asyncio.gather(*asked) if i is not None]
     return ReadinessSpec(
-        agent_id=str(agent.id),
+        agent_id=str(agent.id) if agent is not None else "",
         deployment_id=status.deployment_id,
         environment=status.environment,
         ready=not any(i.blocks for i in items),

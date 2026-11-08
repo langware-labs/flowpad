@@ -935,8 +935,7 @@ class AgentOptions:
     model name is always passed through.
     """
 
-    # Per-worker tier→model/auto map. The vendor picks at every size unless a worker overrides it
-    # (only claude does: its CLI's own size words). See ``flow_sdk/builtin/agentic_process/model_tiers.py``.
+    # Native aliases. Other tiers must be resolved by the source binding before emission.
     MODEL_TIERS: Mapping[str, str | None] = VENDOR_DEFAULT_TIERS
 
     # ── Vendor spec (declarative; overridden per worker) ─────────────────────

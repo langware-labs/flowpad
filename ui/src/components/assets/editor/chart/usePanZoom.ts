@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+/** Screen px → chart units: with `meet`, the larger of the two ratios. */
+const scaleOf = (v: View, size: { w: number; h: number } | null) => (size ? Math.max(v.w / size.w, v.h / size.h) : 1);
+
 interface View {
   x: number;
   y: number;
@@ -11,27 +14,40 @@ interface View {
  * Canvas-style zoom and pan for an SVG chart, on its viewBox: the wheel zooms at the cursor, a drag
  * pans, `fit()` shows the whole chart. A drag never counts as a click on what it started on.
  */
-export function usePanZoom(width: number, height: number) {
+export function usePanZoom(width: number, height: number, { fitWidth = false }: { fitWidth?: boolean } = {}) {
   // A callback ref: the svg remounts (Table ↔ Diagram), and each one needs its own wheel listener.
   const [svgEl, setSvgEl] = useState<SVGSVGElement | null>(null);
   const elRef = useRef<SVGSVGElement | null>(null);
   elRef.current = svgEl;
   const [view, setView] = useState<View>({ x: 0, y: 0, w: width, h: height });
+  // The svg's on-screen size, tracked by a ResizeObserver — never read from layout per frame.
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
+  useEffect(() => {
+    if (!svgEl) return;
+    const measure = () =>
+      setSize(svgEl.clientWidth && svgEl.clientHeight ? { w: svgEl.clientWidth, h: svgEl.clientHeight } : null);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(svgEl);
+    return () => ro.disconnect();
+  }, [svgEl]);
   const viewRef = useRef(view);
   viewRef.current = view;
   const drag = useRef<{ x: number; y: number; view: View; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
 
-  const fit = useCallback(() => setView({ x: 0, y: 0, w: width, h: height }), [width, height]);
-  useEffect(fit, [fit]);
+  // `fitWidth`: Fit = the full width, from the top — a tall chart is panned down, never shrunk until
+  // its text is unreadable (a sequence chart keeps its participant cards pinned while it is).
+  const fit = useCallback(() => {
+    const s = sizeRef.current;
+    const aspect = s ? s.h / s.w : height / width;
+    setView({ x: 0, y: 0, w: width, h: fitWidth ? Math.min(height, width * aspect) : height });
+  }, [width, height, fitWidth]);
+  useEffect(fit, [fit, size]);
 
-  /** Screen px → chart units: with `meet`, the larger of the two ratios. */
-  const unitsPerPx = useCallback(() => {
-    const el = elRef.current;
-    const v = viewRef.current;
-    if (!el || !el.clientWidth || !el.clientHeight) return 1;
-    return Math.max(v.w / el.clientWidth, v.h / el.clientHeight);
-  }, []);
+  const unitsPerPx = useCallback(() => scaleOf(viewRef.current, sizeRef.current), []);
 
   const zoomAt = useCallback(
     (factor: number, clientX?: number, clientY?: number) => {
@@ -98,6 +114,8 @@ export function usePanZoom(width: number, height: number) {
     },
   };
 
+  /** The chart y at the top edge of what is on screen (with `meet`, the view may be letterboxed). */
+  const visibleTop = size ? view.y - (size.h * scaleOf(view, size) - view.h) / 2 : view.y;
   const zoomed = Math.abs(view.w - width) > 1 || Math.abs(view.x) > 1 || Math.abs(view.y) > 1;
   return {
     svgRef: setSvgEl,
@@ -107,5 +125,6 @@ export function usePanZoom(width: number, height: number) {
     zoomIn: () => zoomAt(1 / 1.25),
     zoomOut: () => zoomAt(1.25),
     zoomed,
+    visibleTop,
   };
 }

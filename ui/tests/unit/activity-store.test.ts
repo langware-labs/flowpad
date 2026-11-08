@@ -127,6 +127,22 @@ describe('activity store', () => {
     },
   );
 
+  it('a root that ends with errors leaves the footer and lists each error as a warning', async () => {
+    const { useAlertStore } = await import('@src/notifications/alerts-store');
+    useAlertStore.setState({ alerts: [] });
+    const error = { message: 'docs/a/CHART.md: did not find expected key', ref: 'docs/a', code: 'index.parse' };
+    const chart = spec({ path: 'index/chart', name: 'chart', state: 'completed', errors_count: 1, errors: [error] });
+
+    handleActivitySnapshot(spec({ state: 'completed', seq: 2, children: [chart] }));
+
+    expect(getActivities()).toEqual([]);
+    const { result } = renderHook(() => useActivityReceipt());
+    expect(result.current).toBeNull();
+    const [alert] = useAlertStore.getState().alerts;
+    expect(alert).toMatchObject({ level: 'error', message: error.message });
+    useAlertStore.setState({ alerts: [] });
+  });
+
   it('keeps the last finished root as a receipt past the linger, until dismissed', () => {
     const { result } = renderHook(() => useActivityReceipt());
     act(() => handleActivitySnapshot(spec({ seq: 2, state: 'failed', message: '1 RED' })));

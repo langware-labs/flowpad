@@ -439,6 +439,7 @@ export class ConnectionManager extends EventEmitter {
 
   constructor() {
     super();
+    this.setMaxListeners(25); // one on_recovered listener per open terminal
     ConnectionManager.instance = this;
     // Lazy: auth reaches APIEntity, which must not be in websocket's static import graph.
     void import('./FlowSync/auth').then(({ authManager }) => {

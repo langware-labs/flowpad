@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin import trigger_callbacks
-from flow_sdk.builtin.trigger import Trigger
+from flow_sdk.builtin.trigger import Trigger, set_trigger_on
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.data_spec.trigger_action import ActionType
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
@@ -48,8 +48,7 @@ async def test_daily_usage_analysis_is_forced_off(initialize_test_db):
     trigger = await Trigger.get_by_uname("builtin_daily_usage_analysis")
     assert trigger.enabled is False
 
-    trigger.enabled = True
-    await trigger.update()
+    await set_trigger_on(trigger, True)
     assert (await Trigger.get_by_uname("builtin_daily_usage_analysis")).enabled is True
 
     await set_service_triggers()

@@ -16,6 +16,8 @@ class AssetPublishCode(StrEnum):
     GITHUB_NOT_CONNECTED = "github_not_connected"
     BRANCH_AHEAD = "branch_ahead"
     HUB_PUBLISH_FAILED = "hub_publish_failed"
+    # The hub refused the request (4xx): retrying cannot help, its reason says what to change.
+    HUB_REJECTED = "hub_rejected"
     ASSET_CONFLICT = "asset_conflict"
     # The project is a git checkout and its history is what deploys: commit (and push) first.
     NOT_COMMITTED = "not_committed"
@@ -48,6 +50,9 @@ _PUBLISH_FAILURE: dict[AssetPublishCode, PublishFailure] = {
     AssetPublishCode.HUB_PUBLISH_FAILED: PublishFailure(
         status=502, remedy="The hub could not accept it; try again shortly."
     ),
+    AssetPublishCode.HUB_REJECTED: PublishFailure(
+        status=409, remedy="Fix what the hub reported, then try again."
+    ),
     AssetPublishCode.ASSET_CONFLICT: PublishFailure(
         status=409,
         remedy="It was also edited on the hub. Keep one version: discard your local change, or re-apply it on the hub.",
@@ -72,10 +77,32 @@ def publish_failure(code: AssetPublishCode) -> PublishFailure:
 class AssetPublishError(RuntimeError):
     """Typed, intentionally secret-free asset publication failure."""
 
-    def __init__(self, code: AssetPublishCode, message: str, *, data: dict | None = None):
+    def __init__(
+        self, code: AssetPublishCode, message: str, *, data: dict | None = None, status: int | None = None
+    ):
         super().__init__(message)
         self.code = code
         self.data = data or {}
+        #: Set when the status comes from upstream (the hub's own 4xx), not from the code's row.
+        self._status = status
+
+    @classmethod
+    def from_hub(cls, exc, what: str, *, data: dict | None = None) -> "AssetPublishError":
+        """A hub failure, keeping the hub's reason and the status that names whose fault it is.
+
+        A refusal (4xx) is ``HUB_REJECTED`` with the hub's own sentence; only offline / a broken
+        hub is ``HUB_PUBLISH_FAILED`` — the one case where "try again shortly" is true.
+        """
+        from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
+        retryable = exc.kind in (HubFailureKind.OFFLINE, HubFailureKind.SERVER_ERROR)
+        code = AssetPublishCode.HUB_PUBLISH_FAILED if retryable else AssetPublishCode.HUB_REJECTED
+        return cls(
+            code,
+            f"{what}: {exc.user_message()}",
+            data={**(data or {}), **exc.envelope_data, "error_code": code.value},
+            status=exc.http_status,
+        )
 
     @property
     def status_code(self) -> int:
@@ -85,7 +112,7 @@ class AssetPublishError(RuntimeError):
         `ProjectPublishBlocked` — which `share_action` already handles that way,
         in the same function.
         """
-        return publish_failure(self.code).status
+        return self._status or publish_failure(self.code).status
 
     @property
     def remedy(self) -> str:

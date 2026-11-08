@@ -227,3 +227,49 @@ async def test_the_first_retry_tells_both_sides_once(bootstrapped_client, user, 
     assert retrying == [
         "The host is retrying: API Error 429 · Your credit balance is too low — retrying (attempt 1 of 10)"
     ]
+
+
+async def test_a_prompt_request_ends_after_its_answered_turn(bootstrapped_client, user, fake_worker):
+    """limit 1: the reply goes out FIRST, then the host ends the session — so a
+    second prompt can never run on the approval of the first."""
+    conv_id = await make_conversation(bootstrapped_client)
+    conv = await Conversation.get_one({"id": conv_id})
+    rws = await make_session(conv_id, S.IDLE.value, prompt_limit=1)
+    fm = inbound_prompt_fm(conv_id, rws.id, fm_id="d4d4d4d4-0000-4000-8000-0000000000c1")
+    await fm.save(notify=False)
+
+    result = await ep.run_session_turn(rws, fm, conv, someone_typeid=await _someone(user))
+    assert result.status == "SUCCESS", getattr(result, "message", None)
+
+    after = await RemoteWorkerSession.get_one({"id": rws.id})
+    assert after.status == S.ENDED.value and after.prompts_used == 1
+    fms = await FlowMessage.get_all({"conversation_id": conv_id})
+    reply = _reply_rows(fms, rws.id)
+    assert len(reply) == 1 and not reply[0].is_draft
+    ended = [m for m in fms if m.remote_worker_session_id == rws.id and m.kind == "session_event"]
+    assert ended and all(m.created_date >= reply[0].created_date for m in ended)
+
+
+async def test_a_failed_turn_does_not_use_up_the_prompt_request(bootstrapped_client, user, fake_worker):
+    conv_id = await make_conversation(bootstrapped_client)
+    conv = await Conversation.get_one({"id": conv_id})
+    rws = await make_session(conv_id, S.IDLE.value, prompt_limit=1)
+    fm = inbound_prompt_fm(conv_id, rws.id, fm_id="d4d4d4d4-0000-4000-8000-0000000000c2")
+    await fm.save(notify=False)
+    fake_worker["fail"] = True
+
+    await ep.run_session_turn(rws, fm, conv, someone_typeid=await _someone(user))
+    after = await RemoteWorkerSession.get_one({"id": rws.id})
+    assert after.status == S.ERROR.value and after.prompts_used == 0  # its Retry still runs here
+
+
+async def test_a_live_session_never_ends_on_its_own(bootstrapped_client, user, fake_worker):
+    conv_id = await make_conversation(bootstrapped_client)
+    conv = await Conversation.get_one({"id": conv_id})
+    rws = await make_session(conv_id, S.IDLE.value)  # prompt_limit None
+    for i in range(3):
+        fm = inbound_prompt_fm(conv_id, rws.id, fm_id=f"d4d4d4d4-0000-4000-8000-0000000000d{i}")
+        await fm.save(notify=False)
+        await ep.run_session_turn(rws, fm, conv, someone_typeid=await _someone(user))
+    after = await RemoteWorkerSession.get_one({"id": rws.id})
+    assert after.status == S.IDLE.value and after.prompts_used == 3

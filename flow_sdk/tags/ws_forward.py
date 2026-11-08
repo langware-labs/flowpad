@@ -70,6 +70,9 @@ logger = logging.getLogger(__name__)
 # itself is read from the rows (`deployment/<id>/timeline`). Emitted by the deployment's own
 # process and relayed to the app (`tags/relay.py`).
 #
+# `deployment.synced` says an element's placements changed from the hub (the list reconcile or a
+# bridge push): one frame per change, naming the parent; the Deployments list re-reads.
+#
 # `app.ready` is an exact tag, not a glob, and fires at most once per boot —
 # the cheapest possible entry on this list. It is forwarded because a client
 # that is up when the backend finishes starting should hear so directly rather
@@ -95,6 +98,7 @@ FORWARDED_TAG_PATTERNS: list[str] = [
     "task.*",
     "user_app.*",
     "deployment.timeline",
+    "deployment.synced",
     "dataset.rows.changed",
 ]
 

@@ -5,13 +5,14 @@ sources that read them. The hub is the in-memory double (``tests/utils/fake_hub_
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import json
 
 import pytest
 from pydantic import ValidationError
 
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.agent_cloud_deploy import run_deployment_steps
 from flow_sdk.builtin.credential_service import drop_folder, place_values, save_credential, use_mine
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
@@ -22,7 +23,7 @@ from flow_sdk.schema.data_spec.data_driver_spec import CURRENT_SCHEMA, AuthSpec,
 from flow_sdk.schema.data_spec.webhook_spec import DriverWebhookSpec
 from flow_sdk.sources.families import RecordSource
 from tests.utils import fake_hub_store
-from tests.utils.deploy_run import deploy_ended
+from tests.utils.deploy_run import deploy_ended, deploy_steps, plan_for
 from tests.utils.deployments import make_deployment
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -113,10 +114,11 @@ async def test_the_hub_stores_the_url_so_use_mine_never_copies_this_computers(ho
         values={"POLLED_KEY": "p-1"},
     )
     monkeypatch.setattr(Agent, "ensure_on_hub", _published)
+    monkeypatch.setattr("flow_sdk.builtin.project.Project.ensure_on_hub", AsyncMock(return_value=False))
 
     with pytest.raises(NotReady):
-        await run_deployment_steps(agent, "user-1", "production", provider="e2b")
-    deployment = await agent.plan_deployment("production", provider="e2b")
+        await deploy_steps(agent, "user-1", "production", provider="e2b")
+    deployment = await plan_for(agent, "production", provider="e2b")
     copied = await use_mine(str(deployment.id))
     await deploy_ended(agent, "user-1", "production", provider="e2b", deployment_id=str(deployment.id))
 
@@ -146,7 +148,7 @@ async def test_a_plan_names_the_hub_desks_the_agents_sources_read(home, project,
         ):
             await make_data_source(_Desk.provider, owner=owner, config=config).save()
 
-        deployment = await agent.plan_deployment("production", provider="e2b")
+        deployment = await plan_for(agent, "production", provider="e2b")
 
         assert hub.help_desks[str(deployment.id)] == ["desk-1", "desk-2"]
     finally:
@@ -174,3 +176,18 @@ async def test_placing_the_values_verifies_the_sources_that_read_them(home, proj
     for source in await DataSource.find_owned(agent.typeid):
         expected = SourceStatus.ACTIVE.value if source.provider == _Pushed.provider else SourceStatus.SETUP.value
         assert source.status == expected
+
+
+async def test_a_planned_placement_with_no_machine_is_continued_not_planned_again(home, project, hub):
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.agent_cloud_deploy import _unplaced
+
+    agent = Agent(name="planned-agent", project_id=str(project.id))
+    await agent.save()
+    planned = await plan_for(agent, "staging", provider="gcp_vm")
+    assert planned.origin is None, "a planned placement has no machine yet"
+
+    ctx = SimpleNamespace(project=project, agent=agent, provider="gcp_vm", environment="staging")
+
+    assert await _unplaced(ctx) == str(planned.id)

@@ -412,7 +412,7 @@ def default_size() -> str:
     return size if is_model_tier(size) else DEFAULT_LLM_SIZE
 
 
-async def _size_overrides(worker_type: str, provider: LMApiProvider) -> dict[str, str]:
+async def _size_overrides(worker_type: str, provider: LMApiProvider | str) -> dict[str, str]:
     """The user's per-harness overrides for this provider (``Capability.model_map``), layered over the endpoint."""
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
         worker_capability_kind,
@@ -420,7 +420,7 @@ async def _size_overrides(worker_type: str, provider: LMApiProvider) -> dict[str
     from flow_sdk.builtin.capability import Capability  # noqa: PLC0415
 
     cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
-    return dict((getattr(cap, "model_map", None) or {}).get(provider.value) or {})
+    return dict((getattr(cap, "model_map", None) or {}).get(str(provider)) or {})
 
 
 async def _fresh_hub_tiers(endpoint_typeid) -> dict[str, str]:
@@ -480,9 +480,9 @@ def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: 
 async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:
     """Materialize the spawn binding for whichever ``LLMSource`` funds *process*.
 
-    Returns ``None`` for a DEVICE source -- the vendor CLI reads its own credentials, so
-    there is nothing to inject, and ``None`` is what "spawn with device auth" has always
-    meant to every caller.
+    DEVICE sources keep the vendor CLI's own credentials. A configured device model
+    returns a model-only binding; otherwise native aliases or the vendor default apply.
+    An explicit size without a configured mapping or native alias is refused.
 
     Which source wins is NOT decided here any more: ``resolve_llm_endpoint`` owns the
     ladder, so the answer this spawn uses and the answer the picker renders come from one
@@ -526,8 +526,8 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     that: the user names a row from the picker's own list and wants the binding for it, so the
     recipe must be reachable without inventing a fake process to carry it.
 
-    ``None`` for a DEVICE source, for the same reason as the caller above: the vendor CLI reads
-    its own credentials and there is nothing to inject.
+    DEVICE sources inject no credentials. Their ``Capability.model_map['device']``
+    overrides return a model-only binding; otherwise native aliases/defaults apply.
 
     *tier* is the ``sm``/``md``/``lg`` key (or a literal slug); ``None`` means the default size from
     preferences (``preferences.llm.default_size``).
@@ -541,7 +541,15 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
 
     endpoint, source = candidate
     if endpoint.kind == LLMEndpointKind.DEVICE:
-        return None
+        overrides = await _size_overrides(worker_type, LLMEndpointKind.DEVICE.value)
+        selected = overrides.get(tier or default_size())
+        if tier and is_model_tier(tier) and not selected and tier not in spec.native_tiers.values():
+            raise WorkerSpawnError(
+                worker_type,
+                f"Model size {tier!r} has no device mapping for {worker_type}; configure "
+                "Capability.model_map['device'] or name a concrete model",
+            )
+        return WorkerApiAuth(model_slug=selected) if selected else None
 
     is_hub = endpoint.kind == LLMEndpointKind.HUB
     # A hub endpoint is spent through the harness's FLOWPAD binding whatever its root
@@ -610,8 +618,7 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
 
 
 async def apply_api_model_to_options(cmd, process: "AgenticProcess") -> None:
-    """When *process* is in api mode, stamp the resolved model slug (and codex `-c`
-    overrides) onto the CLI options *cmd* before its argv is frozen."""
+    """Stamp the source's resolved model and config onto options before argv is frozen."""
     auth = await resolve_worker_api_auth(process)
     if auth is None:
         return

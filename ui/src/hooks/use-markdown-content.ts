@@ -1,4 +1,5 @@
 import { DocumentDraft, type AssetDocument, type DocumentRef, type DocumentValue } from '@sdk/fs/AssetDocument';
+import { useFileWatch } from '@sdk/react/hooks';
 import { usePrimaryContentPending } from '@sdk/react/primary-content';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
@@ -58,6 +59,10 @@ export function useMarkdownContent(
   const identity = fsRef?.vpath ?? fsRef?.path ?? null;
   const previousLoad = useRef({ identity, reloadTrigger });
   const reloadKey = options?.reloadKey;
+  // An out-of-band edit (an agent writing this doc) refreshes it now, not after
+  // the next reindex. Watched only while on screen: a hidden tab is unmounted.
+  const [diskTick, diskChanged] = useReducer((n: number) => n + 1, 0);
+  useFileWatch(fsRef?.watchId, fsRef?.path, diskChanged);
 
   useEffect(() => () => { ++epoch.current; }, []);
 
@@ -76,6 +81,8 @@ export function useMarkdownContent(
     if (!explicit && draft.current && target) {
       void target.readDocument().then((document) => {
         if (epoch.current !== token || draft.current?.dirty || inFlight.current || saveBlocked.current) return;
+        // Our own save echoing back (or a no-op touch): nothing to redraw.
+        if (draft.current && draft.current.document.revision === document.revision) return;
         draft.current = new DocumentDraft(document);
         redraw();
       }).catch(() => { /* the loaded copy stays; the next reload or save surfaces a real failure */ });
@@ -105,7 +112,7 @@ export function useMarkdownContent(
       setMissing(missing);
       if (!missing) setLoadError(error instanceof Error ? error : new Error(String(error)));
     });
-  }, [identity, reloadTrigger, reloadKey]);
+  }, [identity, reloadTrigger, reloadKey, diskTick]);
 
   const saveRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
   const save = useCallback(async () => {

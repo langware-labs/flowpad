@@ -7,17 +7,17 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import itertools
+import sys
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
 from flow_sdk.activity import ActivityState, monitor
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.agent_cloud_deploy import DEPLOY_ACTIVITY, AgentDeployRequest
+from flow_sdk.builtin.agent_cloud_deploy import DEPLOY_ACTIVITY, DeployRequest
 from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.cloud_client import hub_proxy
@@ -93,6 +93,7 @@ def hub(monkeypatch):
 @pytest.fixture
 async def agent(home, project, hub, monkeypatch) -> Agent:
     monkeypatch.setattr(Agent, "ensure_on_hub", _published)  # publishing is the git path's; not under test here
+    monkeypatch.setattr("flow_sdk.builtin.project.Project.ensure_on_hub", AsyncMock(return_value=False))
     agent = Agent(name="cloud-agent", project_id=str(project.id))
     await agent.save()
     return agent
@@ -103,7 +104,7 @@ async def _published(self, actor, force=False):
 
 
 async def test_a_gcp_vm_deploy_whose_answer_the_load_balancer_drops_ends_on_the_hubs_push(agent, hub, monkeypatch):
-    subject = str(agent.typeid)
+    subject = f"project-{agent.project_id}"
 
     def planned() -> dict:
         """The one placement this deploy's plan made (the hub makes a new one per plan)."""
@@ -132,19 +133,36 @@ async def test_a_gcp_vm_deploy_whose_answer_the_load_balancer_drops_ends_on_the_
     monkeypatch.setattr(Deployment, "get_by_id", staticmethod(get_by_id))
     stop = monitor.subscribe(hear)
     try:
-        # The signed-in request, as the action reads it first; what it calls sees none, as in every deploy test.
-        request = itertools.chain([SimpleNamespace(someone_typeid=OWNER)], itertools.repeat(None))
+        project = await agent._owning_project()
+        signed_in = SimpleNamespace(someone_typeid=OWNER)
+
+        def request():
+            # The signed-in request, as the action itself reads it; what it calls sees none, as in every deploy test.
+            caller = sys._getframe(1)
+            while caller.f_code.co_filename.endswith("mock.py"):
+                caller = caller.f_back
+            return signed_in if caller.f_code.co_name == "deploy_action" else None
+
         with patch("flow_sdk.request_context.methods.get_current_request_info", side_effect=request):
-            answer = await agent.deploy_action(AgentDeployRequest(provider="gcp_vm", environment="production"))
+            request = DeployRequest(provider="gcp_vm", environment="production", main_agent_id=str(agent.typeid))
+            answer = await project.deploy_action(request)
 
         assert answer.data == {
-            "agent_id": agent.id,
+            "project_id": agent.project_id,
             "activity": {"path": DEPLOY_ACTIVITY, "subject_entity": subject},
             "deployment_id": planned()["id"],
         }
 
         await looked.wait()
-        assert hub.sent == [{"environment": "production", "provider": "gcp_vm", "deployment_id": planned()["id"]}]
+        assert hub.sent == [
+            {
+                "environment": "production",
+                "provider": "gcp_vm",
+                "deployment_id": planned()["id"],
+                "main_agent_id": str(agent.typeid),
+                "source_kind": "commit",
+            }
+        ]
         waiting = monitor.get(DEPLOY_ACTIVITY, subject_entity=subject)
         assert (waiting.state, [(c.name, c.state) for c in waiting.children][-1]) == (
             ActivityState.RUNNING,

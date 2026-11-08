@@ -82,7 +82,7 @@ export function errorProblem(error: unknown): AgentLoadProblem {
  *
  * Keyed on the id, so a result that belongs to a previous link is never returned for this one.
  */
-function useAnonymousAgent(agentId: string | null): Agent | null {
+export function useAnonymousAgent(agentId: string | null): Agent | null {
   const [loaded, setLoaded] = useState<{ id: string; agent: Agent } | null>(null);
   useEffect(() => {
     if (!agentId) return;

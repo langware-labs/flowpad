@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable
+from flow_sdk.schema.data_spec.activity_spec import ActivityErrorSpec
 
 if TYPE_CHECKING:
     from flow_sdk.activity import Activity
@@ -72,9 +73,15 @@ def mirror_table(node: "Activity", table: IndexProgressTable) -> None:
             done=row.done,
             skipped=row.skipped,
             errors=row.errors,
-            # The table carries a count and no messages, so the sample can only say that
-            # the producer has not been migrated yet. The count is the part that was
-            # always true.
+            # A producer that names its errors (the indexer: file + parser message) is
+            # shown by them; one that only counts can say no more than that.
+            # Built only when the count grew — the indexer emits on every file.
+            error_samples=[
+                ActivityErrorSpec(message=f"{e.ref}: {e.message}", ref=e.ref, code=e.code or None)
+                for e in row.error_samples
+            ]
+            if row.errors > child.errors_count
+            else (),
             error_message="(legacy producer reported an error without detail)",
         )
         # A type whose count reached its known total is finished — end it now, so the

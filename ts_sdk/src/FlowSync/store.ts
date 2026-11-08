@@ -15,7 +15,7 @@ import { readFlowAnswer, readFlowEnvelope } from './flow-call';
 import { isAxiosError } from 'axios';
 import { BootstrapInfo, DeferredInfo, ScanInfo } from '../models/BootstrapInfo';
 import { isValidIdentifier, isValidEntityId, TypeId } from '../models/TypeId';
-import { dockOptionsToScopeFilter } from '../utils/scope-filter';
+import { dockOptionsToScopeFilter, pinnedProjectId } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
 import { isElectronShell } from '../utils/runtime';
 import { isAbsoluteMachinePath } from '../utils/vfs-path';
@@ -1220,8 +1220,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (dock?.viewType === 'assets' || dock?.viewType === 'explorer') {
       const noun = dock.viewType === 'assets' ? 'Assets' : 'Files';
       const scope = dockOptionsToScopeFilter(dock.options);
-      if (scope?.mode === 'project' && scope.activeProjectId) {
-        const name = nameFromCache('project', scope.activeProjectId);
+      const pinned = pinnedProjectId(scope);
+      if (pinned) {
+        const name = nameFromCache('project', pinned);
         return name ? `${name}'s ${noun}` : noun;
       }
       if (scope?.mode === 'user') return `My ${noun}`;

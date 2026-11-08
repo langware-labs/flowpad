@@ -68,6 +68,9 @@ if TYPE_CHECKING:
 #: Per event loop, per deployment (``stream_inbox/_locks``): ``keep_in``'s read-modify-write of a binding.
 _SECRETS_LOCKS = new_registry()
 
+#: Background hub reconciles in flight, per parent typeid (:meth:`Deployment.reconcile_soon`).
+_RECONCILES: dict[str, Any] = {}
+
 #: Who a box logs in as for a deployment: nobody, the placed agent's own identity, or its owner.
 DeploymentIdentity = Literal["none", "agent", "user"]
 
@@ -153,7 +156,21 @@ class Deployment(Entity):
     name: str = APIField(description="Display name")
     #: Who the machine logs in as for this placement: ``agent`` (the placed agent's own identity),
     #: ``user`` (its owner), ``none`` (not logged in). Resolved server-side, never from a request.
-    identity: DeploymentIdentity = APIField(default="user", description="Who the box logs in as: none, agent or user")
+    identity: DeploymentIdentity = APIField(default="none", description="Who the box logs in as: none, agent or user")
+    #: The one agent (``agent-<uuid>``) that answers every call on this box; ``None`` = no agent (web only).
+    #: Defaults from the project's ``main_agent`` recommendation (flow.json); stored here, never in git.
+    main_agent_id: str | None = APIField(default=None, description="The agent that answers every call here")
+    #: When this placement answers from (ISO), set by the hub for a person's placement made by a message: that
+    #: message is an arrival here, not history (``agent_serve.bound_at``). None: from when it was bound.
+    answers_from: Optional[str] = APIField(default=None)
+    #: The main agent's launch overrides on this box (keys: ``PLACE_OVERRIDABLE_FIELDS``).
+    main_agent_overrides: dict[str, Any] = APIField(
+        default_factory=dict, description="Launch overrides for the main agent on this deployment"
+    )
+    #: What was deployed: a tag, a release or a commit (``source_ref`` names it; ``source_revision`` is the
+    #: resolved commit actually on the box).
+    source_kind: Literal["tag", "release", "commit"] = APIField(default="commit")
+    source_ref: str | None = APIField(default=None, description="The tag / release name, or the commit")
     artifact_id: str | None = APIField(default=None, description="Referenced Artifact (not the parent)")
     artifact_link_source: ArtifactLinkSource | None = APIField(default=None)
     target: DeploymentTarget = APIField(description="Provider placement target — WHERE it runs")
@@ -219,14 +236,35 @@ class Deployment(Entity):
     #: reading it back by ``parent_type_id`` would find nothing at all.
     _element: Optional[Entity] = PrivateAttr(default=None)
     _element_attached: bool = PrivateAttr(default=False)
+    #: The agent a LOCAL launch through this deployment opens (``Agent.local_deployment``); else the main one.
+    _launch_agent: Optional[Entity] = PrivateAttr(default=None)
 
     def __init__(self, **data: Any) -> None:
         data["id"] = self.allocate_id(data)
-        if "identity" not in data and str(data.get("parent_type_id") or "").startswith("agent-"):
-            # A row stored before ``identity`` existed: an agent's placement logs in as the agent (the hub
-            # reads legacy rows the same way).
-            data["identity"] = "agent"
+        if "identity" not in data:
+            # A box with a main agent logs in as it; ``user`` only when asked for.
+            data["identity"] = "agent" if data.get("main_agent_id") else "none"
         super().__init__(**data)
+
+    def assign_main_agent(self, main_agent_typeid: Optional[str]) -> bool:
+        """Make ``main_agent_typeid`` (``agent-<uuid>``, or None) the agent answering here: the ONE place the
+        login follows the main agent (``agent``, else ``none``; a box asked to log in as its ``user`` -- and
+        this computer -- keep that) and its ``chat`` is declared. The old agent's overrides go with it.
+        True when it changed; the caller saves."""
+        main_agent_typeid = main_agent_typeid or None
+        if self.main_agent_id == main_agent_typeid:
+            return False
+        self.main_agent_id, self.main_agent_overrides = main_agent_typeid, {}
+        if self.identity != "user" and not self.is_this_computer:
+            self.identity = "agent" if main_agent_typeid else "none"
+        if main_agent_typeid and not any(d.name == "chat" for d in self.exposes):
+            self.exposes = [
+                *self.exposes,
+                EndpointDeclaration.model_validate(
+                    {"name": "chat", "subkind": "agent", "protocol": {"spec_kind": "api.chat.openai"}}
+                ),
+            ]
+        return True
 
     def with_element(self, element: Optional[Entity]) -> "Deployment":
         """Attach the already-loaded deployed element. Returns self, for chaining."""
@@ -308,7 +346,7 @@ class Deployment(Entity):
 
     @property
     def places_agent(self) -> bool:
-        return self.element_type == EntityType.AGENT.value
+        return bool(self.main_agent_id)
 
     @property
     def is_this_computer(self) -> bool:
@@ -530,6 +568,85 @@ class Deployment(Entity):
         await deployment.save()
         return deployment.with_element(element)
 
+    @classmethod
+    async def mirror_hub_row(cls, payload: dict[str, Any], op: str = "update") -> bool:
+        """Bring the local copy in line with the hub's row: adopt it, refresh it when the hub's is newer,
+        or drop it on ``delete``. True when the local row changed. The one writer for both the bridge's
+        push and the list reconcile (:meth:`reconcile_with_hub`)."""
+        deployment_id = str(payload.get("id") or "")
+        if not deployment_id:
+            return False
+        existing = await cls.get_one({"id": deployment_id})
+        if op == "delete":
+            if existing is None:
+                return False
+            existing.remote = False  # the hub already deleted it: nothing to ask the hub
+            await existing.delete()
+            return True
+        if existing is None:
+            return await cls.adopt_from_hub(payload) is not None
+        # An echo of our own write is not newer: no save, no broadcast.
+        if not cls.is_stale(existing, payload):
+            return False
+        refreshed = cls(**cls.merge_hub_payload(existing, payload))
+        refreshed.remote = True
+        await refreshed.save()
+        return True
+
+    @classmethod
+    async def reconcile_with_hub(cls, parent_type_id: str) -> bool:
+        """Align the local placements of *parent_type_id* with the hub's list — the conversation list's
+        rule: every page is read; a placement the hub no longer has is dropped only when the hub sent the
+        WHOLE list (a partial walk is missing rows it never saw). This computer's own placement is never
+        the hub's to drop. Never raises; True when anything changed (``deployment.synced`` is emitted)."""
+        from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_base_url  # noqa: PLC0415
+
+        if not hub_base_url() or not hub_auth_available():
+            return False
+        try:
+            walk = await HubProxy.walk(EntityType.DEPLOYMENT, match={"parent_type_id": str(parent_type_id)})
+            changed = False
+            for row in walk.rows:
+                if isinstance(row, dict) and await cls.mirror_hub_row(row):
+                    changed = True
+            if walk.complete:
+                on_hub = {str(row.get("id")) for row in walk.rows if isinstance(row, dict)}
+                for local in await cls.get_all({"match": {"parent_type_id": str(parent_type_id)}}):
+                    if local.remote and not local.is_local and str(local.id) not in on_hub:
+                        changed = await cls.mirror_hub_row({"id": str(local.id)}, "delete") or changed
+        except Exception:  # noqa: BLE001 — a background refresh must never break the list it refreshes
+            logger.warning("deployment reconcile for %s failed", parent_type_id, exc_info=True)
+            return False
+        if changed:
+            cls.announce_synced(parent_type_id)
+        return changed
+
+    @classmethod
+    def reconcile_soon(cls, parent_type_id: str) -> None:
+        """Run :meth:`reconcile_with_hub` in the background — the caller answers with the local rows now.
+        One reconcile per parent at a time: a second ask while one runs joins it."""
+        import asyncio  # noqa: PLC0415
+
+        key = str(parent_type_id)
+        running = _RECONCILES.get(key)
+        if running is not None and not running.done():
+            return
+        task = asyncio.ensure_future(cls.reconcile_with_hub(key))
+        _RECONCILES[key] = task
+        task.add_done_callback(lambda _t: _RECONCILES.pop(key, None))
+
+    @staticmethod
+    def announce_synced(parent_type_id: str) -> None:
+        """``deployment.synced`` — the placements of *parent_type_id* changed from the hub; a list re-reads."""
+        try:
+            from flow_sdk.tags import emit_tag  # noqa: PLC0415
+
+            emit_tag("deployment.synced", str(parent_type_id), {"parent_type_id": str(parent_type_id)})
+        except Exception:  # noqa: BLE001
+            logger.debug("deployment.synced emission failed", exc_info=True)
+
     # ── placement ─────────────────────────────────────────────────────────
 
     @property
@@ -647,7 +764,7 @@ class Deployment(Entity):
         try:
             providers = await HubProxy.call("GET", EntityType.DEPLOYMENT.value, None, "providers")
         except HubError as exc:
-            return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 502)
+            return exc.fail_response("Could not list cloud machines")
         return ApiSuccessResponse(data=providers if isinstance(providers, list) else [])
 
     @action.get(action_name="funding")
@@ -753,7 +870,7 @@ class Deployment(Entity):
     def _runs_here(self) -> bool:
         """An agent deployment on this machine: it runs as a process here, so pausing it stops that
         process (``serving``) — never the machine under it."""
-        return not self.remote and self.is_local and self.places_agent
+        return not self.remote and self.is_local
 
     async def _set_serving(self, serving: bool) -> bool:
         """Stop (or start) this deployment's process. Stopping ends it now — and, not serving, the
@@ -832,8 +949,14 @@ class Deployment(Entity):
         and not the one it answered.
         """
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
-        data = await HubProxy.try_call("GET", self.get_type(), self.id, verb, params=params)
+        # Quiet: the page that asked shows this read's failure itself, in the hub's words (a machine still being
+        # set up, paused, gone); the app-wide "Cloud Request Failed" warning for the same call only alarms.
+        try:
+            data = await HubProxy.call("GET", self.get_type(), self.id, verb, params=params, quiet=True)
+        except HubError as e:
+            raise DeploymentActionError(e.reason or "the hub did not answer", status_code=e.status_code or 502) from e
         if not isinstance(data, dict):
             raise DeploymentActionError("the hub did not answer for this cloud machine", status_code=502)
         return data
@@ -857,8 +980,12 @@ class Deployment(Entity):
         """`POST /deployment/<id>/pause` — stop this placement's machine."""
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
         try:
             paused = await self.pause()
+        except HubError as exc:
+            return exc.fail_response("Could not pause")
         except Exception as exc:  # noqa: BLE001
             return ApiFailResponse(message=f"pause failed: {exc}")
         if not paused:
@@ -875,7 +1002,7 @@ class Deployment(Entity):
         except DeploymentActionError as exc:
             return ApiFailResponse(message=str(exc), status_code=exc.status_code)
         except HubError as exc:
-            return ApiFailResponse(message=f"{verb} failed on the hub: {exc}", status_code=502)
+            return exc.fail_response(f"Could not {verb} on the hub")
 
     @action.post(action_name="resume")
     async def resume_action(self):
@@ -890,8 +1017,62 @@ class Deployment(Entity):
 
     @action.post(action_name="update")
     async def update_action(self):
-        """`POST /deployment/<id>/update` — bring a cloud machine to the published definition."""
+        """`POST /deployment/<id>/update {source_kind?, source_ref?}` — move a cloud machine to that source
+        (none: the published definition)."""
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        kind, ref = body.get("source_kind"), body.get("source_ref")
+        if kind and kind not in ("tag", "release", "commit"):
+            from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+
+            return ApiFailResponse(message="source_kind is tag, release or commit", status_code=400)
+        if kind or ref:
+            self.source_kind, self.source_ref = kind or self.source_kind, ref or self.source_ref
+            await self.save()
         return await self._answer("update", self.update)
+
+    @action.post(action_name="set_main_agent")
+    async def set_main_agent_action(self):
+        """`POST /deployment/<id>/set_main_agent {main_agent_id | null}` — the agent answering here; its
+        overrides go with the old one."""
+        from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        raw = str(body.get("main_agent_id") or "").strip()
+        if raw:
+            agent = await Agent.get_by_id(raw.removeprefix("agent-"))
+            if agent is None:
+                return ApiFailResponse(message="agent not found", status_code=404)
+            if agent.project_id and f"project-{agent.project_id}" != str(self.parent_type_id):
+                return ApiFailResponse(message="agent belongs to another project", status_code=400)
+            raw = str(agent.typeid)
+        if self.assign_main_agent(raw or None):
+            await self.save()
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    @action.post(action_name="set_main_agent_override")
+    async def set_main_agent_override_action(self):
+        """`POST /deployment/<id>/set_main_agent_override {field, value}` — `value: null` resets."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+        from flow_sdk.builtin.agent_schedule import ScheduleError  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        agent = await self.main_agent()
+        if agent is None:
+            return ApiFailResponse(message="this deployment has no main agent", status_code=409)
+        try:
+            await agent_places.set_place_override(agent, str(self.id), str(body.get("field") or ""), body.get("value"))
+        except ScheduleError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+        return ApiSuccessResponse(data=(await type(self).get_by_id(str(self.id))).model_dump(mode="json"))
 
     @action.get(action_name="secrets")
     async def secrets_action(self):
@@ -1042,39 +1223,41 @@ class Deployment(Entity):
 
     # ── the launch verbs (agent placements) ───────────────────────────────
 
-    async def agent(self) -> Optional["Agent"]:
-        """The Agent this places, when it places one."""
+    def with_agent(self, agent: Optional["Agent"]) -> "Deployment":
+        """Launch ``agent`` through this (local) deployment instead of its main agent. Returns self."""
+        self._launch_agent = agent
+        return self
+
+    async def main_agent(self) -> Optional["Agent"]:
+        """The agent this deployment launches: an attached one (``with_agent``), else ``main_agent_id``."""
         from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
 
-        element = await self.element()
-        return element if isinstance(element, Agent) else None
+        if self._launch_agent is not None:
+            return self._launch_agent  # type: ignore[return-value]
+        if not self.main_agent_id:
+            return None
+        return await Agent.get_by_id(str(self.main_agent_id).removeprefix("agent-"))
 
     def is_agent_placement_of(self, agent) -> bool:
-        """The one rule for "may this placement open a session as ``agent``":
-        its row, an agent placement, on a machine — the hub asks the same."""
-        return str(self.parent_type_id) == str(agent.typeid) and self.target.provider in NODE_PROVIDERS
+        """The one rule for "may this deployment open a session as ``agent``": it is its main agent,
+        on a machine — the hub asks the same."""
+        return str(self.main_agent_id or "") == str(agent.typeid) and self.target.provider in NODE_PROVIDERS
+
+    def overrides_for(self, agent) -> dict[str, Any]:
+        """The launch overrides for ``agent`` here: the main agent's, else none."""
+        return dict(self.main_agent_overrides or {}) if str(self.main_agent_id or "") == str(agent.typeid) else {}
 
     async def _require_agent(self) -> "Agent":
-        """The placed Agent, or ``AgentUnavailable`` — a launch site naming a
-        missing or disabled agent is a bug we want to see, not a silent no-op.
-
-        Raised, because ``create_process`` is a primitive that hands back a
-        process. A boundary that forms an ANSWER (a turn, a launch) catches it
-        and answers with ``exit_code`` instead.
-
-        Read fresh, not from ``element()``'s memo: a deployment's runner lives for days, and a
-        launch must open the agent as it is now — an edited prompt or model applies to the next
-        session, not after a runner restart. An agent a caller attached (``with_element``) is used as
-        is: it may carry unsaved edits, or have no stored row."""
-        if not self._element_attached:
-            self._element = None
-        agent = await self.agent()
+        """The agent to launch, or ``AgentUnavailable`` — a launch site naming a missing or disabled
+        agent is a bug we want to see, not a silent no-op. Read fresh on every launch, so an edited
+        prompt or model applies to the next session."""
+        agent = await self.main_agent()
         if agent is None:
             raise AgentUnavailable(
-                f"deployment {self.id}: agent {self.parent_type_id!r} not found",
+                f"deployment {self.id}: agent {self.main_agent_id!r} not found",
                 ExitCode.NOT_FOUND,
             )
-        if not agent.enabled_on(self.id):
+        if not agent.enabled:
             raise AgentUnavailable(
                 f"agent {agent.name!r} is disabled on {self.name or self.id}",
                 ExitCode.REFUSED,
@@ -1094,10 +1277,11 @@ class Deployment(Entity):
         from flow_sdk.builtin.agent_run import create_agentic_process_from_agent  # noqa: PLC0415
 
         agent = await self._require_agent()
-        # This place's overrides (agent.json ``places``) win over the definition
-        # for every launch through it — chat, run, schedule, email alike.
-        process = await create_agentic_process_from_agent(agent, prompt, place=agent.place_for(self.id), **options)
+        # This deployment's main-agent overrides win over the definition for every launch through it.
+        process = await create_agentic_process_from_agent(agent, prompt, overrides=self.overrides_for(agent), **options)
         process.deployment_id = self.id  # provenance: the run came through this placement
+        # Which agent it runs as: a local deployment launches agents other than its main one.
+        process.context_data = {**(process.context_data or {}), "agent_typeid": str(agent.typeid)}
         return process
 
     async def launch(
@@ -1125,7 +1309,7 @@ class Deployment(Entity):
             take_turn,
         )
 
-        agent = await self.agent()
+        agent = await self.main_agent()
         spec = resolve_output_spec(output_spec) or declared_output_spec(getattr(agent, "output", None))
         check_declared_input(input, getattr(agent, "input", None))
         try:
@@ -1259,6 +1443,28 @@ def _local_node_typeid() -> str:
     from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
 
     return f"{EntityType.COMPUTE_NODE.value}-{ComputeNode._local_id()}"
+
+
+@action.post(action_name="adopt", types=[EntityType.DEPLOYMENT.value], allow_missing_target=True)
+async def adopt_deployment_action():
+    """`POST /deployment/<id>/adopt {<the hub's deployment record>}` — on a cloud machine, key this
+    machine's local deployment of the record's project by the hub's id ``<id>``, with its main agent;
+    serving when it has one. The id is the hub's, so the row need not exist here yet."""
+    from flow_sdk.builtin import agent_places  # noqa: PLC0415
+    from flow_sdk.builtin.agent_schedule import ScheduleError  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="adopt requires deployment/<id>/adopt", status_code=400)
+    body = (await request_info.get_post_data()) or {}
+    record = {**body, "id": str(request_info.target_entity_typeid.id)}
+    try:
+        adopted = await agent_places.adopt_deployment(record)
+    except ScheduleError as exc:
+        return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+    return ApiSuccessResponse(data=adopted.model_dump(mode="json"))
 
 
 __all__ = ["NODE_PROVIDERS", "Deployment", "DeploymentIdentity"]

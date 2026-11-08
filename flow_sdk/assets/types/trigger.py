@@ -66,7 +66,11 @@ def row_fields(spec: TriggerSpec, *, parent_type_id: str = "") -> dict:
     fields: dict = {
         "name": spec.name,
         "description": spec.description,
-        "enabled": spec.enabled,
+        # On/off is this machine's (``set_trigger_on``), never the file's. These land only on a rule's
+        # FIRST index — off, undecided; both fields are guarded, so a re-index keeps what is stored.
+        "enabled": False,
+        "decided": False,
+        "recommended": spec.recommended,
         # Firing POLICY — general, not per-kind. The entity labels these
         # "(TAG only)" because that is where they were implemented; nothing
         # about them is about the bus.

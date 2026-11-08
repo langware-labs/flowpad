@@ -183,6 +183,28 @@ status is classified first and the envelope is used as detail:
 
 ## 6. UI — renders and calls actions only
 
+> **Superseded for the dialog itself (2026-11-07):** Ask for help is now a conversation + attachments + one action.
+> See "The help request message" below; the rest of this section still describes delivery and the load dialog.
+
+### The help request message (2026-11-07)
+
+To the person it is just a conversation. `ask-for-help` writes ONE `FlowMessage` of kind `help_request`
+(`FlowMessageKind.HELP_REQUEST`). Its attachments are ordinary files: `diagnosis.value.json` (the `run_diagnose`
+answer, `flow_sdk/diagnose`), `screen.value.json`, `session.value.json`, `logs.txt`, plus the person's own files — and
+`help_request.value.json` (`HelpRequestCarrier`), the carrier that marks the message on every machine, since the hub
+drops the `kind` field (`derive_help_request_kind` re-derives it on arrival). The carrier is plumbing and never shown.
+
+- **The wizard** (`AskForHelpDialog`): 1 · what is wrong (one box; the Help desk chip moved here from the footer)
+  → 2 · Run diagnosis / Share context + **Review content** → 3 · the computed title (`help-request-preview`), the desk
+  chip (removable), people. Nobody picked: a private conversation that never leaves this computer.
+- **Recipients:** people share one conversation; a desk gets its own ticket. Both carry the same request, diagnosed once.
+- **Send once diagnosed** delivers now. **Review before sending** (and Share context off) keeps the context in
+  `<instance>/help_requests/<conversation id>/`; the message then shows `Context: Not shared → Share | Open`
+  (`help-request-context`, `help-request-share`, which sends the context as a help request message of its own).
+- **One review, both directions:** `ReviewShell` is the message review frame. The receiver's `AssetReviewDialog`
+  (review before installing) and the sender's `ContentReviewDialog` (review before sending: Share / Leave out) are both it.
+- **The asker's side is a conversation:** no ticket state chip ("Waiting for pickup") and no Close ticket; those are the desk's.
+
 **`AskForHelpDialog`** (the renamed `VibeAssignTaskDialog`; it keeps the `vibe-assign-*` testids)
 - **Recipients:** desk chips from `help-recipients`, plus `ContactPicker`.
   - When no person is picked, the first desk is preselected.

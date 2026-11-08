@@ -76,7 +76,7 @@ describe('navigate entity with explicit connection_id', () => {
     expect(body.exit_code).toBe(0);
     expect(body.delivered).toBe(true);
     expect(body.connection_id).toBe(connectionManager.id);
-    expect(body.value).toMatchObject({ type: 'project', id: testProject.id });
+    expect(body.value).toMatchObject({ kind: 'dock', view_type: 'project', pointer: testProject.id }); // a project lands on its own page
   });
 
   it('should return CONNECTION_NOT_FOUND for invalid connection_id', async () => {
@@ -104,6 +104,6 @@ describe('navigate entity with explicit connection_id', () => {
     expect(body.exit_code).toBe(0);
     expect(body.delivered).toBe(true);
     expect(body.connection_id).toBeTruthy(); // Should pick the active connection
-    expect(body.value).toMatchObject({ type: 'project', id: testProject.id });
+    expect(body.value).toMatchObject({ kind: 'dock', view_type: 'project', pointer: testProject.id }); // a project lands on its own page
   });
 });

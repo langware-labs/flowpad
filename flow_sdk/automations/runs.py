@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 _KIND_BY_EVENT = {
     "schedule_fire": "schedule",
     "tag_fire": "event",
+    "tag_failed": "event",
     "tag_declined": "event",
     "tag_suppressed": "event",
     "storm_suppressed": "event",
@@ -32,6 +33,9 @@ DECLINED_CODES: frozenset[str] = frozenset({"decision_no", "decision_unavailable
 
 #: Why a fire was skipped, in words.
 SKIP_WORDS = {
+    "busy": "Skipped: this automation is already running",
+    "refused": "Skipped: the wizard refused this invocation",
+    "not_applicable": "Skipped: this invocation does not apply",
     "storm": "Skipped: it fired too often in one minute",
     "confirm_failed": "Skipped: the check before running found nothing",
     "disabled": "Skipped: the automation was off",

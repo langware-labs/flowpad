@@ -25,13 +25,16 @@ from flow_sdk.fs_store.asset_occurrences import (
 )
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.gitignore import FlowIgnore
 from flow_sdk.fs_store.indexer.progress_table import (
     PROGRESS_TEXT_COMPLETE,
     SWEEP_ROW_NAME,
+    ErrorSample,
     IndexProgressTable,
     TypeProgressRow,
 )
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
+from flow_sdk.schema.data_spec.activity_spec import MAX_ERROR_SAMPLE
 from flow_sdk.fs_store.path_owners import PathOwnerIndex
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.server.search_filters import PROJECT_LIKE_SCOPES, SCOPED_RECORD_TYPES, ScopeFilter
@@ -528,10 +531,16 @@ def _source_gone_orphans(
     exists. The declaration is read from the row, else from the record home's
     metadata.json. A record that declares no source isn't file-backed → never
     orphan. A source under an UNREACHABLE root (an unmounted volume) is not
-    gone either — absence there is not deletion. Stat-per-candidate — callers
-    run this off-loop via ``asyncio.to_thread``.
+    gone either — absence there is not deletion. A source a ``.flowignore``
+    now excludes IS gone: it leaves the index as a deleted file does.
+    Stat-per-candidate — callers run this off-loop via ``asyncio.to_thread``.
     """
     from flow_sdk.fs_store.path_utils import source_gone  # noqa: PLC0415
+
+    flowignore = FlowIgnore()
+
+    def gone(source: str) -> bool:
+        return source_gone(source) or (Path(source).is_absolute() and flowignore.excludes(source))
 
     def _declared_source(eid: str) -> str:
         row = db_rows.get(eid)
@@ -543,7 +552,7 @@ def _source_gone_orphans(
         eid
         for eid in candidates
         # An unreachable root is not a deletion — see ``source_gone``.
-        if source_gone(_declared_source(eid))
+        if gone(_declared_source(eid))
     }
 
 
@@ -769,6 +778,7 @@ class FSIndexer:
             rt: {
                 "indexed": 0,
                 "errors": 0,
+                "error_samples": [],
                 "duration_ms": 0.0,
                 "skipped": 0,
                 # Files parsed this run. ``indexed`` counts RECORDS, and one file can
@@ -802,6 +812,7 @@ class FSIndexer:
                         total=total,
                         errors=int(acc["errors"]),
                         skipped=int(acc["skipped"]),
+                        error_samples=tuple(acc["error_samples"]),
                     )
                 )
             rows.sort(key=lambda r: -r.total)
@@ -945,6 +956,15 @@ class FSIndexer:
             await _commit_batch()
             await yield_to_waiting_writers()
 
+        # Why a ref's identity probe failed, by path — the probe runs in a thread and
+        # returns ref_id=None; the loop below turns that into a counted, NAMED error.
+        probe_errors: dict[str, str] = {}
+
+        def _note_error(acc: dict[str, Any], ref: FSRef, message: str, code: str) -> None:
+            acc["errors"] += 1
+            if len(acc["error_samples"]) < MAX_ERROR_SAMPLE:
+                acc["error_samples"].append(ErrorSample(ref=str(ref._path), message=message, code=code))
+
         def _probe_chunk(
             items: list[tuple[FSRef, Any]],
         ) -> list[tuple[FSRef, Any, str | None, FSRecord | None, bool, str]]:
@@ -975,6 +995,7 @@ class FSIndexer:
                         ref.record_type,
                         e,
                     )
+                    probe_errors[str(ref._path)] = str(e)
                     ref_id = None
                     probe = None
                     fresh = False
@@ -1081,7 +1102,7 @@ class FSIndexer:
                     continue
 
                 if ref_id is None or probe is None:
-                    acc["errors"] += 1
+                    _note_error(acc, ref, probe_errors.pop(str(ref._path), "could not resolve identity"), "index.identity")
                     acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
                     await progress.emit()
                     continue
@@ -1187,8 +1208,8 @@ class FSIndexer:
                     # only after the row commits — defer to the post-commit
                     # stamp below so a crash before commit leaves no sentinel.
                     _pending_hashes.append(probe)
-                except Exception:
-                    acc["errors"] += 1
+                except Exception as e:
+                    _note_error(acc, ref, str(e), "index.parse")
                     # Make failures observable, but cap the full traceback to
                     # the first few per type so a pathological tree (thousands
                     # of unparseable files) can't flood the log; the one-line
@@ -1657,6 +1678,18 @@ class FSIndexer:
         # are accumulated inside the chunk and awaited on the main loop after
         # the chunk returns.
         functions = self._functions
+        # A path a .flowignore excludes is never indexed, whatever walker found it: many
+        # walkers list files themselves (a folder's markdown, a memory dir's glob), so the
+        # walk's own pruning cannot be the only gate.
+        flowignore = FlowIgnore()
+
+        def kept(children: list[FSRef]) -> list[FSRef]:
+            return [
+                child for child in children
+                if not flowignore.excludes(child.path, True if child.record_type is RecordType.FOLDER else None)
+            ]
+
+        stack[:] = kept(stack)
 
         # Type-gate the dispatcher: when opts.types is set, build the closure
         # of output types whose walk transitively produces a requested type
@@ -1708,7 +1741,7 @@ class FSIndexer:
                     if _is_async_walker(fn):
                         pending.append((node, fn))
                     else:
-                        children = fn([node], opts)
+                        children = kept(fn([node], opts))
                         stack.extend(reversed(children))
                 if opts.limit is not None and len(visited) >= opts.limit:
                     hit_limit = True
@@ -1723,7 +1756,7 @@ class FSIndexer:
             )
             # Drain any async walkers seen inside the chunk on the main loop.
             for node, fn in pending:
-                children = await fn([node], opts)
+                children = kept(await fn([node], opts))
                 stack.extend(reversed(children))
             await progress.emit()
             if hit_limit:

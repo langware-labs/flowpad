@@ -871,6 +871,11 @@ class DBEntity(DBBaseRecord):
 
         return _all
 
+    @classmethod
+    async def get_all_rows(cls) -> list[dict]:
+        """Every row of this type as stored fields, without building entities (see the driver)."""
+        return await cls._db.get_all_rows(cls.get_type())
+
     @property
     def is_private(self) -> bool | None:
         if self.expand:

@@ -45,6 +45,7 @@ export function AssetsNavigator() {
           currentProjectId={m.scopeProjectId}
           currentProjectName={m.scopeProjectName}
           onScopeChange={m.handleScopeChange}
+          showDependencies
         />
       ),
     },

@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.automations.fingerprint import spec_hash
-from flow_sdk.builtin import agent_run, tag_triggers, trigger_callbacks
+from flow_sdk.builtin import tag_triggers, trigger_callbacks
 from flow_sdk.builtin.change_event import ChangeEvent
 from flow_sdk.builtin.trigger_hook_bridge import _log_hook_fire
 from flow_sdk.fs_store.operations.trigger_log import CAUSE_DATA_MAX_CHARS, cap_cause_data
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from flow_sdk.server.fsop_watcher import _fire
@@ -20,7 +20,8 @@ from tests.unit.automations._helpers import history, rule, settle
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
-ANSWER = SimpleNamespace(marker="started-an-agent")
+PROCESS_ID = str(mint_uuid())
+ANSWER = PromptResult.satisfied("Launched", executor=f"agentic_process-{PROCESS_ID}", value_present=False)
 
 
 @trigger_callbacks.register("test_log_keys_starts_agent")
@@ -49,10 +50,9 @@ def agent_answers(monkeypatch):
 
     real = hook_models.get_action_handler
     monkeypatch.setattr(
-        "flow_sdk.builtin.trigger.get_action_handler",
+        "flow_sdk.builtin.hook_models.get_action_handler",
         lambda t: _RunAgentLike() if t == ActionType.RUN_AGENT else real(t),
     )
-    monkeypatch.setattr(agent_run, "process_id_of", lambda a: "proc-123" if a is ANSWER else None)
 
 
 def test_cause_data_is_capped():
@@ -77,7 +77,7 @@ async def test_real_event_fire_writes_start_and_done_rows(agent_answers):
     assert start["hook_event"] == "tag_fire" and not start["is_test"]
     assert start["cause_data"] == {"title": "hello"}
     assert done["hook_event"] == "tag_fire_done" and done["event_id"] == start["event_id"]
-    assert done["agentic_process_id"] == "proc-123"
+    assert done["agentic_process_id"] == PROCESS_ID
     assert done["spec_hash"] == spec_hash(trigger)
 
 
@@ -101,7 +101,7 @@ async def test_file_fire_records_the_run_it_started(agent_answers, tmp_path):
     await trigger.save()
     await _fire(trigger, [ChangeEvent(path=tmp_path / "a.md", change_type="modified")])
     (row,) = history(trigger)
-    assert row["agentic_process_id"] == "proc-123"
+    assert row["agentic_process_id"] == PROCESS_ID
     assert row["error"] is None and isinstance(row["duration_ms"], int)
 
 

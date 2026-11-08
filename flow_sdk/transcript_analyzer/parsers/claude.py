@@ -78,6 +78,7 @@ _META_TYPES = frozenset(
         # `{"type":"cost-state",…}` — Claude 2.1.27x writes it after the turn's
         # `last-prompt`; unclassified, it hid the terminal marker, so no turn ended.
         "cost-state",
+        "session-owner",  # Claude 2.1.318+: written after last-prompt
     }
 )
 

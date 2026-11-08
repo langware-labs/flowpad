@@ -130,3 +130,37 @@ async def test_remote_keys_skips_null_and_nonstring(monkeypatch):
     monkeypatch.setattr(hl, "is_logged_in", lambda: True)
     # Null / non-string / empty slots resolve to nothing (no DB hit, empty set).
     assert await bcw._remote_keys({"a": None, "b": 123, "c": ""}) == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.parametrize("still_held", [True, False])
+async def test_a_failed_watch_is_sent_once_more_while_still_held(monkeypatch, still_held):
+    """A reconnect landed while DNS was still down and the watch was lost until the next one
+    (Ami, 2026-11-07: "/watch 0: [Errno 8]"). One retry, only for an entity still on screen."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from flow_sdk.cloud_client import context_watch, ws_client
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+    from flow_sdk.cloud_client.shared.errors import HubError
+
+    monkeypatch.setattr(context_watch, "WATCH_RETRY_SECONDS", 0)
+    monkeypatch.setattr(ws_client, "hub_ws_manager", SimpleNamespace(connection_id="conn", is_connected=True))
+    sent: list[str] = []
+
+    async def call(method, et, eid, action, **kw):
+        sent.append(action)
+        if len(sent) == 1:
+            raise HubError(0, "[Errno 8] nodename nor servname provided, or not known")
+
+    monkeypatch.setattr(HubProxy, "call", call)
+    bcw = BrowserContextWatch()
+    bcw._refcount["project:p1"] = 1
+    await bcw._hub_call("project:p1", "watch")
+    if not still_held:
+        bcw._refcount.clear()
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert sent == (["watch", "watch"] if still_held else ["watch"])
+    assert bcw._retrying == set()

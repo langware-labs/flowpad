@@ -21,6 +21,8 @@ class FakeHubStore:
         self.deploys: list[dict] = []
         #: The placement each deploy named, in order: a deploy is for the row its plan made.
         self.deploy_ids: list[str | None] = []
+        #: The main agent each deploy named (``agent-<id>``), in order.
+        self.main_agents: list[str | None] = []
         self.authorized: dict[str, list[str]] = {}
         self.webhooks: dict[str, list[str]] = {}
         self.help_desks: dict[str, list[str] | None] = {}
@@ -29,28 +31,29 @@ class FakeHubStore:
         #: Every placement planned, by id, in the order made.
         self.rows: dict[str, dict] = {}
 
-    def planned(self, agent_typeid: str, environment: str) -> list[dict]:
-        """The placements planned for *agent_typeid* in *environment*, oldest first."""
+    def planned(self, project_typeid: str, environment: str) -> list[dict]:
+        """The placements planned for *project_typeid* in *environment*, oldest first."""
         return [
             row
             for row in self.rows.values()
-            if row["parent_type_id"] == agent_typeid and row["environment"] == environment
+            if row["parent_type_id"] == project_typeid and row["environment"] == environment
         ]
 
-    def _plan(self, agent_typeid: str, payload: dict) -> dict:
+    def _plan(self, project_typeid: str, payload: dict) -> dict:
         named = payload.get("deployment_id")
         if named:
             row = self.rows.get(named)
-            if row is None or row["parent_type_id"] != agent_typeid:
-                raise HubError(404, f"no placement {named} for {agent_typeid}")
+            if row is None or row["parent_type_id"] != project_typeid:
+                raise HubError(404, f"no placement {named} for {project_typeid}")
         else:
             environment = payload["environment"]
             row = {
                 "id": str(uuid.uuid4()),
-                "name": f"agent ({environment})",
-                "parent_type_id": agent_typeid,
+                "name": f"project ({environment})",
+                "parent_type_id": project_typeid,
+                "main_agent_id": payload.get("main_agent_id"),
                 "environment": environment,
-                "target": {"provider": payload.get("provider") or "e2b", "scope": agent_typeid},
+                "target": {"provider": payload.get("provider") or "e2b", "scope": project_typeid},
                 "llm_endpoint_typeid": "",
             }
             self.rows[row["id"]] = row
@@ -87,7 +90,7 @@ class FakeHubStore:
             self.authorized.setdefault(eid, []).append(payload["provider"])
             return {"provider": payload["provider"]}
         if action == "plan_deployment":
-            deployment = self._plan(f"agent-{eid}", payload)
+            deployment = self._plan(f"project-{eid}", payload)
             # The hub keeps each asked-for webhook and stores its URL as the driver's variable.
             self.webhooks[deployment["id"]] = [hook["name"] for hook in payload.get("webhooks") or []]
             self.help_desks[deployment["id"]] = payload.get("help_desks")
@@ -122,9 +125,10 @@ class FakeHubStore:
         return await self.delete(etype, eid, action, sub_path)
 
     async def deploy(
-        self, entity, environment=None, *, provider=None, require=None, deployment_id=None, machine_size=None
+        self, entity, environment=None, *, provider=None, require=None, deployment_id=None, machine_size=None, **extra
     ):
         self.deploys.append({"environment": environment, "provider": provider, "require": list(require or [])})
+        self.main_agents.append(extra.get("main_agent_id"))
         self.deploy_ids.append(deployment_id)
         return {"deployment": {}, "secrets": {"placed": sorted(require or []), "failed": {}}}
 

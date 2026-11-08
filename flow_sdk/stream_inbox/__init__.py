@@ -91,7 +91,9 @@ def invitation_is_pending(inv, viewer_email: Optional[str], now: datetime) -> bo
     this viewer. No cloud account → nothing is pending for us."""
     if not viewer_email:
         return False
-    if getattr(inv, "accepted", None) is True:
+    from flow_sdk.builtin.invitation import invitation_answered  # noqa: PLC0415
+
+    if invitation_answered(inv):
         return False
     expiration = getattr(inv, "expiration_at", None)
     if expiration is not None:
@@ -138,6 +140,17 @@ def conversation_unread_count(conv, fm_by_id: dict, *, pending_conv_ids: set, se
     return max(count, 1) if conv.id in pending_conv_ids else count
 
 
+def _viewer_joined(conv, self_ids: set, viewer_email: Optional[str]) -> bool:
+    """Whether the viewer is an approved member of ``conv`` (by user id or email)."""
+    for m in getattr(conv, "members", None) or []:
+        if not isinstance(m, dict) or m.get("status") != "approved":
+            continue
+        email = (m.get("email") or "").strip().lower()
+        if m.get("user_id") in self_ids or m.get("id") in self_ids or (viewer_email and email == viewer_email):
+            return True
+    return False
+
+
 def in_stream_inbox_of(conv, owner) -> bool:
     """Whether ``conv`` is listed in ``owner``'s stream inbox. A row written before
     ``owner`` existed is the local user's (``owner_of``'s rule), so it counts for the
@@ -172,7 +185,14 @@ def project_unread(
     computed for every conversation regardless. ``None`` (an instance that has not
     bootstrapped its local user) counts the unowned rows only, never another owner's.
     """
-    pending = [inv for inv in invitations if invitation_is_pending(inv, viewer_email, now)]
+    # An invite to a conversation the viewer already joined was used, even if the hub never
+    # flipped ``accepted`` — it carries no action, so it must not hold the row unread.
+    joined = {conv.id for conv in conversations if _viewer_joined(conv, self_ids, viewer_email)}
+    pending = [
+        inv for inv in invitations
+        if invitation_is_pending(inv, viewer_email, now)
+        and (getattr(inv, "target_url_path", None) or "").removeprefix("/conversation/") not in joined
+    ]
     # Every pending invitation is one actionable unread item, counted DIRECTLY —
     # never through its conversation row. A conversation invite's placeholder
     # conversation may not be materialized (or has no pointer projection yet),
@@ -464,8 +484,6 @@ async def accept_mark_preview_read(
             invitation.id, linked_fm_id, conversation_id,
         )
 
-    if invitation.accepted is not True:
-        invitation.accepted = True
-        await invitation.save(owner, notify=True)
+    await invitation.resolve("accepted", owner)
 
     await recompute_unread(f"invitation-accept:{invitation.id}", owner)

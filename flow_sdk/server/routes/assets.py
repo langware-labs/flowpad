@@ -74,6 +74,15 @@ async def _markdown_vaults() -> list[dict]:
         _add(str(mount), scope="project", project_id=entity_id,
              record_project_id=record_project_id, label=f"Project docs ({name})")
 
+    # One vault per plain (non-Project) dependency folder. Its documents are no
+    # project's own and not the user's, so only the Dependencies scope of a
+    # project depending on it lists this vault (and All).
+    from flow_sdk.server.search_filters import plain_dependency_roots  # noqa: PLC0415
+
+    for root in await plain_dependency_roots():
+        _add(root, scope="dependency", project_id=None, record_project_id=None,
+             label=f"Dependency docs ({Path(root).name or root})")
+
     return vaults
 
 

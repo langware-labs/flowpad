@@ -58,8 +58,8 @@ async def _state(deployment_id: str) -> Optional[_State]:
     deployment = await Deployment.get_by_id(deployment_id)
     if deployment is None or not deployment.serving:
         return None
-    agent = await deployment.agent()
-    if agent is None or not agent.enabled_on(deployment.id):
+    agent = await deployment.main_agent()
+    if agent is None or not agent.enabled:
         return None
     sources = await answered_sources(agent, deployment)
     return _State(agent, deployment, sources, frozenset(serving_key(s) for s in sources))

@@ -45,6 +45,28 @@ function CopyRow({ label, value, extraAction }: { label: string; value: string; 
   );
 }
 
+/** Header button: copies `<worker name>:<worker session id>`. */
+function CopyDetailsButton({ value }: { value: string }) {
+  const { t } = useLingui();
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    void copyToClipboard(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <button
+      className={ROW_ICON_BUTTON_CLASS}
+      onClick={handleCopy}
+      title={t`Copy session details`}
+      aria-label={t`Copy session details`}
+    >
+      {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+    </button>
+  );
+}
+
 function useTimeDisplay(iso: string | null | undefined): string {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -197,7 +219,12 @@ function SessionInfoBody({
     [t`Shell Name`, linkedShell?.name || (process.shell_id ? '(unnamed)' : 'none')],
     [t`Shell ID`, process.shell_id || 'none'],
     ...(lineage
-      ? [[t`Caught by`, `${lineage.name ?? ''} · ${lineage.reason ?? ''} · ${Math.round((lineage.confidence ?? 0) * 100)}%`] as [string, string]]
+      ? [
+          [
+            t`Caught by`,
+            `${lineage.name ?? ''} · ${lineage.reason ?? ''} · ${Math.round((lineage.confidence ?? 0) * 100)}%`,
+          ] as [string, string],
+        ]
       : []),
     [t`Status`, process.status || 'unknown'],
     [t`CLI worker status`, process.workerStatus || 'idle'],
@@ -219,10 +246,11 @@ function SessionInfoBody({
 
   return (
     <>
-      <div className="border-b px-3 py-2">
+      <div className="flex items-center justify-between border-b px-3 py-2">
         <h4 className="text-xs font-semibold">
           <Trans>Harness Session Details</Trans>
         </h4>
+        <CopyDetailsButton value={`${sessionName || process.name || ''}:${process.session_id || ''}`} />
       </div>
       <div className="space-y-1 px-3 py-2">
         {rows.map(([label, value]) => (

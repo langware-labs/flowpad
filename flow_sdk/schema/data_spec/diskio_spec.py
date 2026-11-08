@@ -20,9 +20,11 @@ from typing import Any, Final, Literal
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: Bumped with ANY change to a ``diskio.*`` field list — a field added, removed,
-#: renamed or retyped. A Rust artefact exports the same number and ``kernel()``
-#: compares at selection time (§0 Selector).
-CONTRACT_VERSION: Final[int] = 1
+#: renamed or retyped — or to what one means (2: ``WalkPolicy.gitignore`` reads
+#: ``.flowignore`` too, and every ignore file is matched as git matches it). A Rust
+#: artefact exports the same number and ``kernel()`` compares at selection time
+#: (§0 Selector).
+CONTRACT_VERSION: Final[int] = 2
 
 # ── §0 — shared by every piece ────────────────────────────────────────────────
 
@@ -44,6 +46,7 @@ class StreamEnd(DataSpec):
 
 class WalkPolicy(DataSpec):
     spec_kind = "diskio.walk_policy"
+    #: Read the ignore files: ``.gitignore`` and ``.flowignore`` (every ``.flowignore`` above the root too).
     gitignore: bool
     #: None = every file; () = no files; else only names with one of these suffixes (case-insensitive).
     file_exts: tuple[str, ...] | None

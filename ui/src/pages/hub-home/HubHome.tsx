@@ -35,7 +35,6 @@ import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
 import { HubItemsSection } from './HubItemsSection';
 import { hubProjectAssetDock } from '@src/lib/hub-page-url';
 import { FirstAgentCard } from './first-agent/FirstAgentCard';
-import { SharedProjectsBanner, sharedProjectsToOpen } from './SharedProjectsBanner';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { Checkbox } from '@src/components/ui/checkbox';
@@ -60,7 +59,7 @@ import {
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { consumeInboundParams } from '@src/navigation/inbound-link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { isSignedInAsMe } from './signed-in-as-me';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
 
@@ -115,7 +114,8 @@ function fmtSize(cpu?: number, memMb?: number): string | null {
  * does not wake a paused machine to ask. Before this you could only learn whose
  * session a shared box was running by opening the share dialog.
  */
-function SandboxStatus({
+/** A machine's state the way the Machines card says it (also the shared-machine page). */
+export function SandboxStatus({
   info,
   now,
   launched = true,
@@ -346,7 +346,6 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
   // (dataContext.project), so the highlighted card and the footer always agree.
   const { project: currentProject } = useContext();
   const { projects } = useProjects({ priority: 'demand' });
-  const sharedProjects = useMemo(() => sharedProjectsToOpen(projects, currentUser?.id), [projects, currentUser?.id]);
   const {
     sandboxes,
     createSandbox,
@@ -497,9 +496,6 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
             {/* Once the first-agent wizard is started it stands alone on the page. */}
             {!wizardActive && (
               <>
-                {/* Projects other people gave you — the way from here to FlowPad. */}
-                <SharedProjectsBanner projects={sharedProjects} />
-
                 {/* Projects — the Vibe home's project strip, reused as-is (ProjectActionsRow). */}
                 <ProjectActionsRow className="w-full self-start" />
 
@@ -522,14 +518,14 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
             to appear. Above Sandboxes deliberately: a sandbox share is the
             invitation this page will mostly receive, and accepting one changes
             the list directly below it. Renders nothing when there are none. */}
-            <MembershipInvitations recipientEmail={currentUser?.email ?? null} onPendingCount={setPendingInviteCount} />
+            <MembershipInvitations show="pending" recipientEmail={currentUser?.email ?? null} onPendingCount={setPendingInviteCount} />
             {pendingInviteCount > 0 && (
               <p className="-mt-2 text-xs text-muted-foreground">
                 <Trans>Accepting adds it to your Sandboxes below.</Trans>
               </p>
             )}
 
-            {/* Machines — reached from the home page's Machines tab (HubItemsSection). */}
+            {/* Machines — the full screen behind a machine card's deep link; Home lists them in its Machines tab. */}
             <div className="flex flex-col gap-3">
               <h2 className="text-sm font-medium text-muted-foreground">
                 <Trans>Machines</Trans>

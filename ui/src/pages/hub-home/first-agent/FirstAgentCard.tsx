@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Agent,
@@ -69,7 +69,10 @@ const OPTIONS: Record<OnboardingChannel, Option[]> = {
 };
 
 /** The channels' names: the Channels screen's provider titles, plus email (no provider). */
-const CHANNEL_TITLE: Record<OnboardingChannel, string> = { email: 'Email', ...PROVIDER_TITLE } as Record<OnboardingChannel, string>;
+const CHANNEL_TITLE: Record<OnboardingChannel, string> = { email: 'Email', ...PROVIDER_TITLE } as Record<
+  OnboardingChannel,
+  string
+>;
 const SUPPORT_EMAIL = 'support@langware.ai';
 
 /** A channel's mark: its brand icon, or a mail glyph for email (no brand). */
@@ -101,8 +104,16 @@ type LiveMessage = {
   occurred_at?: string | null;
 };
 
-/** The hub home's first-agent card: pick a channel → say what it does → pick how it connects → its own sandbox + connect a channel → talk to it. */
-export function FirstAgentCard({ onActiveChange }: { onActiveChange?: (active: boolean) => void } = {}) {
+type CardProps = { onActiveChange?: (active: boolean) => void };
+
+/** The hub home's first-agent card. × closes the wizard by remounting it: nothing carries over. */
+export function FirstAgentCard({ onActiveChange }: CardProps = {}) {
+  const [run, setRun] = useState(0);
+  return <FirstAgentWizard key={run} onActiveChange={onActiveChange} onClose={() => setRun((n) => n + 1)} />;
+}
+
+/** Pick a channel → say what it does → pick how it connects → its own sandbox + connect a channel → talk to it. */
+function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: () => void }) {
   const { t } = useLingui();
   const [step, setStep] = useState<Step>('channel');
   useEffect(() => onActiveChange?.(step !== 'channel'), [step, onActiveChange]);
@@ -139,22 +150,6 @@ export function FirstAgentCard({ onActiveChange }: { onActiveChange?: (active: b
     return () => clearInterval(id);
   }, [started, step]);
 
-  // × closes the wizard: back to the channel tiles, nothing carried over.
-  const close = () => {
-    setStep('channel');
-    setPrompt('');
-    setOption(null);
-    setMade(null);
-    setDeployed(null);
-    setPhases({});
-    setStarted(0);
-    setError(null);
-    setClaim(null);
-    setPointed(false);
-    askedCode.current = false;
-    deploying.current = null;
-  };
-
   const mark = (name: string) => setPhases((p) => ({ ...p, [name]: Date.now() }));
   const secs = (at?: number) => (at && started ? `${((at - started) / 1000).toFixed(1)}s` : '');
 
@@ -170,7 +165,7 @@ export function FirstAgentCard({ onActiveChange }: { onActiveChange?: (active: b
       mark('saved');
       if (agent.mailbox?.address) mark('linked'); // the address exists the moment the agent does
       setStep('connect');
-      deploying.current = deployedMachine(agent.agent.id).then((d) => {
+      deploying.current = deployedMachine(agent.project.id, agent.agent.id).then((d) => {
         setDeployed(d);
         mark('sandbox');
         return d;
@@ -386,14 +381,11 @@ export function FirstAgentCard({ onActiveChange }: { onActiveChange?: (active: b
       linked();
     });
 
-  // Email: the agent behind the allowed-senders editor, and the list as the hub stored it.
-  const [mailAgent, setMailAgent] = useState<Agent | null>(null);
-  const [senders, setSenders] = useState<string[]>([]);
-  useEffect(() => {
-    if (channel !== 'email' || !made) return;
-    setSenders(made.mailbox?.allowed_senders ?? []);
-    void Agent.getById<Agent>(made.agent.id).then(setMailAgent);
-  }, [channel, made]);
+  // Email: the agent behind the allowed-senders editor (the hub made it; this page holds no row of it), and
+  // the list as the hub last stored it — seeded from the create answer, then each save's answer.
+  const mailAgent = useMemo(() => (made ? Agent.onHub({ ...made.agent }) : null), [made]);
+  const [saved, setSaved] = useState<string[] | null>(null);
+  const senders = saved ?? made?.mailbox?.allowed_senders ?? [];
 
   // Live: the channel's latest messages, read from the sandbox through the hub every few seconds. Held in this page
   // only — nothing here is stored.
@@ -476,7 +468,7 @@ export function FirstAgentCard({ onActiveChange }: { onActiveChange?: (active: b
               className="h-6 w-6"
               aria-label={t`Close`}
               title={t`Close`}
-              onClick={close}
+              onClick={onClose}
             >
               <X className="h-4 w-4" />
             </Button>
@@ -675,7 +667,7 @@ export function FirstAgentCard({ onActiveChange }: { onActiveChange?: (active: b
               <AllowedSendersEditor
                 agent={mailAgent}
                 allowedSenders={senders}
-                onSaved={(next) => setSenders(next)}
+                onSaved={(next) => setSaved(next)}
                 testId="first-agent-mailbox"
               />
               <p className="text-xs text-muted-foreground">

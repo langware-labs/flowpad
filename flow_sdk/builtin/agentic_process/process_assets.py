@@ -413,7 +413,9 @@ class ProcessAssets:
             directories = [*self.process.resolved_add_dirs]
             if self.process.workdir:
                 directories.insert(0, self.process.workdir)
-            if link_skills(self._process_assets_path(), directories):
+            # The launching agent's own skills (``agent_run``): the project's of the same name win.
+            own = (self.process.context_data or {}).get("agent_skills_dir")
+            if link_skills(self._process_assets_path(), directories, own=[own] if own else []):
                 self.ensure_process_assets()
         instructions = await self._prepare_system_instruction_assets()
         hook_runtime = ProcessHookRuntime()

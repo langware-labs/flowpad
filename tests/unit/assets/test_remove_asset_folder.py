@@ -48,3 +48,13 @@ def test_a_folder_that_is_not_the_assets_own_stays(tmp_path: Path):
     remove_asset_files(SOURCE, None)
 
     assert (other / "readme.md").is_file(), "only a folder holding the type's own main document is removed"
+
+
+def test_a_removed_skills_folder_goes(tmp_path: Path):
+    folder = tmp_path / "project" / ".claude" / "skills" / "triage"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("---\nname: triage\n---\n", encoding="utf-8")
+
+    remove_asset_files(EntityType.SKILL.value, str(folder))
+
+    assert not folder.exists()

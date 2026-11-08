@@ -65,10 +65,8 @@ Say who will be able to reach the agent, get an explicit go, then:
   stays blocked until every credential it needs is filled.
 - The command-line equivalent is `flow agent deploy <name> [--environment <env>]`;
   prefer the screen so the user sees the missing credentials.
-- Per-deployment differences go in `places` — the editor writes them when the user
-  changes a deployment's settings (`references/agent-json.md` → *Places*).
-- `email_place` picks the one deployment that answers the agent's email; without it,
-  every machine that polls the mailbox may answer.
+- A deployment places the agent's project with the agent as its main agent; per-deployment
+  differences are the deployment's own overrides, set in its settings — never agent.json.
 - A recurring job is *Schedule it* from `references/screens.md`.
 
 ## Show and test
