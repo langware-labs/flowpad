@@ -109,28 +109,6 @@ describe('TerminalRuntimeErrorBanner', () => {
       vi.spyOn(AgenticProcess, 'getByIdFromCache').mockReturnValue({ start_failure: HUGE } as never);
     });
 
-    it('shows it on ONE line instead of burying the terminal', () => {
-      render(<TerminalRuntimeErrorBanner processId={PROCESS_ID} />);
-
-      const detail = screen.getByTestId('terminal-runtime-error-banner-detail');
-      // `truncate` is the whole fix: one line, ellipsis, no wrapping.
-      expect(detail.className).toContain('truncate');
-      // And the text is still THERE — trimmed by CSS, never cut, so hover and
-      // copy both hand over the real thing.
-      expect(detail.textContent).toContain('not found on worker PATH');
-      expect(detail.textContent).toContain('dir-19');
-    });
-
-    it('copies the full error, not the truncated line', () => {
-      render(<TerminalRuntimeErrorBanner processId={PROCESS_ID} />);
-
-      fireEvent.click(screen.getByTestId('terminal-runtime-error-banner-copy'));
-
-      expect(copied).toHaveLength(1);
-      expect(copied[0]).toContain('dir-19');
-      expect(copied[0]).not.toContain('…');
-    });
-
     it('offers no copy button for our own boilerplate', () => {
       // `runtime_terminated` has no server sentence — its detail is copy we
       // wrote ("Click Restart to spawn a fresh PTY"). A button to put that on

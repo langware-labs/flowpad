@@ -62,6 +62,26 @@ function environment(h, env) {
     h('dl', { class: 'dg-env' }, ...rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, String(v))])));
 }
 
+function context(h, c) {
+  if (!c) return null;
+  const session = c.session;
+  const others = (c.other_sessions || []).map((s) => s.title || s.process).join(', ');
+  const rows = [
+    ['Screen', c.view],
+    ['Address', c.address],
+    ['Open', c.entity],
+    ['Session', session && `${session.title || session.process} (${session.status})`],
+    ['Hub login', c.hub_login],
+    ['Other sessions', others],
+  ].filter(([, v]) => v);
+  const turns = session?.turns || [];
+  if (!rows.length && !turns.length) return null;
+  return h('section', { class: 'dg-section', 'data-testid': 'diagnosis-viewer-context' },
+    h('h4', {}, 'Context'),
+    h('dl', { class: 'dg-env' }, ...rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, String(v))])),
+    ...turns.map((t) => h('div', { class: 'dg-text' }, `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)));
+}
+
 function problems(h, errors) {
   if (!errors?.length) return null;
   return h('section', { class: 'dg-section' },
@@ -103,6 +123,7 @@ const single = {
         prose(h, 'What to do', v.fix),
         findings(h, v.findings),
         problems(h, v.errors),
+        context(h, v.context),
         environment(h, v.environment),
         logs(h, v.logs)),
     );

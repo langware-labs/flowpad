@@ -102,3 +102,5 @@ class SetupNeedSpec(DataSpec):
     #: ``missing``, ``needs_reauth``, ``refused`` — why it is not there yet.
     state: str = ""
     detail: str = ""
+    #: What the sign-in lets the source do, in the driver's own words (its permission's ``why``).
+    why: str = ""

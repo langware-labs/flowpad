@@ -21,7 +21,7 @@ function harness({ stop, quitAndInstall } = {}) {
     failures: [],
   };
   h.applier = createRestartApplier({
-    uvManager: { stop: stop || (async () => { calls.push('stop'); }) },
+    uvManager: { stop: stop || (async () => { calls.push('stop'); }), cancelBackgroundWork: (why) => calls.push(`cancel-bg(${why})`) },
     autoUpdater: { quitAndInstall: quitAndInstall || ((s, f) => { calls.push(`quitAndInstall(${s},${f})`); }) },
     setQuitting: (v) => { h.quitting = v; calls.push(`quitting=${v}`); },
     hideWindow: () => calls.push('hide'),
@@ -38,7 +38,8 @@ function harness({ stop, quitAndInstall } = {}) {
   {
     const h = harness();
     eq(await h.applier.apply(), true, 'apply runs');
-    eq(h.calls, ['quitting=true', 'hide', 'notify', 'stop', 'quitAndInstall(true,true)'], 'order: flag, hide, tell the user, stop the backend, then quitAndInstall(silent, relaunch)');
+    eq(h.calls, ['quitting=true', 'hide', 'notify', 'cancel-bg(restart to install the update)', 'stop', 'quitAndInstall(true,true)'],
+      'order: flag, hide, tell the user, stop the background prepare/compile (the quit skips close()), stop the backend, then quitAndInstall(silent, relaunch)');
     eq(h.applier.busy, true, 'busy until the app actually quits');
   }
 
@@ -107,6 +108,24 @@ function harness({ stop, quitAndInstall } = {}) {
     });
     await a.apply();
     eq(calls, ['qai'], 'works without a backend manager');
+  }
+
+  // showInstalling: the window is never hidden — it says "installing" until the quit takes it; if the
+  // screen cannot be shown, hiding is the fallback. A failed install brings the window back as before.
+  for (const throws of [false, true]) {
+    const calls = [];
+    const a = createRestartApplier({
+      uvManager: { stop: async () => { calls.push('stop'); } },
+      autoUpdater: { quitAndInstall: () => calls.push('qai') },
+      setQuitting() {}, hideWindow: () => calls.push('hide'), showWindow: () => calls.push('show'),
+      showInstalling: async () => { calls.push('installing'); if (throws) throw new Error('window gone'); },
+      onFailure: () => calls.push('onFailure'), log: silentLog,
+    });
+    await a.apply();
+    eq(calls, throws ? ['installing', 'hide', 'stop', 'qai'] : ['installing', 'stop', 'qai'],
+      throws ? 'showInstalling failed → hidden, as before' : 'showInstalling: shown before the stop, never hidden');
+    a.failed(new Error('no installer'));
+    eq(calls.slice(-2), ['show', 'onFailure'], 'a failed install shows the window and tells the user');
   }
 
   console.log(`update-restart.test.js: ${passed} assertions passed`);

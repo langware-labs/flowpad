@@ -117,6 +117,10 @@ def _attachment_only_body(payload: dict) -> str:
             return "Sent you a prompt to run"
         if entity_type == "returned_value":
             return "Ran your prompt"
+        if entity_type == "message_form":
+            return "Sent you questions"
+        if entity_type == "form_answers":
+            return "Answered your questions"
         if entity_type and entity_type not in ("conversation", "flow_message"):
             return f"Sent you: {entity_type}"
     filename = (payload.get("attachment_filename") or "").strip()
@@ -512,6 +516,8 @@ class HubWsBridge:
                     await DiagnosisRequest.take_hub_update(eid, data)
             elif etype in MEMBERSHIP_MIRROR_TYPES:
                 await self._handle_membership_container_op(op, etype, eid, data)
+            elif etype == "compute_node":
+                await self._handle_shared_machine_op(op, eid, data)
             else:
                 logger.debug("hub_bridge: no handler for data_op_msg type=%s op=%s", etype, op)
         except Exception:
@@ -1163,6 +1169,23 @@ class HubWsBridge:
             return
         await handle_invitation_sync(local_user.typeid)
 
+    async def _handle_shared_machine_op(self, op: str, entity_id: str, data: dict) -> None:
+        """A machine someone shared with this user: the hub grants it at invite time and pushes the
+        row, so it is mirrored here as ``remote`` — the Machine page and the invite's Open read it.
+        A machine this box holds as its own (not ``remote``) is never touched by a push."""
+        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+        from flow_sdk.core.entity.entity_model import mirror_delete  # noqa: PLC0415
+
+        local = await ComputeNode.get_by_id(entity_id)
+        if local is not None and not getattr(local, "remote", False):
+            return
+        if op == "delete" or data.get("deleted_at"):
+            if local is not None:
+                with mirror_delete():  # the hub already deleted it
+                    await ComputeNode.delete_by_id(entity_id)
+            return
+        await ComputeNode.mirror_from_hub({**data, "id": entity_id}, None, notify=True)
+
     async def _handle_membership_container_op(
         self,
         op: str,
@@ -1271,28 +1294,14 @@ class HubWsBridge:
         """
         from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
-        existing = await Deployment.get_one({"id": deployment_id})
-        if op == "delete":
-            if existing is not None:
-                existing.remote = False  # the hub already deleted it: nothing to ask the hub
-                await existing.delete()
-            return
-
         payload = {**(data or {}), "id": deployment_id}
-        if existing is None:
-            await Deployment.adopt_from_hub(payload)
-            logger.info("[bridge] deployment op %s materialized %s", op, deployment_id)
-            return
-
-        # The sender receives its OWN op too, so check staleness before doing any
-        # work — an echo would otherwise re-save and re-broadcast every time.
-        if not Deployment.is_stale(existing, payload):
-            return
-        merged = Deployment.merge_hub_payload(existing, payload)
-        refreshed = Deployment(**merged)
-        refreshed.remote = True
-        await refreshed.save()
-        logger.info("[bridge] deployment op %s refreshed %s", op, deployment_id)
+        # A delete carries no row: the parent the list is under is the local copy's.
+        existing = await Deployment.get_one({"id": deployment_id}) if op == "delete" else None
+        if await Deployment.mirror_hub_row(payload, op):
+            logger.info("[bridge] deployment op %s mirrored %s", op, deployment_id)
+            parent = payload.get("parent_type_id") or getattr(existing, "parent_type_id", None)
+            if parent:
+                Deployment.announce_synced(str(parent))
 
     # ------------------------------------------------------------------
     # Outbound helpers — thin wrappers around send_request for callers that

@@ -326,6 +326,11 @@ interface DataOpMessage extends EntityMessage {
  */
 export const DATA_OP_REORDER_WINDOW = 4096;
 
+/** Close codes the hub/backend uses to say "don't just redial". */
+export const WS_CLOSE_AUTH = 1008; // credential refused: wait for one
+export const WS_CLOSE_INTERNAL = 1011; // server error: back off
+export const WS_CLOSE_REPLACED = 4001; // a newer socket with this id took over
+
 export class ConnectionManager extends EventEmitter {
   id = uuidv4();
   private static instance: ConnectionManager;
@@ -343,6 +348,11 @@ export class ConnectionManager extends EventEmitter {
   private baseReconnectDelay: number = 500; // ms
   private isReconnecting: boolean = false;
   private disposed: boolean = false;
+  // Refused for its credential (close 1008: missing/invalid token, origin,
+  // cookie gate). Redialing cannot change that answer, so the socket waits for
+  // a credential event (sign-in, the tab coming back, the network returning)
+  // and dials the moment one fires -- see `retryIfParked`.
+  private parkedOnAuth: boolean = false;
 
   // Local WS connection slot — same enum vocabulary as the cloud side
   // (narrower: no auth_rejected/verified since the local server is the
@@ -373,6 +383,28 @@ export class ConnectionManager extends EventEmitter {
   // instead of racing each other or seeing `undefined` during CONNECTING.
   private _openPromise: Promise<void> | null = null;
 
+  /**
+   * A credential may have appeared (sign-in, the tab regained focus, the
+   * network came back). A socket parked on an auth refusal dials now.
+   */
+  private onTabBack = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    this.retryIfParked();
+  };
+
+  /** A socket refused for a missing token waits for exactly this: a sign-in. */
+  private onLoginChanged = (login: { status: string }) => {
+    if (login.status === 'logged_in') this.retryIfParked();
+  };
+
+  public retryIfParked(): void {
+    if (this.disposed || !this.parkedOnAuth) return;
+    this.parkedOnAuth = false;
+    this.reconnectAttempts = 0;
+    this.reportLifecycle('ws_credentials_changed', {});
+    this.connect().catch(() => undefined);
+  }
+
   public resetReconnectState() {
     this.reconnectAttempts = 0;
     this.isReconnecting = false;
@@ -397,11 +429,30 @@ export class ConnectionManager extends EventEmitter {
 
     this.socket?.close(1000, 'connection manager disposed');
     this.removeAllListeners();
+    void import('./FlowSync/auth').then(({ authManager }) =>
+      authManager?.off('login_status_changed', this.onLoginChanged),
+    );
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', this.onTabBack);
+      window.removeEventListener('online', this.onTabBack);
+      document.removeEventListener('visibilitychange', this.onTabBack);
+    }
   }
 
   constructor() {
     super();
+    this.setMaxListeners(25); // one on_recovered listener per open terminal
     ConnectionManager.instance = this;
+    // Lazy: auth reaches APIEntity, which must not be in websocket's static import graph.
+    void import('./FlowSync/auth').then(({ authManager }) => {
+      // Undefined when this runs inside auth's own import cycle (the api test tier): no listener, no crash.
+      if (!this.disposed) authManager?.on('login_status_changed', this.onLoginChanged);
+    });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', this.onTabBack);
+      window.addEventListener('online', this.onTabBack);
+      document.addEventListener('visibilitychange', this.onTabBack);
+    }
   }
 
   public async connect(): Promise<void> {
@@ -468,7 +519,7 @@ export class ConnectionManager extends EventEmitter {
         } else {
           this.setConnectionStatus('disconnected');
         }
-        this.onClose(event);
+        this.onClose(event, didOpen);
         if (!didOpen) {
           reject_promise(new Error(`WebSocket closed before connecting (code: ${event.code})`));
         }
@@ -547,14 +598,30 @@ export class ConnectionManager extends EventEmitter {
     this.lastDataOpInstanceByEntity.clear();
     this.highestDataOpInstance = 0;
     this.reportLifecycle('ws_open', { attempts_used: this.reconnectAttempts });
-    // Reset reconnect attempts on successful connection
-    this.reconnectAttempts = 0;
+    // Attempts are NOT reset here: a server that accepts and then refuses (a
+    // close right after open) would otherwise redial in a hot loop. A socket
+    // that lived and then dropped resets them in onClose instead.
     this.emit('on_open');
     return event;
   }
 
-  onClose(event: CloseEvent) {
+  onClose(event: CloseEvent, didOpen: boolean) {
     this.emit('on_close');
+    if (event.code === WS_CLOSE_AUTH) {
+      // Refused for its credential: wait for one instead of spinning on the
+      // same refusal (prod 2026-11-03: a signed-out tab redialed every ~2s, 2,730x).
+      this.parkedOnAuth = true;
+      this.reportLifecycle('ws_close', { code: event.code, reason: event.reason || '', action: 'wait_for_credentials' });
+      return event;
+    }
+    if (event.code === WS_CLOSE_REPLACED) {
+      // A newer socket with this connection id took over; it IS this client.
+      this.reportLifecycle('ws_close', { code: event.code, reason: event.reason || '', action: 'replaced' });
+      return event;
+    }
+    // A socket that lived and then dropped is a normal drop: the next dial is
+    // immediate. One the server closed with an internal error keeps its count.
+    if (didOpen && event.code !== WS_CLOSE_INTERNAL) this.reconnectAttempts = 0;
     const willReconnect = !this.disposed && !this.isReconnecting;
     this.reportLifecycle('ws_close', {
       code: event.code,
@@ -594,9 +661,13 @@ export class ConnectionManager extends EventEmitter {
     this.isReconnecting = true;
     this.reconnectAttempts++;
 
+    // The first dial after a drop is immediate; only a dial that keeps FAILING
+    // (backend down, internal error) backs off.
     const delay =
-      Math.min(this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 10000) + // Max 10 seconds
-      Math.random() * 1000; // Add jitter
+      this.reconnectAttempts === 1
+        ? 0
+        : Math.min(this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 2), 10000) + // Max 10 seconds
+          Math.random() * 1000; // Add jitter
 
     console.log(`[ConnectionManager] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
     this.reportLifecycle('ws_reconnect_scheduled', { attempt: this.reconnectAttempts, delay_ms: Math.round(delay) });
@@ -609,7 +680,6 @@ export class ConnectionManager extends EventEmitter {
 
     try {
       await this.connect();
-      this.reconnectAttempts = 0;
       this.isReconnecting = false;
       this.emit('on_reconnected');
       console.log('[ConnectionManager] Reconnected successfully');

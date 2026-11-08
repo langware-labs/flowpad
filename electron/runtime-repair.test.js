@@ -10,7 +10,7 @@ const path = require('path');
 const {
   PYTHON_RUNTIME_MANIFEST, REQUIRED_IMPORTS, detectPolicyBlockInLog, policyBlockFromInstallError, isInterpreterModule, createPolicyBlockProbe,
   readRuntimeState, writeRuntimeState, runtimeStatePath, canAttemptRepair, recordAttempt, priorAttempt,
-  performRuntimeRepair, describeRuntimeBlock,
+  performRuntimeRepair, describeRuntimeBlock, OWNERSHIP_SENTINEL, ownershipSentinelText,
 } = require('./runtime-repair');
 
 let passed = 0;
@@ -392,6 +392,45 @@ function harness(overrides = {}) {
   ok(/gains reputation/.test(text), 'and explains the reputation window');
   const text2 = describeRuntimeBlock({ line: 'x', module: '_multiprocessing', file: null, traceback: '' }, { repairable: true, priorFailure: null });
   ok(/Click “Repair FlowPad”/.test(text2), 'an interpreter module still offers the repair');
+}
+
+{
+  // Ownership sentinel: the folders the repair created are marked, and the token is persisted
+  // right away — before the engine is touched — so the uninstaller can prove they are ours.
+  const DIRS = [path.basename(path.join('C:\\L\\Flowpad\\runtime', 'python-3.11.9')), path.basename('C:\\L\\Flowpad\\runtime\\downloads')];
+  const marked = [];
+  const h = harness({ markOwned: async (dirs, token) => { marked.push({ dirs: dirs.map((d) => path.basename(d)), token }); } });
+  await h.run({}, { newToken: () => 'tok-1' });
+  eq(marked, [{ dirs: DIRS, token: 'tok-1' }], 'both created folders are marked with one token');
+  eq(h.saved[0].runtimeOwnership, { token: 'tok-1', dirs: DIRS }, 'the token is saved before anything else can fail');
+  ok(h.saved.every((s) => s.runtimeOwnership && s.runtimeOwnership.token === 'tok-1'), 'and stays in every later save');
+  const markIdx = h.calls.indexOf('verify-sigs 2');
+  ok(markIdx >= 0 && h.calls.indexOf('validate python.exe 5') > markIdx, 'marking happens after the signature check, before the interpreter runs');
+}
+{
+  // A failure after extraction rolls the engine back but keeps the ownership token: the
+  // runtime folder is still on disk and must stay provably ours.
+  const h = harness({ markOwned: async () => {}, installEngine: async () => { throw new Error('uv exploded'); } });
+  await rejects(h.run({}, { newToken: () => 'tok-2' }), /reinstalling the engine failed/, 'install failure rejects');
+  const last = h.saved.at(-1);
+  ok(!last.python, 'the interpreter is forgotten after the rollback');
+  eq(last.runtimeOwnership && last.runtimeOwnership.token, 'tok-2', 'the ownership token survives the failure');
+}
+{
+  // A reused python.org install is not ours: never marked.
+  let markCalls = 0;
+  const h = harness({
+    existingPythonOrgInstall: async () => ({ python: 'C:\\Users\\n\\AppData\\Local\\Programs\\Python\\Python311\\python.exe' }),
+    markOwned: async () => { markCalls++; },
+  });
+  await h.run();
+  eq(markCalls, 0, 'a reused install is never marked');
+  ok(h.saved.every((s) => !s.runtimeOwnership), 'and no ownership token is recorded');
+}
+{
+  const parsed = JSON.parse(ownershipSentinelText('abc', '2026-10-29T00:00:00Z'));
+  eq(parsed, { owner: 'flowpad-desktop', token: 'abc', createdAt: '2026-10-29T00:00:00Z' }, 'sentinel content');
+  eq(OWNERSHIP_SENTINEL, '.flowpad-owned', 'sentinel file name (read by the uninstaller)');
 }
 
 console.log(`runtime-repair.test.js: ${passed} assertions passed`);

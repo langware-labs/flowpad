@@ -81,20 +81,27 @@ describe('activity bar', () => {
     expect(within(modal).getByText('1 failing · 2 passed')).toBeTruthy();
   });
 
-  it('keeps the receipt after the root ends, in the bar and the open modal, until dismissed', async () => {
+  it('keeps a clean receipt after the root ends, in the bar and the open modal, until dismissed', async () => {
     renderBar();
-    act(() => handleActivitySnapshot(qaTree()));
+    act(() => handleActivitySnapshot(activitySpec({ label: 'Indexing', done: 3, total: 9 })));
     await userEvent.click(screen.getByTestId('activity-status-line'));
 
-    act(() => handleActivitySnapshot(qaTree({ state: 'failed', message: '1 PASS · 1 RED', seq: 2 })));
+    act(() => handleActivitySnapshot(activitySpec({ label: 'Indexing', state: 'completed', message: 'all green', done: 9, total: 9, seq: 2 })));
 
-    expect(screen.getByTestId('activity-status-line').textContent).toBe('QA cycle — 1 PASS · 1 RED');
-    expect(screen.getByTestId('activity-status-pill').dataset.state).toBe('failed');
-    expect(screen.getByTestId('activity-details-summary').textContent).toContain('QA cycle — 1 PASS · 1 RED');
+    expect(screen.getByTestId('activity-status-pill').dataset.state).toBe('completed');
+    expect(screen.getByTestId('activity-details-summary').textContent).toContain('Indexing');
 
     act(() => useActivityDetailsStore.getState().setOpen(false));
     // fireEvent, not userEvent: see the body pointer-events note in beforeEach.
     fireEvent.click(screen.getByTestId('activity-status-dismiss'));
+    expect(screen.queryByTestId('activity-status-pill')).toBeNull();
+  });
+
+  it('a root that ends with errors leaves the bar: its errors go to the warnings list', () => {
+    renderBar();
+    act(() => handleActivitySnapshot(qaTree()));
+    act(() => handleActivitySnapshot(qaTree({ state: 'failed', message: '1 PASS · 1 RED', seq: 2 })));
+
     expect(screen.queryByTestId('activity-status-pill')).toBeNull();
   });
 

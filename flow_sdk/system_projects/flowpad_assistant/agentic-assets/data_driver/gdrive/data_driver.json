@@ -7,6 +7,7 @@
   "kind": "datasource.fs.gdrive",
   "auth": {
     "connector": "google",
+    "group": "drive",
     "scopes": [
       "https://www.googleapis.com/auth/drive.readonly"
     ]

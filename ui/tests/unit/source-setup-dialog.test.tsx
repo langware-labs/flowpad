@@ -16,7 +16,7 @@ vi.mock('@src/components/ask/AskForm', () => ({
   AskForm: ({ questionId }: { questionId: string }) => <div data-testid="ask-form">{questionId}</div>,
 }));
 
-import { SourceSetupDialog } from '@src/components/setup-wizard/SourceSetupDialog';
+import { SourceSetupDialog, pendingConnection } from '@src/components/setup-wizard/SourceSetupDialog';
 import { SETUP_POLL_MS } from '@src/components/project-setup/use-setup-run';
 
 const tree = (state: 'done' | 'failed' | 'running', detail = ''): SetupTreeResult => ({
@@ -124,5 +124,25 @@ describe('SourceSetupDialog', () => {
     await act(() => vi.advanceTimersByTimeAsync(0));
     expect(screen.getByTestId('source-setup-refused').textContent).toBe('This source belongs to no project.');
     expect(screen.getByTestId('source-setup-retry')).toBeTruthy();
+  });
+});
+
+describe('pendingConnection', () => {
+  const signInTree: SetupTreeResult = {
+    ...tree('failed'),
+    root: { ...tree('failed').root!, children: [
+      { id: 'connection:google', label: 'Google sign-in', level: 1, state: 'failed', detail: '', prepare: null, run: null, children: [], shared: false },
+    ] },
+  };
+
+  it('carries what the driver says the sign-in is for', () => {
+    const needs = [{ kind: 'connection', name: 'google', title: 'Google', why: 'List and read the files of the configured folder.' }];
+    expect(pendingConnection(signInTree, needs)).toEqual({
+      provider: 'google', title: 'Google', why: 'List and read the files of the configured folder.',
+    });
+  });
+
+  it('has no reason when the driver gives none', () => {
+    expect(pendingConnection(signInTree, [])?.why).toBe('');
   });
 });

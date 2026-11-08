@@ -59,15 +59,14 @@ def test_spawn_args_support_session_id_resume_model_effort_and_add_dirs():
 
 
 @pytest.mark.parametrize("tier", ["sm", "md", "lg"])
-def test_native_model_tier_persists_raw_and_delegates_to_copilot_auto(tier):
+def test_native_model_tier_persists_raw_and_requires_mapping(tier):
     cmd = CopilotAgentOptions(model=tier, workdir="/repo")
 
     assert cmd.model == tier
     assert cmd.to_json()["model"] == tier
 
-    argv, _env = cmd.to_spawn_args()
-    assert "--model" not in argv
-    assert "--model" not in cmd.to_shell_string()
+    with pytest.raises(ValueError, match="has no mapping"):
+        cmd.to_spawn_args()
 
 
 def test_explicit_auto_model_passes_through():

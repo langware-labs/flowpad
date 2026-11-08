@@ -54,9 +54,11 @@ class HubAgentMailboxDriver:
         body = {k: v for k, v in options.items() if v}
         return await self._post(agent_id, "provision", body)
 
-    async def enable_mailbox(self, agent_id: str) -> dict:
-        """Provision or reactivate the agent's existing Hub allocation."""
-        return await self._post(agent_id, "enable", {})
+    async def enable_mailbox(self, agent_id: str, **options: Any) -> dict:
+        """Provision or reactivate the agent's existing Hub allocation. ``options`` (``username``,
+        ``display_name``) name a NEW mailbox; an existing one keeps its address."""
+        body = {k: v for k, v in options.items() if v}
+        return await self._post(agent_id, "enable", body)
 
     async def disable_mailbox(self, agent_id: str) -> dict:
         """Pause the Hub allocation without deleting the provider mailbox."""
@@ -75,6 +77,17 @@ class HubAgentMailboxDriver:
         """
         data = await self._get(agent_id, None)
         return (data or {}).get("mailbox") or None
+
+    async def offered(self, agent_id: str = "") -> bool:
+        """Whether the hub gives agents a mailbox at all — a fact about the hub, asked with no agent (an agent
+        not yet on the hub cannot read its own mailbox). A hub too old to answer is taken at its word later."""
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+        try:
+            data = await HubProxy.call("GET", BuiltinEntityType.AGENT, None, "mailbox_offer", quiet=True)
+        except HubError:
+            return True
+        return bool((data or {}).get("offered", True))
 
     async def delete_mailbox(self, agent_id: str) -> bool:
         """Release the address.

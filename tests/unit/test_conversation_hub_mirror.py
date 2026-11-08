@@ -38,6 +38,7 @@ async def test_a_hub_ticket_row_lands_whole():
             "status": "closed",
             "initiated_by": "requester-1",
             "picked_up_by": ["staff-1"],
+            "staffed": True,
             "members": [{"user_id": "staff-1", "user_email": "Staff@Desk.test", "role": "member"}],
             "archived_at": None,
             "updated_date": "2030-01-01T00:00:00Z",
@@ -48,6 +49,7 @@ async def test_a_hub_ticket_row_lands_whole():
     assert row.kind == ConversationKind.HELPDESK and row.status == "closed"
     assert row.initiated_by == "requester-1"
     assert row.picked_up_by == ["staff-1"]
+    assert row.staffed is True
     assert row.members[0]["email"] == "staff@desk.test"
     assert row.archived_at == archived
     assert row.updated_date is None or row.updated_date.year != 2030

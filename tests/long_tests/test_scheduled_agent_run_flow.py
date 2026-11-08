@@ -94,9 +94,11 @@ async def test_a_schedule_one_second_ahead_runs_the_agent_headlessly(tmp_path: P
         prompt = "Reply with the single word: scheduled"
 
         # ── the places: this computer first ─────────────────────────────────
-        # Listing places never creates one: this computer becomes a place once
-        # the agent is launched here — the UI's "New deployment → This computer".
-        await _data(client, "POST", f"/api/v1/graph/agent/{agent_id}/deploy", json={"provider": "local"})
+        # Listing places never creates one: this computer becomes a place once the
+        # project is deployed here with the agent as main — "New deployment → This computer".
+        await _data(client, "POST", f"/api/v1/graph/project/{project['id']}/deploy", json={
+            "provider": "local", "main_agent_id": f"agent-{agent_id}",
+        })
         places = await _data(client, "GET", f"/api/v1/graph/agent/{agent_id}/places")
         assert places and places[0]["is_local"] is True, places
         here_id = places[0]["deployment"]["id"]
@@ -178,7 +180,8 @@ async def test_a_schedule_one_second_ahead_runs_the_agent_headlessly(tmp_path: P
         cloud = await _data(client, "POST", "/api/v1/graph/deployment", json={
             "type": "deployment",
             "name": f"{agent_name} (e2b)",
-            "parent_type_id": f"agent-{agent_id}",
+            "parent_type_id": f"project-{project['id']}",
+            "main_agent_id": f"agent-{agent_id}",
             "target": {"provider": "e2b", "scope": "machine", "location": "sandbox"},
             "origin": {"kind": "e2b", "provider": "e2b", "external_id": f"compute_node-{uuid.uuid4()}"},
             "status": {"sync_state": "current"},

@@ -83,12 +83,30 @@ async def _ack(webhook_id: str, delivery_id: str, status: int) -> None:
         logger.warning("[webhook-relay] ack of %s refused: %s", delivery_id, exc)
 
 
+#: The signed-in principal the hub refused ``catch_up`` to (403). A box signed in as an agent holds no
+#: desktop webhooks, and its socket reconnects all day: asking again on each one was ~450 refusals a day
+#: per box. Keyed by principal, so a different sign-in asks again.
+_refused_for: str | None = None
+
+
+def _principal() -> str:
+    from flow_sdk.cli import app_config  # noqa: PLC0415
+
+    return str((app_config.get_user() or {}).get("id") or "")
+
+
 async def catch_up() -> None:
     """This desktop (re)connected to the hub: ask it to push what waited while it was away."""
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
+    global _refused_for
+    principal = _principal()
+    if _refused_for is not None and _refused_for == principal:
+        return
     try:
         await HubProxy.call("POST", "webhook", None, "catch_up", payload={})
     except HubError as exc:
+        if exc.status_code == 403:
+            _refused_for = principal
         logger.debug("[webhook-relay] catch-up refused: %s", exc)

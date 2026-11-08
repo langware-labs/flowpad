@@ -342,8 +342,18 @@ export class TabManager {
 
   activate(tabId: string): Promise<void> {
     this.stampRecencyLocally(tabId);
-    return this.gateway.activateById(tabId);
+    // One navigation activates its tab twice (the warm open and the loader's recency stamp):
+    // a second activate of a tab already being activated joins that request.
+    const open = this.activating.get(tabId);
+    if (open) return open;
+    const request = this.gateway.activateById(tabId).finally(() => {
+      if (this.activating.get(tabId) === request) this.activating.delete(tabId);
+    });
+    this.activating.set(tabId, request);
+    return request;
   }
+
+  private readonly activating = new Map<string, Promise<void>>();
 
   /**
    * `activate` broadcasts no `tabs_changed`, so the snapshot would keep the old

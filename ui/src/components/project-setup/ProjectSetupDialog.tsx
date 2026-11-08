@@ -72,18 +72,22 @@ export function pointerForRequirement(req: ProjectSetupRequirement, projectId: s
   }
   if (req.kind === 'webapp' && req.typeid) return DockPointer.forAppEntity(new TypeId(req.typeid));
   if (req.kind === 'dependency') return DockPointer.forProject(projectId);
+  if (req.kind === 'automation' && req.typeid) {
+    return DockPointer.forAutomations({ place: 'list', trigger: new TypeId(req.typeid).id });
+  }
   return null;
 }
 
 /** A dependency, source or web app goes by its own name (its title is where it comes from); a credential by its title. */
 export const namesItself = (req: ProjectSetupRequirement) =>
-  req.kind === 'dependency' || req.kind === 'source' || req.kind === 'webapp';
+  req.kind === 'dependency' || req.kind === 'source' || req.kind === 'webapp' || req.kind === 'automation';
 
 /**
  * What a row says beside its name: why it is not ready, else what the credential is needed for, else what is
  * missing — an either-or group of values as "A or B".
  */
 export function detailOf(req: ProjectSetupRequirement, or: string): string {
+  if (req.kind === 'automation') return req.note || req.needed_for || '';
   if (namesItself(req)) return req.note || req.title;
   if (req.credential_kind === 'oauth') return req.note || req.needed_for || `connect ${req.title || req.name}`;
   return (
@@ -159,6 +163,7 @@ export function ProjectSetupDialog({
     load,
     skip: skipRows,
     unskip: unskipRow,
+    decide,
     checking,
   } = useSetupReadiness(projectId, {
     enabled: open,
@@ -238,6 +243,10 @@ export function ProjectSetupDialog({
   const questionId = setup.questionId;
 
   // What can be selected is what can be skipped: a row still to do — a run going too (the run skips it live).
+  // An automation is a choice, not setup work: it has its own section and nothing for Start to run.
+  const isChoice = (req: ProjectSetupRequirement) => req.kind === 'automation';
+  const toRun = (readiness?.to_do ?? []).filter((req) => !isChoice(req));
+  const toDecide = (readiness?.to_do ?? []).filter(isChoice);
   const selectedReqs = [...(readiness?.to_do ?? []), ...(readiness?.optional ?? [])].filter((req) =>
     selected.has(rowKey(req)),
   );
@@ -255,8 +264,9 @@ export function ProjectSetupDialog({
         running={running}
         busy={busy.has(k)}
         selected={selected.has(k)}
-        onSelect={skipped ? undefined : (on) => select(req, on)}
-        onSkip={selecting ? undefined : () => setSkipping(k)}
+        onSelect={skipped || isChoice(req) ? undefined : (on) => select(req, on)}
+        onSkip={selecting || isChoice(req) ? undefined : () => setSkipping(k)}
+        onDecide={isChoice(req) ? (on) => void decide(req, on) : undefined}
         skipChoice={
           skipping === k ? (
             <SkipChoice
@@ -329,9 +339,18 @@ export function ProjectSetupDialog({
             <Trans>Everything required is set up.</Trans>
           </p>
         ) : (
-          <Section title={t`Required`} testId="project-setup-requirements">
-            {(readiness?.to_do ?? []).map((req) => row(req))}
-          </Section>
+          <>
+            {!!toRun.length && (
+              <Section title={t`Required`} testId="project-setup-requirements">
+                {toRun.map((req) => row(req))}
+              </Section>
+            )}
+            {!!toDecide.length && (
+              <Section title={t`Recommended automations`} testId="project-setup-automations">
+                {toDecide.map((req) => row(req))}
+              </Section>
+            )}
+          </>
         )}
 
         {!!readiness?.optional?.length && (
@@ -365,7 +384,7 @@ export function ProjectSetupDialog({
           <SetupStatusLine
             tree={setup.tree}
             running={running}
-            canStart={!readiness.ready}
+            canStart={toRun.length > 0}
             onStart={() => void start()}
             onStop={setup.stop && (() => void stop())}
           />
@@ -631,6 +650,7 @@ function RequirementRow({
   onUndo,
   onOpen,
   onExplain,
+  onDecide,
 }: {
   req: ProjectSetupRequirement;
   skipped?: boolean;
@@ -644,6 +664,8 @@ function RequirementRow({
   onUndo?: () => void;
   onOpen: () => void;
   onExplain?: (button: HTMLElement) => void;
+  /** An automation the project recommends: Enable / Disable it on this machine, in place of Skip. */
+  onDecide?: (on: boolean) => void;
 }) {
   const { t } = useLingui();
   const Icon = iconOf(req);
@@ -689,7 +711,7 @@ function RequirementRow({
             className="rounded-full border px-2 text-xs text-muted-foreground"
             data-testid={`project-setup-chip-${rowId}`}
           >
-            {req.required ? t`Required` : t`Optional`}
+            {req.kind === 'automation' ? t`Recommended` : req.required ? t`Required` : t`Optional`}
           </span>
         )}
         <div className="flex-1" />
@@ -720,6 +742,27 @@ function RequirementRow({
             <Undo2 className="size-3" />
             <Trans>Undo</Trans>
           </Button>
+        )}
+        {!running && !busy && onDecide && (
+          <>
+            <Button
+              size="sm"
+              className="h-6 px-2 text-xs"
+              data-testid={`project-setup-enable-${rowId}`}
+              onClick={own(() => onDecide(true))}
+            >
+              <Trans>Enable</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              data-testid={`project-setup-disable-${rowId}`}
+              onClick={own(() => onDecide(false))}
+            >
+              <Trans>Disable</Trans>
+            </Button>
+          </>
         )}
         {!busy && !skipped && !skipChoice && onSkip && (
           <Button

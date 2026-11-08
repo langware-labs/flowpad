@@ -116,7 +116,7 @@ def test_the_neighbours_hand_agents_over():
 
 def test_the_literal_agent_json_blocks_are_valid_agent_specs():
     blocks = _json_blocks(_read(SKILL_DIR / "references/agent-json.md"))
-    assert len(blocks) >= 3, "agent-json.md lost its minimal, shapes or places example"
+    assert len(blocks) >= 2, "agent-json.md lost its minimal or shapes example"
     for block in blocks:
         AgentSpec.model_validate(block)
 

@@ -80,7 +80,7 @@ class VoicePhoneSource(VoiceChannel):
         try:
             self.api_key()
         except AccessDenied as exc:
-            return Verdict(ready=False, detail=str(exc))
+            return Verdict(ready=False, detail=exc.message)
         missing = [n for n in ("OPENAI_WEBHOOK_SECRET", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN") if not self.secret(n)]
         if missing:
             return Verdict(ready=False, detail=f"Set {', '.join(missing)} — the line cannot run without them.")

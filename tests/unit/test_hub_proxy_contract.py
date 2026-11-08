@@ -113,6 +113,13 @@ async def test_a_transport_failure_is_offline_and_reported_as_status_0(hub, monk
     assert e.value.kind is HubFailureKind.OFFLINE and e.value.http_status == 502
     assert [r["status_code"] for r in reports] == [0]
 
+    # A quiet call still fails offline, but a dropped DNS lookup on a best-effort watch is not a
+    # warning the person can act on (Ami, 2026-11-07: "Cloud Request Failed ... /watch 0: [Errno 8]").
+    with pytest.raises(HubError) as e:
+        await HubProxy.call("POST", "project", TASK_ID, "watch", payload={}, quiet=True)
+    assert e.value.kind is HubFailureKind.OFFLINE
+    assert len(reports) == 1, "the quiet call added no report"
+
 
 async def test_download_streams_with_progress(hub):
     body = b"x" * (600 * 1024)

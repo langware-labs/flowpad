@@ -57,6 +57,15 @@ export function isAlertLevel(level: NotificationLevel): boolean {
   return level === 'warning' || level === 'error';
 }
 
+/** The toasts `ingest.ts` raises for a refused hub request (not the outage/sign-in states). */
+const HUB_BROADCAST_IDS = ['cloud-request-rejected', 'cloud-access-denied', 'cloud-not-found'];
+
+/** True for a backend answer built from a hub failure (`HubError.envelope_data` stamps `hub_failure`). */
+function carriesHubFailure(error: unknown): boolean {
+  const data = (error as { response?: { data?: { data?: { hub_failure?: unknown } } } } | null)?.response?.data?.data;
+  return typeof data?.hub_failure === 'string';
+}
+
 function dispatch(input: NotificationInput): string {
   const id = input.id ?? `${input.level}:${djb2(input.title)}`;
   const { error, ...rest } = input;
@@ -76,6 +85,12 @@ function dispatch(input: NotificationInput): string {
     count: (prev?.count ?? 1) + (prev ? 1 : 0),
     timestamp: now,
   };
+
+  // A caller explaining a failed hub call in its own words replaces the hub's generic broadcast for
+  // that same call ("Cloud request rejected"): one failure, one toast. The broadcast stays in the log.
+  if (isAlertLevel(input.level) && carriesHubFailure(error)) {
+    for (const broadcast of HUB_BROADCAST_IDS) closeShown(broadcast);
+  }
 
   // Persistent badge → sidebar feed; not a toast.
   if (data.category) {

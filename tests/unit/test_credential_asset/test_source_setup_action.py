@@ -67,3 +67,56 @@ async def test_a_source_no_project_holds_has_no_setup_to_run(home, started):
     assert started == []
     assert (answer.status_code, answer.message) == (409, NO_SETUP_PROJECT)
     assert (await source.setup_run_action()).data == {"run": "", "running": False, "tree": None}
+
+
+async def test_a_source_created_from_the_cli_belongs_to_the_open_project_and_can_be_set_up(
+    home, project, started, monkeypatch, tmp_path
+):
+    """``flow source create`` outside any project folder used to land the source in the user scope, so its
+    Set up answered NO_SETUP_PROJECT. It now scopes the source the way the app does: to the project open
+    there (the last active one), through the same ``project/<id>/data_source`` route."""
+    import asyncio
+    import time
+
+    from typer.testing import CliRunner
+
+    from flow_sdk.cli import flow_cli
+    from flow_sdk.cli.commands import _common, source_cmd
+    from tests.unit._graph_client import call_local
+
+    project.last_active_at = int(time.time() * 1000)
+    await project.save()
+    loop = asyncio.get_running_loop()
+
+    def over_http(method):
+        def send(url, payload=None, *, params=None, on_error, **_):
+            path = url.split("/api/v1/graph/", 1)[1]
+            resp = asyncio.run_coroutine_threadsafe(call_local(method, path, json=payload, params=params), loop).result()
+            body = resp.json()
+            if resp.status_code >= 400:
+                on_error(resp.status_code, body)
+            return body.get("data")
+
+        return send
+
+    get, post = over_http("GET"), over_http("POST")
+    monkeypatch.setattr(_common, "get_graph_json", lambda url, *, params=None, on_error: get(url, params=params, on_error=on_error))
+    monkeypatch.setattr(_common, "post_graph_json", lambda url, payload=None, *, on_error, **kw: post(url, payload, on_error=on_error))
+    monkeypatch.setattr(source_cmd, "post_graph_json", lambda url, payload=None, *, on_error, **kw: post(url, payload, on_error=on_error))
+    monkeypatch.setattr(source_cmd, "discover_port", lambda required=True: 1)
+    monkeypatch.chdir(tmp_path)  # no project folder here
+
+    result = await asyncio.to_thread(
+        CliRunner().invoke,
+        flow_cli.app,
+        ["source", "create", _Mailbox.provider, "--name", "Acme support", "--config", "address=me@x.test"],
+    )
+    assert result.exit_code == 0, result.output
+
+    import json
+
+    source = await DataSource.get_by_id(json.loads(result.stdout)["source"]["id"])
+    assert str((await source.setup_project()).id) == str(project.id)
+    answer = await source.setup_action()
+    assert started == [(str(project.id), str(source.typeid))]
+    assert answer.data == {"run": project_setup.setup_run_address(str(project.id), str(source.typeid))}

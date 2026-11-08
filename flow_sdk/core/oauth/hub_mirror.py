@@ -12,13 +12,15 @@ class HubMirrorUnavailable(RuntimeError):
     """An adopted credential cannot be resolved; do not change principals."""
 
 
-def hub_mirror(token: str, credential_name: str) -> dict[str, Any]:
-    """Bind a local copy to the cloud account and server that issued it."""
+def hub_mirror(token: str, credential_name: str, scopes: "list[str] | None" = None) -> dict[str, Any]:
+    """Bind a local copy to the cloud account and server that issued it. ``scopes``: what the
+    provider GRANTED it, as the hub recorded — kept so a use can check it covers what it needs."""
     user_id = _cloud_user_id()
     if not user_id:
         raise RuntimeError("Cannot mirror an OAuth token without a cloud account")
     return {
         "access_token": token,
+        **({"scopes": list(scopes)} if scopes else {}),
         _MARKER: {
             "credential_name": credential_name,
             "user_id": user_id,

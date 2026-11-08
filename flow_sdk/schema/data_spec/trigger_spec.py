@@ -234,7 +234,20 @@ class TriggerSpec(DataSpec):
 
     name: str = ""
     description: str = ""
-    enabled: bool = True
+    #: The project's ADVICE, never the switch: on/off is each machine's own (the row's ``enabled``,
+    #: written by ``set_trigger_on``) and never read from or written to this file. A recommended rule
+    #: that arrived with a project is offered in the project's setup; ``false`` lists it, off, under
+    #: Automations only. A file written before this field said ``enabled`` — read as this.
+    recommended: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_enabled(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "enabled" in data:
+            data = dict(data)
+            legacy = data.pop("enabled")
+            data.setdefault("recommended", bool(legacy))
+        return data
 
     # ── firing policy: general, not per-kind ────────────────────────────────
     #: Fire at most once per machine, EVER. The ROW's durable counter is the

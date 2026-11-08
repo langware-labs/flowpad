@@ -103,6 +103,39 @@ async def test_the_hub_listing_forces_the_hub_kind_whatever_the_hub_sent(env, mo
     assert [e.kind for e in endpoints] == [LLMEndpointKind.HUB]
 
 
+
+async def test_concurrent_listings_share_one_pair_of_hub_reads(env, monkeypatch):
+    """A WS drop fires several listings at once; they must cost the hub one pair of reads, not one each."""
+    import asyncio
+
+    from flow_sdk.cli.app_config import set_user
+    from flow_sdk.cli.auth.hub_login import set_api_key
+    from flow_sdk.instance_settings import llm_endpoint as settings
+
+    set_api_key("fp-hub-key")
+    set_user({"id": "99999999-2222-4333-8444-555555555555", "email": "box@local.test"})
+    calls: list[str | None] = []
+    gate = asyncio.Event()
+
+    async def _fake_get(_method, _type, action=None, **_kw):
+        calls.append(action)
+        await gate.wait()
+        return {"data": [{"id": "11111111-2222-4333-8444-555555555555", "name": "b"}]} if action is None else []
+
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_fake_get))
+    settings.reset_cache()
+    reads = [asyncio.ensure_future(settings.fetch_hub_llm_endpoints()) for _ in range(3)]
+    await asyncio.sleep(0)
+    gate.set()
+    answers = await asyncio.gather(*reads)
+    assert calls == [None, "catalog"]
+    assert all(len(a) == 1 for a in answers)
+
+    # A change invalidates: the next read goes out again rather than answering from before it.
+    settings.invalidate_endpoint_listing()
+    await settings.fetch_hub_llm_endpoints()
+    assert calls == [None, "catalog", None, "catalog"]
+
 # ── credentials ──────────────────────────────────────────────────────────────
 
 

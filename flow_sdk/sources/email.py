@@ -23,11 +23,18 @@ class EmailAddressing:
             # The reply keeps its subject (``Re: <the answered subject>``): the sent copy is recorded
             # with it, and a provider that does not derive one itself sends it.
             return EmailMessageData(text=text, subject=subject or None), self.origin(answered)  # type: ignore[attr-defined]
-        address = str(to or "").strip()
-        if not address:
+        recipients = self.people(to)
+        if not recipients:
             raise ValueError(f"a {self.provider} send needs a recipient address in `to`")  # type: ignore[attr-defined]
-        recipient = UserProfile(origin=self.origin(address), address=address)  # type: ignore[attr-defined]
-        return EmailMessageData(text=text, subject=subject or None, recipients=(recipient,)), None
+        return EmailMessageData(text=text, subject=subject or None, recipients=recipients), None
+
+    def people(self, addresses: str) -> tuple[UserProfile, ...]:
+        """A comma-separated address line as recipients (the To or Cc line)."""
+        return tuple(
+            UserProfile(origin=self.origin(a), address=a)  # type: ignore[attr-defined]
+            for a in (x.strip() for x in str(addresses or "").split(","))
+            if a
+        )
 
 
 __all__ = ["EmailAddressing"]

@@ -71,3 +71,23 @@ describe('TabManager.stampTargetRecency', () => {
     expect(tabManager.getSnapshot()).toEqual([]);
   });
 });
+
+describe('TabManager.activate', () => {
+  // Perf hunt 2026-11-07 (B2): one navigation activated its tab twice — the warm open and the
+  // loader's recency stamp — two POSTs per switch. A second activate in flight joins the first.
+  it('joins an activate of the same tab that is still in flight', async () => {
+    tabManager.adoptGlobal([shellTabRow()]);
+    let settle!: () => void;
+    const activate = vi
+      .spyOn(Tab, 'activateById')
+      .mockImplementation(() => new Promise<never>((resolve) => (settle = resolve as () => void)));
+    const first = tabManager.activate(TAB_ID);
+    tabManager.stampTargetRecency('shell', SHELL_ID);
+    await Promise.resolve();
+    expect(activate).toHaveBeenCalledTimes(1);
+    settle();
+    await first;
+    void tabManager.activate(TAB_ID);
+    expect(activate).toHaveBeenCalledTimes(2);
+  });
+});

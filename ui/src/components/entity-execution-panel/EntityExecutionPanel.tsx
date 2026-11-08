@@ -466,7 +466,7 @@ export function EntityExecutionPanel({
   );
   // The Agent this process runs AS — signs its assistant turns. Cache-first,
   // live (a rename / new avatar repaints); null for a plain session.
-  const launchingAgent = useLaunchingAgent(activeProcess?.deployment_id);
+  const launchingAgent = useLaunchingAgent(activeProcess);
 
   // Hydrate history on first resolution. Per AgenticProcess.loadHistory, safe to
   // call repeatedly — internally guarded by `_historyLoaded`.
@@ -1072,12 +1072,12 @@ export function EntityExecutionPanel({
         title={pendingDelete?.kind === 'all' ? t`Clear all past chats?` : t`Delete this chat?`}
         description={
           pendingDelete?.kind === 'all'
-            ? `This will permanently delete ${pendingDelete.count} chat session${pendingDelete.count === 1 ? '' : 's'} for this surface. The conversation transcripts saved on disk are kept; only the process records are removed. This cannot be undone.`
+            ? t`${pendingDelete.count} chats — their transcripts stay on disk.`
             : pendingDelete?.kind === 'one'
-              ? `This will permanently delete "${pendingDelete.title}". The conversation transcript saved on disk is kept; only the process record is removed. This cannot be undone.`
+              ? t`"${pendingDelete.title}" — its transcript stays on disk.`
               : ''
         }
-        confirmLabel={pendingDelete?.kind === 'all' ? t`Delete all` : t`Delete`}
+        confirmLabel={pendingDelete?.kind === 'all' ? t`Delete all` : t`Delete chat`}
         onConfirm={() => {
           void performDelete();
         }}
@@ -1229,10 +1229,10 @@ function ExecutionHistoryHeader({
                         onDeleteSession(p.id, title);
                       }}
                       className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-data-[active=true]:opacity-60"
-                      title={t`Delete this chat`}
+                      title={t`Delete chat`}
                       data-testid={`entity-execution-history-delete-${p.id}`}
                     >
-                      <X className="h-3 w-3" />
+                      <Trash2 className="h-3 w-3" />
                     </button>
                   )}
                 </div>

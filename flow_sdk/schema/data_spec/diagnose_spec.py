@@ -36,6 +36,20 @@ class DiagnosisStatus(StrEnum):
     PARTIAL = "partial"
 
 
+class DiagnosisCause(StrEnum):
+    """Whose problem it is -- decides whether a report is offered, and to whom."""
+
+    FLOWPAD = "flowpad"  # Flowpad itself
+    DEPENDENCY = "dependency"  # an external asset: a flow.json dependency, a package, a library
+    PROJECT = "project"  # the person's own project files
+    MACHINE = "machine"  # this computer: a port taken by another app, a full disk
+    UNKNOWN = "unknown"  # could not tell
+
+
+#: Causes a report is offered for: someone else owns the fix.
+REPORTABLE_CAUSES = frozenset({DiagnosisCause.FLOWPAD, DiagnosisCause.DEPENDENCY, DiagnosisCause.UNKNOWN})
+
+
 class DiagnoseSpec(DataSpec):
     """``diagnose.json`` -- a diagnose: which module to call and how long it may take."""
 
@@ -49,6 +63,28 @@ class DiagnoseSpec(DataSpec):
     #: How long ``diagnose(ctx)`` may run before the baseline is answered instead. It runs in the
     #: background, so the default is generous.
     timeout_s: float = Field(default=300, gt=0)
+
+
+class SessionTurn(DataSpec):
+    """One thing said in a session, cut short and redacted."""
+
+    spec_kind: ClassVar[str] = "diagnosis.session_turn"
+
+    role: str  # user | assistant
+    text: str
+
+
+class SessionState(DataSpec):
+    """A session as it stood when the diagnosis was taken. Only the session on screen carries turns."""
+
+    spec_kind: ClassVar[str] = "diagnosis.session"
+
+    #: The agentic process (a TypeId).
+    process: str
+    title: str = ""
+    status: str = ""
+    worker: str = ""
+    turns: list[SessionTurn] = Field(default_factory=list)
 
 
 class FlowContextSpec(DataSpec):
@@ -69,6 +105,17 @@ class FlowContextSpec(DataSpec):
     origin: str = ""
     #: The Flowpad instance (``FLOW_INSTANCE``) diagnosed.
     instance: str = ""
+    #: The screen the person was on (a ``navigation.place`` view) and its address; empty with no tab open.
+    view: str = ""
+    address: str = ""
+    #: What was open on that screen: its name, else its TypeId.
+    entity: str = ""
+    #: The session on screen, with its last turns.
+    session: Optional[SessionState] = None
+    #: This Flowpad's hub login (``status.hub``), empty when it could not be read.
+    hub_login: str = ""
+    #: The other sessions running here, without their turns.
+    other_sessions: list[SessionState] = Field(default_factory=list)
 
 
 class DiagnosisFinding(DataSpec):
@@ -116,6 +163,9 @@ class DiagnosisSpec(DataSpec):
     spec_kind: ClassVar[str] = "diagnosis"
 
     status: DiagnosisStatus = DiagnosisStatus.INFORMATIONAL
+    #: Whose problem it is; ``cause_asset`` names the dependency when it is one.
+    cause: DiagnosisCause = DiagnosisCause.UNKNOWN
+    cause_asset: str = ""
     title: str = ""
     summary: str = ""
     symptoms: str = ""
@@ -132,3 +182,10 @@ class DiagnosisSpec(DataSpec):
     errors: list[str] = Field(default_factory=list)
     started_at: str = ""
     elapsed_ms: int = 0
+
+    @property
+    def reportable(self) -> bool:
+        """Something is wrong and someone else owns the fix -- offer to report it."""
+        if self.status in (DiagnosisStatus.OK, DiagnosisStatus.INFORMATIONAL):
+            return False
+        return self.cause in REPORTABLE_CAUSES

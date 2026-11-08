@@ -5,6 +5,7 @@ import type { AgenticProcess } from '../process/agentic-process';
 import { lastChatQuery, recencyOf } from '../process/last-chat';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
+import { isHubOnly } from '../utils/hub-runtime';
 import type { GitOrigin } from '../models/GitOrigin';
 import type { HubRepoOrigin } from '../models/FSOrigin';
 import type { PromptResult } from '../models/ReturnedValue';
@@ -14,7 +15,7 @@ import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { ActivityProgressSpec } from '../activity';
-import type { IDeployment } from './deployment';
+import { Deployment, type IDeployment } from './deployment';
 
 /** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
 export type CloudDeployProvider = string;
@@ -78,13 +79,113 @@ export interface AgentTokenAllocation {
   model: string;
 }
 
-/** How signed-out visitors run an agent: the hub's `VisitorDeployment` -- whether the owner allows it, and
- *  optionally the LLM endpoint each visitor's budget is drawn from and what each visitor may spend of it.
- *  With no `llm_source` the visitor brings their own token source. */
-export interface AgentVisitorDeployment {
+/** Who may open a public deployment: anyone with the `/open-pc/<id>` link, or only a holder of an invite code. */
+export type PublicDeploymentMode = 'link' | 'code';
+
+/** The hub's public-deployment settings on an agent (`agent/<id>/public_deployments`). */
+export interface PublicDeploymentSettings {
   allow_visitor_deployment: boolean;
-  llm_source?: string | null;
-  cap_usd?: number | null;
+  mode: PublicDeploymentMode;
+  max_deployments: number | null;
+  wrong_code_limit_per_hour: number;
+  llm_source: string | null;
+  cap_usd: number | null;
+}
+
+/** The body of `enable_public_deployments`: `llm_source` and `cap_usd` come together or not at all. */
+export interface PublicDeploymentSetup {
+  mode: PublicDeploymentMode;
+  max_deployments: number | null;
+  wrong_code_limit_per_hour?: number;
+  /** Required: every public box is funded, so a visitor is never asked for a token source. */
+  llm_source: string;
+  cap_usd: number;
+}
+
+/** One invite code, as the owner sees it: never the code itself, only its last four characters. */
+export interface PublicInviteCode {
+  id: string;
+  last4: string;
+  state: 'unused' | 'in_use' | 'revoked';
+  node_typeid: string | null;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+/** A freshly minted code: the only time its plaintext is ever answered. */
+export interface NewPublicInviteCode {
+  id: string;
+  code: string;
+  last4: string;
+}
+
+/** One visitor's box. `code_id` is null for a link visitor. */
+export interface PublicDeployment {
+  node_typeid: string;
+  name: string;
+  status: string;
+  code_id: string | null;
+  code_last4: string | null;
+  created_date: string | null;
+  last_used_at: string | null;
+  /** IT Sessions on that machine, when the hub reports it (null/absent = not known yet). */
+  it_sessions?: boolean | null;
+}
+
+export interface PublicDeploymentsState {
+  settings: PublicDeploymentSettings | null;
+  codes: PublicInviteCode[];
+  deployments: PublicDeployment[];
+}
+
+export type PublicDeploymentOp = 'open' | 'pause' | 'resume' | 'reset';
+
+/** Which public machines an IT message (or an IT Sessions switch) reaches: all of them, or these `node_typeid`s. */
+export type ItTargets = 'all' | string[];
+
+/** A file an IT message carries to each machine. */
+export interface ItAttachment {
+  name: string;
+  content_b64: string;
+}
+
+export interface ItMessageRequest {
+  text: string;
+  attachments?: ItAttachment[];
+  /** A JSON shape each machine's answer value must match; null for a plain answer. */
+  answer_shape?: Record<string, unknown> | null;
+  targets: ItTargets;
+  /** Append to this IT conversation instead of opening a new one ("Turn on and run"). */
+  conversation_id?: string;
+}
+
+export interface ItMessageResult {
+  conversation_id: string;
+  targets: string[];
+}
+
+export interface ItSessionsBox {
+  node_typeid: string;
+  on: boolean;
+  error?: string;
+}
+
+/** A machine's reply in an IT conversation, as the hub stamps it on the message (`metadata.it`). */
+export type ItReplyState = 'done' | 'off' | 'signed_in' | 'unreachable';
+
+export interface ItReplyMeta {
+  node_typeid: string;
+  code_last4: string | null;
+  state: ItReplyState;
+  woke?: boolean;
+  value?: Record<string, unknown> | null;
+  call_id?: string;
+}
+
+export interface PublicDeploymentOpResult {
+  node_typeid: string;
+  workspace_url?: string;
+  status?: string;
 }
 
 export interface AgentReadinessItem {
@@ -116,8 +217,23 @@ export interface AgentPlannedDeployment {
   readiness: AgentReadiness;
 }
 
+/** Agents known to live only on the hub (made there, no row on this computer): their mailbox is the hub's door. */
+const hubHeld = new WeakSet<Agent>();
+
 @registerEntity
 export class Agent extends APIEntity<Agent> {
+  /** An agent the hub holds and this computer does not — e.g. one the hub just made for the hub page. */
+  static onHub(data: ConstructorParameters<typeof Agent>[0]): Agent {
+    const agent = new Agent(data);
+    hubHeld.add(agent);
+    return agent;
+  }
+
+  /** Its mailbox is answered by the hub: on the hub page, or when only the hub holds it. */
+  private get mailboxOnHub(): boolean {
+    return isHubOnly() || hubHeld.has(this);
+  }
+
   static type: string = 'agent';
 
   // ── identity / presentation ────────────────────────────────────────────
@@ -170,6 +286,11 @@ export class Agent extends APIEntity<Agent> {
   enabled: boolean;
   /** Absolute on-disk path to the agent's folder (`agent.json` sits inside). */
   asset_ref?: string;
+  /** One of Flowpad's own agents (ships inside a system project) — backend-computed, read-only.
+   *  Absent on hub rows, which reads as not shipped. */
+  shipped?: boolean;
+  /** The project holding this agent; null for one in the user scope, which cannot be deployed to the cloud. */
+  project_id?: string | null;
   /** Where the hub keeps this agent's files. A published agent lives in its project's
    *  hub-hosted repository (`kind: 'hub_repo'`, the agent's folder as `rel_path`); an
    *  agent published before that carries a GitHub `kind: 'git'` origin. Hub-written
@@ -202,10 +323,6 @@ export class Agent extends APIEntity<Agent> {
    *  (`{wizard}`). The first place is the session's active display. Opened and
    *  repaired by the backend (`Agent.use`); the frontend only renders them. */
   auto_open?: ({ viewType: string; pointer: string } | { op: string } | { wizard: string })[] | null;
-  /** Per-place launch overrides, keyed by Deployment id (agent.json `places`). */
-  places?: AgentPlaceSpecWire[] | null;
-  /** Deployment id of the one place that answers this agent's email. */
-  email_place?: string | null;
   /** The agent's own phone number (agent.json `phone`) — declaration only. */
   phone?: PhoneNumberWire | null;
 
@@ -238,6 +355,8 @@ export class Agent extends APIEntity<Agent> {
 
     this.enabled = entity.enabled ?? true;
     this.asset_ref = entity.asset_ref;
+    this.shipped = entity.shipped;
+    this.project_id = entity.project_id ?? null;
     this.git_origin = entity.git_origin;
 
     this.intro = entity.intro;
@@ -247,8 +366,6 @@ export class Agent extends APIEntity<Agent> {
     this.vibe_only = entity.vibe_only ?? false;
     this.starter_prompts = entity.starter_prompts ?? [];
     this.auto_open = entity.auto_open ?? null;
-    this.places = entity.places ?? null;
-    this.email_place = entity.email_place ?? null;
     this.phone = entity.phone ?? null;
   }
 
@@ -438,6 +555,19 @@ export class Agent extends APIEntity<Agent> {
     await this.post('resume', { process_id: processId });
   }
 
+  /** Every deployment this agent is the main agent of — the places it answers. */
+  async deployments(): Promise<Deployment[]> {
+    return Deployment.forMainAgent(this.id);
+  }
+
+  /**
+   * "Deploy this agent": its project's Deployments page with a new deployment's main agent preset to it.
+   * Null for an agent that has no project (it has to move into one first).
+   */
+  get deployPagePointer(): DockPointerData | null {
+    return this.project_id ? Deployment.projectPagePointerFor(this.project_id, null, this.id) : null;
+  }
+
   /**
    * Open a chat on one exact cloud Deployment of this Agent.
    *
@@ -456,83 +586,71 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /**
-   * Give this agent a machine of its own in the cloud.
-   *
-   * Publishing to the hub is implicit — the backend does it before deploying,
-   * so there is no order for a caller to get wrong. It also holds the cloud
-   * credentials, which is why this goes through the local backend rather than
-   * the browser calling the hub.
-   *
-   * Slow by nature (create + boot + health on a real sandbox); callers should
-   * show progress rather than assume a snappy round trip.
-   *
-   * `environment` is the placement's credential environment — `production`
-   * when omitted. One cloud machine per environment.
+   * Public deployments: visitors open `/open-pc/<id>` (with an invite code in `code` mode) and get a sandbox of
+   * their own. Hub-owned and owner-only, so every call is reflected to the hub.
    */
-  /**
-   * Deploy to a cloud machine — on `provider` when given, else on the provider the hub chooses — or
-   * `provider: 'local'` — this computer.
-   */
-  /**
-   * `tokenAllocation`: the cloud placement's own budget (see {@link AgentTokenAllocation}); `null` releases it
-   * back to the owner's capped default; omitted leaves it as it is.
-   */
-  async deploy({
-    environment,
-    provider,
-    tokenAllocation,
-    machineSize,
-  }: {
-    environment?: string;
-    provider?: 'local' | CloudDeployProvider;
-    tokenAllocation?: AgentTokenAllocation | null;
-    machineSize?: string;
-  } = {}): Promise<AgentDeployResult> {
-    const body = {
-      ...(environment ? { environment } : {}),
-      ...(provider ? { provider } : {}),
-      ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
-      // This deploy's box size; never written into agent.json (that would dirty the checkout it deploys).
-      ...(machineSize ? { machine_size: machineSize } : {}),
+  async enablePublicDeployments(setup: PublicDeploymentSetup): Promise<PublicDeploymentSettings> {
+    return this.publicDeploymentsCall('enable_public_deployments', 'POST', { ...setup });
+  }
+
+  async disablePublicDeployments(): Promise<PublicDeploymentSettings> {
+    return this.publicDeploymentsCall('disable_public_deployments', 'POST', {});
+  }
+
+  /** Settings, codes and boxes; each list defaults to empty (an unpublished agent is answered by the desktop). */
+  async publicDeployments(): Promise<PublicDeploymentsState> {
+    const data =
+      (await this.publicDeploymentsCall<Partial<PublicDeploymentsState> | null>('public_deployments', 'GET')) ?? {};
+    return {
+      settings: data.settings ?? null,
+      codes: Array.isArray(data.codes) ? data.codes : [],
+      deployments: Array.isArray(data.deployments) ? data.deployments : [],
     };
-    return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as AgentDeployResult;
+  }
+
+  /** Mint `count` (1..100) codes; their plaintext is answered this once only. */
+  async addPublicCodes(count: number): Promise<NewPublicInviteCode[]> {
+    const data = await this.publicDeploymentsCall<{ codes?: NewPublicInviteCode[] }>('add_public_codes', 'POST', {
+      count,
+    });
+    return data?.codes ?? [];
+  }
+
+  /** Revoke a code: its sandbox is deleted and it stops working. */
+  async revokePublicCode(codeId: string): Promise<void> {
+    await this.publicDeploymentsCall('revoke_public_code', 'POST', { code_id: codeId });
+  }
+
+  /** `reset` gives the same deployment a brand-new machine, filled from scratch; it answers like `open`. */
+  async managePublicDeployment(nodeTypeId: string, op: PublicDeploymentOp): Promise<PublicDeploymentOpResult> {
+    return this.publicDeploymentsCall('manage_public_deployment', 'POST', { node_typeid: nodeTypeId, op });
   }
 
   /**
-   * The cloud placement this agent will have on `provider` (omitted: the one the hub chooses) in `environment`
-   * (default `production`), before it
-   * has a machine, and whether it is ready: each missing value can be filled ("use mine",
-   * `credentialsService.useMine`) or a connection authorized (`Deployment.authorize`) before
-   * `deploy`, which is refused (409 `not_ready`) until it is. `deploymentId` plans the existing deployment it
-   * names again (changing its allocation); omitted, the hub makes a new one.
+   * IT message: run `text` once on each targeted public machine, in a throwaway session; the answers come back as
+   * one IT conversation in the StreamInbox. Hub-only and owner-only.
    */
-  async planDeployment(
-    environment?: string,
-    provider?: CloudDeployProvider,
-    tokenAllocation?: AgentTokenAllocation | null,
-    deploymentId?: string,
-  ): Promise<AgentPlannedDeployment> {
-    const body = {
-      ...(environment ? { environment } : {}),
-      ...(provider ? { provider } : {}),
-      ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
-      ...(deploymentId ? { deployment_id: deploymentId } : {}),
-    };
-    return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
+  async itMessage(request: ItMessageRequest): Promise<ItMessageResult> {
+    const data = await this.publicDeploymentsCall<Partial<ItMessageResult> | null>('it_message', 'POST', {
+      ...request,
+    });
+    return { conversation_id: data?.conversation_id ?? '', targets: Array.isArray(data?.targets) ? data.targets : [] };
   }
 
-  /**
-   * Allow (or stop) signed-out visitors running this agent, each in a sandbox of their own -- funded, when
-   * `setup.llm_source` is given, by a public child of it capped at `setup.cap_usd`:
-   * `POST agent/<id>/setup_visitor_deployment`. Hub-owned and owner-only, so it is reflected to the hub;
-   * allowing is refused (409) for an agent visitors could not run, (403) for a source the caller may not
-   * allocate from. Visitors reach it only through the agent's `visitor` audience (`PUBLIC_VIEWER_ROLE`).
-   */
-  async setupVisitorDeployment(setup: AgentVisitorDeployment): Promise<AgentVisitorDeployment> {
-    const info = new ActionInfo('setup_visitor_deployment', this.getType(), this.id, 'POST');
+  /** Turn IT Sessions on or off on the targeted public machines; answers each machine's resulting state. */
+  async setItSessions(targets: ItTargets, on: boolean): Promise<ItSessionsBox[]> {
+    const data = await this.publicDeploymentsCall<{ boxes?: ItSessionsBox[] } | null>('it_sessions', 'POST', {
+      targets,
+      on,
+    });
+    return Array.isArray(data?.boxes) ? data.boxes : [];
+  }
+
+  private publicDeploymentsCall<T>(name: string, method: 'GET' | 'POST', body?: Record<string, unknown>): Promise<T> {
+    const info = new ActionInfo(name, this.getType(), this.id, method);
     info.hubReflect = true;
-    info.bodyParameters = { ...setup };
-    return await dataManager.callAction<unknown, AgentVisitorDeployment>(info);
+    if (body) info.bodyParameters = body;
+    return dataManager.callAction<unknown, T>(info);
   }
 
   /**
@@ -546,27 +664,12 @@ export class Agent extends APIEntity<Agent> {
     // which has no `channels` action and returns the agent row. Each list defaults to empty.
     const data = (await dataManager.callAction<unknown, Partial<AgentChannels>>(info)) ?? {};
     const list = <T>(value: T[] | undefined): T[] => (Array.isArray(value) ? value : []);
-    return { deployments: list(data.deployments), webhooks: list(data.webhooks), connections: list(data.connections) };
-  }
-
-  /** Every place this agent runs on — this computer first — with what each owns. */
-  async listPlaces(): Promise<AgentPlace[]> {
-    return (await this.get<AgentPlace[]>('places')) ?? [];
-  }
-
-  /** Set one launch override for one place; `null` resets it to the definition. */
-  async setPlaceOverride(deploymentId: string, field: AgentPlaceField, value: string | string[] | null): Promise<void> {
-    await this.post('set_place_override', { deployment_id: deploymentId, field, value });
-  }
-
-  /** Switch this agent on or off on one place; `null` follows the definition's `enabled`. */
-  async setPlaceEnabled(deploymentId: string, enabled: boolean | null): Promise<void> {
-    await this.post('set_place_enabled', { deployment_id: deploymentId, enabled });
-  }
-
-  /** Make one place the only one answering this agent's email. */
-  async setEmailPlace(deploymentId: string): Promise<void> {
-    await this.post('set_email_place', { deployment_id: deploymentId });
+    return {
+      deployments: list(data.deployments),
+      people: list(data.people),
+      webhooks: list(data.webhooks),
+      connections: list(data.connections),
+    };
   }
 
   /** The Flowpad Assistant's skills this agent may pick from for `assistant_skills`. */
@@ -609,18 +712,17 @@ export class Agent extends APIEntity<Agent> {
    * Agent's mail surface — everything else about a mailbox (its allowlist, its
    * lifecycle) belongs to `AgentMailbox`, which this hydrates.
    */
-  /** What this agent needs to run anywhere — credentials, permissions, variables. Names only. */
-  async requirements(): Promise<AgentRequirement[]> {
-    return (await this.get<AgentRequirement[] | null>('requirements')) ?? [];
-  }
-
-  /** Does that deployment (default: this computer) satisfy each requirement? Names only. */
-  async readiness(deploymentId?: string): Promise<AgentReadiness | null> {
-    const qs = deploymentId ? `?deployment_id=${encodeURIComponent(deploymentId)}` : '';
-    return this.get<AgentReadiness | null>(`readiness${qs}`);
+  /** Move this project-less agent into a project (`Agent.move_to_project`). */
+  async moveToProject(projectId: string): Promise<void> {
+    await this.post('move_to_project', { project_id: projectId });
+    this.project_id = projectId;
   }
 
   async mailboxState(): Promise<AgentMailboxState> {
+    if (this.mailboxOnHub) {
+      const data = await this.hubMailbox<{ mailbox?: HubMailboxDescriptor | null; offered?: boolean }>('', 'GET');
+      return { ...this.hubMailboxState(data?.mailbox ?? null), offered: data?.offered ?? true };
+    }
     return normalizeAgentMailboxState(await this.get<AgentMailboxStateWire>('mailbox_state'));
   }
 
@@ -632,6 +734,9 @@ export class Agent extends APIEntity<Agent> {
    * on — there is no separate "enable".
    */
   async allocateMailbox(options: MailboxAllocation = {}): Promise<AgentMailboxState> {
+    // The hub page has no local source to wire: `enable` provisions when absent and reactivates when disabled.
+    if (this.mailboxOnHub)
+      return this.hubMailboxState(await this.hubMailbox<HubMailboxDescriptor>('enable', 'POST', options));
     return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('allocate_mailbox', { ...options }));
   }
 
@@ -641,6 +746,10 @@ export class Agent extends APIEntity<Agent> {
   }
 
   async configureMailbox(options: MailboxConfiguration): Promise<AgentMailboxState> {
+    if (this.mailboxOnHub) {
+      const { poll_interval_seconds: _local, ...policy } = options; // the poll cadence is a desktop fact
+      return this.hubMailboxState(await this.hubMailbox<HubMailboxDescriptor>('configure', 'POST', policy));
+    }
     return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('configure_mailbox', { ...options }));
   }
 
@@ -649,14 +758,47 @@ export class Agent extends APIEntity<Agent> {
     return this.post<{ agent_id: string; released: boolean }>('release_mailbox');
   }
 
+  /** The hub's own `agent/<id>/mailbox[/<verb>]` door — the hub page's transport. */
+  private hubMailbox<T>(verb: string, method: 'GET' | 'POST', body?: object): Promise<T> {
+    const info = new ActionInfo(verb ? `mailbox/${verb}` : 'mailbox', 'agent', String(this.id), method);
+    if (body) info.bodyParameters = body as Record<string, unknown>;
+    info.hubReflect = true; // the hub's mailbox: through a desktop it is forwarded, never answered there
+    return dataManager.callAction<unknown, T>(info);
+  }
+
+  /** A hub descriptor as an `AgentMailboxState` — no local source on the hub page. */
+  private hubMailboxState(mailbox: HubMailboxDescriptor | null): AgentMailboxState {
+    return normalizeAgentMailboxState({
+      agent_id: String(this.id),
+      enabled: mailbox?.status === 'active',
+      mailbox: mailbox
+        ? { ...mailbox, agent_typeid: mailbox.agent_typeid ?? new TypeId(Agent.type, String(this.id)) }
+        : null,
+      source: null,
+      sources: [],
+    });
+  }
+
+  /** What this agent is told about its built-in email — added to its instructions by Flowpad, read-only. */
+  async channelsBlock(): Promise<string> {
+    return (await this.get<{ text?: string }>('channels_block'))?.text ?? '';
+  }
+
   async streamInboxScope(): Promise<AgentStreamInboxScope> {
     return this.get<AgentStreamInboxScope>('stream_inbox_scope');
   }
 }
 
 export interface MailboxConfiguration {
-  /** Who may drive the agent through this mailbox. Empty admits nobody. Hub-stored. */
+  /** Receiving: who may drive the agent through this mailbox. Empty admits nobody. Hub-stored. */
   allowed_senders?: string[];
+  blocked_senders?: string[];
+  /** Sending: who the agent may write to; the Hub refuses anyone else. Hub-stored. */
+  allowed_recipients?: string[];
+  blocked_recipients?: string[];
+  /** "Open to all", per direction. */
+  open_senders?: boolean;
+  open_recipients?: boolean;
   /** Standing read defaults, in the Hub's wire vocabulary. Hub-stored. */
   filters?: Record<string, string>;
   /** How often THIS machine polls. Local — not a fact about the mailbox. */
@@ -669,6 +811,12 @@ export interface MailboxAllocation {
   username?: string;
 }
 
+/** What the hub's `mailbox` door answers (`AgentMailbox.descriptor()`). */
+export type HubMailboxDescriptor = Omit<Partial<IAgentMailbox>, 'agent_typeid'> & {
+  typeid?: string;
+  agent_typeid?: TypeId | string;
+};
+
 interface AgentMailboxStateWire {
   agent_id: string;
   enabled: boolean;
@@ -676,6 +824,7 @@ interface AgentMailboxStateWire {
   source: (Partial<IDataSource> & { id?: string; typeid?: string }) | null;
   /** Every message source the agent owns; the mailbox is one of them. */
   sources?: (Partial<IDataSource> & { id?: string; typeid?: string })[];
+  offered?: boolean;
 }
 
 export interface AgentMailboxState {
@@ -687,6 +836,8 @@ export interface AgentMailboxState {
   source: DataSource | null;
   /** Every message source the agent owns (the mailbox included). */
   sources: DataSource[];
+  /** Whether this hub can give an agent its built-in email at all; absent = not known, assume yes. */
+  offered?: boolean;
 }
 
 export interface AgentStreamInboxScope {
@@ -708,6 +859,7 @@ function normalizeAgentMailboxState(state: AgentMailboxStateWire): AgentMailboxS
   return {
     agent_id: state.agent_id,
     enabled: state.enabled,
+    offered: state.offered ?? true,
     mailbox:
       state.mailbox && mailboxId
         ? new AgentMailbox({
@@ -780,51 +932,43 @@ export interface AgentScheduleFields {
 }
 
 /** The launch settings a place may override — `PLACE_OVERRIDABLE_FIELDS` in agent_spec.py. */
-export const AGENT_PLACE_FIELDS = ['worker_type', 'model', 'permission_mode', 'effort', 'mcp_servers'] as const;
-export type AgentPlaceField = (typeof AGENT_PLACE_FIELDS)[number];
-
-export interface AgentPlaceOverrides {
-  worker_type?: string;
-  model?: string;
-  permission_mode?: string;
-  effort?: string;
-  /** Server NAMES — names travel between machines, ids do not. */
-  mcp_servers?: string[];
-}
-
-export interface AgentPlaceSpecWire extends AgentPlaceOverrides {
-  deployment_id: string;
-}
-
 /** `PhoneNumberSpec` — digits only; the backend strips `+`, separators and one trunk `0`. */
 export interface PhoneNumberWire {
   country_code: string;
   number: string;
 }
 
-/** One place an agent runs on (`GET /agent/<id>/places`). */
 /** `agent/<id>/channels`: what an agent is wired to, names and states only. */
 export interface AgentChannels {
-  deployments: { typeid: string; node_typeid: string | null }[];
+  deployments: {
+    typeid: string;
+    node_typeid: string | null;
+    agent_mode?: 'shared' | 'private';
+    channels?: string[];
+    idle_pause_seconds?: number | null;
+    template_deployment_id?: string | null;
+  }[];
+  /** A private deployment's people (its owner reads them): each person's own placement, its state and its cap. */
+  people?: AgentPerson[];
   /** The caller's links delivering to this agent: the channel (`slack`, `whatsapp`…), its state, who it reaches. */
   webhooks: { id: string; provider: string; status: string; sender: string; name: string; deployment_typeid: string }[];
   /** Connections a placement may use (`deployment/<id>/authorize`). */
   connections: { provider: string; deployment_typeid: string }[];
 }
 
-export interface AgentPlace {
-  /** The Deployment row, as wire data — wrap with `new Deployment(...)`. */
-  deployment: Record<string, unknown> & { id: string; name: string; kind: string };
-  is_local: boolean;
-  overrides: AgentPlaceOverrides;
-  schedule_count: number;
-  answers_email: boolean;
-  /** Published commits a cloud machine does not run yet; null when unknown or for this computer. */
-  behind: number | null;
-  /** Whether the agent runs on this place: its own switch, else the definition's `enabled`. */
-  enabled: boolean;
-  /** When it last did something (ISO): its newest run here, else when a cloud machine was last seen. */
-  last_active?: string | null;
+/** One person of a private deployment, as `agent/<id>/channels` answers it. */
+export interface AgentPerson {
+  deployment_typeid: string;
+  template_deployment_id: string;
+  /** The project the agent's deployments belong to (their pages live in its Deployments). */
+  project_id: string | null;
+  person_key: string;
+  /** The person as the provider knows them: an email, a Slack sender, an API caller. */
+  who: string;
+  /** The machine's state: running, paused, not_started, … */
+  state: string;
+  cap_usd_per_day: number | null;
+  allocation_typeid: string | null;
 }
 
 /** `GET /agent/<id>/version` — what this computer has that the published version lacks. */

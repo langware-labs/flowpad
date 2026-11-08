@@ -16,6 +16,7 @@ import {
   useAutomations,
   useRunOnce,
   useSetAutomationEnabled,
+  useSetPackageEnabled,
 } from '@src/hooks/automations/useAutomations';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
@@ -24,6 +25,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { useAutomationWords } from './automation-words';
 import { AutomationRow } from './AutomationRow';
+import { PackageRow } from './PackageRow';
 import { KindGallery } from './KindGallery';
 import type { CreatingKind } from './automations-pointer';
 import { IfThenGraphic } from './IfThenGraphic';
@@ -39,6 +41,7 @@ export function AutomationsList() {
   const { data: automations = [], isLoading, error, cloudWarning } = useAutomations();
   const runOnce = useRunOnce();
   const setEnabled = useSetAutomationEnabled();
+  const setPackage = useSetPackageEnabled();
   const [kind, setKind] = useState<AutomationKind | null>(null);
   const [showBuiltin, setShowBuiltin] = useState(false);
   const [choosing, setChoosing] = useState(false);
@@ -58,6 +61,10 @@ export function AutomationsList() {
   };
   const yours = automations.filter((a) => a.group !== 'builtin');
   const failing = yours.filter((a) => a.last_run?.status === 'failed');
+  // The one failing automation, and what its run said (a data source's own words, a script's last error line).
+  const lone = failing.length === 1 ? failing[0] : undefined;
+  const loneName = lone?.name;
+  const loneWhy = lone?.last_run?.error;
   const builtinFailing = groups.builtin.filter((a) => a.last_run?.status === 'failed');
 
   const open = (a: AutomationSummary) => navigation.openDock(DockPointer.forAutomations({ trigger: a.id }));
@@ -105,13 +112,46 @@ export function AutomationsList() {
       />
     ));
 
+  // A package — the rules an agent (or wizard) holds — is ONE line with one switch; the rest are their own lines.
+  const byParent = (list: AutomationSummary[]) => {
+    const parents = new Map<string, AutomationSummary[]>();
+    for (const a of list) if (a.parent_type_id) parents.set(a.parent_type_id, [...(parents.get(a.parent_type_id) ?? []), a]);
+    return (
+      <>
+        {[...parents].map(([parent, members]) => (
+          <PackageRow
+            key={parent}
+            parentTypeId={parent}
+            members={members}
+            busy={setPackage.isPending && setPackage.variables?.parentTypeId === parent}
+            onRunOnce={onRunOnce}
+            onToggle={(on) =>
+              setPackage.mutate(
+                { parentTypeId: parent, on },
+                {
+                  onError: (e) =>
+                    notify.error({
+                      title: t`Could not change ${members[0].parent_name || parent}`,
+                      message: errorMessage(e, t`Update failed`),
+                      forceToast: true,
+                    }),
+                },
+              )
+            }
+          />
+        ))}
+        {rows(list.filter((a) => !a.parent_type_id))}
+      </>
+    );
+  };
+
   const group = (key: string, title: string, list: AutomationSummary[]) =>
     list.length ? (
       <section key={key} data-testid={`automations-group-${key}`}>
         <h3 className="px-4 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
           {title}
         </h3>
-        {rows(list)}
+        {byParent(list)}
       </section>
     ) : null;
 
@@ -189,8 +229,12 @@ export function AutomationsList() {
           >
             <AlertTriangle className="size-4 shrink-0" aria-hidden />
             <span className="min-w-0 flex-1">
-              {failing.length === 1 ? (
-                <Trans>{failing[0].name} failed last time it ran.</Trans>
+              {loneWhy ? (
+                <Trans>
+                  {loneName} failed: {loneWhy}
+                </Trans>
+              ) : lone ? (
+                <Trans>{loneName} failed last time it ran.</Trans>
               ) : (
                 <Trans>{failing.length} automations failed last time they ran.</Trans>
               )}

@@ -10,7 +10,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import type { AutomationRun, AutomationSummary } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const nav = vi.hoisted(() => ({ openDock: vi.fn(), openFolder: vi.fn(), openMachinePath: vi.fn() }));
+const nav = vi.hoisted(() => ({ openDock: vi.fn() }));
 const dock = vi.hoisted(() => ({ current: null as null | { pointer?: string; options?: Record<string, string> } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: nav, currentDock: dock.current }),
@@ -19,6 +19,9 @@ vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: { id: 'p
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 const gate = vi.hoisted(() => ({ fn: vi.fn(() => Promise.resolve({ ok: true as const })) }));
 vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => gate.fn }));
+vi.mock('@src/components/assets/editor/agent-profile/use-agent-places', () => ({
+  useAgentPlaces: () => ({ places: [], reload: async () => undefined }),
+}));
 vi.mock('@src/hooks/entity-hooks', () => ({
   // One answer for every entity query the screen makes: an agent to pick, and (as a data source) a channel.
   useEntitiesQuery: () => ({ data: [{ id: 'a1', name: 'Chief of Staff', channel: 'gmail' }] }),
@@ -33,6 +36,7 @@ const state = vi.hoisted(() => ({
   mutate: {
     runOnce: vi.fn(),
     setEnabled: vi.fn(),
+    setPackage: vi.fn(),
     save: vi.fn(),
     check: vi.fn(),
     remove: vi.fn(),
@@ -90,6 +94,7 @@ vi.mock('@src/hooks/automations/useAutomations', () => ({
   useAutomationSamples: () => ({ data: [], isFetching: false }),
   useRunOnce: () => mutation(state.mutate.runOnce),
   useSetAutomationEnabled: () => mutation(state.mutate.setEnabled),
+  useSetPackageEnabled: () => mutation(state.mutate.setPackage),
   useSaveAutomation: () => mutation(state.mutate.save),
   useAutomationCheck: () => mutation(state.mutate.check),
   useDeleteAutomation: () => mutation(state.mutate.remove),
@@ -180,15 +185,15 @@ describe('My automations', () => {
     expect(nav.openDock.mock.calls[0][0].options).toEqual({ creating: 'schedule', recipe: 'morning-briefing' });
   });
 
-  it('each row reads as the rule, with its last result and next run', () => {
+  it('each row is one line: IF its when, THEN what it does — its facts live on its page', () => {
     state.automations = [
-      automation({ id: 'a1', last_run: run({ status: 'succeeded' }), next_run: '2026-10-06T06:00:00+00:00' }),
+      automation({ id: 'a1', description: 'Weekday triage', last_run: run({ status: 'succeeded' }), next_run: '2026-10-06T06:00:00+00:00' }),
     ];
     render(<AutomationsView />);
     const row = screen.getByTestId('automation-row-a1');
-    expect(row.textContent).toContain('Every weekday at 09:00');
-    expect(row.textContent).toContain('run Chief of Staff');
-    expect(within(screen.getByTestId('automation-last-a1')).getByText('Succeeded')).toBeTruthy();
+    expect(row.textContent).toMatch(/If\s*Every weekday at 09:00\s*Then\s*run Chief of Staff/);
+    expect(row.getAttribute('title')).toBe('Weekday triage');
+    expect(screen.queryByTestId('automation-last-a1')).toBeNull();
   });
 
   it('groups by whose it is and folds Flowpad’s own into one healthy line', () => {
@@ -216,12 +221,6 @@ describe('My automations', () => {
     fireEvent.click(strip);
     const pointer = nav.openDock.mock.calls[0][0];
     expect([pointer.pointer, pointer.options]).toEqual(['runs', { status: 'failed' }]);
-  });
-
-  it('an untested rule says so instead of its next run', () => {
-    state.automations = [automation({ id: 'u', tested: false })];
-    render(<AutomationsView />);
-    expect(screen.getByTestId('automation-untested-u').textContent).toContain('Not tested yet');
   });
 
   it('kind chips filter, and only kinds that exist are offered', () => {
@@ -252,29 +251,6 @@ describe('My automations', () => {
 });
 
 describe('where each automation runs', () => {
-  it('every row names its place right after its kind', () => {
-    state.automations = [
-      automation({ id: 'here', place: { kind: 'local', label: 'This computer' } }),
-      automation({ id: 'every', place: { kind: 'local', label: 'This computer', every_machine: true } }),
-      // The words come from `deployment_name`; `label` is the CLI's English and is never read.
-      automation({
-        id: 'box',
-        place: { kind: 'cloud_machine', label: 'CLI words', deployment_id: 'd1', deployment_name: 'box-1' },
-      }),
-      automation({ id: 'legacy' }),
-    ];
-    render(<AutomationsView />);
-    expect(screen.getByTestId('automation-place-here').textContent).toContain('This computer');
-    expect(screen.getByTestId('automation-place-every').textContent).toContain('This computer · every machine');
-    expect(screen.getByTestId('automation-place-box').textContent).toContain('Cloud · box-1');
-    expect(screen.getByTestId('automation-place-box').getAttribute('data-place')).toBe('cloud_machine');
-    // An older backend sends no place: the row is this computer's.
-    expect(screen.getByTestId('automation-place-legacy').textContent).toContain('This computer');
-    // The badge sits right after the kind badge.
-    const kind = screen.getByTestId('automation-row-here').querySelector('[data-kind]');
-    expect(kind?.nextElementSibling?.getAttribute('data-testid')).toBe('automation-place-here');
-  });
-
   it('a hub row groups by its project like a local one, says Flowpad cloud, and its actions go to the hub', () => {
     state.automations = [
       automation({
@@ -289,7 +265,6 @@ describe('where each automation runs', () => {
     render(<AutomationsView />);
     const group = screen.getByTestId('automations-group-project');
     expect(within(group).getByTestId('automation-row-cloud1')).toBeTruthy();
-    expect(screen.getByTestId('automation-place-cloud1').textContent).toContain('Flowpad cloud');
     fireEvent.click(screen.getByTestId('automation-toggle-cloud1'));
     expect(state.mutate.setEnabled).toHaveBeenCalledWith(
       { triggerId: 'cloud1', enabled: false },
@@ -478,33 +453,31 @@ describe('what ran, and what it did', () => {
   });
 });
 
-describe('browsing what an automation is made of', () => {
-  const watcher = () =>
-    automation({
-      id: 'w',
-      kind: 'file',
-      name: 'Claude Code chats',
-      when: { kind: 'file', text: '', file: { path: '/Users/me/.claude/projects', glob: '*.jsonl', recursive: true, is_folder: true } },
-    });
+describe('a package', () => {
+  const AGENT = 'agent-8caeb94a-84d7-4d78-9f4b-0e41226380f4';
+  const member = (id: string, whenText: string, kind: AutomationSummary['kind']) =>
+    automation({ id, kind, group: 'project', parent_type_id: AGENT, parent_name: 'Team code review',
+                 when: { kind, text: whenText } as AutomationSummary['when'] });
 
-  it('the watched folder can be browsed from the list, without opening the automation', () => {
-    state.automations = [watcher()];
+  it('is one line with one switch: IF the first condition +1 → THEN the agent; +1 lists them, a click shows the parts', async () => {
+    state.automations = [member('answer', 'a message arrives', 'event'), member('pick', 'every 30 minutes', 'schedule')];
     render(<AutomationsView />);
-    fireEvent.click(screen.getByTestId('automation-browse-w'));
-    expect(nav.openFolder).toHaveBeenCalledWith('/Users/me/.claude/projects');
-    expect(nav.openDock).not.toHaveBeenCalled();
-  });
+    const line = screen.getByTestId(`package-row-${AGENT}`);
+    expect(line.textContent).toMatch(/If\s*a message arrives\s*\+1\s*Then\s*Team code review/);
+    expect(screen.queryByTestId('automation-row-answer')).toBeNull();
 
-  it('the name opens the trigger.json it is defined in, else its page', () => {
-    state.automations = [automation({ id: 'f', asset_ref: '/w/agentic-assets/trigger/morning' }), watcher()];
-    render(<AutomationsView />);
-    fireEvent.click(screen.getByTestId('automation-name-f'));
-    expect(nav.openMachinePath.mock.calls[0][0]).toBe('/w/agentic-assets/trigger/morning/trigger.json');
-    fireEvent.click(screen.getByTestId('automation-name-w'));
-    expect(nav.openDock.mock.calls[0][0].options).toEqual({ trigger: 'w' });
+    fireEvent.click(screen.getByTestId(`package-toggle-${AGENT}`));
+    expect(state.mutate.setPackage).toHaveBeenCalledWith({ parentTypeId: AGENT, on: false }, expect.anything());
+
+    fireEvent.click(screen.getByTestId(`package-conditions-${AGENT}`));
+    expect((await screen.findByTestId('package-condition-pick')).textContent).toBe('every 30 minutes');
+
+    fireEvent.click(line);
+    const parts = screen.getByTestId(`package-members-${AGENT}`);
+    expect(within(parts).getAllByText(/^If$/)).toHaveLength(2);
+    expect(parts.querySelector('[role="switch"]')).toBeNull();
   });
 });
-
 
 describe('a rule on messages arriving', () => {
   it('is the first card, and its starters open the two-box screen', () => {

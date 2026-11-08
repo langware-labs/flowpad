@@ -54,7 +54,7 @@ import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { assetDocumentAtOwner } from './asset-document-owner';
 import { highlightTab } from '@src/tabs/tab-highlight';
 import { openExternal } from '@src/lib/open-external';
-import { openInBrowserProfile } from '@src/lib/browser-profiles';
+import { browserProfileManager } from '@src/lib/browser-profiles';
 import { appLinkPath, bareWebUrl, isWebUrl, localWebUrl } from '@src/lib/link-kind';
 import { errorMessage } from '@src/lib/error-message';
 import type { LinkSource } from '@src/components/links/link-events';
@@ -479,10 +479,9 @@ export class NavigationActions {
       this.openDock(DockPointer.forHome().withPage(PageId.HUB));
       return;
     }
-    // `homePage`: the Home BUTTON asks for the project's home page — every click,
-    // from anywhere — which the root's load redirect resolves
-    // (`project-home-page-redirect`). Only the button asks — a fallback "go home"
-    // (no chat to resume) wants the plain home.
+    // `homePage`: ask for the project's home page, which the root's load
+    // redirect resolves (`project-home-page-redirect`) — closing a project's last
+    // tab and finishing a wizard ask. The Home button does not: it is Flowpad's home.
     this.openDock(options?.homePage ? withHomePage(DockPointer.root()) : DockPointer.root());
   }
 
@@ -881,10 +880,13 @@ export class NavigationActions {
     }
   }
 
-  /** The system browser: a web URL as itself, anything else as the Flowpad view that presents it. */
+  /** The selected browser profile (or system default), presenting the resolved web URL. */
   async openLinkInBrowser(link: string, source: LinkSource | null): Promise<void> {
     try {
-      openExternal(await this.browserUrlFor(link, source));
+      const url = await this.browserUrlFor(link, source);
+      const choice = browserProfileManager.selected;
+      if (choice) await browserProfileManager.open(url, choice.browser, choice.profile);
+      else openExternal(url);
     } catch (error) {
       notifyLinkError(error);
     }
@@ -898,7 +900,7 @@ export class NavigationActions {
     profile: string,
   ): Promise<void> {
     try {
-      await openInBrowserProfile(await this.browserUrlFor(link, source), browser, profile);
+      await browserProfileManager.open(await this.browserUrlFor(link, source), browser, profile);
     } catch (error) {
       notifyLinkError(error);
     }

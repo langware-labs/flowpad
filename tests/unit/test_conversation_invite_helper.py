@@ -45,6 +45,8 @@ class _Hub(list):
     body of each."""
 
     bodies: list
+    # ``answer(path, body) -> (status, payload)``; the default answers every hop with empty success.
+    answer = staticmethod(lambda path, body: (200, {"status": "success", "data": {}}))
 
 
 @pytest.fixture()
@@ -55,7 +57,7 @@ def hub(monkeypatch):
     async def fake_request(self, method, path, **kwargs):
         calls.append((method, path))
         calls.bodies.append((path, kwargs.get("json")))
-        return _FakeResponse(200, {"status": "success", "data": {}})
+        return _FakeResponse(*calls.answer(path, kwargs.get("json") or {}))
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
@@ -158,3 +160,62 @@ async def test_conversation_default_and_explicit_role_sets(hub):
         "invitation_targets": [{"typeid": str(conv.typeid), "roles": ["runner"]}]
     })
     assert _invitations(hub)[-1]["invitation_targets"][0] == {"typeid": str(conv.typeid), "roles": ["runner"]}
+
+
+def _hub_answering(calls: _Hub, create_data: dict, fail_on: str | None = None):
+    """Re-point the fake hub: the create answers ``create_data``; a ``/members`` body
+    naming ``fail_on`` is refused."""
+
+    def answer(path, body):
+        path = path.rstrip("/")
+        if fail_on and path.endswith("/members") and body.get("recipient_email") == fail_on:
+            return 403, {"detail": "no"}
+        return 200, {"status": "success", "data": create_data if path.endswith("/conversation") else {}}
+
+    calls.answer = answer
+
+
+def _paths(calls: _Hub) -> list[str]:
+    return [p.rstrip("/").rsplit("/", 1)[-1] for _m, p in calls]
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_create_that_stamps_the_owner_needs_no_join(hub):
+    _hub_answering(hub, {"initiated_by": SHARER})
+    conv = await _conversation()
+
+    await conv.share(recipients=["a@example.com", "b@example.com"])
+
+    assert "join" not in _paths(hub)
+    assert sorted(b["recipient_email"] for b in _invitations(hub)) == ["a@example.com", "b@example.com"]
+    assert conv.initiated_by == SHARER
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_hub_that_does_not_stamp_the_owner_still_gets_the_join(hub):
+    _hub_answering(hub, {})
+    conv = await _conversation()
+
+    await conv.share(recipients=["a@example.com"])
+
+    paths = _paths(hub)
+    assert paths.index("join") < paths.index("members")
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_one_refused_invitation_fails_the_share_after_all_were_sent(hub):
+    from flow_sdk.cloud_client.shared.errors import HubError
+
+    _hub_answering(hub, {"initiated_by": SHARER}, fail_on="a@example.com")
+    conv = await _conversation()
+
+    with pytest.raises(HubError):
+        await conv.share(recipients=["a@example.com", "b@example.com"])
+
+    assert len(_invitations(hub)) == 2

@@ -703,8 +703,18 @@ async def stop(webapp_id: str) -> ReturnedValue:
         )
     if not found:
         return _answer(ExitCode.OK, f"{app.name} is not running", ran=False)
-    await asyncio.to_thread(app_ports.stop, found)
+    refused = await asyncio.to_thread(app_ports.stop, found)
     ports = ", ".join(str(port) for port in sorted({one.port for one in found}))
+    if refused:
+        # The port is held by the live FlowPad backend (or an ancestor of it): the guard spared it,
+        # so nothing was stopped. Reporting "stopped" would be a lie — and acting on it (a retry, a
+        # taskkill) is the self-kill this guard exists to prevent.
+        return _answer(
+            ExitCode.NOT_YET,
+            f"{app.name} is served on port {ports} by the live FlowPad backend — refusing to stop it "
+            "(that would take down FlowPad). This app does not own that port.",
+            ran=False,
+        )
     return _answer(ExitCode.OK, f"stopped {app.name} (port {ports})")
 
 
@@ -786,12 +796,13 @@ async def _keep_route(app, mount, port: int, command: str) -> bool:
 async def _keep_service(app, service, port: int, command: str) -> bool:
     """The service's endpoint on its project's local placement now names this port."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.builtin.webapp_placement import local_web_deployment, set_service_endpoint  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_placement import local_web_deployment, set_service_endpoint, tell_hub  # noqa: PLC0415
 
     project = await Project.get_by_id(app.project_id) if app.project_id else None
     deployment = await local_web_deployment(project)
     if deployment is None:
         return False
     backend = {"type": "proxy", "port": port, "start_cmd": command, "health": service.serving.health}
-    await set_service_endpoint(deployment, app, service, backend)
+    if await set_service_endpoint(deployment, app, service, backend):
+        tell_hub(deployment)  # as a route does: a box's hub reads the port the service landed on
     return True

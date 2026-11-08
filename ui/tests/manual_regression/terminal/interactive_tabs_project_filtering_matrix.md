@@ -4,7 +4,7 @@ id: c107bc99-a521-595d-98f3-4fd5353da021
 
 # Interactive tabs / project filtering — regression matrix
 
-Users have reported tab close, restore, and project-filter regressions. This file holds 51 active scenarios across 9 areas (historical test numbering is retained): refresh & browse, open by id / from history, close-all, the nav-bar project chip, footer selections, restart & CLI, Codex/Claude/terminal mix, navigation in/out of dock, and the kind-agnostic project chip (content tabs count + select-switches-project).
+Users have reported tab close, restore, and project-filter regressions. This file holds 50 active scenarios across 9 areas (historical test numbering is retained): refresh & browse, open by id / from history, close-all, the nav-bar project chip, footer selections, restart & CLI, Codex/Claude/terminal mix, navigation in/out of dock, and the kind-agnostic project chip (content tabs count + select-switches-project).
 
 ## Selectors
 
@@ -36,7 +36,7 @@ After scenario-specific steps, verify ALL FIVE:
 1. **Tabs alive** — every tab in the tab bar is clickable; the active tab has a mounted `terminal-panel`. No `CLOSING` zombies. xterm cursor blinks (plain shell) or process status badge shows ready/running (Claude/Codex).
 2. **Expected content** — active panel shows only the content this scenario produced. Switching tabs never shows another tab's scrollback.
 3. **Counts correct** — `close-all-tabs-button` badge equals visible-tab count for the current project (and the button is hidden when count < 2). `top-nav-project-list` button shows the distinct project count in its `project-count-badge` (one per project with ≥1 open tab of ANY kind — terminal AND content); the badge's `aria-label` reads `"<N> open project[s]"` (singularized per `projectTotal === 1 ? '' : 's'`).
-4. **Project + workdir correct** — footer (`[data-testid="footer"]`) shows the active tab's project displayName/workdir; this matches `dataContext.project.id` for the active tab.
+4. **Project correct** — the top bar project pill (`[data-testid="top-nav-runtime-chip"]`) shows the active tab's project displayName; this matches `dataContext.project.id` for the active tab.
 5. **URL correct** — URL ends with `/dock/shell/<targetTypeId>`; agent segment if present matches the local agent.
 
 ## Setup helpers (REST fixtures — use these instead of UI clicks)
@@ -198,7 +198,7 @@ test 12: Open shell-by-id whose project differs from current
 - via REST: create `Proj-A` and `Proj-B`. Create a shell in `Proj-B` and record its id.
 - navigate so that current project = `Proj-A` (open `top-nav-project-list` and select it)
 - copy the URL `{APP_URL}/dock/shell/shell-<proj-b-shell-id>` and navigate to it
-- validate `dataContext.project` auto-switches to `Proj-B` (chip current row, footer label, tab strip)
+- validate `dataContext.project` auto-switches to `Proj-B` (chip current row, top bar pill, tab strip)
 - validate URL is preserved (the `Proj-B` shell id stays)
 - run common validation block
 
@@ -269,7 +269,7 @@ test 21: Chip selects project, swaps tab strip, and lands on the project home
 - navigate to `{APP_URL}/dock/shell/shell-<a Proj-A shell id>` (explicitly in Proj-A, so Proj-B has no
   last-active tab); click `top-nav-project-list` and select Proj-B
 - validate strip switches; URL lands on `/dock/project/<project-id>` because
-  direct REST tabs have no known recency; footer/workdir match
+  direct REST tabs have no known recency; the top bar pill matches
 - validate no terminal panel is active until a tab is selected
 
 test 22: Chip badge equals distinct project count
@@ -296,7 +296,7 @@ test 25: Project with zero tabs after close-all
 - click `close-all-tabs-button` (closes A's 3 tabs)
 - click chip; record observed: `Proj-A` row gone OR shows 0 (write to result JSON `notes`)
 - validate `Proj-B` row still listed with count 2
-- validate footer still shows `Proj-A` as current project + workdir
+- validate the top bar pill still shows `Proj-A` as current project
 - run common validation block
 
 test 26: Switching to a project with no known last tab lands on project home
@@ -318,21 +318,13 @@ test 27: Every shell carries a real project_id (no orphans by design)
 
 ## E. Footer selections
 
-test 28: Footer "Switch Project" modal switches end-to-end
+test 28: "Switch Project" modal (top bar → Open project) switches end-to-end
 - create two project entities with real disposable mount directories and one
   shell/tab in each (NOT under the OS temp dir — temp roots are not valid project
   cwds; use `~/.flowpad-qa-roots/<label>-<uuid>` and remove it afterwards)
-- enter Proj-A, click the footer `Switch Project` control, and validate the
+- enter Proj-A, open the top bar project list and click `Open project`, and validate the
   modal's `Active projects` section includes Proj-B
-- select Proj-B and validate its project-home URL, footer, and tab strip
-
-test 29: Footer label fallback chain
-- (rationale: previous wording assumed `displayName` and `workdir` are persisted fields on Project. They are not. Project's actual schema (`flow_sdk/builtin/project.py:53,59`) exposes `name: str | None` and `fs_storage_mount_path: str | None` — nothing else label-relevant. `displayName` is a TS-only computed getter on `APIEntity` (`ts_sdk/src/APIEntity.ts:149-151`) deriving from `getDisplayName()` (not persisted). `workdir` is a `dataContext` runtime override (`status-bar.tsx:31,40`), not a Project field. The footer's actual fallback is documented in `status-bar.tsx:38-50` — first `dataContext.workdir`, then `project.fs_storage_mount_path`, then computed paths.)
-- via REST: ensure the bootstrap project has `name` set. Validate footer label = the computed displayName (typically `project.name`).
-- via `browser_evaluate`: `await window.dataContext.setWorkdir('/tmp/regression/override-workdir')`. Validate footer label switches to the explicit workdir path.
-- via `browser_evaluate`: `await window.dataContext.setWorkdir(null)`. Validate footer label reverts to the project path (`project.fs_storage_mount_path`).
-- via `browser_evaluate`: `await window.dataContext.setContextEntityTypeId('CurrentProjectTypeId', null)`. Validate footer shows the red "Select Project" pill.
-- run common validation block
+- select Proj-B and validate its project-home URL, top bar pill, and tab strip
 
 test 30: "Select Project" red pill — tab spawn flow
 - land at `{APP_URL}/dock/shell` (loader does not touch `project` for this URL — confirmed in `main-loader.ts:141-149`).
@@ -534,5 +526,5 @@ test 52: Selecting a content-only project switches the current project (footer p
 - navigate to `{APP_URL}/dock/shell` (lands in `Proj-A`); click `top-nav-project-list`; click the `Proj-C` row
 - validate URL lands on Proj-C's project home because its content tab has no
   known recency
-- validate the footer updates to Proj-C and no terminal panel is active
+- validate the top bar pill updates to Proj-C and no terminal panel is active
 - (NOTE: no `commonValidation` here — it asserts a mounted terminal panel + concrete shell URL, which a content-only project intentionally does not have)

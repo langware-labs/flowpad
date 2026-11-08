@@ -120,6 +120,7 @@ class OpenCodeDriver:
     # The composer's placeholder. OpenCode paints no directory-trust or
     # first-run interstitial (verified against a pristine XDG data home), so
     # this marker is unambiguous: it appears only once input is accepted.
+    launch_screen = None
     pty_composer_ready_pattern = re.compile(r"Ask anything")
     # Ctrl-C QUITS opencode's TUI — measured on 1.18.16: a single \x03 mid-turn
     # exits the process, which printed its ``opencode -s <id>`` resume hint. So

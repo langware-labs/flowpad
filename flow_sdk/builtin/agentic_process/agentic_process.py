@@ -52,6 +52,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     apply_worker_secret_env,
     get_driver,
     latch_spawn_failure,
+    latch_turn_failure,
 )
 from flow_sdk.builtin.agentic_process.display_context import (
     DISPLAY_CONTEXT_KEY,
@@ -64,6 +65,7 @@ from flow_sdk.builtin.agentic_process.display_context import (
     with_display_context,
     without_stale_display_context,
 )
+from flow_sdk.builtin.agentic_process.launch_health import BLOCKING_CODES, SERVER_FIXES, LaunchError, launch_refusal
 from flow_sdk.builtin.agentic_process.naming.state import SessionNameState
 from flow_sdk.builtin.agentic_process.process_assets import (
     PreparedProcessAssets,
@@ -109,6 +111,8 @@ from flow_sdk.transcript_analyzer.worker_status import (
 from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_terminal
 
 if TYPE_CHECKING:
+    from starlette.responses import JSONResponse
+
     from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
     from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
@@ -147,12 +151,18 @@ BACKGROUND_TASKS_RUNNING = "background tasks are running"
 #: How far back to look for a pending question's answer (it lands right after).
 _PENDING_INPUT_TAIL_BYTES = 256 * 1024
 
+# Text a FlowData derives from its value, dropped from ``get-history``: the client rebuilds a
+# frame from flow_value/attributes/index/created_time/process_entry and never reads these, yet
+# they were half of a 10.8 MB history (perf hunt 2026-11-07).
+_DERIVED_TEXT = {"to_xml", "content", "start_tag_xml", "end_tag_xml"}
+
 #: ``context_data`` key: the question the worker is blocked on, as its
 #: ``PreToolUse`` hook reported it. Claude may keep a pending ``AskUserQuestion``
 #: out of its transcript until it is answered, so the transcript alone cannot
 #: say a question is waiting. Cleared by the next prompt; ignored once the
 #: transcript carries the call's result.
 PENDING_USER_INPUT_KEY = "pending_user_input"
+_LAUNCH_WATCHES: set = set()  # keeps watcher tasks alive
 # Gap between typing and Enter for TUIs that don't submit on paste (codex/copilot);
 # mirrors Shell.write_then_submit's submit_delay. claude submits on paste → no gap.
 _PTY_SUBMIT_SETTLE_S = 0.4
@@ -457,6 +467,7 @@ _LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
     "visible",
     "pty_mode",
     "start_failure",
+    "launch_failure",
     "last_started_snapshot",
     "last_started_hash",
     "restart_required",
@@ -811,6 +822,13 @@ def _change_summary(loaded: Any, current: Any) -> str:
     return f"{_short_item(loaded)} → {_short_item(current)}"
 
 
+
+#: A shell command typed again within this many seconds is the same click (a double click on a run link).
+_SHELL_COMMAND_REPEAT_S = 5.0
+_SHELL_COMMAND_LOCKS = new_registry()
+#: Each session's last typed command and when; entries older than the window are dropped on write.
+_last_shell_command: dict[str, tuple[str, float]] = {}
+
 class AgenticProcess(Entity):
     _api_visible = True
     type: str = APIField(default="agentic_process")
@@ -986,6 +1004,7 @@ class AgenticProcess(Entity):
             "that survives past the window."
         ),
     )
+    launch_failure: dict[str, Any] | None = APIField(default=None)  # typed start_failure; or a waiting prompt
     exit_code: int | None = APIField(
         default=None,
         description=(
@@ -1432,6 +1451,55 @@ class AgenticProcess(Entity):
         # singleton when it is genuinely gone. Never returns None by default.
         return await ComputeNode.get_local()
 
+    def latch_launch_failure(self, error: LaunchError, *, phase="spawn", evidence="", facts=None, status=ProcessStatus.FAILED.value) -> None:
+        self.launch_failure = error.wire(phase, evidence=evidence, facts=facts)
+        if status:  # the latch (start_failure stays for old clients); no status = a prompt shown, not latched
+            self.status, self.start_failure = status, error.detail or str(error.code)
+
+    def clear_launch_failure(self) -> None:
+        self.start_failure = self.launch_failure = None
+        self._clear_pending_input(launch=True)
+
+    def _clear_pending_input(self, *, launch: bool = False) -> None:  # a hook's question, or a launch prompt's
+        if PENDING_USER_INPUT_KEY in (self.context_data or {}) and bool(self.launch_blocked()) == launch:
+            self.context_data = {k: v for k, v in self.context_data.items() if k != PENDING_USER_INPUT_KEY}
+
+    def launch_blocked(self) -> str | None:
+        pending = (self.context_data or {}).get(PENDING_USER_INPUT_KEY) or {}
+        return pending.get("code") if pending.get("kind") == "launch_blocked" else None
+
+    async def _watch_launch_screen(self, shell: "Shell", screen) -> None:
+        """Launch prompts until the composer, then done. Screen text after that is the transcript,
+        which a TUI repaints on resume and resize, so nothing after the composer is read: a quoted
+        "401" in the history is not a refusal. Detection only reports; it never stops the worker."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import strip_pty_controls
+
+        async with shell._output_feed() as feed:
+            text, shown = strip_pty_controls(feed.initial[-16384:]) if feed else "", None
+            while feed is not None:
+                if (verdict := screen.classify(text)) != shown:
+                    if verdict in BLOCKING_CODES or shown in BLOCKING_CODES:
+                        await self._apply_launch_screen(verdict, text, screen)
+                    if verdict == "ready":
+                        return
+                    shown = verdict
+                chunk = await feed.next()
+                if feed.closed:
+                    return
+                text = (text + strip_pty_controls(chunk))[-16384:]
+
+    async def _apply_launch_screen(self, verdict: str | None, text: str, screen) -> None:
+        proc = await AgenticProcess.get_by_id(self.id) or self
+        proc._clear_pending_input(launch=True)
+        if verdict in BLOCKING_CODES:
+            folder = screen.trust_prompt_folder(text) or proc.workdir if verdict == "folder_not_trusted" else None
+            error = LaunchError.of(verdict, "Waiting on a launch prompt", self.driver.name)
+            proc.latch_launch_failure(error, phase="blocked", evidence=text, facts={"folder": folder}, status=None)
+            proc.context_data = {**proc.context_data, PENDING_USER_INPUT_KEY: {"kind": "launch_blocked", "code": verdict}}
+        elif not proc.start_failure:
+            proc.launch_failure = None
+        await proc.save()
+
     async def _latched_failure_recovered(self) -> bool:
         """True iff the current ``start_failure`` latch names a cause we can
         PROVE is now satisfiable, so a non-retry (refresh-driven) open may
@@ -1654,19 +1722,15 @@ class AgenticProcess(Entity):
             # latches stay paused — that's the loop breaker.
             if self.start_failure:
                 if not retry and not await self._latched_failure_recovered():
-                    return ApiFailResponse(
-                        message=(
-                            f"Process failed to start: {self.start_failure} "
-                            "Auto-relaunch is paused — use Retry to relaunch."
-                        ),
-                    )
+                    message = f"Process failed to start: {self.start_failure} Auto-relaunch is paused — use Retry to relaunch."
+                    return launch_refusal(message, self.launch_failure or {})
                 logger.info(
                     "AgenticProcess %s: clearing start_failure latch (%s) — %s",
                     self.id,
                     self.start_failure,
                     "user retry" if retry else "latched cause auto-recovered on refresh",
                 )
-                self.start_failure = None
+                self.clear_launch_failure()
                 cleared_start_failure = True
             # Mint a provisional id ONLY for a vendor that can actually be
             # handed one at launch. Codex and opencode mint their own
@@ -1929,6 +1993,9 @@ class AgenticProcess(Entity):
 
             if execution_info is not None:
                 self._record_worker_started_at(execution_info.started_at)
+                if shell is not None and self.driver.launch_screen is not None:
+                    _LAUNCH_WATCHES.add(task := asyncio.create_task(self._watch_launch_screen(shell, self.driver.launch_screen)))
+                    task.add_done_callback(_LAUNCH_WATCHES.discard)
 
             # Completion detection is now driven by the TranscriptStreamer
             # subscriber (transcript_subscriber.py → on_transcript_change →
@@ -2026,13 +2093,14 @@ class AgenticProcess(Entity):
             # For an explicit Retry that fails before launch after clearing an
             # existing latch, leave the latch cleared so the refused-open gate
             # does not immediately block subsequent attempts.
+            verdict = LaunchError.classify(e, self.driver.name)
             if retry and cleared_start_failure:
-                self.start_failure = None
+                self.clear_launch_failure()
             else:
-                self.start_failure = str(e)
+                self.latch_launch_failure(verdict, evidence=str(e))
             await self.save()
             self._requeue_undelivered(launched_head)
-            return ApiFailResponse(message=str(e))
+            return launch_refusal(str(e), verdict.wire(evidence=str(e)))
 
     async def _stop_headless_turn(self, *, source: str) -> None:
         """Stop this process's in-flight print-mode turn and its CLI child.
@@ -2239,6 +2307,25 @@ class AgenticProcess(Entity):
         if isinstance(exit_result, ApiFailResponse) and "No active shell" not in exit_result.message:
             return exit_result
         return await self.start_pty(retry=True)
+
+    @action.post(action_name="resolve_launch_failure")
+    async def http_resolve_launch_failure(self) -> ApiSuccessResponse | ApiFailResponse:
+        """The launch card's button: driver fix, clear the latch, relaunch (headless: the next prompt does)."""
+        fix = (await _read_json_body()).get("fix", "retry")
+        if fix in SERVER_FIXES and self.driver.launch_screen is not None:
+            folder = self.workdir or ((self.launch_failure or {}).get("facts") or {}).get("folder")
+            await self.driver.launch_screen.apply_launch_fix(fix, folder)
+        blocked = self.launch_blocked()
+        self.clear_launch_failure()
+        if not self.pty_mode and self.status == ProcessStatus.FAILED.value:
+            self.status = ProcessStatus.STOPPED.value
+        await self.save()
+        if not self.pty_mode:
+            return ApiSuccessResponse(data={"fix": fix, "relaunched": False})
+        if blocked:
+            await self.exit()
+        result = await self.start_pty(retry=True)
+        return result if isinstance(result, ApiFailResponse) else ApiSuccessResponse(data={"fix": fix, "relaunched": True})
 
     @action.post(action_name="self-restart")
     async def http_self_restart(self) -> ApiSuccessResponse:
@@ -2482,7 +2569,8 @@ class AgenticProcess(Entity):
         own. Holding out for the slot also means the NEXT turn is admitted
         rather than refused as in flight.
 
-        Polling interval: 2s, or the driver's ``transcript_poll_seconds`` when shorter. Raises
+        Local headless task completion wakes the waiter immediately. Status updates and
+        PTY/remote turns poll every 2s, or the driver's shorter interval. Raises
         TimeoutError if timeout elapses first.
 
         ``on_status`` observes the status this loop ALREADY reads on every
@@ -2506,7 +2594,16 @@ class AgenticProcess(Entity):
                 return
             if deadline and time.monotonic() > deadline:
                 raise TimeoutError(f"Process did not reach terminal state within {timeout}s")
-            await asyncio.sleep(min(2.0, float(getattr(self.driver, "transcript_poll_seconds", 2.0))))
+            interval = min(2.0, float(getattr(self.driver, "transcript_poll_seconds", 2.0)))
+            if deadline is not None:
+                interval = min(interval, max(0.0, deadline - time.monotonic()))
+            turn = _PROMPT_TASKS.get(str(self.id))
+            if turn is not None and not turn.done():
+                # Wake on the turn's final writes, without cancelling it when this
+                # observer times out or is cancelled. PTY/remote turns still poll.
+                await asyncio.wait({turn}, timeout=interval)
+            else:
+                await asyncio.sleep(interval)
 
     async def waitForIdle(self, timeout: float | None = None) -> None:
         """Block until the worker is ready for input (``is_ready_for_input(self)``).
@@ -3603,8 +3700,8 @@ class AgenticProcess(Entity):
             instruction: The prompt text to send.
         """
         # A new turn answers (or moves past) any question the hook reported.
-        if PENDING_USER_INPUT_KEY in (self.context_data or {}):
-            self.context_data = {k: v for k, v in self.context_data.items() if k != PENDING_USER_INPUT_KEY}
+        if PENDING_USER_INPUT_KEY in (self.context_data or {}) and not self.launch_blocked():
+            self._clear_pending_input()
             await self.save()
         if not self.pty_mode:
             if await self._deliver_to_parked_worker(instruction):
@@ -3774,6 +3871,21 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message=f"{self.driver.name} has no shell mode", status_code=409)
         if not await self._is_live_pty():
             return ApiFailResponse(message="the session has no live terminal to type into", status_code=409)
+        # One command at a time per session, and the same one again moments later is the same click:
+        # typing takes seconds (each step waits for the terminal to go quiet), and two runs typed at
+        # once interleave into one broken line -- ``!`` ``!`` paste paste Enter.
+        async with keyed_loop_lock(_SHELL_COMMAND_LOCKS, self.id):
+            now = time.monotonic()
+            last = _last_shell_command.get(self.id)
+            if last is not None and last[0] == command and now - last[1] < _SHELL_COMMAND_REPEAT_S:
+                return ApiSuccessResponse(data={"status": "duplicate"})
+            for stale in [k for k, (_, at) in _last_shell_command.items() if now - at >= _SHELL_COMMAND_REPEAT_S]:
+                del _last_shell_command[stale]
+            _last_shell_command[self.id] = (command, now)
+            return await self._deliver_shell_command(escape, command)
+
+    async def _deliver_shell_command(self, escape: str, command: str) -> ApiSuccessResponse | ApiFailResponse:
+        """Type *command* once the session has settled and prove it arrived, under ``run_shell_command``'s lock."""
         landed = getattr(self.driver, "shell_command_landed", None)
         path = self.transcript_path if landed else None
         # Keys typed while the agent answers are lost. Where the transcript can prove delivery,
@@ -4394,6 +4506,8 @@ class AgenticProcess(Entity):
                     # turn-INITIAL report (spurious-rotation guard).
                     await adopt_session(worker.get_session_id())
                     routed = await turns.route(fd)
+                    if routed is not None:
+                        await latch_turn_failure(self, worker, routed)
                     # Whoever sent the turn in flight listens to it; a turn nobody
                     # sent (the CLI's report of finished background work) has no
                     # stream — its transcript carries it, ``observe-turn`` shows it.
@@ -5957,6 +6071,8 @@ class AgenticProcess(Entity):
         ``[Tool call interrupted]`` once a resumed session moves past it.
         """
         pending = (self.context_data or {}).get(PENDING_USER_INPUT_KEY)
+        if self.launch_blocked():
+            return pending  # waits until the screen watcher sees the prompt leave
         if not isinstance(pending, dict) or not pending.get("tool_use_id"):
             return None
         path = self.transcript_path
@@ -6684,7 +6800,7 @@ class AgenticProcess(Entity):
         )
 
     @action.get(action_name="get-history")
-    async def get_history_action(self) -> "ApiSuccessResponse":
+    async def get_history_action(self) -> "ApiSuccessResponse | JSONResponse":
         """Return this process's transcript as a list of FlowData dicts.
 
         Driver-supplied. Stateless — works for processes that have exited
@@ -6693,37 +6809,41 @@ class AgenticProcess(Entity):
         """
         if self.hub_route:
             return await self._relay_json("get-history", method="GET", refresh=False)
+        from starlette.responses import JSONResponse  # noqa: PLC0415 -- starlette is an app-layer dep
+
         from flow_sdk.builtin.agentic_process.turn_abort import (  # noqa: PLC0415
             history_start_time,
             load_abort_marker_frames,
             merge_abort_markers,
         )
 
-        history = self.driver.load_history(self)
-        # Merge flowpad-authored durable abort markers (written by
-        # ``cancel-prompt``) so a cancelled turn replays as terminated instead
-        # of leaving its last tool call rendered as still running. Worker-
-        # generic: the vendor transcript is vendor-owned and never contains
-        # these; the sidecar in the process record dir does.
-        # ``history_start`` scopes sid-less markers (written before the worker
-        # reported a session id) to rollouts they chronologically overlap — a
-        # rotated session must not inherit them as a phantom index-0 abort.
-        history = merge_abort_markers(
-            history,
-            load_abort_marker_frames(
-                self._record_dir(),
-                session_id=self.session_id,
-                history_start=history_start_time(history),
-            ),
-        )
-        return ApiSuccessResponse(
-            data={
-                "session_id": self.session_id,
-                "use_worker_history": True,
-                "count": len(history),
-                "history": [fd.model_dump(mode="python") for fd in history],
-            }
-        )
+        def read() -> JSONResponse:
+            history = self.driver.load_history(self)
+            # Merge flowpad-authored durable abort markers (written by
+            # ``cancel-prompt``) so a cancelled turn replays as terminated instead
+            # of leaving its last tool call rendered as still running. Worker-
+            # generic: the vendor transcript is vendor-owned and never contains
+            # these; the sidecar in the process record dir does.
+            # ``history_start`` scopes sid-less markers (written before the worker
+            # reported a session id) to rollouts they chronologically overlap — a
+            # rotated session must not inherit them as a phantom index-0 abort.
+            history = merge_abort_markers(
+                history,
+                load_abort_marker_frames(
+                    self._record_dir(),
+                    session_id=self.session_id,
+                    history_start=history_start_time(history),
+                ),
+            )
+            rows = [fd.model_dump(mode="python", exclude=_DERIVED_TEXT) for fd in history]
+            data = {"session_id": self.session_id, "use_worker_history": True, "count": len(rows), "history": rows}
+            # The same envelope and renderer the graph route would apply (``_rendered_once``),
+            # built here so the encode of these freshly-made dicts runs off the loop too.
+            return JSONResponse(content=ApiSuccessResponse(data=data).model_dump())
+
+        # Off the loop: reading, encoding and rendering a multi-MB transcript held the loop
+        # 0.3-0.4 s, and every other request waited behind each chat open (perf hunt 2026-11-07).
+        return await asyncio.to_thread(read)
 
     @action.get(action_name="continuation-prompt")
     async def continuation_prompt_action(
@@ -7144,7 +7264,7 @@ class AgenticProcess(Entity):
         data["background_work"] = prompt_worker_parked(self.id)
         data["ready_for_input"] = is_ready_from_busy(
             self.status, busy, pty_mode=self.pty_mode, session_id=self.session_id
-        )
+        ) and not self.launch_blocked()
         data["queue"] = self._queue_state()
         data["supports_plan_mode"] = self._supports_plan_mode()
         # A command link can run in this session's own shell mode (``run_shell_command``).
@@ -7209,7 +7329,7 @@ class AgenticProcess(Entity):
         if self.status == ProcessStatus.FAILED.value:
             return WorkerStatus.ERROR
         t0 = time.monotonic()
-        discovered = self._discover_status_from_transcript()
+        discovered = transcript_cache.terminal_status(self, self._discover_status_from_transcript)
         took_ms = (time.monotonic() - t0) * 1000
         # Synchronous file discovery on the event loop, run for EVERY process a
         # response serializes: a list of N processes stalls the loop N times this.
@@ -9035,9 +9155,13 @@ class AgenticProcess(Entity):
                         )
                         return
                     proc.sidecar_shell_id = None
-                    if exit_code is not None and exit_code < 0:
-                        proc.status = ProcessStatus.FAILED.value
-                        proc.start_failure = f"Worker terminated by crash signal {-exit_code}."
+                    if (blocked := proc.launch_blocked()) and exit_code is not None and exit_code >= 0:
+                        # Left from a launch prompt ("No, exit"): a respawn shows it again, so latch it.
+                        proc.latch_launch_failure(LaunchError.of(blocked, "Exited at a launch prompt"), phase="blocked",
+                                                  evidence=(proc.launch_failure or {}).get("evidence", ""), facts=(proc.launch_failure or {}).get("facts"))
+                        proc._clear_pending_input(launch=True)
+                    elif exit_code is not None and exit_code < 0:
+                        await _latch_crash(proc, f"Worker terminated by crash signal {-exit_code}.")
                         logger.warning(
                             "AgenticProcess %s: %s Auto-relaunch paused until user retry.",
                             agentic_process_id,
@@ -9051,10 +9175,7 @@ class AgenticProcess(Entity):
                         # Latch ``start_failure`` so auto-recovery (the 5s os-status
                         # sweep and plain open() calls) stops relaunching it; only
                         # an explicit user retry clears the latch.
-                        proc.status = ProcessStatus.FAILED.value
-                        proc.start_failure = (
-                            f"Worker exited {worker_lifetime:.1f}s after launch (exit code {exit_code})."
-                        )
+                        await _latch_crash(proc, f"Worker exited {worker_lifetime:.1f}s after launch (exit code {exit_code}).")
                         logger.warning(
                             "AgenticProcess %s: failed to start — %s Auto-relaunch paused until user retry.",
                             agentic_process_id,
@@ -9087,6 +9208,17 @@ class AgenticProcess(Entity):
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
 
         return _on_pty_exit
+
+
+async def _latch_crash(proc: "AgenticProcess", detail: str) -> None:  # evidence: the end of its terminal output
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import strip_pty_controls
+    from flow_sdk.builtin.shell import Shell
+
+    try:  # evidence is best-effort: it must never lose the latch
+        tail = strip_pty_controls((await (await Shell.get_by_id(proc.shell_id)).read())[-4096:])
+    except Exception:  # noqa: BLE001
+        tail = ""
+    proc.latch_launch_failure(LaunchError.of("cli_crashed", detail), evidence=tail)
 
 
 AgenticProcess.on_event("wizard.close")(AgenticProcess.on_wizard_close)

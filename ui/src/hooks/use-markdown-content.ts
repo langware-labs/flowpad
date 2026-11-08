@@ -1,4 +1,5 @@
 import { DocumentDraft, type AssetDocument, type DocumentRef, type DocumentValue } from '@sdk/fs/AssetDocument';
+import { useFileWatch } from '@sdk/react/hooks';
 import { usePrimaryContentPending } from '@sdk/react/primary-content';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
@@ -12,6 +13,8 @@ export interface MarkdownContentState {
   setBody: (body: string) => void;
   dropField: (key: string) => void;
   dirty: boolean;
+  /** Live dirtiness, read now (not from the last render): true iff `save` would write something. */
+  isDirty: () => boolean;
   saving: boolean;
   lastSync: Date | null;
   isLoading: boolean;
@@ -56,6 +59,10 @@ export function useMarkdownContent(
   const identity = fsRef?.vpath ?? fsRef?.path ?? null;
   const previousLoad = useRef({ identity, reloadTrigger });
   const reloadKey = options?.reloadKey;
+  // An out-of-band edit (an agent writing this doc) refreshes it now, not after
+  // the next reindex. Watched only while on screen: a hidden tab is unmounted.
+  const [diskTick, diskChanged] = useReducer((n: number) => n + 1, 0);
+  useFileWatch(fsRef?.watchId, fsRef?.path, diskChanged);
 
   useEffect(() => () => { ++epoch.current; }, []);
 
@@ -74,6 +81,8 @@ export function useMarkdownContent(
     if (!explicit && draft.current && target) {
       void target.readDocument().then((document) => {
         if (epoch.current !== token || draft.current?.dirty || inFlight.current || saveBlocked.current) return;
+        // Our own save echoing back (or a no-op touch): nothing to redraw.
+        if (draft.current && draft.current.document.revision === document.revision) return;
         draft.current = new DocumentDraft(document);
         redraw();
       }).catch(() => { /* the loaded copy stays; the next reload or save surfaces a real failure */ });
@@ -103,7 +112,7 @@ export function useMarkdownContent(
       setMissing(missing);
       if (!missing) setLoadError(error instanceof Error ? error : new Error(String(error)));
     });
-  }, [identity, reloadTrigger, reloadKey]);
+  }, [identity, reloadTrigger, reloadKey, diskTick]);
 
   const saveRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
   const save = useCallback(async () => {
@@ -170,6 +179,7 @@ export function useMarkdownContent(
     catch (error) { setLoadError(error instanceof Error ? error : new Error(String(error))); }
   }, []);
 
+  const isDirty = useCallback(() => draft.current?.dirty ?? false, []);
   const dirty = draft.current?.dirty ?? false;
   const autoSave = options?.autoSave ?? true;
   const autoSaveMs = options?.autoSaveMs ?? 3000;
@@ -191,7 +201,7 @@ export function useMarkdownContent(
   return {
     fields, typedFields: current?.fields ?? {}, hasFields: Object.keys(current?.fields ?? {}).length > 0,
     body: current?.body ?? '', bodyStartLine: current?.document.body_start_line ?? 1,
-    setBody, setField, dropField, dirty, saving, lastSync, isLoading, loadError,
+    setBody, setField, dropField, dirty, isDirty, saving, lastSync, isLoading, loadError,
     saveError, conflict, currentDocument, inspectCurrent, metadataError: current?.document.metadata_error ?? null,
     isMissing, recreate, save, reload,
   };

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
-from pydantic import BaseModel
+from pydantic import BaseModel, PrivateAttr
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.builtin.change_event import ChangeEvent
@@ -94,6 +94,8 @@ class ExecutedAction(BaseModel):
     trigger_name: str
     action_type: ActionType
     counter: int
+    # Keep invocation evidence out of the existing hook wire response.
+    _execution: Any = PrivateAttr(default=None)
 
 
 
@@ -427,7 +429,7 @@ class RunAgentActionHandler(TriggerActionHandler):
         # refusal, checked here before `launch` — which would refuse too, but only
         # after announcing a run: every tick of a schedule on a switched-off place
         # would emit `agent.run.requested` / `failed`.
-        if not agent.enabled_on(deployment.id):
+        if not agent.enabled:
             return PromptResult.refused(
                 f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: agent {agent.name!r} is disabled "
                 f"on place {deployment.id}."

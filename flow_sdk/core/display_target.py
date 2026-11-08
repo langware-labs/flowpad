@@ -114,6 +114,10 @@ async def resolve_display_target(
             # A project has no document editor: it opens on its own page, the
             # one its "Open project home" button and its tab land on.
             return await dock_target(f"project/{entity.id}")
+        if entity.get_type() == "agentic_process":
+            # A session has no document editor either: it opens as its live
+            # session tab, the one its row in the sessions list lands on.
+            return await dock_target(f"shell/agentic_process-{entity.id}")
         return _entity_payload(entity)
 
     if path:

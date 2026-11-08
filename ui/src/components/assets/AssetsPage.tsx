@@ -691,6 +691,7 @@ export function AssetsPage() {
             <ProjectHome
               spawnProjectId={scopeProjectId}
               setupPage={effectivePointer === (AssetMode.PROJECT_SETUP as string)}
+              deploymentsPage={effectivePointer === (AssetMode.PROJECT_DEPLOYMENTS as string)}
             />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

@@ -1,4 +1,5 @@
 import type { DataSourceChoice, DataSourceChoiceSet } from '@sdk';
+import { errorMessage } from '@src/lib/error-message';
 
 /**
  * What the picker knows about a field's options right now.
@@ -35,7 +36,7 @@ export function nextFetch(answer: DataSourceChoiceSet | null | undefined): Choic
 
 /** A thrown request → the same shape, so the field has one branch, not two. */
 export function failedFetch(error: unknown): ChoiceFetch {
-  return { status: 'unpickable', detail: error instanceof Error ? error.message : String(error) };
+  return { status: 'unpickable', detail: errorMessage(error, String(error)) };
 }
 
 /** True when the field should draw its ordinary text input instead of a picker.
@@ -43,9 +44,8 @@ export function failedFetch(error: unknown): ChoiceFetch {
  *  A type PREDICATE, not a bare boolean: it selects the one state that carries a
  *  `detail`, and the caller renders that sentence right after asking. With a plain
  *  `boolean` the union never narrows and reading `fetch.detail` does not compile. */
-export const fallsBackToTyping = (
-  fetch: ChoiceFetch,
-): fetch is Extract<ChoiceFetch, { status: 'unpickable' }> => fetch.status === 'unpickable';
+export const fallsBackToTyping = (fetch: ChoiceFetch): fetch is Extract<ChoiceFetch, { status: 'unpickable' }> =>
+  fetch.status === 'unpickable';
 
 /**
  * What the picker lists: everything offered, plus anything already picked that the
@@ -55,10 +55,7 @@ export const fallsBackToTyping = (
  * reads. Dropping it from the list would make it vanish from the form and then from the
  * saved config on the next edit — a silent unsubscribe nobody asked for.
  */
-export function mergeChoices(
-  picked: DataSourceChoice[],
-  offered: DataSourceChoice[],
-): DataSourceChoice[] {
+export function mergeChoices(picked: DataSourceChoice[], offered: DataSourceChoice[]): DataSourceChoice[] {
   const seen = new Set(offered.map((c) => c.id));
   return [...offered, ...picked.filter((c) => !seen.has(c.id))];
 }

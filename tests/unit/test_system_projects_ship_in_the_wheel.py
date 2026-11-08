@@ -41,3 +41,23 @@ def test_every_tracked_skill_template_file_is_package_data():
     excluded = _resolve(config["exclude-package-data"]["flow_sdk"])
     missing = [path for path in templates if path not in shipped and path not in excluded]
     assert not missing, f"tracked but not shipped in the wheel: {missing}"
+
+
+#: A module reading a data file next to itself: ``Path(__file__).parent / "name.json"``.
+_BESIDE = re.compile(r"""Path\(__file__\)(?:\.resolve\(\))?\.parent\s*/\s*["']([\w.-]+\.(?:json|md|txt|ya?ml))["']""")
+
+
+def test_a_data_file_a_module_reads_beside_itself_is_package_data():
+    """``core/webapp/default_handlings.json`` was read by every web app's recovery and setup-state, and was
+    not in the wheel: on a cloud box ``micro_app/<id>/setup-state`` answered a 500 (No such file)."""
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["setuptools"]
+    shipped = _resolve(config["package-data"]["flow_sdk"]) - _resolve(config["exclude-package-data"]["flow_sdk"])
+    read: set[str] = set()
+    for module in PACKAGE.rglob("*.py"):
+        if "system_projects" in module.parts:
+            continue
+        for name in _BESIDE.findall(module.read_text(encoding="utf-8", errors="replace")):
+            if (module.parent / name).is_file():
+                read.add(os.path.relpath(module.parent / name, ROOT))
+    assert read, "no module reads a file beside itself: the pattern no longer finds them"
+    assert not read - shipped, f"read beside a module but not shipped in the wheel: {sorted(read - shipped)}"

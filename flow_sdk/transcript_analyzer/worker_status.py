@@ -212,6 +212,7 @@ _IGNORED_TYPES: frozenset[str] = frozenset(
         "api-request",
         "api-request-blob",
         "api-request-shape",
+        "session-owner",  # Claude 2.1.318+: written after last-prompt
     }
 )
 
@@ -533,6 +534,13 @@ def _scan_reversed(
         # the previous turn's ``end_turn`` from reading as this turn's.
         if last_type is None and _is_stop_report(entry):
             continue
+        # A compaction summary is Claude's own rewrite of the finished history, not a prompt: nothing
+        # answers it, so read as a user turn it pins an idle session at ``working`` for good. It closes
+        # that history like an ``end_turn`` — and stopping here keeps the tail read from widening past it.
+        if t == "user" and entry.get("isCompactSummary"):
+            last_type = last_type or t
+            last_stop_reason = last_stop_reason or "end_turn"
+            break
         if last_type is None:
             last_type = t
             if t == "system":

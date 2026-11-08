@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEPLOYMENT_TIMELINE_TAG, type Deployment, type DeploymentThread, type TimelineEvent } from '@sdk';
 import { useOnTag } from '@sdk/react/hooks';
+import { t } from '@lingui/core/macro';
+
+import { errorMessage, errorStatus } from '@src/lib/error-message';
 
 type Data = Record<string, unknown> | undefined;
 
@@ -31,7 +34,11 @@ function useLiveRead<T>(read: (() => Promise<T>) | null, key: string | null) {
           setData(await reader());
           setError(null);
         } catch (err) {
-          setError(err instanceof Error ? err.message : String(err));
+          setError(
+            errorStatus(err) === 502
+              ? t`The hub could not reach this machine. It may be paused or still starting.`
+              : errorMessage(err, String(err)),
+          );
         }
       } while (again.current);
     })().finally(() => {

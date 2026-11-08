@@ -209,3 +209,98 @@ async def test_runs_can_leave_out_flowpads_own(bootstrapped_client):
                                                         params={"include_builtin": "false"})).json()["data"]}
     assert {mine["id"], builtin["id"]} <= every
     assert mine["id"] in yours and builtin["id"] not in yours
+
+
+@pytest.fixture
+def wizard_answers(monkeypatch):
+    """Observe real runner outcomes without replacing any execution behavior."""
+    from flow_sdk.automations import execution
+
+    answers = []
+    original = execution.run_wizard
+
+    async def observe(*args, **kwargs):
+        answer = await original(*args, **kwargs)
+        answers.append(answer)
+        return answer
+
+    monkeypatch.setattr(execution, "run_wizard", observe)
+    return answers
+
+
+@pytest.mark.parametrize("kind", ["tag", "schedule", "fsop"])
+async def test_nonempty_run_once_keeps_admission_and_wizard_correlated(
+    bootstrapped_client, tmp_path, monkeypatch, wizard_answers, kind,
+):
+    import asyncio
+
+    from flow_sdk.builtin import trigger_callbacks
+    from tests.unit.automations._helpers import settle
+
+    entered, release = asyncio.Event(), asyncio.Event()
+    effects = []
+    monkeypatch.setattr(trigger_callbacks, "_handlers", dict(trigger_callbacks._handlers))
+    callback_name = _name("api-wizard-effect")
+
+    @trigger_callbacks.register(callback_name)
+    async def effect(trigger, changes):
+        entered.set()
+        await release.wait()
+        effects.append(trigger.id)
+
+    row = await _create(
+        bootstrapped_client, trigger_type=kind, enabled=False, fire_once=True,
+        **{"tag": {"tag_pattern": "apiwizard.*"},
+           "schedule": {"expr": "0 9 * * 1-5", "sched_trigger_type": "cron"},
+           "fsop": {"watch_path": str(tmp_path)}}[kind],
+        actions=[{"action_type": "callback", "callback_name": callback_name}],
+    )
+    try:
+        admission = await bootstrapped_client.post(f"/api/v1/graph/trigger/{row['id']}/test", json={})
+        assert admission.status_code == 200, admission.text
+        started = admission.json()["data"]
+        assert started["background"] is True and started["run_id"]
+        await entered.wait()
+        running = await bootstrapped_client.get("/api/v1/graph/trigger/run", params={"id": started["run_id"]})
+        assert running.json()["data"]["status"] == "running"
+        assert effects == []
+    finally:
+        release.set()
+        await settle()
+    finished = await bootstrapped_client.get("/api/v1/graph/trigger/run", params={"id": started["run_id"]})
+    result = finished.json()["data"]
+    assert (result["status"], result["trigger_id"], result["is_test"]) == ("succeeded", row["id"], True)
+    assert effects == [row["id"]]
+    matching = [answer for answer in wizard_answers if answer.invocation_id == started["run_id"]]
+    assert matching and matching[-1].steps, "HTTP run must execute a correlated, nonempty Wizard"
+    saved = await bootstrapped_client.get(f"/api/v1/graph/trigger/{row['id']}")
+    assert saved.json()["data"]["counter"] == 0
+
+
+async def test_decision_preview_uses_wizard_without_accepting_or_executing(
+    bootstrapped_client, monkeypatch, tmp_path, wizard_answers,
+):
+    from tests.utils.decision_double import install
+
+    decision = install(monkeypatch, tmp_path)
+    marker = tmp_path / "must-not-exist"
+    script = tmp_path / "effect.sh"
+    script.write_text(f"#!/bin/sh\ntouch '{marker}'\n")
+    script.chmod(0o700)
+    row = await _create(
+        bootstrapped_client, trigger_type="tag", tag_pattern="stream_inbox.*.message.projected",
+        fire_once=True, gate={"sentence": "asks for a refund"},
+        actions=[{"action_type": "run_script", "script_path": str(script)}],
+    )
+    check = await bootstrapped_client.post(f"/api/v1/graph/trigger/{row['id']}/check", json={})
+    assert check.status_code == 200 and not marker.exists() and decision["invoked"] == []
+    preview = await bootstrapped_client.post(
+        f"/api/v1/graph/trigger/{row['id']}/decide_on", json={"text": "Please refund the duplicate charge"},
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["data"]["met"] is True
+    assert decision["invoked"] and wizard_answers and wizard_answers[-1].steps
+    runs = await bootstrapped_client.get("/api/v1/graph/trigger/runs", params={"trigger_id": row["id"]})
+    assert runs.json()["data"] == [] and not marker.exists()
+    saved = await bootstrapped_client.get(f"/api/v1/graph/trigger/{row['id']}")
+    assert saved.json()["data"]["counter"] == 0

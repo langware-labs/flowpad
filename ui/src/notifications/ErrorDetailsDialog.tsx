@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import { useDiagnoseErrorStore } from './diagnose/diagnose-error-store';
+import { diagnoseAndFix } from './diagnose/diagnose-and-fix';
 import { detailSections, detailText, hiddenLine } from './error-detail';
 import { useErrorDetailsStore } from './error-details-store';
 import type { NotificationData } from './types';
@@ -22,7 +22,7 @@ const SECTION_TITLE = 'mb-1 text-xs font-semibold uppercase tracking-wide text-m
 /**
  * The details popup behind every error/warning's Details button: what failed (request), what came
  * back (answer), any limit, when and how often, and this app. Diagnose seeds a diagnosis with all
- * of it. Mounted once in `main.tsx`, next to `DiagnoseErrorModal`.
+ * of it. Mounted once in `main.tsx`.
  */
 export function ErrorDetailsDialog() {
   const shown = useErrorDetailsStore((s) => s.shown);
@@ -38,7 +38,7 @@ function ErrorDetailsContent({ data }: { data: NotificationData }) {
   const { t, i18n } = useLingui();
   const open = useErrorDetailsStore((s) => s.open);
   const close = useErrorDetailsStore((s) => s.close);
-  const diagnose = useDiagnoseErrorStore((s) => s.open);
+  const diagnose = diagnoseAndFix;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the locale changes the labels
   const sections = useMemo(() => detailSections(data), [data, i18n.locale]);
   const status = data.detail?.response?.status;
@@ -102,7 +102,7 @@ function ErrorDetailsContent({ data }: { data: NotificationData }) {
           variant="outline"
           onClick={() => {
             close();
-            diagnose(detailText(data, sections), data.level === 'warning' ? 'warning' : 'error');
+            void diagnose(detailText(data, sections), data.level === 'warning' ? 'warning' : 'error');
           }}
         >
           <Stethoscope className="h-4 w-4" />

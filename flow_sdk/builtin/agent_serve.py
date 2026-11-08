@@ -50,6 +50,7 @@ def _line(text: str, width: int = 90) -> str:
     flat = " ".join(str(text or "").split())
     return flat if len(flat) <= width else f"{flat[: width - 1]}…"
 
+
 # ── the turn record, on the process (durable, so a redelivery is answered from it) ──
 
 TURNS = "turns"
@@ -88,7 +89,12 @@ def done_record(started: Optional[dict], text: str, status: str = DONE) -> dict:
     """The record of a turn that ended (``DONE``, or ``FAILED``) with *text* — keeping when it began
     (a timeline shows both)."""
     began = (started or {}).get("at")
-    return {"status": status, "text": text, **({"at": began} if began else {}), "ended_at": datetime.now(timezone.utc).isoformat()}
+    return {
+        "status": status,
+        "text": text,
+        **({"at": began} if began else {}),
+        "ended_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 async def _forget_turn(ap, key: str) -> None:
@@ -233,10 +239,9 @@ class TurnEngine:
         return next((p for p in existing if str(getattr(p, "status", "")) != ProcessStatus.FAILED.value), None)
 
     async def _current_model(self) -> Optional[str]:
-        """The model this placement runs the agent on now: its place override, else the definition's."""
+        """The model this placement runs the agent on now: its deployment's override, else the definition's."""
         current = await type(self.agent).get_by_id(str(self.agent.id)) or self.agent
-        place = current.place_for(self.deployment.id) if self.deployment is not None else None
-        overridden = place.overrides().get("model") if place is not None else None
+        overridden = self.deployment.overrides_for(current).get("model") if self.deployment is not None else None
         return overridden or getattr(current, "model", None) or None
 
     async def process_for(self, session: str, *, name: Optional[str] = None, context: Optional[dict] = None):
@@ -329,16 +334,25 @@ class TurnEngine:
             prior = turns_of(ap).get(turn.key)
             if prior and prior.get("status") == DONE:
                 # Answered before — the same reply again, and nothing runs now.
-                yield done(PromptResult.satisfied(
-                    "The turn was answered before.", text=prior.get("text", ""), ran=False, executor=executor,
-                ))
+                yield done(
+                    PromptResult.satisfied(
+                        "The turn was answered before.",
+                        text=prior.get("text", ""),
+                        ran=False,
+                        executor=executor,
+                    )
+                )
                 return
             if prior and prior.get("status") == FAILED:
                 # Ended in error before. Running it again could repeat what it did
                 # on the way down; a person decides that, not a redelivery.
-                yield done(PromptResult.not_yet(
-                    "An earlier attempt at this turn ended in error.", ran=False, executor=executor,
-                ))
+                yield done(
+                    PromptResult.not_yet(
+                        "An earlier attempt at this turn ended in error.",
+                        ran=False,
+                        executor=executor,
+                    )
+                )
                 return
             if prior and prior.get("status") == STARTED:
                 # Died mid-turn. Did the agent finish? The transcript knows -- when there is one. A worker that
@@ -347,9 +361,14 @@ class TurnEngine:
                 text = await _left_reply(ap, prior) if has_transcript(ap) else ""
                 if text:
                     await stamp_turn(ap, turn.key, done_record(prior, text))
-                    yield done(PromptResult.satisfied(
-                        "The turn had finished.", text=text, ran=False, executor=executor,
-                    ))
+                    yield done(
+                        PromptResult.satisfied(
+                            "The turn had finished.",
+                            text=text,
+                            ran=False,
+                            executor=executor,
+                        )
+                    )
                     return
             start = len(transcript_entries(ap)) if stream else 0
             await stamp_turn(ap, turn.key, started_record())
@@ -366,15 +385,23 @@ class TurnEngine:
                 if stream:
                     async for event in _follow(ap, start):
                         yield event
-                    text = _last_turn_assistant_text(transcript_entries(ap)[start:]) or await _capture_assistant_reply(ap)
+                    text = _last_turn_assistant_text(
+                        transcript_entries(ap)[start:], last_only=True
+                    ) or await _capture_assistant_reply(ap)
                 else:
+                    # The wait is the capture's; the reply is the turn's FINAL message, not its progress lines.
                     text = await _capture_assistant_reply(ap)
+                    text = _last_turn_assistant_text(transcript_entries(ap), last_only=True) or text
             except TimeoutError:
                 # The wait ended, not necessarily the turn. The STARTED stamp stays:
                 # a redelivery reads the transcript to learn whether it finished.
-                yield done(PromptResult.not_yet(
-                    "The agent did not finish its turn in time.", timed_out=True, executor=executor,
-                ))
+                yield done(
+                    PromptResult.not_yet(
+                        "The agent did not finish its turn in time.",
+                        timed_out=True,
+                        executor=executor,
+                    )
+                )
                 return
             except RuntimeError as ended:
                 # The worker ended with no end-of-turn marker — it never came up (no funding,
@@ -394,7 +421,43 @@ class TurnEngine:
                 # Why it failed (e.g. the hub's 429 "limit ... exceeded") is kept: the health check names it.
                 failed = {**done_record(started, text or "", FAILED), ERROR: _line(str(answer.detail or ""), 300)}
                 await stamp_turn(ap, turn.key, failed)
+            await _settle(ap)
             yield done(answer)
+
+
+async def _settle(ap) -> None:
+    """End the lifecycle of a headless process whose turn is over: ``stopped``, its session kept.
+
+    A headless turn sets the process ``running`` and nothing on the turn's tail sets it back --
+    the worker is per turn, so once it answered nothing is live, yet the run read ``running``
+    forever. ``stopped`` with a session is headless-idle: the next turn starts it again
+    (``process_for`` reuses it). The turn's task is joined first, so its own tail (broadcast,
+    reindex, naming) is not raced. A worker parked on background work is still live, and a PTY
+    or hub-routed process has its own lifecycle owner: those are left alone."""
+    from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
+        _PROMPT_TASKS,
+        prompt_worker_parked,
+    )
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus  # noqa: PLC0415
+
+    if getattr(ap, "pty_mode", False) or getattr(ap, "hub_route", False) or getattr(ap, "shell_id", None):
+        return
+    if getattr(ap, "id", None) is None:  # a runner that answered without a process row: nothing to settle
+        return
+    pid = str(ap.id)
+    # The answer stands: nothing in settling the run's status may turn it into a failed turn.
+    try:
+        if prompt_worker_parked(pid):
+            return
+        task = _PROMPT_TASKS.get(pid)
+        if task is not None and task is not asyncio.current_task():
+            await asyncio.gather(task, return_exceptions=True)
+        if getattr(ap, "status", None) != ProcessStatus.RUNNING.value or prompt_worker_parked(pid):
+            return
+        ap.status = ProcessStatus.STOPPED.value
+        await ap.save()
+    except Exception:  # noqa: BLE001 — a stale status does not undo the answer
+        logger.warning("agent turn: could not settle process %s", pid, exc_info=True)
 
 
 def _transcript_file(ap):
@@ -438,7 +501,7 @@ async def _left_reply(ap, started: dict) -> str:
         return ""
     if path is None or path.stat().st_mtime <= began or ap.driver.tail_status(path) is not WorkerStatus.COMPLETE:
         return ""
-    return _last_turn_assistant_text(transcript_entries(ap))
+    return _last_turn_assistant_text(transcript_entries(ap), last_only=True)
 
 
 def has_transcript(ap) -> bool:
@@ -566,11 +629,14 @@ def admits(source, author: str) -> bool:
     non-empty list restricts either way. Explicit source ``open_to_all`` overrides
     the allowlist, but a paused source always admits nobody.
     """
-    from flow_sdk.builtin.agent_mailbox import sender_allowed  # noqa: PLC0415
+    from flow_sdk.builtin.agent_mailbox import on_list, sender_allowed  # noqa: PLC0415
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
 
     if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
+        return False
+    blocked = getattr(source, "blocked_senders", None) or []
+    if on_list(blocked, author):
         return False
     if getattr(source, "open_to_all", False) or (str(getattr(source, "id", "")), author) in _PROBES:
         return True
@@ -594,19 +660,12 @@ def is_own_outgoing(source, author: str) -> bool:
 async def answers_here(source, deployment, agent=None) -> bool:
     """Whether *deployment* (a placement on this machine) is the one answering *source*.
 
-    ``answer_place`` names it. A mailbox still follows the agent's ``email_place``
-    until it carries its own; a source that names no place is answered wherever it
-    is held, as before places existed.
+    ``answer_place`` names it; a source that names no place is answered by the deployment here
+    whose main agent owns it (one per machine).
     """
     place = str(getattr(source, "answer_place", "") or "")
     if place:
         return place == str(deployment.id)
-    if str(getattr(source, "provider", "") or "") == "cloud_email":
-        # A mailbox that carries no place of its own follows the agent's ``email_place``.
-        agent = agent if agent is not None else await deployment.agent()
-        if agent is not None and agent.email_place:
-            return str(agent.email_place) == str(deployment.id)
-    # A source that names no place is answered by the agent's deployment here (one per machine).
     return True
 
 
@@ -689,7 +748,9 @@ def deployment_chat_driver():
 
 def is_request_channel(cls) -> bool:
     """A driver class an HTTP request can be a message on (``events_from_request`` / ``reply_payload``)."""
-    return all(callable(getattr(cls, verb, None)) for verb in ("events_from_request", "reply_payload", "request_thread"))
+    return all(
+        callable(getattr(cls, verb, None)) for verb in ("events_from_request", "reply_payload", "request_thread")
+    )
 
 
 async def ensure_chat_channel(agent, deployment):
@@ -746,7 +807,22 @@ async def running_deployments() -> list:
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
     rows = await Deployment.get_all({"match": {"serving": True}})
-    return [d for d in rows if d.serving and d.places_agent and d.is_local and deployment_process.alive(d)]
+    async with deployment_process.process_table():
+        return [d for d in rows if d.serving and d.places_agent and d.is_local and deployment_process.alive(d)]
+
+
+async def serving_deployments() -> list:
+    """The local agent deployments set to run here (``serving``) -- their process alive or not yet.
+
+    What the app leaves a deployment's channels for. Not :func:`running_deployments`: the app's poll only
+    RECORDS a message, it never answers one, so a mail it records while the deployment's process is starting
+    (a woken machine boots with mail waiting) or restarting is consumed and never answered. The supervisor
+    starts that process again within ``RESTART_SECONDS``; the channel waits for it.
+    """
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+    rows = await Deployment.get_all({"match": {"serving": True}})
+    return [d for d in rows if d.serving and d.places_agent and d.is_local]
 
 
 async def polled_by_a_deployment(sources=None) -> set[str]:
@@ -754,7 +830,8 @@ async def polled_by_a_deployment(sources=None) -> set[str]:
 
     A deployment's loop polls the channels it answers (:func:`answered_sources`) from its own
     process; the app's heartbeat polling the same source at the same moment would race its cursor
-    (the in-flight guard is per process). A dead deployment's channels are polled here as ever.
+    (the in-flight guard is per process). The app leaves them to every deployment set to serve here,
+    its process up or not yet (:func:`serving_deployments`): recording a message nobody answers loses it.
     *sources* narrows the answer to those.
 
     Held means held by ANOTHER process: asked from inside a deployment's own process
@@ -763,10 +840,10 @@ async def polled_by_a_deployment(sources=None) -> set[str]:
     """
     own = os.environ.get(deployment_process.DEPLOYMENT_ENV, "").strip()
     held: set[str] = set()
-    for deployment in await running_deployments():
+    for deployment in await serving_deployments():
         if str(deployment.id) == own:
             continue
-        agent = await deployment.agent()
+        agent = await deployment.main_agent()
         if agent is not None:
             held.update(str(s.id) for s in await answered_sources(agent, deployment))
     return held if sources is None else held & {str(s.id) for s in sources}
@@ -798,8 +875,15 @@ def bound_at(deployment, source) -> Optional[datetime]:
     """When *deployment* took *source*: the later of their creations (UTC), or None."""
     from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
 
-    stamps = [iso_to_utc(s) for s in (getattr(deployment, "created_date", None), getattr(source, "created_date", None)) if s]
-    return max(stamps, default=None)
+    stamps = [
+        iso_to_utc(s) for s in (getattr(deployment, "created_date", None), getattr(source, "created_date", None)) if s
+    ]
+    bound = max(stamps, default=None)
+    # A placement made BY a message (a private deployment's person, placed on their first mail) answers from
+    # that message: it waited before this machine existed and is the reason it does.
+    raw = getattr(deployment, "answers_from", None)
+    since = iso_to_utc(raw) if raw else None
+    return min(bound, since) if bound is not None and since is not None else bound
 
 
 def is_history(message, since: Optional[datetime]) -> bool:
@@ -915,9 +999,11 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
     channel = source.channel or source.provider
     from flow_sdk.builtin.agent_mailbox import refresh_policy_for  # noqa: PLC0415
 
-    # The cached allowlist may be stale or never filled on this machine (a cloud placement's):
-    # re-read it once from its owner before refusing.
-    if not admits(source, author) and not (await refresh_policy_for(source) and admits(source, author)):
+    # The cached lists may be stale or never filled on this machine (a cloud placement's, or another
+    # process's): re-read them from the Hub before the gate either way — a sender blocked since the last
+    # read must not keep being answered. At most once per window per source.
+    await refresh_policy_for(source)
+    if not admits(source, author):
         console.info("✗ %s  %s — not an allowed sender, not answered", channel, author)
         _announce(engine.deployment, "refused", data_source_id=str(source.id))
         return await skip_message(message)
@@ -948,7 +1034,9 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
         Turn(
             session=session,
             key=turn_key(message),
-            body=turn_body(message, outbox=outbox if getattr(getattr(driver_cls, "files", None), "kinds", None) else None),
+            body=turn_body(
+                message, outbox=outbox if getattr(getattr(driver_cls, "files", None), "kinds", None) else None
+            ),
             name=" · ".join(p for p in (agent.name, source.channel or source.provider, who) if p) or None,
         ),
         process=process,
@@ -1001,8 +1089,10 @@ async def _hold_failed(engine: TurnEngine, message, source, session: str, key: s
         # Sent straight through the source, not ``message.reply``: that would record the message as replied
         # to, and the held answer sent later would then be taken for a resend and never go out.
         make = getattr(message, "reply_spec", None)
-        spec = await make(body=UNAVAILABLE_REPLY, quote=False) if callable(make) else source.reply_spec(
-            message, body=UNAVAILABLE_REPLY, quote=False
+        spec = (
+            await make(body=UNAVAILABLE_REPLY, quote=False)
+            if callable(make)
+            else source.reply_spec(message, body=UNAVAILABLE_REPLY, quote=False)
         )
         await source.send(spec)
         console.info("→ %s  the person was told the agent cannot answer right now", source.channel or source.provider)
@@ -1245,7 +1335,7 @@ class AgentServer:
                 logger.exception("agent server: reconcile failed")
 
     async def reconcile(self, *, chiefs: bool = True) -> None:
-        async with self._reconciling:
+        async with self._reconciling, deployment_process.process_table():
             if chiefs:
                 await self._sync_chiefs_of_staff()
             wanted, strays = await self._wanted()
@@ -1272,12 +1362,14 @@ class AgentServer:
 
         wanted: dict[str, tuple] = {}
         strays: list = []
-        agents = QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["parent_type_id", "agent-%"]))
-        for deployment in await Deployment.get_all(agents):
-            if not deployment.places_agent or not deployment.is_local:
+        # A deployment with a main agent runs that agent; the rest are web-only or this computer -- and
+        # one whose main agent was just cleared is a stray when its loop is still up.
+        local = QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["target.provider", "local"]))
+        for deployment in await Deployment.get_all(local):
+            if not deployment.is_local:
                 continue
-            agent = await deployment.agent() if deployment.serving else None
-            if agent is not None and agent.enabled_on(deployment.id):
+            agent = await deployment.main_agent() if deployment.serving else None
+            if agent is not None and agent.enabled:
                 wanted[str(deployment.id)] = (agent, deployment)
             elif str(deployment.id) not in self._running and deployment_process.alive(deployment):
                 strays.append(deployment)
@@ -1290,11 +1382,19 @@ class AgentServer:
         if not deployment_process.alive(deployment):
             labels = await deployment_process.start(deployment)
             if labels != {k: (deployment.provider_labels or {}).get(k) for k in labels}:
-                deployment.provider_labels = {**(deployment.provider_labels or {}), **labels}
-                await deployment.save()
-            logger.info("agent %s: deployment %s started in terminal %s", agent.name or agent.id, deployment.id,
-                        labels.get(deployment_process.SHELL_LABEL))
-        self._running[str(deployment.id)] = deployment   # started now, or alive from before a restart: adopted
+                # The row as it is NOW, not the copy read before the start: a hub adopt that landed in
+                # between (a main agent cleared, an override changed) must not be written back over.
+                current = await type(deployment).get_by_id(str(deployment.id)) or deployment
+                current.provider_labels = {**(current.provider_labels or {}), **labels}
+                await current.save()
+                deployment = current
+            logger.info(
+                "agent %s: deployment %s started in terminal %s",
+                agent.name or agent.id,
+                deployment.id,
+                labels.get(deployment_process.SHELL_LABEL),
+            )
+        self._running[str(deployment.id)] = deployment  # started now, or alive from before a restart: adopted
 
     async def _stop_process(self, deployment) -> None:
         """Stop the deployment's loop; its terminal stays, showing how it ended."""
@@ -1327,6 +1427,7 @@ class AgentServer:
                 await sync_tasks_channel(agents[aid])
             except Exception:  # noqa: BLE001 — one agent's channel must not stop the rest
                 logger.exception("agent %s: tasks channel sync failed", aid)
+
 
 #: Each running :func:`serve` loop's stop — how :func:`stop_serving` asks it to end.
 _STOPS: "weakref.WeakKeyDictionary[asyncio.Task, asyncio.Event]" = weakref.WeakKeyDictionary()

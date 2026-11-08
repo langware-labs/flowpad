@@ -16,6 +16,7 @@ import { NavIconButton } from './NavIconButton';
 import { ProjectSetupButton } from './ProjectSetupButton';
 import { RuntimeChip } from './RuntimeChip';
 import { TopBarActions } from './TopBarActions';
+import { TopBarAskForHelp } from './TopBarAskForHelp';
 import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
 import { NewWorkspaceDialogHost } from '@src/components/workspace/workspace-switcher';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
@@ -80,12 +81,8 @@ export function TopNavBar() {
       {/* A full window reload, the same as the browser's own — no modifier
           gesture and no soft variant. Anything less does not reload. */}
       <NavIconButton icon={RefreshCw} label={t`Reload`} onClick={reload} testId="top-nav-reload" />
-      <NavIconButton
-        icon={Home}
-        label={t`Home`}
-        onClick={() => navigation.goHome({ homePage: true })}
-        testId="top-nav-home"
-      />
+      {/* Home is Flowpad's own home page, never a project's home page. */}
+      <NavIconButton icon={Home} label={t`Home`} onClick={() => navigation.goHome()} testId="top-nav-home" />
       {/* Files sat on the rail; same destination, same one-liner, just beside
           the other place-buttons instead of below them. */}
       <NavIconButton
@@ -129,6 +126,7 @@ export function TopNavBar() {
         />
       )}
       <TopBarActions targetTypeId={targetTypeId} targetTitle={targetTitle} dock={currentDock} />
+      <TopBarAskForHelp projectId={project?.id ?? null} />
     </div>
   );
 }

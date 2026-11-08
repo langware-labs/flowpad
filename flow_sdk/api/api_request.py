@@ -40,6 +40,10 @@ class APIRequest(BaseModel):
     target_typeid: Optional[TypeId] = None
     action: Optional[str] = None
     sub_path: Optional[str] = None
+    #: A segment after the target that is neither a known action nor a type (``deployment/<id>/nope``).
+    #: Parsing keeps it permissive -- a hub-only action must still route to the hub intact -- but a
+    #: request answered HERE refuses it (``handle_request``) instead of reading it as a bare GET.
+    unknown_segment: Optional[str] = None
     query_params: Optional[dict] = None
     body: Optional[dict] = None
 
@@ -197,6 +201,8 @@ class APIRequest(BaseModel):
                     api_request.sub_path = (
                         "/".join([seg for seg in non_scoped_segments]) if non_scoped_segments else None
                     )
+                elif non_scoped_segments:
+                    api_request.unknown_segment = non_scoped_segments[0]
             elif not api_request.action and non_scoped_segments and is_action(non_scoped_segments[0]):
                 api_request.action = non_scoped_segments.pop(0)
                 api_request.sub_path = "/".join([seg for seg in non_scoped_segments]) if non_scoped_segments else None

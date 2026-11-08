@@ -1,8 +1,7 @@
 """Which channels a deployment answers, and the supervisor that keeps each running deployment's process up.
 
 An agent answers a channel from exactly one place: the source's ``answer_place`` names it, and a
-source that names none is the DEFAULT local deployment's (slot ``""``) — never a second one's, or
-two processes would answer it. A running local deployment is a process (``builtin/agent_loop``);
+source that names none is the agent's project deployment here, whose main agent it is. A running local deployment is a process (``builtin/agent_loop``);
 the ``AgentServer`` starts it, adopts it alive after a restart, and stops it when the deployment
 stops serving or its agent is switched off. The process itself is faked here
 (``deployment_process.start/alive/stop``); ``tests/long_tests/test_local_deployment_process.py``
@@ -23,8 +22,18 @@ from flow_sdk.builtin.deployment import Deployment
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
+async def _project_id() -> str:
+    """A project for the agent: a deployment places a project, its agent the main one."""
+    import tempfile
+    from pathlib import Path
+
+    from tests.unit.agent._seed import seed_project
+
+    return str((await seed_project(Path(tempfile.mkdtemp()) / "proj")).id)
+
+
 async def _agent() -> Agent:
-    agent = Agent(name=f"served-{uuid.uuid4().hex[:8]}", worker_type="claude")
+    agent = Agent(name=f"served-{uuid.uuid4().hex[:8]}", worker_type="claude", project_id=await _project_id())
     await agent.save()
     return agent
 
@@ -190,9 +199,14 @@ async def test_the_app_does_not_poll_what_a_running_deployment_polls(mail_db, pr
     other_agent = await _agent()
     theirs = await _channel(other_agent)
 
-    assert await polled_by_a_deployment([mine, theirs]) == set(), "no process alive: the app polls both"
+    # Its process is not up yet (a woken machine boots with mail waiting): the app still leaves the channel to it --
+    # the app only records a message, so one it took now would never be answered.
+    assert await polled_by_a_deployment([mine, theirs]) == {str(mine.id)}, "serving, process not up: left to it"
     running[str(deployment.id)] = 1
     assert await polled_by_a_deployment([mine, theirs]) == {str(mine.id)}
+    deployment.serving = False
+    await deployment.save()
+    assert await polled_by_a_deployment([mine, theirs]) == set(), "not serving here: the app polls it"
 
 
 async def test_a_deployment_process_polls_the_channels_the_app_leaves_to_it(mail_db, processes, monkeypatch):
@@ -224,22 +238,3 @@ async def test_a_deployment_process_polls_the_channels_the_app_leaves_to_it(mail
     assert dispatched == [str(mine.id)], "its own channel is polled there, and nothing else"
 
 
-async def test_an_agent_mailbox_is_answered_by_one_deployment_never_two(mail_db):
-    """A mailbox with no place of its own is the agent's deployment here — or the agent's email place's.
-    Two places answering it would mail the outsider twice."""
-    agent = await _agent()
-    first = await agent.run_locally()
-    second = await agent.deploy("e2b")
-    mailbox = DataSource(name="mailbox", provider="cloud_email", channel="email", owner=agent.typeid,
-                         config={"agent_id": agent.id, "address": f"{agent.name}@agentmail.to"},
-                         account_key=f"{agent.name}@agentmail.to")
-    await mailbox.save()
-
-    async def answering():
-        return [d.target.provider for d in (first, second) if str(mailbox.id) in _ids(await answered_sources(agent, d))]
-
-    assert "local" in await answering(), "the agent's deployment here"
-
-    agent.email_place = second.id
-    await agent.save()
-    assert await answering() == ["e2b"], "the agent's email place, alone"

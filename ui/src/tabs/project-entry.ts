@@ -1,7 +1,10 @@
 import { DockPointer } from '@src/navigation/DockPointer';
 import { allScope, projectScope } from '@src/lib/scope-filter';
+import { tabHostFor } from '@src/navigation/tab-hosts';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { VIEWER_REGISTRY, ViewType } from '@src/types/ViewType';
 import {
+  childrenOfTab,
   ContextEntitiesEnum,
   dataContext,
   resolveNextTabPure,
@@ -40,7 +43,10 @@ export async function dockForScopeEntry(
   fallback?: DockPointer,
 ): Promise<DockPointer> {
   const tabs = (await tabManager.snapshotOrRefresh()).filter((t) => tabInProject(t, projectId));
-  const dock = tabDock(tabManager.resolveNext(tabs.filter(tabHasRecency)));
+  const next = tabManager.resolveNext(tabs.filter(tabHasRecency));
+  // A Vibe sub-tab resumes inside its Vibe tab, not as a bare top-level page.
+  const host = next?.parent_tab_id ? tabs.find((t) => t.id === next.parent_tab_id) : null;
+  const dock = resumeDock(host ?? next, tabs);
   if (dock) return scopedToEntry(dock, projectId);
   if (fallback) return scopedToEntry(fallback, projectId);
 
@@ -60,6 +66,20 @@ export async function dockForScopeEntry(
  *  hydrate it, or callers chaining `withOption` (`withHomePage`) throw on a plain object. */
 export function tabDock(tab: Tab | null | undefined): DockPointer | null {
   return tab?.dockPointer ? new DockPointer(tab.dockPointer) : null;
+}
+
+/**
+ * Where reopening `tab` lands. A Vibe (host) tab resumes on whatever was last on
+ * screen inside it — its Display or the most recently landed sub-tab — read off
+ * the `last_active_at` stamp every landing writes. Any other tab is its own dock.
+ */
+export function resumeDock(tab: Tab | null | undefined, tabs: readonly Tab[]): DockPointer | null {
+  const dock = tabDock(tab);
+  if (!tab || !dock?.pointer || !tabHostFor(dock.viewType)) return dock;
+  const at = (t: Tab) => Number(t.last_active_at) || Date.parse(String(t.last_active_at)) || 0;
+  const child = childrenOfTab(tabs, tab.id).reduce<Tab | null>((best, c) => (at(c) > (best ? at(best) : at(tab)) ? c : best), null);
+  const childDock = tabDock(child);
+  return childDock ? childDock.withHost(dock.pointer).withViewMode(ViewMode.Vibe) : dock;
 }
 
 /**

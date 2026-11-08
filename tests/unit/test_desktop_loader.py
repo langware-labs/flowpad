@@ -30,8 +30,10 @@ def test_runtime_environment_model():
 
 
 def test_compute_node_size_enum():
-    """Test ComputeNodeSize enum values."""
-    assert ComputeNodeSize.SMALL == "small"
+    """The hub's values, and the old spelling still reads."""
+    assert ComputeNodeSize.SMALL == "sm"
+    assert ComputeNodeSize("small") is ComputeNodeSize.SMALL
+    assert ComputeNodeSize("large") is ComputeNodeSize.LARGE
 
 
 @pytest.mark.asyncio

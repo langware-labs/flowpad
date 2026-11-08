@@ -1,3 +1,4 @@
+import { InviteCard, inviteFromMessage } from '@src/components/conversation/InviteCard';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { automationLineage, automationState } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { openableValue } from './ConversationAutomationChip';
@@ -40,6 +41,8 @@ import {
   AttachmentType,
   BodyStatus,
   FlowMessageKind,
+  DIAGNOSIS_FILE,
+  HELP_REQUEST_FILE,
   forwardMessage,
   isAttachmentMissing,
 } from '@sdk/entities/flow-message';
@@ -55,6 +58,9 @@ import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
+import { DiagnosisMessageActions } from './DiagnosisMessageActions';
+import { HelpRequestLine } from './HelpRequestLine';
+import { ItReplyLine } from './ItReplyLine';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
 import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
 import { useLocalUser } from './useLocalUser';
@@ -76,6 +82,9 @@ import { useOpenGitShare, type OpenShareOutcome } from './asset-review/use-open-
 import { ShareReplyCard } from './ShareReplyCard';
 import type { WorkerType } from './conversation-session-constants';
 import { PromptCallCard } from './PromptCallCard';
+import { MessageFormCard } from './MessageFormCard';
+import { FormAnswersCard } from './FormAnswersCard';
+import type { AnswersEntry, MessageForm } from './message-form';
 import type { ProcessCall, ReturnedValue } from '@sdk';
 import { messageDirection } from './message-direction';
 
@@ -246,11 +255,17 @@ interface FlowMessageBubbleProps {
   onLaunchWorker?: (messageId: string, worker: WorkerType) => void;
   /** A prompt call riding this message (parsed once by the parent): its answer once the receiver
    *  replied, and whether it is running on this machine right now. */
+  /** The form this message carries, with its answers (oldest → newest). */
+  messageForm?: { form: MessageForm; answers: AnswersEntry[] } | null;
+  /** The answers this message carries; `latest`: the newest for its form. */
+  formAnswers?: { entry: AnswersEntry; form: MessageForm | null; latest: boolean } | null;
   promptCall?: { call: ProcessCall; answer: ReturnedValue | null; running: boolean } | null;
   /** The conversation's other participant — the machine a prompt call I send runs on. */
   callPeerName?: string | null;
   /** Same sender as the bubble above, moments later — drawn without avatar and name. */
   continuation?: boolean;
+  /** In an IT conversation: the IT message a machine's reply answers — what "Turn on and run" sends again. */
+  itMessageText?: string | null;
 }
 
 export function FlowMessageBubble({
@@ -281,8 +296,11 @@ export function FlowMessageBubble({
   taskPeople,
   onLaunchWorker,
   promptCall = null,
+  messageForm = null,
+  formAnswers = null,
   callPeerName = null,
   continuation = false,
+  itMessageText = null,
   showEmailHeaders = false,
   channelTraits = null,
   lifecycle = null,
@@ -572,15 +590,29 @@ export function FlowMessageBubble({
   // is staged as a MessageAttachment (asset_type='file') and rides the same
   // download→review→install lifecycle as asset entities — no project gate:
   // review/install resolve their own target. Images never get a staged row.
-  const fileAttachments = (messageAttachments ?? []).filter((ma) => ma.asset_type === 'file');
+  // What the review lists: everything the message carries except a help request's own carrier (plumbing).
+  const reviewAttachments = (messageAttachments ?? []).filter((ma) => ma.name !== HELP_REQUEST_FILE);
+  const fileAttachments = reviewAttachments.filter((ma) => ma.asset_type === 'file');
   const stagedFileNames = new Set(fileAttachments.map((ma) => ma.name ?? ''));
   // The SENDER's own downloaded files have no staged MA row (staging happens on
   // receive/unpack). Render them ungated so the sender sees their file
   // immediately — open/reveal work off the local path, no project needed.
   const senderLocalFileItems = attachmentItems.filter(
     (i) =>
-      i.state === AttachmentChipState.Downloaded && !localImageItems.includes(i) && !stagedFileNames.has(i.filename),
+      i.state === AttachmentChipState.Downloaded &&
+      !localImageItems.includes(i) &&
+      !stagedFileNames.has(i.filename) &&
+      i.filename !== HELP_REQUEST_FILE,
   );
+  // Ask for help: the message names itself, and -- while its context waits on this computer -- says so. The
+  // carrier counts too: a desk ticket's echo from the hub can come back without ``kind`` on a path that does
+  // not re-derive it.
+  const isHelpRequest =
+    fm.kind === FlowMessageKind.HELP_REQUEST || attachmentItems.some((i) => i.filename === HELP_REQUEST_FILE);
+  // Its diagnosis, posted when the background run ends: the text is the bottom line, the details fold away.
+  const isDiagnosis =
+    !isHelpRequest &&
+    (fm.kind === FlowMessageKind.DIAGNOSIS || attachmentItems.some((i) => i.filename === DIAGNOSIS_FILE));
   // The "Download N" button must not re-count what's already surfaced without a
   // download: images shown inline above, and prompt entities (previewed in the
   // prompt row, materialized on Approve & Execute).
@@ -647,7 +679,7 @@ export function FlowMessageBubble({
                 )}
                 // The whole message's attachments — the review modal lists them
                 // all on the left, with the clicked chip pinned + selected.
-                siblingAttachments={messageAttachments}
+                siblingAttachments={reviewAttachments}
               />
             ))}
           </div>
@@ -661,7 +693,7 @@ export function FlowMessageBubble({
                 key={`file:${ma.id}`}
                 attachment={ma}
                 projectId={attachmentProjectId}
-                siblingAttachments={messageAttachments}
+                siblingAttachments={reviewAttachments}
               />
             ))}
           </div>
@@ -765,6 +797,34 @@ export function FlowMessageBubble({
           otherName={(isCurrentUser ? callPeerName : fm.sender_name) || t`the other participant`}
         />
       )}
+      {messageForm && (
+        <MessageFormCard
+          form={messageForm.form}
+          answers={messageForm.answers}
+          messageId={messageId}
+          conversationId={fm.conversation_id ?? ''}
+          isMine={isCurrentUser}
+          otherName={(isCurrentUser ? callPeerName : fm.sender_name) || t`the other participant`}
+        />
+      )}
+      {formAnswers && (
+        <FormAnswersCard
+          entry={formAnswers.entry}
+          form={formAnswers.form}
+          answererName={fm.sender_name || t`They`}
+          canChange={isCurrentUser && formAnswers.latest}
+        />
+      )}
+      {fm.it_reply && (
+        <ItReplyLine
+          reply={fm.it_reply}
+          agentId={fm.sender_id ?? ''}
+          conversationId={fm.conversation_id ?? ''}
+          text={itMessageText ?? ''}
+        />
+      )}
+      {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
+      {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {attachmentFooter}
       {lostChannelFiles.map((a) => (
         <p
@@ -867,6 +927,15 @@ export function FlowMessageBubble({
         replyInThread={!channelTraits?.quotes}
         continuation={continuation}
       />
+      {fm.invite && (
+        <div className="ms-10" data-testid="message-invite">
+          <InviteCard
+            invite={inviteFromMessage(fm.invite, displayName, fm.created_date)}
+            layout="card"
+            mine={isCurrentUser}
+          />
+        </div>
+      )}
       <ShareReplyCard fm={fm} isMine={isCurrentUser} onForward={canForward ? () => setForwardOpen(true) : undefined} />
       {lifecycle && <MessageLifecycle lifecycle={lifecycle} />}
       {reactError && (

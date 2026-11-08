@@ -277,7 +277,14 @@ async def _open_ticket(desk_id: str, text: str):
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user
 
     someone = (await get_or_create_local_user()).typeid
-    body = {"recipient": {"kind": "desk", "desk_project_id": desk_id}, "text": text, "origin": "footer"}
+    # No diagnosis: what is under test is the delivery, which then runs inside the call (with one, it runs once
+    # the background diagnosis lands -- the same ``_first_delivery``).
+    body = {
+        "recipient": {"kind": "desk", "desk_project_id": desk_id},
+        "text": text,
+        "origin": "footer",
+        "diagnose": False,
+    }
     request = SimpleNamespace(someone_typeid=someone, get_post_data=AsyncMock(return_value=body))
     with patch.object(afh, "get_current_request_info", return_value=request):
         return await afh.ask_for_help()
@@ -433,7 +440,7 @@ async def test_a_person_asked_while_the_hub_is_down_gets_the_ask_once_and_only_o
     _, helper_email = _resolve_identities()
     title = f"help me ship {uuid.uuid4().hex[:8]}"
     someone = (await get_or_create_local_user()).typeid
-    body = {"recipient": {"kind": "person", "email": helper_email}, "title": title, "text": title}
+    body = {"recipient": {"kind": "person", "email": helper_email}, "title": title, "text": title, "diagnose": False}
     request = SimpleNamespace(someone_typeid=someone, get_post_data=AsyncMock(return_value=body))
 
     rule = hub_faults.fail("POST", r"/graph/(task|conversation)(/|$)")
@@ -449,7 +456,8 @@ async def test_a_person_asked_while_the_hub_is_down_gets_the_ask_once_and_only_o
     async def helper_messages():
         async with httpx.AsyncClient(timeout=10) as h:
             r = await h.get(
-                f"{base}/api/v1/graph/conversation/{conv_id}/flow_message", headers={"Authorization": f"Bearer {bob_token}"}
+                f"{base}/api/v1/graph/conversation/{conv_id}/flow_message",
+                headers={"Authorization": f"Bearer {bob_token}"},
             )
         return len(r.json().get("data") or []) if r.status_code == 200 else 0
 

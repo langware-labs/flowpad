@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.core.dock_address import (
+    RETIRED_DOCK_POINTERS,
     RETIRED_DOCK_VIEWS,
     VIEW_META,
     AIConfigSubview,
@@ -104,6 +105,32 @@ def test_normalize_retired_resolves_forward(retired):
 
 def test_normalize_retired_passes_live_views_through():
     assert normalize_retired(ViewType.SEARCH, "x") == (ViewType.SEARCH, "x")
+
+
+def test_retired_pointer_map_matches_the_contract():
+    actual = {
+        view.value: {
+            pointer: {"view_type": target.view_type.value, "pointer": target.pointer}
+            for pointer, target in sections.items()
+        }
+        for view, sections in RETIRED_DOCK_POINTERS.items()
+    }
+    assert actual == CONTRACT["retired_pointers"]
+
+
+@pytest.mark.parametrize(
+    "view,pointer",
+    [(view, pointer) for view, sections in sorted(CONTRACT["retired_pointers"].items()) for pointer in sections],
+)
+def test_normalize_retired_resolves_a_retired_section_forward(view, pointer):
+    expected = CONTRACT["retired_pointers"][view][pointer]
+    resolved_view, resolved_pointer = normalize_retired(ViewType(view), pointer)
+    assert resolved_view.value == expected["view_type"]
+    assert resolved_pointer == expected["pointer"]
+
+
+def test_normalize_retired_leaves_a_live_section_of_the_same_view_alone():
+    assert normalize_retired(ViewType.DATA_SOURCES, "drivers") == (ViewType.DATA_SOURCES, "drivers")
 
 
 def test_view_meta_covers_every_view_type():

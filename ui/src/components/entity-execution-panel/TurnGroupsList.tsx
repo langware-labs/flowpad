@@ -9,6 +9,8 @@ import ExecutionMessage from './execution-message/execution-message';
 import { MetaMessageChip } from './MetaMessageChip';
 import { TurnFilesChips } from './TurnFilesChips';
 import { WorkerUnavailableNotice } from './WorkerUnavailableNotice';
+import { useRecentWindow } from './use-recent-window';
+import { ProcessLaunchFailureCard, readLaunchFailure } from '@src/components/launch-failure/LaunchFailureCard';
 import type { WorkerType } from '@src/components/workers/worker-types';
 
 /**
@@ -44,7 +46,7 @@ function TurnDivider() {
  * is touched.
  */
 export function isRenderedGroup(g: TurnGroup, showTools: boolean): boolean {
-  if (g.kind === 'worker-unavailable') return true;
+  if (g.kind === 'worker-unavailable' || g.kind === 'launch-failure') return true;
   // Mirrors ToolEntryRow's own `totalCount === 0 → null`: its `total` counts
   // every event exactly once (a result either fills its call's pair or lands
   // in `orphanResults`), so `total === 0` is precisely an empty run. A
@@ -108,7 +110,10 @@ export function TurnGroupsList({
 }) {
   const [showTools] = usePreference<boolean>(PrefKey.CHAT_SHOW_TOOLS);
   const rendered = useMemo(() => groups.map((g) => isRenderedGroup(g, showTools)), [groups, showTools]);
+  const lastPrompt = lastUserPrompt(groups);
   const visibleGroups = useMemo(() => groups.filter((_, i) => rendered[i]), [groups, rendered]);
+  const anchored = anchorIndex === null ? -1 : visibleGroups.indexOf(groups[anchorIndex]);
+  const { start, sentinel } = useRecentWindow(visibleGroups.length, anchored);
 
   // Skin-layer rule (docs/viewmodes.md): the data is built unconditionally and
   // only the VIEW is gated, so toggling view mode never changes what the chat
@@ -129,7 +134,9 @@ export function TurnGroupsList({
     <>
       {/* A turn whose every group was filtered out still touched files. */}
       {chipsForRow(-1)}
-      {visibleGroups.map((g, i) => {
+      {start > 0 && <div ref={sentinel} aria-hidden data-testid="chat-older-sentinel" />}
+      {visibleGroups.slice(start).map((g, j) => {
+        const i = start + j;
         // Partition index `i` is the tiebreaker: two messages can share a
         // timestamp (and lack an id), which collided on `id ?? timestamp` and
         // tripped React's duplicate-key warning (children duplicated/omitted)
@@ -137,8 +144,8 @@ export function TurnGroupsList({
         const key =
           g.kind === 'message'
             ? `msg-${i}-${g.flowData.timestamp ?? ''}`
-            : g.kind === 'worker-unavailable'
-              ? `worker-unavailable-${i}-${g.flowData.timestamp ?? ''}`
+            : g.kind === 'worker-unavailable' || g.kind === 'launch-failure'
+              ? `${g.kind}-${i}-${g.flowData.timestamp ?? ''}`
               : g.kind === 'thinking'
                 ? `thinking-${i}`
                 : `dense-${i}`;
@@ -159,11 +166,17 @@ export function TurnGroupsList({
               // needs a value that moves with the row to repaint.
               agentVersion={agent?.updated_date ?? null}
               onWorkerChange={onWorkerChange}
+              process={process}
+              lastPrompt={g.kind === 'launch-failure' ? lastPrompt : null}
             />
             {chipsForRow(i)}
           </Fragment>
         );
       })}
+      {/* A process failure with no exit frame in the stream (blocked prompt, rejected key). */}
+      {process && readLaunchFailure(process) && groups[groups.length - 1]?.kind !== 'launch-failure' && (
+        <ProcessLaunchFailureCard process={process} resendPrompt={lastPrompt} />
+      )}
     </>
   );
 }
@@ -179,10 +192,15 @@ const TurnGroupRow = memo(function TurnGroupRow({
   worker,
   agent,
   onWorkerChange,
+  process,
+  lastPrompt,
 }: {
   group: TurnGroup;
+  lastPrompt?: string | null;
   worker?: string;
   agent?: Agent | null;
+  /** For the launch-failure row: its process, and the prompt its retry re-sends. */
+  process?: AgenticProcess | null;
   /** Memo key only — see the call site. */
   agentVersion?: unknown;
   onWorkerChange?: (worker: WorkerType) => void | Promise<void>;
@@ -191,7 +209,9 @@ const TurnGroupRow = memo(function TurnGroupRow({
     group.kind === 'message' &&
     (group.flowData.elementType === FlowElementTypes.USER_MESSAGE || group.flowData.attributes?.role === 'user');
   const node =
-    group.kind === 'worker-unavailable' ? (
+    group.kind === 'launch-failure' ? (
+      <ProcessLaunchFailureCard process={process} frame={group.flowData} resendPrompt={lastPrompt} />
+    ) : group.kind === 'worker-unavailable' ? (
       <WorkerUnavailableNotice flowData={group.flowData} worker={worker} onWorkerChange={onWorkerChange} />
     ) : group.kind === 'message' ? (
       group.flowData.attributes?.['is-meta'] === 'true' ? (
@@ -245,4 +265,9 @@ function paintsThinking(events: FlowData[]): boolean {
 function isFlowpadPromptEnvelope(content: string): boolean {
   if (!content.includes('\n# User message\n')) return false;
   return content.startsWith("# You are the '") || content.startsWith('# Embedded agent specs');
+}
+
+function lastUserPrompt(groups: TurnGroup[]): string | null {
+  const g = [...groups].reverse().find((x) => x.kind === 'message' && x.flowData.attributes?.role === 'user');
+  return g?.kind === 'message' ? String(g.flowData.content ?? '') : null;
 }

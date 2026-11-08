@@ -14,6 +14,7 @@ creates the source, not inferred at save time.
 list polls unconditionally, which is what makes "may" real rather than
 aspirational, and is exactly the phase-1 (credential-free) path.
 """
+
 from __future__ import annotations
 
 import logging
@@ -73,6 +74,23 @@ class DataSourceAmbiguous(NameAmbiguous):
     """Several data source instances share the name; ``candidates`` are their typeids."""
 
     plural = "data sources"
+
+
+def _plain_text_of(html: str) -> str:
+    """The readable text of an HTML body: tags dropped, entities decoded, whitespace folded."""
+    import html as html_lib  # noqa: PLC0415
+    import re  # noqa: PLC0415
+
+    body = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html or "")
+    body = re.sub(r"(?i)<br\s*/?>|</(p|div|h[1-6]|li|tr)>", "\n", body)
+    return re.sub(r"[ \t]+", " ", html_lib.unescape(re.sub(r"<[^>]+>", " ", body))).strip()
+
+
+def _address_line(value) -> str:
+    """``to`` / ``cc`` as one comma-separated line, from a string or a list."""
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v).strip() for v in value if str(v).strip())
+    return str(value or "")
 
 
 def _outcome_dict(outcome: SendOutcome) -> dict:
@@ -179,7 +197,11 @@ class DataSource(SetupSkippable, Entity):
     # for the harness-backed sources. One channel may have several transports
     # (a harness Gmail source and an API one), and threading + the message
     # badge must key on the channel so both resolve to the same thread.
-    channel: str = APIField(default="", description="User-facing channel: a kind the driver declares; several drivers may share one", persist=Persist.FALSE)
+    channel: str = APIField(
+        default="",
+        description="User-facing channel: a kind the driver declares; several drivers may share one",
+        persist=Persist.FALSE,
+    )
     # The addresses/handles that are ME on this source. A record authored by
     # one of them is mine, and the stream inbox projection must attribute it to the
     # local user — otherwise my own Sent mail counts as unread mail from a
@@ -191,7 +213,9 @@ class DataSource(SetupSkippable, Entity):
     # descriptive only — ids are uuid4 and several sources may serve one
     # account, so nothing dedupes on it and correcting it is a plain edit.
     account_identities: list[str] = APIField(
-        default_factory=list, description="Addresses that identify the local user on this source", persist=Persist.FALSE,
+        default_factory=list,
+        description="Addresses that identify the local user on this source",
+        persist=Persist.FALSE,
     )
 
     # ── gating ──
@@ -234,6 +258,8 @@ class DataSource(SetupSkippable, Entity):
     #: the driver is ``open_inbound`` or ``open_to_all`` is set. Third parties' addresses: PRIVATE, row-only — never in the shareable
     #: ``config`` (a form's field is moved here), and a re-read file leaves it as it is.
     allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
+    #: Who may NOT drive it, whatever else says so (an address or ``@domain``); checked before the Allowed list.
+    blocked_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
     #: Explicit public inbound access; private machine policy, never published with the source.
     open_to_all: bool = APIField(default=False, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
 
@@ -279,7 +305,11 @@ class DataSource(SetupSkippable, Entity):
     window_days: int = APIField(default=7, ge=1, description="The 'since last pull' floor")
     #: A thread quiet this long is over: the next message on it starts a new thread (a new
     #: conversation), on top of the driver's own split (a chat, a topic, a call). None = never.
-    thread_timeout_seconds: Optional[int] = APIField(default=None, ge=1, description="Seconds of quiet after which a thread ends")
+    thread_timeout_seconds: Optional[int] = APIField(
+        default=None, ge=1, description="Seconds of quiet after which a thread ends"
+    )
+    #: Times a request waits out the provider's rate limit (its Retry-After) before failing. 0 = fail at once.
+    rate_limit_retries: int = APIField(default=0, ge=0, le=10, description="Rate-limit waits before a request fails")
     next_poll_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
     last_synced_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
 
@@ -289,7 +319,9 @@ class DataSource(SetupSkippable, Entity):
     cursor: Optional[str] = APIField(default=None, persist=Persist.FALSE)
     #: A reflecting source's diff bookkeeping (path → digest), carried verbatim between passes.
     manifest: dict = APIField(default_factory=dict, persist=Persist.FALSE)
-    high_water: Optional[str] = APIField(default=None, persist=Persist.FALSE, description="ISO-8601: the newest record seen")
+    high_water: Optional[str] = APIField(
+        default=None, persist=Persist.FALSE, description="ISO-8601: the newest record seen"
+    )
     consecutive_failures: int = APIField(default=0, persist=Persist.FALSE)
 
     # ── health of the last pass ──
@@ -348,7 +380,11 @@ class DataSource(SetupSkippable, Entity):
     @classmethod
     def _owner_entity(cls, owner):
         """``owner`` takes the entity itself (an ``Agent``) as well as its ``TypeId``."""
-        if owner is not None and not isinstance(owner, (str, dict, TypeId)) and getattr(owner, "typeid", None) is not None:
+        if (
+            owner is not None
+            and not isinstance(owner, (str, dict, TypeId))
+            and getattr(owner, "typeid", None) is not None
+        ):
             return owner.typeid
         return owner
 
@@ -366,9 +402,7 @@ class DataSource(SetupSkippable, Entity):
         if "enabled" in data:
             data = dict(data)
             legacy = data.pop("enabled")
-            data["status"] = (
-                SourceStatus.ACTIVE.value if legacy else SourceStatus.DISABLED.value
-            )
+            data["status"] = SourceStatus.ACTIVE.value if legacy else SourceStatus.DISABLED.value
         return data
 
     @property
@@ -441,7 +475,9 @@ class DataSource(SetupSkippable, Entity):
             return []
         rows = await Dataset.get_all({"data_source": self.name}) or []
         if self.project_id:
-            rows = [row for row in rows if str(getattr(row, "project_id", "") or self.project_id) == str(self.project_id)]
+            rows = [
+                row for row in rows if str(getattr(row, "project_id", "") or self.project_id) == str(self.project_id)
+            ]
         return rows
 
     # ── the access pattern: declare → get and check → bind ──────────────────
@@ -472,7 +508,9 @@ class DataSource(SetupSkippable, Entity):
         from flow_sdk.secrets.requirements import SecretRequirements  # noqa: PLC0415
 
         auth = self._auth()
-        return SecretRequirements((list(auth.env) or list(auth.secrets) or list(auth.vars.values())) if auth is not None else [])
+        return SecretRequirements(
+            (list(auth.env) or list(auth.secrets) or list(auth.vars.values())) if auth is not None else []
+        )
 
     @property
     def connections(self) -> "ConnectionRequirements":
@@ -514,18 +552,16 @@ class DataSource(SetupSkippable, Entity):
     async def _resolve_scope_project(self):
         """The project whose ``agentic-assets/data_source/`` holds this source.
 
-        A project-scoped request; the row's own project; its owning agent's project; and, for code
-        running outside any request (a script, a block), the working directory's project. None lands
-        it in the user scope — a mailbox source the heartbeat creates has no project to belong to.
+        Its owning agent's project first — a channel travels with its agent, whatever project the request
+        came from; then a project-scoped request; the row's own project; and, for code running outside
+        any request (a script, a block), the working directory's project. None lands it in the user
+        scope — a mailbox source the heartbeat creates has no project to belong to.
         """
-        scoped = await super()._resolve_scope_project()
-        if scoped is not None or self.exist_in_db:
-            return scoped  # placement happens once, at create; a poll's save never asks again
+        if self.exist_in_db:  # placement happens once, at create; a poll's save never asks again
+            return await super()._resolve_scope_project()
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
         from flow_sdk.stream_inbox.projection import owning_agent  # noqa: PLC0415
 
-        if getattr(self, "project_id", None):
-            return await Project.get_by_id(str(self.project_id))
         agent = await owning_agent(self)
         if agent is not None and getattr(agent, "project_id", None):
             # A shipped agent's project is the SDK's own read-only tree: its channels land in the user
@@ -533,7 +569,12 @@ class DataSource(SetupSkippable, Entity):
             from flow_sdk.ingest.credentials import owner_project  # noqa: PLC0415
 
             return await owner_project(self)
-        if get_current_request_info() is None:
+        scoped = await super()._resolve_scope_project()
+        if scoped is not None:
+            return scoped
+        if getattr(self, "project_id", None):
+            return await Project.get_by_id(str(self.project_id))
+        if agent is None and get_current_request_info() is None:
             from flow_sdk import context  # noqa: PLC0415
 
             return await context.current_project()
@@ -602,7 +643,13 @@ class DataSource(SetupSkippable, Entity):
 
     @classmethod
     async def find_for_account(
-        cls, provider: str, key: str, value: str, *, owner: "Optional[TypeId]" = None, part: str = "",
+        cls,
+        provider: str,
+        key: str,
+        value: str,
+        *,
+        owner: "Optional[TypeId]" = None,
+        part: str = "",
     ) -> "Optional[DataSource]":
         """The source of ``provider`` whose ``config[key]`` names ``value``.
 
@@ -633,6 +680,8 @@ class DataSource(SetupSkippable, Entity):
         value = str(value or "").strip()
         for row in await cls.get_all({"provider": provider}):
             candidates = [(row.config or {}).get(key)] if key else [row.account_key, *(row.account_identities or [])]
+            # A picked choice (`{id, name}`) names its account by id.
+            candidates = [c.get("id") if isinstance(c, dict) else c for c in candidates]
             if not any(str(c or "").strip() == value for c in candidates):
                 continue
             if part_of(row.config or {}) != part:
@@ -653,9 +702,7 @@ class DataSource(SetupSkippable, Entity):
         from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
 
         rows = list(await cls.get_all({"owner": str(owner)}))
-        legacy = await cls.get_all(
-            QueryFilter(match=ExpressionNode(op=QueryOp.IS_NULL, operands=["owner"]))
-        )
+        legacy = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IS_NULL, operands=["owner"])))
         for row in legacy:
             if await owner_of(row) == owner:
                 rows.append(row)
@@ -694,7 +741,11 @@ class DataSource(SetupSkippable, Entity):
         if driver is None or not driver.sends:
             raise RuntimeError(f"the {self.provider} driver cannot send")
         outcome = await driver.send(self, thread_key="", to=to, text=body, subject=subject)
-        item = await SourceItem.get_one({"data_source_id": str(self.id), "external_id": outcome.external_id}) if outcome.external_id else None
+        item = (
+            await SourceItem.get_one({"data_source_id": str(self.id), "external_id": outcome.external_id})
+            if outcome.external_id
+            else None
+        )
         conversation_id = await conversation_of(item, source=self) if item is not None else None
         if not conversation_id:
             raise RuntimeError(f"the {self.provider} message to {to} was {outcome.status.value} but not recorded here")
@@ -850,7 +901,9 @@ class DataSource(SetupSkippable, Entity):
         await self._make_due()
         await self.save_runtime()
         return {
-            "status": "due", "health": self.health, "source_status": self.status,
+            "status": "due",
+            "health": self.health,
+            "source_status": self.status,
             "detail": "queued for the next heartbeat tick (≤60s)",
         }
 
@@ -914,22 +967,31 @@ class DataSource(SetupSkippable, Entity):
         """
         refusal = self.poll_refusal()
         if refusal:
-            return ApiSuccessResponse(data={
-                "status": "ignored", "health": self.health, "source_status": self.status,
-                "detail": refusal,
-            })
+            return ApiSuccessResponse(
+                data={
+                    "status": "ignored",
+                    "health": self.health,
+                    "source_status": self.status,
+                    "detail": refusal,
+                }
+            )
         if self.next_poll_at is not None:
             self.next_poll_at = None
             await self.save_runtime()
         cadence = self.note_attention()
-        return ApiSuccessResponse(data={
-            "status": "due", "health": self.health, "source_status": self.status,
-            "attention_seconds": cadence,
-            "detail": (
-                f"fast lane armed — polling every {cadence}s while watched"
-                if cadence else "queued for the next heartbeat tick (≤60s)"
-            ),
-        })
+        return ApiSuccessResponse(
+            data={
+                "status": "due",
+                "health": self.health,
+                "source_status": self.status,
+                "attention_seconds": cadence,
+                "detail": (
+                    f"fast lane armed — polling every {cadence}s while watched"
+                    if cadence
+                    else "queued for the next heartbeat tick (≤60s)"
+                ),
+            }
+        )
 
     @core_action.post(action_name="reset")
     async def reset_action(self) -> ApiResponse:
@@ -938,11 +1000,13 @@ class DataSource(SetupSkippable, Entity):
         Clears the cursor and the reflection manifest, so the next poll re-reads the whole window.
         """
         await self.reset()
-        return ApiSuccessResponse(data={
-            "status": "reset",
-            "detail": "position cleared; existing records still gate on content digest — "
-                      "pair with purge_items for a visible re-fetch",
-        })
+        return ApiSuccessResponse(
+            data={
+                "status": "reset",
+                "detail": "position cleared; existing records still gate on content digest — "
+                "pair with purge_items for a visible re-fetch",
+            }
+        )
 
     async def reset(self) -> None:
         """Forget this source's position and make it due."""
@@ -1048,9 +1112,7 @@ class DataSource(SetupSkippable, Entity):
     # thin hooks.
 
     @classmethod
-    async def purge_records_of(
-        cls, source_id: str, *, since: Optional[datetime] = None
-    ) -> int:
+    async def purge_records_of(cls, source_id: str, *, since: Optional[datetime] = None) -> int:
         """Drop a source's records; with ``since``, only those at/after it.
 
         Undated records are KEPT by a bounded replay. ``occurred_at`` is the
@@ -1067,10 +1129,15 @@ class DataSource(SetupSkippable, Entity):
             doomed = await SourceItem.get_all({"data_source_id": source_id})
         else:
             doomed = await SourceItem.get_all(
-                QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[
-                    ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", source_id]),
-                    ExpressionNode(op=QueryOp.GE, operands=["occurred_at", since.isoformat()]),
-                ]))
+                QueryFilter(
+                    match=ExpressionNode(
+                        op=QueryOp.AND,
+                        operands=[
+                            ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", source_id]),
+                            ExpressionNode(op=QueryOp.GE, operands=["occurred_at", since.isoformat()]),
+                        ],
+                    )
+                )
             )
         for item in doomed:
             await item.destroy()
@@ -1322,7 +1389,11 @@ class DataSource(SetupSkippable, Entity):
             return
         logger.warning(
             "[data_source] %s: reflect=%r is not offered by the %r spec (%s); using %r",
-            self.id, self.reflect, self.provider, ", ".join(modes), modes[0],
+            self.id,
+            self.reflect,
+            self.provider,
+            ", ".join(modes),
+            modes[0],
         )
         self.reflect = modes[0]
 
@@ -1360,9 +1431,7 @@ class DataSource(SetupSkippable, Entity):
             return ApiFailResponse(message="provider and field are required")
         picks = await cls.choices_for(provider, field, body.get("config") or {})
         if picks is None:
-            return ApiFailResponse(
-                message=f"{provider!r} has no config field {field!r} that offers choices"
-            )
+            return ApiFailResponse(message=f"{provider!r} has no config field {field!r} that offers choices")
         return ApiSuccessResponse(data=picks)
 
     @classmethod
@@ -1423,26 +1492,50 @@ class DataSource(SetupSkippable, Entity):
     async def send_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/send — one message into the channel.
 
-        Body: ``{"to", "text", "thread_key"?, "subject"?, "in_reply_to"?}``. ``to`` is what the channel
+        Body: ``{"to", "text", "thread_key"?, "subject"?, "in_reply_to"?, "cc"?, "html"?}`` — ``to`` / ``cc`` an
+        address or a list of them (email). ``to`` is what the channel
         addresses (a chat, a channel id, an address); the source class reads it (``message_for``)."""
         body = await self._body()
         try:
-            return ApiSuccessResponse(data=await self.send_text(
-                to=str(body.get("to") or ""), text=str(body.get("text") or ""), thread_key=str(body.get("thread_key") or ""),
-                subject=str(body.get("subject") or ""), in_reply_to=str(body.get("in_reply_to") or ""),
-            ))
+            return ApiSuccessResponse(
+                data=await self.send_text(
+                    to=_address_line(body.get("to")),
+                    cc=_address_line(body.get("cc")),
+                    html=str(body.get("html") or ""),
+                    text=str(body.get("text") or ""),
+                    thread_key=str(body.get("thread_key") or ""),
+                    subject=str(body.get("subject") or ""),
+                    in_reply_to=str(body.get("in_reply_to") or ""),
+                )
+            )
         except (ValueError, RuntimeError, NotImplementedError) as exc:
             return ApiFailResponse(message=str(exc))
 
-    async def send_text(self, *, to: str, text: str, thread_key: str = "", subject: str = "", in_reply_to: str = "") -> dict:
+    async def send_text(
+        self,
+        *,
+        to: str,
+        text: str,
+        thread_key: str = "",
+        subject: str = "",
+        in_reply_to: str = "",
+        cc: str = "",
+        html: str = "",
+    ) -> dict:
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
         driver = await DataDriver.find(self.provider or "")
         if driver is None or not driver.sends:
             raise RuntimeError(f"{self.provider} cannot send")
-        if not (text or "").strip():
+        if not (text or "").strip() and not (html or "").strip():
             raise ValueError("text is required")
-        outcome = await driver.send(self, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to)
+        if not (text or "").strip():
+            # An HTML-only email still carries a plain part (clients without HTML, and the record's text).
+            text = _plain_text_of(html)
+        extra = {k: v for k, v in (("cc", cc), ("html", html)) if v}
+        outcome = await driver.send(
+            self, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to, **extra
+        )
         return _outcome_dict(outcome)
 
     @core_action.post(action_name="reply")
@@ -1452,7 +1545,9 @@ class DataSource(SetupSkippable, Entity):
         Body: ``{"item_id", "text"}``. Who the reply goes to is the channel's rule (``reply_spec``)."""
         body = await self._body()
         try:
-            return ApiSuccessResponse(data=await self.reply_to_item(str(body.get("item_id") or ""), str(body.get("text") or "")))
+            return ApiSuccessResponse(
+                data=await self.reply_to_item(str(body.get("item_id") or ""), str(body.get("text") or ""))
+            )
         except LookupError as exc:
             return ApiFailResponse(message=str(exc), status_code=404)
         except (ValueError, RuntimeError, NotImplementedError) as exc:
@@ -1479,7 +1574,11 @@ class DataSource(SetupSkippable, Entity):
         driver = self._driver()
         if driver is None or not driver.is_object:
             return None
-        root = target_root(self) if self.reflect in (ReflectMode.COPY.value, ReflectMode.SYMLINK.value) else driver.tree_root(self)
+        root = (
+            target_root(self)
+            if self.reflect in (ReflectMode.COPY.value, ReflectMode.SYMLINK.value)
+            else driver.tree_root(self)
+        )
         return str(root) if root is not None else None
 
     # ── write back: one record of the outside system, through the driver ───────
@@ -1514,7 +1613,11 @@ class DataSource(SetupSkippable, Entity):
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
 
         report = await ingest_items([envelope_of(written, data_source_id=str(self.id), provider=self.provider)])
-        answer = {"item_id": report.outcomes[0].entity_id, "origin": written.origin.model_dump(mode="json"), "status": status}
+        answer = {
+            "item_id": report.outcomes[0].entity_id,
+            "origin": written.origin.model_dump(mode="json"),
+            "status": status,
+        }
         if written.warnings:
             answer["warnings"] = list(written.warnings)
         return answer
@@ -1533,7 +1636,7 @@ class DataSource(SetupSkippable, Entity):
         if not isinstance(data, dict) or not data:
             raise ValueError("data: a non-empty object is required")
         async with await self._mutable("create") as live:
-            try:   # the shape the driver's own `create(data: ...)` names
+            try:  # the shape the driver's own `create(data: ...)` names
                 shape = get_type_hints(type(live.source).create).get("data", RecordData)
             except Exception:  # noqa: BLE001 -- an annotation that does not resolve: the base record
                 shape = RecordData
@@ -1624,20 +1727,38 @@ class DataSource(SetupSkippable, Entity):
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-        rows = await SourceItem.get_all(QueryFilter(
-            match=ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", str(self.id)]),
-            order_by=[{"occurred_at": "desc"}, {"created_date": "desc"}],
-            limit=max(limit, 0),
-        )) or []
-        fields = ("id", "external_id", "kind", "name", "thread_key", "author_external_id", "author_display", "occurred_at")
+        rows = (
+            await SourceItem.get_all(
+                QueryFilter(
+                    match=ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", str(self.id)]),
+                    order_by=[{"occurred_at": "desc"}, {"created_date": "desc"}],
+                    limit=max(limit, 0),
+                )
+            )
+            or []
+        )
+        fields = (
+            "id",
+            "external_id",
+            "kind",
+            "name",
+            "thread_key",
+            "author_external_id",
+            "author_display",
+            "occurred_at",
+        )
         items = []
         for row in rows:
             body = str(getattr(row, "body", "") or "")
-            items.append({
-                **{field: getattr(row, field, None) for field in fields},
-                "body": body[:PREVIEW_CHARS], "body_truncated": len(body) > PREVIEW_CHARS, "full_body_length": len(body),
-                "full_record_path": f"/api/v1/graph/source_item/{row.id}",
-            })
+            items.append(
+                {
+                    **{field: getattr(row, field, None) for field in fields},
+                    "body": body[:PREVIEW_CHARS],
+                    "body_truncated": len(body) > PREVIEW_CHARS,
+                    "full_body_length": len(body),
+                    "full_record_path": f"/api/v1/graph/source_item/{row.id}",
+                }
+            )
         return items
 
     @core_action.post(action_name="sync")
@@ -1653,18 +1774,35 @@ class DataSource(SetupSkippable, Entity):
         await self._make_due()
         await self.save_runtime()
         if self.status in (SourceStatus.SETUP.value, SourceStatus.DISABLED.value):
-            return ApiSuccessResponse(data={
-                "ran": False, "created": 0, "updated": 0, "unchanged": 0, "removed": 0,
-                "health": self.health, "status": self.status, "error_detail": None, "detail": self.poll_refusal(),
-            })
+            return ApiSuccessResponse(
+                data={
+                    "ran": False,
+                    "created": 0,
+                    "updated": 0,
+                    "unchanged": 0,
+                    "removed": 0,
+                    "health": self.health,
+                    "status": self.status,
+                    "error_detail": None,
+                    "detail": self.poll_refusal(),
+                }
+            )
         report = await self.sync()
         # The cycle writes health through its own row handle; read what it left.
         refreshed = await type(self).get_one({"id": self.id}) or self
-        return ApiSuccessResponse(data={
-            "created": report.created, "updated": report.updated, "unchanged": report.unchanged, "removed": report.removed,
-            "health": refreshed.health, "status": refreshed.status, "error_detail": refreshed.error_detail,
-            "ran": True, "detail": "",
-        })
+        return ApiSuccessResponse(
+            data={
+                "created": report.created,
+                "updated": report.updated,
+                "unchanged": report.unchanged,
+                "removed": report.removed,
+                "health": refreshed.health,
+                "status": refreshed.status,
+                "error_detail": refreshed.error_detail,
+                "ran": True,
+                "detail": "",
+            }
+        )
 
     @core_action.post(action_name="set_enabled")
     async def set_enabled_action(self) -> ApiResponse:
@@ -1746,7 +1884,7 @@ class DataSource(SetupSkippable, Entity):
         owner = str(self.owner or "")
         if owner.startswith("agent-"):
             agent = await Agent.get_by_id(owner.split("-", 1)[1])
-            for deployment in (await agent.deployments() if agent is not None else []):
+            for deployment in await agent.deployments() if agent is not None else []:
                 node = deployment.compute_node_id  # a property: the machine it runs on, or None
                 if deployment.is_local or not node:
                     continue
@@ -1836,7 +1974,9 @@ class DataSource(SetupSkippable, Entity):
         place = str((await self._body()).get("place") or "")
         claim = await self._hub_route()
         if claim is None:
-            return ApiFailResponse(message="no hub webhook delivers to this channel yet — connect it first", status_code=404)
+            return ApiFailResponse(
+                message="no hub webhook delivers to this channel yet — connect it first", status_code=404
+            )
         if place == "this":
             target = {"kind": "desktop", "instance_id": instance_uid(), "data_source_id": str(self.id)}
         else:
@@ -1857,7 +1997,9 @@ class DataSource(SetupSkippable, Entity):
 
         claim = await self._hub_route()
         if claim is None:
-            return ApiFailResponse(message="no hub webhook delivers to this channel yet — connect it first", status_code=404)
+            return ApiFailResponse(
+                message="no hub webhook delivers to this channel yet — connect it first", status_code=404
+            )
         answer = await HubProxy.call("POST", "webhook", str(claim.get("id")), "probe", payload={"phase": "reach"})
         if not answer:
             return ApiFailResponse(message="the hub did not answer the reach probe", status_code=502)
@@ -1896,7 +2038,9 @@ class DataSource(SetupSkippable, Entity):
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else None) or {}
         values = body.get("values") if isinstance(body.get("values"), dict) else {}
-        answer = await self.step(str(body.get("step") or ""), check=bool(body.get("check")), probe=bool(body.get("probe")), values=values)
+        answer = await self.step(
+            str(body.get("step") or ""), check=bool(body.get("check")), probe=bool(body.get("probe")), values=values
+        )
         return ApiSuccessResponse(data=answer.model_dump(mode="json"))
 
     async def step(self, name: str, *, check: bool = False, probe: bool = False, values: Optional[dict] = None):
@@ -1923,20 +2067,25 @@ class DataSource(SetupSkippable, Entity):
                 live = await self._open_for_setup(driver)
                 answer = await getattr(live, method)(check=True, values=typed, probe=True)
             elif name == steps.PUBLIC_WEBHOOK:
-                answer = await self._public_webhook(driver, check=check, delivery=(values or {}).get("delivery", self.webhook_delivery))
+                answer = await self._public_webhook(
+                    driver, check=check, delivery=(values or {}).get("delivery", self.webhook_delivery)
+                )
             elif name == steps.VERIFY:
                 answer = await self._verify_step(check=check)
             elif name == steps.ANSWERED:
                 answer = await self._answered_step(check=check)
             elif name == steps.FIRST_TURN:
                 answer = await self._first_turn_step(
-                    check=check, wait=float((values or {}).get("wait") or 0),
+                    check=check,
+                    wait=float((values or {}).get("wait") or 0),
                     external_id=str((values or {}).get("external_id") or ""),
                     since=str((values or {}).get("since") or ""),
                 )
             elif name == steps.HEARD:
                 answer = await self._heard_step(
-                    check=check, wait=float((values or {}).get("wait") or 0), since=str((values or {}).get("since") or ""),
+                    check=check,
+                    wait=float((values or {}).get("wait") or 0),
+                    since=str((values or {}).get("since") or ""),
                 )
             else:
                 method = setup_steps(driver.cls).get(name)
@@ -2021,9 +2170,13 @@ class DataSource(SetupSkippable, Entity):
                     continue
                 for first in incoming:
                     same_thread = bool(first.thread_key) and first.thread_key == reply.thread_key
-                    correlated = reply.reply_to_external_id == first.external_id if reply.reply_to_external_id else same_thread
+                    correlated = (
+                        reply.reply_to_external_id == first.external_id if reply.reply_to_external_id else same_thread
+                    )
                     if correlated and (reply.occurred_at or "") >= (first.occurred_at or ""):
-                        return FirstTurnProofSpec(incoming_external_id=first.external_id, reply_external_id=reply.external_id), True
+                        return FirstTurnProofSpec(
+                            incoming_external_id=first.external_id, reply_external_id=reply.external_id
+                        ), True
             return None, bool(incoming)
 
         deadline = time.monotonic() + (0 if check else max(0.0, wait))
@@ -2033,7 +2186,8 @@ class DataSource(SetupSkippable, Entity):
                 return ReturnedValue.satisfied("a message came in and the answer went back", ran=not check, value=proof)
             if time.monotonic() >= deadline:
                 return ReturnedValue.not_yet(
-                    "Message received; waiting for the agent reply." if received
+                    "Message received; waiting for the agent reply."
+                    if received
                     else "Send a message from your phone to try the agent.",
                 )
             # A wait on a person, polled at a human pace: the person is typing on their phone.
@@ -2059,9 +2213,17 @@ class DataSource(SetupSkippable, Entity):
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
         by_source = ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", str(self.id)])
-        match = by_source if after is None else ExpressionNode(op=QueryOp.AND, operands=[
-            by_source, ExpressionNode(op=QueryOp.GE, operands=["occurred_at", after.isoformat()]),
-        ])
+        match = (
+            by_source
+            if after is None
+            else ExpressionNode(
+                op=QueryOp.AND,
+                operands=[
+                    by_source,
+                    ExpressionNode(op=QueryOp.GE, operands=["occurred_at", after.isoformat()]),
+                ],
+            )
+        )
 
         async def heard() -> Optional[SourceItem]:
             rows = await SourceItem.get_all(QueryFilter(match=match, order_by=[{"occurred_at": "desc"}], limit=1)) or []
@@ -2071,9 +2233,13 @@ class DataSource(SetupSkippable, Entity):
         while True:
             row = await heard()
             if row is not None:
-                return ReturnedValue.satisfied(f"heard: {(row.name or row.body or row.external_id or '')[:60]}", ran=not check)
+                return ReturnedValue.satisfied(
+                    f"heard: {(row.name or row.body or row.external_id or '')[:60]}", ran=not check
+                )
             if time.monotonic() >= deadline:
-                return ReturnedValue.not_yet("Nothing has arrived yet — send a message where this source listens." + await self._delivery_hint())
+                return ReturnedValue.not_yet(
+                    "Nothing has arrived yet — send a message where this source listens." + await self._delivery_hint()
+                )
             await asyncio.sleep(2.0)
 
     async def _delivery_hint(self) -> str:
@@ -2086,12 +2252,18 @@ class DataSource(SetupSkippable, Entity):
         except Exception:  # noqa: BLE001 — no hub: no hint
             return ""
         url = next((str(c.get("url") or "") for c in own if c.get("url")), "")
-        return f" Live delivery needs the provider to post to exactly {url} (an app made from an older link posts elsewhere)." if url else ""
+        return (
+            f" Live delivery needs the provider to post to exactly {url} (an app made from an older link posts elsewhere)."
+            if url
+            else ""
+        )
 
     async def _own_account_claims(self) -> list[dict]:
         """The hub's account claims that deliver to THIS source — never the URL in the credential: sources of
         one driver share that credential, so a held URL may be a sibling's (proven with the sibling's app)."""
-        return [c for c in _claims_for(await _hub_claims(), str(self.id)) if (c.get("claim") or {}).get("kind") == "account"]
+        return [
+            c for c in _claims_for(await _hub_claims(), str(self.id)) if (c.get("claim") or {}).get("kind") == "account"
+        ]
 
     async def _open_for_setup(self, driver):
         """This source, opened as far as its setup allows: with its credential when it resolves, else
@@ -2105,8 +2277,13 @@ class DataSource(SetupSkippable, Entity):
 
     async def _keep(self, driver, update) -> None:
         """Store what a setup step learned: config on the file, senders on the row, secrets in the credential."""
-        if (update.config or update.allowed_senders is not None or update.open_to_all is not None
-                or update.owner or update.webhook_delivery is not None):
+        if (
+            update.config
+            or update.allowed_senders is not None
+            or update.open_to_all is not None
+            or update.owner
+            or update.webhook_delivery is not None
+        ):
             if update.webhook_delivery is not None:
                 self.webhook_delivery = update.webhook_delivery
             if update.config:
@@ -2129,7 +2306,8 @@ class DataSource(SetupSkippable, Entity):
                 raise ValueError(f"{self.provider}'s credential has no {sorted(unknown)}")
             project = await self._own_project()
             await set_credential_by_name(
-                auth.credential, {auth.vars[key]: value for key, value in update.secrets.items()},
+                auth.credential,
+                {auth.vars[key]: value for key, value in update.secrets.items()},
                 project_id=str(project.id) if project is not None else None,
             )
 
@@ -2180,9 +2358,14 @@ class DataSource(SetupSkippable, Entity):
             if not (self.config or {}).get("verify_token") and "verify_token" in (driver.config or {}):
                 config["verify_token"] = secrets.token_urlsafe(24)
             return ReturnedValue.satisfied(
-                "direct webhook is ready", ran=not check,
-                value=SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: callback},
-                                       shown=SetupShown(link=callback, connected=True)),
+                "direct webhook is ready",
+                ran=not check,
+                value=SourceUpdateSpec(
+                    config=config,
+                    webhook_delivery=delivery,
+                    secrets={hook.url_var: callback},
+                    shown=SetupShown(link=callback, connected=True),
+                ),
             )
         if check:
             if self.webhook_delivery != delivery:
@@ -2193,7 +2376,11 @@ class DataSource(SetupSkippable, Entity):
                 # A part of an account (a group) has no URL of its own: done once the hub routes THAT part here.
                 wanted = {"kind": kind, "key": declared["key"]}
                 routed = any(c.get("claim") == wanted for c in _claims_for(await _hub_claims(), str(self.id)))
-                return ReturnedValue.satisfied(f"the hub routes this {kind} here") if routed else ReturnedValue.not_yet(f"the hub does not route this {kind} here yet")
+                return (
+                    ReturnedValue.satisfied(f"the hub routes this {kind} here")
+                    if routed
+                    else ReturnedValue.not_yet(f"the hub does not route this {kind} here yet")
+                )
             if declared is not None:
                 own = await self._own_account_claims()
                 if not own:
@@ -2202,7 +2389,11 @@ class DataSource(SetupSkippable, Entity):
                     # The URL was handed out before the account was known (a pending claim): done only once the
                     # hub holds the proof — until then the URL answers the vendor's handshake and routes nothing.
                     proven = any(str(c.get("status") or "active") == "active" for c in own)
-                    return ReturnedValue.satisfied("a public URL is set and proven") if proven else ReturnedValue.not_yet("the hub does not hold your app's proof yet")
+                    return (
+                        ReturnedValue.satisfied("a public URL is set and proven")
+                        if proven
+                        else ReturnedValue.not_yet("the hub does not hold your app's proof yet")
+                    )
                 return ReturnedValue.satisfied("a public URL is set")
             if not held:
                 return ReturnedValue.not_yet("no public URL yet")
@@ -2213,7 +2404,9 @@ class DataSource(SetupSkippable, Entity):
             token = config["verify_token"] = secrets.token_urlsafe(24)
         claim = await self._hub_claim(driver, {**(self.config or {}), **config})
         if claim is not None and claim["parent"] is None:
-            return ReturnedValue.not_yet(f"claim the {claim['claim']['kind']}'s account on the hub first — set up its own source")
+            return ReturnedValue.not_yet(
+                f"claim the {claim['claim']['kind']}'s account on the hub first — set up its own source"
+            )
         if claim is not None and claim["claim"]["kind"] != "account":
             # A part of an account (a group) rides the account's URL: the hub routes it here by its claim, so
             # there is no URL of its own to keep — the account's stays where it is.
@@ -2221,7 +2414,10 @@ class DataSource(SetupSkippable, Entity):
             if not data or not data.get("id"):
                 return ReturnedValue.not_yet("the hub did not take this claim — sign in to Flowpad cloud first")
             kind, key = claim["claim"]["kind"], claim["claim"]["key"]
-            return ReturnedValue.satisfied(f"the hub routes this {kind} ({key}) here", value=SourceUpdateSpec(config=config, webhook_delivery=delivery))
+            return ReturnedValue.satisfied(
+                f"the hub routes this {kind} ({key}) here",
+                value=SourceUpdateSpec(config=config, webhook_delivery=delivery),
+            )
         if claim is not None:
             # The account on the hub's chain for this vendor (``webhook/@<provider>``): the hub checks the
             # vendor's signature with the claim's own secret and hands each event to THIS channel on THIS
@@ -2230,24 +2426,47 @@ class DataSource(SetupSkippable, Entity):
             # A driver that needs the URL BEFORE the account exists (an app created from a manifest naming
             # its Request URL) declares the claim with no key first: the hub holds it PENDING under the same
             # URL, and the second time through — key and proof known — that claim is proven, not replaced.
-            pending = next((c for c in await self._own_account_claims() if str(c.get("status") or "") == "pending"), None)
+            pending = next(
+                (c for c in await self._own_account_claims() if str(c.get("status") or "") == "pending"), None
+            )
             if pending is not None and claim["claim"]["key"] and (claim.get("proof") or {}).get("credential"):
-                data = await _post_unless_unconfigured("webhook", "prove", {"key": claim["claim"]["key"], "proof": claim["proof"]}, entity_id=str(pending["id"]))
+                data = await _post_unless_unconfigured(
+                    "webhook",
+                    "prove",
+                    {"key": claim["claim"]["key"], "proof": claim["proof"]},
+                    entity_id=str(pending["id"]),
+                )
                 if not data or str(data.get("status") or "") != "active":
-                    return ReturnedValue.not_yet("the hub did not take your app's proof — sign in to Flowpad cloud first")
+                    return ReturnedValue.not_yet(
+                        "the hub did not take your app's proof — sign in to Flowpad cloud first"
+                    )
                 url = str(data.get("url") or pending.get("url") or "")
-                update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: url}, shown=SetupShown(link=url, connected=True))
-                return ReturnedValue.satisfied("the hub now checks your app's signature and delivers here", value=update)
+                update = SourceUpdateSpec(
+                    config=config,
+                    webhook_delivery=delivery,
+                    secrets={hook.url_var: url},
+                    shown=SetupShown(link=url, connected=True),
+                )
+                return ReturnedValue.satisfied(
+                    "the hub now checks your app's signature and delivers here", value=update
+                )
             if pending is not None and not claim["claim"]["key"]:
                 url = str(pending.get("url") or "")
-                update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: url}, shown=SetupShown(link=url))
+                update = SourceUpdateSpec(
+                    config=config, webhook_delivery=delivery, secrets={hook.url_var: url}, shown=SetupShown(link=url)
+                )
                 return ReturnedValue.satisfied(f"public URL {url}", ran=False, value=update)
             data = await _post_unless_unconfigured("webhook", "chain", claim)
             if not data or not data.get("url"):
                 return ReturnedValue.not_yet("the hub did not take this account — sign in to Flowpad cloud first")
             url = str(data["url"])
             connected = str(data.get("status") or "active") == "active"
-            update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: url}, shown=SetupShown(link=url, connected=connected))
+            update = SourceUpdateSpec(
+                config=config,
+                webhook_delivery=delivery,
+                secrets={hook.url_var: url},
+                shown=SetupShown(link=url, connected=connected),
+            )
             return ReturnedValue.satisfied(f"public URL {url}", value=update)
         body = {
             "name": f"{self.provider}-{self.id}",
@@ -2289,9 +2508,14 @@ class DataSource(SetupSkippable, Entity):
         under = claim.get("under")
         if isinstance(under, dict):
             held = sorted(
-                (c for c in await _hub_claims()
-                 if c.get("provider") == claim["provider"] and c.get("status", "active") == "active"
-                 and (c.get("claim") or {}).get("kind") == under.get("kind") and (c.get("claim") or {}).get("key") == under.get("key")),
+                (
+                    c
+                    for c in await _hub_claims()
+                    if c.get("provider") == claim["provider"]
+                    and c.get("status", "active") == "active"
+                    and (c.get("claim") or {}).get("kind") == under.get("kind")
+                    and (c.get("claim") or {}).get("key") == under.get("key")
+                ),
                 # The claim the vendor's deliveries reach first: one routed HERE, then one routed anywhere at all
                 # (a claim left with no target delivers nothing, so a part chained under it would never be reached).
                 key=lambda c: _parent_rank(c, instance),
@@ -2348,7 +2572,7 @@ class DataSource(SetupSkippable, Entity):
         """
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        await DataDriver.find(self.provider or "")   # an authored driver loads on first use, as in ``get``
+        await DataDriver.find(self.provider or "")  # an authored driver loads on first use, as in ``get``
         driver = self._driver()
         if driver is None:
             return None
@@ -2361,15 +2585,23 @@ class DataSource(SetupSkippable, Entity):
             self.verified_at = datetime.now(timezone.utc)
             await self.save_runtime()
             return {
-                "ready": False, "layer": need.kind, "detail": need.detail,
-                "status": self.status, "needs": [need.model_dump()],
+                "ready": False,
+                "layer": need.kind,
+                "detail": need.detail,
+                "status": self.status,
+                "needs": [need.model_dump()],
             }
 
         verdict = await self._verify_setup(driver)
         if isinstance(verdict, Exception):
             # The provider did not answer: that says nothing about the setup, so the status stands.
-            return {"ready": False, "layer": "setup", "transient": True, "status": self.status,
-                    "detail": f"could not check — {verdict}"}
+            return {
+                "ready": False,
+                "layer": "setup",
+                "transient": True,
+                "status": self.status,
+                "detail": f"could not check — {verdict}",
+            }
         self.verified_at = datetime.now(timezone.utc)
         if verdict.ready:
             self.status = SourceStatus.ACTIVE.value
@@ -2426,7 +2658,34 @@ class DataSource(SetupSkippable, Entity):
 
         if get_probe(provider) is None:
             return None  # no probe defined — not a failure, just unverifiable
-        return await connection_need(provider, driver.cls.connection_probe_url(self.config or {}))
+        need = await connection_need(
+            provider, driver.cls.connection_probe_url(self.config or {}), why=_read_why(manifest)
+        )
+        return need or await self._missing_grant(provider, manifest)
+
+    async def _missing_grant(self, provider: str, manifest) -> Optional[SetupNeedSpec]:
+        """A working sign-in that lacks a scope THIS source needs (a read-only grant for a source that writes
+        back): the sign-in need again, saying — in the driver's words — what the missing permission is for.
+        What the source needs is ``requirements_of_source``'s answer, so Verify and Setup never disagree."""
+        from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import connection_of, requirements_of_source  # noqa: PLC0415
+        from flow_sdk.core.connections.specs import _connection_user  # noqa: PLC0415
+        from flow_sdk.core.oauth.provider_registry import grant_gap, granted_scopes  # noqa: PLC0415
+
+        connector = str(manifest.auth.connector or "")
+        wants = [
+            (req, grant[1])
+            for req in await requirements_of_source(self)
+            if (grant := connection_of(req)) is not None and grant[0] == connector and grant[1]
+        ]
+        if not wants:
+            return None
+        granted = await granted_scopes(provider, await _connection_user())  # one read, whatever the needs
+        for req, scopes in wants:
+            if missing := [s for s in scopes if granted and s not in granted]:
+                title = shipped_provider_title(provider) or provider.title()
+                return _sign_in_need(provider, title, "missing_scopes", grant_gap(missing), req.why)
+        return None
 
     async def _verify_credentials(self) -> Optional[SetupNeedSpec]:
         """For a source that holds datasets' rows (asked only for those: a feed's values may live in a
@@ -2444,8 +2703,13 @@ class DataSource(SetupSkippable, Entity):
             return None
         auth = self._auth()
         title = str(getattr(auth, "credential", "") or self.provider or "credential")
-        return SetupNeedSpec(kind=NEED_CREDENTIAL, name=title, title=title, state="missing",
-                             detail=f"Needs the {title} credential ({', '.join(names)})")
+        return SetupNeedSpec(
+            kind=NEED_CREDENTIAL,
+            name=title,
+            title=title,
+            state="missing",
+            detail=f"Needs the {title} credential ({', '.join(names)})",
+        )
 
     async def _verify_setup(self, stype):
         """The type's setup verdict; a source that raises becomes a verdict, never a 500 — or the exception itself
@@ -2506,8 +2770,7 @@ class DataSource(SetupSkippable, Entity):
         """Make this source due on the next tick, clearing the ``config_error`` latch ``is_due`` refuses."""
         self.next_poll_at = None
         if self.health == SourceHealth.CONFIG_ERROR.value:
-            self.health = SourceHealth.NEVER_SYNCED.value if self.last_synced_at is None \
-                else SourceHealth.OK.value
+            self.health = SourceHealth.NEVER_SYNCED.value if self.last_synced_at is None else SourceHealth.OK.value
             self.consecutive_failures = 0
         self.error_code = None
         self.error_detail = None
@@ -2521,7 +2784,8 @@ class DataSource(SetupSkippable, Entity):
 #: What the engine writes while a source runs: never in ``data_source.json``, only on the row
 #: (``save_runtime``). Everything else on the row is authored and lives in the file.
 RUNTIME_FIELDS: tuple[str, ...] = tuple(
-    name for name, field in DataSource.model_fields.items()
+    name
+    for name, field in DataSource.model_fields.items()
     if name in DataSource.__annotations__  # this type's own, not the Entity base's
     and persist_policy(field) == Persist.FALSE
     and name not in DataSource.projected_fields  # the setup skip mark: its own writer, kept through every save
@@ -2534,11 +2798,16 @@ RUNTIME_FIELDS: tuple[str, ...] = tuple(
 _NOT_ADOPTED = frozenset({"id", "type", "env_vars", "expand"})
 
 
-
-def _sign_in_need(provider: str, title: str, state: str, detail: str = "") -> SetupNeedSpec:
+def _sign_in_need(provider: str, title: str, state: str, detail: str = "", why: str = "") -> SetupNeedSpec:
     """The one shape of "this source needs <title> sign-in" — at create, from Verify and from a setup step alike."""
-    return SetupNeedSpec(kind=NEED_CONNECTION, name=provider, title=title, state=state,
-                         detail=detail or f"Needs {title} sign-in")
+    return SetupNeedSpec(
+        kind=NEED_CONNECTION,
+        name=provider,
+        title=title,
+        state=state,
+        detail=detail or f"Needs {title} sign-in",
+        why=why,
+    )
 
 
 def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
@@ -2549,10 +2818,20 @@ def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
         return None
     from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
 
-    return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified")
+    return _sign_in_need(
+        connector, shipped_provider_title(connector) or connector.title(), "unverified", why=_read_why(manifest)
+    )
 
 
-async def connection_need(provider: str, url: Optional[str] = None) -> Optional[SetupNeedSpec]:
+def _read_why(manifest) -> str:
+    """What reading through a driver's sign-in lets a source do: its first read permission's own reason."""
+    from flow_sdk import permissions  # noqa: PLC0415
+
+    name = getattr(manifest, "name", "") or ""
+    return next((need.why for need in permissions.needs_of_driver(name, writes=False) if need.why), "")
+
+
+async def connection_need(provider: str, url: Optional[str] = None, why: str = "") -> Optional[SetupNeedSpec]:
     """None when ``provider``'s sign-in works for what runs here (``provider_probe.connection_answer``);
     otherwise the need it is — the answer a source's Verify and its setup step's sign-in node both give."""
     from flow_sdk.builtin.credential_service import _provider_title  # noqa: PLC0415
@@ -2566,7 +2845,7 @@ async def connection_need(provider: str, url: Optional[str] = None) -> Optional[
     state = "missing" if code == "missing_token" else (code or "refused")
     title = await _provider_title(provider)
     detail = "" if state == "missing" else str(data.get("detail") or f"{title} did not accept the sign-in")
-    return _sign_in_need(provider, title, state, detail)
+    return _sign_in_need(provider, title, state, detail, why)
 
 
 def remove_source_folder(asset_ref: Optional[str]) -> None:
@@ -2586,7 +2865,9 @@ async def migrate_list_configs() -> int:
     from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec  # noqa: PLC0415
 
     split = 0
-    retiring = [driver for _, driver in DRIVERS.items() if driver.config_cls is not None and driver.config_cls.retired_list]
+    retiring = [
+        driver for _, driver in DRIVERS.items() if driver.config_cls is not None and driver.config_cls.retired_list
+    ]
     rows = [(driver, row) for driver in retiring for row in await DataSource.get_all({"provider": driver.provider})]
     for driver, row in rows:
         parts = driver.config_cls.split(row.config or {})
@@ -2598,14 +2879,19 @@ async def migrate_list_configs() -> int:
             split += 1
             continue
         authored = {
-            name: getattr(row, name) for name in DataSourceSpec.model_fields
+            name: getattr(row, name)
+            for name in DataSourceSpec.model_fields
             if name not in ("name", "provider", "config") and getattr(row, name, None) is not None
         }
         try:
             for label, config in parts:
                 await driver.create_source(
-                    config, name=f"{row.name} {label}".strip(), project_id=row.project_id, scope=row.scope,
-                    account_key=row.account_key, **authored,
+                    config,
+                    name=f"{row.name} {label}".strip(),
+                    project_id=row.project_id,
+                    scope=row.scope,
+                    account_key=row.account_key,
+                    **authored,
                 ).save()
         except Exception:  # noqa: BLE001 — the fallback is the park, never a failed boot
             logger.warning("could not split data source %s", row.id, exc_info=True)
@@ -2646,7 +2932,9 @@ async def _hub_claims() -> list[dict]:
     return [r for r in rows or [] if isinstance(r, dict)]
 
 
-async def _post_unless_unconfigured(entity_type: str, action: str, payload: dict, *, entity_id: Optional[str] = None) -> Any:
+async def _post_unless_unconfigured(
+    entity_type: str, action: str, payload: dict, *, entity_id: Optional[str] = None
+) -> Any:
     """POST to the hub (a class action, or ``entity_id``'s own); None when this box has no hub configured
     (Local mode) — the caller's "sign in to Flowpad cloud first" path. Every other hub failure raises."""
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
@@ -2680,7 +2968,9 @@ def answered_by(source) -> str:
     """Who answers a message source's messages: a ``deployment`` (it has an answer place), an ``agent``
     (an Agent owns it), or ``nobody`` (a person's own channel — they read and answer it themselves)."""
     owner = str(getattr(source, "owner", "") or "")  # a TypeId on the row
-    return "deployment" if getattr(source, "answer_place", None) else "agent" if owner.startswith("agent-") else "nobody"
+    return (
+        "deployment" if getattr(source, "answer_place", None) else "agent" if owner.startswith("agent-") else "nobody"
+    )
 
 
 def _channel_row(claim: Optional[dict], instance: str, source=None, *, by_hub: bool = False) -> dict:
@@ -2701,7 +2991,12 @@ def _parent_rank(claim: dict, instance: str) -> tuple:
     HERE, then routed anywhere at all (a claim left with no target delivers nothing, so a part under it would never
     be reached) — then the oldest."""
     routed = _routed(claim, instance)
-    return routed != "this", routed in ("nowhere", "polls"), float(claim.get("proven_at") or 0), str(claim.get("id") or "")
+    return (
+        routed != "this",
+        routed in ("nowhere", "polls"),
+        float(claim.get("proven_at") or 0),
+        str(claim.get("id") or ""),
+    )
 
 
 def _routed(claim: Optional[dict], instance: str, *, by_hub: bool = False) -> str:

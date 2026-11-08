@@ -13,6 +13,7 @@ import { lazyAssets, LazyAsset } from '../lazy';
 
 import { EventEmitter } from 'events';
 import apiClient from '../client';
+import { browserProfileManager, type ProfileChoice } from './browser-profiles';
 import { sdkConfig } from '../config/index';
 import { API_PREFIX } from '../config/SDKConfig';
 import { isHubOnly } from '../utils/hub-runtime';
@@ -512,7 +513,7 @@ class CloudManager extends EventEmitter {
   async login(opts?: {
     popup?: boolean;
     refresh?: 'reload' | 'session';
-    browserProfile?: { browser: string; profile: string };
+    browserProfile?: ProfileChoice;
   }): Promise<CloudLoginResult | void> {
     // Any locally-initiated login attempt — including a click on
     // `SessionTakenOverOverlay`'s own button — dismisses the sticky
@@ -557,7 +558,7 @@ class CloudManager extends EventEmitter {
     try {
       const started = await apiClient.post<{ url?: string; present_in_browser?: boolean }>(
         '/cloud/login',
-        opts?.browserProfile,
+        opts?.browserProfile ?? browserProfileManager.selected ?? undefined,
       );
       if (started?.present_in_browser && started.url) {
         const popup = window.open(started.url, LOGIN_POPUP_NAME, LOGIN_POPUP_FEATURES);

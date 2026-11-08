@@ -1,6 +1,6 @@
 """Live-session settings that travel between tiers."""
 
-from typing import ClassVar
+from typing import ClassVar, Optional
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -17,3 +17,6 @@ class SessionStartSettings(DataSpec, frozen=True):
     spec_kind: ClassVar[str] = "session.start"
 
     reply_policy: str = "auto"
+    # 1 = a prompt request (the host ends the session after one answered
+    # prompt); None = a live session, no limit.
+    prompt_limit: Optional[int] = None

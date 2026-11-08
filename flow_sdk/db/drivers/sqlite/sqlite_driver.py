@@ -53,6 +53,22 @@ def split_record_types(record_type: str) -> list[str]:
     return [t.strip() for t in record_type.split(",") if t.strip()]
 
 
+
+def _asset_ref_under_sql(roots, prefix: str, bindings: dict) -> str:
+    """SQL: the row's ``asset_ref`` is one of ``roots`` or lies beneath one (OR-joined;
+    ``""`` for no roots) — the twin of ``search_filters.under_dependency_root``.
+    ``substr`` rather than LIKE, so ``_``/``%`` in a path are not wildcards."""
+    parts = []
+    for i, root in enumerate(roots or ()):
+        key = f"{prefix}_{i}"
+        bindings[key] = root
+        bindings[f"{key}_slash"] = root + "/"
+        parts.append(
+            f"json_extract(data, '$.asset_ref') = :{key} OR "
+            f"substr(json_extract(data, '$.asset_ref'), 1, length(:{key}_slash)) = :{key}_slash"
+        )
+    return " OR ".join(parts)
+
 class TransactionHandler:
     pass
 
@@ -1094,6 +1110,7 @@ class SQLiteDBDriver(DBDriver):
             (system rows carry the system project's id, so selecting that project
             surfaces them; they stay hidden otherwise)
           - scope is empty/missing → kept only for non-scoped record types
+          - asset_ref under a ``dependency_roots`` folder → kept (deps scope)
 
         Returns "" when scope is None (caller-side opt-out). Mutates
         ``bindings`` to add any new bind parameters.
@@ -1122,7 +1139,11 @@ class SQLiteDBDriver(DBDriver):
                 scoped_type_placeholders.append(f":{key}")
             clauses.append(f"({empty_scope} AND type NOT IN ({','.join(scoped_type_placeholders)}))")
         if keep_user:
-            clauses.append("json_extract(data, '$.scope') = 'user'")
+            # Plain dependency folders index as user scope but belong to the project
+            # depending on them — "Mine" leaves them out (mirrors apply_scope_filter).
+            excluded = _asset_ref_under_sql(getattr(scope, "user_excluded_roots", ()), "__sf_xu", bindings)
+            not_excluded = f" AND NOT (coalesce({excluded}, 0))" if excluded else ""
+            clauses.append(f"(json_extract(data, '$.scope') = 'user'{not_excluded})")
         if projects:
             placeholders = []
             for i, pid in enumerate(projects):
@@ -1138,6 +1159,12 @@ class SQLiteDBDriver(DBDriver):
                 f"(json_extract(data, '$.scope') IN ({','.join(scope_placeholders)}) AND "
                 f"json_extract(data, '$.project_id') IN ({','.join(placeholders)}))"
             )
+        # Dependency folders (a `deps` scope): a row under one is in scope
+        # whatever its stamp — mirrors `under_dependency_root`. `substr` rather
+        # than LIKE, so `_`/`%` in a path are not wildcards.
+        under_dependency = _asset_ref_under_sql(getattr(scope, "dependency_roots", ()), "__sf_dep", bindings)
+        if under_dependency:
+            clauses.append(f"({under_dependency})")
         # Without `user` and without any projects, only non-scoped record
         # types can still match via the empty-scope branch above.
         if not clauses:
@@ -1247,6 +1274,26 @@ class SQLiteDBDriver(DBDriver):
             )
             result = await session.execute(text(f"DELETE FROM entities WHERE {where_clause}"), bindings)
             return result.rowcount or 0
+
+    async def entity_metas_for_project(self, project_id: str) -> list[dict]:
+        """Every row whose ``project_id`` is ``project_id``, any type and scope, as a
+        flat record dict (``data`` plus ``type``/``id``). One query: a project's
+        children without reading every record's metadata.json off disk."""
+        if not self.session_factory:
+            return []
+        async with self._session_ctx(write=False) as session:
+            result = await session.execute(
+                text("SELECT id, type, data FROM entities WHERE json_extract(data, '$.project_id') = :pid"),
+                {"pid": project_id},
+            )
+            metas = []
+            for rid, rtype, data in result.all():
+                try:
+                    payload = json.loads(data) if isinstance(data, str) else dict(data or {})
+                except ValueError:
+                    payload = {}
+                metas.append({**payload, "type": rtype, "id": rid})
+            return metas
 
     async def create_db(self):
         """Create database tables."""
@@ -1944,6 +1991,10 @@ class SQLiteDBDriver(DBDriver):
                     )
                 )
 
+            # Their FTS rows go in the same transaction — a cascaded descendant
+            # must not stay searchable after its row is gone.
+            await self._fts_delete_batch(session, entity_ids, 500)
+
             # Delete entities
             for entity_id in entity_ids:
                 await session.execute(delete(EntitySchema).where(EntitySchema.id == entity_id))
@@ -1966,7 +2017,8 @@ class SQLiteDBDriver(DBDriver):
                     (RelationshipSchema.from_id == eid) | (RelationshipSchema.to_id == eid)
                 )
             )
-            # Delete entity
+            # Delete entity and its FTS row together
+            await self._fts_delete_batch(session, [eid], 500)
             await session.execute(delete(EntitySchema).where(EntitySchema.id == eid))
             return True
 
@@ -3161,6 +3213,29 @@ class SQLiteDBDriver(DBDriver):
         if dt.tzinfo is None:
             return dt.replace(tzinfo=UTC)
         return dt
+
+    async def get_all_rows(self, entity_type: str) -> list[dict]:
+        """Every row of a type as its stored JSON plus ``id`` / ``updated_date``; no entity is built.
+
+        Building is the cost of a whole-type read: 1,382 processes take ~370 ms to hydrate and
+        ~30 ms to read this way (perf hunt 2026-11-07, worker-history on every project switch).
+        """
+        query = select(EntitySchema.id, EntitySchema.updated_date, EntitySchema.data).where(
+            EntitySchema.type == entity_type
+        )
+        async with self._session_ctx(write=False) as session:
+            result = await session.execute(query)
+            raw = result.all()
+        rows: list[dict] = []
+        for row_id, updated_date, data in raw:
+            try:
+                row = json.loads(data) if data else {}
+            except ValueError:
+                continue
+            row["id"] = row_id
+            row["updated_date"] = self._ensure_utc(updated_date)
+            rows.append(row)
+        return rows
 
     def _hydrate(self, schemas: "Sequence[EntitySchema]", where: str) -> List[DBBaseRecord]:
         """The rows of a LIST that can be built, with ONE warning for those that cannot.

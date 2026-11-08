@@ -7,6 +7,7 @@ hub-client state. The handlers just instantiate the Python entity (no local
 save) and delegate to its ``share()`` / ``add_message()`` methods, which talk
 to the hub through ``FlowpadClient`` using the stored cloud credentials.
 """
+
 from __future__ import annotations
 
 import logging
@@ -151,9 +152,7 @@ async def share_entity() -> ApiResponse:
         try:
             project_git_origin = await assert_project_publishable(entity, request_info.someone_typeid)
         except ProjectPublishBlocked as blocked:
-            return ApiFailResponse(
-                status_code=blocked.status_code, message=blocked.message, data=blocked.data()
-            )
+            return ApiFailResponse(status_code=blocked.status_code, message=blocked.message, data=blocked.data())
         # A folder that is a clean git checkout still advertises its origin; its
         # published assets travel through the project's hub repo either way.
         if project_git_origin is not None:
@@ -213,6 +212,10 @@ async def share_entity() -> ApiResponse:
             message=str(exc),
             data={"code": "invalid_role"},
         )
+    except HubError as exc:  # the hub's own answer (409 id_taken, 403, offline) reaches the caller as itself
+        logger.warning("[share] %s %s failed: %s", entity.get_type(), entity.id, exc)
+        prefix = "Could not invite" if project_invite_only else "Could not share"
+        return exc.fail_response(prefix)
     except Exception as exc:  # noqa: BLE001 — keep Project publish failures typed
         if project_invite_only:
             logger.warning("[share] inviting to Project %s failed: %s", entity.id, exc)
@@ -228,8 +231,6 @@ async def share_entity() -> ApiResponse:
                 message="The Hub could not publish this Project",
                 data={"code": "hub_publish_failed"},
             )
-        if isinstance(exc, HubError):  # a typed hub answer (e.g. ``id_taken``) reaches the caller as itself
-            return exc.fail_response("Could not share")
         raise
 
     # Send-side address-book reconcile (rule 4): learn every recipient — for ANY
@@ -239,19 +240,17 @@ async def share_entity() -> ApiResponse:
     if recipients or recipient_user_ids:
         try:
             from flow_sdk.app.actions.flow_message_action import _learn_address_book  # noqa: PLC0415
+
             learn_entries: list[dict] = list(getattr(entity, "members", None) or [])
-            learn_entries += [
-                {"email": r} for r in (recipients or []) if isinstance(r, str) and r.strip()
-            ]
+            learn_entries += [{"email": r} for r in (recipients or []) if isinstance(r, str) and r.strip()]
             # A principal grantee is already a known contact (that is where the
             # user_id came from), so this is a no-op refresh rather than a new
             # row — but keeping both halves symmetric means the learner never
             # has to care which path admitted someone.
             from flow_sdk.builtin.user import recipient_user_id  # noqa: PLC0415
+
             learn_entries += [
-                {"user_id": user_id}
-                for user_id in map(recipient_user_id, recipient_user_ids or [])
-                if user_id
+                {"user_id": user_id} for user_id in map(recipient_user_id, recipient_user_ids or []) if user_id
             ]
             await _learn_address_book(learn_entries)
         except Exception as e:  # noqa: BLE001
@@ -298,7 +297,9 @@ async def share_entity() -> ApiResponse:
         except Exception as e:  # noqa: BLE001
             logger.warning(
                 "[share] persisting remote=True on local %s %s failed (non-fatal): %s",
-                target.type, target.id, e,
+                target.type,
+                target.id,
+                e,
             )
     return ApiSuccessResponse(data=entity)
 
@@ -362,7 +363,9 @@ async def conversation_add_message() -> ApiResponse:
     # The session that wrote this (the `flow` CLI inside a worker) — linked after the send, never sent.
     origin_process = str(body.pop("origin_process", "") or "").strip()
     response = await handle_add_message(
-        body, request_info.someone_typeid, pending_send=pending_send,
+        body,
+        request_info.someone_typeid,
+        pending_send=pending_send,
     )
     if origin_process and isinstance(response, ApiSuccessResponse) and isinstance(response.data, dict):
         from flow_sdk.app.actions.notification_action import link_origin_session  # noqa: PLC0415
@@ -451,11 +454,9 @@ async def conversation_send_external() -> ApiResponse:
 
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
-        raise HTTPException(status_code=400,
-                            detail="send_external: target conversation typeid required")
+        raise HTTPException(status_code=400, detail="send_external: target conversation typeid required")
     if request_info.target_entity_typeid.type != "conversation":
-        raise HTTPException(status_code=400,
-                            detail="send_external: target must be a conversation")
+        raise HTTPException(status_code=400, detail="send_external: target must be a conversation")
 
     body = await request_info.get_post_data() or {}
     text = str((body or {}).get("text") or (body or {}).get("message") or "").strip()
@@ -480,6 +481,10 @@ async def conversation_send_external() -> ApiResponse:
             return ApiFailResponse(message=str(exc), status_code=exc.status_code)
         if not scope.source_ids:
             return ApiFailResponse(message="Agent stream inbox has no message source", status_code=404)
+        from flow_sdk.app.ticket_approval import unapproved_reason  # noqa: PLC0415
+
+        if reason := await unapproved_reason(request_info.target_entity_typeid.id):
+            return ApiFailResponse(message=reason)
 
     # The source is the conversation's own — the one its messages arrived through — never the
     # agent's "first" source: an agent with a mailbox AND a channel answers each on its channel.

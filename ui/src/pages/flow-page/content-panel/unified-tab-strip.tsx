@@ -16,13 +16,14 @@
  * The controller is kept ONLY for the surrounding controls: the trailing
  * opener toolbar, the new-tab menu, spawn modals, and the close-shortcut label.
  */
+import { setTabFullScreen } from '@src/tabs/tab-full-screen';
 import { AgenticProcess, dataManager, Project, tabKey, tabManager, Tab, TypeId, uniqueTabsByDockKey } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import { isTypeIdLikeName } from '@src/components/terminal/rename-rules';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { globalHomeDock } from '@src/tabs/project-entry';
+import { globalHomeDock, resumeDock } from '@src/tabs/project-entry';
 import { useTabCloser } from '@src/tabs/tab-close-request';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
@@ -173,13 +174,21 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
 
   const handleSelect = useCallback(
     (key: string) => {
-      const tab = tabByKey.get(key);
-      if (!tab?.dockPointer) return;
+      const dock = resumeDock(tabByKey.get(key), allTabs);
+      if (!dock) return;
       // A chip in the GLOBAL strip is a top-level tab: clicking it from inside a
       // Vibe tab must not adopt it into that Vibe tab's workspace.
-      navigation.openDock(tab.dockPointer, undefined, { topLevel: true });
+      navigation.openDock(dock, undefined, { topLevel: true });
     },
-    [tabByKey, navigation],
+    [tabByKey, navigation, allTabs],
+  );
+
+  const handleFullScreen = useCallback(
+    (key: string) => {
+      if (key !== activeKey) handleSelect(key);
+      setTabFullScreen(true);
+    },
+    [activeKey, handleSelect],
   );
 
   const handlePopout = useCallback(
@@ -207,12 +216,12 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     (closing: Tab[]) => {
       const closingIds = new Set(closing.map((t) => t.id));
       const remaining = tabs.filter((t) => !closingIds.has(t.id));
-      const next = tabManager.resolveNext(remaining, new Set());
-      if (next?.dockPointer) navigation.openDock(next.dockPointer, undefined, { topLevel: true });
+      const next = resumeDock(tabManager.resolveNext(remaining, new Set()), allTabs);
+      if (next) navigation.openDock(next, undefined, { topLevel: true });
       else if (projectId) navigation.goHome({ homePage: true });
       else navigation.openDock(globalHomeDock());
     },
-    [tabs, projectId, navigation],
+    [tabs, allTabs, projectId, navigation],
   );
 
   const handleClose = useCallback(
@@ -333,6 +342,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
           onCloseMany={handleCloseMany}
           onRename={handleRename}
           onPopout={handlePopout}
+          onFullScreen={handleFullScreen}
           onReorderPreview={handleReorderPreview}
           onReorderCommit={handleReorderCommit}
           onReorderCancel={() => void tabManager.refresh()}

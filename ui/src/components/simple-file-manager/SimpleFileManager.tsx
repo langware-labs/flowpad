@@ -1,5 +1,5 @@
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
-import { FSEntry, FSRef, fsManager, fsStore, TypeId } from '@sdk';
+import { FSRef, fsManager, fsStore, TypeId } from '@sdk';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { BreadcrumbChevron } from '@src/components/ui/breadcrumb';
@@ -42,8 +42,9 @@ import { ShareToConversationDialog } from '@src/components/share-to-conversation
 import { writeBrowseableDrag } from '@src/components/browseable-tree/drag';
 import { attachMultiDragGhost, buildRowDragItem } from './drag-payload';
 import { useFileShareSource } from '@src/hooks/use-file-share-source';
-import { FileItem, SimpleFileManagerProps, SortDirection, SortField } from './types';
+import { FileItem, SimpleFileManagerProps, SortField } from './types';
 import { FilterName } from './filters';
+import { DEFAULT_SORT, fsItemToFileItem, normalizeFsPath, sortFileItems, useFolderViewStore } from './folderViewStore';
 import { formatBytes } from '@src/utils/format-bytes';
 
 function formatDate(date: Date): string {
@@ -182,12 +183,6 @@ function isEditableFile(fileName: string): boolean {
   return false;
 }
 
-function normalizeFsPath(path: string): string {
-  if (!path) return '/';
-  const withLeadingSlash = path.startsWith('/') ? path : `/${path}`;
-  return withLeadingSlash.replace(/\/+/g, '/').replace(/\/$/, '') || '/';
-}
-
 function getErrorStatus(error: unknown): number | null {
   if (!error || typeof error !== 'object') return null;
   const maybeStatus = (error as { response?: { status?: unknown } }).response?.status;
@@ -233,21 +228,6 @@ function formatFsErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function fsItemToFileItem(fsItem: FSEntry, currentPath: string): FileItem {
-  const name = fsItem.relativePath?.split('/').pop() || fsItem.name || '';
-  // Use relativePath for the full path, fallback to constructed path if relativePath is not available
-  const itemPath = fsItem.relativePath || (currentPath === '/' ? `/${name}` : `${currentPath}/${name}`);
-  return {
-    id: fsItem.relativePath || name,
-    name,
-    type: fsItem.is_dir ? 'folder' : 'file',
-    size: fsItem.size || 0,
-    modifiedAt: fsItem.last_modified ? new Date(fsItem.last_modified * 1000) : new Date(),
-    path: itemPath,
-    fsItem,
-  };
-}
-
 export function SimpleFileManager({
   typeId,
   initialPath = '/',
@@ -265,6 +245,11 @@ export function SimpleFileManager({
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [currentPath, setCurrentPath] = useState(() => normalizeFsPath(initialPath));
+  // Sort and the viewer's last-shown file live per folder, shared with the file viewer.
+  const sort = useFolderViewStore((s) => s.folders[currentPath]?.sort) ?? DEFAULT_SORT;
+  const shown = useFolderViewStore((s) => s.folders[currentPath]?.shown);
+  const setFolderSort = useFolderViewStore((s) => s.setSort);
+  const selectName = initialSelectedName ?? shown;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -278,8 +263,6 @@ export function SimpleFileManager({
     if (showHidden) setSelectedItems(new Set());
     onEnabledFiltersChange?.(showHidden ? [...others, FilterName.HIDDEN] : others);
   };
-  const [sortField, setSortField] = useState<SortField>('name');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [clipboard, setClipboard] = useState<{ items: FileItem[]; operation: 'copy' | 'cut' } | null>(null);
   // Absolute node path of the file being shared; non-null opens the dialog.
   const [sharePath, setSharePath] = useState<string | null>(null);
@@ -319,13 +302,15 @@ export function SimpleFileManager({
   }, [initialPath]);
 
   useEffect(() => {
-    if (!initialSelectedName || appliedSelectRef.current === initialSelectedName) return;
-    const item = files.find((f) => f.name === initialSelectedName);
+    if (!selectName || appliedSelectRef.current === selectName) return;
+    const item = files.find((f) => f.name === selectName);
     if (!item) return;
-    appliedSelectRef.current = initialSelectedName;
+    appliedSelectRef.current = selectName;
     setSelectedItems(new Set([item.id]));
     setScrollToId(item.id);
-  }, [files, initialSelectedName]);
+    // `initialPath`: the reset above clears the selection when the URL catches up
+    // with an in-table folder change, so the name is applied again after it.
+  }, [files, selectName, initialPath]);
 
   // Dialogs
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
@@ -425,41 +410,11 @@ export function SimpleFileManager({
   );
 
   // Sorting
-  const sortedFiles = useMemo(() => {
-    const sorted = [...files].sort((a, b) => {
-      // Folders first
-      if (a.type !== b.type) {
-        return a.type === 'folder' ? -1 : 1;
-      }
-
-      let comparison = 0;
-      switch (sortField) {
-        case 'name':
-          comparison = a.name.localeCompare(b.name);
-          break;
-        case 'size':
-          comparison = a.size - b.size;
-          break;
-        case 'modifiedAt':
-          comparison = a.modifiedAt.getTime() - b.modifiedAt.getTime();
-          break;
-        case 'type':
-          comparison = a.name.localeCompare(b.name);
-          break;
-      }
-
-      return sortDirection === 'asc' ? comparison : -comparison;
-    });
-    return sorted;
-  }, [files, sortField, sortDirection]);
+  const sortedFiles = useMemo(() => sortFileItems(files, sort), [files, sort]);
 
   const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
+    const direction = sort.field === field && sort.direction === 'asc' ? 'desc' : 'asc';
+    setFolderSort(currentPath, { field, direction });
   };
 
   // Selection
@@ -665,9 +620,11 @@ export function SimpleFileManager({
   const canReveal = typeidObj.type === 'compute_node';
   const handleRevealInFinder = useCallback(
     (item: FileItem) => {
-      void new FSRef(item.path, typeidObj).open({ select: item.type === 'file' }).catch((error) =>
-        notify.error({ title: t`Could not open in Finder`, message: errorMessage(error, item.path) }),
-      );
+      void new FSRef(item.path, typeidObj)
+        .open({ select: item.type === 'file' })
+        .catch((error) =>
+          notify.error({ title: t`Could not open in Finder`, message: errorMessage(error, item.path) }),
+        );
     },
     [typeidObj, t],
   );
@@ -969,13 +926,13 @@ export function SimpleFileManager({
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[45%] cursor-pointer" onClick={() => handleSort('name')}>
-                    <Trans>Name</Trans> {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                    <Trans>Name</Trans> {sort.field === 'name' && (sort.direction === 'asc' ? '↑' : '↓')}
                   </TableHead>
                   <TableHead className="w-[15%] cursor-pointer" onClick={() => handleSort('size')}>
-                    <Trans>Size</Trans> {sortField === 'size' && (sortDirection === 'asc' ? '↑' : '↓')}
+                    <Trans>Size</Trans> {sort.field === 'size' && (sort.direction === 'asc' ? '↑' : '↓')}
                   </TableHead>
                   <TableHead className="w-[25%] cursor-pointer" onClick={() => handleSort('modifiedAt')}>
-                    <Trans>Modified</Trans> {sortField === 'modifiedAt' && (sortDirection === 'asc' ? '↑' : '↓')}
+                    <Trans>Modified</Trans> {sort.field === 'modifiedAt' && (sort.direction === 'asc' ? '↑' : '↓')}
                   </TableHead>
                   <TableHead className="w-[15%]">
                     <Trans>Actions</Trans>

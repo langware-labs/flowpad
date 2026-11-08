@@ -13,11 +13,15 @@ A deployed agent's ``chat`` endpoint is one (``api.chat.openai``):
 * ``POST v1/chat/completions`` — the last ``user`` message is the message. ``metadata.conversation_id``
   continues a conversation (omitted, one is started); every answer names it
   (``flowpad.conversation_id`` and ``X-Flowpad-Conversation``). A conversation is the caller's own.
-  ``stream`` answers Server-Sent Events (OpenAI chunk shape) carrying the reply once it is recorded.
+  ``stream`` answers Server-Sent Events (OpenAI chunk shape) at once: the role chunk, an SSE comment
+  every ``KEEP_ALIVE_SECONDS`` while the turn runs, then the reply once it is recorded. A turn outlasts
+  any idle-read timeout between the caller and this box (the desktop's hub proxy gives up after 30s of
+  silence), so a stream is never silent — and is bounded by how long an agent turn may run
+  (``AGENT_TIMEOUT``), not by ``REPLY_DEADLINE_SECONDS``.
 * ``GET v1/conversations/<id>`` — the caller's conversation so far (``{messages}``), from the channel.
 * ``GET v1/models`` — the one model: this endpoint.
 
-No reply within ``REPLY_DEADLINE_SECONDS`` is a 504 naming the conversation — the message stays in
+Without ``stream``, no reply within ``REPLY_DEADLINE_SECONDS`` is a 504 naming the conversation — the message stays in
 the channel and is answered when its loop gets to it.
 """
 
@@ -27,13 +31,18 @@ import asyncio
 import json
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 
-#: How long one HTTP request waits for its reply — the request/response contract, not a retry budget.
+from flow_sdk.schema.data_spec.compute_op_spec import AGENT_TIMEOUT
+
+#: How long one non-streamed request waits for its reply — the request/response contract, not a retry
+#: budget. A streamed request waits as long as an agent turn may run (``AGENT_TIMEOUT``).
 REPLY_DEADLINE_SECONDS = 60.0
+#: How often a stream says it is alive while the turn runs — well inside any proxy's idle-read timeout.
+KEEP_ALIVE_SECONDS = 5.0
 #: How often the waiting request looks for the reply the answering process recorded: soon at
 #: first, then no more than once a second — a turn takes seconds, and each look is a query.
 _REPLY_CHECKS = (0.1, 0.2, 0.4, 0.8, 1.0)
@@ -82,15 +91,26 @@ async def _completions(request: Request, endpoint, caller: str) -> Response:
         return _fail(400, "the body must be JSON")
     if not isinstance(body, dict):
         return _fail(400, "the body must be a JSON object")
-    outcome = await ask(endpoint, caller, body)
-    if isinstance(outcome, Response):
-        return outcome
-    completion, conversation_id = outcome
-    headers = {"X-Flowpad-Conversation": conversation_id}
-    if body.get("stream"):
-        return StreamingResponse(_sse(completion), media_type="text/event-stream",
-                                 headers={**headers, "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-    return JSONResponse(completion, headers=headers)
+    if not body.get("stream"):
+        outcome = await ask(endpoint, caller, body)
+        if isinstance(outcome, Response):
+            return outcome
+        completion, conversation_id = outcome
+        return JSONResponse(completion, headers={"X-Flowpad-Conversation": conversation_id})
+    asked = await _post(endpoint, caller, body)
+    if isinstance(asked, Response):
+        return asked
+    return StreamingResponse(_sse(endpoint, asked), media_type="text/event-stream",
+                             headers={"X-Flowpad-Conversation": asked.conversation_id,
+                                      "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+class _Asked:
+    """A message posted on an endpoint's channel, awaiting the reply its loop records."""
+
+    def __init__(self, source, driver, item, asked_at: datetime, conversation_id: str):
+        self.source, self.driver, self.item = source, driver, item
+        self.asked_at, self.conversation_id = asked_at, conversation_id
 
 
 async def ask(endpoint, caller: str, body: dict):
@@ -100,6 +120,19 @@ async def ask(endpoint, caller: str, body: dict):
 
     The route's whole contract, callable without HTTP: an agent's ``ask`` action uses it for the hub
     that placed the agent here (``Agent.ask_action``)."""
+    asked = await _post(endpoint, caller, body)
+    if isinstance(asked, Response):
+        return asked
+    async for outcome in _await_reply(endpoint, asked, REPLY_DEADLINE_SECONDS, wake_every=None):
+        if outcome is not None:
+            break
+    if isinstance(outcome, Response):
+        return outcome
+    return asked.driver.cls.reply_payload(asked.item, outcome, model=_model(endpoint)), asked.conversation_id
+
+
+async def _post(endpoint, caller: str, body: dict):
+    """Put *body*'s message on the endpoint's channel: an :class:`_Asked`, or the failure as a ``Response``."""
     from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
 
@@ -123,22 +156,35 @@ async def ask(endpoint, caller: str, body: dict):
     ids = ingested.get("ids") or []
     if not ids:
         return _fail(400, "messages must end with a user message that has text")
-    item = await SourceItem.get_by_id(ids[-1])
+    return _Asked(source, driver, await SourceItem.get_by_id(ids[-1]), asked_at, conversation_id)
 
-    deadline = time.monotonic() + REPLY_DEADLINE_SECONDS
+
+async def _await_reply(endpoint, asked: _Asked, within: float, *, wake_every: Optional[float]) -> AsyncIterator:
+    """Wait up to *within* seconds for *asked*'s reply. Yields ``None`` every *wake_every* seconds while
+    waiting (so a stream can say it is alive), then once: the reply row, or the failure as a ``Response``."""
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+    deadline = time.monotonic() + within
+    woke = time.monotonic()
     looks = 0
-    while (reply := await SourceItem.find_reply_from_self(source, item, since=asked_at)) is None:
-        if await _turn_failed(endpoint, item):
+    while (reply := await SourceItem.find_reply_from_self(asked.source, asked.item, since=asked.asked_at)) is None:
+        if await _turn_failed(endpoint, asked.item):
             # The loop never runs a failed turn again (it may have half-acted); waiting would only end
             # in a 504, and asking again in another. Said now, so the caller can tell the person.
-            return _fail(422, "the agent could not answer this message", "turn_failed",
-                         conversation_id=conversation_id)
+            yield _fail(422, "the agent could not answer this message", "turn_failed",
+                        conversation_id=asked.conversation_id)
+            return
         if time.monotonic() >= deadline:
-            return _fail(504, "no reply yet — the message waits in the channel", "no_reply_yet",
-                         conversation_id=conversation_id)
+            hint = "" if wake_every is not None else " (ask with stream:true to wait for a long turn)"
+            yield _fail(504, f"no reply yet — the message waits in the channel{hint}", "no_reply_yet",
+                        conversation_id=asked.conversation_id)
+            return
+        if wake_every is not None and time.monotonic() - woke >= wake_every:
+            woke = time.monotonic()
+            yield None
         await asyncio.sleep(_REPLY_CHECKS[min(looks, len(_REPLY_CHECKS) - 1)])
         looks += 1
-    return driver.cls.reply_payload(item, reply, model=_model(endpoint)), conversation_id
+    yield reply
 
 
 async def _turn_failed(endpoint, item) -> bool:
@@ -156,14 +202,26 @@ async def _turn_failed(endpoint, item) -> bool:
     return any((turns_of(p).get(key) or {}).get("status") == FAILED for p in processes)
 
 
-async def _sse(completion: dict):
-    """A completion as OpenAI chunks: the role, the whole reply, the stop — the reply is recorded whole."""
-    base = {k: completion.get(k) for k in ("id", "created", "model")} | {"object": "chat.completion.chunk"}
-    extra = {"flowpad": completion.get("flowpad") or {}}
-    content = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-    for delta, finish in (({"role": "assistant"}, None), ({"content": content}, None), ({}, "stop")):
-        chunk = {**base, "choices": [{"index": 0, "delta": delta, "finish_reason": finish}], **extra}
-        yield f"data: {json.dumps(chunk)}\n\n"
+async def _sse(endpoint, asked: _Asked):
+    """The turn as OpenAI chunks: the role at once, a keep-alive comment while the turn runs, then the
+    whole reply and the stop (the reply is recorded whole) — or the failure as an ``error`` event."""
+    opening = asked.driver.cls.reply_payload(asked.item, None, model=_model(endpoint))
+    base = {k: opening.get(k) for k in ("id", "created", "model")} | {"object": "chat.completion.chunk"}
+    extra = {"flowpad": opening.get("flowpad") or {}}
+
+    def chunk(delta: dict, finish: Optional[str] = None) -> str:
+        return f"data: {json.dumps({**base, 'choices': [{'index': 0, 'delta': delta, 'finish_reason': finish}], **extra})}\n\n"
+
+    yield chunk({"role": "assistant"})
+    async for outcome in _await_reply(endpoint, asked, AGENT_TIMEOUT, wake_every=KEEP_ALIVE_SECONDS):
+        if outcome is None:
+            yield ": keep-alive\n\n"
+        elif isinstance(outcome, Response):
+            yield f"data: {outcome.body.decode()}\n\n"
+        else:
+            completion = asked.driver.cls.reply_payload(asked.item, outcome, model=_model(endpoint))
+            yield chunk({"content": ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""})
+            yield chunk({}, "stop")
     yield "data: [DONE]\n\n"
 
 
@@ -187,4 +245,4 @@ async def _history(endpoint, caller: str, conversation_id: str) -> Response:
     return JSONResponse({"conversation_id": conversation_id, "messages": messages})
 
 
-__all__ = ["REPLY_DEADLINE_SECONDS", "ask", "channel_http"]
+__all__ = ["KEEP_ALIVE_SECONDS", "REPLY_DEADLINE_SECONDS", "ask", "channel_http"]

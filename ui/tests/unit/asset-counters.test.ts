@@ -5,13 +5,12 @@
  */
 import type { Agent, ComputeNode, Deployment } from '@sdk';
 import { ExecutionEnvironmentStatus } from '@sdk';
-import { isActiveAgent, isActiveMachine, isLiveDeployment } from '@src/components/asset-counters/hub-counters';
-import {
-  agentSource,
-  deploymentsByAgent,
-  runningRows,
-  toAgentRows,
-} from '@src/components/asset-counters/agent-counters';
+import { isActiveMachine } from '@src/components/asset-counters/hub-counters';
+import { isLiveDeployment, isPaused, isRunning } from '@src/components/asset-counters/placement';
+import { agentSource, deploymentsByAgent, toAgentRows } from '@src/components/asset-counters/agent-counters';
+import { counterAt, crossCounters, selectionOf } from '@src/components/asset-counters/axes';
+import { skillsUnder } from '@src/components/asset-counters/skill-counters';
+import type { Skill } from '@sdk';
 import { matchesQuickSearch, quickSearchTerms } from '@src/components/asset-counters/quick-search';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
@@ -19,8 +18,12 @@ import { describe, expect, it } from 'vitest';
 
 const agent = (id: string, name: string, bundleDirectory: string | null = null) =>
   ({ id, displayName: name, bundleDirectory, typeId: { toString: () => `agent:${id}` } }) as unknown as Agent;
-const deployment = (id: string, parent: string | null) =>
-  ({ id, agentTypeId: parent?.startsWith('agent:') ? { toString: () => parent } : null }) as unknown as Deployment;
+const deployment = (id: string, parent: string | null, state: string | null = null) =>
+  ({
+    id,
+    mainAgentTypeId: parent?.startsWith('agent:') ? { toString: () => parent } : null,
+    status: { provider_state: state },
+  }) as unknown as Deployment;
 
 describe('agent counters', () => {
   const zed = agent('z', 'Zed');
@@ -42,7 +45,7 @@ describe('agent counters', () => {
   it('running is the distinct project agents that have a deployment', () => {
     const rows = toAgentRows([zed, amy], deploymentsByAgent(deployments));
     expect(rows.map((r) => r.agent.displayName)).toEqual(['Amy', 'Zed']);
-    expect(runningRows(rows).map((r) => r.agent.id)).toEqual(['z']);
+    expect(rows.filter(isRunning).map((r) => r.agent.id)).toEqual(['z']);
   });
 
   it("Flowpad's own (system-scope) agents are neither counted nor listed", () => {
@@ -56,6 +59,58 @@ describe('agent counters', () => {
     expect(agentSource(agent('x', 'X', '/Users/me/proj/agentic-assets/agent/x'))).toBe('proj');
     expect(agentSource(agent('y', 'Y', '/Users/me/other/y'))).toBe('other');
     expect(agentSource(agent('n', 'N'))).toBe('');
+  });
+});
+
+describe('scope × status counters', () => {
+  const live = { deployments: [deployment('l', 'agent:x')] };
+  const paused = { deployments: [deployment('p', 'agent:y', 'paused')] };
+  const idle = { deployments: [] };
+
+  it('running = a live placement, paused = placed but every placement paused', () => {
+    expect([live, paused, idle].map(isRunning)).toEqual([true, false, false]);
+    expect([live, paused, idle].map(isPaused)).toEqual([false, true, false]);
+  });
+
+  it('crosses every scope with every status under a <scope>.<status> key', () => {
+    const counters = crossCounters({
+      label: 'Apps',
+      scopes: [
+        { key: 'project', label: 'p', items: [live], isLoading: false },
+        { key: 'all', label: 'All', items: [live, paused, idle], isLoading: false },
+      ],
+      statuses: [
+        { key: 'running', label: 'Running', keep: isRunning },
+        { key: 'paused', label: 'Paused', keep: isPaused },
+        { key: 'all', label: 'All' },
+      ],
+    });
+    expect(counters.map((c) => `${c.key}=${c.items.length}`)).toEqual([
+      'project.running=1',
+      'project.paused=0',
+      'project.all=1',
+      'all.running=1',
+      'all.paused=1',
+      'all.all=3',
+    ]);
+    // An unknown key falls back to this project, everything.
+    expect(selectionOf(counters, 'nope')).toEqual({ scope: 'project', status: 'all' });
+    expect(counterAt(counters, selectionOf(counters, 'all.paused'))?.items).toEqual([paused]);
+  });
+
+  it('a group with no axes is one counter keyed "all"', () => {
+    expect(crossCounters({ label: 'Skills', items: [1, 2] }).map((c) => c.key)).toEqual(['all']);
+  });
+
+  it("project skills are the ones under the project's roots, either slash", () => {
+    const skill = (ref: string) => ({ asset_ref: ref }) as Skill;
+    const skills = [
+      skill('/w/proj/.claude/skills/a'),
+      skill('C:\\w\\proj\\.claude\\skills\\b'),
+      skill('/w/projx/.claude/skills/c'),
+    ];
+    expect(skillsUnder(skills, ['/w/proj'])).toEqual([skills[0]]);
+    expect(skillsUnder(skills, ['C:/w/proj'])).toEqual([skills[1]]);
   });
 });
 
@@ -89,9 +144,9 @@ describe('hub counters — active rules', () => {
 
   it('an agent is active only with a live deployment', () => {
     const a = {} as Agent;
-    expect(isActiveAgent({ agent: a, deployments: [] })).toBe(false);
-    expect(isActiveAgent({ agent: a, deployments: [dep('paused')] })).toBe(false);
-    expect(isActiveAgent({ agent: a, deployments: [dep('paused'), dep('running')] })).toBe(true);
+    expect(isRunning({ agent: a, deployments: [] })).toBe(false);
+    expect(isRunning({ agent: a, deployments: [dep('paused')] })).toBe(false);
+    expect(isRunning({ agent: a, deployments: [dep('paused'), dep('running')] })).toBe(true);
   });
 
   it('a machine is active only when READY', () => {

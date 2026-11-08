@@ -666,7 +666,7 @@ async def _declaring(names: list[str], project: Optional["Project"], deployment:
     missing = [n for n in names if n not in declared]
     if not missing:
         return declared
-    agent = await deployment.element()
+    agent = await deployment.main_agent()
     owner = {v: r.name for r in (getattr(agent, "requirements", None) or []) if r.kind == "credential" for v in r.vars}
     groups: dict[str, list[str]] = {}
     for name in missing:
@@ -678,7 +678,7 @@ async def _declaring(names: list[str], project: Optional["Project"], deployment:
 
 async def _on_this_machine(deployment_id: str, environment: str) -> tuple["Deployment", Placement]:
     """Where a deployment's machine reads its values: the row this machine keeps for ``deployment_id``
-    (``adopt_placement`` re-keys the agent's; ``expose-endpoints`` keys a serving one), else this
+    (``deployment/<id>/adopt`` re-keys it; ``expose-endpoints`` keys a serving one), else this
     machine's own — the machine IS that deployment, and the hub places before, or without, a successful
     adopt. The environment is the one the hub sends, never the row's (a serving row carries the
     instance default); it becomes this instance's default, so the agent and every terminal read it."""
@@ -789,12 +789,13 @@ async def use_mine(deployment_id: str, names: Optional[list[str]] = None) -> dic
     placement = await Placement.of(deployment)
     if placement.secrets.protected:
         raise CredentialError("a protected deployment's values are entered directly, never copied in", code="protected")
-    agent = await deployment.element()
-    project = await project_of(agent) if agent is not None else None
+    agent = await deployment.main_agent()
+    element = await deployment.element()
+    project = element if getattr(element, "type", None) == "project" else (await project_of(agent) if agent else None)
     if names is None:
-        if agent is None:
-            raise CredentialError("name the values to copy: this deployment runs no agent")
-        ready = await readiness(agent, deployment)
+        if agent is None and project is None:
+            raise CredentialError("name the values to copy: this deployment runs no project")
+        ready = await readiness(agent, deployment, project=project)
         names = ready.value_names(missing_only=True)
     declared = await declared_vars(project)
     funded = sorted(n for n in names if n in declared and declared[n].spec.lm_provider)

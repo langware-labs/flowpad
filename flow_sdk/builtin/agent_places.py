@@ -1,17 +1,9 @@
 """Where an agent runs, and how it runs there.
 
-A *place* is a Deployment of the agent: this computer (the local placement) or
-a cloud machine. The definition (agent.json) is shared by every place; a place may
-override its launch settings, be switched off on its own, own schedules
-(``runs_on`` on the trigger) and be the one place that answers the agent's email
-(``email_place``). All of these live in agent.json keyed by Deployment id, so they
-travel with the definition and each machine applies only the entries naming a
-placement that runs there.
-
-A choice made here is written as a FIELD PATCH to agent.json through the same
-revision-safe document writer the editor uses, then the row is re-read from disk.
-Never ``agent.save()``: the row does not carry every file-owned field (the
-system prompt body among them), and a full re-render from it erased the prompt.
+A *place* of an agent is a Deployment of its project whose ``main_agent_id`` is the agent: this
+computer's local deployment or a cloud machine. The definition (agent.json) is shared by every
+place; a place's launch overrides live on the deployment row (``main_agent_overrides``), never in
+git, and a place owns the schedules whose trigger ``runs_on`` names it.
 """
 
 from __future__ import annotations
@@ -22,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.builtin.agent_schedule import ScheduleError, agent_folder
-from flow_sdk.schema.data_spec.agent_spec import PLACE_OVERRIDABLE_FIELDS, AgentPlaceSpec
+from flow_sdk.schema.data_spec.agent_spec import PLACE_OVERRIDABLE_FIELDS
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent import Agent
@@ -36,7 +28,7 @@ class PlaceError(ScheduleError):
 
 
 async def place_of(agent: "Agent", deployment_id: str, *, local: bool = False) -> "Optional[Deployment]":
-    """The Deployment ``deployment_id`` when it places THIS agent, else None.
+    """The Deployment ``deployment_id`` when THIS agent is its main agent, else None.
 
     ``local`` also requires that it runs on this machine — the one rule for "does
     this place's schedule, email or launch belong here".
@@ -46,11 +38,11 @@ async def place_of(agent: "Agent", deployment_id: str, *, local: bool = False) -
     if not deployment_id:
         return None
     deployment = await Deployment.get_by_id(str(deployment_id))
-    if deployment is None or deployment.parent_type_id != str(agent.typeid):
+    if deployment is None or deployment.main_agent_id != str(agent.typeid):
         return None
     if local and not deployment.is_local:
         return None
-    return deployment.with_element(agent)
+    return deployment.with_agent(agent)
 
 
 async def _require_place(agent: "Agent", deployment_id: str) -> "Deployment":
@@ -70,8 +62,7 @@ async def _write_header(agent: "Agent", set_fields: dict[str, Any], drop_fields:
     document = Path(agent_folder(agent)) / SchemaRegistry.get(EntityType.AGENT.value).shape.main
     if not document.is_file():
         raise PlaceError(f"{document} does not exist", status_code=409)
-    patch = DocumentPatch(set_fields=set_fields, drop_fields=drop_fields)
-    await asyncio.to_thread(update_document, document, patch)
+    await asyncio.to_thread(update_document, document, DocumentPatch(set_fields=set_fields, drop_fields=drop_fields))
     await reindex_paths([str(document)], mint=False)
 
 
@@ -237,8 +228,6 @@ async def list_places(agent: "Agent") -> list[dict[str, Any]]:
     local = next((d for d in placed if d.is_local), None)
     deployments = ([local] if local is not None else []) + [d for d in placed if d is not local]
     schedules = [t for t in triggers if t.trigger_type == TriggerType.SCHEDULE]
-    # Unset keeps the legacy rule, reported as this computer: the machine asking is the one polling.
-    answering = agent.email_place or (local.id if local is not None else None)
     published = str(getattr(agent.origin, "head_commit", "") or "")
     cloud = [d for d in deployments if not d.is_local]
     repo = await asyncio.to_thread(_agent_repo, agent) if cloud and published else None
@@ -249,19 +238,17 @@ async def list_places(agent: "Agent") -> list[dict[str, Any]]:
 
     rows = []
     for deployment in deployments:
-        place = agent.place_for(deployment.id)
         rows.append(
             {
                 "deployment": deployment,
                 "is_local": deployment.is_local,
-                "overrides": place.overrides() if place is not None else {},
-                "enabled": agent.enabled_on(deployment.id),
+                "overrides": dict(deployment.main_agent_overrides or {}),
+                "enabled": bool(agent.enabled),
                 "schedule_count": sum(
                     1
                     for t in schedules
                     if (t.runs_on or "") == deployment.id or (not t.runs_on and deployment.is_local)
                 ),
-                "answers_email": answering == deployment.id,
                 "behind": behind.get(deployment.id),
                 "last_active": last_active.get(deployment.id),
             }
@@ -293,39 +280,24 @@ async def _last_active(deployment) -> str | None:
 
 
 async def email_answers_here(agent_id: str) -> bool:
-    """Whether THIS machine should poll and answer the agent's mailbox."""
+    """Whether THIS machine should poll and answer the agent's mailbox: it has a local deployment
+    whose main agent this is, or the agent is the main agent of no deployment at all."""
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
 
     agent = await Agent.get_by_id(str(agent_id or ""))
-    if agent is None or not agent.email_place:
+    if agent is None:
         return True
-    return await place_of(agent, agent.email_place, local=True) is not None
+    placed = await agent.deployments()
+    return not placed or any(d.is_local for d in placed)
 
 
 # ── writing the places ────────────────────────────────────────────────────
 
 
-async def _write_place(agent: "Agent", deployment_id: str, field: str, value: Any) -> "Agent":
-    """Set one field of one place's entry in agent.json; an entry left with nothing to say is dropped."""
-    places = [p for p in agent.places or [] if p.deployment_id != deployment_id]
-    current = agent.place_for(deployment_id)
-    data = current.model_dump() if current is not None else {"deployment_id": deployment_id}
-    data[field] = value
-    updated = AgentPlaceSpec.model_validate(data)
-    if updated.overrides() or updated.enabled is not None:
-        places.append(updated)
-    # No `places: []` in the file: an empty list is dropped from the header.
-    if places:
-        await _write_header(agent, {"places": [p.model_dump(exclude_none=True) for p in places]}, ())
-    else:
-        await _write_header(agent, {}, ("places",))
-    agent.places = places or None
-    return agent
-
-
 async def set_place_override(agent: "Agent", deployment_id: str, field: str, value: Any) -> "Agent":
-    """Set (or with ``value=None`` clear) one launch-setting override for one place; writes agent.json."""
-    await _require_place(agent, deployment_id)
+    """Set (or with ``value=None`` clear) one launch-setting override of the main agent on one deployment;
+    written on the deployment row."""
+    deployment = await _require_place(agent, deployment_id)
     if field not in PLACE_OVERRIDABLE_FIELDS:
         raise PlaceError(f"{field!r} cannot be overridden per place; one of {', '.join(PLACE_OVERRIDABLE_FIELDS)}")
     if value is not None:
@@ -335,79 +307,77 @@ async def set_place_override(agent: "Agent", deployment_id: str, field: str, val
             value = [v.strip() for v in value]
         else:
             value = str(value).strip() or None
-    return await _write_place(agent, deployment_id, field, value)
-
-
-async def set_place_enabled(agent: "Agent", deployment_id: str, enabled: Any) -> "Agent":
-    """Switch the agent on or off on one place; ``None`` follows the definition's ``enabled``. Writes agent.json."""
-    await _require_place(agent, deployment_id)
-    if enabled is not None and not isinstance(enabled, bool):
-        raise PlaceError("enabled must be true or false")
-    return await _write_place(agent, deployment_id, "enabled", enabled)
-
-
-async def set_email_place(agent: "Agent", deployment_id: str) -> "Agent":
-    """Make one place the only one answering this agent's email; writes agent.json.
-
-    Stops this machine's poller first when the answer moves elsewhere, so the
-    hand-over never has two machines answering.
-    """
-    from flow_sdk.builtin.agent_mailbox import email_source_for_agent  # noqa: PLC0415
-    from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
-
-    deployment = await _require_place(agent, deployment_id)
-    source = await email_source_for_agent(agent.id)
-    if source is not None and not deployment.is_local and source.status == SourceStatus.ACTIVE.value:
-        source.status = SourceStatus.DISABLED.value
-        await source.save_runtime()
-
-    await _write_header(agent, {"email_place": deployment.id}, ())
-    agent.email_place = deployment.id
-
-    if source is not None and deployment.is_local and source.status == SourceStatus.DISABLED.value:
-        source.status = SourceStatus.ACTIVE.value
-        source.next_poll_at = None
-        await source.save_runtime()
+    overrides = {k: v for k, v in (deployment.main_agent_overrides or {}).items() if k != field}
+    if value is not None:
+        overrides[field] = value
+    deployment.main_agent_overrides = overrides
+    await deployment.save()
     return agent
 
 
-async def adopt_placement(agent: "Agent", deployment_id: str, environment: str | None = None) -> "Deployment":
-    """Make this machine's placement of ``agent`` carry the hub's id for it.
+async def _project_here(record: dict[str, Any]):
+    """The project on this machine a hub deployment places. The machine indexes the cloned repo as its
+    own project under its own id, which the record carries as ``project_id``; the hub's ``parent_type_id``
+    is that id only when the project was shared from this machine."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
-    Called ON a cloud machine by the hub at deploy and update. The box minted its
-    own local placement; the definition's place entries (overrides, ``runs_on``,
-    ``email_place``) name the hub's id. One placement, one id everywhere — so the
-    row is re-keyed here rather than translating ids at every read.
+    for candidate in (record.get("project_id"), str(record.get("parent_type_id") or "").removeprefix("project-")):
+        if candidate and (project := await Project.get_by_id(str(candidate))) is not None:
+            return project
+    return None
 
-    ``environment`` is the placement's credential environment. It is stamped on
-    the row and becomes this instance's default, so plain terminals on the box
-    read the same environment as its agent runs.
-    """
+
+async def adopt_deployment(record: dict[str, Any]) -> "Deployment":
+    """``POST deployment/<id>/adopt`` on a cloud machine: make this machine's local deployment of the
+    record's project carry the hub's id, main agent and environment. One deployment, one id everywhere —
+    the row is re-keyed rather than translating ids at every read. Serving when it has a main agent.
+
+    The environment becomes this instance's default, so plain terminals on the box read the same
+    environment as its agent runs."""
     from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.instance_settings.environment import set_default_environment  # noqa: PLC0415
     from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
 
-    deployment_id = str(deployment_id or "").strip()
+    deployment_id = str(record.get("id") or "").strip()
     if not is_valid_entity_id(deployment_id):
-        raise PlaceError("deployment_id must be a UUID v4 or v5")
+        raise PlaceError("deployment id must be a UUID v4 or v5")
+    parent = str(record.get("parent_type_id") or "")
+    if not parent.startswith("project-"):
+        raise PlaceError("a deployment to adopt places a project", status_code=400)
     try:
-        env = normalize_environment(environment) if environment is not None else None
+        env = normalize_environment(record["environment"]) if record.get("environment") else None
     except ValueError as e:
         raise PlaceError(str(e)) from e
+    main = str(record.get("main_agent_id") or "") or None
+    changes: dict[str, Any] = {
+        "main_agent_id": main,
+        "main_agent_overrides": dict(record.get("main_agent_overrides") or {}),
+        "identity": record.get("identity") or ("agent" if main else "none"),
+        "serving": bool(main),
+        **{k: record[k] for k in ("source_kind", "source_ref", "source_revision") if record.get(k)},
+        # A placement made by a message answers from that message (``agent_serve.bound_at``).
+        **({"answers_from": record["answers_from"]} if record.get("answers_from") else {}),
+        **({"environment": env} if env is not None else {}),
+    }
     existing = await Deployment.get_by_id(deployment_id)
+    project = await _project_here(record)
     if existing is not None:
-        if existing.parent_type_id != str(agent.typeid):
-            raise PlaceError(f"{deployment_id} places a different element", status_code=409)
+        if project is None or existing.parent_type_id != str(project.typeid):
+            raise PlaceError(f"{deployment_id} places a different project", status_code=409)
         if not existing.is_local:
-            raise PlaceError(f"{deployment_id} is not a placement on this machine", status_code=409)
-        if env is not None and existing.environment != env:
-            existing.environment = env
-            await existing.save()
+            raise PlaceError(f"{deployment_id} is not a deployment on this machine", status_code=409)
+        # The hub's record, verbatim -- not a client PUT: a cleared main agent (None) must clear it here too.
+        for name, value in changes.items():
+            setattr(existing, name, value)
+        await existing.save()
         adopted = existing
     else:
-        current = await agent.local_deployment()
-        adopted = await current.rekey(deployment_id, **({"environment": env} if env is not None else {}))
+        if project is None:
+            raise PlaceError(f"project {parent} is not on this machine", status_code=404)
+        current = await project.local_deployment()
+        adopted = current if str(current.id) == deployment_id else await current.rekey(deployment_id, **changes)
     if env is not None:
         set_default_environment(env)
-    return adopted.with_element(agent)
+    return adopted

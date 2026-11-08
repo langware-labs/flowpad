@@ -60,6 +60,7 @@ describe('add a channel', () => {
 
   it('offers Agent Email for an agent, never the vendor, and allocates instead of a form', async () => {
     const allocate = vi.spyOn(Agent.prototype, 'allocateMailbox').mockResolvedValue({} as never);
+    vi.spyOn(Agent, 'getById').mockResolvedValue(new Agent({ id: AGENT_ID }) as never);
     const onOpenChange = vi.fn();
     render(
       <TooltipProvider>

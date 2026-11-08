@@ -1,14 +1,12 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AgenticProcess, ExecutionMode, Project, supportedExecutionModes, TypeId, WorkerStatus } from '@sdk';
+import { AgenticProcess, Project, TypeId, WorkerStatus } from '@sdk';
 import type { ActivityProgressSpec } from '@sdk/activity';
 import { Pencil } from 'lucide-react';
-import { EntityTypeBar } from '@src/components/asset-manager/EntityTypeBar';
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
 import { useInlineRename } from '@src/components/browseable-tree/use-inline-rename';
 import { workerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { showWizard } from '@src/components/assets/editor/wizard/wizard-popup-store';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
@@ -19,7 +17,6 @@ import {
 import {
   acknowledgePending,
   formatTimeAgo,
-  useWorkerCountsByMode,
   useWorkerList,
   type WorkerListEntry,
 } from '@src/store/pending-actions-store';
@@ -27,7 +24,6 @@ import { cn } from '@src/lib/utils';
 import { useActivities } from '@src/store/activity-store';
 import { ActivityRow } from './ActivityRow';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { executionModeLabel, iconForExecutionMode } from './execution-mode-icons';
 import { useNotificationPulse } from './useNotificationPulse';
 import { workerStatusLabel } from './worker-status-label';
 
@@ -41,7 +37,10 @@ function projectNameFromCache(projectId: string): string | null {
 function buildWorkerRow(e: WorkerListEntry) {
   return {
     processId: e.processId,
-    mode: e.mode,
+    category: e.category,
+    state: e.state,
+    errorDetail: e.errorDetail,
+    interactive: e.visible,
     name: agenticProcessName(e.processId) ?? e.processId.slice(0, 8),
     projectName: e.projectId ? projectNameFromCache(e.projectId) : null,
     statusLabel: workerStatusLabel(e.workerStatus, e.pending),
@@ -52,18 +51,41 @@ function buildWorkerRow(e: WorkerListEntry) {
 }
 
 type WorkerRowData = ReturnType<typeof buildWorkerRow>;
+type ActivityTab = 'overview' | 'processes' | 'errors';
+type ProcessFilter = 'all' | 'chat' | 'background';
+
+const ACTIVITY_TABS: readonly ActivityTab[] = ['overview', 'processes', 'errors'];
+const PROCESS_FILTERS: readonly ProcessFilter[] = ['all', 'chat', 'background'];
+const DISMISSED_COMPLETED_KEY = 'activity-panel-dismissed-completed';
+
+function readDismissedCompleted(): Record<string, number> {
+  try {
+    return JSON.parse(localStorage.getItem(DISMISSED_COMPLETED_KEY) ?? '{}') as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+function Counter({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border bg-muted/30 px-2 py-2" data-testid={`activity-count-${label.toLowerCase().replaceAll(' ', '-')}`}>
+      <div className="text-lg font-semibold tabular-nums">{value}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+    </div>
+  );
+}
+
+function Empty({ label }: { label: string }) {
+  return <div className="px-2 py-3 text-center text-xs text-muted-foreground">{label}</div>;
+}
 
 /**
- * Footer chip — generic "agents at work" list, grouped by execution mode and
- * gated by view mode.
+ * Footer chip — a compact activity panel for processes and generic work.
  *
  * The list shows EVERY live worker on the machine, classified into an
- * ``ExecutionMode`` (interactive / background / error / external). The chip owns
- * the per-view-mode *supported* set via ``supportedExecutionModes`` — Standard
- * users only ever see interactive + background, so the error/external complexity
- * is hidden from them entirely. A filter-toggle bar (the same ``EntityTypeBar``
- * the asset picker uses) narrows the shown modes; the badge counter reflects the
- * current filter (supported ∩ selected).
+ * Process categories come from `process_type`: Chat is conversational work;
+ * every other process type is Background. Terminal visibility remains only an
+ * interaction choice when a row is opened.
  *
  * Pulse + glow are preserved verbatim: a one-shot 3 s chip pulse fires alongside
  * the notification sound when a new id enters pending, and per-row
@@ -84,11 +106,7 @@ type WorkerRowData = ReturnType<typeof buildWorkerRow>;
  * routing. Showing both would double-count the same work.
  */
 export function PendingActionsChip() {
-  const isAdvanced = useIsAdvanced();
-  const supported = useMemo(() => supportedExecutionModes(isAdvanced), [isAdvanced]);
-
-  const allRows = useWorkerList(supported);
-  const counts = useWorkerCountsByMode(supported);
+  const allRows = useWorkerList();
   // See the note above: a process's own activity is represented by its worker row.
   // Memoized on the snapshot identity — the store hands out a new array only when
   // something actually changed, and this list is a render dependency below.
@@ -98,16 +116,37 @@ export function PendingActionsChip() {
     [allActivities],
   );
   const [open, setOpen] = useState(false);
-  // Empty = all supported modes shown (mirrors AssetPickerPopover).
-  const [selected, setSelected] = useState<string[]>([]);
+  const [tab, setTab] = useState<ActivityTab>('overview');
+  const [processFilter, setProcessFilter] = useState<ProcessFilter>('all');
+  const [dismissedCompleted, setDismissedCompleted] = useState<Record<string, number>>(readDismissedCompleted);
   const { navigation } = useDockNavigation();
   const pulsing = useNotificationPulse(3000);
 
-  // The shown set: the user's selection, or all supported modes when nothing
-  // is narrowed. Memoized so the `filtered` memo below stays stable across
-  // renders where neither input changed.
-  const effective: readonly string[] = useMemo(() => (selected.length ? selected : supported), [selected, supported]);
-  const filtered = useMemo(() => allRows.filter((e) => effective.includes(e.mode)), [allRows, effective]);
+  const visibleRows = useMemo(
+    () => allRows.filter((entry) => dismissedCompleted[entry.processId] !== entry.lastStatusChangedAt),
+    [allRows, dismissedCompleted],
+  );
+  const counts = useMemo(() => {
+    const next = { running: 0, waiting: 0, completed: 0, error: 0 };
+    for (const entry of visibleRows) next[entry.state]++;
+    return next;
+  }, [visibleRows]);
+  const filtered = useMemo(
+    () => visibleRows.filter((entry) => processFilter === 'all' || entry.category === processFilter),
+    [visibleRows, processFilter],
+  );
+  const errors = useMemo(
+    () => visibleRows.filter((entry) => entry.state === 'error'),
+    [visibleRows],
+  );
+  const clearCompleted = useCallback(() => {
+    const next = { ...dismissedCompleted };
+    for (const entry of visibleRows) {
+      if (entry.category === 'background' && entry.state === 'completed') next[entry.processId] = entry.lastStatusChangedAt;
+    }
+    localStorage.setItem(DISMISSED_COMPLETED_KEY, JSON.stringify(next));
+    setDismissedCompleted(next);
+  }, [dismissedCompleted, visibleRows]);
 
   // When the popover opens, lazily fetch each row's process (+ its ClaudeSession
   // / Shell) and its Project so the cached names replace the id fragments. Both
@@ -163,10 +202,10 @@ export function PendingActionsChip() {
   // makes the hook count jump when `allRows` goes 0 → non-zero, which throws
   // "Rendered more hooks than during the previous render".
   const handlePick = useCallback(
-    async (processId: string, mode: ExecutionMode) => {
+    async (processId: string, interactive: boolean) => {
       setOpen(false);
       try {
-        await openAgenticProcess(processId, navigation, mode === ExecutionMode.Interactive);
+        await openAgenticProcess(processId, navigation, interactive);
       } finally {
         // Ack either way — clears the row's glow if the process was in the
         // pending set. No-op if it was only burning (no readyAt to mark).
@@ -191,13 +230,11 @@ export function PendingActionsChip() {
     [navigation],
   );
 
-  // Hide the chip only when there is nothing happening at all — no supported workers AND
-  // no activities. When the user has narrowed to an empty mode (e.g. External in v1) the
-  // chip stays visible showing 0 so the popover remains reachable to reset the filter.
+  // Hide the chip only when there is nothing happening at all.
   // MUST come after every hook above — see the handlePick note.
-  if (allRows.length === 0 && activities.length === 0) return null;
+  if (visibleRows.length === 0 && activities.length === 0) return null;
 
-  const count = rows.length + activities.length;
+  const count = counts.running + counts.waiting + counts.error + activities.length;
   const tooltipText =
     activities.length === 0
       ? `${count} active agent${count === 1 ? '' : 's'}`
@@ -236,31 +273,37 @@ export function PendingActionsChip() {
           className="w-80 p-1"
           data-testid="pending-actions-popover"
         >
-          {/* Execution-mode filter toggles — pinned at the top. ``shrink-0``
-              keeps the bar in place; only the scrollable body below it changes
-              when a filter is toggled, so the header never moves. */}
-          {supported.length > 1 && (
-            <div className="flex shrink-0 items-center border-b px-2 py-1.5" data-testid="worker-mode-bar">
-              <EntityTypeBar
-                selected={selected}
-                onChange={setSelected}
-                counts={counts}
-                allowed={supported}
-                iconForType={iconForExecutionMode}
-                labelForType={executionModeLabel}
-                testIdPrefix="worker-mode"
-              />
-            </div>
-          )}
+          <div className="flex border-b px-1" role="tablist" aria-label="Activity panel views">
+            {ACTIVITY_TABS.map((item) => (
+              <button key={item} type="button" role="tab" aria-selected={tab === item} onClick={() => setTab(item)} className={cn('px-2 py-1.5 text-xs font-medium capitalize', tab === item ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground')}>
+                {item === 'errors' ? `Errors${counts.error ? ` (${counts.error})` : ''}` : item}
+              </button>
+            ))}
+          </div>
           {/* Fixed-height scroll body: a constant height means the popover
               (which opens upward) never resizes when the filtered count
               changes, so the pinned filter bar above stays put. */}
           <div className="h-64 overflow-y-auto" data-testid="worker-list-body">
-            {rows.length === 0 && activities.length === 0 ? (
+            {tab === 'overview' ? (
+              <div className="p-3" data-testid="activity-overview">
+                {counts.completed > 0 && <button type="button" onClick={clearCompleted} className="mb-2 text-xs text-muted-foreground hover:text-foreground">Clear completed</button>}
+                <div className="grid grid-cols-2 gap-2">
+                <Counter label="Running" value={counts.running + activities.length} />
+                <Counter label="Waiting for you" value={counts.waiting} />
+                <Counter label="Completed" value={counts.completed} />
+                <Counter label="Errors" value={counts.error} />
+                </div>
+              </div>
+            ) : tab === 'errors' ? (
+              errors.length === 0 ? <Empty label="No errors" /> : <ul className="flex flex-col">{errors.map((row) => <WorkerRow key={row.processId} row={buildWorkerRow(row)} onPick={handlePick} onRenamed={bumpNameTick} />)}</ul>
+            ) : (
+              <>
+                <div className="flex gap-1 border-b px-2 py-1.5" data-testid="process-filter">
+                  {PROCESS_FILTERS.map((item) => <button key={item} type="button" onClick={() => setProcessFilter(item)} className={cn('rounded px-2 py-0.5 text-xs capitalize', processFilter === item ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground')}>{item}</button>)}
+                </div>
+                {rows.length === 0 && activities.length === 0 ? (
               <div className="px-2 py-3 text-center text-xs text-muted-foreground" data-testid="worker-list-empty">
-                {effective.length === 1 && effective[0] === (ExecutionMode.External as string)
-                  ? 'No external workers detected'
-                  : 'No agents match this filter'}
+                No processes match this filter
               </div>
             ) : (
               <>
@@ -297,6 +340,7 @@ export function PendingActionsChip() {
                   </>
                 )}
               </>
+            )}</>
             )}
           </div>
         </PopoverContent>
@@ -317,7 +361,7 @@ const WorkerRow = memo(function WorkerRow({
   onRenamed,
 }: {
   row: WorkerRowData;
-  onPick: (processId: string, mode: ExecutionMode) => void | Promise<void>;
+  onPick: (processId: string, interactive: boolean) => void | Promise<void>;
   onRenamed: () => void;
 }) {
   const { t } = useLingui();
@@ -337,7 +381,7 @@ const WorkerRow = memo(function WorkerRow({
     // No outer <button> while editing (input-in-button is invalid HTML) — a
     // plain row with the status icon + a full-width input.
     return (
-      <li className="flex items-center gap-2 rounded px-2 py-1.5" data-mode={row.mode}>
+      <li className="flex items-center gap-2 rounded px-2 py-1.5" data-category={row.category}>
         {statusIconEl}
         <InlineRenameInput
           rename={rename}
@@ -360,19 +404,20 @@ const WorkerRow = memo(function WorkerRow({
     <li className="group flex items-center rounded pe-1 hover:bg-muted" data-pending={row.pending ? 'true' : undefined}>
       <button
         type="button"
-        onClick={() => void onPick(row.processId, row.mode)}
+        onClick={() => void onPick(row.processId, row.interactive)}
         onDoubleClick={(e) => {
           e.preventDefault();
           rename.startEditing();
         }}
         className={rowClass}
-        data-mode={row.mode}
+        data-category={row.category}
       >
         {statusIconEl}
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium">{row.name}</div>
           <div className="truncate text-xs text-muted-foreground">
-            {executionModeLabel(row.mode)} · {row.statusLabel}
+            {row.category === 'chat' ? 'Chat' : 'Background'} · {row.statusLabel}
+            {row.errorDetail ? ` · ${row.errorDetail}` : ''}
             {row.projectName ? ` · ${row.projectName}` : ''}
           </div>
         </div>

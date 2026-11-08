@@ -1,7 +1,7 @@
 import { APIEntity, FSRef, TypeId, dataManager, systemTools } from '@sdk';
 import { useEntityOps } from '@sdk/react/hooks';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 /**
  * Discriminator for entity-by-path resolution lifecycle.
@@ -238,8 +238,17 @@ export function useEntityByPath<T extends APIEntity<T>>(
   // result so the next render re-runs the lookup and finds the freshly
   // indexed row. Subscribe on the resolved type when known, else the hint,
   // to avoid invalidating on unrelated entity ops.
+  const shownIdRef = useRef<string | null>(null);
   const onEntityOp = useCallback(
-    (_typeId: unknown, op: unknown) => {
+    (typeId: TypeId, op: unknown) => {
+      if (op === 'delete') {
+        // The entity shown here was deleted: settle on "gone" without a refetch,
+        // which could re-index a path whose files are not removed yet.
+        if (String(typeId.id) !== shownIdRef.current) return;
+        queryClient.setQueryData(exactKey, null);
+        queryClient.setQueryData(resolveKey, NOT_FOUND);
+        return;
+      }
       if (op !== 'create' && op !== 'update') return;
       void queryClient.invalidateQueries({ queryKey: exactKey });
       void queryClient.invalidateQueries({ queryKey: resolveKey });
@@ -306,6 +315,7 @@ export function useEntityByPath<T extends APIEntity<T>>(
       ? resolvedEntityRaw
       : null;
   const entity = state === 'missing_asset' ? orphanEntity : liveEntity;
+  shownIdRef.current = liveEntity?.id ? String(liveEntity.id) : null;
   const isLoading = state === 'querying' || state === 'discovering';
   const error = (exactError ?? projectionFailure ?? resolveError) as Error | undefined;
 

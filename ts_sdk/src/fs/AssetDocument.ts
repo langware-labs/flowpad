@@ -1,3 +1,4 @@
+import type { TypeId } from '../models/TypeId';
 import type { FSRefJson } from './FSRef';
 
 export type DocumentValue = string | number | boolean | null | DocumentValue[] | { [key: string]: DocumentValue };
@@ -23,6 +24,8 @@ export interface DocumentRef {
   readonly path: string;
   readonly readOnly?: boolean;
   readonly vpath?: string;
+  /** The entity a file watch names this file by; a ref without one is never watched. */
+  readonly watchId?: TypeId;
   readDocument(): Promise<AssetDocument>;
   updateDocument(patch: DocumentPatch): Promise<AssetDocument>;
   exists?(): Promise<boolean>;

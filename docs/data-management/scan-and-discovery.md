@@ -240,7 +240,7 @@ After the index loop, orphans are detected **entirely on-disk** (zero DB reads):
 orphan_ids = (records_dir_ids | db_row_ids) - seen_ids
 ```
 
-A record is an orphan iff its Layer-1 source is gone. `OrphanAction` controls the response:
+A record is an orphan iff its Layer-1 source is gone — or a `.flowignore` now excludes it, which takes it out of the index the way a deletion does. `OrphanAction` controls the response:
 
 | Action | Effect |
 |---|---|

@@ -1,15 +1,17 @@
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { KeyRound } from 'lucide-react';
-import type { Project } from '@sdk';
+import { canSetUpProjects, dataContext, type Project } from '@sdk';
 import { useProjectSetupLeft, useProjectUpdatesPending } from '@sdk/react/hooks/use-project-readiness';
 import { openProjectSetup } from '@src/components/project-setup/project-setup-store';
+import { useSharedProjectSetUp } from '@src/components/task-receive/use-shared-project-set-up';
+import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { isHubOnly } from '@src/navigation/hub-runtime';
 import { cn } from '@src/lib/utils';
 
 /**
  * A single round glowing key beside the project chip while the current project cannot run here
- * yet — the same answer the footer's "Project setup required" warning reads — or while dependencies
+ * yet — the same answer the footer's "Project setup required" warning reads, or a shared project
+ * whose files are not on this machine (its click opens that project's set-up) — or while dependencies
  * Flowpad cloned have updates waiting. Yellow means setup is owed; blue means only updates are
  * waiting; yellow with a blue dot means both. The tooltip carries the label and the counts; the
  * button itself stays icon-only. A click opens the project's setup dialog (a transient overlay, not a
@@ -20,14 +22,23 @@ export function ProjectSetupButton({ project }: { project?: Project | null }) {
   const { t } = useLingui();
   const left = useProjectSetupLeft(project?.id);
   const updates = useProjectUpdatesPending(project?.id);
-  if (isHubOnly() || !project || (!left && !updates)) return null;
-  const onlyUpdates = !left;
+  // A shared project with no files here owes its files before anything else can be set up.
+  const sharedSetUp = useSharedProjectSetUp(project?.id);
+  const setPendingProject = useIncomingProjectStore((s) => s.setPendingProject);
+  // Setup is answered on this backend's disk by a person here: never on the hub, nor an agent's box.
+  const owesSetup = left > 0 || !!sharedSetUp;
+  if (!canSetUpProjects(dataContext.caps) || !project || (!owesSetup && !updates)) return null;
+  const onlyUpdates = !owesSetup;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
-          onClick={() => openProjectSetup({ projectId: String(project.id), projectName: project.name ?? '' })}
+          onClick={() =>
+            sharedSetUp
+              ? setPendingProject(sharedSetUp)
+              : openProjectSetup({ projectId: String(project.id), projectName: project.name ?? '' })
+          }
           data-testid="top-nav-project-setup"
           data-updates={updates || undefined}
           aria-label={onlyUpdates ? t`Dependency updates available` : t`Setup required`}
@@ -39,7 +50,7 @@ export function ProjectSetupButton({ project }: { project?: Project | null }) {
           )}
         >
           <KeyRound className="h-4 w-4 shrink-0" />
-          {left > 0 && updates > 0 && (
+          {owesSetup && updates > 0 && (
             <span
               data-testid="top-nav-project-updates-dot"
               className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-background"
@@ -48,20 +59,24 @@ export function ProjectSetupButton({ project }: { project?: Project | null }) {
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="text-xs">
-        {left > 0 && (
+        {owesSetup && (
           <>
             <div className="font-semibold">
               <Trans>Setup required</Trans>
             </div>
-            <Plural
-              value={left}
-              one="# thing to set up before this project can run"
-              other="# things to set up before this project can run"
-            />
+            {sharedSetUp ? (
+              <Trans>Its files are not on this machine yet</Trans>
+            ) : (
+              <Plural
+                value={left}
+                one="# thing to set up before this project can run"
+                other="# things to set up before this project can run"
+              />
+            )}
           </>
         )}
         {updates > 0 && (
-          <div className={cn(left > 0 ? 'mt-1' : 'font-semibold')}>
+          <div className={cn(owesSetup ? 'mt-1' : 'font-semibold')}>
             <Plural value={updates} one="# dependency has updates" other="# dependencies have updates" />
           </div>
         )}

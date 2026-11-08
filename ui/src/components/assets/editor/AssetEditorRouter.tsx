@@ -54,7 +54,8 @@ import { ValueViewer } from '@src/components/value-viewer/ValueViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
 import { GitConnectionRequiredCard } from './GitConnectionRequiredCard';
-import { needsGitConnection } from './git-connection';
+import { gitConnectionRequired, needsGitConnection } from './git-connection';
+import { errorStatus } from '@src/lib/error-message';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { MarkdownEditor, type WikiLinkTarget } from './markdown/MarkdownEditor';
 import { detectLanguage } from '@sdk';
@@ -197,13 +198,13 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
   } = useEntity<AnyEntity>(typeId);
   const { computeNode, flow } = useAgentContext();
   // On the hub, a git-stored asset with no git link has no files to read: say so, skip the 404.
-  const gitBlocked =
-    !!typeId &&
-    needsGitConnection(hubReflect, dataManager.getTypeInfo(typeId.type)?.cloud_file_transport, typeIdEntity);
+  const transport = typeId ? dataManager.getTypeInfo(typeId.type)?.cloud_file_transport : undefined;
+  const gitBlocked = !!typeId && needsGitConnection(hubReflect, transport, typeIdEntity);
   const {
     data: entityRecord,
     isLoading: recordLoading,
     isError: recordError,
+    error: recordErrorDetail,
     refetch: refetchRecord,
   } = useQuery({
     queryKey: ['asset-record-refs', hubReflect ? 'hub' : 'local', typeId?.toString()],
@@ -334,18 +335,15 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
     return <DiagnosisRequestView value={ptr.value} />;
   }
 
-  // A deployment's page reads the agent and deployment RECORDS (funding, threads, health), never the
-  // agent's files: an agent not linked to git still opens it on the hub.
-  if (gitBlocked && nestedChild?.section === 'deployment' && typeIdEntity?.getType() === Agent.type) {
-    return (
-      <AgentChildView agent={typeIdEntity as Agent} section={nestedChild.section} typeIdString={nestedChild.typeId} />
-    );
-  }
-  if (gitBlocked && typeIdEntity) {
+  // No git link, or one the hub answered record/refs 404 for: "connect git", never "Missing asset".
+  if (gitConnectionRequired(hubReflect, transport, typeIdEntity, errorStatus(recordErrorDetail)) && typeIdEntity) {
     return (
       <GitConnectionRequiredCard
-        name={typeIdEntity.displayName || typeId.toString()}
-        onRetry={() => void refetchEntity()}
+        name={typeIdEntity.displayName || (typeId?.toString() ?? "")}
+        onRetry={() => {
+          void refetchEntity();
+          void refetchRecord();
+        }}
       />
     );
   }

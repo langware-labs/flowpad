@@ -191,14 +191,15 @@ async def test_navigate_success_sends_ui_command_to_active_tab():
             body = _answer(resp)
             assert body["exit_code"] == 0 and body["delivered"] is True
             assert body["connection_id"] == connection_id
-            assert body["value"]["type"] == "project"
-            assert body["value"]["id"] == project_id
+            # A project has no editor: it lands on its own page (`resolve_display_target`).
+            assert body["value"]["kind"] == "dock"
+            assert body["value"]["view_type"] == "project"
+            assert body["value"]["pointer"] == project_id
 
             msg = _receive_ui_command(ws)
             assert msg["message_type"] == "ui_command"
-            assert msg["kind"] == "navigate_entity"
-            assert msg["type"] == "project"
-            assert msg["id"] == project_id
+            assert msg["kind"] == "navigate_dock"
+            assert msg["pointer"] == project_id
 
 
 async def _make_markdown(asset_ref: str) -> str:
@@ -354,7 +355,7 @@ async def test_navigate_picks_focused_tab_when_multiple_connected():
 
                 msg = _receive_ui_command(ws_fg)
                 assert msg["message_type"] == "ui_command"
-                assert msg["id"] == project_id
+                assert msg["pointer"] == project_id
 
 
 # ─────────────────────────────────────────────────────────────────────────────

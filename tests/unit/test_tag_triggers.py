@@ -9,7 +9,7 @@ from flow_sdk.builtin.tag_triggers import (
     unregister_tag_trigger,
     validate_tag_trigger,
 )
-from flow_sdk.builtin.trigger import Trigger
+from flow_sdk.builtin.trigger import Trigger, set_trigger_on
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from flow_sdk.tags import emit_tag, target_of
@@ -93,9 +93,8 @@ async def test_disabled_and_reregister_semantics(tmp_path):
         # Reload before mutating — updating the stale pre-fire instance would
         # clobber the counter the fire just wrote.
         row = await Trigger.get_by_id(trigger.id)
-        row.enabled = False
-        await row.update()
-        register_tag_trigger(row)  # disabled → unsubscribed
+        await set_trigger_on(row, False)  # off here → unsubscribed
+        register_tag_trigger(row)
         emit_tag("rr.two", "x:1")
         await _settle()
         assert (await Trigger.get_by_id(trigger.id)).counter == 1

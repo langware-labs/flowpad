@@ -64,10 +64,14 @@ function subscribeToClock(listener: () => void): () => void {
 }
 
 const getClock = (): number => clockNow;
+const noSubscription = () => () => {};
 
-/** The shared clock. Subscribing keeps it running; the last unsubscriber stops it. */
-export function useClock(): number {
-  return useSyncExternalStore(subscribeToClock, getClock, getClock);
+/**
+ * The shared clock. Subscribing keeps it running; the last unsubscriber stops it. An inactive
+ * caller reads it without subscribing, so nothing finished or absent re-renders every second.
+ */
+export function useClock(active = true): number {
+  return useSyncExternalStore(active ? subscribeToClock : noSubscription, getClock, getClock);
 }
 
 /**
@@ -79,7 +83,7 @@ export function useClock(): number {
  * arrives, which is the whole point.
  */
 export function useElapsedMs(spec: ActivityProgressSpec | null): number {
-  const now = useClock();
+  const now = useClock(!!spec?.started_at && !spec.finished_at);
   if (!spec?.started_at) return 0;
   const end = spec.finished_at ? Date.parse(spec.finished_at) : now;
   return Math.max(end - Date.parse(spec.started_at), 0);
@@ -87,7 +91,7 @@ export function useElapsedMs(spec: ActivityProgressSpec | null): number {
 
 export function useActivity(path: string, subject_entity?: string | null): ActivityView {
   const spec = useActivitySpec(path, subject_entity);
-  const now = useClock();
+  const now = useClock(!!spec);
   const elapsedMs = useElapsedMs(spec);
 
   if (!spec) {

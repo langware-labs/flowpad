@@ -1,4 +1,5 @@
-import { Deployment, type AgentPlace, type AutomationPlace } from '@sdk';
+import { Deployment, type AutomationPlace } from '@sdk';
+import type { AgentPlace } from './use-agent-places';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback } from 'react';
 import { Cloud, Laptop, type LucideIcon } from 'lucide-react';
@@ -14,8 +15,8 @@ export interface PlaceDisplay {
 export type NamedPlace = Pick<AgentPlace, 'is_local'> & { deployment: Pick<AgentPlace['deployment'], 'name'> };
 
 /**
- * How an environment is named and drawn, once: `Development · local` on this
- * computer, `Cloud · <name>` otherwise. A cloud machine wears the Deployment
+ * How an environment is named and drawn, once: `This computer · not in the cloud` on
+ * this computer, `Cloud · <name>` otherwise. A cloud machine wears the Deployment
  * type's own icon; only the local environment overrides it.
  */
 export function usePlaceDisplay(): (place: NamedPlace) => PlaceDisplay {
@@ -23,7 +24,7 @@ export function usePlaceDisplay(): (place: NamedPlace) => PlaceDisplay {
   return useCallback(
     (place: NamedPlace) =>
       place.is_local
-        ? { label: t`Development · local`, Icon: Laptop }
+        ? { label: t`This computer · not in the cloud`, Icon: Laptop }
         : { label: t`Cloud · ${place.deployment.name}`, Icon: iconForType(Deployment.type) },
     [t],
   );

@@ -20,11 +20,16 @@ from typing import Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.builtin.conversation import Conversation, conversation_row_lock
-from flow_sdk.builtin.flow_message import FlowMessage, FlowMessageKind, derive_session_fields, session_snapshot_from_header
+from flow_sdk.builtin.flow_message import (
+    FlowMessage,
+    FlowMessageKind,
+    derive_help_request_kind,
+    derive_it_reply,
+    derive_session_fields,
+    session_snapshot_from_header,
+)
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.discovery.notify import send_resource_sync
-from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.operations.conversation import (
     append_message_pointer,
     default_jsonl_path,
@@ -197,16 +202,15 @@ async def materialize_flow_message(
     """Create or upsert a FlowMessage, append its pointer to the conversation,
     project ``message_ids`` / ``message_count``, and (optionally) notify.
 
-    Sequence (ordering is load-bearing — FM CREATE must precede Conversation
-    UPDATE so the UI has the FM row to render when it refetches the
-    conversation):
+    Sequence (ordering is load-bearing — the FM row must exist before the
+    Conversation update goes out, so the UI has it to render when it refetches):
 
     1. Save the FlowMessage record (notify=False).
     2. Append a typed Pointer to the canonical ``conversation.jsonl``.
     3. ``ConversationRecord.sync_to_db`` projects ``message_ids`` /
        ``message_count`` onto the Conversation entity.
-    4. If ``notify``: dispatch ``flow_message`` CREATE then ``conversation``
-       UPDATE.
+    4. If ``notify``: re-read the Conversation and ``notify_updated()`` it (the
+       in-process entity event the UI's ``useEntity`` hooks re-render on).
 
     ``payload`` is anything ``FlowMessage.model_validate`` accepts; ``id`` may
     be omitted (allocated) or pre-populated (idempotent upsert when the same
@@ -254,6 +258,8 @@ async def materialize_flow_message(
             # Refill live-session fields the hub may have stripped (unknown-
             # field drop) from the authoritative attachment carrier.
             derive_session_fields(fm)
+            derive_help_request_kind(fm)
+            derive_it_reply(fm, payload)
             # Pure reflection: preserve the hub's created_by/updated_by/dates
             # verbatim, never the local sync user.
             with remote_reflection():
@@ -281,6 +287,8 @@ async def materialize_flow_message(
         # drop) from the authoritative attachment carrier. Covers every arrival
         # path — hub WS, bundle unpack, catch-up sync — in this one chokepoint.
         derive_session_fields(fm)
+        derive_help_request_kind(fm)
+        derive_it_reply(fm, payload)
         # Save with notify=False — the CREATE is emitted explicitly below. Remote
         # rows reflect (preserve hub attribution); local rows stamp normally.
         with remote_reflection() if remote else nullcontext():
@@ -349,36 +357,7 @@ async def materialize_flow_message(
 
     if notify:
         try:
-            task_id_for_sync = parent_id if parent_type == RecordType.TASK else fm.id
-            # These are sniffer-channel NOTIFICATIONS that materialization
-            # happened — not entity-reflection instructions. The real entity
-            # events already fired: handle_entity_op for the FM CREATE above,
-            # and conv.notify_updated() below. Sent as CRUD ops (CREATE/UPDATE)
-            # they reached the webhook receiver's _reflect_entity, which tried
-            # to *construct* a FlowMessage from this event-shaped payload —
-            # which carries no entity fields — and failed with "text Field
-            # required". EVENT routes to the event handler / sniffer instead,
-            # which is all this channel was ever for.
-            send_resource_sync(
-                type="flow_message",
-                id=fm.id,
-                operation=SyncOperation.EVENT,
-                data={
-                    "event_name": "flow_message_materialized",
-                    "event_data": {"flow_message_id": fm.id, "task_id": task_id_for_sync},
-                },
-            )
-            send_resource_sync(
-                type="conversation",
-                id=conv.id,
-                operation=SyncOperation.EVENT,
-                data={
-                    "event_name": "conversation_updated",
-                    "event_data": {"task_id": task_id_for_sync, "conversation_id": conv.id},
-                },
-            )
-            # Entity-event channel — required for React useEntity hooks to
-            # re-render. send_resource_sync only fires the sniffer channel.
+            # Entity-event channel: what makes React useEntity hooks re-render.
             conv_fresh = await Conversation.get_one({"id": conv.id})
             if conv_fresh:
                 await conv_fresh.notify_updated()

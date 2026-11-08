@@ -1,6 +1,6 @@
 """A cloud deploy answers before its machine exists and reports its steps as an activity (FLOWPAD-2311).
 
-`POST /agent/<id>/deploy` used to hold the request for the whole deploy — publish, plan, readiness
+`POST /project/<id>/deploy` (with the agent as ``main_agent_id``) used to hold the request for the whole deploy — publish, plan, readiness
 and the hub booting a machine — so the dialog showed a spinner for minutes with nothing behind
 it. The contract pinned here: the desktop ACCEPTS (200, naming its activity) before the machine is
 placed, and every step arrives over the WebSocket as a block of that activity,
@@ -137,7 +137,7 @@ def unfunded_allocation(instance: LiveE2EInstance) -> JsonObject:
 
 def _deployments_of(client: httpx.Client, agent_id: str) -> list[JsonObject]:
     rows: list[JsonObject] = client.get("/api/v1/graph/deployment").json().get("data") or []
-    return [row for row in rows if row.get("parent_type_id") == f"agent-{agent_id}"]
+    return [row for row in rows if row.get("main_agent_id") == f"agent-{agent_id}"]
 
 
 async def _deploy_activity(ws: ClientConnection, subject: str) -> list[JsonObject]:
@@ -173,8 +173,11 @@ async def _deploy_watched(
     instance: LiveE2EInstance, base: str, agent_id: str, body: JsonObject
 ) -> tuple[httpx.Response, list[JsonObject]]:
     """Deploy *agent_id* with *body* while watching it: the answer, and — when it was accepted — every
-    snapshot of the deploy's activity until the run ends, so the cleanup finds whatever it placed."""
-    subject: str = f"agent-{agent_id}"
+    snapshot of the deploy's activity until the run ends, so the cleanup finds whatever it placed. A deploy
+    places the agent's PROJECT with the agent as main; the activity is the project's."""
+    with httpx.Client(base_url=base, timeout=60) as reader:
+        project_id: str = reader.get(f"/api/v1/graph/agent/{agent_id}").json()["data"]["project_id"]
+    subject: str = f"project-{project_id}"
     connection_id: str = f"deploy-e2e-{uuid.uuid4()}"
     client: httpx.AsyncClient
     ws: ClientConnection
@@ -185,14 +188,16 @@ async def _deploy_watched(
         hello: JsonObject = json.loads(await ws.recv())
         assert hello.get("message_type") == "response_msg"
         watched: httpx.Response = await client.post(
-            f"/api/v1/graph/agent/{agent_id}/watch", json={"connection_id": connection_id}
+            f"/api/v1/graph/project/{project_id}/watch", json={"connection_id": connection_id}
         )
         assert watched.status_code == 200, watched.text
 
         # The whole deploy's budget, not a short one: a deploy that still blocks must END before the
         # caller's assert fails, so the cleanup finds its machine instead of racing one still being created.
         accepted: httpx.Response = await client.post(
-            f"/api/v1/graph/agent/{agent_id}/deploy", json=body, timeout=DEPLOY_LIMIT_S
+            f"/api/v1/graph/project/{project_id}/deploy",
+            json={"main_agent_id": f"agent-{agent_id}", **body},
+            timeout=DEPLOY_LIMIT_S,
         )
         # Taken on = an answer naming the activity it reports on; anything else is the outcome itself.
         if accepted.status_code != 200 or not (accepted.json().get("data") or {}).get("activity"):
@@ -212,7 +217,8 @@ async def test_deploy_is_accepted_and_streams_its_steps(instance: LiveE2EInstanc
     accepted, snapshots = await _deploy_watched(instance, base, agent_id, {"provider": PROVIDER})
 
     assert accepted.status_code == 200, accepted.text
-    assert accepted.json()["data"]["activity"] == {"path": DEPLOY_ACTIVITY, "subject_entity": f"agent-{agent_id}"}
+    assert accepted.json()["data"]["activity"]["path"] == DEPLOY_ACTIVITY
+    assert accepted.json()["data"]["activity"]["subject_entity"].startswith("project-")
     final: JsonObject = snapshots[-1]
     assert final["state"] == "completed", f"{final['state']}: {final.get('message')}"
     blocks: list[tuple[str, str]] = [(block["name"], block["state"]) for block in final["children"]]
@@ -246,7 +252,8 @@ async def test_an_unfunded_deploy_is_still_accepted_with_a_warning(
     accepted, snapshots = await _deploy_watched(instance, base, agent_id, body)
 
     assert accepted.status_code == 200, accepted.text
-    assert accepted.json()["data"]["activity"] == {"path": DEPLOY_ACTIVITY, "subject_entity": f"agent-{agent_id}"}
+    assert accepted.json()["data"]["activity"]["path"] == DEPLOY_ACTIVITY
+    assert accepted.json()["data"]["activity"]["subject_entity"].startswith("project-")
     warnings: list[str] = accepted.json()["data"].get("warnings") or []
     assert any(w.lower().startswith(NO_FUNDING_WARNING.lower()) for w in warnings), warnings
     # A warning, not a gate: the deploy runs to the end without funding.

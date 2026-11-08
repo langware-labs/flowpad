@@ -28,6 +28,7 @@ which stores the local copy and confirms in the screen that asked. The hub's
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -46,6 +47,8 @@ async def _hub_data(
     sub_path: str,
     on_error: str,
     level: int = logging.WARNING,
+    params: Optional[dict[str, str]] = None,
+    unreachable_raises: bool = False,
 ) -> Optional[dict[str, Any]]:
     """One hub GET on the user, unwrapped to its data dict.
 
@@ -56,11 +59,25 @@ async def _hub_data(
     field read.
 
     ``on_error`` is logged with the exception appended, at ``level``.
+
+    ``unreachable_raises``: a hub that could not ANSWER (offline, or broken itself) raises
+    ``SourceUnavailable`` instead of answering None — for a reader whose None means "not held",
+    where "could not ask" must not pass for "the user is signed out".
     """
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
     try:
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        payload = await HubProxy.try_call("GET", BuiltinEntityType.USER, user_id, action, sub_path)
+        payload = await HubProxy.call("GET", BuiltinEntityType.USER, user_id, action, sub_path, params=params or None)
+    except HubError as e:
+        if unreachable_raises and e.kind in (HubFailureKind.OFFLINE, HubFailureKind.SERVER_ERROR):
+            from flow_sdk.sources.errors import SourceUnavailable  # noqa: PLC0415
+
+            raise SourceUnavailable(f"{on_error}: {e.user_message()}") from e
+        logger.debug("%s: %s", on_error, e)
+        return None
     except Exception as e:  # noqa: BLE001
         logger.log(level, "%s: %s", on_error, e)
         return None
@@ -71,13 +88,16 @@ async def _hub_data(
     return data if isinstance(data, dict) else payload
 
 
-async def hub_start_auth(provider: str, *, return_to: str = "", scopes: "list[str] | tuple[str, ...]" = ()) -> Optional[dict[str, Any]]:
+async def hub_start_auth(
+    provider: str, *, return_to: str = "", scopes: "list[str] | tuple[str, ...]" = (), group: str = ""
+) -> Optional[dict[str, Any]]:
     """Ask the hub to open an OAuth session for ``provider``.
 
     ``return_to`` is where the hub sends the browser once it has stored the grant.
     A hub that predates it ignores the parameter and shows its own page. ``scopes`` are
-    asked for on top of the provider's base set (``wanted_extra_scopes``); the hub refuses
-    one its manifest does not list as optional.
+    asked for on top of the group's own set (what the use point needs); the hub refuses
+    one its manifest does not list as optional. ``group`` names a non-default scope group
+    (``resolve_group``): its consent and its token are its own.
 
     Returns the hub's ``OauthClientRequestInfo`` payload, or ``None`` when the
     hub is unreachable / not logged in / does not know the provider — callers
@@ -101,7 +121,8 @@ async def hub_start_auth(provider: str, *, return_to: str = "", scopes: "list[st
         user_id,
         "oauth",
         f"{hub_provider_name(provider)}/auth",
-        params={k: v for k, v in (("return_to", return_to), ("scopes", " ".join(scopes))) if v} or None,
+        params={k: v for k, v in (("return_to", return_to), ("scopes", " ".join(scopes)), ("group", group)) if v}
+        or None,
     )
     if not data.get("auth_url"):
         logger.warning("[oauth] hub returned no auth_url for %r", provider)
@@ -109,8 +130,8 @@ async def hub_start_auth(provider: str, *, return_to: str = "", scopes: "list[st
     return data
 
 
-async def hub_test_provider(provider: str) -> Optional[dict[str, Any]]:
-    """Delegate verification for a Hub-defined descriptor to its owner."""
+async def hub_test_provider(provider: str, group: str = "") -> Optional[dict[str, Any]]:
+    """Delegate verification for a Hub-defined descriptor to its owner — one scope group's token."""
     from flow_sdk.core.oauth.hub_providers import _cloud_user_id, _hub_reachable  # noqa: PLC0415
 
     if not _hub_reachable():
@@ -123,7 +144,26 @@ async def hub_test_provider(provider: str) -> Optional[dict[str, Any]]:
         action="oauth",
         sub_path=f"{hub_provider_name(provider)}/test",
         on_error=f"[oauth] hub verification failed for {provider!r}",
+        params={"group": group} if group else None,
     )
+
+
+async def hub_granted_scopes(provider: str, group: str = "") -> list[str]:
+    """The scopes the hub says ``provider``'s (group's) token was GRANTED; empty when it never said."""
+    from flow_sdk.core.oauth.hub_providers import _cloud_user_id, _hub_reachable  # noqa: PLC0415
+
+    if not _hub_reachable() or not (user_id := _cloud_user_id()):
+        return []
+    data = await _hub_data(
+        user_id,
+        action="oauth",
+        sub_path=f"{hub_provider_name(provider)}/status",
+        on_error=f"[oauth] hub status failed for {provider!r}",
+        level=logging.DEBUG,
+        params={"group": group} if group else None,
+    )
+    granted = data.get("granted_scopes") if data else None
+    return [str(s) for s in granted] if isinstance(granted, list) else []
 
 
 async def hub_wait_auth(provider: str, oauth_request_id: str) -> dict[str, Any]:
@@ -175,6 +215,49 @@ async def hub_cancel_auth(provider: str, oauth_request_id: str) -> dict[str, Any
     return answer or not_found
 
 
+@dataclass(frozen=True)
+class ScopeGroup:
+    """A use point's scope group, resolved against the hub's catalogue in one pass."""
+
+    #: What to send the hub as ``group``: "" for the provider's default group (and on a hub with no groups).
+    sent: str = ""
+    #: The token's name on the hub, and on this machine.
+    hub_name: str = ""
+    local_name: str = ""
+    #: Why the group cannot be connected (a hub that lists groups, but not this one); "" when it can.
+    refusal: str = ""
+
+
+async def hub_provider_row(provider: str) -> Any:
+    """The hub catalogue's row for ``provider`` (matched by its hub name), or None."""
+    from flow_sdk.core.oauth.hub_providers import hub_provider_rows  # noqa: PLC0415
+
+    wanted = hub_provider_name(provider).lower()
+    return next((r for r in (await hub_provider_rows()).values if r.name.strip().lower() == wanted), None)
+
+
+async def resolve_group(provider: str, group: str) -> ScopeGroup:
+    """``group`` of ``provider`` as the hub defines it. The default group — and any group on a hub that predates
+    groups — is the provider's own consent and token, exactly as before. A group the catalogue lists without
+    it is a refusal, never a silent default."""
+    from flow_sdk.core.oauth import resolve_user_credentials_name  # noqa: PLC0415
+    from flow_sdk.core.oauth.provider_registry import group_credentials_name  # noqa: PLC0415
+
+    row = await hub_provider_row(provider)
+    base_hub = (row.ref_name if row is not None and row.ref_name else "") or hub_credentials_name_for(provider)
+    base_local = await resolve_user_credentials_name(provider) or base_hub
+    entries = list(row.oauth_groups) if row is not None else []
+    if not group or not entries:
+        return ScopeGroup(hub_name=base_hub, local_name=base_local)
+    entry = next((e for e in entries if e.get("name") == group), None)
+    if entry is None:
+        return ScopeGroup(hub_name=base_hub, local_name=base_local, refusal=f"{provider} has no scope group {group!r}")
+    # The hub marks its default group; an older hub that does not is told by the token name it shares.
+    if entry.get("default", entry.get("credentials_name") == base_hub):
+        return ScopeGroup(hub_name=base_hub, local_name=base_local)
+    return ScopeGroup(sent=group, hub_name=str(entry["credentials_name"]), local_name=group_credentials_name(base_local, group))
+
+
 async def hub_credentials_ref(provider: str) -> str:
     """The Hub catalogue's credential ref, including dynamic providers."""
     from flow_sdk.core.oauth.hub_providers import hub_provider_rows  # noqa: PLC0415
@@ -186,7 +269,7 @@ async def hub_credentials_ref(provider: str) -> str:
     return hub_credentials_name_for(provider)
 
 
-async def hub_holds_credential(credentials_name: str) -> bool:
+async def hub_holds_credential(credentials_name: str, *, unreachable_raises: bool = False) -> bool:
     """Whether the hub now holds the token stored under ``credentials_name``.
 
     Read against the hub's own table rather than a status endpoint, so there is
@@ -207,6 +290,7 @@ async def hub_holds_credential(credentials_name: str) -> bool:
         sub_path="table",
         on_error="[oauth] hub credential check failed",
         level=logging.DEBUG,
+        unreachable_raises=unreachable_raises,
     )
     values = data.get("values") if data is not None else None
     if not isinstance(values, list):
@@ -255,7 +339,7 @@ async def hub_credential_value(credentials_name: str, *, verify_held: bool = Tru
     # not hold is not merely wasted — a refusal from the hub surfaces to the user
     # as "Cloud request rejected", so the routine "not connected yet" case would
     # pop an error toast at them for nothing.
-    if verify_held and not await hub_holds_credential(credentials_name):
+    if verify_held and not await hub_holds_credential(credentials_name, unreachable_raises=True):
         logger.debug("[oauth] hub does not hold %r; not asking for its value", credentials_name)
         return None
 
@@ -264,6 +348,7 @@ async def hub_credential_value(credentials_name: str, *, verify_held: bool = Tru
         action="env-var",
         sub_path=f"{credentials_name}/value",
         on_error=f"[oauth] could not read {credentials_name!r} from the hub",
+        unreachable_raises=True,
     )
     if data is None:
         return None

@@ -19,6 +19,16 @@ export interface IInvitation extends IEntity {
   /** The inviter (resolved hub-side from the InvitedBy edge). */
   sender_name?: string;
   sender_user_id?: string;
+  /** What became of it; absent on rows written before it existed — read `invitationState`. */
+  status?: InvitationState;
+  resolved_at?: string | Date;
+}
+
+export type InvitationState = 'pending' | 'accepted' | 'declined' | 'revoked';
+
+/** The invitation's state, for rows with or without `status`. */
+export function invitationState(inv: Pick<IInvitation, 'status' | 'accepted'>): InvitationState {
+  return inv.status ?? (inv.accepted ? 'accepted' : 'pending');
 }
 
 // `implements IInvitation` only checks the class; it contributes no members, so every
@@ -41,6 +51,8 @@ export class Invitation extends APIEntity<Invitation> implements IInvitation {
   target_roles?: string[];
   sender_name?: string;
   sender_user_id?: string;
+  status?: InvitationState;
+  resolved_at?: string | Date;
   static type: string = 'invitation';
 
   constructor(entity: Partial<IInvitation> = {}) {
@@ -57,6 +69,8 @@ export class Invitation extends APIEntity<Invitation> implements IInvitation {
     this.target_roles = entity.target_roles;
     this.sender_name = entity.sender_name;
     this.sender_user_id = entity.sender_user_id;
+    this.status = entity.status;
+    this.resolved_at = entity.resolved_at;
   }
 }
 

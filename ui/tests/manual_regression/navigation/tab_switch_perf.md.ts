@@ -460,10 +460,11 @@ test('leaving and returning to a long chat: the main thread stays free', async (
             .count(),
         {
           timeout: 30_000,
-          message: 'the long chat never rendered its history',
+          message: 'the long chat never rendered its recent window',
         },
       )
-      .toBeGreaterThan(500);
+      // A long chat opens on its recent turns (useRecentWindow's RECENT_WINDOW = 40), not every row.
+      .toBeGreaterThanOrEqual(40);
     await networkQuiet(page);
 
     /** Click a chip and return the main thread's long-task time over the next 1.5 s. */

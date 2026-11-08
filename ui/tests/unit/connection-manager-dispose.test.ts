@@ -10,7 +10,7 @@ describe('ConnectionManager.dispose', () => {
     (manager as any).socket = { close };
 
     manager.dispose();
-    manager.onClose({ code: 1000, wasClean: true, reason: 'disposed' } as CloseEvent);
+    manager.onClose({ code: 1000, wasClean: true, reason: 'disposed' } as CloseEvent, true);
 
     expect(close).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledWith(1000, 'connection manager disposed');

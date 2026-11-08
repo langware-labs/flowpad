@@ -88,6 +88,47 @@ async def email_source_for_agent(agent_id: str) -> "Optional[DataSource]":
     )
 
 
+async def channels_block(agent_id: str) -> str:
+    """What the agent is told about its built-in email — its address, how replies work, how to send, who it
+    hears from. ``""`` when it has none. Read from the local source alone (no Hub call): a launch must not
+    wait on the network, and the Hub enforces the Sending list on every send whatever this says."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    # Nothing to tell where the built-in email channel is not even loaded — and a launch must never
+    # fail for a channel it does not have.
+    if DataDriver.loaded("cloud_email") is None:
+        return ""
+    try:
+        source = await email_source_for_agent(agent_id)
+    except Exception:  # noqa: BLE001 — what the agent is told about email never blocks its launch
+        logging.getLogger(__name__).warning("agent %s: could not read its built-in email", agent_id, exc_info=True)
+        return ""
+    if source is None:
+        return ""
+    address = str((source.config or {}).get("address") or getattr(source, "account_key", "") or "")
+    if not address:
+        return ""
+    hears = (
+        "anyone (Open to all)"
+        if getattr(source, "open_to_all", False)
+        else (", ".join(source.allowed_senders or []) or "nobody yet")
+    )
+    lines = [
+        "## Your email (built-in, added by Flowpad)",
+        f"Your email address is {address}.",
+        "A reply to an email you receive is sent for you, in the same thread: just write the answer.",
+        "To send a new email, run:",
+        f'  flow source send {source.id} --to "<address>[, <address>]" --subject "<subject>" '
+        '[--cc "<address>"] (--text "<plain text>" | --html-file <file.html>)',
+        "It is sent from your address. The Hub sends only to the people on your Sending list; a refused send "
+        "names who is not on it — report that, do not retry another way.",
+        f"Mail you read and answer comes from: {hears}.",
+    ]
+    if source.blocked_senders:
+        lines.append(f"Never answer: {', '.join(source.blocked_senders)}.")
+    return "\n".join(lines)
+
+
 #: How often one source may re-read its mailbox's allowlist from the Hub after refusing a sender.
 POLICY_REFRESH_SECONDS = 30.0
 _policy_read_at: dict[str, float] = {}
@@ -98,9 +139,9 @@ async def refresh_policy_for(source) -> bool:
 
     The allowlist is a private, runtime-only field of the source: the machine where the person saved
     it holds it, every other machine starts empty. A cloud placement's source comes with its deploy
-    and was never configured there, so its gate refused everyone. The serve loop calls this when the
-    gate refuses a sender — the one moment a stale copy matters — at most once per
-    ``POLICY_REFRESH_SECONDS`` per source, so a stranger writing in costs no more than that.
+    and was never configured there, so its gate refused everyone; and a sender blocked after the
+    copy was taken stayed admitted. The serve loop calls this before the gate on every message, at
+    most once per ``POLICY_REFRESH_SECONDS`` per source, so mail costs no more than one Hub read a window.
     """
     import logging  # noqa: PLC0415
     import time  # noqa: PLC0415
@@ -152,18 +193,38 @@ def _mailbox_id_from(config: Mapping[str, Any]) -> str:
         return ""
 
 
-def sender_allowed(allowlist, address: str) -> bool:
-    """Whether ``address`` is on ``allowlist`` — THE allowlist fold.
+def on_list(entries, address: str) -> bool:
+    """Whether ``address`` matches an entry of ``entries``: the exact address, or its whole domain written ``@domain``.
 
-    Case- and whitespace-insensitive through ``normalize_email``, the funnel
-    every address comparison uses, so this keeps agreeing with
-    ``is_self_address``; a non-email handle passes through it unchanged. An
-    empty list admits nobody.
+    Case- and whitespace-insensitive through ``normalize_email``, the funnel every address comparison
+    uses, so this keeps agreeing with ``is_self_address``; a non-email handle passes through it unchanged.
     """
     from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
 
     candidate = normalize_email(address or "")
-    return bool(candidate) and any(candidate == normalize_email(str(a)) for a in allowlist or [])
+    if not candidate:
+        return False
+    domain = "@" + candidate.rsplit("@", 1)[1] if "@" in candidate else ""
+    for raw in entries or []:
+        entry = str(raw or "").strip().lower()
+        if entry.startswith("@"):
+            if domain and entry == domain:
+                return True
+        elif candidate == normalize_email(entry):
+            return True
+    return False
+
+
+def sender_allowed(allowlist, address: str, blocked=(), *, open_to_all: bool = False) -> bool:
+    """Whether ``address`` may write in — THE Receiving fold: Blocked wins, then Open to all, then the Allowed
+    list. An empty Allowed list admits nobody."""
+    return not on_list(blocked, address) and (open_to_all or on_list(allowlist, address))
+
+
+#: The mailbox's address lists (Receiving: senders; Sending: recipients) and its two "Open to all" switches —
+#: the Hub's names, stored and enforced there, mirrored here.
+POLICY_LISTS = ("allowed_senders", "blocked_senders", "allowed_recipients", "blocked_recipients")
+POLICY_SWITCHES = ("open_senders", "open_recipients")
 
 
 class AgentMailbox(Entity):
@@ -194,6 +255,14 @@ class AgentMailbox(Entity):
         sharing=Sharing.PRIVATE,
         description="Addresses allowed to drive the agent through this mailbox; empty allows none.",
     )
+    #: The rest of the two directions, same vocabulary (an address or ``@domain``). Receiving: Blocked beats
+    #: Allowed. Sending: who the agent may write to — the Hub refuses a send to anyone else.
+    blocked_senders: list[str] = APIField(default_factory=list, persist=Persist.FALSE, sharing=Sharing.PRIVATE)
+    allowed_recipients: list[str] = APIField(default_factory=list, persist=Persist.FALSE, sharing=Sharing.PRIVATE)
+    blocked_recipients: list[str] = APIField(default_factory=list, persist=Persist.FALSE, sharing=Sharing.PRIVATE)
+    #: "Open to all" per direction. A Hub too old to say has no Sending gate, so it reads open.
+    open_senders: bool = APIField(default=False, persist=Persist.FALSE)
+    open_recipients: bool = APIField(default=True, persist=Persist.FALSE)
     #: Standing read defaults the mailbox carries, in the Hub's wire vocabulary
     #: (``labels`` / ``from`` / ``to`` / ``subject`` / ``before`` / ``after``).
     #: Defaults, not constraints — an explicit parameter always wins.
@@ -248,7 +317,9 @@ class AgentMailbox(Entity):
         and must beat a populated list. An empty allowlist admits nobody — see
         :attr:`allowed_senders`.
         """
-        return self.is_active and sender_allowed(self.allowed_senders, address)
+        return self.is_active and sender_allowed(
+            self.allowed_senders, address, self.blocked_senders, open_to_all=self.open_senders
+        )
 
     # ── constructors ──────────────────────────────────────────────────────
 
@@ -268,6 +339,7 @@ class AgentMailbox(Entity):
         carry it — never as an override, because a local answer to "who may drive
         this agent" is exactly the second source of truth this removed.
         """
+        descriptor = {**descriptor, "allowed_senders": descriptor.get("allowed_senders") or list(allowed_senders)}
         mailbox_typeid = TypeId(str(descriptor.get("typeid") or ""))
         if (
             mailbox_typeid.type != EntityType.AGENT_MAILBOX.value
@@ -293,7 +365,9 @@ class AgentMailbox(Entity):
             provider_inbox_id=descriptor.get("provider_inbox_id"),
             status=descriptor.get("status"),
             agent_typeid=linked_agent,
-            allowed_senders=list(descriptor.get("allowed_senders") or allowed_senders),
+            **{name: list(descriptor.get(name) or []) for name in POLICY_LISTS},
+            open_senders=bool(descriptor.get("open_senders", False)),
+            open_recipients=bool(descriptor.get("open_recipients", True)),
             filters=dict(descriptor.get("filters") or {}),
         )
 
@@ -333,6 +407,8 @@ class AgentMailbox(Entity):
             status=STATUS_ACTIVE if listening else STATUS_DISABLED,
             agent_typeid=TypeId(type=EntityType.AGENT.value, id=agent_id),
             allowed_senders=list(getattr(source, "allowed_senders", None) or []),
+            blocked_senders=list(getattr(source, "blocked_senders", None) or []),
+            open_senders=bool(getattr(source, "open_to_all", False)),
         )
 
     @classmethod
@@ -418,8 +494,15 @@ class AgentMailbox(Entity):
             # allocating its mailbox. Adopt that Hub row on retry.
             agent.remote = True
 
+        # An ACTIVE mailbox is adopted as it is. Enabling is a lifecycle change only its human owner may make; a
+        # machine signed in as the agent (a private deployment's person machine) adopts and wires its source, and
+        # asking the hub to enable it there would be refused.
+        if isinstance(existing, dict) and existing.get("status") == "active" and not options:
+            descriptor = existing
+        else:
+            descriptor = None
         try:
-            descriptor = await driver.enable_mailbox(agent.id, **options)
+            descriptor = descriptor or await driver.enable_mailbox(agent.id, **options)
         except AgentMailboxError as exc:
             if exc.status_code == 401:
                 raise LoginRequired("FlowPad cloud login required to allocate a mailbox") from exc
@@ -549,9 +632,9 @@ class AgentMailbox(Entity):
     async def configure(
         self,
         *,
-        allowed_senders: "Sequence[str] | None" = None,
         filters: "dict | None" = None,
         poll_interval_seconds: "int | None" = None,
+        **policy: Any,
     ) -> dict:
         """Update this mailbox's policy and the cadence of the source polling it.
 
@@ -563,7 +646,7 @@ class AgentMailbox(Entity):
         """
         from flow_sdk.builtin.data_source import MIN_POLL_INTERVAL_SECONDS  # noqa: PLC0415
 
-        await self.set_policy(allowed_senders=allowed_senders, filters=filters)
+        await self.set_policy(filters=filters, **policy)
 
         if poll_interval_seconds is not None:
             if poll_interval_seconds < MIN_POLL_INTERVAL_SECONDS:
@@ -576,12 +659,7 @@ class AgentMailbox(Entity):
                 await source.save()
         return await self.state()
 
-    async def set_policy(
-        self,
-        *,
-        allowed_senders: "Sequence[str] | None" = None,
-        filters: "dict | None" = None,
-    ) -> "AgentMailbox":
+    async def set_policy(self, *, filters: "dict | None" = None, **policy: Any) -> "AgentMailbox":
         """Write the Hub-owned half of the settings. Returns self.
 
         Separate from :meth:`configure` because writing policy and rendering the
@@ -590,9 +668,16 @@ class AgentMailbox(Entity):
         """
         from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
 
+        unknown = sorted(set(policy) - {*POLICY_LISTS, *POLICY_SWITCHES})
+        if unknown:
+            raise ValueError(f"unknown mailbox setting(s): {', '.join(unknown)}")
         settings: dict = {}
-        if allowed_senders is not None:
-            settings["allowed_senders"] = list(allowed_senders)
+        for name in POLICY_LISTS:
+            if policy.get(name) is not None:
+                settings[name] = list(policy[name])
+        for name in POLICY_SWITCHES:
+            if policy.get(name) is not None:
+                settings[name] = bool(policy[name])
         if filters is not None:
             settings["filters"] = dict(filters)
         if settings:
@@ -673,7 +758,7 @@ class AgentMailbox(Entity):
     #: reaches the wire instead of being silently dropped by a forgotten literal.
     #: ``allowed_senders`` and ``filters`` are listed although they are
     #: ``Persist.FALSE``: a UI that cannot see the policy cannot render it.
-    WIRE_FIELDS: ClassVar[frozenset[str]] = frozenset((*_HUB_FIELDS, "allowed_senders", "filters"))
+    WIRE_FIELDS: ClassVar[frozenset[str]] = frozenset((*_HUB_FIELDS, *POLICY_LISTS, *POLICY_SWITCHES, "filters"))
 
     def descriptor(self) -> dict:
         """The wire view of this mailbox — the Hub's descriptor shape, plus policy."""
@@ -704,6 +789,15 @@ class AgentMailbox(Entity):
             raise LoginRequired("FlowPad cloud login required to load agent email")
 
         mailbox = await cls.for_agent(agent)
+        offered = True
+        if mailbox is None:
+            from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
+
+            ask = getattr(get_agent_mailbox_driver(), "offered", None)
+            try:
+                offered = bool(await ask(agent.id)) if ask is not None else True
+            except Exception:  # noqa: BLE001 — an unreachable hub says nothing about the offer
+                offered = True
         if mailbox is not None and mailbox.is_active:
             source = await mailbox.ensure_source()
             await mailbox._cache_policy(source)
@@ -712,7 +806,7 @@ class AgentMailbox(Entity):
             if source is not None and source.status != SourceStatus.DISABLED.value:
                 source.status = SourceStatus.DISABLED.value
                 await source.save_runtime()
-        return await _state_payload(agent.id, mailbox, source)
+        return {**await _state_payload(agent.id, mailbox, source), "offered": offered}
 
     # ── messages ──────────────────────────────────────────────────────────
 
@@ -761,7 +855,9 @@ class AgentMailbox(Entity):
         )
         for field in _HUB_FIELDS:
             setattr(self, field, getattr(fresh, field))
-        self.allowed_senders = list(fresh.allowed_senders)
+        for name in (*POLICY_LISTS, *POLICY_SWITCHES):
+            value = getattr(fresh, name)
+            setattr(self, name, list(value) if isinstance(value, list) else value)
         self.filters = dict(fresh.filters)
         return self
 
@@ -789,9 +885,15 @@ class AgentMailbox(Entity):
         source = source or await self.source()
         if source is None:
             return
-        cached = list(self.allowed_senders)
-        if list(source.allowed_senders or []) != cached:
-            source.allowed_senders = cached
+        # Receiving is what this machine's gate applies; Sending the Hub enforces on every send.
+        wanted = {
+            "allowed_senders": list(self.allowed_senders),
+            "blocked_senders": list(self.blocked_senders),
+            "open_to_all": bool(self.open_senders),
+        }
+        if any(getattr(source, name, None) != value for name, value in wanted.items()):
+            for name, value in wanted.items():
+                setattr(source, name, value)
             await source.save_runtime()
 
 

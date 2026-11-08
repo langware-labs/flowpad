@@ -12,8 +12,8 @@ class MessageSuggest(Entity):
     message_text: str = APIField("")
     conversation_id: Optional[str] = APIField(None)
     flow_message_id: Optional[str] = APIField(None)
-    # The recorded flowpad_diagnosis id — lets the card's "Report issue" button
-    # email the diagnosis without re-resolving it from the support message.
+    # The recorded flowpad_diagnosis id — lets the card's "Ask for help" button
+    # send the diagnosis without re-resolving it from the support message.
     diagnosis_id: Optional[str] = APIField(None)
     # Discriminates the feed-card variant. "" = diagnosis card (Report/Forward);
     # "draft_reply" = an executed-prompt draft waiting to send (Send/Open).

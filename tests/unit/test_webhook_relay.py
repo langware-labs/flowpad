@@ -87,3 +87,28 @@ async def test_an_unreachable_app_is_a_502_the_hub_keeps(monkeypatch, acks):
     monkeypatch.setattr(settings, "get_instance_settings", lambda: SimpleNamespace(port=1))
     assert await webhook_relay.deliver(_message("d-2")) == 502
     assert acks[-1][3] == {"delivery_id": "d-2", "status": 502}
+
+
+async def test_a_refused_catch_up_is_not_asked_again_by_the_same_principal(monkeypatch):
+    """A box signed in as an agent is refused ``catch_up`` (403); its socket reconnects all day, so it must stop asking."""
+    from flow_sdk.cli import app_config
+    from flow_sdk.cloud_client.shared.errors import HubError
+
+    asked: list = []
+
+    async def hub_call(*_a, **_kw):
+        asked.append(1)
+        raise HubError(403, "Forbidden")
+
+    monkeypatch.setattr(HubProxy, "call", staticmethod(hub_call))
+    monkeypatch.setattr(webhook_relay, "_refused_for", None)
+    user = {"id": "agent-1"}
+    monkeypatch.setattr(app_config, "get_user", lambda: user)
+
+    for _ in range(3):
+        await webhook_relay.catch_up()
+    assert len(asked) == 1
+
+    user["id"] = "person-2"  # a different sign-in asks again
+    await webhook_relay.catch_up()
+    assert len(asked) == 2

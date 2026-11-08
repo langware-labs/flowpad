@@ -21,6 +21,7 @@ hub is ``server/routes/_hub_reflect.py``'s job, not this module's.
 from __future__ import annotations
 
 import logging
+import time
 import uuid as _uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Mapping, Optional
@@ -30,6 +31,7 @@ from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 
+from flow_sdk import toplog
 from flow_sdk.cloud_client.client_hooks import (
     ANONYMOUS_EXTENSION,
     PASSTHROUGH_EXTENSION,
@@ -214,7 +216,16 @@ class HubProxy:
                     extensions=extensions or None,
                 )
                 logger.info("[hub] %s %s", request.method, request.url)
+                t0 = time.monotonic()
                 resp = await client.send(request, stream=stream)
+                toplog.log(
+                    "hub",
+                    "http %s %s status=%s ms=%.0f",
+                    request.method,
+                    request.url.path,
+                    resp.status_code,
+                    (time.monotonic() - t0) * 1000,
+                )
         except HubAuthExpiredError as e:
             logger.warning("[hub] %s %s auth expired: %s", method, url, e)
             raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT) from e
@@ -223,7 +234,8 @@ class HubProxy:
         except Exception as e:  # noqa: BLE001 — any transport failure is "offline"
             logger.warning("[hub] %s %s transport error: %s", method, url, e)
             _note_reach(0)
-            await _report_unreachable(method, url, e)
+            if not quiet:  # a quiet call owns its failure; no "hub unreachable" warning for it
+                await _report_unreachable(method, url, e)
             raise HubError(0, str(e) or type(e).__name__) from e
         _note_reach(resp.status_code)
         return resp
@@ -653,6 +665,7 @@ def _unwrap(resp: httpx.Response, *, method: str = "", url: Any = "", strict: bo
             raise HubError(
                 0, f"the hub could not be reached (HTTP {resp.status_code} from the way there)",
                 kind=HubFailureKind.OFFLINE,
+                via_status=resp.status_code,
             )
         raise HubError(
             resp.status_code, _extract_reason(resp), code=_extract_error_code(resp), data=_extract_data(resp)

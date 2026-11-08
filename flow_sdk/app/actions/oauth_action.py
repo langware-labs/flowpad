@@ -391,6 +391,14 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
         user_id = request_info.user.id if hasattr(request_info.user, "id") else str(request_info.user)
 
     local = get_local_provider(provider)
+    params = getattr(request_info, "request_parameters", None) or {}
+    # What THIS use point needs beyond its group's own scopes — named by the caller (``scopes``), or
+    # read off the source it connects for (``source``: a Drive source that writes back). Never what
+    # anything else on the machine needs: one use's need must not change another's consent.
+    from flow_sdk.core.oauth.wanted_scopes import use_point  # noqa: PLC0415
+
+    source_group, source_scopes = await use_point(provider, str(params.get("source") or ""))
+    extra = list(dict.fromkeys([*str(params.get("scopes") or "").split(), *source_scopes]))
 
     # A real authorization-code grant wins. The only local flow that is NOT one
     # is GitHub's device grant — it makes the user retype a code and is bounded
@@ -402,24 +410,24 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
     if prefers_hub_flow(provider):
         from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
         from flow_sdk.api.api_types.messages import OAuthMessageStatus  # noqa: PLC0415
-        from flow_sdk.core.oauth.hub_oauth import hub_credentials_ref, hub_test_provider  # noqa: PLC0415
+        from flow_sdk.core.oauth.hub_oauth import hub_test_provider  # noqa: PLC0415
 
         # Connecting this machine can reuse the owner's existing valid grant.
         # Only an actual provider probe permits adoption; a catalogue row alone
         # must never bypass reauthorization for a revoked credential. An explicit
         # reauthorize (the row's Reconnect) always runs the provider's consent.
-        params = getattr(request_info, "request_parameters", None) or {}
         reauthorize = str(params.get("reauthorize", "")).lower() in {"1", "true", "yes"}
-        from flow_sdk.core.oauth.wanted_scopes import wanted_extra_scopes  # noqa: PLC0415
+        from flow_sdk.core.oauth.hub_oauth import resolve_group  # noqa: PLC0415
 
-        # What a source here needs beyond the provider's base scopes (a Drive source that writes back). The held
-        # grant's own scopes are not known here, so wanting more always runs the consent that adds them.
-        extra = await wanted_extra_scopes(provider)
-        verification = None if reauthorize or extra else await hub_test_provider(provider)
+        asked_group = str(params.get("group") or "") or source_group
+        scope_group = await resolve_group(provider, asked_group)
+        if scope_group.refusal:
+            return ApiFailResponse(message=scope_group.refusal, data={"error_code": "unknown_scope_group"})
+        group = scope_group.sent
+        # Wanting more than the group's own scopes always runs the consent that adds them.
+        verification = None if reauthorize or extra else await hub_test_provider(provider, group)
         if verification and verification.get("ok") is True:
-            hub_name = await hub_credentials_ref(provider)
-            local_name = await resolve_user_credentials_name(provider) or hub_name
-            await _adopt_hub_credential(provider, local_name, hub_name)
+            await _adopt_hub_credential(provider, scope_group.local_name, scope_group.hub_name, group)
             # No broadcast: this response IS the delivery to the one caller that asked.
             request_id = mint_uuid()
             return ApiSuccessResponse(data={
@@ -430,7 +438,9 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
         from flow_sdk.cli.auth.cloud_urls import desktop_oauth_complete_url  # noqa: PLC0415
 
         try:
-            hub_payload = await hub_start_auth(provider, return_to=desktop_oauth_complete_url(provider), scopes=extra)
+            hub_payload = await hub_start_auth(
+                provider, return_to=desktop_oauth_complete_url(provider), scopes=extra, group=group
+            )
         except Exception as exc:  # noqa: BLE001
             from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
@@ -459,6 +469,7 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
                     provider,
                     flow_id=str(hub_payload.get("oauth_request_id") or ""),
                     initiator_connection_id=getattr(request_info, "initiator_connection_id", "") or "",
+                    group=group,
                 )
                 # Name the grant, so the client knows where it completes.
                 # ``CODE`` already means exactly this one — "authorization code,
@@ -496,7 +507,7 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
             )
 
     return await get_desktop_oauth_auth_url(
-        provider, user_id, getattr(request_info, "initiator_connection_id", "") or ""
+        provider, user_id, getattr(request_info, "initiator_connection_id", "") or "", extra_scopes=extra
     )
 
 
@@ -595,7 +606,7 @@ async def complete_hub_flow(provider: str, flow_id: str) -> tuple[Optional["Auth
     still waiting on the user; ``(result, delivered)`` once it ended.
     """
     from flow_sdk.core.oauth import flows  # noqa: PLC0415
-    from flow_sdk.core.oauth.hub_oauth import hub_credentials_ref, hub_wait_auth  # noqa: PLC0415
+    from flow_sdk.core.oauth.hub_oauth import hub_wait_auth  # noqa: PLC0415
 
     async def produce() -> Optional["AuthFlowResult"]:
         hub = await hub_wait_auth(provider, flow_id)
@@ -603,9 +614,11 @@ async def complete_hub_flow(provider: str, flow_id: str) -> tuple[Optional["Auth
         if status in {"pending", "polling"}:
             return None
         if status == "success":
-            local_name = await resolve_user_credentials_name(provider)
-            hub_name = await hub_credentials_ref(provider)
-            await _adopt_hub_credential(provider, local_name or hub_name, hub_name)
+            from flow_sdk.core.oauth.hub_oauth import resolve_group  # noqa: PLC0415
+
+            known = flows.get_flow(flow_id)
+            names = await resolve_group(provider, known.group if known is not None else "")
+            await _adopt_hub_credential(provider, names.local_name, names.hub_name, names.sent)
         try:
             flow_status = flows.AuthFlowStatus(status)
         except ValueError:
@@ -620,7 +633,7 @@ async def complete_hub_flow(provider: str, flow_id: str) -> tuple[Optional["Auth
     return await flows.complete_once(flow_id, produce)
 
 
-async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -> None:
+async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str, group: str = "") -> None:
     """Store a completed hub grant locally before reporting it connected.
 
     The hub owns the OAuth exchange and refresh. Every desktop connection also
@@ -641,11 +654,17 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
     if user is None:
         raise RuntimeError("OAuth token could not be stored: no local user")
 
+    from flow_sdk.core.oauth.hub_oauth import hub_granted_scopes  # noqa: PLC0415
+
     descriptor = get_local_provider(provider)
-    value = await hub_credential_value(hub_name)
+    # A non-default group's token is not the one its provider row points at, so the row cannot vouch for it:
+    # the value route itself answers whether the hub holds it.
+    value = await hub_credential_value(hub_name, verify_held=not group)
     if not value:
         raise RuntimeError(f"OAuth token for {provider} could not be read from the hub")
-    if not await record_credential(user, provider, hub_mirror(value, hub_name), name=local_name):
+    # What the provider GRANTED (a person may untick a box), as the hub recorded it — kept with the copy.
+    granted = await hub_granted_scopes(provider, group)
+    if not await record_credential(user, provider, hub_mirror(value, hub_name, granted), name=local_name):
         raise RuntimeError(f"OAuth token for {provider} could not be stored locally")
     logger.info("OAuth: adopted the hub's %s token into local %s", provider, local_name)
 

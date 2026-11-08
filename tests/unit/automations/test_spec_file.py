@@ -23,7 +23,8 @@ BASE = {
 def test_patch_touches_only_what_changed():
     doc = apply_patch(BASE, {"expr": "0 9 * * 1-5", "enabled": False})
     assert doc["schedule"] == {"every": "cron", "expr": "0 9 * * 1-5"}
-    assert doc["enabled"] is False and doc["description"] == "kept" and doc["actions"] == BASE["actions"]
+    assert doc["description"] == "kept" and doc["actions"] == BASE["actions"]
+    assert "enabled" not in doc, "on/off is the machine's, never written to the file"
 
 
 def test_row_actions_become_document_actions():

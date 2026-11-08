@@ -51,7 +51,8 @@ function declinedIds(): string[] {
 }
 
 /** The person ticked "Don't ask me again" on this project's set-up: it is not offered on its
- *  own any more. Their own click (the footer's "Set up") still opens it. */
+ *  own any more, nor when the project is opened. Their own click (the nav bar's glowing key, the
+ *  project list's "new" row) still opens it. */
 export function isSetupDeclined(projectId: string | undefined): boolean {
   return !!projectId && declinedIds().includes(projectId);
 }

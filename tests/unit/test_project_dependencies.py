@@ -233,7 +233,7 @@ async def test_a_checkout_you_made_is_never_pulled(tmp_path):
 
 
 async def test_a_clone_flowpad_made_is_fast_forwarded_on_update(tmp_path, monkeypatch):
-    monkeypatch.setattr("flow_sdk.utils.git.find_local_repo_for_url", lambda _url: None)
+    monkeypatch.setattr("flow_sdk.utils.git.find_local_repo_for_url", lambda _url, **_: None)
     remote = tmp_path / "remote"
     url = _repo(remote)
     site = await _project(tmp_path, "site")

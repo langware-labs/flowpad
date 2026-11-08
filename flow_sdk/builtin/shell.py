@@ -726,9 +726,26 @@ class Shell(Entity):
             except (psutil.Error, SystemError, OSError):
                 continue
             sid = self._argv_flag_value(cmdline, "--session-id") or self._argv_flag_value(cmdline, "--resume")
-            if sid == session_id:
+            if sid == session_id and self._is_this_instances(proc):
                 matches.append(proc)
         return matches
+
+    @staticmethod
+    def _is_this_instances(proc: psutil.Process) -> bool:
+        """Whether *proc* was spawned by this instance, by the ``FLOW_INSTANCE`` pinned in its env.
+
+        A session id is not an owner: another instance on this machine sharing prod's data (a
+        prodit copy) resumes the same sessions, and killing by argv alone SIGTERMed prod's live
+        workers mid-turn. Env, not ancestry, because the sweep exists for orphans whose parent is
+        gone. Unset means ``prod``, as for the ``flow`` CLI; an unreadable env is not ours.
+        """
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        try:
+            owner = proc.environ().get("FLOW_INSTANCE") or "prod"
+        except (psutil.Error, SystemError, OSError):
+            return False
+        return owner == get_instance_settings().instance_name
 
     async def terminate_worker(self) -> None:
         """Gracefully kill EVERY worker on this shell's session and wait for full reap.
@@ -1075,8 +1092,8 @@ class Shell(Entity):
         fg = await self._foreground_pgid()
         if fg is None:
             return True
-        _, survivors = await asyncio.to_thread(terminate_tree, await self._foreground_job(fg))
-        return not survivors
+        _, survivors, refused = await asyncio.to_thread(terminate_tree, await self._foreground_job(fg))
+        return not survivors and not refused
 
     @classmethod
     def sentinel_exit(cls, data: bytes, marker: str) -> "tuple[int, int] | None":

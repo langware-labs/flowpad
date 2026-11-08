@@ -157,9 +157,9 @@ def local_request(method: str, url: str, **kwargs: Any) -> "requests.Response":
     An explicit ``headers`` kwarg wins — the gate header is merged underneath it
     — so a caller can still override it deliberately.
     """
-    import requests
-
     from urllib.parse import urlsplit
+
+    import requests
 
     from flow_sdk.instance_settings import cookie_gate
     from flow_sdk.utils.networking import is_loopback
@@ -205,12 +205,24 @@ def graph_url(port: int, path: str) -> str:
 
 
 def _graph_json(
-    method: str, url: str, *, timeout: int, on_error: "Callable[[int, dict], NoReturn]", **kwargs: Any
+    method: str,
+    url: str,
+    *,
+    timeout: int,
+    on_error: "Callable[[int, dict], NoReturn]",
+    answer_may_lag: bool = False,
+    **kwargs: Any,
 ) -> Any:
     import requests
 
     try:
         resp = local_request(method, url, timeout=timeout, **kwargs)
+    except requests.exceptions.ReadTimeout:
+        # The request reached the server and is still running there: a caller that follows its outcome elsewhere
+        # (an activity on the socket) goes on following it instead of calling the server unreachable.
+        if answer_may_lag:
+            return None
+        fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Flowpad server at {url} did not answer in {timeout}s")
     except requests.exceptions.RequestException as e:
         fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
     try:
@@ -229,8 +241,12 @@ def post_graph_json(
     *,
     timeout: int = 15,
     on_error: "Callable[[int, dict], NoReturn]",
+    answer_may_lag: bool = False,
 ) -> dict:
     """POST JSON to a graph endpoint and return the SUCCESS envelope's ``data``.
+
+    ``answer_may_lag``: the caller follows the outcome another way, so an answer slower than ``timeout`` is ``{}``,
+    not a failure.
 
     Owns the transport layer every graph-action command shares: request errors
     and non-JSON bodies fail as CONNECTION_ERROR; any other non-success response
@@ -238,7 +254,10 @@ def post_graph_json(
     command keeps its own documented exit-code contract without re-implementing
     the POST/parse/envelope boilerplate.
     """
-    return _graph_json("POST", url, json=payload or {}, timeout=timeout, on_error=on_error) or {}
+    return (
+        _graph_json("POST", url, json=payload or {}, timeout=timeout, on_error=on_error, answer_may_lag=answer_may_lag)
+        or {}
+    )
 
 
 def get_graph_json(
@@ -258,13 +277,20 @@ def server_error(status_code: int, body: dict) -> NoReturn:
     fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", str(body.get("message") or f"HTTP {status_code}"))
 
 
-def data_source_create_path(port: int) -> str:
-    """Where a new data source is POSTed (under ``/graph/``): the working directory's project, whose
-    ``agentic-assets/data_source/`` the asset lands in; outside any project, the user scope."""
+def data_source_create_path(port: int, project_id: "str | None" = None) -> str:
+    """Where a new data source is POSTed (under ``/graph/``): into a project, the way the app saves one
+    into the project open there — ``project_id`` when given, else the working directory's project, else
+    the project this instance was last used in (``project/last-active``, the one the app opens on). A
+    source belongs to a project because its setup is a node of that project's setup tree; only an
+    instance with no project at all lands it in the user scope."""
     from flow_sdk.fs_store.path_utils import is_valid_project_cwd  # noqa: PLC0415
 
-    cwd = os.getcwd()
-    project_id = project_for_path(port, cwd, create=False) if is_valid_project_cwd(cwd, include_temp=True) else None
+    if not project_id:
+        cwd = os.getcwd()
+        project_id = project_for_path(port, cwd, create=False) if is_valid_project_cwd(cwd, include_temp=True) else None
+    if not project_id:
+        last = get_graph_json(graph_url(port, "project/last-active"), on_error=server_error) or {}
+        project_id = last.get("project_id") if isinstance(last, dict) else None
     return f"project/{project_id}/data_source" if project_id else "data_source"
 
 

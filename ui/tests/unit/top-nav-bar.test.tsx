@@ -71,6 +71,7 @@ vi.mock('@src/components/top-nav-bar/use-entity-breadcrumbs', () => ({
   }),
 }));
 vi.mock('@src/components/top-nav-bar/TopBarActions', () => ({ TopBarActions: () => null }));
+vi.mock('@src/components/top-nav-bar/TopBarAskForHelp', () => ({ TopBarAskForHelp: () => null }));
 /** The ⚡'s counter reads react-query; the bar's own tests pin the counter in top-nav-automations.test.tsx. */
 vi.mock('@src/hooks/automations/useAutomations', () => ({ useStartedLastHour: () => 0 }));
 // The project switcher is a heavy surface with its own tests; here we only care
@@ -224,16 +225,16 @@ describe('the navigation bar', () => {
     expect(screen.getByTestId('top-nav-home')).toBeTruthy();
   });
 
-  describe('Home always asks for the project home page', () => {
+  describe('Home always goes to the Flowpad home page', () => {
     it.each([{ tabHash: 'h1' }, { viewType: 'home', tabHash: null }, { viewType: 'project', pointer: PROJECT_ID }])(
-      'asks for the project home page from %j',
+      'goes to the Flowpad home page from %j',
       async (current) => {
         dock.current = current;
         renderBar();
 
         expect(screen.queryByTestId('top-nav-tabs')).toBeNull();
         await userEvent.click(screen.getByTestId('top-nav-home'));
-        expect(goHome).toHaveBeenCalledWith({ homePage: true });
+        expect(goHome).toHaveBeenCalledWith();
       },
     );
   });

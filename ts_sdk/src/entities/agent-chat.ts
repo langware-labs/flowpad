@@ -26,7 +26,32 @@ export interface AgentChatMessage {
  * `conversationId` a turn answered with to continue it.
  */
 export class AgentChat {
-  constructor(readonly endpoint: ServiceEndpoint) {}
+  /**
+   * *endpoint*: one placement's `chat`. *agentId* instead: the agent's own Chat API (`agent/<id>/chat`), which a
+   * private deployment answers on the CALLER's own machine -- the hub picks it from who is calling.
+   */
+  constructor(
+    readonly endpoint: ServiceEndpoint | null,
+    readonly agentId: string | null = null,
+  ) {}
+
+  /** The agent's own Chat API: for an agent deployed in private mode, each caller reaches their own machine. */
+  static forAgent(agentId: string): AgentChat {
+    return new AgentChat(null, agentId);
+  }
+
+  private action(method: 'GET' | 'POST', subpath: string, raw: boolean, stream: boolean, signal: AbortSignal | null) {
+    const action = this.agentId
+      ? new ActionInfo('chat', 'agent', this.agentId, method, raw, stream, signal)
+      : new ActionInfo('service', ServiceEndpoint.type, this.endpoint!.id, method, raw, stream, signal);
+    action.subpath = subpath;
+    if (this.agentId) action.hubReflect = true;
+    return action;
+  }
+
+  private get model(): string {
+    return this.agentId ? `agent-${this.agentId}` : `endpoint-${this.endpoint!.id}`;
+  }
 
   /** The `chat` endpoint of *deployment* — for a cloud placement, as the hub has it now. */
   static async forDeployment(deployment: Deployment): Promise<AgentChat | null> {
@@ -39,10 +64,9 @@ export class AgentChat {
     text: string,
     opts: { conversationId?: string | null; signal?: AbortSignal } = {},
   ): AsyncGenerator<AgentChatEvent> {
-    const action = new ActionInfo('service', ServiceEndpoint.type, this.endpoint.id, 'POST', false, true, opts.signal ?? null);
-    action.subpath = 'v1/chat/completions';
+    const action = this.action('POST', 'v1/chat/completions', false, true, opts.signal ?? null);
     action.bodyParameters = {
-      model: `endpoint-${this.endpoint.id}`,
+      model: this.model,
       stream: true,
       messages: [{ role: 'user', content: text }],
       ...(opts.conversationId ? { metadata: { conversation_id: opts.conversationId } } : {}),
@@ -74,8 +98,7 @@ export class AgentChat {
 
   /** The conversation so far, oldest first. */
   async history(conversationId: string): Promise<AgentChatMessage[]> {
-    const action = new ActionInfo('service', ServiceEndpoint.type, this.endpoint.id, 'GET', true);
-    action.subpath = `v1/conversations/${encodeURIComponent(conversationId)}`;
+    const action = this.action('GET', `v1/conversations/${encodeURIComponent(conversationId)}`, true, false, null);
     // A raw response — the service speaks its own shape, not the envelope — is the body text.
     const raw = await dataManager.callAction<unknown, unknown>(action);
     const body = typeof raw === 'string' ? parseJson(raw) : raw;

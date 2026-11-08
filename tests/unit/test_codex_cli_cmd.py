@@ -64,9 +64,8 @@ def test_model_tier_persists_raw_and_emits_resolved_model():
     assert cmd.model == "sm"
     assert cmd.to_json()["model"] == "sm"
 
-    # On its own login codex picks its default for every size: no ``-m`` (no model ids in code).
-    argv, _env = cmd.to_spawn_args()
-    assert "-m" not in argv
+    with pytest.raises(ValueError, match="has no mapping"):
+        cmd.to_spawn_args()
 
 
 def test_json_spawn_args_read_prompt_from_stdin():

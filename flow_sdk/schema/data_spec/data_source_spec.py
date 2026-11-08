@@ -53,6 +53,8 @@ class DataSourceSpec(AssetDocumentSpec):
     window_days: Optional[int] = None
     #: Seconds of quiet after which a thread ends and the next message starts a new one.
     thread_timeout_seconds: Optional[int] = None
+    #: Times a request waits out the provider's rate limit before failing; absent = 0.
+    rate_limit_retries: Optional[int] = None
     required_capabilities: Optional[list[str]] = None
     #: The store the driver's names load from (``{type, config}``); absent = the default store.
     secret_store: Optional[SecretStoreRef] = None

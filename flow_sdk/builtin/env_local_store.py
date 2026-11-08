@@ -25,6 +25,7 @@ credential removes its own variables from every env file it wrote — a deleted
 credential must leave no value behind. Every other line (comments, other keys,
 order) is kept byte for byte.
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,6 +52,7 @@ from flow_sdk.utils.git_ignore import (
     NOT_IGNORED,
     TRACKED,
     append_line,
+    exclude_in_clone,
     ignore_status,
 )
 
@@ -164,25 +166,25 @@ def env_file_status(path: Path | str | None) -> dict[str, Any]:
 def ensure_env_file_ignored(path: Path | str | None) -> dict[str, Any]:
     """Make sure the env file at ``path`` is excluded by git, then verify with git.
 
-    Only inside a git work tree: outside one there is nothing to leak into, and
-    writing a ``.gitignore`` into a folder that is not a repo (a home directory)
-    would be a surprise. Appends the file's OWN name, so a project that ignores
-    only ``.env.local`` still protects ``.env.production.local``. Returns the
-    VERIFIED status dict.
+    Only inside a git work tree: outside one there is nothing to leak into. Excludes
+    the file's OWN name, so a project that ignores only ``.env.local`` still protects
+    ``.env.production.local``, and in this clone only (``exclude_in_clone``): storing a
+    value must not leave a change in the repository. Returns the VERIFIED status dict.
     """
     status = env_file_status(path)
     if status["code"] != GITIGNORE_NOT_IGNORED and status["code"] != GITIGNORE_TRACKED:
         # Already excluded, not a repo, no folder, or git failed: nothing to append.
         return status
 
-    _, d, name = _file(path)
-    try:
-        append_line(d / GITIGNORE_FILENAME, name)
-    except OSError as e:  # noqa: BLE001
-        logger.warning("[env-local] could not write .gitignore for %s: %s", d, e)
-        return _status(GITIGNORE_GIT_FAILURE, name)
-
-    # Verify, don't assume: a later negation can re-include the file.
+    p, d, name = _file(path)
+    if exclude_in_clone(p) == GITIGNORE_NOT_IGNORED:
+        # A `!` rule in a .gitignore outranks the clone's exclude; only a later line there beats it.
+        try:
+            append_line(d / GITIGNORE_FILENAME, name)
+        except OSError as e:  # noqa: BLE001
+            logger.warning("[env-local] could not write .gitignore for %s: %s", d, e)
+            return _status(GITIGNORE_GIT_FAILURE, name)
+    # Verify, don't assume.
     return env_file_status(path)
 
 
@@ -268,19 +270,17 @@ def ensure_gitignored(root: Path | str | None, environment: str = DEFAULT_ENVIRO
 def env_local_block(status: dict[str, Any]) -> Optional[dict[str, Any]]:
     """The reason a value must not be written here, or ``None`` if it may be.
 
-    Not ignored YET is not a block: a write appends the file's own name to
-    .gitignore and verifies with git first (``ensure_env_file_ignored``), so a
-    named environment's file — which no .gitignore lists until then — stays
-    writable. A negation that defeats the append still refuses at write time.
+    Not ignored YET is not a block: a write excludes the file in this clone and
+    verifies with git first (``ensure_env_file_ignored``), so a named environment's
+    file — which no .gitignore lists until then — stays writable. A negation that
+    defeats that too still refuses at write time.
     """
     if (status["ignored"] and status["code"] != GITIGNORE_NO_DIR) or status["code"] == GITIGNORE_NOT_IGNORED:
         return None
     return {"code": status["code"], "reason": status["reason"]}
 
 
-def write_env_local(
-    root: Path | str | None, key: str, value: str, environment: str = DEFAULT_ENVIRONMENT
-) -> None:
+def write_env_local(root: Path | str | None, key: str, value: str, environment: str = DEFAULT_ENVIRONMENT) -> None:
     path = env_local_path(root, environment)
     if path is None:
         raise EnvLocalNotWritable(f"no writable folder for {env_file_name(environment)}", code=GITIGNORE_NO_DIR)

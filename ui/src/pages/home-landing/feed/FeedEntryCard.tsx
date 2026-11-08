@@ -33,23 +33,11 @@ interface FeedEntryCardProps {
   busy: boolean;
   error?: string;
   onDismiss: (entry: FeedEntry) => void;
-  /** "Report issue" — email the diagnosis to the Flowpad team. */
-  onReportIssue: (entry: FeedEntry, suggest: MessageSuggest) => void;
-  /** The issue report for this entry was already sent (session-scoped). */
-  reported?: boolean;
   /** "Forward" — post the report into the chosen conversation. */
   onForwardMessageSuggest: (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => void;
 }
 
-export function FeedEntryCard({
-  entry,
-  busy,
-  error,
-  onDismiss,
-  onReportIssue,
-  reported,
-  onForwardMessageSuggest,
-}: FeedEntryCardProps) {
+export function FeedEntryCard({ entry, busy, error, onDismiss, onForwardMessageSuggest }: FeedEntryCardProps) {
   const feedData = useMemo(() => FeedData.fromEntry(entry), [entry]);
   const targetTypeId = feedData.targetTypeId;
   // ``watch:false`` — the parent (``HomeFeedColumn``) batch-hydrates every
@@ -105,8 +93,6 @@ export function FeedEntryCard({
         error={error}
         feedData={feedData}
         onDismiss={onDismiss}
-        onReportIssue={onReportIssue}
-        reported={reported}
         onForward={onForwardMessageSuggest}
       />
     );
@@ -251,9 +237,6 @@ interface MessageSuggestFeedEntryCardProps {
   error?: string;
   feedData: FeedData;
   onDismiss: (entry: FeedEntry) => void;
-  onReportIssue: (entry: FeedEntry, suggest: MessageSuggest) => void;
-  /** The issue report for this entry was already sent (session-scoped). */
-  reported?: boolean;
   onForward: (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => void;
 }
 
@@ -264,8 +247,6 @@ function MessageSuggestFeedEntryCard({
   error,
   feedData,
   onDismiss,
-  onReportIssue,
-  reported,
   onForward,
 }: MessageSuggestFeedEntryCardProps) {
   const { t } = useLingui();
@@ -377,20 +358,17 @@ function MessageSuggestFeedEntryCard({
         />
       ) : (
         <>
-          {/* View opens the diagnosis popup, right-most on the Report/Forward row.
-              Report/Forward never dismiss the card (only the frame's eye-off does). */}
+          {/* View opens the diagnosis popup, right-most on the Ask for help / Forward row.
+              They never dismiss the card (only the frame's eye-off does). */}
           {isDiagnosis && suggest.conversation_id ? (
             <DiagnosisActionButtons
               suggestedConversationId={suggest.conversation_id}
               busy={busy}
               error={error}
               showDismiss={false}
-              canReport={!!suggest.diagnosis_id}
-              reported={reported}
               diagnosisId={suggest.diagnosis_id ?? undefined}
               diagnosisTitle={title}
               onDismiss={() => onDismiss(entry)}
-              onReportIssue={() => onReportIssue(entry, suggest)}
               onForward={(conversationId) => onForward(entry, suggest, conversationId)}
               trailing={viewButton}
             />

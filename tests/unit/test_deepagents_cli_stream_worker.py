@@ -179,10 +179,11 @@ def test_argv_is_this_interpreter_running_our_runner(tmp_path):
     assert env["FLOWPAD_DEEPAGENTS_API_KEY"] == "k"
 
 
-def test_a_bare_size_with_no_endpoint_leaves_the_model_to_the_runner(tmp_path):
+def test_a_bare_size_with_no_endpoint_is_refused_not_left_to_the_runner(tmp_path):
+    # An unmapped size is rejected, never silently replaced by the vendor default (model_tiers).
     worker = DeepAgentsCLIStreamWorker(transcript_path=tmp_path / "tee.jsonl")
-    argv, _, _ = worker._build_spawn(_context(tmp_path, model="lg"), "hi")
-    assert "--model" not in argv
+    with pytest.raises(ValueError, match="Model size 'lg' has no mapping"):
+        worker._build_spawn(_context(tmp_path, model="lg"), "hi")
 
 
 def test_skills_mcp_and_agents_reach_the_runner(tmp_path):

@@ -47,8 +47,9 @@ class _HubMailboxes:
 
     async def configure_mailbox(self, agent_id, settings):
         row = self.rows[agent_id]
-        if "allowed_senders" in settings:
-            row["allowed_senders"] = [str(a).strip().lower() for a in settings["allowed_senders"]]
+        for name in ("allowed_senders", "blocked_senders"):
+            if name in settings:
+                row[name] = [str(a).strip().lower() for a in settings[name]]
         if "filters" in settings:
             row["filters"] = dict(settings["filters"])
         return dict(row)
@@ -138,6 +139,12 @@ async def test_a_machine_that_never_configured_the_mailbox_admits_the_hub_allowl
     assert not admits(source, "stranger@evil.test"), "the Hub's list admits only who it names"
     # One Hub read per window: a stranger writing again does not cost another round trip.
     assert await refresh_policy_for(source) is False
+
+    # Blocked on the Hub after this copy was taken: the next window's read stops answering them.
+    await hub.configure_mailbox(agent.id, {"blocked_senders": ["captain@gmail.com"]})
+    monkeypatch.setattr(agent_mailbox_module, "_policy_read_at", {})
+    assert await refresh_policy_for(source) is True
+    assert not admits(source, "captain@gmail.com"), "a sender blocked since the last read is refused"
 
 
 async def test_deleting_the_agent_releases_its_mailbox_and_drops_its_source(monkeypatch):

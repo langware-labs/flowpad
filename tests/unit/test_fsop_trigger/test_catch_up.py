@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
@@ -47,7 +48,7 @@ def _make_file_trigger(watch_path: Path) -> Trigger:
         trigger_type=TriggerType.FSOP,
         watch_path=str(watch_path),
     )
-    t.id = "id-ft"
+    t.id = str(mint_uuid())
     return t
 
 
@@ -58,7 +59,7 @@ def _make_folder_trigger(watch_path: Path) -> Trigger:
         watch_path=str(watch_path),
         recursive=True,
     )
-    t.id = "id-folt"
+    t.id = str(mint_uuid())
     return t
 
 
@@ -179,7 +180,7 @@ async def test_folder_trigger_by_dir_path_skips_catch_up(tmp_path, trigger_log_d
     folder.mkdir()
 
     t = Trigger(name="folt2", trigger_type=TriggerType.FSOP, watch_path=str(folder))
-    t.id = "id-folt2"
+    t.id = str(mint_uuid())
     await _catch_up_if_changed(t)
     assert t.counter == 0
 
@@ -191,8 +192,7 @@ async def test_disabled_trigger_does_not_catch_up(tmp_path, trigger_log_dir):
     """Disabled triggers skip catch-up (would no-op inside _fire anyway, but cleaner to short-circuit)."""
     f = tmp_path / "a.txt"
     f.write_text("hi")
-    t = _make_file_trigger(f)
-    t.enabled = False
+    t = _make_file_trigger(f).model_copy(update={"enabled": False})
     # File changed but trigger is disabled → no fire
     await _catch_up_if_changed(t)
     assert t.counter == 0

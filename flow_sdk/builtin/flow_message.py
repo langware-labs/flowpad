@@ -23,6 +23,7 @@ from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
+from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -110,6 +111,13 @@ class FlowMessageKind(str, Enum):
     #: The quiet, automatic line of that exchange ("Bob shared public key for secured transfer") — a real local row,
     #: rendered as a slim line in the share's thread.
     SEALED_NOTE = "sealed_note"
+    #: Ask for help: a person's request, sent like any message. Its attachments (the diagnosis, the screen and
+    #: session) are ordinary files; the hub may strip this field, so receivers re-derive it from the
+    #: ``help_request.value.json`` carrier (:func:`derive_help_request_kind`).
+    HELP_REQUEST = "help_request"
+    #: A help request's diagnosis, posted when the background run finishes: its text is the bottom line, its
+    #: ``diagnosis.value.json`` the details. Receivers re-derive it from that file when the hub strips the field.
+    DIAGNOSIS = "diagnosis"
 
     @classmethod
     def hub_only(cls, value: "str | None") -> bool:
@@ -121,8 +129,8 @@ class FlowMessageKind(str, Enum):
         """The kind a caller may set via ``add_message``, or None to fall back
         to USER. USER is implicit; INVITATION is a local-only first-row
         placeholder no caller mints; SESSION_EVENT and SEALED_NOTE are the
-        explicitly sendable non-default kinds."""
-        return next((k for k in (cls.SESSION_EVENT, cls.SEALED_NOTE) if value == k.value), None)
+        explicitly sendable non-default kinds, and HELP_REQUEST is Ask for help's."""
+        return next((k for k in (cls.SESSION_EVENT, cls.SEALED_NOTE, cls.HELP_REQUEST, cls.DIAGNOSIS) if value == k.value), None)
 
 
 class DeliveryStatus(str, Enum):
@@ -246,8 +254,9 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
     #
     # ``process_call`` / ``returned_value`` are a call on a message and its answer
     # (``process_call_spec``): the value IS the header ``prompt_preview``, never a row.
+    # ``message_form`` / ``form_answers`` likewise: a form on a message and its answers (``message_form_spec``).
     {"conversation", "flow_message", "task", "remote_worker_session", "project", "prompt_completion",
-     "process_call", "returned_value"}
+     "process_call", "returned_value", "message_form", "form_answers"}
 )
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder
@@ -366,6 +375,38 @@ def derive_session_fields(fm: "FlowMessage") -> None:
         break
 
 
+#: The file a help request carries (a ``help.request`` value): what marks the message as one on every machine.
+HELP_REQUEST_FILE = "help_request.value.json"
+
+
+def carrier_attachment(fm: "FlowMessage") -> "Attachment | None":
+    """A help request's carrier file (``help_request.value.json``) among its attachments, or None."""
+    return next(
+        (
+            a
+            for a in fm.attachment or []
+            if a.attachment_type == AttachmentType.FILE and (a.data or "").rsplit("/", 1)[-1] == HELP_REQUEST_FILE
+        ),
+        None,
+    )
+
+
+def derive_help_request_kind(fm: "FlowMessage") -> None:
+    """Refill ``kind=help_request`` the hub may have stripped, from its carrier file. Idempotent."""
+    if fm.kind == FlowMessageKind.USER and carrier_attachment(fm) is not None:
+        fm.kind = FlowMessageKind.HELP_REQUEST
+
+
+def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
+    """Carry an IT reply's ``metadata.it`` (hub-written) onto ``it_reply``. Idempotent; absent leaves it as is."""
+    metadata = payload.get("metadata")
+    it = metadata.get("it") if isinstance(metadata, dict) else None
+    # Only a MACHINE's reply names its node; the owner's IT message carries ``metadata.it`` too (its attachment
+    # names) and is the IT message itself, not a reply.
+    if isinstance(it, dict) and it.get("node_typeid"):
+        fm.it_reply = dict(it)
+
+
 def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
     """Sync disk probe: is the entity referenced by a TYPE_ID attachment
     locally present? See ``_type_id_attachment_path`` for where it looks.
@@ -466,6 +507,29 @@ class Attachment(BaseModel):
     data: str
     local_path: Optional[str] = None
     prompt_preview: Optional[str] = None
+
+    @property
+    def is_listed_file(self) -> bool:
+        """A file the conversation lists as an attachment: a FILE, or a ``prompt/`` file.
+        The same rule as the UI's ``buildAttachmentEntries``, so the StreamInbox count matches the list."""
+        if self.attachment_type == AttachmentType.FILE:
+            return True
+        return self.attachment_type == AttachmentType.PROMPT and str(self.data or "").startswith(PROMPT_FILE_VFS_PREFIX)
+
+
+def _local_file(storage, data: str) -> Optional[str]:
+    """A message file's path on this machine, or None when its bytes are not here."""
+    resolved = storage.get_storage_path(data) if data else None
+    return resolved if resolved and Path(resolved).is_file() else None
+
+
+class ListedFileSpec(DataSpec):
+    """One file a conversation lists (``Attachment.is_listed_file``): the message it rides and the
+    attachment, ``local_path`` set only when its bytes are on this machine."""
+
+    message_id: str
+    ts: Optional[str] = None
+    attachment: Attachment
 
 
 class MessageEnvelope(DataSpec):
@@ -650,6 +714,10 @@ class FlowMessage(Entity):
     # What the channel message did (approved, merged) — projected from ``MessageData.mark``. PRIVATE
     # like ``envelope``: re-derived here, so a hub refresh never blanks it.
     mark: Optional[MessageMarkSpec] = APIField(None, sharing=Sharing.PRIVATE)
+    # A machine's reply in an IT conversation (``ConversationKind.IT``): the hub writes it with
+    # ``metadata.it`` = ``{node_typeid, code_last4, state, woke, value, call_id}``. PRIVATE like ``mark``:
+    # re-derived from that metadata on every arrival (``derive_it_reply``), never sent back.
+    it_reply: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
@@ -683,6 +751,10 @@ class FlowMessage(Entity):
     # ``context_entities`` carry the backing Invitation TypeId so the UI
     # can read invitation_id off it for the Accept action.
     kind: FlowMessageKind = APIField(default=FlowMessageKind.USER)
+    # An invite message (``kind=invitation``) names the share it carries and what became of it. The hub
+    # writes it and updates ``state`` in place (accepted / declined / revoked), so the card in the
+    # conversation always reads the current answer. None on every other message.
+    invite: Optional[MessageInvite] = APIField(default=None)
     # Body-bundle lifecycle on the hub. NA when the message has no body
     # (text-only, or only URL/REPO/inline-PROMPT attachments). UPLOADING is
     # stamped at hub-side add_message time when the incoming FM's attachments
@@ -812,6 +884,26 @@ class FlowMessage(Entity):
         data.update(self._body_download_state(data.get("attachment") or []))
         return data
 
+    def listed_files(self) -> list[ListedFileSpec]:
+        """This message's listed files, each with ``local_path`` resolved — one storage lookup, no
+        whole-message serialize; ``_body_download_state`` resolves the API dump's through the same ``_local_file``."""
+        listed = [a for a in self.attachment or [] if a.is_listed_file]
+        if not listed:
+            return []
+        storage = self._embedded_storage()
+        ts = self.occurred_at.isoformat() if self.occurred_at is not None else None
+        return [
+            ListedFileSpec(
+                message_id=self.id, ts=ts, attachment=a.model_copy(update={"local_path": _local_file(storage, a.data)})
+            )
+            for a in listed
+        ]
+
+    def _embedded_storage(self):
+        from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
+
+        return get_entity_embedded_storage(TypeId(type="flow_message", id=self.id))
+
     def _body_download_state(self, atts: list[dict[str, Any]]) -> dict[str, Any]:
         """One local availability probe for API serialization and catch-up.
 
@@ -832,11 +924,8 @@ class FlowMessage(Entity):
                 atype == AttachmentType.PROMPT.value and raw.startswith(PROMPT_FILE_VFS_PREFIX)
             ):
                 if storage is None:
-                    from flow_sdk.storage import get_entity_embedded_storage
-
-                    storage = get_entity_embedded_storage(TypeId(type="flow_message", id=self.id))
-                resolved = storage.get_storage_path(raw) if raw else None
-                att["local_path"] = resolved if resolved and Path(resolved).is_file() else None
+                    storage = self._embedded_storage()
+                att["local_path"] = _local_file(storage, raw)
                 present = bool(att["local_path"])
             else:
                 continue

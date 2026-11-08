@@ -99,6 +99,11 @@ def read_autolaunch_journey(root: Optional[Path]) -> Optional[str]:
     return read(root).autolaunch_journey
 
 
+def read_main_agent(root: Optional[Path]) -> Optional[str]:
+    """The project's recommended main agent, by name (``mainAgent``), or None."""
+    return read(root).main_agent
+
+
 def read_always_use_skills(root: Optional[Path]) -> tuple[str, ...]:
     return tuple(read(root).always_use_skills)
 

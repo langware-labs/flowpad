@@ -59,7 +59,6 @@ async def test_appends_one_pointer_and_projects_count(monkeypatch, tmp_path):
             "flow_sdk.app.actions.materialize_flow_message.project_pointers_to_entity",
             new=AsyncMock(return_value=None),
         ),
-        patch("flow_sdk.app.actions.materialize_flow_message.send_resource_sync"),
     ):
         result = await materialize_flow_message(
             {"id": _FM_ID, "text": "hi"},
@@ -100,7 +99,6 @@ async def test_idempotent_on_same_fm_id(monkeypatch, tmp_path):
             "flow_sdk.app.actions.materialize_flow_message.project_pointers_to_entity",
             new=AsyncMock(return_value=None),
         ),
-        patch("flow_sdk.app.actions.materialize_flow_message.send_resource_sync"),
     ):
         await materialize_flow_message(
             {"id": _FM_ID, "text": "hi"},
@@ -119,7 +117,13 @@ async def test_idempotent_on_same_fm_id(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_notify_dispatches_fm_create_then_conversation_update(monkeypatch, tmp_path):
+async def test_notify_updates_the_ui_in_process_and_sends_no_webhook(monkeypatch, tmp_path):
+    """The UI learns of a materialized message from ``notify_updated`` in this process.
+
+    It used to also fire two ``send_resource_sync`` EVENTs, each one a child interpreter per
+    running instance POSTing ``/webhook/listen`` - 27 processes per message on a 9-instance
+    machine, competing with the send itself (local create+send 302-428ms, 108ms without them),
+    for a receiver that routed them nowhere."""
     monkeypatch.setattr(
         "flow_sdk.fs_store.record_paths.get_default_records_data_root",
         lambda: tmp_path,
@@ -133,22 +137,19 @@ async def test_notify_dispatches_fm_create_then_conversation_update(monkeypatch,
     conv.id = _CONV_ID
     saved_fm = FlowMessage.model_validate({"id": _FM_ID, "text": "hi"})
 
-    sync_calls = []
-
-    def _capture_sync(**kwargs):
-        sync_calls.append(kwargs)
+    # Every webhook notification starts by listing the instances to POST to.
+    report_urls = MagicMock(return_value=[])
+    monkeypatch.setattr("flow_sdk.discovery.notify._get_report_urls", report_urls)
+    notified = AsyncMock()
 
     with (
         patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
         patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
         patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv)),
+        patch.object(Conversation, "notify_updated", new=notified),
         patch(
             "flow_sdk.app.actions.materialize_flow_message.project_pointers_to_entity",
             new=AsyncMock(return_value=None),
-        ),
-        patch(
-            "flow_sdk.app.actions.materialize_flow_message.send_resource_sync",
-            side_effect=_capture_sync,
         ),
     ):
         await materialize_flow_message(
@@ -157,9 +158,8 @@ async def test_notify_dispatches_fm_create_then_conversation_update(monkeypatch,
             someone_typeid=None,
         )
 
-    assert len(sync_calls) == 2
-    assert sync_calls[0]["type"] == "flow_message"
-    assert sync_calls[1]["type"] == "conversation"
+    report_urls.assert_not_called()
+    notified.assert_awaited()
 
 
 async def _materialize_capture_created_by(monkeypatch, tmp_path, payload):
@@ -190,7 +190,6 @@ async def _materialize_capture_created_by(monkeypatch, tmp_path, payload):
             "flow_sdk.app.actions.materialize_flow_message.project_pointers_to_entity",
             new=AsyncMock(return_value=None),
         ),
-        patch("flow_sdk.app.actions.materialize_flow_message.send_resource_sync"),
     ):
         await materialize_flow_message(
             payload,

@@ -703,19 +703,14 @@ def _promise_cards(snap: _Snapshot, me: str) -> list[dict]:
     return cards
 
 
-async def _on_hub(conversation_id: str) -> bool:
-    """Whether the hub can hold this conversation's secured transfers. One this install holds and never bound to
-    the hub (a channel's, a local one) has no hub messages: asking the hub about it only earns a 403 the page
-    toasts as "Cloud access denied". A conversation not held here is asked about (a peer's, not yet mirrored)."""
+async def state(conversation_id: str) -> dict:
+    """Both views from ONE read of the hub: ``{incoming, sent}`` — what the conversation's card shows. A
+    conversation the hub does not hold yet (a private help request, one never sent) has nothing sealed in it:
+    asking the hub about it only answers "not found"."""
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
 
-    conv = await Conversation.get_one({"id": conversation_id})
-    return conv is None or conv.hub_bound
-
-
-async def state(conversation_id: str) -> dict:
-    """Both views from ONE read of the hub: ``{incoming, sent}`` — what the conversation's card shows."""
-    if not await _on_hub(conversation_id):
+    here = await Conversation.get_one({"id": conversation_id})
+    if here is not None and not here.remote:
         return {"incoming": [], "sent": []}
     snap = await _Snapshot.read(conversation_id)
     sent_here = any(r.get("conversation_id") == conversation_id for r in _read_json("sent.json").values())

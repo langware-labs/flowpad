@@ -93,7 +93,7 @@ jobs:
     # what reported both times that the tier had outgrown its runner.
     name: backend (pytest unit) ${{ matrix.shard }}/4
     if: ${{ github.event_name != 'workflow_dispatch' || (inputs.backend-tests && inputs.e2e-only == '') }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -119,7 +119,7 @@ jobs:
   backend-api:
     name: backend (pytest api)
     if: ${{ github.event_name != 'workflow_dispatch' || (inputs.backend-tests && inputs.e2e-only == '') }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -131,7 +131,7 @@ jobs:
   frontend-tests:
     name: frontend (tsc + vitest unit + i18n)
     if: ${{ github.event_name != 'workflow_dispatch' || (inputs.frontend-tests && inputs.e2e-only == '') }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -147,14 +147,21 @@ jobs:
   # exercised with the real `process.platform`, PowerShell and path semantics only on
   # a Windows runner; on Linux they run behind a faked platform.
   electron-tests:
-    name: electron (node unit tests, ${{ matrix.os }})
+    name: electron (node unit tests, ${{ matrix.label }})
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.e2e-only == '' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-latest]
+        # Blacksmith runs the Linux leg (Windows/macOS are not offered there, so windows-latest stays
+        # GitHub-hosted). `label` keeps the CHECK NAME stable across the runner move — required checks
+        # and the deploy gate match on it.
+        include:
+          - os: blacksmith-4vcpu-ubuntu-2404
+            label: ubuntu-24.04
+          - os: windows-latest
+            label: windows-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -167,6 +174,48 @@ jobs:
         working-directory: electron
       - name: node unit tests
         run: npm test
+        working-directory: electron
+
+  # The Windows uninstaller (FLOWPAD-2250): flow-rs's `uninstall` engine
+  # (flow_sdk/rust/src/uninstall) and the NSIS script around it
+  # (electron/resources/installer.nsh). Windows only by nature: deletion by handle
+  # on NTFS, junctions, process snapshots, RunOnce. The runner is an administrator,
+  # so this covers the elevated case; the standard-user and desktop-session cases
+  # (Credential Manager, the uninstaller's GUI) are run on a Windows VM — see
+  # docs/desktop-install-test-scenarios.md, section E. The end-to-end script skips,
+  # and says so, what a service session cannot do.
+  uninstall-windows:
+    name: uninstaller (flow-rs + installer.nsh, windows)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.e2e-only == '' }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Decisions, receipt, process selection, cleanup state, report (unit)
+        run: cargo test --manifest-path flow_sdk/rust/Cargo.toml --lib uninstall
+      - name: Deletion on NTFS and the process snapshot
+        run: cargo test --manifest-path flow_sdk/rust/Cargo.toml --test fs_delete --test proc_scan
+      - name: Build flow-rs (debug; the end-to-end switches exist only in debug builds)
+        run: cargo build --manifest-path flow_sdk/rust/Cargo.toml --bin flow-rs
+      - name: End-to-end against a scratch tree
+        shell: powershell
+        run: scripts\win_uninstall_e2e.ps1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: electron/package-lock.json
+      - name: Install electron dependencies
+        run: npm ci
+        working-directory: electron
+      - name: Build flow-rs (release, packaged into the installer)
+        run: cargo build --release --manifest-path flow_sdk/rust/Cargo.toml --bin flow-rs
+      # electron-builder compiles NSIS with warnings as errors, so this fails on any
+      # installer.nsh mistake. Unsigned here (no signing credentials in this workflow).
+      - name: Build the installer (installer.nsh compiles)
+        # bash: pwsh splits `-c.directories.output=…` into `-c` + a config-file path.
+        shell: bash
+        run: npx electron-builder --win nsis --x64 --config electron-builder.config.cjs --publish never -c.directories.output=release-ci
         working-directory: electron
 
   # The fast, PTY-free Python tests behind the Windows failure handling (the
@@ -220,7 +269,7 @@ jobs:
           && (needs.electron-tests.result == 'success' || needs.electron-tests.result == 'skipped')
           && (needs.backend-unit-windows.result == 'success' || needs.backend-unit-windows.result == 'skipped')
           && (github.event_name != 'workflow_dispatch' || inputs.e2e-tests) }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 30
     # Burn-in ended 2026-08-19 (first full-green run, 32267242614): e2e
     # failures now count in the PyPI deploy gate like every other job.

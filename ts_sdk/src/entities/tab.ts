@@ -2,6 +2,7 @@ import { APIEntity, dataManager, registerEntity, type AnyEntity } from '../APIEn
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models';
 import { IDockPointer } from '../models/DockPointer';
+import { editorForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { ViewType } from '../utils/ui/view-types';
 import { isValidEntityId, TypeId } from '../models/TypeId';
@@ -354,7 +355,15 @@ export class Tab extends APIEntity<Tab> implements ITab {
   get dockPointer(): IDockPointer | null {
     if (!this.pointer) return null;
     try {
-      const parsed = JSON.parse(this.pointer) as IDockPointer;
+      const parsed = JSON.parse(this.pointer) as IDockPointer & { workspaceContent?: boolean };
+      // Older Assets children stored only their scope key, folding away the
+      // document address. Reopen their recorded target, not the browser root.
+      if (this.parent_tab_id && parsed.viewType === ViewType.ASSETS && !parsed.pointer && parsed.workspaceContent) {
+        const editor = this.target_type ? editorForType(this.target_type) : undefined;
+        if (editor && this.target_id) {
+          parsed.pointer = `editor/${editor}/typeid/${this.target_type}-${this.target_id}`;
+        }
+      }
       return withCanonicalTabHash(parsed);
     } catch {
       const normalized = normalizeLegacyPointer(this.pointer, this.target_type, this.target_id);

@@ -106,7 +106,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
     notify.error({
       id: 'cloud-access-denied',
       title: t`Cloud access denied`,
-      message: t`You don't have permission for this action. Contact your admin if this seems wrong.`,
+      message: rawMessage || t`You don't have permission for this action. Contact your admin if this seems wrong.`,
       detail,
     });
     hold('cloud-access-denied', request);
@@ -114,7 +114,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
     notify.warning({
       id: 'cloud-not-found',
       title: t`Cloud resource not found`,
-      message: t`We couldn't find what you were looking for on the cloud.`,
+      message: rawMessage || t`We couldn't find what you were looking for on the cloud.`,
       detail,
     });
     hold('cloud-not-found', request);
@@ -122,7 +122,9 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
     notify.error({
       id: 'cloud-server-error',
       title: t`Cloud service is having trouble`,
-      message: t`The cloud service returned an error. Please try again in a moment.`,
+      message: rawMessage
+        ? `${rawMessage} — ${t`Please try again in a moment.`}`
+        : t`The cloud service returned an error. Please try again in a moment.`,
       detail,
     });
     hold('cloud-server-error', request);

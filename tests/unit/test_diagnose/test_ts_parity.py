@@ -15,6 +15,8 @@ from flow_sdk.diagnose import (
     DiagnosisStatus,
     FlowContextSpec,
     LogTail,
+    SessionState,
+    SessionTurn,
 )
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
@@ -32,7 +34,9 @@ def _union(name: str) -> set[str]:
 
 
 @pytest.mark.parametrize(
-    "model", [DiagnosisSpec, FlowContextSpec, DiagnosisFinding, DiagnosisEnvironment, LogTail], ids=lambda m: m.__name__
+    "model",
+    [DiagnosisSpec, FlowContextSpec, DiagnosisFinding, DiagnosisEnvironment, LogTail, SessionState, SessionTurn],
+    ids=lambda m: m.__name__,
 )
 def test_the_ts_interface_names_every_field(model):
     assert _fields(model.__name__) == set(model.model_fields)

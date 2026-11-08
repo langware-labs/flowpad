@@ -658,7 +658,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await dismissCleanedSessionsOrSkip(page);
     // project auto-switches to Proj-B; URL preserved.
     expect(page.url()).toContain(`shell-${pbShell}`);
-    await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-b/i, { timeout: 15_000 });
+    await expect(page.locator('[data-testid="top-nav-runtime-chip"]')).toContainText(/proj-b/i, { timeout: 15_000 });
     await commonValidation(page);
     await rq.dispose();
   });
@@ -866,7 +866,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await switchToProjectViaChip(page, 'Proj-B');
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
     await expect(page).toHaveURL(new RegExp(`/dock/project/${pb}(?:\\?|$)`));
-    await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-b/i);
+    await expect(page.locator('[data-testid="top-nav-runtime-chip"]')).toContainText(/proj-b/i);
     await expect(page.locator('[data-testid="terminal-panels"]')).toHaveCount(0);
     await rq.dispose();
   });
@@ -959,7 +959,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // NOT auto-switch away). The footer keeps showing Proj-A as the current
     // project (.md: "validate footer still shows Proj-A as current project").
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(0);
-    await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-a/i, { timeout: 10_000 });
+    await expect(page.locator('[data-testid="top-nav-runtime-chip"]')).toContainText(/proj-a/i, { timeout: 10_000 });
     // Open the chip: Proj-A's row is gone (0 open tabs), Proj-B is still listed
     // with count 2 (.md: "Proj-A row gone OR shows 0" / "Proj-B still listed count 2").
     const popover = await openProjectsChipPopover(page);
@@ -1013,7 +1013,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
 
   // ---- E. Footer selections ----
 
-  test('test 28: Footer "Switch Project" modal switches end-to-end', async ({ page }) => {
+  test('test 28: "Switch Project" modal (top bar → Open project) switches end-to-end', async ({ page }) => {
     const rq = await api();
     const rootA = disposableProjectRoot('switch-modal-a');
     const suffix = Date.now();
@@ -1032,7 +1032,10 @@ test.describe('Interactive tabs / project filtering matrix', () => {
       await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
       await dismissCleanedSessionsOrSkip(page);
 
-      await page.getByRole('button', { name: 'Switch Project' }).click();
+      // The footer no longer has a switcher: the modal opens from the top
+      // bar's project list ("Open project").
+      await page.locator('[data-testid="top-nav-project-list"]').click();
+      await page.locator('[data-testid="projects-counter-open-project"]').click();
       const dialog = page.getByRole('dialog');
       await expect(dialog.getByRole('heading', { name: 'Switch Project' })).toBeVisible();
       await expect(dialog.locator('[data-testid="switch-project-active-title"]')).toBeVisible();
@@ -1058,7 +1061,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
       const projectMatch = new URL(page.url()).pathname.match(/^\/dock\/project\/([0-9a-f-]+)$/);
       expect(projectMatch).not.toBeNull();
       selectedProjectId = projectMatch![1];
-      await expect(page.locator('[data-testid="footer"]')).toContainText(targetName);
+      await expect(page.locator('[data-testid="top-nav-runtime-chip"]')).toContainText(targetName);
 
       const selectedResponse = await rq.get(`${API}/api/v1/graph/project/${selectedProjectId}`);
       expect(selectedResponse.status()).toBe(200);
@@ -1074,33 +1077,6 @@ test.describe('Interactive tabs / project filtering matrix', () => {
       await rq.dispose();
       rmSync(rootA, { recursive: true, force: true });
     }
-  });
-
-  test('test 29: Footer label fallback chain', async ({ page }) => {
-    const rq = await api();
-    await resetDb(rq);
-    // Seed a shell so bare /dock/shell resolves a default (no auto-spawn).
-    const { projectId } = await bootstrapIds(rq);
-    await createShell(rq, projectId);
-    await gotoDockShell(page);
-    await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 15_000 });
-    // Footer reflects project path/name initially.
-    const footer = page.locator('[data-testid="footer"]');
-    await expect(footer).toBeVisible();
-    // Override workdir → the footer's path-bearing affordance reflects the explicit
-    // path. The footer's VISIBLE label is the project's displayName; the workdir →
-    // project-path → name fallback chain surfaces in the "Open folder" / "Open
-    // project view" title+aria-label (StatusBar.projectPath), not the visible text.
-    const overridePath = page.locator(
-      '[data-testid="footer"] [title*="override-workdir"], [data-testid="footer"] [aria-label*="override-workdir"]',
-    );
-    await page.evaluate(() => (window as unknown as { dataContext: { setWorkdir: (p: string | null) => Promise<void> } }).dataContext.setWorkdir('/tmp/regression/override-workdir'));
-    await expect(overridePath.first()).toBeVisible({ timeout: 10_000 });
-    // Revert → the override path drops out of the fallback chain (falls back to the
-    // project's own path).
-    await page.evaluate(() => (window as unknown as { dataContext: { setWorkdir: (p: string | null) => Promise<void> } }).dataContext.setWorkdir(null));
-    await expect(overridePath).toHaveCount(0, { timeout: 10_000 });
-    await rq.dispose();
   });
 
   test('test 30: "Select Project" red pill — tab spawn flow', async ({ page }) => {
@@ -1577,7 +1553,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
       await switchToProjectViaChip(page, nameC);
 
       await expect(page).toHaveURL(new RegExp(`/dock/project/${projectC}(?:\\?|$)`));
-      await expect(page.locator('[data-testid="footer"]')).toContainText(nameC);
+      await expect(page.locator('[data-testid="top-nav-runtime-chip"]')).toContainText(nameC);
       await expect(page.locator('[data-testid="terminal-panels"]')).toHaveCount(0);
     } finally {
       await page.goto('/');

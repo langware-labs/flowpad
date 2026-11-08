@@ -548,6 +548,15 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     return Trigger.updateAutomation(triggerId, { enabled });
   }
 
+  /** A package (the agent or wizard whose folder holds the rules) is one switch: every rule of it on or off on
+   *  this machine (`POST trigger/set-package-on`). Answers how many changed. */
+  static async setPackageEnabled(parentTypeId: string, on: boolean): Promise<number> {
+    const action = new ActionInfo('set-package-on', Trigger.type, null, 'POST' as HttpMethod);
+    action.bodyParameters = { parent_type_id: parentTypeId, on };
+    const data = await dataManager.callAction<{ parent_type_id: string; on: boolean }, { changed: number }>(action);
+    return data?.changed ?? 0;
+  }
+
   /** Delete an automation; the backend disarms it first. */
   static async remove(triggerId: string): Promise<void> {
     const action = byId(new ActionInfo('delete', Trigger.type, triggerId, 'DELETE' as HttpMethod));

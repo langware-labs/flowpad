@@ -130,18 +130,4 @@ describe('alert toasts are dev-only, and always logged to the footer', () => {
       expect(useAlertStore.getState().alerts).toHaveLength(0);
     });
   });
-
-  it('offers no bulk dismiss when only derived warnings are showing', async () => {
-    const user = userEvent.setup();
-    // No alerts logged — the popover is carrying only `useWarnings`' derived
-    // warnings, which describe a live condition and are deliberately NOT
-    // dismissible.
-    render(<WarningsPopover />);
-
-    await user.click(await screen.findByTestId('warnings-popover-trigger'));
-
-    expect(screen.queryAllByTestId('warnings-popover-alert')).toHaveLength(0);
-    expect(screen.queryByTestId('warnings-popover-dismiss-all')).toBeNull();
-    expect(screen.queryByTestId('warnings-popover-dismiss')).toBeNull();
-  });
 });

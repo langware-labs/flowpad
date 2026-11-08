@@ -658,3 +658,17 @@ async def test_a_conversation_the_hub_does_not_hold_is_not_asked_about(world, mo
         assert asked == []
         assert await st.state(bound.id) == {"incoming": [], "sent": []}
     assert asked == [bound.id]
+
+
+async def test_a_conversation_the_hub_does_not_hold_is_never_asked_about(monkeypatch):
+    """A private help request lives only here: its card is empty, and the hub -- which would answer
+    "not found", raising a warning on every view -- is not asked."""
+    from flow_sdk.builtin.conversation import Conversation
+
+    conv = await Conversation(title="private").save()
+
+    async def no_hub(_conversation_id):
+        raise AssertionError("asked the hub about a conversation it does not hold")
+
+    monkeypatch.setattr(st, "_hub_messages", no_hub)
+    assert await st.state(conv.id) == {"incoming": [], "sent": []}

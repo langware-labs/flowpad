@@ -1,4 +1,3 @@
-import { Trans, useLingui } from '@lingui/react/macro';
 import { LanguageSelector } from '@src/components/footer/LanguageSelector';
 import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 import { LiveSessionsChip } from '@src/components/footer/LiveSessionsChip';
@@ -12,18 +11,12 @@ import { VersionPopover } from '@src/components/version-popover';
 import { HubReleaseLabel } from '@src/components/version-popover/hub-release-label';
 import { AdvancedOnly } from '@src/components/view-mode';
 import { WarningsPopover } from '@src/components/warnings-popover';
-import { PrivacyModePopover } from '@src/components/privacy-mode/privacy-mode-popover';
 import { SubAgent, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { HelpdeskLoadDialog } from '@src/components/helpdesk/HelpdeskLoadDialog';
-import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
-import { LifeBuoy } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useParams } from 'react-router';
 import { useContext } from '@sdk/react/hooks';
-import { PageId } from '@sdk';
 import { isHubOnly } from '@src/navigation/hub-runtime';
-import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { useColorPalette } from '../hooks/useColorPalette';
 
 interface FooterProps {
@@ -33,38 +26,21 @@ interface FooterProps {
 // Priority-collapse the right-hand cluster on the footer's OWN width (container
 // query), not the viewport — viewport breakpoints (md:/lg:) fail to collapse
 // when a sidebar/split-pane makes the footer narrower than the window, which is
-// how the bar used to overrun. Least-important items yield first: Powered-by →
-// Help Desk label → whole Help Desk button.
+// how the bar used to overrun. Least-important item yields first: Powered-by.
+// (The Help desk button moved into Ask for help's first card.)
 // Essentials (version, language, git, pending) never collapse.
-// The Help desk button replaced the former Docs + assistance pair, so
-// this ladder lost one rung; the surviving thresholds keep their old values.
 // Raw @container + !important (rather than Tailwind variants) because no
 // @tailwindcss/container-queries plugin is installed; !important beats the
 // utility `.flex` display on the items it hides.
 const FOOTER_COLLAPSE_STYLE = /* css */ `
   @container foot (max-width: 960px) { .cq-powered { display: none !important; } }
-  @container foot (max-width: 860px) { .cq-helpdesk-label { display: none !important; } }
-  @container foot (max-width: 520px) { .cq-helpdesk { display: none !important; } }
 `;
 
 export function Footer({ className = '' }: FooterProps) {
-  const { version, project } = useContext();
-  const { t } = useLingui();
+  const { version } = useContext();
   const { agentId } = useParams();
-  // Same signal the rail uses (`collapsed-sidebar.tsx`), NOT `isHubOnly()`: this
-  // must also hold when a desktop is showing the hub page, and that case has a
-  // desk-serving backend. It hides Help desk
-  // (desk-only actions — `helpdesk-ticket-list` 404s on the hub, so the button
-  // could only fail). `useCurrentDock`, not `useDockNavigation`: only the page id
-  // is needed, and the latter also builds a NavigationActions and rewrites the
-  // `navigation` global on every URL change.
-  const hubMode = useCurrentDock()?.page === PageId.HUB;
   const agentTypeId = useMemo(() => (agentId ? new TypeId(SubAgent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<SubAgent>(agentTypeId);
-  const [showHelpdesk, setShowHelpdesk] = useState(false);
-  const [showAskForHelp, setShowAskForHelp] = useState(false);
-  // Set when the guides could not load: the ask opens anyway, saying why.
-  const [guidesFailed, setGuidesFailed] = useState<string | null>(null);
   useColorPalette(agent?.site_config);
   usePendingCompletionSound();
 
@@ -79,12 +55,9 @@ export function Footer({ className = '' }: FooterProps) {
     >
       <style>{FOOTER_COLLAPSE_STYLE}</style>
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap sm:justify-between">
-        {/* Data-privacy mode + Warnings icons on the left. No mode selector: a
-            mode belongs to a session, and its switch lives in that session. */}
+        {/* Warnings icon on the left. No mode selector: a mode belongs to a
+            session, and its switch lives in that session. */}
         <div className="flex shrink-0 items-center gap-1">
-          <AdvancedOnly reserve={false}>
-            <PrivacyModePopover />
-          </AdvancedOnly>
           <WarningsPopover />
         </div>
 
@@ -105,29 +78,7 @@ export function Footer({ className = '' }: FooterProps) {
           <AdvancedOnly reserve={false}>
             <IndexerStatusPill />
           </AdvancedOnly>
-          {/* Single support entry point — replaces the former "Flowpad docs"
-              (which opened the bundled assistant project) and the assistance
-              entry (which opened the ticket dialog) pair. Opens the
-              stepped load flow, which materializes the helpdesk portal
-              checkout and then navigates to its project home; the ticket
-              dialog now lives on that screen's banner. */}
-          {!hubMode && (
-            <button
-              type="button"
-              onClick={() => setShowHelpdesk(true)}
-              className="cq-helpdesk flex shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] text-violet-600 transition-colors hover:bg-accent hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
-              title={t`Open the help desk`}
-              aria-label={t`Help desk`}
-              data-testid="footer-helpdesk-button"
-            >
-              <LifeBuoy className="h-3.5 w-3.5" />
-              <span className="cq-helpdesk-label">
-                <Trans>Help desk</Trans>
-              </span>
-            </button>
-          )}
-          {/* `isHubOnly()`, not `hubMode`: this gate is runtime-shaped, not
-              page-shaped. A desktop showing the hub page still has a desk
+          {/* Runtime-shaped, not page-shaped: a desktop showing the hub page still has a desk
               backend, so the popover's actions work there — and the label would
               print the DESK's version under the word "hub". */}
           {isHubOnly() && <HubReleaseLabel hubVersion={version} />}
@@ -140,32 +91,6 @@ export function Footer({ className = '' }: FooterProps) {
           <LanguageSelector />
         </div>
       </div>
-      {/* A desk with no portal has nothing to load, so the load dialog hands
-          straight over to the ticket flow — which is what the button is for.
-          Mounted with the button, not beside it: gating only the button would
-          leave both dialogs mounted on the hub with no way to ever open them. */}
-      {!hubMode && (
-        <>
-          <HelpdeskLoadDialog
-            open={showHelpdesk}
-            onClose={() => setShowHelpdesk(false)}
-            onNoPortal={(reason) => {
-              setShowHelpdesk(false);
-              setGuidesFailed(reason ?? null);
-              setShowAskForHelp(true);
-            }}
-          />
-          {showAskForHelp && (
-            <AskForHelpDialog
-              open={showAskForHelp}
-              onOpenChange={setShowAskForHelp}
-              projectId={project?.id ?? null}
-              origin={guidesFailed ? 'load_failure' : 'footer'}
-              note={guidesFailed ? t`The guides couldn't load (${guidesFailed}) — a person can still help.` : null}
-            />
-          )}
-        </>
-      )}
     </footer>
   );
 }

@@ -84,6 +84,7 @@ _META_TYPES = frozenset(
         "api-request",
         "api-request-blob",
         "api-request-shape",
+        "session-owner",  # Claude 2.1.318+: written after last-prompt
     }
 )
 

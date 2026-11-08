@@ -1,4 +1,4 @@
-import { VFSPath } from '@sdk';
+import { TypeId, VFSPath } from '@sdk';
 import { useFS } from '@src/hooks/useFS';
 import { useProject } from '@src/hooks/useProject';
 
@@ -10,7 +10,12 @@ import { useProject } from '@src/hooks/useProject';
  * inline byte viewers (MediaViewer, PdfViewer). Returns `url: null` when no fs is
  * resolvable, so callers can render a "cannot resolve source" fallback.
  */
-export function useDownloadUrl(path: string): { url: string | null; subPath: string; revision: number } {
+export function useDownloadUrl(path: string): {
+  url: string | null;
+  subPath: string;
+  revision: number;
+  typeId: TypeId | undefined;
+} {
   const { project } = useProject();
   const parsed = VFSPath.parse(path);
   const typeId = parsed.typeId ?? project?.typeId;
@@ -20,5 +25,6 @@ export function useDownloadUrl(path: string): { url: string | null; subPath: str
     url: fs ? fs.getDownloadUrl(subPath) : null,
     subPath,
     revision: fs?.revision(subPath) ?? 0,
+    typeId,
   };
 }

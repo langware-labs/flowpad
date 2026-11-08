@@ -49,8 +49,28 @@ def main() -> None:
 
         state = {"status": 200, "invoked": [], "answers": {}}
         _call, _send = seams(state)
-        HubProxy.call = HubProxy.try_call = staticmethod(_call)
-        HubProxy.send = staticmethod(_send)
+        original_call, original_try_call, original_send = HubProxy.call, HubProxy.try_call, HubProxy.send
+
+        async def decision_call(method, entity_type, *args, **kwargs):
+            if str(entity_type) == "api_endpoint":
+                return await _call(method, entity_type, *args, **kwargs)
+            return await original_call(method, entity_type, *args, **kwargs)
+
+        async def decision_try_call(method, entity_type, *args, **kwargs):
+            if str(entity_type) == "api_endpoint":
+                return await _call(method, entity_type, *args, **kwargs)
+            return await original_try_call(method, entity_type, *args, **kwargs)
+
+        async def decision_send(method, url, **kwargs):
+            if "/api_endpoint/" in str(url) and "/invoke/" in str(url):
+                return await _send(method, url, **kwargs)
+            return await original_send(method, url, **kwargs)
+
+        # Only the Decision API is doubled. Memberships, subscription status and
+        # other normal app traffic keep their real local-hub response contracts.
+        HubProxy.call = staticmethod(decision_call)
+        HubProxy.try_call = staticmethod(decision_try_call)
+        HubProxy.send = staticmethod(decision_send)
         print("[mock-decision] the Decision API answers from the double (yes 0.9, first option, mid score)", flush=True)
     run.main()
 

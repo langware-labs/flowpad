@@ -82,9 +82,6 @@ class VersionCheckResponse(BaseModel):
     #: ``pypi``: it holds whether or not the PyPI fetch succeeded, and says
     #: nothing about the registry. ``None`` for a source checkout.
     installed_at: Optional[str] = None
-    #: The flow SDK version this server process runs. A page loaded before a restart onto another
-    #: version still shows the old one; this is how it learns it is stale.
-    running_version: str = __version__
 
 
 class InstallVersionRequest(BaseModel):

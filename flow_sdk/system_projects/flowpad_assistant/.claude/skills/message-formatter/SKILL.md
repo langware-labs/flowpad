@@ -7,7 +7,8 @@ description: >-
   before every `flow conversation send/new/reply` and every channel send whose wording is
   yours: one line saying what they need to do, decide or know; a short summary only when
   needed; then just the details they need to act. Drops filler, never repeats the
-  conversation title, and renders the right markup for the channel.
+  conversation title, puts bounded questions in a one-Submit form (`--form`) with defaults, and
+  renders the right markup for the channel.
 ---
 
 # Message formatter
@@ -65,6 +66,44 @@ The "no emoji decoration" rule still holds; this one earned mark is the only exc
 - Text the user dictated word for word goes out as written. You may format around it, never
   rewrite it.
 - Never invent a fact, deadline or option to fill a section. Missing → leave the section out.
+- A prompt the receiver should run is not wording: send it in its own field (`--prompt`),
+  never as a code block in the text. The text just says what it does.
+- Questions with bounded answers are not wording either: they go in a form (`--form`, below).
+
+## Questions → a form (Flowpad messages)
+
+When you ask the receiver anything with a bounded answer — pick, number, date, yes/no, a value you can
+guess — send ONE form with the message (`--form`), not questions in the text. They answer in place and
+one **Submit** sends the answers back as a reply you read typed (`flow conversation show`: `✅ answers …`).
+
+- The text is the one-liner (why you ask). Never repeat the questions in it.
+- **Default every field you can infer** — from the conversation, their profile, the obvious choice. Leave
+  `default` out ONLY when you truly can't tell; that field must be filled, so it is the decision you need.
+- Most info per token and per click: short labels (≤3 words); prefer `one`/`buttons`/`yesno` over
+  `text`; no `hint` unless the label is ambiguous; ≤7 fields; drop what you can decide yourself.
+- `optional: true` only for extras (a note, a screenshot).
+- Act on the LATEST answers — the receiver may change them; a change arrives as a new reply.
+- WhatsApp, Telegram, Slack, email: no forms there — ask in the text as today.
+
+| type | use for | value |
+|---|---|---|
+| `text` / `long_text` | a short / long free answer | string |
+| `number` (`min`, `max`) | a count or amount | number |
+| `date` | a day | `YYYY-MM-DD` |
+| `yesno` | a yes/no decision | `true`/`false` |
+| `one` / `buttons` / `select` | pick one (`options`); buttons for 2–4 quick picks, select for many | an option |
+| `many` | pick several (`options`) | list of options |
+| `file` | a screenshot or file they attach | file name (the file rides on the reply) |
+
+```bash
+flow conversation send <id> "Local deployment is up — a few answers before I switch it to cloudtest." \
+  --form '{"title": "Before the switch", "fields": [
+    {"id": "tenant", "label": "Tenant", "type": "one", "options": ["cloudtest", "local"], "default": "cloudtest"},
+    {"id": "homes", "label": "Test homes", "type": "number", "min": 0, "max": 20, "default": 5},
+    {"id": "on", "label": "Switch on", "type": "date"},
+    {"id": "qa", "label": "Run QA after", "type": "yesno", "default": true},
+    {"id": "shot", "label": "Screenshot", "type": "file", "optional": true}]}'
+```
 
 ## Markup per channel
 
@@ -93,8 +132,9 @@ Both pass the brand check; A is the one marketing prefers.
 
 - A: https://example.com/logo-a
 - B: https://example.com/logo-b
-- Reply "A" or "B" here.
 ```
+
+with `--form '{"title": "Logo", "fields": [{"id": "logo", "label": "Logo", "type": "buttons", "options": ["A", "B"], "default": "A"}]}'`
 
 Not: "Need your help with something" or "Logo pick: I need you to pick a logo".
 

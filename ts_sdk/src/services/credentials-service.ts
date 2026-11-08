@@ -365,9 +365,15 @@ export class CredentialsService {
     name: string,
     values: Record<string, string>,
     projectId: string | null = null,
+    deploymentId: string | null = null,
   ): Promise<CredentialSaved> {
     const action = this.action('set', 'POST');
-    action.bodyParameters = projectId ? { name, values, project_id: projectId } : { name, values };
+    action.bodyParameters = {
+      name,
+      values,
+      ...(projectId ? { project_id: projectId } : {}),
+      ...(deploymentId ? { deployment_id: deploymentId } : {}),
+    };
     return dataManager.callAction<unknown, CredentialSaved>(action);
   }
 

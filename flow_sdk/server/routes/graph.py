@@ -129,6 +129,19 @@ async def get_by_id(target: TypeId) -> Tuple[Type[Entity], Entity]:
     return entity_model, entity
 
 
+def _unknown_segment(request_info) -> str | None:
+    """The path segment after the target that names no action or type, if any."""
+    from flow_sdk.api.api_request import APIRequest  # noqa: PLC0415
+
+    raw = getattr(request_info, "raw_api_path", None)
+    if not raw:
+        return None
+    try:
+        return APIRequest.from_api_path(raw).unknown_segment
+    except Exception:  # noqa: BLE001 — the middleware already parsed this path; nothing new to report
+        return None
+
+
 async def handle_request(
     request: Request, response: Response | None = None, background_tasks: BackgroundTasks | None = None
 ) -> ApiResponse | Response:
@@ -142,6 +155,12 @@ async def handle_request(
     if request_info.action.lower() == "resetAvailableOnlyForLocalUserOnTesting".lower():
         return await handle_reset_action(request)
 
+    # The parser leaves a segment it does not know (``deployment/<id>/funding`` before the desktop
+    # declared ``funding``) so the hub routing can still forward it; answered HERE it would fall back
+    # to the method's implicit action and return the bare entity with a 200.
+    unknown = _unknown_segment(request_info)
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown action: {unknown}")
     a = action.get_by_name(request_info.action, request_info.resource_type)
     if not a:
         raise HTTPException(status_code=400, detail=f"Unknown action: {request_info.action}")

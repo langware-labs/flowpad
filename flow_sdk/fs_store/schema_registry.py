@@ -246,6 +246,9 @@ class TypeInfo:
     # True ⇒ entity saves re-render the backing file from default_body_fn on
     # EVERY store() (entity is the file's sole editor), not just on create.
     owns_main_ref: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
+    # True ⇒ deleting an entity of this type deletes its asset folder, as an
+    # ``owns_main_ref`` type's does, without that flag's save-time re-render.
+    deletes_files: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
     # True ⇒ sharing an entity of this type also shares its parent
     # (``parent_type_id``); the receive path materializes the parent first via
     # ``Entity.materialize_share_parent``. Runtime-only; not part of the

@@ -76,9 +76,10 @@ test.beforeAll(async ({ browser }) => {
   );
   ids.agent = String(agent.id);
   const planned = ok(
-    await api(page, 'POST', `/api/v1/graph/agent/${ids.agent}/plan_deployment`, {
+    await api(page, 'POST', `/api/v1/graph/project/${String(agent.project_id)}/plan_deployment`, {
       provider: 'e2b',
       environment: 'production',
+      main_agent_id: `agent-${ids.agent}`,
     }),
   );
   ids.deployment = String((planned.deployment as Record<string, unknown>).id);
@@ -109,7 +110,7 @@ test('a user moves a deployment onto an lg sub-budget of their own allowance, fr
 
   // Its page: the funding card, then Change allocation → my allowance, lg, $5/day → Save.
   await row.click();
-  await page.waitForURL(/\/child\/deployment\//);
+  await page.waitForURL(/\/project-deployments\?deployment=/);
   await page.waitForLoadState('networkidle');
   const card = page.getByTestId('deployment-funding');
   await expect(card).toBeVisible();

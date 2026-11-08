@@ -230,6 +230,10 @@ class EmailMessageData(MessageData):
     spec_kind: ClassVar[str] = "ingest.message.email"
 
     subject: Optional[str] = None
+    #: Who else it goes to, openly. ``recipients`` stay the To line.
+    cc: tuple[UserProfile, ...] = ()
+    #: The HTML body, beside ``text`` (the plain one, for clients that show no HTML).
+    html: Optional[str] = None
 
     @property
     def item_title(self) -> str:

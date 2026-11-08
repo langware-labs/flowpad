@@ -177,8 +177,9 @@ async def _mini_trigger():
         for legacy_name in ("Mini analyzer (manual)", MINI_TRIGGER_SPEC["name"]):
             existing = await Trigger.get_one({"name": legacy_name})
             if existing is not None and not existing.uname:
-                # Seeded on before anyone could choose; it starts off like a new one.
-                existing.uname, existing.enabled = uname, False
+                # Seeded on before anyone could choose; it starts off like a new one — the upsert
+                # below applies the spec's ``enabled: False`` through the sanctioned setter.
+                existing.uname = uname
                 break
             existing = None
     await _upsert_one(MINI_TRIGGER_SPEC, existing=existing)

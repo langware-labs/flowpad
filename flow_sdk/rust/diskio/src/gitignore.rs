@@ -1,327 +1,374 @@
-//! One `.gitignore` file as a matcher — a port of what the Python walk uses:
-//! `pathspec.GitIgnoreSpec` (1.1, "simple" backend).
+//! One ignore file (`.gitignore` or `.flowignore`), matched the way git matches
+//! it — the same port as `flow_sdk/fs_store/ignore_rules.py`, line for line.
 //!
-//! The port is line for line, not "a gitignore matcher": the walk's oracle is
-//! `GitIgnoreSpec.match_file`, whose answers differ from git's own and from
-//! other gitignore libraries in ways a tree walk can see. `build/**` matches
-//! the directory `build/` itself here (the regex is `^build/`), so the walk
-//! drops that directory instead of yielding it empty.
-//!
-//! * `parse_line` is `GitIgnoreSpecPattern.pattern_to_regex`: the same segment
-//!   normalisation, the same regex text (written in this crate's regex dialect),
-//!   the same three outcomes — a pattern, a no-op, or an unparseable line.
-//! * `Spec::match_file` is `SimpleGiBackend.match_file` over reversed patterns:
-//!   the last pattern matching the path ITSELF wins; failing that, the last
-//!   pattern matching through a directory marker.
+//! git's `wildmatch.c` (`dowild`) and the pattern rules of `dir.c`
+//! (`add_patterns_from_buffer`, `trim_trailing_spaces`, `parse_path_pattern`,
+//! `match_basename`, `match_pathname`, `last_matching_pattern_from_list`).
+//! Matching is on bytes and case-sensitive (git with `core.ignorecase=false`).
+//! The oracle is git itself: `tests/unit/diskio/test_ignore_files.py`.
 
-use std::cell::OnceCell;
+use std::fs;
+use std::path::Path;
 
-use regex::{Regex, RegexSet};
+pub const GITIGNORE: &str = ".gitignore";
+pub const FLOWIGNORE: &str = ".flowignore";
 
-/// The capture group a directory-marker match sets (`pathspec`'s `_DIR_MARK`).
-const DIR_MARK: &str = "ps_d";
-const DIR_MARK_CG: &str = "(?P<ps_d>/)";
-/// `(?:(?P<ps_d>/)|$)` — Python's `$` also matches before one final newline.
-const DIR_MARK_OPT: &str = "(?:(?P<ps_d>/)|\\n?\\z)";
+const MATCH: i32 = 0;
+const NOMATCH: i32 = 1;
+const ABORT_ALL: i32 = -1;
+const ABORT_TO_STARSTAR: i32 = -2;
 
-/// What one line of a `.gitignore` is.
-#[derive(Debug, PartialEq)]
-pub enum Line {
-    /// Blank, a comment, `/`, or a bracket with no closing `]` — matches nothing.
-    NoOp,
-    /// A pattern: its regex and whether a match ignores (`true`) or re-includes.
-    Pattern { regex: String, ignore: bool },
-    /// A line pathspec cannot parse (`a\`, a bare `!`) — dropped, as git does.
-    Unparseable,
+const NEGATIVE: u8 = 1;
+const MUSTBEDIR: u8 = 2;
+const NODIR: u8 = 4;
+const ENDSWITH: u8 = 8;
+
+fn glob_special(c: u8) -> bool {
+    matches!(c, b'*' | b'?' | b'[' | b'\\')
 }
 
-/// The characters `str.isspace()` is true for — `str.rstrip()` strips these.
-fn py_space(c: char) -> bool {
-    matches!(c as u32,
-        0x09..=0x0d | 0x1c..=0x20 | 0x85 | 0xa0 | 0x1680 | 0x2000..=0x200a
-        | 0x2028 | 0x2029 | 0x202f | 0x205f | 0x3000)
-}
-
-/// The boundaries `str.splitlines()` splits on.
-fn py_line_break(c: char) -> bool {
-    matches!(c as u32, 0x0a..=0x0d | 0x1c..=0x1e | 0x85 | 0x2028 | 0x2029)
-}
-
-fn literal(c: char, out: &mut String) {
-    let mut buf = [0u8; 4];
-    out.push_str(&regex::escape(c.encode_utf8(&mut buf)));
-}
-
-/// A glob bracket expression as Python's `re` reads it: literals and ranges,
-/// nothing else (a backslash is a literal, there are no POSIX classes).
-/// `None` when `re.compile` would refuse it (a reversed range).
-fn bracket(negated: bool, content: &[char]) -> Option<String> {
-    let mut out = String::from(if negated { "[^" } else { "[" });
-    let hex = |c: char| format!("\\x{{{:x}}}", c as u32);
-    let mut k = 0;
-    while k < content.len() {
-        let lo = content[k];
-        k += 1;
-        if k < content.len() && content[k] == '-' {
-            if k + 1 == content.len() {
-                out.push_str(&hex(lo));
-                out.push_str(&hex('-'));
-                break;
-            }
-            let hi = content[k + 1];
-            k += 2;
-            if hi < lo {
-                return None;
-            }
-            out.push_str(&hex(lo));
-            out.push('-');
-            out.push_str(&hex(hi));
-        } else {
-            out.push_str(&hex(lo));
-        }
-    }
-    out.push(']');
-    Some(out)
-}
-
-enum GlobError {
-    /// No closing bracket: git discards the pattern (a no-op).
-    Range,
-    /// A trailing escape, or a class `re` cannot compile.
-    Invalid,
-}
-
-/// `_GitIgnoreBasePattern._translate_segment_glob(pattern, 'raise')`.
-fn translate_segment_glob(seg: &[char]) -> Result<String, GlobError> {
-    let mut escape = false;
-    let mut regex = String::new();
-    let (mut i, end) = (0, seg.len());
-    while i < end {
-        let ch = seg[i];
-        i += 1;
-        if escape {
-            escape = false;
-            literal(ch, &mut regex);
-        } else if ch == '\\' {
-            escape = true;
-        } else if ch == '*' {
-            regex.push_str("[^/]*");
-        } else if ch == '?' {
-            regex.push_str("[^/]");
-        } else if ch == '[' {
-            let mut j = i;
-            if j < end && (seg[j] == '!' || seg[j] == '^') {
-                j += 1;
-            }
-            if j < end && seg[j] == ']' {
-                j += 1;
-            }
-            while j < end && seg[j] != ']' {
-                j += 1;
-            }
-            if j >= end {
-                return Err(GlobError::Range);
-            }
-            let negated = seg[i] == '!' || seg[i] == '^';
-            if negated {
-                i += 1;
-            }
-            regex.push_str(&bracket(negated, &seg[i..j]).ok_or(GlobError::Invalid)?);
-            i = j + 1;
-        } else {
-            literal(ch, &mut regex);
-        }
-    }
-    if escape {
-        return Err(GlobError::Invalid);
-    }
-    Ok(regex)
-}
-
-enum Normalized {
-    Segments(Vec<Vec<char>>),
-    Override(&'static str),
-}
-
-fn is_star2(seg: &[char]) -> bool {
-    seg == ['*', '*']
-}
-
-/// `GitIgnoreSpecPattern.__normalize_segments`; `None` = "normalized to nothing".
-fn normalize_segments(is_dir_pattern: bool, mut segs: Vec<Vec<char>>) -> Option<Normalized> {
-    if segs[0].is_empty() {
-        segs.remove(0);
-    } else if (segs.len() == 1 || (segs.len() == 2 && segs[1].is_empty())) && !is_star2(&segs[0]) {
-        segs.insert(0, vec!['*', '*']);
-    }
-    if segs.is_empty() {
-        return None;
-    }
-    if segs.last().is_some_and(|s| s.is_empty()) {
-        *segs.last_mut().unwrap() = vec!['*', '*'];
-    }
-    for i in (1..segs.len()).rev() {
-        if is_star2(&segs[i - 1]) && is_star2(&segs[i]) {
-            segs.remove(i);
-        }
-    }
-    let star = |s: &Vec<char>| s.as_slice() == ['*'];
-    Some(match segs.as_slice() {
-        [a] if is_star2(a) => Normalized::Override(if is_dir_pattern { DIR_MARK_CG } else { "." }),
-        [a, b] if is_star2(a) && star(b) => Normalized::Override("."),
-        [a, b, c] if is_star2(a) && star(b) && is_star2(c) => {
-            Normalized::Override(if is_dir_pattern { DIR_MARK_CG } else { "/" })
-        }
-        _ => Normalized::Segments(segs),
+/// The `[:class:]` names wildmatch knows, over git's ASCII-only ctype (its
+/// `isspace` has no `\v` or `\f`). `None` for a name it does not know.
+fn class_matches(name: &[u8], c: u8) -> Option<bool> {
+    Some(match name {
+        b"alnum" => c.is_ascii_alphanumeric(),
+        b"alpha" => c.is_ascii_alphabetic(),
+        b"blank" => c == b' ' || c == b'\t',
+        b"cntrl" => c < 32 || c == 127,
+        b"digit" => c.is_ascii_digit(),
+        b"graph" => (33..=126).contains(&c),
+        b"lower" => c.is_ascii_lowercase(),
+        b"print" => (32..=126).contains(&c),
+        b"punct" => c.is_ascii_punctuation(),
+        b"space" => matches!(c, b'\t' | b'\n' | b'\r' | b' '),
+        b"upper" => c.is_ascii_uppercase(),
+        b"xdigit" => c.is_ascii_hexdigit(),
+        _ => return None,
     })
 }
 
-/// `GitIgnoreSpecPattern.__translate_segments`.
-fn translate_segments(is_dir_pattern: bool, segs: &[Vec<char>]) -> Result<String, GlobError> {
-    let mut out = String::new();
-    let mut need_slash = false;
-    let end = segs.len() - 1;
-    for (i, seg) in segs.iter().enumerate() {
-        if is_star2(seg) {
-            if i == 0 {
-                out.push_str("^(?:.+/)?");
-            } else if i < end {
-                out.push_str("(?:/.+)?");
-                need_slash = true;
-            } else {
-                out.push_str(if is_dir_pattern { DIR_MARK_CG } else { "/" });
+/// `wildmatch.c`'s `dowild`, index for pointer.
+fn dowild(p: &[u8], mut pi: usize, t: &[u8], mut ti: usize, pathname: bool) -> i32 {
+    let at = |s: &[u8], i: usize| s.get(i).copied().unwrap_or(0);
+    while pi < p.len() {
+        let mut p_ch = p[pi];
+        let mut t_ch = at(t, ti);
+        if ti >= t.len() && p_ch != b'*' {
+            return ABORT_ALL;
+        }
+        match p_ch {
+            b'\\' => {
+                pi += 1;
+                p_ch = at(p, pi);
+                if t_ch != p_ch {
+                    return NOMATCH;
+                }
             }
-            continue;
-        }
-        if i == 0 {
-            out.push('^');
-        }
-        if need_slash {
-            out.push('/');
-        }
-        if seg.as_slice() == ['*'] {
-            out.push_str("[^/]+");
-        } else {
-            out.push_str(&translate_segment_glob(seg)?);
-        }
-        if i == end {
-            out.push_str(DIR_MARK_OPT);
-        }
-        need_slash = true;
-    }
-    Ok(out)
-}
-
-/// `GitIgnoreSpecPattern.pattern_to_regex` for one line.
-pub fn parse_line(line: &str) -> Line {
-    let mut pattern: &str = if line.ends_with("\\ ") { line } else { line.trim_end_matches(py_space) };
-    if pattern.is_empty() || pattern.starts_with('#') || pattern == "/" {
-        return Line::NoOp;
-    }
-    let ignore = !pattern.starts_with('!');
-    if !ignore {
-        pattern = &pattern[1..];
-    }
-    let segs: Vec<Vec<char>> = pattern.split('/').map(|s| s.chars().collect()).collect();
-    let is_dir_pattern = segs.last().is_some_and(|s| s.is_empty());
-    let regex = match normalize_segments(is_dir_pattern, segs) {
-        None => return Line::Unparseable,
-        Some(Normalized::Override(regex)) => regex.to_string(),
-        Some(Normalized::Segments(segs)) => match translate_segments(is_dir_pattern, &segs) {
-            Ok(regex) => regex,
-            Err(GlobError::Range) => return Line::NoOp,
-            Err(GlobError::Invalid) => return Line::Unparseable,
-        },
-    };
-    Line::Pattern { regex, ignore }
-}
-
-/// One pattern of a file: compiled on its own only when a path matches it and
-/// the directory-marker question has to be asked.
-struct Pattern {
-    source: String,
-    ignore: bool,
-    regex: OnceCell<Option<Regex>>,
-}
-
-impl Pattern {
-    /// Did `path` match through the directory marker (`foo/` matching `foo/bar`)?
-    fn through_dir_mark(&self, path: &str) -> bool {
-        self.regex
-            .get_or_init(|| Regex::new(&self.source).ok())
-            .as_ref()
-            .and_then(|regex| regex.captures(path))
-            .is_some_and(|captures| captures.name(DIR_MARK).is_some())
-    }
-}
-
-/// One `.gitignore` file, compiled.
-pub struct Spec {
-    /// Every pattern at once: most paths match none, and that is one pass.
-    set: RegexSet,
-    /// The same patterns, in file order.
-    patterns: Vec<Pattern>,
-}
-
-impl Spec {
-    /// Compile the text of a `.gitignore`. A line that cannot be parsed is
-    /// dropped and the rest of the file applies (diskio.md §1 step 0).
-    pub fn from_text(text: &str) -> Spec {
-        let mut patterns: Vec<Pattern> = Vec::new();
-        for line in text.split(py_line_break) {
-            match parse_line(line) {
-                Line::NoOp => {}
-                Line::Unparseable => eprintln!("flowpad-diskio-scan: dropped unparseable .gitignore line {line:?}"),
-                Line::Pattern { regex, ignore } => patterns.push(Pattern { source: regex, ignore, regex: OnceCell::new() }),
+            b'?' => {
+                if pathname && t_ch == b'/' {
+                    return NOMATCH;
+                }
             }
-        }
-        let compile = |patterns: &[Pattern]| RegexSet::new(patterns.iter().map(|p| p.source.as_str()));
-        let set = match compile(&patterns) {
-            Ok(set) => set,
-            Err(_) => {
-                // One pattern this regex dialect refuses: find it, drop it, keep the rest.
-                patterns.retain(|pattern| {
-                    let ok = Regex::new(&pattern.source).is_ok();
-                    if !ok {
-                        eprintln!("flowpad-diskio-scan: dropped .gitignore pattern {:?}", pattern.source);
+            b'*' => {
+                pi += 1;
+                let match_slash;
+                if at(p, pi) == b'*' {
+                    let prev = pi.checked_sub(2);
+                    while at(p, pi) == b'*' {
+                        pi += 1;
                     }
-                    ok
-                });
-                compile(&patterns).unwrap_or_else(|_| RegexSet::empty())
+                    let next = at(p, pi);
+                    if prev.is_none_or(|i| p[i] == b'/')
+                        && (next == 0 || next == b'/' || (next == b'\\' && at(p, pi + 1) == b'/'))
+                    {
+                        // "foo/**/bar" matches "foo/bar": try "**/" as nothing first.
+                        if next == b'/' && dowild(p, pi + 1, t, ti, pathname) == MATCH {
+                            return MATCH;
+                        }
+                        match_slash = true;
+                    } else {
+                        match_slash = false;
+                    }
+                } else {
+                    match_slash = !pathname;
+                }
+                if pi >= p.len() {
+                    // A trailing "**" matches everything; a trailing "*" only what has no more slashes.
+                    if !match_slash && t[ti..].contains(&b'/') {
+                        return NOMATCH;
+                    }
+                    return MATCH;
+                }
+                if !match_slash && p[pi] == b'/' {
+                    // One star then a slash: the rest of this directory name, then that slash.
+                    let Some(slash) = t[ti..].iter().position(|&c| c == b'/') else { return NOMATCH };
+                    pi += 1;
+                    ti += slash + 1;
+                    continue;
+                }
+                loop {
+                    if t_ch == 0 {
+                        break;
+                    }
+                    if !glob_special(p[pi]) {
+                        // A literal follows the star: skip straight to its next occurrence.
+                        p_ch = p[pi];
+                        t_ch = 0;
+                        while ti < t.len() {
+                            t_ch = t[ti];
+                            if (!match_slash && t_ch == b'/') || t_ch == p_ch {
+                                break;
+                            }
+                            ti += 1;
+                            t_ch = 0;
+                        }
+                        if t_ch != p_ch {
+                            return if match_slash { ABORT_ALL } else { ABORT_TO_STARSTAR };
+                        }
+                    }
+                    let matched = dowild(p, pi, t, ti, pathname);
+                    if matched != NOMATCH {
+                        if !match_slash || matched != ABORT_TO_STARSTAR {
+                            return matched;
+                        }
+                    } else if !match_slash && t_ch == b'/' {
+                        return ABORT_TO_STARSTAR;
+                    }
+                    ti += 1;
+                    t_ch = at(t, ti);
+                }
+                return ABORT_ALL;
             }
-        };
-        Spec { set, patterns }
+            b'[' => {
+                pi += 1;
+                p_ch = at(p, pi);
+                if p_ch == b'^' {
+                    p_ch = b'!';
+                }
+                let negated = p_ch == b'!';
+                if negated {
+                    pi += 1;
+                    p_ch = at(p, pi);
+                }
+                let mut prev_ch = 0u8;
+                let mut matched = false;
+                loop {
+                    if p_ch == 0 {
+                        return ABORT_ALL;
+                    }
+                    if p_ch == b'\\' {
+                        pi += 1;
+                        p_ch = at(p, pi);
+                        if p_ch == 0 {
+                            return ABORT_ALL;
+                        }
+                        if t_ch == p_ch {
+                            matched = true;
+                        }
+                    } else if p_ch == b'-' && prev_ch != 0 && pi + 1 < p.len() && p[pi + 1] != b']' {
+                        pi += 1;
+                        p_ch = p[pi];
+                        if p_ch == b'\\' {
+                            pi += 1;
+                            p_ch = at(p, pi);
+                            if p_ch == 0 {
+                                return ABORT_ALL;
+                            }
+                        }
+                        if prev_ch <= t_ch && t_ch <= p_ch {
+                            matched = true;
+                        }
+                        p_ch = 0; // so the next prev_ch is 0: a range never starts a range
+                    } else if p_ch == b'[' && at(p, pi + 1) == b':' {
+                        pi += 2;
+                        let start = pi;
+                        while pi < p.len() && p[pi] != b']' {
+                            pi += 1;
+                        }
+                        if pi >= p.len() {
+                            return ABORT_ALL;
+                        }
+                        if pi < start + 1 || p[pi - 1] != b':' {
+                            // No ":]": the "[" is an ordinary member of the set.
+                            pi = start - 2;
+                            p_ch = b'[';
+                            if t_ch == p_ch {
+                                matched = true;
+                            }
+                        } else {
+                            match class_matches(&p[start..pi - 1], t_ch) {
+                                None => return ABORT_ALL,
+                                Some(true) => matched = true,
+                                Some(false) => {}
+                            }
+                            p_ch = 0;
+                        }
+                    } else if t_ch == p_ch {
+                        matched = true;
+                    }
+                    prev_ch = p_ch;
+                    pi += 1;
+                    p_ch = at(p, pi);
+                    if p_ch == b']' {
+                        break;
+                    }
+                }
+                if matched == negated || (pathname && t_ch == b'/') {
+                    return NOMATCH;
+                }
+            }
+            _ => {
+                if t_ch != p_ch {
+                    return NOMATCH;
+                }
+            }
+        }
+        pi += 1;
+        ti += 1;
+    }
+    if ti < t.len() { NOMATCH } else { MATCH }
+}
+
+/// git's `wildmatch(pattern, text, pathname ? WM_PATHNAME : 0) == WM_MATCH`.
+pub fn wildmatch(pattern: &[u8], text: &[u8], pathname: bool) -> bool {
+    dowild(pattern, 0, text, 0, pathname) == MATCH
+}
+
+fn simple_length(p: &[u8]) -> usize {
+    p.iter().position(|&c| glob_special(c)).unwrap_or(p.len())
+}
+
+/// Drop trailing spaces unless the first of them is escaped (`\ `).
+fn trim_trailing_spaces(line: &[u8]) -> &[u8] {
+    let mut last_space: Option<usize> = None;
+    let mut i = 0;
+    while i < line.len() {
+        match line[i] {
+            b' ' => {
+                if last_space.is_none() {
+                    last_space = Some(i);
+                }
+            }
+            b'\\' => {
+                i += 1;
+                if i >= line.len() {
+                    return line;
+                }
+                last_space = None;
+            }
+            _ => last_space = None,
+        }
+        i += 1;
+    }
+    &line[..last_space.unwrap_or(line.len())]
+}
+
+struct Rule {
+    pattern: Vec<u8>,
+    flags: u8,
+    prefix: usize,
+}
+
+impl Rule {
+    fn new(mut line: &[u8]) -> Rule {
+        let mut flags = 0;
+        if line.first() == Some(&b'!') {
+            flags |= NEGATIVE;
+            line = &line[1..];
+        }
+        let mut len = line.len();
+        if len > 0 && line[len - 1] == b'/' {
+            len -= 1;
+            flags |= MUSTBEDIR;
+        }
+        if !line[..len].contains(&b'/') {
+            flags |= NODIR;
+        }
+        if line.first() == Some(&b'*') && simple_length(&line[1..]) == line.len() - 1 {
+            flags |= ENDSWITH;
+        }
+        Rule { pattern: line[..len].to_vec(), flags, prefix: simple_length(line).min(len) }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.patterns.is_empty()
+    fn matches(&self, rel: &[u8], basename: &[u8]) -> bool {
+        let (mut pattern, mut prefix) = (self.pattern.as_slice(), self.prefix);
+        if self.flags & NODIR != 0 {
+            // match_basename
+            if prefix == pattern.len() {
+                return pattern == basename;
+            }
+            if self.flags & ENDSWITH != 0 {
+                return pattern.len() - 1 <= basename.len() && basename.ends_with(&pattern[1..]);
+            }
+            return wildmatch(pattern, basename, false);
+        }
+        // match_pathname, relative to the file's own folder. The literal prefix is only a
+        // shortcut: the whole pattern is matched, so a "**" right after it ("ab**/c") stays
+        // an ordinary star, as git has it.
+        if pattern.first() == Some(&b'/') {
+            pattern = &pattern[1..];
+            prefix = prefix.saturating_sub(1);
+        }
+        if rel.is_empty() || (prefix > 0 && rel.get(..prefix) != Some(&pattern[..prefix])) {
+            return false;
+        }
+        wildmatch(pattern, rel, true)
+    }
+}
+
+/// The rules of one ignore file, in file order.
+pub struct IgnoreFile {
+    rules: Vec<Rule>,
+}
+
+impl IgnoreFile {
+    /// `add_patterns_from_buffer`: a BOM dropped, blank and `#` lines skipped, one
+    /// `\r` and the unescaped trailing spaces cut from each line.
+    pub fn parse(mut data: &[u8]) -> IgnoreFile {
+        if data.starts_with(b"\xef\xbb\xbf") {
+            data = &data[3..];
+        }
+        let mut lines: Vec<&[u8]> = data.split(|&c| c == b'\n').collect();
+        if lines.last().is_some_and(|l| l.is_empty()) {
+            lines.pop();
+        }
+        let mut rules = Vec::new();
+        for mut line in lines {
+            if line.is_empty() || line[0] == b'#' {
+                continue;
+            }
+            if line.last() == Some(&b'\r') {
+                line = &line[..line.len() - 1];
+            }
+            rules.push(Rule::new(trim_trailing_spaces(line)));
+        }
+        IgnoreFile { rules }
     }
 
-    /// `GitIgnoreSpec.match_file(path)`: does this file's last word on `path` ignore it?
-    pub fn match_file(&self, path: &str) -> bool {
-        if self.patterns.is_empty() {
-            return false;
+    /// Stands in for the rules of a folder that is itself excluded: nothing under it survives.
+    pub fn exclude_all() -> IgnoreFile {
+        IgnoreFile::parse(b"*")
+    }
+
+    /// `dir/name` parsed, or `None` when it is absent, unreadable or not a regular
+    /// file — git does not follow an in-tree ignore file that is a symlink.
+    pub fn read(dir: &Path, name: &str) -> Option<IgnoreFile> {
+        let path = dir.join(name);
+        if !fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_file()) {
+            return None;
         }
-        let matched = self.set.matches(path);
-        if !matched.matched_any() {
-            return false;
-        }
-        let mut hits: Vec<usize> = matched.iter().collect();
-        hits.reverse();
-        let mut verdict = false;
-        let mut priority = 0;
-        for index in hits {
-            let pattern = &self.patterns[index];
-            let this = if pattern.through_dir_mark(path) { 1 } else { 2 };
-            if this > priority {
-                verdict = pattern.ignore;
-                priority = this;
-            }
-            if this == 2 {
-                break;
-            }
-        }
-        verdict
+        fs::read(&path).ok().map(|bytes| IgnoreFile::parse(&bytes))
+    }
+
+    /// git's word on `rel` (`/`-separated, relative to this file's folder): `Some(true)`
+    /// ignored, `Some(false)` re-included by a `!` line, `None` when no line matches.
+    pub fn decide(&self, rel: &[u8], is_dir: bool) -> Option<bool> {
+        let basename = &rel[rel.iter().rposition(|&c| c == b'/').map_or(0, |i| i + 1)..];
+        self.rules
+            .iter()
+            .rev()
+            .find(|rule| (is_dir || rule.flags & MUSTBEDIR == 0) && rule.matches(rel, basename))
+            .map(|rule| rule.flags & NEGATIVE == 0)
     }
 }
 
@@ -329,86 +376,55 @@ impl Spec {
 mod tests {
     use super::*;
 
-    fn spec(lines: &[&str]) -> Spec {
-        Spec::from_text(&lines.join("\n"))
+    fn file(lines: &[&str]) -> IgnoreFile {
+        IgnoreFile::parse(lines.join("\n").as_bytes())
     }
 
     #[test]
-    fn the_three_outcomes_of_a_line() {
-        for noop in ["", "   ", "# comment", "/", "a[b"] {
-            assert_eq!(parse_line(noop), Line::NoOp, "{noop:?}");
-        }
-        for bad in ["a\\", "!", "[z-a]"] {
-            assert_eq!(parse_line(bad), Line::Unparseable, "{bad:?}");
-        }
-        assert!(matches!(parse_line("!keep"), Line::Pattern { ignore: false, .. }));
-        assert!(matches!(parse_line("\\!literal"), Line::Pattern { ignore: true, .. }));
+    fn the_last_matching_line_decides_and_none_means_no_line_spoke() {
+        let f = file(&["*.md", "!keep.md"]);
+        assert_eq!(f.decide(b"a.md", false), Some(true));
+        assert_eq!(f.decide(b"sub/keep.md", false), Some(false));
+        assert_eq!(f.decide(b"a.txt", false), None);
     }
 
     #[test]
-    fn an_unparseable_line_is_dropped_and_the_rest_applies() {
-        let s = spec(&["*.log", "a\\", "!", "tmp/"]);
-        assert!(s.match_file("x.log"));
-        assert!(s.match_file("tmp/"));
-        assert!(!s.match_file("tmp"));
-        assert!(!s.match_file("a"));
+    fn a_trailing_slash_matches_only_a_directory_and_never_what_is_inside_it() {
+        let f = file(&["out/"]);
+        assert_eq!(f.decide(b"out", true), Some(true));
+        assert_eq!(f.decide(b"out", false), None);
+        assert_eq!(f.decide(b"out/a.md", false), None); // the walk never enters out/
     }
 
     #[test]
-    fn a_trailing_double_star_matches_the_directory_itself() {
-        // pathspec: `x.d/**` is `^x\.d/` — "x.d/" matches, "x.d" does not.
-        let s = spec(&["x.d/**"]);
-        assert!(s.match_file("x.d/"));
-        assert!(!s.match_file("x.d"));
-        assert!(s.match_file("x.d/inner.txt"));
+    fn anchoring_and_double_star() {
+        let f = file(&["/top", "a/**/b", "docs/*.tmp", "ab**/c"]);
+        assert_eq!(f.decide(b"top", false), Some(true));
+        assert_eq!(f.decide(b"sub/top", false), None);
+        assert_eq!(f.decide(b"a/b", false), Some(true));
+        assert_eq!(f.decide(b"a/x/y/b", false), Some(true));
+        assert_eq!(f.decide(b"docs/sub/x.tmp", false), None);
+        assert_eq!(f.decide(b"abq/c", false), Some(true));
+        assert_eq!(f.decide(b"ab/x/c", false), None); // "**" after a literal is one star
     }
 
     #[test]
-    fn the_last_pattern_matching_the_path_itself_wins() {
-        let s = spec(&["foo", "!foo/"]);
-        assert!(!s.match_file("foo/")); // re-included as a directory …
-        assert!(s.match_file("foo")); // … and still ignored as a bare name
-        let s = spec(&["*.md", "!keep.md"]);
-        assert!(s.match_file("a.md"));
-        assert!(!s.match_file("keep.md"));
-        assert!(!s.match_file("sub/keep.md"));
+    fn brackets_classes_and_escapes() {
+        let f = file(&["[!c]y", "[[:digit:]]*.dat", "q\\*", "sp\\ ", "trail   ", "\\#hash"]);
+        assert_eq!(f.decide(b"dy", false), Some(true));
+        assert_eq!(f.decide(b"cy", false), None);
+        assert_eq!(f.decide(b"1.dat", false), Some(true));
+        assert_eq!(f.decide(b"q*", false), Some(true));
+        assert_eq!(f.decide(b"qq", false), None);
+        assert_eq!(f.decide(b"sp ", false), Some(true));
+        assert_eq!(f.decide(b"trail", false), Some(true));
+        assert_eq!(f.decide(b"#hash", false), Some(true));
     }
 
     #[test]
-    fn a_match_on_the_path_itself_outranks_a_later_directory_marker() {
-        let s = spec(&["*.txt", "!dir/"]);
-        assert!(s.match_file("dir/a.txt"));
-    }
-
-    #[test]
-    fn anchoring_and_inner_double_star() {
-        let s = spec(&["/top", "a/**/b", "docs/*.tmp"]);
-        assert!(s.match_file("top"));
-        assert!(!s.match_file("sub/top"));
-        assert!(s.match_file("a/b"));
-        assert!(s.match_file("a/x/y/b"));
-        assert!(s.match_file("docs/x.tmp"));
-        assert!(!s.match_file("docs/sub/x.tmp"));
-        assert!(!s.match_file("other/docs/x.tmp"));
-    }
-
-    #[test]
-    fn brackets_and_escapes() {
-        let s = spec(&["[ab]x", "[!c]y", "q\\*", "sp\\ "]);
-        assert!(s.match_file("ax"));
-        assert!(!s.match_file("cx"));
-        assert!(s.match_file("dy"));
-        assert!(!s.match_file("cy"));
-        assert!(s.match_file("q*"));
-        assert!(!s.match_file("qq"));
-        assert!(s.match_file("sp "));
-    }
-
-    #[test]
-    fn lines_split_and_strip_as_python_does() {
-        let s = Spec::from_text("a.txt  \r\nb.txt\u{2028}c.txt\u{0c}d.txt");
-        for name in ["a.txt", "b.txt", "c.txt", "d.txt"] {
-            assert!(s.match_file(name), "{name}");
-        }
+    fn comments_blank_lines_crlf_and_a_bom() {
+        let f = IgnoreFile::parse(b"\xef\xbb\xbf# note\r\n\r\n*.log\r\n");
+        assert_eq!(f.decide(b"x.log", false), Some(true));
+        assert_eq!(f.decide(b"# note", false), None);
     }
 }

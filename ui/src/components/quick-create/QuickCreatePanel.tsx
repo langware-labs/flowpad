@@ -22,8 +22,7 @@ import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { openNewChat } from '@src/navigation/open-new-chat';
-import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
+import { openNewChatOrExplain } from '@src/navigation/open-new-chat';
 import { GitBranch, Info, Loader2, MessageSquarePlus } from 'lucide-react';
 import {
   Fragment,
@@ -397,20 +396,11 @@ export function QuickCreatePanel({
   // a useCallback here could never hit, and no consumer is memo'd anyway.
   const handleStartSession = async (workerType: 'claude_code' | 'codex' | 'copilot' | 'opencode') => {
     onDone?.();
-    // openNewChat creates AND navigates (carrying the chat mode) — no second nav.
-    // The catch is load-bearing: this is invoked as `void handleStartSession(…)`,
-    // so a rejected create used to become an unhandled rejection and the user got
-    // no feedback at all in any view mode.
-    try {
-      const process = await openNewChat(navigation, {
-        workerType,
-        ...(explicitProject ? { projectId: explicitProject.id, cwd: explicitProject.fs_storage_mount_path ?? undefined } : {}),
-      });
-      if (!process) notify.error({ title: t`Failed to start session` });
-    } catch (err) {
-      console.error('[QuickCreatePanel] start session failed', err);
-      openCapabilitiesForWorker(navigation, workerType);
-    }
+    // Creates AND navigates; a refused launch shows the launch-failure card, anything else a toast.
+    await openNewChatOrExplain(navigation, {
+      workerType,
+      ...(explicitProject ? { projectId: explicitProject.id, cwd: explicitProject.fs_storage_mount_path ?? undefined } : {}),
+    });
   };
 
   // Intersection of the UI registry and the server-reported `creatable` types,

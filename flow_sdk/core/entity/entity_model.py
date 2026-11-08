@@ -2249,7 +2249,7 @@ class Entity(DBEntity):
         await blob_index_entity.save(self.embedded_storage)
         # logging.info(f"Saved blob index for {self.typeid} with fields: {blob_index_entity._blob_index.fields.keys()} on \n {self.storage.vfs_root_path}")
 
-    async def share(self: EntityType, *, recursive: bool = False) -> EntityType:
+    async def share(self: EntityType, *, recursive: bool = False, with_create: Optional[dict] = None) -> EntityType:
         """Create this entity on the hub (POST /api/v1/graph/<type>).
 
         Generic, type-agnostic: the body is this entity's serialized dump,
@@ -2270,6 +2270,9 @@ class Entity(DBEntity):
         transient instance reconstructed from a request body and not
         bound to a DB row, so we deliberately do not call ``self.save()``
         from inside ``share()``.
+
+        ``with_create`` adds keys the type's hub create takes beyond its fields (a
+        conversation's ``members`` / ``first_message``); the answer reaches ``_adopt_hub_created``.
 
         Raises ``RuntimeError`` if not cloud-logged-in or the hub rejects.
         """
@@ -2307,10 +2310,11 @@ class Entity(DBEntity):
         parent_tid = parent_share_typeid(self)
         if parent_tid is not None:
             self.add_shared_context_entities(parent_tid)
-        body = self._hub_body()
+        body = {**self._hub_body(), **(with_create or {})}
 
         try:
-            await HubProxy.call("POST", self.get_type(), payload=body, strict=True)
+            created = await HubProxy.call("POST", self.get_type(), payload=body, strict=True)
+            self._adopt_hub_created(created if isinstance(created, dict) else {})
         except HubError as e:
             # A 409 says only that SOME row holds this id — the hub answers it whoever owns
             # that row. Ours (``Conversation.share`` re-runs ``super().share()`` on every
@@ -2333,6 +2337,9 @@ class Entity(DBEntity):
         if recursive:
             await self._share_children()
         return self
+
+    def _adopt_hub_created(self, created: dict) -> None:
+        """Take what the hub stamped on the row it just created (its create answer). No-op here."""
 
     async def confirm_hub_row_is_ours(self, *, remedy: str = "") -> None:
         """After a create answered 409: check the row at this id is one this account can reach.
