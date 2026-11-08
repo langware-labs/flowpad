@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
-import { type HelpRequestDiagnosis, helpRequestDiagnosis, helpRequestReport } from '@sdk';
+import { helpRequestReport } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
+import { useHelpRequestDiagnosis } from './use-help-request-diagnosis';
 
 /**
  * Under a diagnosis message (its text is the bottom line): the ONE action its cause calls for -- Report it,
@@ -13,17 +14,9 @@ import { notify } from '@src/notifications';
  */
 export function DiagnosisMessageActions({ conversationId, isMine }: { conversationId: string; isMine: boolean }) {
   const { t } = useLingui();
-  const [state, setState] = useState<HelpRequestDiagnosis | null>(null);
+  const [state, load] = useHelpRequestDiagnosis(conversationId);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-
-  const load = useCallback(() => {
-    if (!conversationId) return;
-    void helpRequestDiagnosis(conversationId)
-      .then(setState)
-      .catch(() => setState(null));
-  }, [conversationId]);
-  useEffect(load, [load]);
 
   const report = async () => {
     setBusy(true);

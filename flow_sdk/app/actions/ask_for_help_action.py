@@ -594,21 +594,20 @@ def _is_ticket(conv) -> bool:
     return conv.kind in (ConversationKind.HELPDESK, ConversationKind.HELPDESK.value)
 
 
-async def _desk_replied(conv) -> bool:
+def _desk_replied(messages) -> bool:
     """Whether the last word in a reported request is someone else's — the help desk answered. The asker
     is whoever sent the request; Flowpad's own lines (the request, the diagnosis) are never an answer."""
-    messages = await conv.messages()
     asker = next((m.sender_id for m in messages if _kind(m) == FlowMessageKind.HELP_REQUEST.value), None)
     last = messages[-1] if messages else None
-    own = (FlowMessageKind.HELP_REQUEST.value, FlowMessageKind.DIAGNOSIS.value)
-    return bool(last and asker and _kind(last) not in own and last.sender_id and last.sender_id != asker)
+    # Flowpad's own lines (the request, the diagnosis, "Reported to …") go out under the asker's id.
+    return bool(last and asker and last.sender_id not in (None, asker))
 
 
 def _kind(fm) -> str:
     return getattr(fm.kind, "value", fm.kind)
 
 
-async def _posted_diagnosis(conv):
+async def _posted_diagnosis(conv, messages=None):
     """The diagnosis a request's diagnosis message carries (shared), else the one held here (private)."""
     from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
     from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisSpec  # noqa: PLC0415
@@ -618,8 +617,8 @@ async def _posted_diagnosis(conv):
     if held is not None:
         return held, True
     posted = False
-    for fm in reversed(await conv.messages()):
-        if getattr(fm.kind, "value", fm.kind) != FlowMessageKind.DIAGNOSIS.value:
+    for fm in reversed(messages if messages is not None else await conv.messages()):
+        if _kind(fm) != FlowMessageKind.DIAGNOSIS.value:
             continue
         posted = True
         for a in fm.attachment or []:
@@ -644,7 +643,8 @@ async def help_request_diagnosis() -> ApiResponse:
     conv = await Conversation.get_one({"id": request_info.target_entity_typeid.id})
     if conv is None:
         return ApiFailResponse(message="Conversation not found", status_code=404)
-    diagnosis, posted = await _posted_diagnosis(conv)
+    messages = await conv.messages()  # read once: the diagnosis and the desk's last word both come from it
+    diagnosis, posted = await _posted_diagnosis(conv, messages)
     reported = _is_ticket(conv) or bool(conv.members)
     desk, pass_on = "", ""
     if diagnosis is not None and diagnosis.reportable and not reported:
@@ -655,7 +655,7 @@ async def help_request_diagnosis() -> ApiResponse:
             "diagnosis": diagnosis.model_dump(mode="json") if diagnosis is not None else None,
             "reportable": bool(diagnosis is not None and diagnosis.reportable and not reported),
             "reported": reported,
-            "replied": reported and await _desk_replied(conv),
+            "replied": reported and _desk_replied(messages),
             "desk": desk,
             "pass_on": pass_on,
         }

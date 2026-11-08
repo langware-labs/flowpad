@@ -366,7 +366,7 @@ export const ConversationListRow = memo(function ConversationListRow({
   // Gmail-style sender column: comma-joined names of everyone who has
   // participated in the thread, with the latest sender first so the most
   // recent author is the lead name. Deduped case-insensitively.
-  // Falls back to ``No members`` when neither the latest message nor any
+  // Falls back to the viewer's own name, then ``No members``, when neither the latest message nor any
   // participant has a name; invitation rows always render the canonical
   // ``Invitation`` placeholder so the violet mail-plus icon reads cleanly.
   // MUST run before the `isHidden` early return so the hook order stays

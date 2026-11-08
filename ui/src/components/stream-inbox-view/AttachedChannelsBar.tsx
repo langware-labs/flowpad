@@ -356,10 +356,6 @@ function AddChannelDialog({
   );
 }
 
-/** One round mark per channel kind: the brand glyph, a status dot, a count when
- *  several sources share it, and — while filtering — a ring on the ones the
- *  list is narrowed to. Hovering lists just this kind's sources with their
- *  switches, the same rows the details popover shows for all. */
 /** The Diagnosis mark: no source behind it, so no listening state — it only narrows the list to the
  *  conversations on the Diagnosis channel. Its glyph is the channel's own (``conversation_channel.DIAGNOSIS``). */
 function DiagnosisMark({ filtering, pressed, onClick }: { filtering: boolean; pressed: boolean; onClick: () => void }) {
@@ -386,6 +382,10 @@ function DiagnosisMark({ filtering, pressed, onClick }: { filtering: boolean; pr
   );
 }
 
+/** One round mark per channel kind: the brand glyph, a status dot, a count when
+ *  several sources share it, and — while filtering — a ring on the ones the
+ *  list is narrowed to. Hovering lists just this kind's sources with their
+ *  switches, the same rows the details popover shows for all. */
 function ChannelMark({
   group,
   spec,

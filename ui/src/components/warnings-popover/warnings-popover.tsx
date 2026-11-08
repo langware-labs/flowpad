@@ -1,5 +1,6 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { type HelpRequestDiagnosis, helpRequestDiagnosis, UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
+import { UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
+import { useHelpRequestDiagnosis } from '@src/components/conversation/use-help-request-diagnosis';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { openWikiModal } from '@src/components/wiki-tip';
@@ -34,7 +35,7 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { create } from 'zustand';
 
 // Map icon names to Lucide components
@@ -144,24 +145,7 @@ const useDismissedWarnings = create<{ keys: ReadonlyMap<string, string>; dismiss
  *  like the request line in the conversation does. */
 function DiagnosisStatusLine({ conversationId }: { conversationId: string }) {
   const { t } = useLingui();
-  const [state, setState] = useState<HelpRequestDiagnosis | null>(null);
-  useEffect(() => {
-    let live = true;
-    let timer: number | undefined;
-    const load = () =>
-      helpRequestDiagnosis(conversationId)
-        .then((s) => {
-          if (!live) return;
-          setState(s);
-          if (s.diagnosing) timer = window.setTimeout(load, 3000);
-        })
-        .catch(() => undefined);
-    void load();
-    return () => {
-      live = false;
-      window.clearTimeout(timer);
-    };
-  }, [conversationId]);
+  const [state] = useHelpRequestDiagnosis(conversationId);
 
   const d = state?.diagnosis;
   let status: 'diagnosing' | 'replied' | 'reported' | 'fixed' | 'report' | 'diagnosed' | 'failed';
@@ -196,6 +180,8 @@ function DiagnosisStatusLine({ conversationId }: { conversationId: string }) {
     >
       {status === 'diagnosing' ? (
         <Loader2 className="mt-0.5 h-3 w-3 shrink-0 animate-spin" aria-hidden />
+      ) : status === 'failed' || status === 'report' ? (
+        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" aria-hidden />
       ) : (
         <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-500" aria-hidden />
       )}
@@ -294,7 +280,7 @@ function WarningItem({ warning, onClick, onAction, onDiagnose, onDismiss }: Warn
             <button
               type="button"
               onClick={onAction}
-              className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+              className={PRIMARY_BTN}
               data-testid="warnings-popover-warning-action"
             >
               {warning.action.label}

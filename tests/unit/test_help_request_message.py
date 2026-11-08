@@ -378,14 +378,14 @@ async def test_a_desk_and_a_person_each_get_the_request_diagnosed_once(monkeypat
     assert len(runs) == 1, "one request is diagnosed once"
 
 
-async def test_the_warning_learns_the_help_desk_replied_only_from_someone_elses_last_word():
+def test_the_warning_learns_the_help_desk_replied_only_from_someone_elses_last_word():
     def fm(kind, sender):
         return SimpleNamespace(kind=kind, sender_id=sender)
 
     def conv(*messages):
-        return SimpleNamespace(messages=AsyncMock(return_value=list(messages)))
+        return list(messages)
 
     asked = [fm("help_request", "me"), fm("diagnosis", "me"), fm("help_request", "me")]
-    assert not await afh._desk_replied(conv(*asked)), "reported, nobody answered yet"
-    assert await afh._desk_replied(conv(*asked, fm("user", "dana"))), "the desk answered"
-    assert not await afh._desk_replied(conv(*asked, fm("user", "dana"), fm("user", "me"))), "the asker spoke last"
+    assert not afh._desk_replied(conv(*asked)), "reported, nobody answered yet"
+    assert afh._desk_replied(conv(*asked, fm("user", "dana"))), "the desk answered"
+    assert not afh._desk_replied(conv(*asked, fm("user", "dana"), fm("user", "me"))), "the asker spoke last"
