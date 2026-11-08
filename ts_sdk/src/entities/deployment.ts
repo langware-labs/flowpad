@@ -258,9 +258,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
 
   /** What pays for THIS deployment's turns, asked without spending. */
   async funding(): Promise<DeploymentFunding> {
-    return dataManager.callAction<undefined, DeploymentFunding>(
-      new ActionInfo('funding', Deployment.type, this.id, 'GET'),
-    );
+    return this.get<DeploymentFunding>('funding');
   }
 
   /**
