@@ -6,7 +6,8 @@ the approved answer does.
 
 It needs more than the hub tier gives: a real ``claude`` turn that runs ``flow`` commands, so the
 agent must run on a live instance. Point it at one with the variables below and it drives the rest
-over HTTP; without them it skips.
+over HTTP; without them it skips. Run it as the product is: the agent's project as committed (no row
+patched by hand, its trigger's ``if`` intact), on a hub that has a decision API.
 
     SUPPORT_E2E_CUSTOMER_BACKEND  the customer instance's backend URL
     SUPPORT_E2E_CUSTOMER_EMAIL / _PW
@@ -44,6 +45,11 @@ def _messages(hub: str, auth: dict, conversation: str) -> list[dict]:
     answer = httpx.get(f"{hub}/api/v1/graph/conversation/{conversation}/messages", headers=auth, timeout=15)
     answer.raise_for_status()
     return answer.json()["data"]
+
+
+def customer_name(messages: list[dict]) -> str:
+    """The opener's name as the hub shows it: the sender of the ticket's first message."""
+    return messages[0].get("sender_name", "")
 
 
 def _until(what: str, found: Callable[[], Any]) -> Any:
@@ -96,9 +102,10 @@ def test_a_customer_gets_the_answer_the_team_approved(hub_base_url):
     summary = _until("summary", lambda: _messages(hub, team, private))
     assert "approve" in summary[0]["text"].lower(), summary[0]["text"]
 
-    # Until the team approves, the customer holds their own messages and acknowledgements only.
+    # Until the team approves, the customer holds their own messages and ONE acknowledgement.
     before = _messages(hub, customer, ticket)
-    assert len(before) >= 2, "the agent acknowledged the ticket"
+    desk = [m for m in before if m.get("sender_name") != customer_name(before)]
+    assert len(desk) == 1, f"one acknowledgement, not {len(desk)}: {[m['text'][:60] for m in desk]}"
     answered = httpx.post(
         f"{hub}/api/v1/graph/conversation/{private}/add_message",
         headers=team,
