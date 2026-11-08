@@ -17542,7 +17542,7 @@ msgstr "זה לא עבד"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "IT Disabled"
-msgstr "IT כבוי"
+msgstr "IT מושבת"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "IT Disabled: this machine refuses IT messages. Click to enable."

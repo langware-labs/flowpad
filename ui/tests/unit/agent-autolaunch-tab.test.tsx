@@ -123,9 +123,12 @@ describe('AgentAutoLaunchTab', () => {
     expect(enabled).toHaveTextContent('IT Enabled'); // reported by the hub on first load
     expect(unknown).toHaveTextContent('IT —'); // the hub never saw it
     expect(enabled).toHaveAttribute('aria-label', expect.stringContaining('Click to disable'));
+    expect(enabled).toHaveAttribute('data-it-enabled', 'true');
+    expect(unknown).toHaveAttribute('data-it-enabled', 'unknown');
 
     fireEvent.click(enabled); // ONE click disables a machine that is enabled
     await waitFor(() => expect(enabled).toHaveTextContent('IT Disabled'));
+    expect(enabled).toHaveAttribute('data-it-enabled', 'false');
     const at = urls.findIndex((u) => u.endsWith(`/agent/${AGENT_ID}/it_sessions`));
     expect(bodies[at]).toEqual({ targets: ['compute_node-1'], on: false });
 

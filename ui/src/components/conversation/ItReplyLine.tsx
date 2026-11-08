@@ -83,6 +83,8 @@ export function ItReplyLine({
           <span
             className={`flex items-center gap-1 rounded-full border px-2 py-0.5 ${TONE[view.tone]}`}
             data-testid="it-reply-state"
+            data-it-state={reply.state}
+            data-it-woke={reply.woke ? 'true' : 'false'}
           >
             {view.label}
           </span>

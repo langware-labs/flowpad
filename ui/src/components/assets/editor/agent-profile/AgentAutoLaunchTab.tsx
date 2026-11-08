@@ -451,6 +451,7 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
                         disabled={rowLocked}
                         onClick={() => void toggleIt(d)}
                         aria-label={itTip(itStateOf(d))}
+                        data-it-enabled={itStateOf(d) === null ? 'unknown' : String(itStateOf(d))}
                         data-testid="it-sessions-state"
                       >
                         {itStateOf(d) === null ? t`IT —` : itStateOf(d) ? t`IT Enabled` : t`IT Disabled`}

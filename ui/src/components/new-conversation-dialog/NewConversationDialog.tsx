@@ -349,7 +349,12 @@ export function NewConversationDialog({ open, onClose, destination = null }: New
             <Button variant="outline" onClick={onClose} disabled={busy}>
               <Trans>Cancel</Trans>
             </Button>
-            <Button onClick={() => void handleCreate()} disabled={!canCreate} className="gap-1.5">
+            <Button
+              onClick={() => void handleCreate()}
+              disabled={!canCreate}
+              className="gap-1.5"
+              data-testid="new-conversation-submit"
+            >
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
               {busy ? (destination ? t`Sending…` : t`Creating…`) : (destination?.sendLabel ?? t`Create`)}
             </Button>
