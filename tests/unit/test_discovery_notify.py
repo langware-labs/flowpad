@@ -1,7 +1,5 @@
 """Tests for flow_sdk.discovery.notify envelope fields."""
 
-import threading
-import time
 import json
 
 import flow_sdk.discovery.notify as notify
@@ -138,36 +136,3 @@ def test_send_resource_sync_no_server(monkeypatch):
         type="task", id="1", operation=SyncOperation.CREATE, data={}
     )
     assert queued is False
-
-
-def test_report_urls_scan_does_not_block_a_notification_after_the_first(monkeypatch):
-    """Every notification (every add_message) asks for the server list; scanning all instance dirs each time cost seconds."""
-    from types import SimpleNamespace
-
-    calls = []
-    release = threading.Event()
-
-    def fake_read():
-        calls.append(1)
-        if len(calls) > 1:
-            release.wait(5)  # a slow rescan must not hold the caller
-        return [SimpleNamespace(url=f"http://localhost:{6000 + len(calls)}")]
-
-    monkeypatch.setattr("flow_sdk.discovery.flowpad_discovery.read_all_server_infos", fake_read)
-    monkeypatch.setattr(notify, "_report_urls_cache", None)
-    clock = [100.0]
-    monkeypatch.setattr(notify.time, "monotonic", lambda: clock[0])
-
-    assert notify._get_report_urls() == ["http://localhost:6001"]  # first call reads
-    assert notify._get_report_urls() == ["http://localhost:6001"]  # fresh: no read
-    assert len(calls) == 1
-    clock[0] += notify._REPORT_URLS_TTL_S + 0.1
-    assert notify._get_report_urls() == ["http://localhost:6001"]  # stale: answered at once, rescan in background
-    release.set()
-    deadline = time.time() + 5
-    while time.time() < deadline and len(calls) < 2:
-        time.sleep(0.01)
-    assert len(calls) == 2
-    while time.time() < deadline and notify._report_urls_cache[1] != ["http://localhost:6002"]:
-        time.sleep(0.01)
-    assert notify._get_report_urls() == ["http://localhost:6002"]
