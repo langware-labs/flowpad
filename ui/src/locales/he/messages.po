@@ -15691,7 +15691,7 @@ msgstr "IT מושבת"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "IT Disabled: this machine refuses IT messages. Click to enable."
-msgstr "IT כבוי: מכונה זו אינה מקבלת הודעות IT. לחיצה להפעלה."
+msgstr "IT מושבת: מכונה זו אינה מקבלת הודעות IT. לחיצה להפעלה."
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "It doesn't appear to be installed on your computer. Would you like to install it now?"
