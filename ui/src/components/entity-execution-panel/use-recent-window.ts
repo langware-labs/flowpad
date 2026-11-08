@@ -42,8 +42,10 @@ export function useRecentWindow(count: number, keep: number) {
     if (!el || start === 0) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        // A hidden pane (another layout is showing) has no geometry: nothing is near its top.
+        // A parked pane (another layout is showing) reads scrollTop 0 until it is shown again: nothing
+        // is near its top, and widening it there would overwrite the place the browser restores.
         if (!entry?.isIntersecting || !entry.rootBounds?.height) return;
+        if (el.checkVisibility?.({ visibilityProperty: true }) === false) return;
         const first = el.nextElementSibling;
         if (first) pinned.current = { el: first, top: first.getBoundingClientRect().top };
         setExpanded(Math.max(0, start - RECENT_WINDOW));
