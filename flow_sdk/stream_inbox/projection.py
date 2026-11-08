@@ -67,15 +67,8 @@ async def find_thread(channel: str, key: str, owner, data_source_id: str):
 
 
 async def resolve_thread(
-    channel: str,
-    key: str,
-    owner,
-    *,
-    data_source_id: str,
-    title: str,
-    conversation_id: str = "",
-    timeout_seconds: Optional[int] = None,
-    at: Optional[datetime] = None,
+    channel: str, key: str, owner, *, data_source_id: str, title: str, conversation_id: str = "",
+    timeout_seconds: Optional[int] = None, at: Optional[datetime] = None,
 ):
     """The thread for ``(owner, channel, key)`` read by ``data_source_id`` — found, adopted, or minted.
 
@@ -167,9 +160,7 @@ async def last_message_at(thread) -> Optional[datetime]:
     """The thread's newest message time — message time, never the row's ingest clock."""
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
-    rows = await FlowMessage.get_all(
-        {"match": {"thread_id": str(thread.id)}, "order_by": {"sent_at": "desc"}, "limit": 1}
-    )
+    rows = await FlowMessage.get_all({"match": {"thread_id": str(thread.id)}, "order_by": {"sent_at": "desc"}, "limit": 1})
     return iso_to_utc(rows[0].occurred_at) if rows else None
 
 
@@ -215,7 +206,6 @@ def _follow_marks(conversation, item, source) -> bool:
 #: sync is a few hundred; this bounds the work per `sync.completed` without a
 #: cursor, because the next sync's sweep picks up whatever is left.
 RECONCILE_BATCH = 500
-
 
 def thread_key_for(item, subject: str) -> str:
     """The item's grouping key: the driver's handle, else the subject."""
@@ -353,9 +343,7 @@ async def project_source_item(
     thread = await _thread_of(existing_fm)
     if thread is None:
         thread = await resolve_thread(
-            channel,
-            key,
-            owner,
+            channel, key, owner,
             data_source_id=str(source.id),
             title=subject or _thread_title(item) or key,
             conversation_id=str(getattr(item, "conversation_id", "") or ""),
@@ -415,39 +403,15 @@ async def project_source_item(
             if existing_fm is None:
                 # First placement stays UNDER the lock — the birth is the race.
                 return await _place_message(
-                    item,
-                    source,
-                    channel,
-                    subject,
-                    key,
-                    thread,
-                    thread_id,
-                    conversation_id,
-                    sender,
-                    sender_name,
-                    None,
-                    notify=notify,
-                    recount=recount,
-                    announce=announce,
-                    item_changed=False,
+                    item, source, channel, subject, key, thread, thread_id,
+                    conversation_id, sender, sender_name, None,
+                    notify=notify, recount=recount, announce=announce, item_changed=False,
                 )
     # Already placed: idempotent re-projection, no lock needed.
     return await _place_message(
-        item,
-        source,
-        channel,
-        subject,
-        key,
-        thread,
-        thread_id,
-        conversation_id,
-        sender,
-        sender_name,
-        existing_fm,
-        notify=notify,
-        recount=recount,
-        announce=announce,
-        item_changed=item_changed,
+        item, source, channel, subject, key, thread, thread_id,
+        conversation_id, sender, sender_name, existing_fm,
+        notify=notify, recount=recount, announce=announce, item_changed=item_changed,
     )
 
 
@@ -629,11 +593,7 @@ def _message_files(item, fm_id: str, *, have: Optional[list] = None) -> list:
     from flow_sdk.sources.values.items import MessageFileData  # noqa: PLC0415
     from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
 
-    files = [
-        f.data
-        for f in (getattr(getattr(item, "data", None), "attachments", None) or ())
-        if isinstance(f.data, MessageFileData)
-    ]
+    files = [f.data for f in (getattr(getattr(item, "data", None), "attachments", None) or ()) if isinstance(f.data, MessageFileData)]
     names, used = [], set()
     for f in files:
         name = safe_name(f.name or (Path(f.path).name if f.path else None))
@@ -654,22 +614,9 @@ def _message_files(item, fm_id: str, *, have: Optional[list] = None) -> list:
 
 
 async def _place_message(
-    item,
-    source,
-    channel,
-    subject,
-    key,
-    thread,
-    thread_id,
-    conversation_id,
-    sender,
-    sender_name,
-    existing_fm,
-    *,
-    notify,
-    recount,
-    announce,
-    item_changed,
+    item, source, channel, subject, key, thread, thread_id,
+    conversation_id, sender, sender_name, existing_fm,
+    *, notify, recount, announce, item_changed,
 ):
     """Write the message row + pointers for one resolved message.
 
@@ -750,7 +697,6 @@ async def _place_message(
     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-
     origin, origin_local = _origins(item, source, channel, key)
     payload: dict[str, Any] = {
         "id": fm_id,
@@ -1070,7 +1016,11 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
     if not items:
         return 0
     existing = await FlowMessage.get_all(
-        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["source_item_id", [str(i.id) for i in items]])),
+        QueryFilter(
+            match=ExpressionNode(
+                op=QueryOp.IN, operands=["source_item_id", [str(i.id) for i in items]]
+            )
+        ),
         hydrate=False,  # placement check reads ids only
     )
     placed = {str(m.source_item_id) for m in existing}
@@ -1079,7 +1029,9 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
     # the convergent heal, which is what makes a plain reindex fix mis-dated
     # data "as is" — no bespoke migration, this sweep runs after every sync.
     unstamped = {
-        str(m.source_item_id) for m in existing if getattr(m, "sent_at", None) is None and str(m.source_item_id or "")
+        str(m.source_item_id)
+        for m in existing
+        if getattr(m, "sent_at", None) is None and str(m.source_item_id or "")
     }
     missing = [i for i in items if str(i.id) not in placed]
     heal = [i for i in items if str(i.id) in unstamped and i.occurred_at]
@@ -1121,11 +1073,8 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
     ):
         try:
             result = await project_source_item(
-                item,
-                source=source,
-                recount=False,
-                announce=announce_it,
-                known_unplaced=unplaced,
+                item, source=source, recount=False,
+                announce=announce_it, known_unplaced=unplaced,
             )
             if result:
                 projected += unplaced
@@ -1193,7 +1142,9 @@ async def remove_projection_for_items(item_ids, *, notify: bool = True) -> int:
         QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", sorted(touched_threads)]))
     )
     survivors = await FlowMessage.get_all(
-        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["thread_id", sorted(touched_threads)])),
+        QueryFilter(
+            match=ExpressionNode(op=QueryOp.IN, operands=["thread_id", sorted(touched_threads)])
+        ),
         hydrate=False,
     )
     live_threads = {str(m.thread_id) for m in survivors if m.thread_id}
@@ -1284,9 +1235,7 @@ async def _on_sync(event) -> None:
     """
     source_id = str((event.data or {}).get("source_id") or "")
     if source_id:
-        await single_flight(
-            _sweeps, source_id, lambda: _reconcile(source_id), "[stream-inbox] reconcile failed for source %s"
-        )
+        await single_flight(_sweeps, source_id, lambda: _reconcile(source_id), "[stream-inbox] reconcile failed for source %s")
 
 
 async def _reconcile(source_id: str) -> None:
