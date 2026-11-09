@@ -1557,7 +1557,6 @@ class SQLiteDBDriver(DBDriver):
                 .where(EntitySchema.id.in_(list(todo)))
                 .values(
                     updated_by=stamp.updated_by,
-                    updated_date=stamp.updated_date,
                     updated_through=stamp.updated_through,
                     data=func.json_set(
                         func.coalesce(EntitySchema.data, "{}"),
