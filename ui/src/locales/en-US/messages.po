@@ -576,10 +576,6 @@ msgstr "{0} automations failed last time they ran."
 msgid "{0} available"
 msgstr "{0} available"
 
-#: src/components/llm-endpoints/ShareEndpointDialog.tsx
-#~ msgid "{0} can now spend {1}."
-#~ msgstr "{0} can now spend {1}."
-
 #. placeholder {0}: deployment.name
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "{0} cannot pay for its next turn"
@@ -1222,10 +1218,6 @@ msgstr "{count, plural, one {You have # error to handle} other {You have # error
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "{count} {0} attached"
 msgstr "{count} {0} attached"
-
-#: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
-#~ msgid "{count} codes · ${0}"
-#~ msgstr "{count} codes · ${0}"
 
 #: src/components/assets/ContextFolderGitBadge.tsx
 msgid "{count} pending change(s) — click to view diff"
@@ -2176,10 +2168,6 @@ msgstr "🤖 Prompt - Query AI (Claude Haiku)"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "$ per user"
 msgstr "$ per user"
-
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "$ per visitor"
-#~ msgstr "$ per visitor"
 
 #. placeholder {0}: cap ?? 0
 #. placeholder {0}: invite.settings.cap_usd
@@ -4182,10 +4170,6 @@ msgstr "Anyone with the link gets their own machine."
 msgid "Anyone you share with can open, use and delete this sandbox."
 msgstr "Anyone you share with can open, use and delete this sandbox."
 
-#: src/components/llm-endpoints/ShareEndpointDialog.tsx
-#~ msgid "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
-#~ msgstr "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
-
 #: src/components/automations/automation-words.ts
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "anything"
@@ -4805,10 +4789,6 @@ msgid "Attach an asset"
 msgstr "Attach an asset"
 
 #: src/components/conversation/MessageComposer.tsx
-#~ msgid "Attach an asset (skill, agent, doc, spec)"
-#~ msgstr "Attach an asset (skill, agent, doc, spec)"
-
-#: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/session-input/session-input.tsx
 msgid "Attach files"
@@ -4959,10 +4939,6 @@ msgstr "Auto-detect direction from first strong character"
 #: src/components/settings-view/settings-utils.ts
 msgid "Auto-enable all project-level MCP servers"
 msgstr "Auto-enable all project-level MCP servers"
-
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#~ msgid "Auto-launch"
-#~ msgstr "Auto-launch"
 
 #: src/agents/agent-auto-launch-warning.ts
 msgid "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
@@ -5439,10 +5415,6 @@ msgstr "Budget history"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Budget in dollars"
 msgstr "Budget in dollars"
-
-#: src/components/llm-endpoints/ShareEndpointDialog.tsx
-#~ msgid "Budget shared"
-#~ msgstr "Budget shared"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Budget source"
@@ -5972,10 +5944,6 @@ msgstr "Chain"
 msgid "Chain session"
 msgstr "Chain session"
 
-#: src/components/terminal/interactive-terminal/useChainSession.tsx
-#~ msgid "Chain this session into which project?"
-#~ msgstr "Chain this session into which project?"
-
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/inbound/InboundView.tsx
@@ -6439,10 +6407,6 @@ msgstr "Choose the kind of each row"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "Choose the LLM endpoint users spend"
 msgstr "Choose the LLM endpoint users spend"
-
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "Choose the LLM endpoint visitors spend"
-#~ msgstr "Choose the LLM endpoint visitors spend"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Choose the project it loads, and any asset packages to bring with it."
@@ -7132,10 +7096,6 @@ msgstr "Code expires"
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "codes"
 msgstr "codes"
-
-#: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
-#~ msgid "Codes"
-#~ msgstr "Codes"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
@@ -8180,10 +8140,6 @@ msgstr "Cost (USD), total"
 msgid "Could not activate the organization"
 msgstr "Could not activate the organization"
 
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Could not add {name}"
-#~ msgstr "Could not add {name}"
-
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Could not add codes"
 msgstr "Could not add codes"
@@ -8273,10 +8229,6 @@ msgstr "Could not change the sandbox"
 msgid "Could not change where the project runs"
 msgstr "Could not change where the project runs"
 
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
-#~ msgid "Could not check — {failed}"
-#~ msgstr "Could not check — {failed}"
-
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Could not check sign-in"
 msgstr "Could not check sign-in"
@@ -8299,10 +8251,6 @@ msgstr "Could not connect to {displayName}."
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 msgid "Could not convert the chart"
 msgstr "Could not convert the chart"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Could not copy {0}"
-#~ msgstr "Could not copy {0}"
 
 #: src/components/links/link-handlers.ts
 msgid "Could not copy link"
@@ -8473,10 +8421,6 @@ msgstr "Could not fill in {name}"
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Could not fix {key}"
 msgstr "Could not fix {key}"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Could not forget {0}"
-#~ msgstr "Could not forget {0}"
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Could not forward diagnosis"
@@ -8698,10 +8642,6 @@ msgstr "Could not reach the backend. Try again in a moment."
 #: src/components/assets/editor/agent-profile/AgentPlaceActivity.tsx
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr "Could not reach this cloud machine. It may be paused."
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Could not read the agent's Env"
-#~ msgstr "Could not read the agent's Env"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Could not read the diagnosis"
@@ -9657,10 +9597,6 @@ msgid "Credential"
 msgstr "Credential"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
-#~ msgid "Credential environment"
-#~ msgstr "Credential environment"
-
-#: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Credential environment this deployment reads"
 msgstr "Credential environment this deployment reads"
 
@@ -9707,10 +9643,6 @@ msgstr "current"
 #: src/journey/JourneyViewer.tsx
 msgid "Current"
 msgstr "Current"
-
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "Current deployments"
-#~ msgstr "Current deployments"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Current Directory"
@@ -11261,10 +11193,6 @@ msgstr "Done"
 msgid "Done — access given"
 msgstr "Done — access given"
 
-#: src/components/warnings-popover/warnings-popover.tsx
-#~ msgid "Done — remove"
-#~ msgstr "Done — remove"
-
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Done editing"
 msgstr "Done editing"
@@ -11527,10 +11455,6 @@ msgstr "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo 
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Each code opens its own machine. Give one code to each user."
 msgstr "Each code opens its own machine. Give one code to each user."
-
-#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#~ msgid "Each code opens its own sandbox. Give one code to each visitor."
-#~ msgstr "Each code opens its own sandbox. Give one code to each visitor."
 
 #: src/components/inbound/RouteCheck.tsx
 msgid "Each hop, without sending a message."
@@ -12359,10 +12283,6 @@ msgstr "Everything open that needs fixing"
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Everything required is set up."
 msgstr "Everything required is set up."
-
-#: src/components/stream-inbox-view/MembershipInvitations.tsx
-#~ msgid "Everything shared with you"
-#~ msgstr "Everything shared with you"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Everything the budget above allows"
@@ -13418,10 +13338,6 @@ msgstr "Finish signing in in the browser window that opened…"
 msgid "Finish signing in on the page that opened in your browser."
 msgstr "Finish signing in on the page that opened in your browser."
 
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
-#~ msgid "Finish that, then press Verify again."
-#~ msgstr "Finish that, then press Verify again."
-
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Finish the setup above first."
 msgstr "Finish the setup above first."
@@ -13526,10 +13442,6 @@ msgstr "Fix the configuration — credentials or settings — then press Verify 
 #: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "Fix…"
 msgstr "Fix…"
-
-#: src/components/warnings-popover/warnings-popover.tsx
-#~ msgid "Fixed"
-#~ msgstr "Fixed"
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
@@ -13834,10 +13746,6 @@ msgstr "Force Login Org UUID"
 msgid "Force login to a specific organization"
 msgstr "Force login to a specific organization"
 
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Forget"
-#~ msgstr "Forget"
-
 #: src/navigation/record-type-nav.ts
 msgid "Fork"
 msgstr "Fork"
@@ -13939,10 +13847,6 @@ msgstr "From the tag index"
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "From the tag index; the last refresh failed"
 msgstr "From the tag index; the last refresh failed"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "From this agent's credentials"
-#~ msgstr "From this agent's credentials"
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "From this block's own sites list"
@@ -15492,14 +15396,6 @@ msgstr "Initialize git repo"
 msgid "Initializing…"
 msgstr "Initializing…"
 
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Inject"
-#~ msgstr "Inject"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Inject {0} into deployments"
-#~ msgstr "Inject {0} into deployments"
-
 #: src/components/graph-workflows/panels/InjectPanel.tsx
 msgid "Inject ▶"
 msgstr "Inject ▶"
@@ -15896,10 +15792,6 @@ msgstr "Invite code only"
 msgid "Invite codes"
 msgstr "Invite codes"
 
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "Invite codes ({activeCodes})"
-#~ msgstr "Invite codes ({activeCodes})"
-
 #: src/components/account/organization-panel.tsx
 #: src/components/organization/invite-row.tsx
 msgid "Invite failed"
@@ -15926,10 +15818,6 @@ msgstr "Invite the bot to a private channel with /invite @your-bot."
 #: src/components/organization/invite-row.tsx
 msgid "Invited {trimmed}."
 msgstr "Invited {trimmed}."
-
-#: src/components/stream-inbox-view/MembershipInvitations.tsx
-#~ msgid "Invites"
-#~ msgstr "Invites"
 
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
@@ -16598,10 +16486,6 @@ msgstr "Latest on PyPI"
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Launch"
 msgstr "Launch"
-
-#: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
-#~ msgid "Launch — hand out the codes"
-#~ msgstr "Launch — hand out the codes"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "Launch — share the link"
@@ -17670,7 +17554,7 @@ msgstr "Machine size"
 msgid "Machine type"
 msgstr "Machine type"
 
-#. placeholder {0}: sizeLine((oneCode.machine_size as ComputeNodeSize) || size)
+#. placeholder {0}: sizeLine(oneCode.machine_size ?? size)
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "Machine: {0}"
 msgstr "Machine: {0}"
@@ -18977,10 +18861,6 @@ msgstr "New MCP server"
 msgid "New messages"
 msgstr "New messages"
 
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
-#~ msgid "New messages will appear here on the next poll."
-#~ msgstr "New messages will appear here on the next poll."
-
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New name"
 msgstr "New name"
@@ -19374,10 +19254,6 @@ msgstr "No checkpoint selected"
 #: src/components/summary-dashboard/SummaryDashboard.tsx
 msgid "No Claude Code data found. Run Claude Code in a project to see stats here."
 msgstr "No Claude Code data found. Run Claude Code in a project to see stats here."
-
-#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#~ msgid "No codes yet."
-#~ msgstr "No codes yet."
 
 #: src/components/collaboration/CollaborationPage.tsx
 msgid "No collaboration open"
@@ -20537,14 +20413,6 @@ msgstr "No value discovered"
 msgid "No value in the project yet — set it on the agent's Env tab; machines get it then."
 msgstr "No value in the project yet — set it on the agent's Env tab; machines get it then."
 
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "No variables yet."
-#~ msgstr "No variables yet."
-
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "No visitor has opened one yet."
-#~ msgstr "No visitor has opened one yet."
-
 #: src/components/webapp-viewer.tsx
 msgid "No web app available"
 msgstr "No web app available"
@@ -21296,10 +21164,6 @@ msgstr "Notify people about this push"
 #: src/components/stream-inbox-view/StreamInboxPager.tsx
 msgid "Now"
 msgstr "Now"
-
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
-#~ msgid "Now listening."
-#~ msgstr "Now listening."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Now send your messages to the hub. Paste these into your server's webhook settings:"
@@ -23475,24 +23339,11 @@ msgstr "Pixel Y offset from the top of the visible viewport (viewportRow × cell
 msgid "Placed"
 msgstr "Placed"
 
-#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
-#~ msgid "placed {0}"
-#~ msgstr "placed {0}"
-
 #. placeholder {0}: where.on
 #. placeholder {1}: where.of
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "placed on {0} of {1}"
 msgstr "placed on {0} of {1}"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "placed on {placedOn} of {total}"
-#~ msgstr "placed on {placedOn} of {total}"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Plain"
-#~ msgstr "Plain"
 
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/hooks/event-summaries.tsx
@@ -24316,11 +24167,6 @@ msgstr "Proves the bot (getMe). Stored write-only."
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Proves the number on your server. Stored write-only."
 msgstr "Proves the number on your server. Stored write-only."
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
-#~ msgid "Provided by Flowpad"
-#~ msgstr "Provided by Flowpad"
 
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
@@ -25897,10 +25743,6 @@ msgstr "Reset failed"
 msgid "Reset failed."
 msgstr "Reset failed."
 
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "Reset sandbox"
-#~ msgstr "Reset sandbox"
-
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Reset to default"
 msgstr "Reset to default"
@@ -26301,18 +26143,6 @@ msgstr "Revoke {0} invites?"
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Revoke {revokingWho}'s invite?"
 msgstr "Revoke {revokingWho}'s invite?"
-
-#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#~ msgid "Revoke code"
-#~ msgstr "Revoke code"
-
-#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#~ msgid "Revoke code ••••{revokingLast4}? Its sandbox is deleted and the code stops working."
-#~ msgstr "Revoke code ••••{revokingLast4}? Its sandbox is deleted and the code stops working."
-
-#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#~ msgid "Revoked"
-#~ msgstr "Revoked"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Right-click the channel → Copy → Copy link, and paste it here:"
@@ -27031,10 +26861,6 @@ msgstr "Save this API key now. You won't be able to see it again!"
 msgid "Save this task into the project as a folder, where git tracks it"
 msgstr "Save this task into the project as a folder, where git tracks it"
 
-#: src/components/top-nav-bar/RecordingReadyDialog.tsx
-#~ msgid "Save to project"
-#~ msgstr "Save to project"
-
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Save version"
 msgstr "Save version"
@@ -27556,11 +27382,6 @@ msgstr "Searching inside sessions…"
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Searching…"
 msgstr "Searching…"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Secret"
-#~ msgstr "Secret"
 
 #: src/components/credentials/VariableDetails.tsx
 msgid "Secret (mask value)"
@@ -29091,10 +28912,6 @@ msgstr "Shown at approval"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "Shown once — the hub keeps only {0}."
 msgstr "Shown once — the hub keeps only {0}."
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Shown once the agent is published."
-#~ msgstr "Shown once the agent is published."
 
 #: src/components/ui/sidebar.tsx
 msgid "Sidebar"
@@ -31876,10 +31693,6 @@ msgstr "They will leave {0} and every team in it, and lose the budgets those gav
 msgid "They will leave {0} and lose the budget it gave them. Money already spent is not affected."
 msgstr "They will leave {0} and lose the budget it gave them. Money already spent is not affected."
 
-#: src/components/llm-endpoints/ShareEndpointDialog.tsx
-#~ msgid "They'll get an email with a link that opens this budget."
-#~ msgstr "They'll get an email with a link that opens this budget."
-
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "They'll get an email with a link that opens this sandbox."
 msgstr "They'll get an email with a link that opens this sandbox."
@@ -32018,10 +31831,6 @@ msgstr "This chat has no resumable session."
 msgid "This code doesn't work. Check it, or ask whoever gave it to you."
 msgstr "This code doesn't work. Check it, or ask whoever gave it to you."
 
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "This code gets a fresh machine. Everything on the current one is erased; the same code opens the new one."
-#~ msgstr "This code gets a fresh machine. Everything on the current one is erased; the same code opens the new one."
-
 #: src/routes/loaders/load-project.ts
 msgid "This collaboration room no longer exists or is unavailable."
 msgstr "This collaboration room no longer exists or is unavailable."
@@ -32049,10 +31858,6 @@ msgstr "This computer · not in the cloud"
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "This computer (fetches its own)"
 msgstr "This computer (fetches its own)"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "This computer holds no value for {0}"
-#~ msgstr "This computer holds no value for {0}"
 
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "This computer is not signed in to the secret manager yet — Set up signs in, then fetches."
@@ -33252,10 +33057,6 @@ msgstr "Triggers"
 msgid "Try again"
 msgstr "Try again"
 
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
-#~ msgid "Try again in a moment."
-#~ msgstr "Try again in a moment."
-
 #: src/components/ask/AskAssist.tsx
 msgid "Try AI Assist again"
 msgstr "Try AI Assist again"
@@ -33488,11 +33289,6 @@ msgstr "Unit"
 #: src/components/assets/DependencyChips.tsx
 msgid "unknown"
 msgstr "unknown"
-
-#: src/components/conversation/MessageBubble.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
-#~ msgid "Unknown"
-#~ msgstr "Unknown"
 
 #: src/components/graph-view/ui/HeatLegend.tsx
 msgid "Unknown · {unknown}"
@@ -34120,15 +33916,6 @@ msgstr "Value for {0}"
 msgid "Value for {key}"
 msgstr "Value for {key}"
 
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Value of {0}"
-#~ msgstr "Value of {0}"
-
-#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
-#~ msgid "Value of {0} on this deployment"
-#~ msgstr "Value of {0} on this deployment"
-
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Value shared"
 msgstr "Value shared"
@@ -34185,10 +33972,6 @@ msgstr "Values the hub holds"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Variable name"
 msgstr "Variable name"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "VARIABLE_NAME"
-#~ msgstr "VARIABLE_NAME"
 
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/credentials-view/CredentialView.tsx
@@ -34450,10 +34233,6 @@ msgstr "visible"
 msgid "Visitor"
 msgstr "Visitor"
 
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "Visitor LLM source"
-#~ msgstr "Visitor LLM source"
-
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Waiting for {hostName} to approve the live session…"
 msgstr "Waiting for {hostName} to approve the live session…"
@@ -34485,10 +34264,6 @@ msgstr "Waiting for FlowPad to open…"
 #: src/pages/keychain-approval.tsx
 msgid "Waiting for keychain approval…"
 msgstr "Waiting for keychain approval…"
-
-#: src/components/conversation/conversation-category.ts
-#~ msgid "Waiting for pickup"
-#~ msgstr "Waiting for pickup"
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "Waiting for sign-in"
@@ -34707,10 +34482,6 @@ msgstr "What do you want to do?"
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"
 msgstr "What do you want to work on"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "What every deployment of this agent gets. Only the variables you approve with Inject are placed on its machines. A secret's value is kept by Flowpad Cloud and is never shown again."
-#~ msgstr "What every deployment of this agent gets. Only the variables you approve with Inject are placed on its machines. A secret's value is kept by Flowpad Cloud and is never shown again."
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "What Flowpad found when it checked this project's Git setup."
@@ -35007,10 +34778,6 @@ msgstr "Which project should it work on?"
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Which set of values the machine reads. It joins the hub you are signed in to either way."
 msgstr "Which set of values the machine reads. It joins the hub you are signed in to either way."
-
-#: src/components/terminal/interactive-terminal/useChainSession.tsx
-#~ msgid "Which worker reviews it?"
-#~ msgstr "Which worker reviews it?"
 
 #: src/components/inbound/RouteCheck.tsx
 msgid "While it is offline, the hub answers 503 and your server retries — nothing is lost and nothing is stored. Messages from other senders keep flowing."
