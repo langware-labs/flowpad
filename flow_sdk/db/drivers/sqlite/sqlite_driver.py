@@ -89,6 +89,12 @@ _standalone_session_var: "ContextVar[Optional[AsyncSession]]" = ContextVar(
 )
 _AFTER_COMMIT_KEY = "flow_after_commit"
 
+#: The id of the row being created that its writer proved absent inside the current writer
+#: transaction (``Entity.mirror_batch``). Its ``save`` skips the existence read and its FTS write
+#: skips the delete — neither row can be there. A first sync creates thousands of rows, and each
+#: statement is a round trip to the SQLite thread.
+PROVEN_NEW_ROW: "ContextVar[Optional[str]]" = ContextVar("_sqlite_proven_new_row", default=None)
+
 # One segment of a field path. A path is pasted into SQL text (``json_extract`` takes its path as a
 # literal for index matching), so every segment is checked against this before it gets there.
 _PATH_SEGMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -780,8 +786,11 @@ class SQLiteDBDriver(DBDriver):
         if not entries:
             return
 
+        proven_new = PROVEN_NEW_ROW.get()
         async with self._session_ctx() as session:
-            await self._fts_delete_batch(session, [e.entity_id for e in entries], batch_size)
+            stale = [e.entity_id for e in entries if str(e.entity_id) != proven_new]
+            if stale:
+                await self._fts_delete_batch(session, stale, batch_size)
             await self._fts_insert_batch(session, entries, batch_size)
 
     async def fts_search(
@@ -1462,6 +1471,8 @@ class SQLiteDBDriver(DBDriver):
     async def save(self, entity: DBBaseRecord, owner: TypeId | None = None) -> DBBaseRecord:
         """Save entity (create or update)."""
         async with self._session_ctx() as session:
+            if PROVEN_NEW_ROW.get() == str(entity.id):
+                return await self._create_entity(entity, owner, session)
             # Check if entity exists by ID
             result = await session.execute(select(EntitySchema).where(EntitySchema.id == entity.id))
             existing = result.scalar_one_or_none()
