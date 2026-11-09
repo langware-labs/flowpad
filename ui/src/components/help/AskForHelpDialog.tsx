@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { LifeBuoy, Paperclip, Stethoscope, X } from 'lucide-react';
 import {
   askForHelp,
@@ -35,6 +35,7 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateTo, notify } from '@src/notifications';
 import { guardCloudAction } from '@src/services/privacy-guard';
+import { describesAProblem } from './describes-a-problem';
 
 /** A small toggle pill: Diagnosis, Context. */
 const PILL = 'flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground';
@@ -253,6 +254,11 @@ export function AskForHelpDialog({
               disabled={busy}
               data-testid="vibe-assign-notes"
             />
+            {text.trim() && !describesAProblem(text) && (
+              <p className="text-xs text-amber-600 dark:text-amber-400" data-testid="ask-for-help-short-hint">
+                <Trans>A few words about what went wrong help us look in the right place.</Trans>
+              </p>
+            )}
             <PickedFileList
               files={picker.files}
               rejected={picker.rejected}
@@ -275,10 +281,7 @@ export function AskForHelpDialog({
                   data-testid="ask-for-help-run-diagnosis"
                 />
               </label>
-              <label
-                className={PILL}
-                title={t`Your screen, session and diagnosis`}
-              >
+              <label className={PILL} title={t`Your screen, session and diagnosis`}>
                 <Paperclip className="h-3 w-3" />
                 {t`Context`}
                 <input
@@ -408,11 +411,7 @@ export function AskForHelpDialog({
             <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
               {t`Cancel`}
             </Button>
-            <Button
-              onClick={() => void submit()}
-              disabled={busy || !text.trim()}
-              data-testid="vibe-assign-submit"
-            >
+            <Button onClick={() => void submit()} disabled={busy || !text.trim()} data-testid="vibe-assign-submit">
               {busy ? t`Diagnosing…` : sendLabel}
             </Button>
           </div>

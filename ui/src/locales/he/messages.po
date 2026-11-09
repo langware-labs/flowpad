@@ -2403,6 +2403,10 @@ msgstr "מופע Desktop או מחשב, ומזהה ערוץ בתוכו"
 msgid "A document is saved, a folder gets a new file."
 msgstr "מסמך נשמר, לתיקייה נוסף קובץ חדש."
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "A few words about what went wrong help us look in the right place."
+msgstr "כמה מילים על מה שהשתבש יעזרו לנו לחפש במקום הנכון."
+
 #: src/components/data-sources/source-attention.ts
 msgid "A file changed both here and remotely, so write-back wrote neither."
 msgstr "קובץ השתנה גם כאן וגם מרחוק, ולכן הכתיבה חזרה לא נכתבה לאף אחד מהם."
@@ -3071,7 +3075,7 @@ msgstr "הוספת אנשים"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Add people — pick a person or type an email"
-msgstr ""
+msgstr "הוספת אנשים — בחרו אדם או הקלידו אימייל"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Add people to {teamName}"
@@ -4517,8 +4521,8 @@ msgid "Ask a teammate to join it and write there. The agent answers as you."
 msgstr "בקשו מחבר צוות להצטרף אליו ולכתוב שם. הסוכן עונה בשמכם."
 
 #: src/components/conversation/AutomationMessageActions.tsx
-#~ msgid "Ask about this"
-#~ msgstr ""
+msgid "Ask about this"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Ask about this analysis…"
@@ -4580,7 +4584,7 @@ msgstr "ניתן לשאול את עוזר Flowpad כל דבר על הדף הזה
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Ask the help desk too"
-msgstr ""
+msgstr "לבקש גם ממוקד התמיכה"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
@@ -4605,7 +4609,7 @@ msgstr "בקשו קישור חדש ממי ששיתף אותו."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Asked before? Your open requests are in the help desk."
-msgstr ""
+msgstr "ביקשתם כבר? הבקשות הפתוחות שלכם נמצאות במוקד התמיכה."
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Asked by"
@@ -4816,7 +4820,7 @@ msgstr "צרפו קבצים"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Attach files or a screenshot"
-msgstr ""
+msgstr "צירוף קבצים או צילום מסך"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Attach more files or assets"
@@ -5016,13 +5020,14 @@ msgstr "האוטומציה נוצרה"
 #: src/components/automations/BusView.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/conversation/channel-attribution.tsx
 #: src/types/ViewType.ts
 msgid "Automations"
 msgstr "אוטומציות"
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
-#~ msgid "Automations — what your automations report"
-#~ msgstr ""
+msgid "Automations — what your automations report"
+msgstr ""
 
 #: src/components/automations/BusView.tsx
 #: src/components/automations/BusView.tsx
@@ -5098,7 +5103,6 @@ msgstr "אזור AWS עבור Bedrock"
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/git/GitSetupWizard.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
@@ -5147,8 +5151,8 @@ msgid "Back to the conversation message that started this session"
 msgstr "חזרה להודעה בשיחה שפתחה את הסשן הזה"
 
 #: src/components/conversation/AutomationMessageActions.tsx
-#~ msgid "Back to the session"
-#~ msgstr ""
+msgid "Back to the session"
+msgstr ""
 
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Back to the simple view"
@@ -6342,7 +6346,7 @@ msgstr "הבדיקות עברו"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Checks this computer when you send"
-msgstr ""
+msgstr "בודק את המחשב הזה בעת השליחה"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -7175,7 +7179,7 @@ msgstr "אוסף כל החלטת ניווט חכם (מה הוקלד, לאן ומ
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Collecting…"
-msgstr ""
+msgstr "אוסף…"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/ui/agent-avatar-picker.tsx
@@ -7699,6 +7703,7 @@ msgstr "תוכן"
 
 #: src/components/conversation/ConversationPanel.tsx
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/types/ViewType.ts
 msgid "Context"
@@ -7726,7 +7731,7 @@ msgstr "פעולות רשימת הקשר"
 
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Context not shared"
-msgstr ""
+msgstr "ההקשר לא שותף"
 
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 msgid "Context to share — review before sending."
@@ -8258,7 +8263,7 @@ msgstr "לא ניתן היה לבדוק את מצב ההתחברות"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Could not collect the context"
-msgstr ""
+msgstr "לא ניתן לאסוף את ההקשר"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
@@ -8625,8 +8630,8 @@ msgid "Could not open the machine"
 msgstr "לא ניתן לפתוח את המכונה"
 
 #: src/components/conversation/AutomationMessageActions.tsx
-#~ msgid "Could not open the session"
-#~ msgstr ""
+msgid "Could not open the session"
+msgstr ""
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
 #: src/components/conversation/asset-review/use-open-git-share.ts
@@ -8964,6 +8969,7 @@ msgid "Could not save to the project"
 msgstr ""
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
+#: src/notifications/commands.ts
 msgid "Could not send"
 msgstr "לא ניתן לשלוח"
 
@@ -9003,7 +9009,7 @@ msgstr ""
 
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Could not share"
-msgstr ""
+msgstr "לא ניתן לשתף"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -10774,6 +10780,7 @@ msgstr "התחברות דרך מכשיר"
 msgid "Device logins"
 msgstr "התחברויות מכשיר"
 
+#: src/components/help/AskForHelpDialog.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Diagnose"
 msgstr "אבחון"
@@ -10801,11 +10808,11 @@ msgstr "אובחן: {0}"
 
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Diagnosing privately… you can leave, the answer lands here."
-msgstr ""
+msgstr "מאבחן באופן פרטי… אפשר לעזוב, התשובה תגיע לכאן."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Diagnosing…"
-msgstr ""
+msgstr "מאבחן…"
 
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Diagnosing… you'll get a message when it's done"
@@ -10814,6 +10821,7 @@ msgstr "מאבחן… תקבל הודעה כשזה יסתיים"
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 #: src/components/conversation/channel-attribution.tsx
 #: src/components/diagnosis-viewer/DiagnosisViewer.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
 #: src/types/ViewType.ts
 msgid "Diagnosis"
@@ -14594,7 +14602,7 @@ msgstr "מאגרי עזרה או מאגרי כישורים שייטענו יחד
 
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Help request"
-msgstr ""
+msgstr "בקשת עזרה"
 
 #: src/components/credentials/VariableDetails.tsx
 msgid "Help URL"
@@ -19046,7 +19054,6 @@ msgstr "החדשים ביותר תחילה"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/media-viewer/MediaPager.tsx
 #: src/components/ui/pagination.tsx
 #: src/journey/JourneyTray.tsx
@@ -20518,7 +20525,7 @@ msgstr "אף אחד עדיין לא יכול לכתוב לסוכן הזה — ה
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Nobody picked: it stays a private conversation on this computer, with the diagnosis."
-msgstr ""
+msgstr "לא נבחר אף אחד: זו נשארת שיחה פרטית במחשב הזה, עם האבחון."
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Nobody yet"
@@ -21774,8 +21781,8 @@ msgid "Open authorization page"
 msgstr "פתיחת דף ההרשאה"
 
 #: src/components/conversation/AutomationMessageActions.tsx
-#~ msgid "Open automation"
-#~ msgstr ""
+msgid "Open automation"
+msgstr ""
 
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
@@ -24093,6 +24100,7 @@ msgid "prompt"
 msgstr "הנחיה"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/conversation/AttachMenu.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/quick-create/registry.ts
@@ -24100,6 +24108,10 @@ msgstr "הנחיה"
 #: src/i18n/type-labels.ts
 msgid "Prompt"
 msgstr "פרומפט"
+
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
+msgid "Prompt — they approve it, it runs once on their machine…"
+msgstr ""
 
 #: src/components/conversation/PromptCallCard.tsx
 msgid "Prompt · runs once on {otherName}'s machine"
@@ -25336,6 +25348,10 @@ msgstr "הסרת אפשרות"
 msgid "Remove package"
 msgstr "הסרת חבילה"
 
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
+msgid "Remove prompt"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Remove public access"
 msgstr "הסירו גישה ציבורית"
@@ -25356,7 +25372,7 @@ msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Remove the help desk"
-msgstr ""
+msgstr "הסרת מוקד התמיכה"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Remove this argument"
@@ -26059,6 +26075,7 @@ msgstr "חודש — הבדיקה הבאה תתבצע במחזור הקרוב."
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+#: src/notifications/ingest.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Retry"
 msgstr "נסו שוב"
@@ -26142,6 +26159,7 @@ msgstr "חשפו את ההודעה שהמשימה הזו נגזרה ממנה"
 
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "Review"
 msgstr "סקירה"
 
@@ -26840,7 +26858,6 @@ msgstr "ארגז החול שודרג"
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
@@ -26985,7 +27002,6 @@ msgstr ""
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/DetectedKeys.tsx
 #: src/components/cron-view/CronForm.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/top-nav-bar/RecordScreenButton.tsx
@@ -27809,6 +27825,10 @@ msgstr "שלחו את הקישור הזה למי שתרצו לתת לו גישה
 msgid "Send this to the person you support — they run it in their terminal:"
 msgstr "שלחו את זה לאדם שאתם תומכים בו — הוא יריץ את זה בטרמינל שלו:"
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Send to"
+msgstr "שליחה אל"
+
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 msgid "Send to agent"
 msgstr ""
@@ -27818,10 +27838,6 @@ msgid "Send updated answers"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Send to"
-msgstr "שליחה אל"
-
 msgid "Send without it"
 msgstr "שלחו בלי זה"
 
@@ -31386,7 +31402,7 @@ msgstr "המספר שלפני הנקודתיים בטוקן הבוט."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "The one you already took"
-msgstr ""
+msgstr "זה שכבר ביצעתם"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -32108,9 +32124,13 @@ msgstr "זהו משאב ענן — הוא יושמד בענן, לא רק כאן.
 msgid "This is its first start, so it takes a few minutes."
 msgstr "זו ההפעלה הראשונה שלו, ולכן זה עשוי להימשך כמה דקות."
 
-#: src/components/conversation/AutomationMessageActions.tsx
 #~ msgid "This is my usage report ({target}, attached as context). Read it, then wait for my questions."
 #~ msgstr ""
+
+#. placeholder {0}: conversation?.title ?? ''
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "This is what my automation \"{0}\" reported ({target}, attached as context). Read it, then wait for my questions."
+msgstr ""
 
 #: src/components/harness-login/StatusRow.tsx
 msgid "This is your default assistant"
@@ -32745,7 +32765,6 @@ msgid "Times this event happened since Flowpad started"
 msgstr "מספר הפעמים שהאירוע התרחש מאז הפעלת Flowpad"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
@@ -35137,6 +35156,7 @@ msgid "Working Tree"
 msgstr "עץ עבודה"
 
 #: src/components/conversation/ConversationAutomationChip.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "working…"
@@ -35145,6 +35165,7 @@ msgstr "עובד…"
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/conversation/ConversationActions.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -35626,7 +35647,7 @@ msgstr "הסנדבוקס שלכם מוכן."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Your screen, session and diagnosis"
-msgstr ""
+msgstr "המסך, ה־session והאבחון שלכם"
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "your secret manager"

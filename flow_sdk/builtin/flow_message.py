@@ -125,7 +125,12 @@ class FlowMessageKind(str, Enum):
     @classmethod
     def hub_only(cls, value: "str | None") -> bool:
         """A kind that stays on the hub: ``materialize_flow_message`` refuses it, so no path makes it a chat row."""
-        return value in (cls.SEALED_VALUE.value, cls.SEALED_ACK.value, cls.SEALED_PENDING.value, cls.SEALED_REQUEST.value)
+        return value in (
+            cls.SEALED_VALUE.value,
+            cls.SEALED_ACK.value,
+            cls.SEALED_PENDING.value,
+            cls.SEALED_REQUEST.value,
+        )
 
     @classmethod
     def sendable(cls, value: "str | None") -> "FlowMessageKind | None":
@@ -133,7 +138,14 @@ class FlowMessageKind(str, Enum):
         to USER. USER is implicit; INVITATION is a local-only first-row
         placeholder no caller mints; SESSION_EVENT and SEALED_NOTE are the
         explicitly sendable non-default kinds, and HELP_REQUEST is Ask for help's."""
-        return next((k for k in (cls.SESSION_EVENT, cls.SEALED_NOTE, cls.HELP_REQUEST, cls.DIAGNOSIS, cls.AUTOMATION_RESULT) if value == k.value), None)
+        return next(
+            (
+                k
+                for k in (cls.SESSION_EVENT, cls.SEALED_NOTE, cls.HELP_REQUEST, cls.DIAGNOSIS, cls.AUTOMATION_RESULT)
+                if value == k.value
+            ),
+            None,
+        )
 
 
 class DeliveryStatus(str, Enum):
@@ -258,8 +270,18 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
     # ``process_call`` / ``returned_value`` are a call on a message and its answer
     # (``process_call_spec``): the value IS the header ``prompt_preview``, never a row.
     # ``message_form`` / ``form_answers`` likewise: a form on a message and its answers (``message_form_spec``).
-    {"conversation", "flow_message", "task", "remote_worker_session", "project", "prompt_completion",
-     "process_call", "returned_value", "message_form", "form_answers"}
+    {
+        "conversation",
+        "flow_message",
+        "task",
+        "remote_worker_session",
+        "project",
+        "prompt_completion",
+        "process_call",
+        "returned_value",
+        "message_form",
+        "form_answers",
+    }
 )
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder
@@ -308,7 +330,7 @@ def carried_value(attachments, kind: str) -> "tuple[str, dict] | None":
             value = _json.loads(_get(a, "prompt_preview") or "")
         except (ValueError, TypeError):
             return None
-        return (data[len(prefix):], value) if isinstance(value, dict) else None
+        return (data[len(prefix) :], value) if isinstance(value, dict) else None
     return None
 
 
@@ -735,6 +757,8 @@ class FlowMessage(Entity):
     delivery_status: str = APIField(default=DeliveryStatus.CREATED.value)
     delivered_at: Optional[datetime] = APIField(default=None)
     received_at: Optional[datetime] = APIField(default=None, sharing=Sharing.HUB_WRITE)
+    #: Set by the hub while the recipient agent is working on an answer: the sender's "working..." status.
+    handling_at: Optional[datetime] = APIField(default=None, sharing=Sharing.HUB_WRITE)
     #: EVENT time — when the human sent this, on its original channel. Stamped
     #: (and convergently re-stamped) ONLY by the stream inbox projection, from
     #: ``SourceItem.occurred_at``; every other lane leaves it None and falls
@@ -1133,7 +1157,9 @@ class FlowMessage(Entity):
             if not (a.attachment_type == AttachmentType.TYPE_ID and a.data in structural)
         ]
 
-    def read_entry(self, self_ids: "frozenset[str] | set[str]" = frozenset(), *, list_body: bool = False) -> dict[str, Any]:
+    def read_entry(
+        self, self_ids: "frozenset[str] | set[str]" = frozenset(), *, list_body: bool = False
+    ) -> dict[str, Any]:
         """The unabridged read of this message — what ``flow conversation show``
         and ``flow conversation message`` print. Full text, who sent it relative
         to the reader (``you`` when ``sender_id`` is one of ``self_ids``, see
@@ -1188,9 +1214,9 @@ class FlowMessage(Entity):
             staged = staged_attachments_dir(self.id)
             entries = [p for p in unpacked.iterdir() if p != staged]
             entries += list(staged.iterdir()) if staged.is_dir() else []
-            out["unpacked_files"] = sorted(
-                str(p.relative_to(unpacked)) + ("/" if p.is_dir() else "") for p in entries
-            )[:200]
+            out["unpacked_files"] = sorted(str(p.relative_to(unpacked)) + ("/" if p.is_dir() else "") for p in entries)[
+                :200
+            ]
         return out
 
     def clone_for_forward(
