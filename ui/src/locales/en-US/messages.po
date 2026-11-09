@@ -2403,6 +2403,10 @@ msgstr "A desktop instance or a machine, and a channel id on it"
 msgid "A document is saved, a folder gets a new file."
 msgstr "A document is saved, a folder gets a new file."
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "A few words about what went wrong help us look in the right place."
+msgstr "A few words about what went wrong help us look in the right place."
+
 #: src/components/data-sources/source-attention.ts
 msgid "A file changed both here and remotely, so write-back wrote neither."
 msgstr "A file changed both here and remotely, so write-back wrote neither."
@@ -35162,6 +35166,7 @@ msgid "Working Tree"
 msgstr "Working Tree"
 
 #: src/components/conversation/ConversationAutomationChip.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "working…"
@@ -35170,6 +35175,7 @@ msgstr "working…"
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/conversation/ConversationActions.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
