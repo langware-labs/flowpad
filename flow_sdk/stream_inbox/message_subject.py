@@ -20,6 +20,9 @@ from flow_sdk.tags.envelope import parse_target
 
 logger = logging.getLogger(__name__)
 
+#: The handling notices in flight (a task must be held to run to its end).
+_NOTICES: set = set()
+
 #: Every tag whose events name a projected message.
 MESSAGE_PROJECTED = "stream_inbox.*.message.projected"
 
@@ -182,7 +185,9 @@ class ConversationMessageSubject(MessageSubject):
                 logger.debug("handling notice to the hub failed", exc_info=True)
 
         try:
-            asyncio.get_running_loop().create_task(_tell())
+            task = asyncio.get_running_loop().create_task(_tell())
+            _NOTICES.add(task)  # a task nobody holds can be collected mid-run
+            task.add_done_callback(_NOTICES.discard)
         except RuntimeError:
             logger.debug("no loop for the handling notice")
 
