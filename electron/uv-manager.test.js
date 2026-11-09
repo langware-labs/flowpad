@@ -2699,6 +2699,30 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       await assert.rejects(() => m.upgrade(), /Could not check which FlowPad engine release is compatible.*preserved/s); passed++;
       eq(installed, false, 'upgrade(): PyPI silent → nothing installed (fail closed)');
     }
+    // ...but the update-cycle harness's forced spec is not "PyPI did not answer": resolution is skipped on purpose
+    // (resolveCompatibleEngineVersion → null) and the forced spec is installed.
+    {
+      const saved = { t: process.env.FLOWPAD_UPDATE_TEST, s: process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC };
+      process.env.FLOWPAD_UPDATE_TEST = '1';
+      process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC = 'flowpad==0.2.77';
+      try {
+        const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+        const specs = [];
+        m._uvToolInstallForce = async (args) => { specs.push(args[2]); };
+        m._getPypiData = async () => { throw new Error('PyPI must not be asked under a forced spec'); };
+        m._pythonPinForUpgrade = async () => '3.12';
+        m._ensureShimOnPath = async () => {};
+        m._resolveFlowBin = async () => '/fake/flow';
+        m._verifyInstalledPairOrRollback = async () => {};
+        m.getInstalledVersionSync = () => '0.2.40';
+        await m.upgrade();
+        eq(specs, ['flowpad==0.2.77'], 'upgrade(): the harness-forced spec is installed, not refused');
+      } finally {
+        for (const [k, v] of [['FLOWPAD_UPDATE_TEST', saved.t], ['FLOWPAD_UPDATE_TEST_ENGINE_SPEC', saved.s]]) {
+          if (v === undefined) delete process.env[k]; else process.env[k] = v;
+        }
+      }
+    }
 
     // Failed activation: a successful upgrade is remembered until its engine is seen healthy; one that never came up is
     // put back — the engine that worked — and never an engine that did come up.

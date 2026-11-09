@@ -3265,17 +3265,18 @@ class UvManager {
       pin = await this._pythonPinForUpgrade(target.info); // that release's own requires_python
       this.log.info(`[uv] Upgrading flowpad to ${target.version}${target.version !== version ? ` (${version} was withdrawn)` : ''}...`);
     } else {
-      // Newest release compatible in BOTH directions; null → contract not evaluable, keep @latest.
+      // Newest release compatible in BOTH directions; null → the contract could not be evaluated (refused below).
       const picked = await this.resolveCompatibleEngineVersion();
       if (picked) {
         spec = engineSpec(`${PYPI_PACKAGE}==${picked.version}`);
         pin = await this._pythonPinForUpgrade(await this._getPypiVersionInfo(picked.version));
         this.log.info(`[uv] Upgrading flowpad to ${picked.version}...`);
-      } else if (this._appVersion) {
+      } else if (this._appVersion && engineSpec(PYPI_PACKAGE) === PYPI_PACKAGE) {
         // The contract could not be evaluated (PyPI did not answer): an update never installs a release it could
         // not check — the working engine stays (fail closed).
         throw installFailure('Could not check which FlowPad engine release is compatible with this desktop (PyPI did not answer). Not updating the engine. Your existing installation has been preserved.');
       } else {
+        // No desktop version to check against, or the update-cycle harness forced the spec (engineSpec()).
         pin = await this._pythonPinForUpgrade();
         this.log.info('[uv] Upgrading flowpad...');
       }
@@ -3590,10 +3591,6 @@ class UvManager {
     throw new Error('unreachable: no staging strategy ran');
   }
 
-  /**
-   * The staged engine imports — its server stack and the SDK — and is exactly `version`: a broken wheel,
-   * a missing dependency or a wrong resolution fails HERE, with the running engine untouched.
-   */
   /**
    * The staged engine must be able to do what this desktop asks of an engine, checked in its own throwaway venv —
    * nothing here starts a server, so the working engine, its data, port and singleton are never touched:

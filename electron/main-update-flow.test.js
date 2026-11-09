@@ -740,7 +740,7 @@ const HOUR = 60 * 60 * 1000;
       const checksBefore = env.autoUpdater.checks;
       const r = await env.ipc['upgrade-flowpad']({}, '0.2.181');
       eq(env.autoUpdater.checks, checksBefore + 1, 'the click looks at the feed again first');
-      eq([r.desktopCheckFailed, r.desktopUpdatePending], [undefined, undefined], 'still no answer, no newer desktop known: not refused');
+      eq(r.desktopUpdatePending, undefined, 'still no answer, no newer desktop known: not refused');
       eq(env.uv.asserted, ['0.2.181'], 'the release is checked against this desktop (fail closed) before anything is touched');
       eq(env.uv.upgrades.map((o) => o.version), ['0.2.181'], 'and installed');
       // the fallback never skips the compatibility check: a release this desktop cannot run is still refused

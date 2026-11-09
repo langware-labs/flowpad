@@ -3489,14 +3489,8 @@ ipcMain.handle('upgrade-flowpad', async (_event, version) => {
   // An old failed desktop check is looked at again first: the user is asking NOW (engineChangeAllowedAfterRecheck).
   const policy = await engineChangeAllowedAfterRecheck('upgrade-flowpad IPC');
   if (policy !== 'allow') {
-    // Say which: a newer desktop is known, or the feed still does not answer (nothing to install first).
-    if (!pendingDesktopVersion && desktopStatus.state !== 'available' && !lastKnownNewerDesktop()) {
-      return {
-        success: false,
-        desktopCheckFailed: true,
-        error: 'FlowPad could not check for a desktop update right now (the update server did not answer), and the engine is updated only once that is known. Try again in a few minutes.',
-      };
-    }
+    // Only a newer desktop (pending or known) refuses here: a feed that does not answer falls back to the
+    // compatibility-checked path inside engineChangeAllowedAfterRecheck.
     return { success: false, desktopUpdatePending: true, error: 'A newer FlowPad desktop must be installed first; the engine is updated after it.' };
   }
   if (target) {

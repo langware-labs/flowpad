@@ -144,8 +144,8 @@ Electron (main.js)
   installed (`_assertCandidateCompatible`), and `upgrade()` never falls back to an unchecked `@latest`; only a first
   install or a repair (no working engine) still relies on the post-install check. Used by the popover's "Upgrade",
   the post-boot and engine-retry checks, the postponed prepare and the gate after a prepare (the pre-start prompt
-  still holds: the post-boot check follows it). The popover's refusal says which it is: a newer desktop to install
-  first (`desktopUpdatePending`), or a feed that still does not answer (`desktopCheckFailed`).
+  still holds: the post-boot check follows it). The popover refuses only for a newer desktop to install first
+  (`desktopUpdatePending`).
 - **Activation:** an upgraded engine is remembered until it is seen healthy (`markEngineHealthy`). One that does not
   come up — after the post-boot dialog, from the popover, or installed at launch — is stopped and the engine it
   replaced is put back (`restorePreviousEngine`: uv's cache first, then PyPI) and started; before activation the staged
