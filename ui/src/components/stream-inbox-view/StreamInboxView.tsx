@@ -65,10 +65,9 @@ import {
   useChannelAttribution,
 } from '@src/components/conversation/channel-attribution';
 import { AttachedChannelsBar, ConnectChannelPrompt, useAttachedChannels } from './AttachedChannelsBar';
-import { ChannelAttentionBar } from './ChannelAttentionBar';
 import {
-  attentionAmong,
   BUILT_IN_CHANNELS,
+  FLOWPAD_CHANNEL,
   channelKeyOf,
   channelsOwnerFor,
   type ConversationScope,
@@ -762,8 +761,6 @@ export function StreamInboxView({
     },
     [currentDock, navigation, initialChannel, channelStoreKey],
   );
-  // The picked channels that are not listening: the strip above the list explains each one.
-  const attention = useMemo(() => attentionAmong(ownerChannels, channelFilter), [ownerChannels, channelFilter]);
   // The query already narrows to the picked sources; this also hides rows pushed live from other channels.
   const channelMatch = useMemo(
     () =>
@@ -772,6 +769,7 @@ export function StreamInboxView({
             // A built-in channel (Diagnosis) is the conversation's own; a source's is its message's.
             if (conv.channel && channelFilter.has(conv.channel)) return true;
             const source = sourceForOrigin(ownerChannels, m.origin, m.origin_local);
+            if (!conv.channel && !source && !conv.channel_source_id) return channelFilter.has(FLOWPAD_CHANNEL);
             return !!source && channelFilter.has(channelKeyOf(source));
           }
         : undefined,
@@ -1683,7 +1681,6 @@ export function StreamInboxView({
           </div>
         )}
 
-        {!initialLoading && !embedded && <ChannelAttentionBar items={attention} specFor={specFor} />}
 
         {initialLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
@@ -1719,7 +1716,7 @@ export function StreamInboxView({
                 channelsOwner && channelFilter.size === 0 && <ConnectChannelPrompt owner={channelsOwner} offers={channelOffers} />
               )
             )}
-            {!inArchivedView && !searchActive && !columnFilterActive && attention.length === 0 && (
+            {!inArchivedView && !searchActive && !columnFilterActive && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
                 <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 <Trans>Check for new messages</Trans>

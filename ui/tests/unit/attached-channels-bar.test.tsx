@@ -28,7 +28,7 @@ import { useSourceSetupStore } from '@src/components/setup-wizard/source-setup-s
 
 // A person's own StreamInbox also carries the Diagnosis mark; these cases are about channel marks.
 const channelMarks = () =>
-  screen.getAllByTestId('attached-channel').filter((e) => e.dataset.provider !== 'diagnosis');
+  screen.getAllByTestId('attached-channel').filter((e) => !['diagnosis', 'flowpad'].includes(e.dataset.provider ?? ''));
 
 function mount(rows: DataSource[], selected = new Set<string>()) {
   const onSelectedChange = vi.fn();
@@ -102,7 +102,7 @@ describe('AttachedChannelsBar', () => {
     // All marks are lit by default; a press dims that one and keeps the rest shown.
     expect(marks.map((e) => e.getAttribute('aria-pressed'))).toEqual(['true', 'true']);
     fireEvent.click(marks[1]);
-    expect(onSelectedChange).toHaveBeenCalledWith(new Set(['gmail|gmail', 'diagnosis']));
+    expect(onSelectedChange).toHaveBeenCalledWith(new Set(['flowpad', 'gmail|gmail', 'diagnosis']));
     expect(save).not.toHaveBeenCalled();
   });
 
