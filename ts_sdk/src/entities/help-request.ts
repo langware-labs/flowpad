@@ -136,6 +136,8 @@ export interface HelpRequestDiagnosis {
   diagnosis: import('../diagnose/types').DiagnosisSpec | null;
   reportable: boolean;
   reported: boolean;
+  /** Reported, and the last word is someone else's: the help desk answered. */
+  replied?: boolean;
   /** Who Report it goes to ("Flowpad support", "acme-planner's help desk"). */
   desk: string;
   /** A dependency with no desk: Flowpad support passes it on to this. */
@@ -146,7 +148,7 @@ export async function helpRequestDiagnosis(conversationId: string): Promise<Help
   const action = new ActionInfo('help-request-diagnosis', 'conversation', conversationId, 'POST');
   action.bodyParameters = {};
   const res = await dataManager.callAction<unknown, HelpRequestDiagnosis>(action);
-  return res ?? { diagnosing: false, diagnosis: null, reportable: false, reported: false, desk: '', pass_on: '' };
+  return res ?? { diagnosing: false, diagnosis: null, reportable: false, reported: false, replied: false, desk: '', pass_on: '' };
 }
 
 /** An action body: the request itself, or — with files — a multipart form carrying it in ``request``. */

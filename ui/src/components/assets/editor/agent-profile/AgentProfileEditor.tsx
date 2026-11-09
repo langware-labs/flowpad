@@ -33,6 +33,7 @@ import { AgentAssistantSkillsField } from './AgentAssistantSkillsField';
 import { AgentModelSizeField } from './AgentModelSizeField';
 import { AgentVisibilitySection } from './AgentVisibilitySection';
 import { AgentAutoLaunchTab } from './AgentAutoLaunchTab';
+import { AgentEnvTab } from './AgentEnvTab';
 import { useAgentMcpSync } from './use-agent-mcp-sync';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import type { AgentDocumentPatch } from './agent-fields';
@@ -65,6 +66,9 @@ interface AgentProfileEditorProps {
  * agent.md through the same revision-checked document action; the backend
  * preserves YAML and identity data.
  */
+/** Dock option: the editor's open tab. */
+const EDITOR_TAB_OPTION = 'tab';
+
 export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) {
   const { t } = useLingui();
   const hub = isHubOnly();
@@ -115,6 +119,13 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   );
   // Sharing reads its public grant from the hub on mount; hold it back until "More" is first opened.
   const [moreOpened, setMoreOpened] = useState(false);
+  // The open tab lives in the URL (`?tab=`), like the deployment card's: saving the agent re-renders the editor, and a
+  // tab kept only in state would snap back to Summary (seen when saving a value on the Env tab).
+  const tab = currentDock?.options?.[EDITOR_TAB_OPTION] || 'summary';
+  const openTab = (next: string) => {
+    if (next === 'settings') setMoreOpened(true);
+    if (currentDock) navigation.openDock(currentDock.withOption(EDITOR_TAB_OPTION, next === 'summary' ? null : next));
+  };
   const [promptFull, setPromptFull] = useState(false);
   // Milkdown rebuilds on a new onChange, so keep the callback stable and read the latest body from a ref.
   const setBodyRef = useRef(content.setBody);
@@ -402,11 +413,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
             )}
           </fieldset>
 
-          <Tabs
-            defaultValue="summary"
-            className="flex min-h-0 flex-1 flex-col"
-            onValueChange={(v) => v === 'settings' && setMoreOpened(true)}
-          >
+          <Tabs value={tab} className="flex min-h-0 flex-1 flex-col" onValueChange={openTab}>
             <TabsList className="self-start">
               <TabsTrigger value="summary" data-testid="agent-tab-summary">
                 <Trans>Summary</Trans>
@@ -428,6 +435,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   </span>
                 )}
               </TabsTrigger>
+              {!hub && (
+                <TabsTrigger value="env" data-testid="agent-tab-env">
+                  <Trans>Env</Trans>
+                </TabsTrigger>
+              )}
               {!hub && (
                 <TabsTrigger value="autolaunch" data-testid="agent-tab-autolaunch">
                   <Trans>Auto-launch</Trans>
@@ -698,7 +710,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 {/* Sharing and the public grant land on the published hub row — nothing to toggle on the hub's own
                   read-only view. Outside the definition's fieldsets: an unreadable agent document must not
                   disable controls that never touch it. */}
-                {!hub && moreOpened && (
+                {!hub && (moreOpened || tab === 'settings') && (
                   <AgentVisibilitySection agent={agent} version={version} onPublished={loadVersion} />
                 )}
               </div>
@@ -742,6 +754,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
             <TabsContent value="deployments" className="mt-3">
               <AgentPlacesColumn agent={agent} />
             </TabsContent>
+            {!hub && (
+              <TabsContent value="env" className="mt-3">
+                <AgentEnvTab agent={agent} />
+              </TabsContent>
+            )}
             {/* Not force-mounted: read on first open, and its 10s poll stops when another tab is shown. */}
             {!hub && (
               <TabsContent value="autolaunch" className="mt-3">

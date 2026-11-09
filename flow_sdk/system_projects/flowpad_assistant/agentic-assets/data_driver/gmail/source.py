@@ -20,6 +20,7 @@ the message from All Mail by its key when handed an attachment the session never
 """
 from __future__ import annotations
 
+import codecs
 import imaplib
 import re
 import smtplib
@@ -624,7 +625,16 @@ def message_body(message: Message) -> str:
     part = message.get_body(preferencelist=("plain", "html")) if message.is_multipart() else message
     if part is None:
         return ""
-    content = part.get_content()
+    try:
+        content = part.get_content()
+    except LookupError:  # a charset Python has no codec for, e.g. Hebrew mail's iso-8859-8-i
+        charset = re.sub(r"-[ie]$", "", part.get_content_charset() or "")
+        try:
+            codecs.lookup(charset)
+        except LookupError:
+            charset = "utf-8"
+        payload = part.get_payload(decode=True)
+        return payload.decode(charset, errors="replace") if isinstance(payload, bytes) else ""
     return content.decode(part.get_content_charset() or "utf-8", errors="replace") if isinstance(content, bytes) else str(content)
 
 

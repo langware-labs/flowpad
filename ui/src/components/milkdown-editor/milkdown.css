@@ -462,3 +462,17 @@ html.light .milkdown-editor-wrapper .token.important {
   background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
 }
 .flowpad-change-pin[data-sent='true'] { opacity: 0.6; }
+
+/* Doc comments: the quoted passage, and the card drawn after its block. */
+.flowpad-comment-mark {
+  background-color: hsl(45 90% 55% / 0.16);
+  border-bottom: 2px solid hsl(45 90% 55% / 0.7);
+  border-radius: 2px;
+}
+.flowpad-comment-slot { display: block; margin: 0.25rem 0 1rem; white-space: normal; }
+.flowpad-comment-slot:empty { display: none; }
+.flowpad-comment-flash > * { animation: flowpad-comment-flash 1.6s ease-out; }
+@keyframes flowpad-comment-flash {
+  0%, 40% { box-shadow: 0 0 0 3px hsl(var(--primary) / 0.55); }
+  100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0); }
+}

@@ -58,6 +58,7 @@ import {
   participantRoleLabel,
   participantSubtitle,
   type ContactIdentity,
+  personName,
 } from './participant-display';
 
 const MAX_INLINE_AVATARS = 4;
@@ -832,7 +833,7 @@ export function MembersAvatarStack({
                                     </AvatarFallback>
                                   </Avatar>
                                   <NameWithSubtitle
-                                    name={u.name || u.email || 'unknown'}
+                                    name={personName(u)}
                                     subtitle={participantSubtitle(u)}
                                   />
                                 </button>

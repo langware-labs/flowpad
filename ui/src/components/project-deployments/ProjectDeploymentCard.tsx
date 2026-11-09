@@ -22,7 +22,7 @@ import { AgentPlaceSecrets } from '@src/components/assets/editor/agent-profile/A
 import { DeployedAgentChatPanel } from '@src/components/assets/editor/agent-profile/DeployedAgentChatPanel';
 import { PROJECT_DEPLOYMENT_OPTION } from './project-deployments-url';
 
-const TABS = ['activity', 'config', 'secrets'] as const;
+const TABS = ['activity', 'config', 'environment'] as const;
 type CardTab = (typeof TABS)[number];
 /** Dock options: the selected tab, and whether the main agent's chat is open. */
 const TAB_OPTION = 'tab';
@@ -37,7 +37,7 @@ interface ProjectDeploymentCardProps {
 
 /**
  * How one deployment of a project is run: its environment and source, Update to a new ref, Pause / Resume,
- * Delete, a Chat with its main agent, and its Activity, Config (the main agent's overrides here) and Secrets.
+ * Delete, a Chat with its main agent, and its Activity, Config (the main agent's overrides here) and Environment.
  * The tab and the open chat live in the URL — a click only navigates.
  */
 export function ProjectDeploymentCard({ project, deployment, mainAgent }: ProjectDeploymentCardProps) {
@@ -47,7 +47,8 @@ export function ProjectDeploymentCard({ project, deployment, mainAgent }: Projec
   const [ref, setRef] = useState('');
   const local = deployment.isLocal;
 
-  const rawTab = currentDock?.options?.[TAB_OPTION];
+  // `secrets` is the tab's old name: a link made before the rename still opens it.
+  const rawTab = currentDock?.options?.[TAB_OPTION] === 'secrets' ? 'environment' : currentDock?.options?.[TAB_OPTION];
   const tab: CardTab = (TABS as readonly string[]).includes(rawTab ?? '') ? (rawTab as CardTab) : 'activity';
   const chatOpen = !!mainAgent && currentDock?.options?.[CHAT_OPTION] === deployment.id;
   const openTab = (next: string) =>
@@ -99,7 +100,10 @@ export function ProjectDeploymentCard({ project, deployment, mainAgent }: Projec
     });
 
   return (
-    <article className="overflow-hidden rounded-lg border bg-background" data-testid={`project-deployment-card-${deployment.id}`}>
+    <article
+      className="overflow-hidden rounded-lg border bg-background"
+      data-testid={`project-deployment-card-${deployment.id}`}
+    >
       <div className="flex flex-wrap items-center gap-2.5 px-3.5 py-2.5">
         <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground" data-testid="project-deployment-meta">
           {local ? t`Runs only while this computer is awake` : paused ? t`Paused` : t`Always on`}
@@ -109,7 +113,7 @@ export function ProjectDeploymentCard({ project, deployment, mainAgent }: Projec
           title={t`Credential environment this deployment reads`}
           data-testid="project-deployment-environment"
         >
-          {deployment.environment || DEFAULT_CREDENTIAL_ENVIRONMENT}
+          {t`Credential environment`}: {deployment.environment || DEFAULT_CREDENTIAL_ENVIRONMENT}
         </span>
         {!local && (
           <>
@@ -136,7 +140,12 @@ export function ProjectDeploymentCard({ project, deployment, mainAgent }: Projec
           </>
         )}
         {mainAgent && (
-          <Button size="sm" variant={chatOpen ? 'secondary' : 'default'} onClick={toggleChat} data-testid="project-deployment-chat">
+          <Button
+            size="sm"
+            variant={chatOpen ? 'secondary' : 'default'}
+            onClick={toggleChat}
+            data-testid="project-deployment-chat"
+          >
             <MessageSquare className="me-1.5 h-3.5 w-3.5" />
             <Trans>Chat</Trans>
           </Button>
@@ -194,8 +203,8 @@ export function ProjectDeploymentCard({ project, deployment, mainAgent }: Projec
             </TabsTrigger>
           )}
           {!local && (
-            <TabsTrigger value="secrets" data-testid="project-deployment-tab-secrets">
-              <Trans>Secrets</Trans>
+            <TabsTrigger value="environment" data-testid="project-deployment-tab-environment">
+              <Trans>Environment</Trans>
             </TabsTrigger>
           )}
         </TabsList>
@@ -209,7 +218,7 @@ export function ProjectDeploymentCard({ project, deployment, mainAgent }: Projec
             </TabsContent>
           )}
           {!local && (
-            <TabsContent value="secrets" className="mt-0">
+            <TabsContent value="environment" className="mt-0">
               <AgentPlaceSecrets project={project} deployment={deployment} />
             </TabsContent>
           )}

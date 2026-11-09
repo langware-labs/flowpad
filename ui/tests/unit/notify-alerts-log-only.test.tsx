@@ -1,6 +1,6 @@
 /**
- * Alert routing: `warning`/`error` notifications pop as a toast ONLY in Dev
- * mode, but are logged to the footer warnings popover in EVERY mode — where
+ * Alert routing: `warning`/`error` notifications never pop as a toast, even in
+ * Dev mode; they are logged to the footer warnings popover in EVERY mode — where
  * they can be dismissed one at a time or all at once. Non-alert levels
  * (`success`/`info`) are untouched: they still toast for everyone and never
  * enter the warnings list.
@@ -77,12 +77,12 @@ describe('alert toasts are dev-only, and always logged to the footer', () => {
     expect(toastDismiss).toHaveBeenCalledWith('job-1'); // …but it closed the spinner
   });
 
-  it('still toasts in Dev mode, and logs it too', () => {
+  it('does not toast in Dev mode either, and logs it', () => {
     setMode(ViewMode.Dev);
 
     notify.warning({ title: 'Slow query' });
 
-    expect(toastCustom).toHaveBeenCalledTimes(1);
+    expect(toastCustom).not.toHaveBeenCalled();
     expect(useAlertStore.getState().alerts).toHaveLength(1);
   });
 

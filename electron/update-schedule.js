@@ -23,7 +23,7 @@ const SCHEDULE_FILE = 'update-schedule.json';
 // The DESKTOP feed is also checked at every launch and on this cadence, for every account: a new desktop is
 // the update that leads (the engine follows its dependencies), so it is never a day away. Desktop-only
 // checks do not move the shared anchor above — the engine keeps its own cadence.
-const DESKTOP_INTERVAL_MS = 60 * 60 * 1000;
+const DESKTOP_INTERVAL_MS = 20 * 60 * 1000;
 // The tick only ASKS whether a check is due; the real cadence is the interval above.
 const SCHEDULER_TICK_MS = 5 * 60 * 1000;
 // Failed checks retry sooner than the interval (an outage must not cost a day), but never
@@ -127,7 +127,7 @@ function planLaunchCheck({ state, intervalMs, now }) {
   return { run: true, reason: 'no-usable-answer' };
 }
 
-/** Is a desktop-only check due? An hour after the last look at the feed (any kind of check). */
+/** Is a desktop-only check due? 20 minutes after the last look at the feed (any kind of check). */
 function desktopCheckDue({ state, now }) {
   const seen = [attemptMs(state.lastAttemptAt, now), attemptMs(state.lastDesktopCheckAt, now)].filter((v) => v !== null);
   return seen.length === 0 || now >= Math.max(...seen) + DESKTOP_INTERVAL_MS;

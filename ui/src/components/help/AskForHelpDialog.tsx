@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { LifeBuoy, Paperclip, Stethoscope, X } from 'lucide-react';
 import {
   askForHelp,
@@ -36,6 +36,7 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateTo, notify } from '@src/notifications';
 import { guardCloudAction } from '@src/services/privacy-guard';
+import { describesAProblem } from './describes-a-problem';
 
 export interface AskForHelpDialogProps {
   open: boolean;
@@ -170,6 +171,8 @@ export function AskForHelpDialog({
     project_id: projectId,
     origin,
     diagnose: runDiagnosis && !diagnosisId,
+    // The diagnosis is `flow diagnose`'s agent (minutes, reads the report), not the generic quick checks.
+    purpose: 'repair',
     diagnosis_id: diagnosisId,
     share_context: shareContext,
     left_out: leftOut,
@@ -252,7 +255,10 @@ export function AskForHelpDialog({
 
           <ol className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="ask-for-help-steps">
             {steps.map((label, i) => (
-              <li key={label} className={cn('flex items-center gap-1.5', i + 1 === step && 'font-medium text-foreground')}>
+              <li
+                key={label}
+                className={cn('flex items-center gap-1.5', i + 1 === step && 'font-medium text-foreground')}
+              >
                 <span
                   className={cn(
                     'flex h-5 w-5 items-center justify-center rounded-full border text-[10px]',
@@ -283,6 +289,11 @@ export function AskForHelpDialog({
                 autoFocus
                 data-testid="vibe-assign-notes"
               />
+              {text.trim() && !describesAProblem(text) && (
+                <p className="text-xs text-amber-600 dark:text-amber-400" data-testid="ask-for-help-short-hint">
+                  <Trans>A few words about what went wrong help us look in the right place.</Trans>
+                </p>
+              )}
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>{t`Asked before? Your open requests are in the help desk.`}</span>
                 <button
@@ -485,11 +496,7 @@ export function AskForHelpDialog({
                   disabled={!!busy}
                   data-testid="vibe-assign-submit"
                 >
-                  {busy === 'when_diagnosed'
-                    ? t`Diagnosing…`
-                    : chosen.length
-                      ? t`Send once diagnosed`
-                      : t`Save`}
+                  {busy === 'when_diagnosed' ? t`Diagnosing…` : chosen.length ? t`Send once diagnosed` : t`Save`}
                 </Button>
               </span>
             )}

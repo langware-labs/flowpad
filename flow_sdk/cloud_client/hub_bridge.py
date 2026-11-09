@@ -780,25 +780,14 @@ class HubWsBridge:
                         and not _is_session_traffic(payload)
                     ):
                         try:
-                            from flow_sdk.notifications import notify_desktop
+                            from flow_sdk.notifications import notify_message_arrival
 
-                            text = " ".join((payload.get("text") or "").split())
-                            preview = text if len(text) <= 80 else text[:77] + "..."
-                            if not preview:
-                                preview = _attachment_only_body(payload)
-                            # Message → generic payload flattening lives HERE
-                            # (the Layer-2 consumer); the notification service
-                            # renders it blind. The click target is the same
-                            # /conversation/<id>/message/<id> pointer an in-app
-                            # bubble click navigates to.
-                            await notify_desktop(
-                                "message",
-                                title=payload.get("sender_name") or "New message",
-                                body=preview,
-                                click_target={
-                                    "view_type": "conversation",
-                                    "pointer": f"{conversation_id}/message/{fm_id}",
-                                },
+                            await notify_message_arrival(
+                                conversation_id,
+                                fm_id,
+                                sender_name=payload.get("sender_name") or "",
+                                text=payload.get("text") or "",
+                                fallback=_attachment_only_body(payload),
                             )
                         except Exception as _notify_err:
                             logger.warning(
@@ -1354,6 +1343,20 @@ class HubWsBridge:
                 "target_typeid": {"type": "conversation", "id": conversation_id},
                 "action": "add_message",
                 "body": body,
+            },
+            timeout=timeout,
+        )
+
+    async def mark_handling(self, *, conversation_id: str, flow_message_ids: list[str], timeout: float = 5.0) -> dict:
+        """Tell the hub this box started working on an answer to these messages: the sender's "working..."."""
+        return await self.manager.send_request(
+            {
+                "message_type": "rest_api_msg",
+                "method": "POST",
+                "scope": [],
+                "target_typeid": {"type": "conversation", "id": conversation_id},
+                "action": "mark_handling",
+                "body": {"flow_message_ids": list(flow_message_ids)},
             },
             timeout=timeout,
         )

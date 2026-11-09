@@ -1,23 +1,19 @@
 import { askForHelp, dataContext } from '@sdk';
 import { connectionManager } from '@sdk/websocket';
 import { t } from '@lingui/core/macro';
-import { DockPointer } from '@src/navigation/DockPointer';
-import { useAlertStore } from '../alerts-store';
-import { navigateTo } from '../commands';
+import { useDiagnosisLinks } from '../alerts-store';
 import { notify } from '../notify';
 
 /** What is being diagnosed — drives the request's wording. */
 export type DiagnoseKind = 'error' | 'warning';
 
-/** Diagnosed conversations started from a warnings-list entry: a repair is marked on that entry. */
-const diagnosedAlerts = new Map<string, string>();
-
 /**
- * "Diagnose & fix" — one click, no window. The error becomes a PRIVATE help request (nobody asked,
- * ``purpose: repair``): its conversation opens at once, the repair runs in the background and lands there
- * as a diagnosis message, which offers Report it when someone else owns the fix.
+ * "Diagnose & fix" — one click, no window, no navigation. The error becomes a PRIVATE help request (nobody
+ * asked, ``purpose: repair``) on the Diagnosis channel; the repair runs in the background and lands in that
+ * conversation as a diagnosis message, whose arrival raises the standard new-message notification. The
+ * warnings-list entry it started from (``entryKey``) shows the diagnosis status meanwhile.
  */
-export async function diagnoseAndFix(detail: string, kind: DiagnoseKind = 'error', alertId?: string): Promise<void> {
+export async function diagnoseAndFix(detail: string, kind: DiagnoseKind = 'error', entryKey?: string): Promise<void> {
   const first = detail.split('\n')[0]?.trim() || (kind === 'warning' ? t`A warning` : t`An error`);
   try {
     const result = await askForHelp({
@@ -30,8 +26,7 @@ export async function diagnoseAndFix(detail: string, kind: DiagnoseKind = 'error
       project_id: dataContext.project?.id ?? null,
       connection_id: connectionManager.id,
     });
-    if (alertId) diagnosedAlerts.set(result.conversation_id, alertId);
-    navigateTo(DockPointer.forConversation(result.conversation_id).toUrl());
+    if (entryKey) useDiagnosisLinks.getState().link(entryKey, result.conversation_id);
   } catch (e: unknown) {
     notify.error({
       title: t`Could not start the diagnosis`,
@@ -39,12 +34,4 @@ export async function diagnoseAndFix(detail: string, kind: DiagnoseKind = 'error
       forceToast: true,
     });
   }
-}
-
-/** The diagnosis repaired the cause: mark the warnings-list entry it was started from as fixed. */
-export function markDiagnosedAlert(conversationId: string, summary: string): void {
-  const alertId = diagnosedAlerts.get(conversationId);
-  if (!alertId) return;
-  diagnosedAlerts.delete(conversationId);
-  useAlertStore.getState().markFixed(alertId, summary);
 }

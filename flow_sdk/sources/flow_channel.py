@@ -164,6 +164,11 @@ class FlowChannel(MessageSource):
     def claim_id(self) -> str:
         return str(self.config.get("claim_id") or "")
 
+    @classmethod
+    def set_up_by_config(cls, config) -> bool:
+        """A private channel naming its claim is set up: no person links it, the hub's claim delivers to it."""
+        return bool(config.get("answers_delivered") and config.get("claim_id"))
+
     @property
     def answers_delivered(self) -> bool:
         return bool(self.config.get("answers_delivered"))

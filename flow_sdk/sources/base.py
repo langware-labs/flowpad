@@ -159,6 +159,12 @@ class Source:
         return None
 
     @classmethod
+    def set_up_by_config(cls, config: Mapping[str, Any]) -> bool:
+        """Whether *config* alone already completes this driver's setup, so a new source starts ACTIVE rather than
+        waiting in SETUP for a person to verify it (a source no person sets up, e.g. on an agent's machine)."""
+        return False
+
+    @classmethod
     def account_part(cls, config: Mapping[str, Any]) -> str:
         """What narrows a source to PART of its account (one group of a number), or ``""`` for a source
         that is its whole account. Two sources on one account are twins only when this agrees."""

@@ -6,7 +6,6 @@ import {
   createHarnessLoginWarning,
   createHubRequestFailedWarning,
   createEmptyProjectsWarning,
-  createProjectSetupRequiredWarning,
   createNoComputeNodeWarning,
   createNoHarnessWarning,
   SNIFFER_ACTIVE_WARNING,
@@ -18,7 +17,6 @@ import { cloudManager, type HubClientErrorInfo } from '../../services/cloud_logi
 import { shouldWarnAboutEmptyProjects } from '../../stores/project-cleanup-store';
 import { useCleanupSummary } from './use-cleanup-summary';
 import type { ProjectReadiness } from '../../entities/project';
-import { useProjectSetupLeft } from './use-project-readiness';
 import {
   checkProjectUpdatesOnce,
   refreshProjectReadiness,
@@ -79,22 +77,20 @@ export function useWarnings() {
   // Empty-project count from the last project scan. The store only replaces its
   // held value on a real change, so an unchanged scan result does not rewrite
   // the global warnings context.
-  // Checked in the background whenever the current project changes — the footer says when it
-  // cannot run here yet.
+  // Checked in the background whenever the current project changes — the nav bar's setup button
+  // says when it cannot run here yet.
   const projectId = context.project?.id ?? null;
-  const projectName = context.project?.name ?? '';
   useEffect(() => {
     void refreshProjectReadiness(projectId);
     // Fetching dependency remotes is network work: in the background, after the readiness read.
     void checkProjectUpdatesOnce(projectId);
   }, [projectId]);
   // The setup answer the backend pushes on the project row (``local_status``): a skip, a credential, an app coming
-  // up or a setup run ending reaches the footer and the nav bar's button without anyone asking again.
+  // up or a setup run ending reaches the nav bar's setup button without anyone asking again.
   const setupValue = useProjectStatus(isDesktop ? projectId : null).part('setup')?.value;
   useEffect(() => {
     if (setupValue) setProjectReadiness(setupValue as ProjectReadiness);
   }, [setupValue]);
-  const setupLeft = useProjectSetupLeft(projectId);
 
   const cleanup = useCleanupSummary();
   const emptyProjects = shouldWarnAboutEmptyProjects(cleanup) ? cleanup!.empty_count : 0;
@@ -180,14 +176,8 @@ export function useWarnings() {
       warnings.push(createEmptyProjectsWarning(emptyProjects));
     }
 
-    if (setupLeft > 0) {
-      warnings.push(createProjectSetupRequiredWarning(projectName, setupLeft));
-    }
-
     return warnings;
   }, [
-    setupLeft,
-    projectName,
     emptyProjects,
     isDesktop,
     cloudLoginAvailable,

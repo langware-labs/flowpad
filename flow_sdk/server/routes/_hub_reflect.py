@@ -18,6 +18,7 @@ from typing import Any
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from flow_sdk.builtin.user import person_name
 from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -618,6 +619,12 @@ def normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
         for hub_key, client_key in _HUB_TO_CLIENT.items():
             if hub_key in entry and client_key not in normalized:
                 normalized[client_key] = entry[hub_key]
+        # A person row always carries a name: a hub that sends none (an invitation
+        # shadow on an older hub) still renders as a short name, never "unknown".
+        if normalized.get("type", "user") == "user":
+            normalized["name"] = person_name(
+                normalized.get("name"), normalized.get("email"), normalized.get("user_id") or normalized.get("id")
+            )
         out.append(normalized)
     return out
 

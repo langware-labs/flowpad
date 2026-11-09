@@ -61,6 +61,23 @@ export function isRenderedGroup(g: TurnGroup, showTools: boolean): boolean {
   return !isFlowpadPromptEnvelope(String(content));
 }
 
+/** The message group whose time is nearest *at*, or null. */
+export function nearestGroup(groups: readonly TurnGroup[], at: string | null | undefined): number | null {
+  if (!at) return null;
+  const target = Date.parse(at);
+  let best: number | null = null;
+  let bestGap = Infinity;
+  groups.forEach((g, i) => {
+    if (g.kind !== 'message' || !g.flowData.timestamp) return;
+    const gap = Math.abs(Date.parse(g.flowData.timestamp) - target);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = i;
+    }
+  });
+  return best;
+}
+
 /**
  * Renders a `groupTurnEvents` partition: text-shaped turns as
  * {@link ExecutionMessage} bubbles, contiguous tool/status runs as a single
@@ -152,7 +169,7 @@ export function TurnGroupsList({
         return (
           <Fragment key={key}>
             {i > 0 && <TurnDivider />}
-            {anchorIndex !== null && groups[anchorIndex] === g && <span data-chat-anchor className="block scroll-mt-16" />}
+            {anchorIndex !== null && groups[anchorIndex] === g && <span data-chat-anchor className="flowpad-chat-anchor block scroll-mt-16" />}
             {/* TurnGroupRow stays memoized — that memo is what keeps a live
                 frame from re-rendering the whole history (QA D10). The chip row
                 is a sibling, and it sits BEFORE the next divider so it reads as

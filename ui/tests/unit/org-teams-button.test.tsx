@@ -17,9 +17,10 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PageId } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 
-const nav = vi.hoisted(() => ({ openTab: vi.fn() }));
+const nav = vi.hoisted(() => ({ openTab: vi.fn(), openPage: vi.fn() }));
 const dock = vi.hoisted(() => ({ current: null as { viewType: ViewType } | null }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: nav, currentDock: dock.current }),
@@ -51,6 +52,7 @@ beforeEach(() => {
 
 afterEach(() => {
   nav.openTab.mockClear();
+  nav.openPage.mockClear();
   cleanup();
 });
 
@@ -95,7 +97,7 @@ describe('Org & teams button — the door', () => {
   it('opens the organization view', () => {
     render(<OrgTeamsButton />);
     fireEvent.click(button()!);
-    expect(nav.openTab).toHaveBeenCalledWith(ViewType.ORGANIZATION);
+    expect(nav.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.ORGANIZATION);
   });
 
   it('renders pressed only while that view is the current dock', () => {

@@ -108,6 +108,29 @@ async def test_an_undeclared_webapp_is_a_route_of_the_app_proxy(client, tmp_path
     assert nothing.status_code == 404, "no app declared itself the audience's root"
 
 
+async def test_received_web_artifact_is_served_from_its_copied_folder(client, tmp_path):
+    """Copy reception places a generated ``Artifact`` without requiring webapp.json."""
+    from flow_sdk.builtin.artifact import Artifact
+    from flow_sdk.fs_store.origin.local_origin import LocalOrigin
+
+    project = await _project(tmp_path, "received")
+    app_dir = tmp_path / "webapps" / "received"
+    app_dir.mkdir(parents=True)
+    (app_dir / "index.html").write_text("<title>Received app</title><h1>Rendered on B</h1>")
+    artifact = Artifact(
+        name="Received app",
+        kind="application.web",
+        project_id=project.id,
+        origin=LocalOrigin(base=str(app_dir.parent), rel_path=app_dir.name),
+    )
+    await artifact.save()
+
+    [route] = await webapp_placement.place_webapp_artifact_locally(artifact)
+    page = await client.get(f"/api/v1/graph/service_endpoint/{route.id}/service/{route.mount}/")
+    assert page.status_code == 200
+    assert "Rendered on B" in page.text
+
+
 async def test_exposing_twice_converges_on_the_same_rows(client, tmp_path):
     project = await _project(tmp_path)
     await _webapp(project, tmp_path / "a" / "shop")
