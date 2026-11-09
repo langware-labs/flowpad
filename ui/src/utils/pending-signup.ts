@@ -3,6 +3,8 @@ import { trackEvent } from '@src/utils/analytics';
 /** Set while a sign-up waits for the visitor's cookie choice. Holds a timestamp and nothing else. */
 const PENDING_KEY = '_pending_signup';
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+/** Set once `sign_up` was sent in this tab. Survives the reload CookieScript does after a choice. */
+const SENT_KEY = '_signup_sent';
 
 const CONSENT_COOKIE = 'CookieScriptConsent';
 /** The CookieScript category that grants Google's `analytics_storage`. */
@@ -43,9 +45,11 @@ function settleHeldSignUp(): void {
   const expired = Date.now() - heldAt > MAX_AGE_MS;
   if (consent === 'undecided' && !expired) return;
 
-  // Cleared first, so the event is sent once.
+  if (consent === 'granted' && !expired && !sessionStorage.getItem(SENT_KEY)) {
+    sessionStorage.setItem(SENT_KEY, '1');
+    trackEvent({ event: 'sign_up' });
+  }
   localStorage.removeItem(PENDING_KEY);
-  if (consent === 'granted' && !expired) trackEvent({ event: 'sign_up' });
 }
 
 /** Report a sign-up now if analytics is allowed; otherwise hold it for the visitor's choice. */

@@ -23,6 +23,7 @@ describe('sign-up held until consent', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     document.cookie = `${COOKIE}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
     mocks.trackEvent.mockClear();
     stopWatching = watchConsentForHeldSignUp();
@@ -57,6 +58,24 @@ describe('sign-up held until consent', () => {
     accept(['performance', 'targeting']);
     announceConsent();
     announceConsent();
+    expect(mocks.trackEvent).toHaveBeenCalledExactlyOnceWith({ event: 'sign_up' });
+    expect(held()).toBeNull();
+  });
+
+  it('marks the event sent before firing it', () => {
+    let markedAtSend: string | null = null;
+    mocks.trackEvent.mockImplementationOnce(() => {
+      markedAtSend = sessionStorage.getItem('_signup_sent');
+    });
+    accept(['performance']);
+    trackSignUpWhenConsented();
+    expect(markedAtSend).toBe('1');
+  });
+
+  it('does not send twice in one tab session, even if held again', () => {
+    accept(['performance']);
+    trackSignUpWhenConsented();
+    trackSignUpWhenConsented();
     expect(mocks.trackEvent).toHaveBeenCalledExactlyOnceWith({ event: 'sign_up' });
     expect(held()).toBeNull();
   });
