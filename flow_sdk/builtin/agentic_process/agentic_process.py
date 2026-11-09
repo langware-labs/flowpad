@@ -126,13 +126,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# run_shell_command delivery: how long a typed ``!`` command may take to show in the
-# transcript, how long the transcript must be unwritten before the session counts as
-# settled, and how long a retry waits for a running turn to end.
-SHELL_COMMAND_ARRIVAL_TIMEOUT_S = 8.0
-SHELL_COMMAND_QUIET_S = 1.5
-SHELL_COMMAND_IDLE_TIMEOUT_S = 120.0
-
 # Detached background tasks that must outlive the request that spawned them
 # (e.g. ``self-restart``, which kills the very worker — and therefore the CLI
 # child process — that issued the request). ``asyncio`` only holds a weak
@@ -3882,44 +3875,14 @@ class AgenticProcess(Entity):
             for stale in [k for k, (_, at) in _last_shell_command.items() if now - at >= _SHELL_COMMAND_REPEAT_S]:
                 del _last_shell_command[stale]
             _last_shell_command[self.id] = (command, now)
-            return await self._deliver_shell_command(escape, command)
+            return await self._type_shell_command(escape, command)
 
-    async def _deliver_shell_command(self, escape: str, command: str) -> ApiSuccessResponse | ApiFailResponse:
-        """``run_shell_command`` under its lock: settle, type, prove the command arrived."""
-        landed = getattr(self.driver, "shell_command_landed", None)
-        path = self.transcript_path if landed else None
-        # Keys typed while the agent answers are lost. Where the transcript can prove delivery,
-        # wait for the session to settle — idle AND its transcript unwritten for a moment, since
-        # Claude writes a turn's rows a beat late (a `!` run it is about to answer reads idle) —
-        # then type it here. The prompt queue is only the fallback: it delivers the text as a
-        # pasted prompt, which Claude reads as a message, not as shell mode.
-        settled = (
-            await self._shell_settled(path, timeout=SHELL_COMMAND_IDLE_TIMEOUT_S)
-            if path is not None
-            else not is_turn_busy(self)
-        )
-        logger.info("run_shell_command %s: settled=%s verifiable=%s %r", self.id, settled, path is not None, command)
-        if not settled:
+    async def _type_shell_command(self, escape: str, command: str) -> ApiSuccessResponse | ApiFailResponse:
+        """The three typed steps of ``run_shell_command``, under its lock."""
+        if is_turn_busy(self):
+            # Keys typed while the agent answers are lost; the queue delivers it once the turn ends.
             entry = await self._enqueue(f"{escape} {command}", source="shell-command")
             return ApiSuccessResponse(data={"status": "queued", "entry_id": entry.get("id")})
-        for attempt in (1, 2):
-            since = datetime.now(timezone.utc)
-            typed = await self._type_shell_command(escape, command)
-            if isinstance(typed, ApiFailResponse):
-                return typed
-            if path is None or await self._shell_command_arrived(landed, path, command, since):
-                logger.info("run_shell_command %s: ran on attempt %d", self.id, attempt)
-                return ApiSuccessResponse(data={"status": "ran"})
-            # The TUI dropped the keys (typed into a turn it was still running). Once it is
-            # truly idle again, type it once more — never a third time.
-            logger.warning("run_shell_command: %r did not reach the session (attempt %d)", command, attempt)
-            if attempt == 1 and not await self._shell_settled(path, timeout=SHELL_COMMAND_IDLE_TIMEOUT_S):
-                break
-        return ApiFailResponse(message="the session did not take the command; try again", status_code=409)
-
-    async def _type_shell_command(self, escape: str, command: str) -> ApiSuccessResponse | ApiFailResponse | None:
-        """Type *command* into the TUI's shell mode: the escape key, the command as a bracketed
-        paste, then a discrete Enter, each once the terminal has gone quiet."""
         shell = await self.shell()
         typed = await self.input(escape)
         if isinstance(typed, ApiFailResponse):
@@ -3928,36 +3891,7 @@ class AgenticProcess(Entity):
         await self.send(f"\x1b[200~{command}\x1b[201~".encode())
         await shell.wait_for_input_ready()
         await self.send(b"\r")
-        return None
-
-    async def _shell_command_arrived(self, landed: Any, path: Path, command: str, since: datetime) -> bool:
-        """Poll the transcript until *command* shows as run or queued, for a few seconds."""
-        deadline = time.monotonic() + SHELL_COMMAND_ARRIVAL_TIMEOUT_S
-        while True:
-            if await asyncio.to_thread(landed, path, command, since):
-                return True
-            if time.monotonic() >= deadline:
-                return False
-            await asyncio.sleep(0.25)
-
-    async def _shell_settled(self, path: Path, timeout: float = 0.0) -> bool:
-        """True once no turn is running AND the transcript has not been written for a moment
-        (``SHELL_COMMAND_QUIET_S``) — the tail lags the TUI, so idle alone is not enough. With
-        a *timeout*, wait up to that long for it; without, answer now (after one quiet wait)."""
-        deadline = time.monotonic() + max(timeout, SHELL_COMMAND_QUIET_S)
-        while True:
-            try:
-                quiet_for = time.time() - path.stat().st_mtime
-            except OSError:
-                quiet_for = SHELL_COMMAND_QUIET_S
-            if is_turn_busy(self):
-                if time.monotonic() >= deadline or timeout == 0.0:
-                    return False
-            elif quiet_for >= SHELL_COMMAND_QUIET_S:
-                return True
-            if time.monotonic() >= deadline:
-                return False
-            await asyncio.sleep(0.25)
+        return ApiSuccessResponse(data={"status": "ran"})
 
     @action.post(action_name="run-shell-command")
     async def _http_run_shell_command(self) -> ApiSuccessResponse | ApiFailResponse:
