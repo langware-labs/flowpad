@@ -58,7 +58,7 @@ function osFrom(hints: PlatformHints): DesktopOs {
   return 'other';
 }
 
-function archFrom(hints: PlatformHints): CpuArch {
+function archFrom(hints: PlatformHints, os: DesktopOs): CpuArch {
   if (hints.uaArch) {
     const arch = hints.uaArch.toLowerCase();
     if (arch === 'arm') return 'arm';
@@ -69,19 +69,21 @@ function archFrom(hints: PlatformHints): CpuArch {
   if (/aarch64|arm64|\barmv?\d/i.test(ua)) return 'arm';
   if (/x86_64|x86-64|amd64|Win64|WOW64|\bx64\b/i.test(ua)) return 'x64';
   if (/\bi[3-6]86\b/i.test(ua)) return 'x86';
+  // Windows browsers name a 64-bit OS (Win64, WOW64, ARM64); a bare "Windows NT" is 32-bit Windows.
+  if (os === 'windows' && /Windows NT/i.test(ua)) return 'x86';
   return 'unknown';
 }
 
 export function platformFromHints(hints: PlatformHints): Platform {
   const os = osFrom(hints);
-  return { os, arch: os === 'other' ? 'unknown' : archFrom(hints) };
+  return { os, arch: os === 'other' ? 'unknown' : archFrom(hints, os) };
 }
 
 /**
  * What to offer a platform: `installers` (the first is the default), plus `note`:
  * - `arm-emulated` — Windows on ARM: the x64 installer runs under the OS's emulation;
  * - `x64-only` — Linux of unknown architecture: offered, but labelled x86_64-only;
- * - `no-arch` — Linux on ARM or 32-bit: there is no installer to give;
+ * - `no-arch` — Linux on ARM, or 32-bit Linux or Windows: there is no installer to give;
  * - `no-os` — not a desktop FlowPad runs on.
  */
 export type OfferNote = 'arm-emulated' | 'x64-only' | 'no-arch' | 'no-os';
@@ -96,6 +98,7 @@ export function offerFor(platform: Platform): Offer {
     case 'mac':
       return { installers: ['dmg'] }; // universal: Intel and Apple Silicon
     case 'windows':
+      if (platform.arch === 'x86') return { installers: [], note: 'no-arch' }; // the installer is x64-only
       return platform.arch === 'arm' ? { installers: ['exe'], note: 'arm-emulated' } : { installers: ['exe'] };
     case 'linux':
       if (platform.arch === 'x64') return { installers: ['appimage', 'deb', 'rpm'] };

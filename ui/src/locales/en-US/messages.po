@@ -13514,6 +13514,10 @@ msgid "Flowpad Cloud:"
 msgstr "Flowpad Cloud:"
 
 #: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop isn't available for 32-bit Windows — it needs 64-bit Windows."
+msgstr "FlowPad Desktop isn't available for 32-bit Windows — it needs 64-bit Windows."
+
+#: src/pages/entry/DesktopDownload.tsx
 msgid "FlowPad Desktop isn't available for this processor yet — it runs on 64-bit Intel/AMD (x86_64) Linux."
 msgstr "FlowPad Desktop isn't available for this processor yet — it runs on 64-bit Intel/AMD (x86_64) Linux."
 
@@ -13590,6 +13594,10 @@ msgstr "Flowpad runs this one itself. You can check it, run it and see its runs,
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Flowpad shared pool. Usage draws on Flowpad credits."
 msgstr "Flowpad shared pool. Usage draws on Flowpad credits."
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad still didn't open. Make sure the installation finished, then click Open FlowPad again."
+msgstr "FlowPad still didn't open. Make sure the installation finished, then click Open FlowPad again."
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "FlowPad stops, upgrades and starts again on each. Anyone working in them is interrupted, and paused machines are woken."

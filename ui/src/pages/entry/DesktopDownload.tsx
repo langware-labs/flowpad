@@ -121,7 +121,10 @@ export const DesktopDownload: React.FC<{ onStart: (id: InstallerId) => void }> =
     {
       'arm-emulated': t`On Windows on ARM, FlowPad runs through Windows' built-in x64 emulation.`,
       'x64-only': t`These installers are for 64-bit Intel/AMD (x86_64) Linux.`,
-      'no-arch': t`FlowPad Desktop isn't available for this processor yet — it runs on 64-bit Intel/AMD (x86_64) Linux.`,
+      'no-arch':
+        platform?.os === 'windows'
+          ? t`FlowPad Desktop isn't available for 32-bit Windows — it needs 64-bit Windows.`
+          : t`FlowPad Desktop isn't available for this processor yet — it runs on 64-bit Intel/AMD (x86_64) Linux.`,
       'no-os': t`FlowPad Desktop runs on macOS, Windows and Linux. Open this page on your computer, or download it below.`,
     }[offer.note];
 

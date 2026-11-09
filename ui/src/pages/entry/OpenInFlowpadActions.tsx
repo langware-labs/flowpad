@@ -81,6 +81,7 @@ export const OpenInFlowpadActions: React.FC<{ openTargetPath: string; showConnec
   const downloaded = (id: InstallerId) => {
     writeDownloadAttempt(id);
     setAttempt(id);
+    setMissing(false); // a fresh attempt: "didn't open" speaks only of the next Open FlowPad
   };
   const chooseAnother = () => {
     writeDownloadAttempt(null);
@@ -99,6 +100,11 @@ export const OpenInFlowpadActions: React.FC<{ openTargetPath: string; showConnec
             {t`Open FlowPad`}
           </button>
         </div>
+        {missing && (
+          <p className="nl-hint" data-testid="still-not-opened" role="status">
+            {t`FlowPad still didn't open. Make sure the installation finished, then click Open FlowPad again.`}
+          </p>
+        )}
         {showConnection && <ConnectionStatus presence={presence} notInstalled={false} recheck={recheck} />}
         <InstallHint id={attempt} />
         <p className="nl-hint">

@@ -85,9 +85,14 @@ it('downloading keeps the page and says what comes next — a reload too; Open F
   cleanup(); // the reload
   card();
   expect(screen.getByTestId('download-started')).toBeInTheDocument();
+  // Still nothing answering: the card says so instead of staying silent.
+  expect(screen.queryByTestId('still-not-opened')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByTestId('open-flowpad'));
+  expect(await screen.findByTestId('still-not-opened')).toBeInTheDocument();
   state.handedOff = true;
   fireEvent.click(screen.getByTestId('open-flowpad'));
-  await waitFor(() => expect(state.opened.at(-1)).toBe(TARGET));
+  await waitFor(() => expect(screen.queryByTestId('still-not-opened')).not.toBeInTheDocument());
+  expect(state.opened.at(-1)).toBe(TARGET);
   // A hand-off is never claimed: the card still only says what to do.
   expect(screen.getByTestId('download-started')).toBeInTheDocument();
 
@@ -117,6 +122,14 @@ it('Linux on ARM: says there is no installer for it, and still lists every one b
   await openWithNoApp();
   expect(screen.getByTestId('download-note')).toHaveTextContent("isn't available for this processor");
   expect(screen.queryByRole('link', { name: /Download FlowPad for/ })).not.toBeInTheDocument();
+  expect(screen.getByTestId('download-all').querySelectorAll('a')).toHaveLength(5);
+});
+
+it('32-bit Windows: says it needs 64-bit Windows, and lists every installer by hand', async () => {
+  asUserAgent('Mozilla/5.0 (Windows NT 10.0; rv:132.0) Gecko/20100101 Firefox/132.0');
+  card();
+  fireEvent.click(await screen.findByTestId('download-choose'));
+  expect(await screen.findByTestId('download-note')).toHaveTextContent('needs 64-bit Windows');
   expect(screen.getByTestId('download-all').querySelectorAll('a')).toHaveLength(5);
 });
 

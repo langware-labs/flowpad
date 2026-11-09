@@ -13514,6 +13514,10 @@ msgid "Flowpad Cloud:"
 msgstr "Flowpad Cloud:"
 
 #: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop isn't available for 32-bit Windows — it needs 64-bit Windows."
+msgstr "FlowPad Desktop לא זמין ל-Windows של 32 ביט — הוא דורש Windows של 64 ביט."
+
+#: src/pages/entry/DesktopDownload.tsx
 msgid "FlowPad Desktop isn't available for this processor yet — it runs on 64-bit Intel/AMD (x86_64) Linux."
 msgstr "FlowPad Desktop עדיין לא זמין למעבד הזה — הוא רץ על Linux של 64 ביט במעבדי Intel/AMD (x86_64)."
 
@@ -13590,6 +13594,10 @@ msgstr "Flowpad מריץ את זה בעצמו. ניתן לבדוק, להריץ �
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Flowpad shared pool. Usage draws on Flowpad credits."
 msgstr ""
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad still didn't open. Make sure the installation finished, then click Open FlowPad again."
+msgstr "FlowPad עדיין לא נפתח. ודאו שההתקנה הסתיימה, ואז לחצו שוב על „פתיחת FlowPad”."
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "FlowPad stops, upgrades and starts again on each. Anyone working in them is interrupted, and paused machines are woken."

@@ -17,6 +17,8 @@ const UA = {
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
   winChrome:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  win32Firefox: 'Mozilla/5.0 (Windows NT 10.0; rv:132.0) Gecko/20100101 Firefox/132.0',
+  win32OnWin64Firefox: 'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:132.0) Gecko/20100101 Firefox/132.0',
   winArmFirefox: 'Mozilla/5.0 (Windows NT 10.0; ARM64; rv:132.0) Gecko/20100101 Firefox/132.0',
   linuxFirefox: 'Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0',
   linuxArmFirefox: 'Mozilla/5.0 (X11; Linux aarch64; rv:132.0) Gecko/20100101 Firefox/132.0',
@@ -42,6 +44,14 @@ describe('the installer offered', () => {
       undefined,
     ],
     ['Windows x64', { userAgent: UA.winChrome }, ['exe'], undefined],
+    ['32-bit Windows has no installer', { userAgent: UA.win32Firefox }, [], 'no-arch'],
+    [
+      '32-bit Windows (client hints)',
+      { userAgent: UA.winChrome, uaPlatform: 'Windows', uaArch: 'x86', uaBitness: '32' },
+      [],
+      'no-arch',
+    ],
+    ['a 32-bit browser on 64-bit Windows', { userAgent: UA.win32OnWin64Firefox }, ['exe'], undefined],
     ['Windows on ARM (UA)', { userAgent: UA.winArmFirefox }, ['exe'], 'arm-emulated'],
     // Chromium freezes the UA at "Win64; x64" — the client hint is what tells ARM apart.
     [
