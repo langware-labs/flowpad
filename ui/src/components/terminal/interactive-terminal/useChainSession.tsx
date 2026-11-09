@@ -19,7 +19,7 @@ export function chainPrompt(process: Pick<AgenticProcess, 'worker_type' | 'sessi
 }
 
 /**
- * Chain session: pick another project, launch a context worker there whose
+ * Chain session: pick a project (this one by default), launch a context worker there whose
  * first turn reviews this session, and open it.
  */
 export function useChainSession(process: AgenticProcess): { start: () => void; picker: ReactNode } {
@@ -46,7 +46,6 @@ export function useChainSession(process: AgenticProcess): { start: () => void; p
         sharedContextEntities: [process.typeId.toString()],
       });
       setOpen(false);
-      setProjectId(null);
       void navigation.openShellProcess(chained.id);
     } catch (err) {
       console.error('[chain-session] launch failed', err);
@@ -59,7 +58,6 @@ export function useChainSession(process: AgenticProcess): { start: () => void; p
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
-        if (!nextOpen) setProjectId(null);
       }}
     >
       <DialogContent className="sm:max-w-md" data-testid="chain-session-picker">
@@ -76,7 +74,6 @@ export function useChainSession(process: AgenticProcess): { start: () => void; p
               <ProjectSelector
                 projects={items}
                 selectedId={projectId}
-                excludeIds={process.project_id ? [process.project_id] : undefined}
                 onSelect={setProjectId}
                 isLoading={isLoading}
               />
@@ -101,7 +98,8 @@ export function useChainSession(process: AgenticProcess): { start: () => void; p
 
   return {
     start: () => {
-      setWorkerType(defaultWorkerType);
+      setProjectId(process.project_id ?? null);
+      setWorkerType((process.worker_type as WorkerType | null | undefined) ?? defaultWorkerType);
       setOpen(true);
     },
     picker,

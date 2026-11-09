@@ -922,9 +922,14 @@ class HubWsBridge:
                 "delivery_status",
                 "delivered_at",
                 "received_at",
+                "handling_at",
                 "body_status",
                 "attachment_filename",
             ):
+                # The hub leaves a cleared field out of a full message: no ``handling_at`` on a message that is
+                # otherwise whole means "not working any more".
+                if field == "handling_at" and field not in data and ("sender_id" in data or "delivery_status" in data):
+                    data = {**data, "handling_at": None}
                 if field not in data:
                     continue
                 if (

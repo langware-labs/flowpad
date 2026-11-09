@@ -447,10 +447,6 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
       absolute path is the only form immune to both.
     * ``PATH`` — pinned to this backend's `flow` CLI (version-skew guard,
       see :func:`flow_cli_env_path`).
-    * ``CLOUDSDK_CORE_PROJECT`` / ``GOOGLE_CLOUD_PROJECT`` / ``GCLOUD_PROJECT``
-      — gcloud/client-library default project, pinned to the isolated
-      deployment project (``gcp_deployment_project_id``) so agent-improvised
-      GCP deployments never land in the production project.
     * ``CLAUDE_CONFIG_DIR`` — for explicitly configured Claude roots, pinned
       to the same canonical root Flowpad uses for transcript discovery. The
       native default stays unset because Claude keeps ``~/.claude.json`` beside
@@ -502,16 +498,6 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
     from flow_sdk.core.compute.exec import flow_env  # noqa: PLC0415
 
     env.update(flow_env())
-    from flow_sdk.config import default_service_config  # noqa: PLC0415
-
-    deploy_project = default_service_config.gcp_deployment_project_id
-    if deploy_project:
-        # Agent-driven GCP deployments must land in the isolated playground
-        # project, never in the production project a user's ambient gcloud
-        # login defaults to. setdefault: an explicit per-process override wins.
-        env.setdefault("CLOUDSDK_CORE_PROJECT", deploy_project)
-        env.setdefault("GOOGLE_CLOUD_PROJECT", deploy_project)
-        env.setdefault("GCLOUD_PROJECT", deploy_project)
     if process.driver.name == "claude":
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.base_settings import (  # noqa: PLC0415
@@ -639,14 +625,8 @@ async def resolve_worker_language(process: "AgenticProcess") -> str | None:
     return name
 
 
-async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
-    """Resolve declared credentials (user scope + the process's project) into
-    this transient worker env.
-
-    This must only be called on spawn-time env dicts. It must not mutate
-    AgentOptions.env_vars because those are persisted and rendered.
-    """
-    from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
+async def _process_project(process: "AgenticProcess"):
+    """The process's project: its ``project_id``, else the project above it; None when there is none."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
     project = None
@@ -658,6 +638,37 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
             project = await Project.get_ancestor(process.typeid)
         except Exception:
             project = None
+    return project
+
+
+async def credentials_prompt_block(process: "AgenticProcess") -> str | None:
+    """The "Credentials:" block a worker's system-prompt file carries: ``flow credentials list`` for the
+    process's project — names, variables, available — and where the values are (this machine's environment).
+    None when the project declares no credential. Never a value."""
+    from flow_sdk.builtin.credential_listing import listing, prompt_block  # noqa: PLC0415
+    from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
+
+    project = await _process_project(process)
+    if project is None:
+        return None
+    try:
+        status = await credentials_status(project, str(getattr(process, "deployment_id", "") or ""), sign_ins=False)
+    except Exception:
+        logger.exception("AgenticProcess %s: could not list the project's credentials", process.id)
+        return None
+    return prompt_block(listing(status.model_dump(mode="json"), scope="project"))
+
+
+async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
+    """Resolve declared credentials (user scope + the process's project) into
+    this transient worker env.
+
+    This must only be called on spawn-time env dicts. It must not mutate
+    AgentOptions.env_vars because those are persisted and rendered.
+    """
+    from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
+
+    project = await _process_project(process)
 
     # Node attachment gates the worker too, not only the connector's commands.
     # None = nothing curated on this node, i.e. every declared variable. With no
@@ -1206,9 +1217,6 @@ def restart_payload_from_cli_options(options: AgentOptions) -> dict[str, Any]:
     env_vars = dict(data.get("env_vars") or {})
     env_vars.pop("FLOWPAD_EXECUTION_SCOPE", None)
     env_vars.pop("FLOWPAD_PYTHON", None)
-    env_vars.pop("CLOUDSDK_CORE_PROJECT", None)
-    env_vars.pop("GOOGLE_CLOUD_PROJECT", None)
-    env_vars.pop("GCLOUD_PROJECT", None)
     data["env_vars"] = env_vars
     data.pop("resume", None)
     data.pop("fork_session_id", None)

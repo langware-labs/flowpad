@@ -183,7 +183,7 @@ def open_terminal(
                     else:
                         _check_popen_exit([term, "--workdir", cwd])
                 else:
-                    _check_popen_exit([term, "-e", f"cd {cwd} && $SHELL"])
+                    _check_popen_exit([term, "-e", f"cd {shlex.quote(str(cwd))} && $SHELL"])
                 return
             except FileNotFoundError:
                 continue

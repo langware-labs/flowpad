@@ -221,6 +221,8 @@ export interface IFlowMessage extends IEntity {
   delivery_status?: DeliveryStatus;
   delivered_at?: string | null;
   received_at?: string | null;
+  /** Set by the hub while the recipient agent works on an answer: the sender's "working…". */
+  handling_at?: string | null;
   /** EVENT time — when the human sent this on its original channel. Written
    *  only by the backend stream inbox projection (from SourceItem.occurred_at);
    *  None for authored and hub-synced messages, whose event time is their
@@ -348,6 +350,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   delivery_status?: DeliveryStatus;
   delivered_at?: string | null;
   received_at?: string | null;
+  /** Set by the hub while the recipient agent works on an answer: the sender's "working…". */
+  handling_at?: string | null;
   sent_at?: string | null;
   is_draft?: boolean;
   kind?: FlowMessageKind;
@@ -400,6 +404,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.delivery_status = entity.delivery_status ?? 'created';
     this.delivered_at = entity.delivered_at ?? null;
     this.received_at = entity.received_at ?? null;
+    this.handling_at = entity.handling_at ?? null;
     this.sent_at = entity.sent_at ?? null;
     this.is_draft = entity.is_draft ?? false;
     this.kind = entity.kind ?? FlowMessageKind.USER;

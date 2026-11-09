@@ -177,8 +177,8 @@ describe('the deploy gate', () => {
   });
 });
 
-describe('the Environment tab', () => {
-  it('lists the environment the hub places and revokes a connection', async () => {
+describe('the Secrets tab', () => {
+  it('lists what the hub holds and revokes a connection', async () => {
     const deployment = new Deployment(DEPLOYMENT as never);
     const a = agent();
     vi.spyOn(a, 'readiness').mockResolvedValue(readiness([]));
@@ -187,14 +187,10 @@ describe('the Environment tab', () => {
       authorizations: [{ provider: 'google', permissions: ['permission.google.drive.read'] }],
     });
     const revoke = vi.spyOn(deployment, 'revoke').mockResolvedValue();
-    vi.spyOn(deployment, 'environmentRows').mockResolvedValue([
-      { name: 'STRIPE_KEY', kind: 'secret', source: 'deployment', written: true, placed_at: '2026-10-01T00:00:00Z' },
-    ]);
 
     render(<AgentPlaceSecrets project={a} deployment={deployment} />);
 
-    expect(await screen.findByTestId('deployment-env-row-STRIPE_KEY')).toHaveTextContent('placed');
-    expect(screen.getByTestId('deployment-env-source-STRIPE_KEY')).toHaveTextContent('This deployment');
+    expect(await screen.findByTestId('agent-place-secret-STRIPE_KEY')).toHaveTextContent('placed');
     expect(screen.queryByTestId('deployment-secrets-gate')).toBeNull();
     fireEvent.click(screen.getByTestId('agent-place-revoke-google'));
     await waitFor(() => expect(revoke).toHaveBeenCalledWith('google'));

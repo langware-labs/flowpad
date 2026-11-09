@@ -20,6 +20,9 @@ from flow_sdk.tags.envelope import parse_target
 
 logger = logging.getLogger(__name__)
 
+#: The handling notices in flight (a task must be held to run to its end).
+_NOTICES: set = set()
+
 #: Every tag whose events name a projected message.
 MESSAGE_PROJECTED = "stream_inbox.*.message.projected"
 
@@ -162,6 +165,37 @@ class ConversationMessageSubject(MessageSubject):
         conversation = await Conversation.get_by_id(state.conversation_id) if state.conversation_id else None
         title = str(getattr(conversation, "title", "") or "")
         return state.model_copy(update={"subject": title}) if title else state
+
+    def on_fired(self, state: MessageState, event: Any) -> None:
+        """A hub conversation message woke a rule: tell the hub we are working on it ("working..." for the sender)."""
+        super().on_fired(state, event)
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
+
+        if not (state.conversation_id and state.message_id):
+            return
+
+        async def _tell() -> None:
+            try:
+                # Over HTTP, as every action an agent calls: the hub refuses an agent's write on the WS.
+                await HubProxy.call(
+                    "POST",
+                    BuiltinEntityType.CONVERSATION,
+                    str(state.conversation_id),
+                    "mark_handling",
+                    payload={"flow_message_ids": [str(state.message_id)]},
+                )
+            except Exception:  # noqa: BLE001 — a notice, never the fire
+                logger.info("handling notice to the hub failed", exc_info=True)
+
+        try:
+            task = asyncio.get_running_loop().create_task(_tell())
+            _NOTICES.add(task)  # a task nobody holds can be collected mid-run
+            task.add_done_callback(_NOTICES.discard)
+        except RuntimeError:
+            logger.debug("no loop for the handling notice")
 
     async def test_event(self, subject_id: str) -> dict[str, Any]:
         from flow_sdk.stream_inbox.stream_inbox_on_tag import conversation_message_envelope  # noqa: PLC0415

@@ -324,3 +324,9 @@ to record a child executor rather than searching by process name or start time.
 **A toast/notification is shown for one thing: a message arriving in a conversation.** Results, status and next
 steps (a diagnosis finished, a fix is ready, "report it") are messages in the conversation, never a custom
 notification with its own buttons. The message's arrival raises the standard new-message notification — that's it.
+
+**The one exception: the desktop's "Update Ready" toast** (`ui/src/components/update-ready/`). It is app status,
+not a conversation result: there is no conversation to put it in, and the update flow must not block on a modal.
+It is raised only by `electron/main.js` when a downloaded or prepared update is ready (and on its 90-minute
+reminder), with id `update-ready` (one at a time), Restart / Later actions, and a top-bar indicator that keeps
+the update reachable after the toast closes. Don't use it as a precedent for other custom notifications.

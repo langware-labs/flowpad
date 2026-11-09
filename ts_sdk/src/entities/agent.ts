@@ -5,7 +5,6 @@ import type { AgenticProcess } from '../process/agentic-process';
 import { lastChatQuery, recencyOf } from '../process/last-chat';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
-import { EntityEnv, EnvVarType } from '../models/env_var';
 import { isHubOnly } from '../utils/hub-runtime';
 import type { GitOrigin } from '../models/GitOrigin';
 import type { HubRepoOrigin } from '../models/FSOrigin';
@@ -16,6 +15,7 @@ import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { ActivityProgressSpec } from '../activity';
+import type { ComputeNodeSize } from './compute-node/machine-status';
 import { Deployment, type IDeployment } from './deployment';
 
 /** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
@@ -31,68 +31,6 @@ export interface AssistantSkillChoice {
   /** The skill's folder name — what `assistant_skills` lists. */
   name: string;
   description: string;
-}
-
-/** Whether an agent Env variable is a secret (value write-only, held by the hub) or plain (value in agent.json). */
-export type AgentEnvKind = 'secret' | 'plain';
-
-/** One entry of the agent's Env (`agent.json` → `env`) as `agent/<id>/env` answers it. Never a secret value. */
-export interface AgentEnvEntry {
-  name: string;
-  kind: AgentEnvKind;
-  description: string;
-  /** The owner's approval: only an approved entry is injected into the agent's deployments. */
-  inject: boolean;
-  /** A secret: the hub holds a value. A plain entry: it has a value. */
-  written: boolean;
-  /** A plain entry's value; absent for a secret. */
-  value?: string | null;
-}
-
-/** What `save_env` takes for one entry: a plain entry's value rides along, a secret is its name. */
-export interface AgentEnvEntryInput {
-  name: string;
-  kind: AgentEnvKind;
-  description?: string;
-  inject: boolean;
-  value?: string | null;
-}
-
-/** A variable Flowpad itself gives every deployment — shown read-only, never stored on the agent. */
-export interface AgentEnvSystemRow {
-  name: string;
-  provided_by: 'llm_endpoint' | 'sealed_credential' | 'connection' | 'flowpad';
-  description: string;
-}
-
-/** Where the agent's Env was placed: a deployment, a private placement, or an invite box. */
-export interface AgentEnvPlacement {
-  target: string;
-  kind: 'deployment' | 'private' | 'invite';
-  placed: string[];
-  at: string;
-}
-
-/** `GET /agent/<id>/env`. */
-export interface AgentEnv {
-  entries: AgentEnvEntry[];
-  system: AgentEnvSystemRow[];
-  placements: AgentEnvPlacement[];
-}
-
-/** What "Use mine" on the agent's Env copied into the agent's hub store. Names only. */
-export interface AgentEnvUseMineResult {
-  copied: string[];
-  not_here: string[];
-  hub_funded: string[];
-}
-
-function agentEnvOf(data: Partial<AgentEnv> | null | undefined): AgentEnv {
-  return {
-    entries: Array.isArray(data?.entries) ? data.entries : [],
-    system: Array.isArray(data?.system) ? data.system : [],
-    placements: Array.isArray(data?.placements) ? data.placements : [],
-  };
 }
 
 /** `GET /agent/<id>/auto_launch_state`. */
@@ -169,10 +107,14 @@ export interface PublicDeploymentSetup {
 export interface PublicInviteCode {
   id: string;
   last4: string;
+  /** Who the code is for, as the owner named it ("" when unnamed). */
+  name?: string;
   state: 'unused' | 'in_use' | 'revoked';
   node_typeid: string | null;
   created_at: string;
   last_used_at: string | null;
+  /** The size its machine runs (or will run) at: the code's own, else the agent's. */
+  machine_size?: ComputeNodeSize;
 }
 
 /** A freshly minted code: the only time its plaintext is ever answered. */
@@ -180,6 +122,8 @@ export interface NewPublicInviteCode {
   id: string;
   code: string;
   last4: string;
+  name?: string;
+  machine_size?: ComputeNodeSize;
 }
 
 /** One visitor's box. `code_id` is null for a link visitor. */
@@ -193,6 +137,8 @@ export interface PublicDeployment {
   last_used_at: string | null;
   /** IT Enabled on that machine: live for a running box, the last seen for a paused one, null when never seen. */
   it_enabled?: boolean | null;
+  /** The size this machine runs at. */
+  machine_size?: ComputeNodeSize;
 }
 
 export interface PublicDeploymentsState {
@@ -354,6 +300,8 @@ export class Agent extends APIEntity<Agent> {
   shipped?: boolean;
   /** The project holding this agent; null for one in the user scope, which cannot be deployed to the cloud. */
   project_id?: string | null;
+  /** What the agent needs wherever it runs (`agent.json` → `requirements`): credentials by name, never a value. */
+  requirements?: AgentRequirement[] | null;
   /** Where the hub keeps this agent's files. A published agent lives in its project's
    *  hub-hosted repository (`kind: 'hub_repo'`, the agent's folder as `rel_path`); an
    *  agent published before that carries a GitHub `kind: 'git'` origin. Hub-written
@@ -420,6 +368,7 @@ export class Agent extends APIEntity<Agent> {
     this.asset_ref = entity.asset_ref;
     this.shipped = entity.shipped;
     this.project_id = entity.project_id ?? null;
+    this.requirements = entity.requirements ?? null;
     this.git_origin = entity.git_origin;
 
     this.intro = entity.intro;
@@ -671,12 +620,24 @@ export class Agent extends APIEntity<Agent> {
     };
   }
 
-  /** Mint `count` (1..100) codes; their plaintext is answered this once only. */
-  async addPublicCodes(count: number): Promise<NewPublicInviteCode[]> {
+  /** Mint `count` (1..100) codes, optionally named in order; their plaintext is answered this once only.
+   * `machineSize` is the size every one of them opens (omitted: the agent's). */
+  async addPublicCodes(
+    count: number,
+    names: string[] = [],
+    machineSize?: ComputeNodeSize,
+  ): Promise<NewPublicInviteCode[]> {
     const data = await this.publicDeploymentsCall<{ codes?: NewPublicInviteCode[] }>('add_public_codes', 'POST', {
       count,
+      ...(names.length ? { names } : {}),
+      ...(machineSize ? { machine_size: machineSize } : {}),
     });
     return data?.codes ?? [];
+  }
+
+  /** Name an invite code (who it is for); an empty name clears it. */
+  async renamePublicCode(codeId: string, name: string): Promise<void> {
+    await this.publicDeploymentsCall('rename_public_code', 'POST', { code_id: codeId, name });
   }
 
   /** Revoke a code: its sandbox is deleted and it stops working. */
@@ -747,54 +708,16 @@ export class Agent extends APIEntity<Agent> {
       connections: list(data.connections),
     };
   }
-
   /**
-   * The agent's Env (`GET agent/<id>/env`): its entries from agent.json, whether each secret is written and
-   * where it was placed (asked of the hub when the agent is there), and what Flowpad provides. Never a secret value.
+   * The Flowpad Assistant's skills this agent may pick from for `assistant_skills`.
+   *
+   * A desktop action: the hub has no `assistant_skill_catalog`, and an unknown action after `agent/<id>` is
+   * parsed there as no action at all -- the GET answers with the agent row itself. Anything but a list is
+   * therefore "no catalog here", never something to map over (it crashed the hub page's agent editor).
    */
-  // Not `env()`: the agent row carries its agent.json `env` entries as a field named `env`, which would shadow it.
-  async envState(): Promise<AgentEnv> {
-    return agentEnvOf(await this.get<Partial<AgentEnv> | null>('env'));
-  }
-
-  /** Write the Env into agent.json and sync it to the hub (`PUT agent/<id>/env`). Secret values go to `setEnvSecret`. */
-  async setEnv(entries: AgentEnvEntryInput[]): Promise<AgentEnv> {
-    const body = entries.map(({ name, kind, description, inject, value }) => ({
-      name,
-      kind,
-      description: description ?? '',
-      inject,
-      ...(value != null ? { value } : {}),
-    }));
-    return agentEnvOf(await this.post<Partial<AgentEnv> | null>('save_env', { entries: body }));
-  }
-
-  /** Store a secret's value in the agent's hub store (`POST agent/<id>/env-var`) — write-only, never read back. */
-  async setEnvSecret(name: string, value: string, opts: { written?: boolean } = {}): Promise<void> {
-    // A secret already written is CHANGED (PUT); only a new one is created (POST) -- the hub refuses to create twice.
-    if (opts.written) await this.hubEnv().update(name, { value, var_type: EnvVarType.API_KEY });
-    else await this.hubEnv().create({ name, value, var_type: EnvVarType.API_KEY });
-  }
-
-  /** Forget a secret's value on the hub (`DELETE agent/<id>/env-var/<NAME>`). The entry itself stays. */
-  async forgetEnv(name: string): Promise<void> {
-    await this.hubEnv().delete(name);
-  }
-
-  /** The agent's own variables in the hub's store (`agent/<id>/env-var`). */
-  private hubEnv(): EntityEnv {
-    return new EntityEnv(new TypeId(this.getType(), this.id), { hubReflect: true });
-  }
-
-  /** Copy this computer's values for these secret entries into the agent's hub store. Names come back, never a value. */
-  async envUseMine(names: string[]): Promise<AgentEnvUseMineResult> {
-    const res = await this.post<Partial<AgentEnvUseMineResult> | null>('env_use_mine', { names });
-    return { copied: res?.copied ?? [], not_here: res?.not_here ?? [], hub_funded: res?.hub_funded ?? [] };
-  }
-
-  /** The Flowpad Assistant's skills this agent may pick from for `assistant_skills`. */
   async assistantSkillCatalog(): Promise<AssistantSkillChoice[]> {
-    return (await this.get<AssistantSkillChoice[] | null>('assistant_skill_catalog')) ?? [];
+    const answer = await this.get<unknown>('assistant_skill_catalog');
+    return Array.isArray(answer) ? (answer as AssistantSkillChoice[]) : [];
   }
 
   /** Whether this agent already auto-launched in its project (the once-only mark is set). */

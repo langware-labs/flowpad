@@ -227,7 +227,15 @@ export function MessageComposer({
 
   // The session-start control lives on the plain conversation composer only:
   // inside a session view every send is already a turn of that session.
-  const canStartSession = !!sessionHost && !!onStartLiveSession && !liveSessionId && !isDraftMode;
+  // Why the live-session and prompt buttons are disabled (null = available); the buttons show it.
+  const sessionUnavailableReason = isDraftMode
+    ? t`Send the first message to start the conversation, then a live session can run`
+    : !sessionHost
+      ? t`No other participant's machine in this conversation to run on`
+      : !onStartLiveSession
+        ? t`Live sessions are not available here`
+        : null;
+  const canStartSession = !liveSessionId && sessionUnavailableReason === null;
   const terminal = variant === 'terminal';
   useEffect(() => {
     if (autoFocus) textareaRef.current?.focus();
@@ -614,50 +622,59 @@ export function MessageComposer({
   /** The live-session icon: opens the conversation's live session (starting one when none is
    *  open) — the turns are typed in the session view, never in this box. */
   const hostName = sessionHost?.name?.trim() || t`the other participant`;
-  const sessionToggle = canStartSession ? (
-    <button
-      type="button"
-      onClick={() => onStartLiveSession?.()}
-      disabled={isDisabled}
-      title={
-        sessionHost?.hasOpenSession
-          ? t`Open the live session on ${hostName}'s machine`
-          : t`Start a live session on ${hostName}'s machine`
-      }
-      data-testid="composer-session-toggle"
-      className={cn(
-        ICON_BUTTON_CLASS,
-        sessionHost?.hasOpenSession && 'text-emerald-700 hover:text-emerald-700 dark:text-emerald-300',
-      )}
-    >
-      <MonitorPlay className="h-3.5 w-3.5" />
-    </button>
-  ) : null;
+  const sessionToggle = liveSessionId ? null : (
+    <span title={sessionUnavailableReason ? t`Live session: ${sessionUnavailableReason}` : undefined}>
+      <button
+        type="button"
+        onClick={() => onStartLiveSession?.()}
+        disabled={isDisabled || !canStartSession}
+        title={
+          sessionUnavailableReason
+            ? undefined
+            : sessionHost?.hasOpenSession
+              ? t`Open the live session on ${hostName}'s machine`
+              : t`Start a live session on ${hostName}'s machine`
+        }
+        data-testid="composer-session-toggle"
+        className={cn(
+          ICON_BUTTON_CLASS,
+          'disabled:pointer-events-none',
+          sessionHost?.hasOpenSession && 'text-emerald-700 hover:text-emerald-700 dark:text-emerald-300',
+        )}
+      >
+        <MonitorPlay className="h-3.5 w-3.5" />
+      </button>
+    </span>
+  );
 
   // A prompt call is offered wherever a live session is: the same other machine, run once, async.
-  const promptCallToggle = canStartSession ? (
-    <button
-      type="button"
-      onClick={() => setPromptCallOn((on) => !on)}
-      disabled={isDisabled}
-      aria-pressed={promptCallOn}
-      title={
-        promptCallOn
-          ? t`This message is a prompt — ${hostName} approves it, it runs once on their machine, you get its status`
-          : t`Attach a prompt — runs once on ${hostName}'s machine after they approve it`
-      }
-      data-testid="composer-prompt-call"
-      className={cn(
-        'flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors disabled:opacity-40',
-        promptCallOn
-          ? 'border border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300'
-          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-      )}
-    >
-      <SquareTerminal className="h-3.5 w-3.5" />
-      {promptCallOn && <Trans>Prompt</Trans>}
-    </button>
-  ) : null;
+  const promptCallToggle = liveSessionId ? null : (
+    <span title={sessionUnavailableReason ? t`Prompt request: ${sessionUnavailableReason}` : undefined}>
+      <button
+        type="button"
+        onClick={() => setPromptCallOn((on) => !on)}
+        disabled={isDisabled || !canStartSession}
+        aria-pressed={promptCallOn}
+        title={
+          sessionUnavailableReason
+            ? undefined
+            : promptCallOn
+              ? t`This message is a prompt — ${hostName} approves it, it runs once on their machine, you get its status`
+              : t`Attach a prompt — runs once on ${hostName}'s machine after they approve it`
+        }
+        data-testid="composer-prompt-call"
+        className={cn(
+          'flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors disabled:pointer-events-none disabled:opacity-40',
+          promptCallOn
+            ? 'border border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+        )}
+      >
+        <SquareTerminal className="h-3.5 w-3.5" />
+        {promptCallOn && <Trans>Prompt</Trans>}
+      </button>
+    </span>
+  );
 
   // Offered on the plain reply box only: a channel send returns no message id, a prompt is a run.
   const canTaskIt = !!onTaskIt && !channel && !isDraftMode && !liveSessionId;

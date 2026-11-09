@@ -43,6 +43,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.goal import goal_met
 from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (
     to_mcp_config_json,
@@ -686,6 +687,10 @@ class ClaudeDriver:
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         """Map the tail of the Claude JSONL to a WorkerStatus."""
         return _tail_status(transcript_path)
+
+    def goal_met(self, transcript_path: Path) -> bool:
+        """The session's ``/goal`` was judged met (newest goal check in the JSONL)."""
+        return goal_met(transcript_path)
 
     def has_resumable_session(self, process: "AgenticProcess") -> bool:
         from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session

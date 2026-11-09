@@ -34,9 +34,14 @@ describe('MessageComposer session toggle', () => {
   });
   afterEach(() => cleanup());
 
-  it('no sessionHost → no toggle, a plain send has no prompt extras', async () => {
+  it('no sessionHost → toggles disabled with the reason, a plain send has no prompt extras', async () => {
     render(<MessageComposer conversationId={CONV} />);
-    expect(screen.queryByTestId('composer-session-toggle')).toBeNull();
+    const toggle = screen.getByTestId('composer-session-toggle') as HTMLButtonElement;
+    expect(toggle.disabled).toBe(true);
+    expect(toggle.parentElement?.getAttribute('title')).toBe(
+      "Live session: No other participant's machine in this conversation to run on",
+    );
+    expect((screen.getByTestId('composer-prompt-call') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByPlaceholderText('Reply to sender…'), { target: { value: 'hi' } });
     fireEvent.keyDown(screen.getByPlaceholderText('Reply to sender…'), { key: 'Enter' });
     await waitFor(() => expect(sendReply).toHaveBeenCalledTimes(1));

@@ -141,7 +141,16 @@ function buildEntities(fm: FlowMessage | null | undefined): TypeId[] {
       if (dash <= 0) return null;
       return new TypeId(d.slice(0, dash), d.slice(dash + 1));
     })
-    .filter((t): t is TypeId => t !== null && !STRUCTURAL_ATTACHMENT_TYPES.has(t.type));
+    .filter((t): t is TypeId => t !== null && !isStructural(t, fm));
+}
+
+/** Is this TYPE_ID the plumbing the send path injects, or a real reference? The self-refs are a message's OWN
+ *  ``conversation-<id>`` and ``flow_message-<id>``; a ``conversation`` or ``flow_message`` naming another one
+ *  (an agent's "Open the ticket" link) is a reference like any entity and renders as a chip. */
+function isStructural(t: TypeId, fm: FlowMessage): boolean {
+  if (t.type === 'conversation') return !fm.conversation_id || t.id === fm.conversation_id;
+  if (t.type === 'flow_message') return !fm.id || t.id === fm.id;
+  return STRUCTURAL_ATTACHMENT_TYPES.has(t.type);
 }
 
 /** Map one attachment to a chip state. The single truth table for "what can the

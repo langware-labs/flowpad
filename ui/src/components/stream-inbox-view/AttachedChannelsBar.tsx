@@ -66,7 +66,8 @@ import {
 } from '@src/components/data-sources/source-attention';
 import { openSourceSetup } from '@src/components/setup-wizard/source-setup-store';
 import { useSourcePull } from '@src/components/data-sources/source-parts';
-import { channelKeyOf, DIAGNOSIS_CHANNEL, ownerOf } from './channel-owner';
+import { channelKeyOf, DIAGNOSIS_CHANNEL, FLOWPAD_CHANNEL, ownerOf } from './channel-owner';
+import flowpadIcon from '@src/assets/flowpad-icon.png';
 
 const EMPTY: DataSource[] = [];
 const NO_OFFERS: ChannelOffer[] = [];
@@ -197,12 +198,21 @@ export function AttachedChannelsBar({
   const groups = useMemo(() => groupChannels(rows), [rows]);
   const attachedProviders = useMemo(() => new Set(rows.map((r) => r.provider)), [rows]);
 
+  // Every mark is lit (shown) by default; a press dims it (filtered out) or lights it again.
+  // `selected` holds the lit ones while filtering — empty means all lit. The last lit mark stays lit.
+  const allKeys = [
+    ...(owner.type !== Agent.type ? [FLOWPAD_CHANNEL] : []),
+    ...groups.map((g) => g.key),
+    ...(owner.type !== Agent.type ? [DIAGNOSIS_CHANNEL] : []),
+  ];
+  const lit = (key: string) => !filtering || selected.has(key);
   const pick = (key: string) => {
     if (onMarkPress) return onMarkPress(key);
-    const next = new Set(selected);
+    const next = new Set(filtering ? selected : allKeys);
     if (next.has(key)) next.delete(key);
     else next.add(key);
-    onSelectedChange?.(next);
+    if (next.size === 0) return;
+    onSelectedChange?.(allKeys.every((k) => next.has(k)) ? new Set() : next);
   };
 
   return (
@@ -214,22 +224,33 @@ export function AttachedChannelsBar({
       role="toolbar"
       aria-label={t`Attached channels`}
     >
+      {owner.type !== Agent.type && (
+        <BuiltInMark
+          channel={FLOWPAD_CHANNEL}
+          label={t`Flowpad — standard messages`}
+          glyph={<img src={flowpadIcon} alt="" className="size-[17px] rounded-sm" />}
+          pressed={lit(FLOWPAD_CHANNEL)}
+          onClick={() => pick(FLOWPAD_CHANNEL)}
+        />
+      )}
       {groups.map((group) => (
         <ChannelMark
           key={group.key}
           group={group}
           spec={specFor(group.provider)}
           filtering={filtering}
-          pressed={selected.has(group.key)}
+          pressed={lit(group.key)}
           onClick={() => pick(group.key)}
           onDelete={setDeleting}
         />
       ))}
       {/* A person's own StreamInbox also narrows to Diagnosis: Diagnose & fix and the help desk it may go to. */}
       {owner.type !== Agent.type && (
-        <DiagnosisMark
-          filtering={filtering}
-          pressed={selected.has(DIAGNOSIS_CHANNEL)}
+        <BuiltInMark
+          channel={DIAGNOSIS_CHANNEL}
+          label={t`Diagnosis — diagnoses and the help desk`}
+          glyph={<DiagnosisGlyph />}
+          pressed={lit(DIAGNOSIS_CHANNEL)}
           onClick={() => pick(DIAGNOSIS_CHANNEL)}
         />
       )}
@@ -356,28 +377,41 @@ function AddChannelDialog({
   );
 }
 
-/** The Diagnosis mark: no source behind it, so no listening state — it only narrows the list to the
- *  conversations on the Diagnosis channel. Its glyph is the channel's own (``conversation_channel.DIAGNOSIS``). */
-function DiagnosisMark({ filtering, pressed, onClick }: { filtering: boolean; pressed: boolean; onClick: () => void }) {
-  const { t } = useLingui();
+function DiagnosisGlyph() {
   const { Base } = sourceGlyphs({ icon_name: 'Stethoscope' }, DIAGNOSIS_CHANNEL);
+  return <Base className="size-[17px]" />;
+}
+
+/** A mark for a channel no data source delivers (Flowpad, Diagnosis): no listening state — it only
+ *  narrows the list to the conversations that carry that channel. */
+export function BuiltInMark({
+  channel,
+  label,
+  glyph,
+  pressed,
+  onClick,
+  badge,
+}: {
+  channel: string;
+  label: string;
+  glyph: ReactNode;
+  pressed: boolean;
+  onClick: () => void;
+  badge?: ReactNode;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={pressed}
-      aria-label={t`Diagnosis — diagnoses and the help desk`}
-      title={t`Diagnosis — diagnoses and the help desk`}
-      className={cn(
-        MARK,
-        'border-border bg-background',
-        pressed && 'border-primary ring-1 ring-primary',
-        filtering && !pressed && MARK_GREYED,
-      )}
+      aria-label={label}
+      title={label}
+      className={cn(MARK, 'border-border bg-background', !pressed && MARK_GREYED)}
       data-testid="attached-channel"
-      data-provider={DIAGNOSIS_CHANNEL}
+      data-provider={channel}
     >
-      <Base className="size-[17px]" />
+      {glyph}
+      {badge}
     </button>
   );
 }
@@ -423,8 +457,7 @@ function ChannelMark({
             MARK,
             'bg-background',
             state === 'off' ? 'border-dashed border-border' : 'border-border',
-            pressed && 'border-primary ring-1 ring-primary',
-            ((filtering && !pressed) || state === 'off') && MARK_GREYED,
+            (!pressed || state === 'off') && MARK_GREYED,
           )}
           data-testid="attached-channel"
           data-provider={group.provider}

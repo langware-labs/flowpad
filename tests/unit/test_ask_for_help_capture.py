@@ -58,7 +58,13 @@ async def test_asking_a_person_writes_the_task_the_conversation_and_the_message(
     assert task.origin_conversation == conv_id and task.assignee == "dana@x.test" and task.kind == "vibe"
     conv = await Conversation.get_one({"id": conv_id})
     assert conv.awaits_hub, "captured for the hub, not there yet"
-    assert [m.text for m in await _messages(conv_id)] == ["help me ship"]
+    assert [m.text for m in await _messages(conv_id)] == ["help me ship\n\nDiagnosis: on its way"]
+
+
+def test_the_last_line_of_a_request_says_whether_a_diagnosis_is_coming():
+    assert afh.diagnosis_line(diagnosing=True, attached=False) == "Diagnosis: on its way"
+    assert afh.diagnosis_line(diagnosing=False, attached=True) == "Diagnosis: attached"
+    assert afh.diagnosis_line(diagnosing=False, attached=False) == "Diagnosis: not requested"
 
 
 async def test_the_same_request_sent_again_writes_nothing_new():
