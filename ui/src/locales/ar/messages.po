@@ -6316,6 +6316,10 @@ msgstr "اختيار artifact لفتحه"
 msgid "Choose an endpoint…"
 msgstr "اختاروا نقطة نهاية…"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Choose another installer"
+msgstr "اختاروا مُثبّتًا آخر"
+
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "Choose another worker"
 msgstr "اختيار عامل آخر"
@@ -11192,10 +11196,48 @@ msgstr "تنزيل المرفقات"
 msgid "Download bundle"
 msgstr "تنزيل الحزمة"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Download didn't start?"
+msgstr "لم يبدأ التنزيل؟"
+
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Download file"
 msgstr "تنزيل الملف"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad"
+msgstr "تنزيل FlowPad"
+
+#: src/pages/entry/DesktopDownload.tsx
+#: src/pages/entry/DesktopDownload.tsx
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad for Linux"
+msgstr "تنزيل FlowPad لنظام Linux"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad for macOS"
+msgstr "تنزيل FlowPad لنظام macOS"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad for Windows"
+msgstr "تنزيل FlowPad لنظام Windows"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download for Linux (AppImage)"
+msgstr "تنزيل لنظام Linux (AppImage)"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download for macOS"
+msgstr "تنزيل لنظام macOS"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download for Windows"
+msgstr "تنزيل لنظام Windows"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Download it directly"
+msgstr "نزّلوه مباشرةً"
 
 #: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
@@ -13471,6 +13513,14 @@ msgstr "نتائج Flowpad Cloud"
 msgid "Flowpad Cloud:"
 msgstr "Flowpad Cloud:"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop isn't available for this processor yet — it runs on 64-bit Intel/AMD (x86_64) Linux."
+msgstr "FlowPad Desktop غير متوفر لهذا المعالج بعد — فهو يعمل على Linux بمعمارية 64 بت لمعالجات Intel/AMD (x86_64)."
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop runs on macOS, Windows and Linux. Open this page on your computer, or download it below."
+msgstr "يعمل FlowPad Desktop على macOS وWindows وLinux. افتحوا هذه الصفحة على حاسوبكم، أو نزّلوه من الأسفل."
+
 #: src/i18n/type-labels.ts
 msgid "Flowpad Diagnosis"
 msgstr "تشخيص Flowpad"
@@ -13948,12 +13998,10 @@ msgid "Generic options"
 msgstr "خيارات عامة"
 
 #: src/pages/entry/entry-shell.tsx
-#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get FlowPad at flowpad.ai →"
 msgstr "احصلوا على FlowPad من flowpad.ai ←"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get it at flowpad.ai"
 msgstr "احصلوا عليه من flowpad.ai"
 
@@ -15447,6 +15495,10 @@ msgstr "فشل التثبيت."
 msgid "Install Flowpad on your computer first"
 msgstr "ثبّتوا Flowpad على حاسوبكم أولًا"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Install FlowPad, then come back to this page."
+msgstr "ثبّتوا FlowPad ثم عودوا إلى هذه الصفحة."
+
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Install gh"
 msgstr "تثبيت gh"
@@ -16727,6 +16779,18 @@ msgstr "فشل الربط."
 msgid "Linking…"
 msgstr "جاري الربط…"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Linux AppImage — most distributions (x86_64)"
+msgstr "Linux AppImage — معظم التوزيعات (x86_64)"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Linux DEB — Ubuntu, Debian, Linux Mint"
+msgstr "Linux DEB — Ubuntu وDebian وLinux Mint"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Linux RPM — Fedora, RHEL, Rocky Linux"
+msgstr "Linux RPM — Fedora وRHEL وRocky Linux"
+
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "List"
 msgstr "قائمة"
@@ -17430,6 +17494,10 @@ msgstr "نوع الجهاز"
 #: src/types/ViewType.ts
 msgid "Machines"
 msgstr "الأجهزة"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "macOS (.dmg) — Intel and Apple Silicon"
+msgstr "macOS (.dmg) — Intel وApple Silicon"
 
 #: src/components/top-nav-bar/use-screen-recorder.ts
 msgid "macOS blocks Flowpad from recording the screen. Allow it under Privacy & Security › Screen & System Audio Recording, then try again."
@@ -21154,6 +21222,10 @@ msgstr ""
 msgid "On this machine only — undo any time"
 msgstr "على هذا الجهاز فقط — يمكن التراجع في أي وقت"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "On Windows on ARM, FlowPad runs through Windows' built-in x64 emulation."
+msgstr "على Windows لمعالجات ARM، يعمل FlowPad عبر محاكاة x64 المدمجة في Windows."
+
 #. placeholder {0}: port.port
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "On: if another program holds {0}, starting fails instead of moving."
@@ -21175,6 +21247,10 @@ msgstr "مرة واحدة"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Once at {when}"
 msgstr "مرة واحدة في {when}"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Once FlowPad is installed, click Open FlowPad to continue."
+msgstr "بعد تثبيت FlowPad، انقروا على «فتح FlowPad» للمتابعة."
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "once per machine"
@@ -21602,6 +21678,11 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Open externally: {childPath}"
 msgstr "فتح خارجياً: {childPath}"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Open FlowPad"
+msgstr "فتح FlowPad"
 
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open Flowpad Cloud"
@@ -22462,6 +22543,10 @@ msgstr "أصول أخرى"
 msgid "Other paths with this asset identity"
 msgstr "مسارات أخرى بنفس هوية المورد"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Other platforms"
+msgstr "منصات أخرى"
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Other project"
 msgstr "مشروع آخر"
@@ -22567,6 +22652,10 @@ msgstr "تجميع المفاتيح في بيانات اعتماد"
 #: src/components/top-nav-bar/AppButton.tsx
 msgid "Package"
 msgstr "الحزمة"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Package format"
+msgstr "صيغة الحزمة"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Package removed"
@@ -31347,6 +31436,10 @@ msgstr "خرج العامل فور تشغيله، لذا أُوقفت إعادة
 msgid "Then"
 msgstr "ثم"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Then install it:"
+msgstr "ثم ثبّتوه:"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Then send this to the Flowpad bot:"
 msgstr "ثم أرسلوا هذا إلى بوت Flowpad:"
@@ -31380,6 +31473,10 @@ msgstr "هذه الملفات غير مدرجة في Git وقد تكون خاص�
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "These conversations exist only on this device."
 msgstr "هذه المحادثات موجودة على هذا الجهاز فقط"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "These installers are for 64-bit Intel/AMD (x86_64) Linux."
+msgstr "هذه المُثبّتات مخصصة لنظام Linux بمعمارية 64 بت لمعالجات Intel/AMD (x86_64)."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
@@ -32790,7 +32887,6 @@ msgstr "المشغّلات"
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
-#: src/pages/entry/OpenInFlowpadActions.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
@@ -34663,6 +34759,10 @@ msgstr "ستتم الترقية"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Window (days)"
 msgstr "النافذة الزمنية (أيام)"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Windows (.exe)"
+msgstr "Windows (.exe)"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
