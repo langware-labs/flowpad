@@ -80,21 +80,6 @@ def last_synced_tree(repo_id: str, rel_path: str) -> str | None:
     return entry.get("tree") or None
 
 
-def remember_env_sync(repo_id: str, rel_path: str, digest: str) -> None:
-    """The hash of the agent Env payload this desk last sent the hub for the asset at ``rel_path``."""
-    path = _state_file(repo_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with locked(path.with_suffix(".lock")):
-        state = read_json(path)
-        state.setdefault("assets", {}).setdefault(rel_path, {})["env"] = digest
-        write_json_atomic(path, state)
-
-
-def last_env_sync(repo_id: str, rel_path: str) -> str | None:
-    entry = read_json(_state_file(repo_id)).get("assets", {}).get(rel_path) or {}
-    return entry.get("env") or None
-
-
 def hub_origin_for_path(local_path: Path):
     """The ``HubRepoOrigin`` this desk last synced for the asset at ``local_path``, or None."""
     from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin  # noqa: PLC0415
