@@ -1,5 +1,6 @@
 import {
   cloudManager,
+  LLMEndpoint,
   setPublicAccess,
   type Agent,
   type AgentVersionState,
@@ -14,7 +15,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { ChevronLeft, Loader2, Ticket } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { endpointTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
+import { endpointIdFromTypeId, endpointTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
@@ -70,6 +71,15 @@ const sameDraft = (a: Draft, b: Draft) =>
 /** The wiki page every IT Enabled tip opens. */
 const IT_ENABLED_WIKI = 'IT Enabled';
 
+/** An invite code as the owner sees it: only its last four characters. */
+export const maskCode = (last4: string) => `••••${last4}`;
+
+/** Who may open public deployments, in words. */
+export function useModeLabel() {
+  const { t } = useLingui();
+  return (mode: PublicDeploymentMode) => (mode === 'link' ? t`Anyone with the link` : t`Invite code only`);
+}
+
 /**
  * Turn invites on (or update their settings). Visitors reach `visitor-sandbox` only through the `runner` stamp
  * (hub policies.json, agent role `runner`): keep whatever the owner already stamped (e.g. public `reader`) and add
@@ -119,12 +129,14 @@ export function AgentAutoLaunchTab({
   onBack?: () => void;
 }) {
   const { t } = useLingui();
+  const modeLabel = useModeLabel();
   const published = version?.published === true;
   const [role, setRole] = useVisitorRole(agent, published);
   const [state, setState] = useState<PublicDeploymentsState | null>(null);
   const [draft, setDraft] = useState<Draft>(draftOf(null));
   const [busy, setBusy] = useState(false);
   const [codesOpen, setCodesOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [revoking, setRevoking] = useState<PublicInviteCode | null>(null);
   // Names as typed, before the hub has them: the poll must not overwrite what is being edited.
   const [names, setNames] = useState<Record<string, string>>({});
@@ -140,6 +152,20 @@ export function AgentAutoLaunchTab({
     () => (status?.available ?? []).filter((e) => e.kind === 'hub' && e.can_administer === true),
     [status],
   );
+  // The saved source's name when this account cannot administer it (the sources list only names those).
+  const [savedSourceName, setSavedSourceName] = useState<string | null>(null);
+  const savedSource = state?.settings?.llm_source ?? '';
+  useEffect(() => {
+    const listed = (status?.available ?? []).some((e) => endpointTypeId(e.id) === savedSource);
+    if (!savedSource || listed) return;
+    let live = true;
+    LLMEndpoint.getById<LLMEndpoint>(endpointIdFromTypeId(savedSource))
+      .then((e) => live && setSavedSourceName(e?.name ?? null))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [savedSource, status]);
 
   const agentRef = useRef(agent);
   agentRef.current = agent;
@@ -193,6 +219,9 @@ export function AgentAutoLaunchTab({
   const link = openPcLink(agent);
   const lines = inviteLines(state);
   const agentLabel = agent.displayName || agent.name;
+  // The source by its name: every source this account can see, not only the ones it administers.
+  const sourceName =
+    (status?.available ?? []).find((e) => endpointTypeId(e.id) === saved.source)?.name || savedSourceName || t`not set`;
   const activeCodes = lines.filter((l) => l.code).length;
   const nameOf = (code: PublicInviteCode) => names[code.id] ?? code.name ?? '';
   const saveName = async (code: PublicInviteCode) => {
@@ -221,9 +250,9 @@ export function AgentAutoLaunchTab({
   };
   // Who a reset or a revoke is about: the invite's name when it has one, else its code.
   const whoOf = (code: PublicInviteCode | null | undefined) =>
-    code?.name ? code.name : code ? `••••${code.last4}` : t`this visitor`;
+    code?.name ? code.name : code ? maskCode(code.last4) : t`this visitor`;
   const resettingWho = whoOf(state.codes.find((c) => c.id === resetting?.code_id));
-  const resettingCode = resetting?.code_last4 ? `••••${resetting.code_last4}` : '';
+  const resettingCode = resetting?.code_last4 ? maskCode(resetting.code_last4) : '';
   const revokingWho = whoOf(revoking);
 
   const enable = async () => {
@@ -393,93 +422,136 @@ export function AgentAutoLaunchTab({
             </div>
           )}
 
-          <div>
-            <p className="mb-1 text-xs font-medium">
-              <Trans>Who can open it</Trans>
-            </p>
-            <RadioGroup
-              value={draft.mode}
-              onValueChange={(v) => setDraft({ ...draft, mode: v as PublicDeploymentMode })}
-              className="gap-1.5"
-            >
-              <label className="flex items-center gap-2 text-sm">
-                <RadioGroupItem value="link" data-testid="agent-autolaunch-mode-link" />
-                <Trans>Anyone with the link</Trans>
-              </label>
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-sm">
-                  <RadioGroupItem value="code" data-testid="agent-autolaunch-mode-code" />
-                  <Trans>Invite code only</Trans>
-                </label>
+          {editing ? (
+            <>
+              <div>
+                <p className="mb-1 text-xs font-medium">
+                  <Trans>Who can open it</Trans>
+                </p>
+                <RadioGroup
+                  value={draft.mode}
+                  onValueChange={(v) => setDraft({ ...draft, mode: v as PublicDeploymentMode })}
+                  className="gap-1.5"
+                >
+                  <label className="flex items-center gap-2 text-sm">
+                    <RadioGroupItem value="link" data-testid="agent-autolaunch-mode-link" />
+                    <Trans>Anyone with the link</Trans>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-sm">
+                      <RadioGroupItem value="code" data-testid="agent-autolaunch-mode-code" />
+                      <Trans>Invite code only</Trans>
+                    </label>
+                  </div>
+                </RadioGroup>
               </div>
-            </RadioGroup>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <Label htmlFor="agent-autolaunch-max" className="text-xs">
-              <Trans>At most</Trans>
-            </Label>
-            <Input
-              id="agent-autolaunch-max"
-              type="number"
-              min={1}
-              className="h-8 w-20 text-xs"
-              value={draft.max ?? ''}
-              placeholder={t`no limit`}
-              onChange={(e) => setDraft({ ...draft, max: e.target.value === '' ? null : Number(e.target.value) })}
-              data-testid="agent-autolaunch-max"
-            />
-            <span>
-              <Trans>deployments at once</Trans>
-            </span>
-          </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <Label htmlFor="agent-autolaunch-max" className="text-xs">
+                  <Trans>At most</Trans>
+                </Label>
+                <Input
+                  id="agent-autolaunch-max"
+                  type="number"
+                  min={1}
+                  className="h-8 w-20 text-xs"
+                  value={draft.max ?? ''}
+                  placeholder={t`no limit`}
+                  onChange={(e) => setDraft({ ...draft, max: e.target.value === '' ? null : Number(e.target.value) })}
+                  data-testid="agent-autolaunch-max"
+                />
+                <span>
+                  <Trans>deployments at once</Trans>
+                </span>
+              </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
-              value={draft.source}
-              onChange={(e) => setDraft({ ...draft, source: e.target.value })}
-              aria-label={t`LLM source users spend`}
-              data-testid="agent-autolaunch-source"
-            >
-              {!draft.source && <option value="">{t`Choose the LLM endpoint users spend`}</option>}
-              {sources.map((e) => (
-                <option key={e.id} value={endpointTypeId(e.id)}>
-                  {e.name}
-                </option>
-              ))}
-              {/* The saved source, even when this account cannot administer it any more. */}
-              {draft.source && !sources.some((e) => endpointTypeId(e.id) === draft.source) && (
-                <option value={draft.source}>{draft.source}</option>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                  value={draft.source}
+                  onChange={(e) => setDraft({ ...draft, source: e.target.value })}
+                  aria-label={t`LLM source users spend`}
+                  data-testid="agent-autolaunch-source"
+                >
+                  {!draft.source && <option value="">{t`Choose the LLM endpoint users spend`}</option>}
+                  {sources.map((e) => (
+                    <option key={e.id} value={endpointTypeId(e.id)}>
+                      {e.name}
+                    </option>
+                  ))}
+                  {/* The saved source, even when this account cannot administer it any more. */}
+                  {draft.source && !sources.some((e) => endpointTypeId(e.id) === draft.source) && (
+                    <option value={draft.source}>{draft.source}</option>
+                  )}
+                </select>
+                <Label htmlFor="agent-autolaunch-cap" className="text-xs">
+                  <Trans>$ per user</Trans>
+                </Label>
+                <Input
+                  id="agent-autolaunch-cap"
+                  type="number"
+                  min={0}
+                  step="0.5"
+                  className="h-8 w-24 text-xs"
+                  value={draft.capUsd ?? ''}
+                  onChange={(e) =>
+                    setDraft({ ...draft, capUsd: e.target.value === '' ? null : Number(e.target.value) })
+                  }
+                  data-testid="agent-autolaunch-cap"
+                />
+              </div>
+
+              {!sameDraft(draft, saved) && (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => void enable()}
+                    disabled={busy || !ready}
+                    data-testid="agent-autolaunch-update"
+                  >
+                    <Trans>Update</Trans>
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setDraft(saved)} disabled={busy}>
+                    <Trans>Cancel</Trans>
+                  </Button>
+                </div>
               )}
-            </select>
-            <Label htmlFor="agent-autolaunch-cap" className="text-xs">
-              <Trans>$ per user</Trans>
-            </Label>
-            <Input
-              id="agent-autolaunch-cap"
-              type="number"
-              min={0}
-              step="0.5"
-              className="h-8 w-24 text-xs"
-              value={draft.capUsd ?? ''}
-              onChange={(e) => setDraft({ ...draft, capUsd: e.target.value === '' ? null : Number(e.target.value) })}
-              data-testid="agent-autolaunch-cap"
-            />
-          </div>
-
-          {!sameDraft(draft, saved) && (
-            <div className="flex gap-2">
               <Button
+                variant="link"
                 size="sm"
-                onClick={() => void enable()}
-                disabled={busy || !ready}
-                data-testid="agent-autolaunch-update"
+                className="h-6 self-start px-0 text-xs"
+                onClick={() => setEditing(false)}
               >
-                <Trans>Update</Trans>
+                <Trans>Done editing</Trans>
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setDraft(saved)} disabled={busy}>
-                <Trans>Cancel</Trans>
+            </>
+          ) : (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs" data-testid="agent-invite-summary">
+              <span>
+                <Trans>
+                  Who can open it: <b>{modeLabel(saved.mode)}</b>
+                </Trans>
+              </span>
+              {saved.max !== null && (
+                <span>
+                  <Trans>
+                    At most <b>{saved.max}</b> at once
+                  </Trans>
+                </span>
+              )}
+              <span>
+                <Trans>
+                  LLM: <b>{sourceName}</b>, <b>${saved.capUsd ?? 0}</b> per user
+                </Trans>
+              </span>
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto px-0 text-xs"
+                onClick={() => setEditing(true)}
+                data-testid="agent-invite-edit-settings"
+              >
+                <Trans>Edit settings</Trans>
               </Button>
             </div>
           )}
@@ -551,7 +623,7 @@ export function AgentAutoLaunchTab({
                     ) : (
                       <span className="w-40 text-muted-foreground">{t`link visitor`}</span>
                     )}
-                    <span className="w-20 font-mono">{code ? `••••${code.last4}` : ''}</span>
+                    <span className="w-20 font-mono">{code ? maskCode(code.last4) : ''}</span>
                     {d ? (
                       <>
                         <span className="w-16">{statusLabel(d.status)}</span>
@@ -599,35 +671,24 @@ export function AgentAutoLaunchTab({
                         >
                           <Trans>Reset</Trans>
                         </Button>
-                        {code && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-xs"
-                            disabled={rowLocked}
-                            onClick={() => setRevoking(code)}
-                            data-testid="agent-invite-revoke"
-                          >
-                            <Trans>Revoke</Trans>
-                          </Button>
-                        )}
                       </>
                     ) : (
                       <>
                         <span className="w-16 text-muted-foreground">{t`Unused`}</span>
                         <span className="flex-1 text-muted-foreground">{t`not opened yet`}</span>
-                        {code && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-xs"
-                            onClick={() => setRevoking(code)}
-                            data-testid="agent-invite-revoke"
-                          >
-                            <Trans>Revoke</Trans>
-                          </Button>
-                        )}
                       </>
+                    )}
+                    {code && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        disabled={rowLocked}
+                        onClick={() => setRevoking(code)}
+                        data-testid="agent-invite-revoke"
+                      >
+                        <Trans>Revoke</Trans>
+                      </Button>
                     )}
                   </li>
                 );

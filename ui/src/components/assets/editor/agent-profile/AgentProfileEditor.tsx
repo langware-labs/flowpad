@@ -150,8 +150,10 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   // A deploy publishes the agent without touching its row, so the header follows the deployments too:
   // without this it still said "Not published yet" after a cloud deploy, until the page was reopened.
   const { places } = useAgentPlaces(agent);
-  const shownPlaces = (places ?? []).filter((p) => !isPublicPlace(p.deployment)).length;
-  const cloudPlaces = places?.filter((p) => !p.is_local && !isPublicPlace(p.deployment)).length ?? 0;
+  // Invite templates and visitors' boxes are the invite deployment's, never places of their own.
+  const plainPlaces = (places ?? []).filter((p) => !isPublicPlace(p.deployment));
+  const shownPlaces = plainPlaces.length;
+  const cloudPlaces = plainPlaces.filter((p) => !p.is_local).length;
   const localPlace = places?.find((p) => p.is_local) ?? null;
   const deployPage = agent.deployPagePointer;
   const placesKey = places

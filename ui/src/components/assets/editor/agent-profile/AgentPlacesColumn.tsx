@@ -12,6 +12,7 @@ import { providerIcon, useAgentChannels } from '@src/components/agent-resources/
 import { isPublicPlace, useAgentPlaces, type AgentPlace } from './use-agent-places';
 import { usePlaceDisplay } from './use-place-display';
 import { AgentPeopleList } from './AgentPeopleList';
+import { useModeLabel } from './AgentAutoLaunchTab';
 
 interface AgentPlacesColumnProps {
   agent: Agent;
@@ -34,6 +35,7 @@ export function AgentPlacesColumn({ agent, onOpenInvite }: AgentPlacesColumnProp
   const wired = useAgentChannels(agent);
   const hub = isHubOnly();
 
+  const modeLabel = useModeLabel();
   const visible = (places ?? []).filter((p) => !isPublicPlace(p.deployment));
   // The invite deployment is ONE row: its machines live inside it, never as rows of their own.
   const [invites, setInvites] = useState<PublicDeploymentsState | null>(null);
@@ -61,7 +63,7 @@ export function AgentPlacesColumn({ agent, onOpenInvite }: AgentPlacesColumnProp
           <span className="truncate text-sm">{t`Invite · ${agent.displayName || agent.name}`}</span>
           <span className="truncate text-xs text-muted-foreground">
             {[
-              invite.settings?.mode === 'link' ? t`Anyone with the link` : t`Invite code only`,
+              modeLabel(invite.settings?.mode ?? 'code'),
               invite.settings?.max_deployments
                 ? t`${invite.deployments.length} of ${invite.settings.max_deployments} machines in use`
                 : t`${invite.deployments.length} machines in use`,

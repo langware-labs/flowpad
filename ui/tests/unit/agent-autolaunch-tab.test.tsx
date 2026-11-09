@@ -108,6 +108,10 @@ describe('AgentAutoLaunchTab', () => {
 
     expect(await screen.findByTestId('agent-autolaunch-allow')).toHaveAttribute('data-state', 'checked');
     expect(screen.getByTestId('agent-autolaunch-link')).toHaveTextContent(`${HUB}/open-pc/${AGENT_ID}`);
+    // Settings read as one line, the mock's summary; the form opens on Edit settings.
+    expect(screen.getByTestId('agent-invite-summary')).toHaveTextContent('Invite code only');
+    expect(screen.getByTestId('agent-invite-summary')).toHaveTextContent('At most 3 at once');
+    fireEvent.click(screen.getByTestId('agent-invite-edit-settings'));
     expect(screen.getByTestId('agent-autolaunch-mode-code')).toHaveAttribute('data-state', 'checked');
     expect(screen.getByTestId('agent-autolaunch-codes')).toHaveTextContent('Add codes');
     // Revoked codes are gone; a used code and an unused one each get a line.

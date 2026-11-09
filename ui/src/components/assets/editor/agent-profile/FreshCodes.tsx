@@ -6,10 +6,12 @@ import { Input } from '@src/components/ui/input';
 
 /** Name each just-minted code that was given one (who it is for). */
 export async function saveCodeNames(agent: Agent, codes: NewPublicInviteCode[], names: Record<string, string>) {
-  for (const c of codes) {
-    const name = (names[c.id] ?? '').trim();
-    if (name && name !== (c.name ?? '')) await agent.renamePublicCode(c.id, name);
-  }
+  await Promise.all(
+    codes
+      .map((c) => [c, (names[c.id] ?? '').trim()] as const)
+      .filter(([c, name]) => name && name !== (c.name ?? ''))
+      .map(([c, name]) => agent.renamePublicCode(c.id, name)),
+  );
 }
 
 /**
