@@ -4517,8 +4517,8 @@ msgid "Ask a teammate to join it and write there. The agent answers as you."
 msgstr "Ask a teammate to join it and write there. The agent answers as you."
 
 #: src/components/conversation/AutomationMessageActions.tsx
-msgid "Ask about this"
-msgstr "Ask about this"
+#~ msgid "Ask about this"
+#~ msgstr "Ask about this"
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Ask about this analysis…"
@@ -5021,14 +5021,13 @@ msgstr "Automation created"
 #: src/components/automations/BusView.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/components/conversation/channel-attribution.tsx
 #: src/types/ViewType.ts
 msgid "Automations"
 msgstr "Automations"
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
-msgid "Automations — what your automations report"
-msgstr "Automations — what your automations report"
+#~ msgid "Automations — what your automations report"
+#~ msgstr "Automations — what your automations report"
 
 #: src/components/automations/BusView.tsx
 #: src/components/automations/BusView.tsx
@@ -5153,8 +5152,8 @@ msgid "Back to the conversation message that started this session"
 msgstr "Back to the conversation message that started this session"
 
 #: src/components/conversation/AutomationMessageActions.tsx
-msgid "Back to the session"
-msgstr "Back to the session"
+#~ msgid "Back to the session"
+#~ msgstr "Back to the session"
 
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Back to the simple view"
@@ -8631,8 +8630,8 @@ msgid "Could not open the machine"
 msgstr "Could not open the machine"
 
 #: src/components/conversation/AutomationMessageActions.tsx
-msgid "Could not open the session"
-msgstr "Could not open the session"
+#~ msgid "Could not open the session"
+#~ msgstr "Could not open the session"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
 #: src/components/conversation/asset-review/use-open-git-share.ts
@@ -21780,8 +21779,8 @@ msgid "Open authorization page"
 msgstr "Open authorization page"
 
 #: src/components/conversation/AutomationMessageActions.tsx
-msgid "Open automation"
-msgstr "Open automation"
+#~ msgid "Open automation"
+#~ msgstr "Open automation"
 
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
@@ -32131,8 +32130,8 @@ msgid "This is its first start, so it takes a few minutes."
 msgstr "This is its first start, so it takes a few minutes."
 
 #: src/components/conversation/AutomationMessageActions.tsx
-msgid "This is my usage report ({target}, attached as context). Read it, then wait for my questions."
-msgstr "This is my usage report ({target}, attached as context). Read it, then wait for my questions."
+#~ msgid "This is my usage report ({target}, attached as context). Read it, then wait for my questions."
+#~ msgstr "This is my usage report ({target}, attached as context). Read it, then wait for my questions."
 
 #: src/components/harness-login/StatusRow.tsx
 msgid "This is your default assistant"
