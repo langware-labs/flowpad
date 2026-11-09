@@ -122,12 +122,14 @@ function checkPair({ desktopVersion, engineVersion, minDesktopVersion = null, mi
  *        'invalid' (broken metadata → candidate rejected), or null (indeterminate — offline /
  *        read failed → candidate ACCEPTED as legacy; the post-install verification is the
  *        authoritative gate and rolls back if this optimism was wrong)
+ * @param {boolean} [o.requireMetadata]  an UPDATE of a working engine: a candidate whose metadata is indeterminate
+ *        (null) or missing (no compat.json) is skipped instead of accepted — fail closed (counted in stats.unverifiable)
  * @param {number} [o.limit]   how many candidates to interrogate before giving up
- * @param {{checked?: number, stoppedAtLimit?: boolean}} [o.stats]  filled in: how many were interrogated, and whether the limit ended the walk
+ * @param {{checked?: number, stoppedAtLimit?: boolean, unverifiable?: number}} [o.stats]  filled in: how many were interrogated, and whether the limit ended the walk
  * @param {(msg: string) => void} [o.log]
  * @returns {Promise<{version: string, minDesktopVersion: string|null}|null>} null = no compatible release
  */
-async function selectCompatibleRelease({ releases, desktopVersion, minBackendVersion, readEngineCompat, limit = 10, log = () => {}, stats = {} }) {
+async function selectCompatibleRelease({ releases, desktopVersion, minBackendVersion, readEngineCompat, requireMetadata = false, limit = 10, log = () => {}, stats = {} }) {
   const candidates = (releases || [])
     .filter((r) => r && !r.yanked)
     .map((r) => ({ version: r.version, parsed: string2semver(r.version) }))
@@ -137,6 +139,7 @@ async function selectCompatibleRelease({ releases, desktopVersion, minBackendVer
   let interrogated = 0;
   stats.checked = 0;
   stats.stoppedAtLimit = false;
+  stats.unverifiable = 0;
   for (const candidate of candidates) {
     if (interrogated >= limit) {
       stats.stoppedAtLimit = true;
@@ -148,6 +151,11 @@ async function selectCompatibleRelease({ releases, desktopVersion, minBackendVer
     const compat = await readEngineCompat(candidate.version);
     if (compat === 'invalid') {
       log(`[compat] ${candidate.version}: invalid compatibility metadata — skipping it`);
+      continue;
+    }
+    if (requireMetadata && (compat === null || (compat && compat.missing))) {
+      stats.unverifiable += 1;
+      log(`[compat] ${candidate.version}: compatibility metadata ${compat === null ? 'could not be read' : 'missing'} — not picking a release it cannot check`);
       continue;
     }
     const floor = compat ? compat.minDesktopVersion : null;

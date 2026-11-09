@@ -11,14 +11,14 @@
  * In test mode:
  *
  *   FLOWPAD_UPDATE_TEST_ANSWERS scripts the update dialogs, e.g.
- *     FLOWPAD_UPDATE_TEST_ANSWERS="both=later,restart=later,engine=upgrade"
+ *     FLOWPAD_UPDATE_TEST_ANSWERS="restart=later,engine=upgrade"
  *   Prompt ids (button 0 always accepts, 1 defers):
  *     move    — macOS: the app runs from a transient place     ("Move to Applications" / "Not now")
- *     both    — desktop + engine both have a new version   ("Update now" / "Later")
- *     restart — the desktop update is downloaded           ("Restart now" / "Later")
- *     engine  — an engine-only update                      ("Upgrade" / "Later")
+ *     restart — an update set is ready: "Update Ready" ("Restart" applies it / "Later" leaves the toast unshown)
+ *     engine  — the recovery's pre-start engine question  ("Upgrade" / "Later")
  *   Accepted values: accept|update|upgrade|restart|yes|0 → button 0; anything else → button 1. An UNSCRIPTED
- *   prompt answers button 1 (defer), so a harness run can never hang on an unexpected native dialog.
+ *   prompt answers button 1 (defer), so a harness run can never hang on an unexpected native dialog — except
+ *   `restart`: unscripted, the real "Update Ready" toast is shown (it blocks nothing), so a run can click it.
  *
  *   Every prompt and lifecycle event is logged as one parseable line:
  *     [update-test] {"event":"prompt","prompt":"engine","answer":1,...}
@@ -45,7 +45,7 @@ function isEnabled() {
   return process.env.FLOWPAD_UPDATE_TEST === '1';
 }
 
-/** "both=later,engine=accept" → { both: 'later', engine: 'accept' } */
+/** "restart=later,engine=accept" → { restart: 'later', engine: 'accept' } */
 function parseAnswers(raw) {
   const out = {};
   for (const part of String(raw || '').split(',')) {
@@ -96,6 +96,11 @@ function answerFor(prompt, data = {}) {
   return answer;
 }
 
+/** True when test mode is on and FLOWPAD_UPDATE_TEST_ANSWERS scripts this prompt. */
+function isScripted(prompt) {
+  return isEnabled() && parseAnswers(process.env.FLOWPAD_UPDATE_TEST_ANSWERS)[prompt] !== undefined;
+}
+
 /** The launch-time desktop check bound in ms, or undefined (the app's own default) outside test mode. */
 function checkBoundMs() {
   const ms = Number(process.env.FLOWPAD_UPDATE_TEST_CHECK_BOUND_MS);
@@ -113,4 +118,4 @@ function forceRunAfter(forceRun) {
   return isEnabled() ? false : forceRun;
 }
 
-module.exports = { isEnabled, answerFor, event, parseAnswers, forceRunAfter, checkBoundMs, checkIntervalMs, _setLogLine };
+module.exports = { isEnabled, isScripted, answerFor, event, parseAnswers, forceRunAfter, checkBoundMs, checkIntervalMs, _setLogLine };
