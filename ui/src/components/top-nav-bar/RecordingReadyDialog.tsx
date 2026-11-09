@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FolderInput, Share2, Video } from 'lucide-react';
+import { FolderInput, RotateCcw, Share2, Trash2, Video } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { ActionInfo, dataManager, TypeId, VFSPath } from '@sdk';
 import { Button } from '@src/components/ui/button';
@@ -11,7 +11,7 @@ import { notify } from '@src/notifications/notify';
 import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 import { formatBytes } from '@src/utils/format-bytes';
 import type { UploadDir } from '@src/utils/upload-to-input-dir';
-import { dismissRecording, formatElapsed, setRecordingPlace, type Recording, type RecordingPlace } from './use-screen-recorder';
+import { dismissRecording, formatElapsed, setRecordingPlace, startRecording, type Recording, type RecordingPlace } from './use-screen-recorder';
 
 /** The toast's Open: the saved recording in its viewer (URL-first, like every toast link). */
 function recordingHref(place: RecordingPlace): string {
@@ -56,6 +56,22 @@ export function RecordingReadyDialog({ recording }: { recording: Recording }) {
     }
   };
 
+  // Discard deletes the temp file; Record again does that, then starts a new recording.
+  const discard = async (again: boolean) => {
+    setSaving(true);
+    try {
+      const action = new ActionInfo('recording-discard', null, null, 'POST');
+      action.bodyParameters = { name: fileName };
+      await dataManager.callAction(action);
+    } catch (error) {
+      notify.error({ title: t`Could not delete the recording`, message: error instanceof Error ? error.message : String(error), transient: true });
+      setSaving(false);
+      return;
+    }
+    dismissRecording();
+    if (again) void startRecording();
+  };
+
   if (sharing) {
     return source && <ShareToConversationDialog open onClose={dismissRecording} source={source} projectId={project?.id ?? null} />;
   }
@@ -90,6 +106,18 @@ export function RecordingReadyDialog({ recording }: { recording: Recording }) {
           </div>
         </div>
         <DialogFooter className="gap-2">
+          {!saved && (
+            <>
+              <Button variant="ghost" className="sm:mr-auto" onClick={() => void discard(false)} disabled={saving} data-testid="recording-discard">
+                <Trash2 className="h-4 w-4" />
+                {t`Discard`}
+              </Button>
+              <Button variant="outline" onClick={() => void discard(true)} disabled={saving} data-testid="recording-record-again">
+                <RotateCcw className="h-4 w-4" />
+                {t`Record again`}
+              </Button>
+            </>
+          )}
           {!saved && (
             <Button variant="outline" onClick={() => void saveToProject()} disabled={saving || !project?.id} data-testid="recording-save-to-project">
               <FolderInput className="h-4 w-4" />
