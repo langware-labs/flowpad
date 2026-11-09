@@ -7,7 +7,11 @@ import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
 import { TaskChips, type TaskPeople } from './task-it';
 import { MessageActionsMenu } from './MessageActionsMenu';
-import { MESSAGE_ROW_ICON_BUTTON_CLASS, OpenSessionButton, QuickWorkerButton } from '@src/components/workers/ContextWorkerToolbar';
+import {
+  MESSAGE_ROW_ICON_BUTTON_CLASS,
+  OpenSessionButton,
+  QuickWorkerButton,
+} from '@src/components/workers/ContextWorkerToolbar';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { CHIP_LAYOUT } from './EntityChip';
 import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
@@ -21,10 +25,11 @@ import { messageDirection } from './message-direction';
 import { avatarColorForMessage } from './avatar-color';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { MessageMarkChip, QuotedMessage, ReactionChips } from './ChannelMessageExtras';
 import type { IMessageReaction } from '@sdk/entities/flow-message';
 import type { WorkerType } from './conversation-session-constants';
+import { personName } from '@src/components/conversation/participant-display';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -152,10 +157,30 @@ function NotDelivered({ message }: { message: FlowMessage }) {
   );
 }
 
+/** The recipient agent is working on an answer. A stale mark (it never cleared) stops showing after a while. */
+const WORKING_MAX_MS = 15 * 60 * 1000;
+function isWorking(message?: FlowMessage): boolean {
+  const at = message?.handling_at ? new Date(message.handling_at).getTime() : NaN;
+  return !Number.isNaN(at) && Date.now() - at < WORKING_MAX_MS;
+}
+
 function DeliveryReceipt({ status, message }: { status: DeliveryStatus | undefined; message?: FlowMessage }) {
   const { t } = useLingui();
-  const owed = status === 'created' || status === 'pending_send' || message?.body_status === 'failed';
+  const raw: string | undefined = status;
+  const owed = raw === 'created' || raw === 'pending_send' || (message?.body_status as string | undefined) === 'failed';
   if (message?.outbound && message.delivery_failure && owed) return <NotDelivered message={message} />;
+  if (isWorking(message)) {
+    return (
+      <span
+        title={t`Working…`}
+        className="inline-flex items-center gap-1 text-[10px] text-sky-500"
+        data-testid="message-working"
+      >
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <Trans>working…</Trans>
+      </span>
+    );
+  }
   if (!status) return null;
   if (status === 'created' || status === 'pending_send') {
     // `created` = written to the local store, NOT yet accepted by the hub.
@@ -334,7 +359,7 @@ export function MessageBubble({
   };
 
   const isBot = message.role === 'bot';
-  const displayName = isBot ? t`Claude` : senderName || t`Unknown`;
+  const displayName = isBot ? t`Claude` : personName({ name: senderName });
   const initial = (displayName.trim()[0] ?? '?').toUpperCase();
   const time = formatTime(message.timestamp);
   const ago = formatTimeAgo(message.timestamp);

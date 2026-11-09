@@ -39,6 +39,13 @@ const codeRequired = (e: unknown) => errorStatus(e) === 401 && /code required/i.
  * code mode asks for the invite code, and the same code always opens the same sandbox. Signed-out on purpose
  * (`anonymous-entry.ts`): no sign-in is ever offered. The answer is the box's gated url, followed once.
  */
+/** The hub's `data.reason` on a refused open (`full` | `not_ready`), if it gave one. */
+export function refusalReason(e: unknown): string | null {
+  const body = (e as { response?: { data?: { data?: { reason?: unknown } } } } | null)?.response?.data;
+  const reason = body?.data?.reason;
+  return typeof reason === 'string' ? reason : null;
+}
+
 export default function OpenPcLanding() {
   const { t } = useLingui();
   // Trimmed: a copied or clicked link can carry a trailing newline (`%0A`), which the hub reads as another id.
@@ -47,13 +54,22 @@ export default function OpenPcLanding() {
   const name = agent ? agent.getDisplayName() || agent.name : '';
   const [phase, setPhase] = useState<'probing' | 'code' | 'opening' | 'failed'>('probing');
   const [askCode, setAskCode] = useState(false);
-  const [code, setCode] = useState('');
+  // A code handed over in the link's fragment (`#code=…`, from the owner's Open machine) is already in the box.
+  const [code, setCode] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('code') ?? '');
   const [problem, setProblem] = useState<string | null>(null);
 
   const problemOf = (e: unknown, sentCode: boolean): string => {
     const status = errorStatus(e);
     if (status === 404 && sentCode) return t`This code doesn't work. Check it, or ask whoever gave it to you.`;
-    if (status === 409) return t`All sandboxes for this agent are in use right now. Try again in a few minutes.`;
+    if (status === 409) {
+      // The hub says which 409 it is: only "full" passes by waiting; anything else the owner has to fix.
+      if (refusalReason(e) === 'full')
+        return t`All sandboxes for this agent are in use right now. Try again in a few minutes.`;
+      const why = errorDetail(e);
+      return why
+        ? t`This agent isn't ready to open yet: ${why} Tell whoever gave you the code.`
+        : t`This agent isn't ready to open yet. Tell whoever gave you the code.`;
+    }
     if (status === 429) return t`Too many tries. Try again later.`;
     if (status === 403) return t`This link is for visitors. Open it in a private window.`;
     return errorMessage(e, t`Couldn't open a sandbox.`);

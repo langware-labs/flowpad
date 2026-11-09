@@ -417,15 +417,23 @@ async def project_source_item(
 
 def _adopt_kind(source, conversation) -> bool:
     """Give the conversation the kind the source's threads are (``conversation_kind``), so a help-desk
-    ticket that only ever arrived through its source is still a ticket. Answers whether it changed."""
+    ticket that only ever arrived through its source is still a ticket. A ticket is the hub's own
+    conversation (its id is the hub's), so it is marked ``remote`` too: left as a local row it reads as
+    written on this machine, the viewer is taken for the person who asked, and a staff member is offered
+    no pickup. Answers whether it changed."""
+    from flow_sdk.builtin.conversation import ConversationKind  # noqa: PLC0415
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
     driver = DataDriver.loaded(str(getattr(source, "provider", "") or ""))
     kind = getattr(driver.cls, "conversation_kind", None) if driver is not None else None
-    if not kind or conversation.kind == kind:
+    if not kind:
         return False
+    changed = conversation.kind != kind
     conversation.kind = kind
-    return True
+    if kind == ConversationKind.HELPDESK.value and not conversation.remote:
+        conversation.remote = True
+        changed = True
+    return changed
 
 
 async def _follow_subject(source, thread, conversation, subject: str) -> bool:

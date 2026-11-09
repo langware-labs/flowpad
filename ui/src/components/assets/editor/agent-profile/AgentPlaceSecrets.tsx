@@ -13,7 +13,10 @@ import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 
+import { Input } from '@src/components/ui/input';
+
 import { BusyButton, DeploymentSecretsGate } from './DeploymentSecretsGate';
+import { overrideRows, type DeclaredCredential } from './project-secrets';
 
 interface AgentPlaceSecretsProps {
   project: Project;
@@ -34,9 +37,15 @@ export function AgentPlaceSecrets({ project, deployment }: AgentPlaceSecretsProp
   const [inventory, setInventory] = useState<DeploymentSecretsInventory | null>(null);
   const [readiness, setReadiness] = useState<AgentReadiness | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // "Override here": the credential being typed for this deployment only, and its values until saved.
+  const [overriding, setOverriding] = useState<string | null>(null);
+  const [typed, setTyped] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
-    const [held, ready] = await Promise.all([deployment.secretsInventory(), project.readiness(deployment.id, deployment.main_agent_id)]);
+    const [held, ready] = await Promise.all([
+      deployment.secretsInventory(),
+      project.readiness(deployment.id, deployment.main_agent_id),
+    ]);
     setInventory(held);
     setReadiness(ready);
   }, [project, deployment]);
@@ -60,6 +69,12 @@ export function AgentPlaceSecrets({ project, deployment }: AgentPlaceSecretsProp
   };
 
   if (!inventory) return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+
+  // The credentials this deployment's agent requires, each on the project's value or overridden here.
+  const required: DeclaredCredential[] = (readiness?.items ?? [])
+    .filter((i) => i.requirement.kind === 'credential')
+    .map((i) => ({ name: i.requirement.name, vars: i.vars.length > 0 ? i.vars : i.requirement.vars }));
+  const overrides = overrideRows(required, inventory);
 
   const small = (label: string, key: string, run: () => Promise<unknown>, testId: string) => (
     <BusyButton
@@ -85,6 +100,71 @@ export function AgentPlaceSecrets({ project, deployment }: AgentPlaceSecretsProp
             void deployment.secretsInventory().then(setInventory);
           }}
         />
+      )}
+      {overrides.length > 0 && (
+        <section className="flex flex-col gap-1" data-testid="agent-place-overrides">
+          <p className="font-medium text-muted-foreground">
+            <Trans>Credentials</Trans>
+          </p>
+          {overrides.map((row) => (
+            <div key={row.name} className="flex flex-col gap-1" data-testid={`agent-place-override-${row.name}`}>
+              <div className="flex items-center gap-2">
+                <span className="font-mono">{row.name}</span>
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                  {row.overridden ? t`Overridden here` : t`Project value`} ·{' '}
+                  <span className="font-mono">{row.vars.join(', ')}</span>
+                </span>
+                {row.overridden
+                  ? small(
+                      t`Reset to project`,
+                      row.name,
+                      () => Promise.all(row.vars.map((v) => deployment.resetToProject(v))),
+                      `agent-place-reset-${row.name}`,
+                    )
+                  : overriding !== row.name && (
+                      <BusyButton
+                        label={t`Override here`}
+                        testId={`agent-place-override-open-${row.name}`}
+                        variant="outline"
+                        busy={false}
+                        disabled={busy !== null}
+                        onClick={() => setOverriding(row.name)}
+                      />
+                    )}
+              </div>
+              {overriding === row.name && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {row.vars.map((v) => (
+                    <Input
+                      key={v}
+                      type="password"
+                      autoComplete="off"
+                      className="h-7 w-64 font-mono text-xs"
+                      placeholder={v}
+                      aria-label={v}
+                      title={t`Write-only: it cannot be shown again.`}
+                      value={typed[v] ?? ''}
+                      onChange={(e) => setTyped((prev) => ({ ...prev, [v]: e.target.value }))}
+                      data-testid={`agent-place-override-value-${v}`}
+                    />
+                  ))}
+                  {small(
+                    t`Save`,
+                    row.name,
+                    async () => {
+                      const held = new Set(inventory.secrets.map((x) => x.name));
+                      const values = row.vars.filter((v) => (typed[v] ?? '').length > 0);
+                      await Promise.all(values.map((v) => deployment.setOverride(v, typed[v], held.has(v))));
+                      setTyped({});
+                      setOverriding(null);
+                    },
+                    `agent-place-override-save-${row.name}`,
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </section>
       )}
       <section className="flex flex-col gap-1">
         <p className="font-medium text-muted-foreground">

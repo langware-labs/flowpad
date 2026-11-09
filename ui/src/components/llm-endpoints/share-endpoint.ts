@@ -40,6 +40,10 @@ import { endpointShareLandingPath } from './llm-endpoints-pointer';
  *  the same set `SHARE_ROLES` pins on the Python side. */
 export const ENDPOINT_SHARE_ROLES = [Role.READER, Role.RUNNER];
 
+/** Roles the budget page's members control may grant -- the generic set (approved 2026-11-09): editor can
+ *  allocate (fund deployments), admin also configures. The hub's `can_assign` caps each by the inviter's rank. */
+export const ENDPOINT_INVITE_ROLES = [Role.ADMIN, Role.EDITOR, Role.READER, Role.RUNNER];
+
 export interface ShareEndpointFailure {
   email: string;
   reason: string;

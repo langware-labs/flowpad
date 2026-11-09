@@ -986,9 +986,8 @@ class Deployment(Entity):
     @action.post(action_name="pause")
     async def pause_action(self):
         """`POST /deployment/<id>/pause` — stop this placement's machine."""
-        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
-
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         try:
             paused = await self.pause()

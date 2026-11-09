@@ -2,7 +2,7 @@ import { AgenticProcess, toplog } from '@sdk';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ChatActivityLine } from '@src/components/entity-execution-panel/ChatActivityLine';
-import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
+import { nearestGroup, TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
 import { useObservedTurn } from '@src/components/entity-execution-panel/hooks/useObservedTurn';
 import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
 import { useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
@@ -27,23 +27,6 @@ interface SimpleChatPaneProps {
    * message nearest it — a timeline event opening its process.
    */
   focusAt?: string | null;
-}
-
-/** The message group whose time is nearest *at*, or null. */
-function nearestGroup(groups: readonly TurnGroup[], at: string | null | undefined): number | null {
-  if (!at) return null;
-  const target = Date.parse(at);
-  let best: number | null = null;
-  let bestGap = Infinity;
-  groups.forEach((g, i) => {
-    if (g.kind !== 'message' || !g.flowData.timestamp) return;
-    const gap = Math.abs(Date.parse(g.flowData.timestamp) - target);
-    if (gap < bestGap) {
-      bestGap = gap;
-      best = i;
-    }
-  });
-  return best;
 }
 
 /**

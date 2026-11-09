@@ -509,6 +509,15 @@
   box-shadow: inset 2px 0 0 0 hsl(var(--primary) / 0.6);
 }
 
+/* The chat message a doc comment's "Open in chat" focused (`?t=`). The row is
+   `display: contents` (no box of its own), so the mark goes on its content. */
+.flowpad-chat-anchor + .contents > *,
+.flowpad-chat-anchor + :not(.contents) {
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.6);
+  background-color: hsl(var(--primary) / 0.06);
+}
+
 /*
  * Asset row tracks — see `AssetGridRow` in AssetManagerPopover.tsx for the
  * column layout. The row's host div is the container, so the row adapts to

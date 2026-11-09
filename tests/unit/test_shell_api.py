@@ -69,17 +69,14 @@ def test_is_alive_false_when_no_session():
 
 @pytest.mark.asyncio
 async def test_ensure_live_compute_node_binding_rebinds_stale_node_to_local():
-    """When id lookup fails, rebind falls back to @local via uname."""
+    """When id lookup fails, rebind falls back to the @local node (ComputeNode.get_local)."""
     shell = Shell(id=str(uuid.uuid4()), compute_node_id="compute_node-stale-node")
     current_node = MagicMock()
     current_node.id = "local-node"
     current_node.uname = "local"
 
-    async def uname_lookup(uname):
-        return current_node if uname == "local" else None
-
     with patch("flow_sdk.builtin.faas.compute_node.ComputeNode.get_by_id", new=AsyncMock(return_value=None)) as get_by_id, \
-         patch("flow_sdk.builtin.faas.compute_node.ComputeNode.get_by_uname", new=AsyncMock(side_effect=uname_lookup)) as get_by_uname, \
+         patch("flow_sdk.builtin.faas.compute_node.ComputeNode.get_local", new=AsyncMock(return_value=current_node)) as get_local, \
          patch.object(Shell, "save", new=AsyncMock()) as save:
         rebound = await shell.ensure_live_compute_node_binding()
 
@@ -87,7 +84,7 @@ async def test_ensure_live_compute_node_binding_rebinds_stale_node_to_local():
     assert shell.compute_node_id == "local-node"
     assert shell.compute_node_uname == "local"
     get_by_id.assert_any_await("compute_node-stale-node")
-    get_by_uname.assert_awaited_once_with("local")
+    get_local.assert_awaited_once()
     save.assert_awaited_once()
 
 

@@ -29,6 +29,7 @@ from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.builtin.agent_cloud_deploy import _UNSET, DeployRequest
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
+from flow_sdk.builtin.project_secrets import SecretsUseMineRequest
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
 from flow_sdk.config import PLATFORM_WIN32, StorageProvider
 from flow_sdk.core import Entity, action
@@ -2629,10 +2630,10 @@ class Project(SetupSkippable, Entity):
         return None
 
     @classmethod
-    async def free_name(cls, base: str) -> str:
-        """``base``, or the first ``<base>-N`` no visible project holds."""
+    async def free_name(cls, base: str, taken: Callable[[str], bool] | None = None) -> str:
+        """``base``, or the first ``<base>-N`` no visible project holds (nor ``taken`` claims)."""
         name, n = base, 1
-        while await cls._project_named(name) is not None:
+        while (taken is not None and taken(name)) or await cls._project_named(name) is not None:
             n += 1
             name = f"{base}-{n}"
         return name
@@ -3009,6 +3010,18 @@ class Project(SetupSkippable, Entity):
             source_ref=source_ref,
             mode_fields=mode_fields,
         )
+
+    @action.post(action_name="secrets_use_mine")
+    async def secrets_use_mine_action(self, body: SecretsUseMineRequest) -> "ApiResponse":
+        """`POST /project/<id>/secrets_use_mine {names}` — copy this computer's values for those variables into
+        the project's hub store (write-only). Names come back, never a value."""
+        from flow_sdk.builtin.project_secrets import use_mine  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+        try:
+            return ApiSuccessResponse(data=await use_mine(self, list(body.names)))
+        except HubError as exc:
+            return exc.fail_response("Could not copy the values to the hub")
 
     @action.post(action_name="deploy")
     async def deploy_action(self, body: DeployRequest) -> "ApiResponse":

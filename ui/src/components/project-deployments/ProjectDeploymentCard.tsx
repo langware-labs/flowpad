@@ -99,7 +99,10 @@ export function ProjectDeploymentCard({ project, deployment, mainAgent }: Projec
     });
 
   return (
-    <article className="overflow-hidden rounded-lg border bg-background" data-testid={`project-deployment-card-${deployment.id}`}>
+    <article
+      className="overflow-hidden rounded-lg border bg-background"
+      data-testid={`project-deployment-card-${deployment.id}`}
+    >
       <div className="flex flex-wrap items-center gap-2.5 px-3.5 py-2.5">
         <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground" data-testid="project-deployment-meta">
           {local ? t`Runs only while this computer is awake` : paused ? t`Paused` : t`Always on`}
@@ -136,7 +139,12 @@ export function ProjectDeploymentCard({ project, deployment, mainAgent }: Projec
           </>
         )}
         {mainAgent && (
-          <Button size="sm" variant={chatOpen ? 'secondary' : 'default'} onClick={toggleChat} data-testid="project-deployment-chat">
+          <Button
+            size="sm"
+            variant={chatOpen ? 'secondary' : 'default'}
+            onClick={toggleChat}
+            data-testid="project-deployment-chat"
+          >
             <MessageSquare className="me-1.5 h-3.5 w-3.5" />
             <Trans>Chat</Trans>
           </Button>

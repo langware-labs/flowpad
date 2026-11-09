@@ -1,7 +1,7 @@
 {
   "name": "service-stub",
   "title": "service-stub",
-  "description": "Tier-1 stub: brings the `tenant` service on required port 48300 (the Spora tenant mirror).",
+  "description": "Tier-1 stub: brings the `tenant` service on required port 48300.",
   "build": "build",
   "services": [
     {

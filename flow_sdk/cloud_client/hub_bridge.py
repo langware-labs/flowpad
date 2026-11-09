@@ -780,25 +780,14 @@ class HubWsBridge:
                         and not _is_session_traffic(payload)
                     ):
                         try:
-                            from flow_sdk.notifications import notify_desktop
+                            from flow_sdk.notifications import notify_message_arrival
 
-                            text = " ".join((payload.get("text") or "").split())
-                            preview = text if len(text) <= 80 else text[:77] + "..."
-                            if not preview:
-                                preview = _attachment_only_body(payload)
-                            # Message → generic payload flattening lives HERE
-                            # (the Layer-2 consumer); the notification service
-                            # renders it blind. The click target is the same
-                            # /conversation/<id>/message/<id> pointer an in-app
-                            # bubble click navigates to.
-                            await notify_desktop(
-                                "message",
-                                title=payload.get("sender_name") or "New message",
-                                body=preview,
-                                click_target={
-                                    "view_type": "conversation",
-                                    "pointer": f"{conversation_id}/message/{fm_id}",
-                                },
+                            await notify_message_arrival(
+                                conversation_id,
+                                fm_id,
+                                sender_name=payload.get("sender_name") or "",
+                                text=payload.get("text") or "",
+                                fallback=_attachment_only_body(payload),
                             )
                         except Exception as _notify_err:
                             logger.warning(
@@ -933,9 +922,14 @@ class HubWsBridge:
                 "delivery_status",
                 "delivered_at",
                 "received_at",
+                "handling_at",
                 "body_status",
                 "attachment_filename",
             ):
+                # The hub leaves a cleared field out of a full message: no ``handling_at`` on a message that is
+                # otherwise whole means "not working any more".
+                if field == "handling_at" and field not in data and ("sender_id" in data or "delivery_status" in data):
+                    data = {**data, "handling_at": None}
                 if field not in data:
                     continue
                 if (

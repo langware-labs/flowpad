@@ -35,7 +35,7 @@ describe('NewConversationDialog — a special destination', () => {
         onClose={onClose}
         destination={{
           label: 'IT · Game Builder deployments (5 machines)',
-          note: '1 has IT Sessions off',
+          note: '1 is IT Disabled',
           title: 'IT · Game Builder - Nov 7',
           sendLabel: 'Send',
           send,
@@ -46,7 +46,7 @@ describe('NewConversationDialog — a special destination', () => {
     expect(screen.getByTestId('conversation-destination').textContent).toBe(
       'IT · Game Builder deployments (5 machines)',
     );
-    expect(screen.getByText('1 has IT Sessions off')).toBeTruthy();
+    expect(screen.getByText('1 is IT Disabled')).toBeTruthy();
     const button = screen.getByRole<HTMLButtonElement>('button', { name: 'Send' });
     expect(button.disabled).toBe(true); // nothing to send yet
     fireEvent.change(screen.getByTestId('initial-message-input'), { target: { value: 'Check progress' } });

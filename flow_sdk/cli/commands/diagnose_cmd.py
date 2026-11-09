@@ -20,6 +20,7 @@ import contextlib
 import json
 import logging
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from flow_sdk.agentic_warmup import await_worker_started
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.cli.commands._common import quiet_logs
 from flow_sdk.cli.commands._common import safe_echo as _safe_echo
+from flow_sdk.diagnose.report_text import describes_a_problem, no_description_instruction
 
 # The id keys report.py's result JSON carries. ``diagnosis_id`` is always an id;
 # the support pair is either both ids (an issue) or both ``None`` (a clean sweep).
@@ -424,6 +426,7 @@ async def _run_diagnose(
     prompt_extra: str = "",
     report_only: bool = False,
     connection_id: str | None = None,
+    feed: bool = True,
 ) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
 
@@ -437,7 +440,7 @@ async def _run_diagnose(
     ``_TerminalSink`` so the CLI renders exactly as before; the UI's HTTP endpoint
     passes its own ``emit`` to forward the same events as SSE.
 
-    Every completed run posts exactly one Home-Feed card through
+    Every completed run posts exactly one Home-Feed card (unless ``feed=False``: Diagnose & fix answers in its conversation) through
     ``_post_home_feed_entry`` — an issue card carrying the report buttons when
     report.py created a support Conversation/FlowMessage, otherwise a no-issue card
     carrying the summary. This holds for both surfaces (the CLI and the UI modal), so
@@ -475,6 +478,7 @@ async def _run_diagnose(
     origin = "cli" if isinstance(emit, _TerminalSink) else "footer"
     sweep = await _sweep(message, project_id, origin=origin, emit=emit, connection_id=connection_id)
 
+    no_description_note = f"{no_description_instruction(message)}\n\n" if not describes_a_problem(message) else ""
     prompt_text = (
         f"Read the flow-diagnose skill at {skill_dir}/SKILL.md and follow it to "
         "diagnose Flowpad and record the result.\n\n"
@@ -487,6 +491,7 @@ async def _run_diagnose(
         "--status ok). Do NOT end your turn before it has printed its JSON.\n\n"
         "User-reported text — free text or a pasted error; empty means run a full "
         f'sweep:\n"{message}"\n\n'
+        f"{no_description_note}"
         "A fixed diagnostic sweep ALREADY RAN on this machine. Start from what it found — do not "
         "repeat those checks — and use its findings in what you record:\n"
         f"```json\n{_sweep_for_prompt(sweep)}\n```"
@@ -656,7 +661,9 @@ async def _run_diagnose(
             )
             done(False, sweep)
             return 1
-        feed_entry_id = await _post_home_feed_entry(summary=sweep.summary or sweep.title or "", diagnosis_id=did)
+        feed_entry_id = (
+            await _post_home_feed_entry(summary=sweep.summary or sweep.title or "", diagnosis_id=did) if feed else None
+        )
         emit({"type": "status", "text": "  ! The agent could not finish. Recorded what the checks found instead."})
         done(False, sweep, diagnosis_id=did, feed_entry_id=feed_entry_id)
         return 0
@@ -727,11 +734,16 @@ async def _run_diagnose(
             # card carrying the summary. Either way the result reaches the Home feed,
             # from the CLI or the UI modal, watched or not.
             summary = (getattr(diag, "summary", None) or getattr(diag, "title", None) or "") if diag else ""
-            feed_entry_id = await _post_home_feed_entry(
-                summary=summary,
-                conversation_id=conv_id,
-                flow_message_id=msg_id,
-                diagnosis_id=did,
+            # ``feed=False``: the caller answers in a conversation (Diagnose & fix) — one place for the answer.
+            feed_entry_id = (
+                await _post_home_feed_entry(
+                    summary=summary,
+                    conversation_id=conv_id,
+                    flow_message_id=msg_id,
+                    diagnosis_id=did,
+                )
+                if feed
+                else None
             )
             emit({"type": "status", "text": "  ✓ Diagnostic complete — diagnosis recorded."})
             done(
@@ -800,7 +812,7 @@ def _request_context(attach_dir: Path, received: list[dict]) -> str:
         "This run only DIAGNOSES: change nothing on this computer -- repair nothing, edit or delete no "
         "file (the file-editing tools are off for this run). Describe the fix for the person who asked "
         "instead. Write what they should see with a shell command, e.g. "
-        f"`cat > {attach_dir}/<short-name>.txt`."
+        f"`cat > {shlex.quote(f'{attach_dir}/<short-name>.txt')}`."
     )
     return "\n\n".join(parts)
 

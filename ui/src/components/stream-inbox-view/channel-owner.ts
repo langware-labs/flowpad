@@ -9,7 +9,6 @@ import {
   TypeId,
   User,
 } from '@sdk';
-import { type AttentionReason, attentionReason } from '@src/components/data-sources/source-attention';
 
 /** The backend's `owner_of` rule (`flow_sdk/stream_inbox/projection.py`), client-side, for a
  *  row written before `owner` existed: the agent its legacy `config.agent_id` names,
@@ -88,21 +87,46 @@ export const STREAM_INBOX_PAGE_SIZE = 100;
 /** Which conversations a page lists: an owner's stream inbox — narrowed to some of its sources when the
  *  channel marks pick them — or one data source's. The narrowing is part of the query, so a filtered page
  *  is N rows of those sources, never N rows the browser then thins out. */
-export type ConversationScope = { owner: TypeId; sourceIds?: readonly string[] } | { sourceId: string };
+export type ConversationScope =
+  | { owner: TypeId; sourceIds?: readonly string[]; channels?: readonly string[] }
+  | { sourceId: string };
+
+/** Channels no data source delivers but a mark still narrows to: their conversations carry the channel itself
+ *  (``Conversation.channel``). Diagnosis — Diagnose & fix and the help desk it may be reported to — is one. */
+export const DIAGNOSIS_CHANNEL = 'diagnosis';
+/** Standard Flowpad messages (``conversation_channel.FLOWPAD``); a conversation written before channels were stamped carries none. */
+export const FLOWPAD_CHANNEL = 'flowpad';
+export const BUILT_IN_CHANNELS: readonly string[] = [FLOWPAD_CHANNEL, DIAGNOSIS_CHANNEL];
 
 /** A scope as a string: what keys a memo or a request on it. */
 export const scopeKey = (scope: ConversationScope) =>
   'owner' in scope
-    ? scope.sourceIds?.length
-      ? `${scope.owner.toString()}|${[...scope.sourceIds].sort().join(',')}`
-      : scope.owner.toString()
+    ? [scope.owner.toString(), [...(scope.sourceIds ?? [])].sort().join(','), [...(scope.channels ?? [])].sort().join(',')]
+        .join('|')
+        .replace(/\|+$/, '')
     : scope.sourceId;
 
 const scopeClauses = (scope: ConversationScope): ExpressionNode[] => {
   if (!('owner' in scope)) return [sourceMatch(scope.sourceId)];
   const clauses = [ownerMatch(scope.owner)];
+  // The picked marks: a source's conversations by its id, a built-in channel's by the channel they carry.
+  const picked: ExpressionNode[] = [];
   if (scope.sourceIds?.length)
-    clauses.push(new ExpressionNode({ op: '$IN', operands: ['channel_source_id', [...scope.sourceIds]] }));
+    picked.push(new ExpressionNode({ op: '$IN', operands: ['channel_source_id', [...scope.sourceIds]] }));
+  if (scope.channels?.length) picked.push(new ExpressionNode({ op: '$IN', operands: ['channel', [...scope.channels]] }));
+  // A Flowpad conversation with no channel stamped and no source behind it.
+  if (scope.channels?.includes(FLOWPAD_CHANNEL))
+    picked.push(
+      new ExpressionNode({
+        op: '$AND',
+        operands: [
+          new ExpressionNode({ op: '$IS_NULL', operands: ['channel'] }),
+          new ExpressionNode({ op: '$IS_NULL', operands: ['channel_source_id'] }),
+        ],
+      }),
+    );
+  if (picked.length === 1) clauses.push(picked[0]);
+  else if (picked.length > 1) clauses.push(new ExpressionNode({ op: '$OR', operands: picked }));
   return clauses;
 };
 
@@ -205,19 +229,3 @@ export function newerPageBefore(
 /** The identity a channel mark draws: provider AND channel, because one transport
  *  (`agent`) reaches several channels and wears a different glyph for each. */
 export const channelKeyOf = (s: DataSource) => `${s.provider}|${s.channel}`;
-
-export interface AttentionItem {
-  source: DataSource;
-  reason: AttentionReason;
-}
-
-/** The sources among `rows` whose channel the list is narrowed to and that are not delivering,
- *  each with why — what the attention strip above the list draws. */
-export function attentionAmong(rows: DataSource[], selected: ReadonlySet<string>): AttentionItem[] {
-  return rows
-    .filter((source) => selected.has(channelKeyOf(source)))
-    .flatMap((source) => {
-      const reason = attentionReason(source);
-      return reason ? [{ source, reason }] : [];
-    });
-}

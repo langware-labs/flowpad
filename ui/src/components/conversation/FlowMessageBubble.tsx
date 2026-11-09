@@ -16,6 +16,7 @@ import {
   dataManager,
   FlowMessage,
   gitOriginCloneUrl,
+  fsStore,
   isImagePath,
   launchWizard,
   MessageAttachment,
@@ -52,6 +53,9 @@ import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageRunStatus } from './MessageRunStatus';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
+import { isLightboxMedia } from '@src/components/ui/media-lightbox';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
+import { basename } from '@src/components/asset-manager/asset-row-helpers';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { CredentialValueLock } from './CredentialValueLock';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -66,7 +70,7 @@ import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
-import { participantLabelByUserId, UNRESOLVED_SENDER_LABEL, warnUnresolvedSender } from './participant-display';
+import { participantLabelByUserId, personName, unresolvedSenderLabel, warnUnresolvedSender } from './participant-display';
 import { useAttachments, type AttachmentTypeChipView } from './useAttachments';
 import { AttachmentDownloadWarning } from './AttachmentDownloadWarning';
 import { dockPointerForLocalFile } from './attachment-url';
@@ -264,8 +268,6 @@ interface FlowMessageBubbleProps {
   callPeerName?: string | null;
   /** Same sender as the bubble above, moments later — drawn without avatar and name. */
   continuation?: boolean;
-  /** In an IT conversation: the IT message a machine's reply answers — what "Turn on and run" sends again. */
-  itMessageText?: string | null;
 }
 
 export function FlowMessageBubble({
@@ -300,7 +302,6 @@ export function FlowMessageBubble({
   formAnswers = null,
   callPeerName = null,
   continuation = false,
-  itMessageText = null,
   showEmailHeaders = false,
   channelTraits = null,
   lifecycle = null,
@@ -475,7 +476,8 @@ export function FlowMessageBubble({
     cloudUserId: viewerCloudUserId,
     localUserId: localUser?.id ?? null,
   });
-  const creatorLabel = creatorIsLocalArtifact ? null : creator?.name?.trim() || creator?.email?.trim() || null;
+  const hasCreator = !!(creator?.name?.trim() || creator?.email?.trim());
+  const creatorLabel = !creatorIsLocalArtifact && hasCreator ? personName(creator) : null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
   // glyph on legitimate gaps (cold-load before roster fetch returns,
   // departed members, cross-instance bundle imports). Tiered chain:
@@ -496,7 +498,7 @@ export function FlowMessageBubble({
   //      confirmed loaded (rosterReady) AND none of the cushions matched.
   //      That's the "the hub roster says no, no other signal" case worth
   //      alerting on.
-  //   7b. otherwise the benign 'unknown' string (roster still loading, no
+  //   7b. otherwise a short name from the sender id (roster still loading, no
   //      sender_id at all, etc.)
   const rosterLabel = fm.sender_id ? participantLabelByUserId(participants, fm.sender_id) : null;
   const wireSenderName = fm.sender_name?.trim() || null;
@@ -517,9 +519,9 @@ export function FlowMessageBubble({
   } else if (creatorLabel) {
     displayName = creatorLabel;
   } else if (fm.sender_id && rosterReady && !isHelpdesk) {
-    displayName = UNRESOLVED_SENDER_LABEL;
+    displayName = unresolvedSenderLabel(fm.sender_id);
   } else {
-    displayName = t`unknown`;
+    displayName = personName({ user_id: fm.sender_id });
   }
 
   // When task is present, role tracks the original task initiator (sender) vs
@@ -641,20 +643,12 @@ export function FlowMessageBubble({
         {/* Locally-available images always render as image cards — no project
             gate, no download step. The sender sees them immediately. */}
         {localImageItems.map((item) => (
-          <AttachmentChip
+          <LocalAttachmentChip
             key={item.key}
             url={item.url ?? ''}
             filename={item.filename}
             state={item.state}
             localPath={item.localPath}
-            onOpenInEditor={
-              item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
-            }
-            onRevealInFolder={
-              item.localPath
-                ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
-                : undefined
-            }
           />
         ))}
         {/* Entity chips render as soon as the entity resolves locally — no
@@ -700,20 +694,12 @@ export function FlowMessageBubble({
         )}
         {/* Sender's own local files (no staged row): open/reveal off local_path. */}
         {senderLocalFileItems.map((item) => (
-          <AttachmentChip
+          <LocalAttachmentChip
             key={item.key}
             url={item.url ?? ''}
             filename={item.filename}
             state={item.state}
             localPath={item.localPath}
-            onOpenInEditor={
-              item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
-            }
-            onRevealInFolder={
-              item.localPath
-                ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
-                : undefined
-            }
           />
         ))}
         {senderLocalFileItems.length > 1 && (
@@ -816,12 +802,7 @@ export function FlowMessageBubble({
         />
       )}
       {fm.it_reply && (
-        <ItReplyLine
-          reply={fm.it_reply}
-          agentId={fm.sender_id ?? ''}
-          conversationId={fm.conversation_id ?? ''}
-          text={itMessageText ?? ''}
-        />
+        <ItReplyLine reply={fm.it_reply} agentId={fm.sender_id ?? ''} conversationId={fm.conversation_id ?? ''} />
       )}
       {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
@@ -1125,6 +1106,24 @@ function ProjectMessageChip({
   );
 }
 
+/** A file card for bytes on this machine: open opens it in the editor, reveal shows it in Finder/Explorer. */
+function LocalAttachmentChip({
+  localPath,
+  ...chip
+}: { url: string; filename: string; state?: AttachmentChipState; localPath: string | null }) {
+  const { navigation } = useDockNavigation();
+  return (
+    <AttachmentChip
+      {...chip}
+      localPath={localPath}
+      onOpenInEditor={localPath ? () => navigation.openDock(dockPointerForLocalFile(localPath)) : undefined}
+      onRevealInFolder={
+        localPath ? () => void openExternalFromComputeNode('@local', localPath, { select: true }) : undefined
+      }
+    />
+  );
+}
+
 export function MessageEntityChip({
   typeId,
   conversationId,
@@ -1279,6 +1278,19 @@ export function MessageEntityChip({
   // Built on click, not in render: constructing an entity while rendering notifies the cache
   // (eslint-rules/no-entity-construct-in-render.js).
   const artifactData = typeId.type === Artifact.type && data ? data : null;
+  // An artifact that stands for one local picture or video (a shared screen
+  // recording) shows the media itself, like a raw media attachment does.
+  const artifactFile = artifactData as { path?: string | null; asset_ref?: string } | null;
+  const mediaPath = artifactFile?.path || artifactFile?.asset_ref || null;
+  if (mediaPath && isLightboxMedia(mediaPath)) {
+    return (
+      <LocalAttachmentChip
+        url={fsStore.getState().getServeUrl(LOCAL_COMPUTE_NODE, mediaPath)}
+        filename={basename(mediaPath)}
+        localPath={mediaPath}
+      />
+    );
+  }
   // Installed via a MessageAttachment: behavior splits by view mode.
   //  • Advanced (or Dev): the chip KEEPS opening the review modal, where
   //    uninstall / test live and an "Open" button jumps to the entity view.

@@ -25,4 +25,33 @@ describe('ChatHistoryRow', () => {
     expect(options).toMatchObject({ enabled: true });
     expect(options).not.toHaveProperty('watch', true);
   });
+
+  it.each([
+    ['pending_user', true],
+    ['error', true],
+    ['interrupted', true],
+    ['idle', false],
+    ['complete', false],
+    ['inactive', false],
+  ])('status gutter for worker_status=%s', (status, shown) => {
+    const id = '0f2b8a3e-6d1c-4e0a-9b7f-2c5d8e1a4b6c';
+    vi.spyOn(AgenticProcess, 'getByIdFromCache').mockReturnValue({ id, name: 'x', workerStatus: status } as never);
+    const entry = { worker_type: 'claude', worker_id: 'w', agentic_process_id: id } as WorkerHistoryEntry;
+    const { getByTestId } = render(
+      <ChatHistoryRow entry={entry} selected={false} hasOpenTab onSelect={vi.fn()} onToggleFavorite={vi.fn()} onDelete={vi.fn()} />,
+    );
+    const gutter = getByTestId('chat-history-row-busy');
+    expect(gutter.dataset.status).toBe(shown ? status : undefined);
+    expect(gutter.querySelector('svg') !== null).toBe(shown);
+  });
+
+  it('a met goal shows the green check over the worker status', () => {
+    const id = '5e1c7a2b-3f4d-4b6e-8a9c-1d2e3f4a5b6c';
+    vi.spyOn(AgenticProcess, 'getByIdFromCache').mockReturnValue({ id, name: 'x', workerStatus: 'complete', goal_met: true } as never);
+    const entry = { worker_type: 'claude', worker_id: 'w', agentic_process_id: id } as WorkerHistoryEntry;
+    const { getByTestId } = render(
+      <ChatHistoryRow entry={entry} selected={false} hasOpenTab onSelect={vi.fn()} onToggleFavorite={vi.fn()} onDelete={vi.fn()} />,
+    );
+    expect(getByTestId('chat-history-row-busy').dataset.status).toBe('goal_met');
+  });
 });

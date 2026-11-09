@@ -202,7 +202,15 @@ describe('the new deployment dialog', () => {
   // The refusal names the placement planned for the machine and environment as they were: changing either
   // one drops it, or Launch would go on to deploy the old placement.
   it.each([
-    ['the machine', () => Promise.resolve(void (fireEvent.click(screen.getByTestId('new-deployment-back')), fireEvent.click(screen.getByTestId('new-deployment-size-md')), fireEvent.click(screen.getByTestId('new-deployment-next'))))],
+    [
+      'the machine',
+      () =>
+        Promise.resolve(
+          void (fireEvent.click(screen.getByTestId('new-deployment-back')),
+          fireEvent.click(screen.getByTestId('new-deployment-size-md')),
+          fireEvent.click(screen.getByTestId('new-deployment-next'))),
+        ),
+    ],
     [
       'the environment',
       async () => {
@@ -233,7 +241,8 @@ describe('the new deployment dialog', () => {
       const onLaunched = vi.fn();
 
       renderInQuery(<NewDeploymentDialog project={a} open onOpenChange={vi.fn()} onLaunched={onLaunched} />);
-      (fireEvent.click(screen.getByTestId('new-deployment-size-sm')), fireEvent.click(screen.getByTestId('new-deployment-next')));
+      (fireEvent.click(screen.getByTestId('new-deployment-size-sm')),
+        fireEvent.click(screen.getByTestId('new-deployment-next')));
       fireEvent.click(screen.getByTestId('new-deployment-launch'));
 
       expect(await screen.findByTestId('deployment-secret-stripe')).toHaveTextContent('flow credentials set stripe');

@@ -15,6 +15,7 @@ import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { ActivityProgressSpec } from '../activity';
+import type { ComputeNodeSize } from './compute-node/machine-status';
 import { Deployment, type IDeployment } from './deployment';
 
 /** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
@@ -106,10 +107,14 @@ export interface PublicDeploymentSetup {
 export interface PublicInviteCode {
   id: string;
   last4: string;
+  /** Who the code is for, as the owner named it ("" when unnamed). */
+  name?: string;
   state: 'unused' | 'in_use' | 'revoked';
   node_typeid: string | null;
   created_at: string;
   last_used_at: string | null;
+  /** The size its machine runs (or will run) at: the code's own, else the agent's. */
+  machine_size?: ComputeNodeSize;
 }
 
 /** A freshly minted code: the only time its plaintext is ever answered. */
@@ -117,6 +122,8 @@ export interface NewPublicInviteCode {
   id: string;
   code: string;
   last4: string;
+  name?: string;
+  machine_size?: ComputeNodeSize;
 }
 
 /** One visitor's box. `code_id` is null for a link visitor. */
@@ -128,8 +135,10 @@ export interface PublicDeployment {
   code_last4: string | null;
   created_date: string | null;
   last_used_at: string | null;
-  /** IT Sessions on that machine, when the hub reports it (null/absent = not known yet). */
-  it_sessions?: boolean | null;
+  /** IT Enabled on that machine: live for a running box, the last seen for a paused one, null when never seen. */
+  it_enabled?: boolean | null;
+  /** The size this machine runs at. */
+  machine_size?: ComputeNodeSize;
 }
 
 export interface PublicDeploymentsState {
@@ -155,7 +164,7 @@ export interface ItMessageRequest {
   /** A JSON shape each machine's answer value must match; null for a plain answer. */
   answer_shape?: Record<string, unknown> | null;
   targets: ItTargets;
-  /** Append to this IT conversation instead of opening a new one ("Turn on and run"). */
+  /** Append to this IT conversation instead of opening a new one. */
   conversation_id?: string;
 }
 
@@ -171,7 +180,7 @@ export interface ItSessionsBox {
 }
 
 /** A machine's reply in an IT conversation, as the hub stamps it on the message (`metadata.it`). */
-export type ItReplyState = 'done' | 'off' | 'signed_in' | 'unreachable';
+export type ItReplyState = 'done' | 'failed' | 'off' | 'signed_in' | 'unreachable';
 
 export interface ItReplyMeta {
   node_typeid: string;
@@ -291,6 +300,8 @@ export class Agent extends APIEntity<Agent> {
   shipped?: boolean;
   /** The project holding this agent; null for one in the user scope, which cannot be deployed to the cloud. */
   project_id?: string | null;
+  /** What the agent needs wherever it runs (`agent.json` → `requirements`): credentials by name, never a value. */
+  requirements?: AgentRequirement[] | null;
   /** Where the hub keeps this agent's files. A published agent lives in its project's
    *  hub-hosted repository (`kind: 'hub_repo'`, the agent's folder as `rel_path`); an
    *  agent published before that carries a GitHub `kind: 'git'` origin. Hub-written
@@ -357,6 +368,7 @@ export class Agent extends APIEntity<Agent> {
     this.asset_ref = entity.asset_ref;
     this.shipped = entity.shipped;
     this.project_id = entity.project_id ?? null;
+    this.requirements = entity.requirements ?? null;
     this.git_origin = entity.git_origin;
 
     this.intro = entity.intro;
@@ -608,12 +620,24 @@ export class Agent extends APIEntity<Agent> {
     };
   }
 
-  /** Mint `count` (1..100) codes; their plaintext is answered this once only. */
-  async addPublicCodes(count: number): Promise<NewPublicInviteCode[]> {
+  /** Mint `count` (1..100) codes, optionally named in order; their plaintext is answered this once only.
+   * `machineSize` is the size every one of them opens (omitted: the agent's). */
+  async addPublicCodes(
+    count: number,
+    names: string[] = [],
+    machineSize?: ComputeNodeSize,
+  ): Promise<NewPublicInviteCode[]> {
     const data = await this.publicDeploymentsCall<{ codes?: NewPublicInviteCode[] }>('add_public_codes', 'POST', {
       count,
+      ...(names.length ? { names } : {}),
+      ...(machineSize ? { machine_size: machineSize } : {}),
     });
     return data?.codes ?? [];
+  }
+
+  /** Name an invite code (who it is for); an empty name clears it. */
+  async renamePublicCode(codeId: string, name: string): Promise<void> {
+    await this.publicDeploymentsCall('rename_public_code', 'POST', { code_id: codeId, name });
   }
 
   /** Revoke a code: its sandbox is deleted and it stops working. */
@@ -633,6 +657,19 @@ export class Agent extends APIEntity<Agent> {
   async itMessage(request: ItMessageRequest): Promise<ItMessageResult> {
     const data = await this.publicDeploymentsCall<Partial<ItMessageResult> | null>('it_message', 'POST', {
       ...request,
+    });
+    return { conversation_id: data?.conversation_id ?? '', targets: Array.isArray(data?.targets) ? data.targets : [] };
+  }
+
+  /**
+   * "Turn on and run": ask these machines the IT conversation's own first request again -- its text, files and answer
+   * shape -- posting nothing new in the thread.
+   */
+  async itRerun(conversationId: string, targets: ItTargets): Promise<ItMessageResult> {
+    const data = await this.publicDeploymentsCall<Partial<ItMessageResult> | null>('it_message', 'POST', {
+      rerun: true,
+      conversation_id: conversationId,
+      targets,
     });
     return { conversation_id: data?.conversation_id ?? '', targets: Array.isArray(data?.targets) ? data.targets : [] };
   }
@@ -671,10 +708,16 @@ export class Agent extends APIEntity<Agent> {
       connections: list(data.connections),
     };
   }
-
-  /** The Flowpad Assistant's skills this agent may pick from for `assistant_skills`. */
+  /**
+   * The Flowpad Assistant's skills this agent may pick from for `assistant_skills`.
+   *
+   * A desktop action: the hub has no `assistant_skill_catalog`, and an unknown action after `agent/<id>` is
+   * parsed there as no action at all -- the GET answers with the agent row itself. Anything but a list is
+   * therefore "no catalog here", never something to map over (it crashed the hub page's agent editor).
+   */
   async assistantSkillCatalog(): Promise<AssistantSkillChoice[]> {
-    return (await this.get<AssistantSkillChoice[] | null>('assistant_skill_catalog')) ?? [];
+    const answer = await this.get<unknown>('assistant_skill_catalog');
+    return Array.isArray(answer) ? (answer as AssistantSkillChoice[]) : [];
   }
 
   /** Whether this agent already auto-launched in its project (the once-only mark is set). */

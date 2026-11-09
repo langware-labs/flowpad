@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
+import { RolesPicker } from './RolesPicker';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Check, Link as LinkIcon, Loader2, Plus, UserPlus, UsersRound, X } from 'lucide-react';
 import {
@@ -58,6 +59,7 @@ import {
   participantRoleLabel,
   participantSubtitle,
   type ContactIdentity,
+  personName,
 } from './participant-display';
 
 const MAX_INLINE_AVATARS = 4;
@@ -195,7 +197,11 @@ export function MembersAvatarStack({
   // No roster row yet = first share, which makes me the owner: offer them all.
   const offeredRoles = useMemo(() => {
     const grantable = me === null ? CONFERRABLE_ROLES : grantableRoles(me, inviteEntityType);
-    return inviteRoles?.length ? inviteRoles.filter((r) => grantable.includes(r)) : (isConversation ? [...grantable] : []);
+    return inviteRoles?.length
+      ? inviteRoles.filter((r) => grantable.includes(r))
+      : isConversation
+        ? [...grantable]
+        : [];
   }, [inviteRoles, me, inviteEntityType, isConversation]);
   // A member row's role options: what the ladder lets me assign that member,
   // narrowed to ``inviteRoles`` when the surface passes them — so changing a
@@ -211,11 +217,13 @@ export function MembersAvatarStack({
   // each listed row can still be changed individually (a project invite is one
   // ``MembershipRequest`` per person, and each may carry a different role).
   const [inviteRole, setInviteRole] = useState<string[]>(isConversation ? ['reader', 'runner'] : ['reader']);
-  const effectiveInviteRole = offeredRoles.length ? inviteRole.filter(role => offeredRoles.includes(role)) : undefined;
+  const effectiveInviteRole = offeredRoles.length
+    ? inviteRole.filter((role) => offeredRoles.includes(role))
+    : undefined;
   // A listed row's role, re-checked against the offer (it can shrink when the
   // roster refreshes my rank) so Apply never sends a grant the hub would 403.
   const roleOf = (invite: PendingInvite) =>
-    invite.role?.filter(role => offeredRoles.includes(role)) ?? effectiveInviteRole;
+    invite.role?.filter((role) => offeredRoles.includes(role)) ?? effectiveInviteRole;
 
   // Contacts + groups feed the add row's suggestions — only queried while the
   // form is actually on screen (every conversation header renders this stack).
@@ -530,21 +538,15 @@ export function MembersAvatarStack({
           <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{identity}</div>
         )}
         {roles.length > 0 ? (
-          <select
-            aria-label={`Change role of ${participantLabel(p)}`}
-            data-testid="member-role-select"
-            multiple
+          <RolesPicker
+            ariaLabel={`Change role of ${participantLabel(p)}`}
+            testId="member-role-select"
+            roles={roles}
             value={participantRoles(p)}
             disabled={changingId === p.user_id}
-            onChange={(e) => void handleRoleChange(p.user_id as string, Array.from(e.target.selectedOptions, option => option.value))}
-            className="rounded border border-transparent bg-transparent text-[10px] uppercase tracking-wide text-muted-foreground outline-none transition-colors hover:border-border focus:border-primary disabled:opacity-40"
-          >
-            {roles.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => void handleRoleChange(p.user_id as string, next)}
+            className="h-6 border-transparent bg-transparent text-[10px] uppercase tracking-wide text-muted-foreground hover:border-border"
+          />
         ) : (
           role && <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{role}</span>
         )}
@@ -831,10 +833,7 @@ export function MembersAvatarStack({
                                       {participantInitials(participant)}
                                     </AvatarFallback>
                                   </Avatar>
-                                  <NameWithSubtitle
-                                    name={u.name || u.email || 'unknown'}
-                                    subtitle={participantSubtitle(u)}
-                                  />
+                                  <NameWithSubtitle name={personName(u)} subtitle={participantSubtitle(u)} />
                                 </button>
                               );
                             })}
@@ -850,21 +849,15 @@ export function MembersAvatarStack({
                         testId="members-address-book"
                       />
                       {offeredRoles.length > 0 && (
-                        <select
-                          aria-label={t`Role`}
-                          data-testid="members-invite-role"
-                          multiple
-                          value={effectiveInviteRole}
+                        <RolesPicker
+                          ariaLabel={t`Role`}
+                          testId="members-invite-role"
+                          roles={offeredRoles}
+                          value={effectiveInviteRole ?? []}
                           disabled={inviting}
-                          onChange={(e) => setInviteRole(Array.from(e.target.selectedOptions, option => option.value))}
-                          className="h-9 shrink-0 rounded-md border border-input bg-background px-2 text-xs capitalize text-foreground outline-none transition-colors hover:border-primary/60 focus:border-primary disabled:opacity-40"
-                        >
-                          {offeredRoles.map((r) => (
-                            <option key={r} value={r}>
-                              {r}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={setInviteRole}
+                          className="h-9 text-xs"
+                        />
                       )}
                       <button
                         type="button"
@@ -994,26 +987,19 @@ export function MembersAvatarStack({
                               </Avatar>
                               <NameWithSubtitle name={label} subtitle={participantSubtitle(p)} />
                               {offeredRoles.length > 0 && (
-                                <select
-                                  aria-label={t`Invite ${label} as`}
-                                  data-testid={`members-invite-role-${key}`}
-                                  multiple
-                                  value={roleOf(invite)}
+                                <RolesPicker
+                                  ariaLabel={t`Invite ${label} as`}
+                                  testId={`members-invite-role-${key}`}
+                                  roles={offeredRoles}
+                                  value={roleOf(invite) ?? []}
                                   disabled={inviting}
-                                  onChange={(e) => {
-                                    const role = Array.from(e.target.selectedOptions, option => option.value);
+                                  onChange={(role) =>
                                     setPending((prev) =>
                                       prev.map((x) => (participantKey(x.participant) === key ? { ...x, role } : x)),
-                                    );
-                                  }}
-                                  className="h-6 shrink-0 rounded border border-transparent bg-background px-1 text-[11px] capitalize text-muted-foreground outline-none transition-colors hover:border-border focus:border-primary disabled:opacity-40"
-                                >
-                                  {offeredRoles.map((r) => (
-                                    <option key={r} value={r}>
-                                      {r}
-                                    </option>
-                                  ))}
-                                </select>
+                                    )
+                                  }
+                                  className="h-6 border-transparent text-[11px] text-muted-foreground hover:border-border"
+                                />
                               )}
                               <button
                                 type="button"

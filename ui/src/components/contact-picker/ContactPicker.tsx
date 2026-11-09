@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import { EMAIL_RE, filterContacts, participantFromContact, participantKey, useContacts } from './use-contacts';
 import { filterGroups, mergeGroupMembers, useContactsGroups } from './use-contacts-groups';
 import { filterTeams, useMessageableTeams, type MessageableTeam } from './use-team-suggestions';
+import { participantSubtitle, personName } from '@src/components/conversation/participant-display';
 
 interface ContactPickerProps {
   /** Currently selected contacts as ConversationParticipant entries. */
@@ -137,12 +138,12 @@ export function ContactPicker({
               key={participantKey(p)}
               className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
             >
-              {p.name || p.email || 'unknown'}
+              {personName(p)}
               <button
                 type="button"
                 className="rounded-full p-0.5 hover:bg-muted-foreground/20"
                 onClick={() => removeParticipant(p)}
-                aria-label={`Remove ${p.name || p.email || 'unknown'}`}
+                aria-label={`Remove ${personName(p)}`}
                 disabled={disabled}
               >
                 <X className="h-3 w-3" />
@@ -235,8 +236,8 @@ export function ContactPicker({
               onClick={() => addContact(u)}
               disabled={alreadyAdded(participantFromContact(u)) || disabled}
             >
-              <span className="truncate">{u.name || u.email || 'unknown'}</span>
-              {u.name && u.email && <span className="truncate text-xs text-muted-foreground">{u.email}</span>}
+              <span className="truncate">{personName(u)}</span>
+              {participantSubtitle(u) && <span className="truncate text-xs text-muted-foreground">{participantSubtitle(u)}</span>}
             </button>
           ))}
         </div>

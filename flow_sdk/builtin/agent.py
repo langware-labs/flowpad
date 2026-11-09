@@ -348,8 +348,16 @@ class Agent(Entity):
         a scoped lookup rather than a walk.
         """
         from flow_sdk.builtin.mcp import Mcp  # noqa: PLC0415
+        from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
 
-        return await Mcp.get_all({"match": {"parent_type_id": str(self.typeid)}})
+        rows = await Mcp.get_all({"match": {"parent_type_id": str(self.typeid)}})
+        if not self.asset_ref:
+            return rows
+        # The agent's id rides in git, so another clone's rows (one deleted since) name it as
+        # parent too; only the ones inside THIS folder are its — re-saving another clone's row
+        # would write it back at that clone's path and recreate its folder.
+        home = canonical_posix_path(self.asset_ref)
+        return [m for m in rows if not m.asset_ref or is_path_under(canonical_posix_path(m.asset_ref), home)]
 
     async def resolved_mcp_specs(self) -> list["McpSpec"]:
         """This agent's servers as launch payloads, deduped by name."""

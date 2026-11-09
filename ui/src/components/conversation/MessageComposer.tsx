@@ -3,22 +3,33 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Boxes,
   File as FileIcon,
+  Lock,
   MessagesSquare,
   MonitorPlay,
   Paperclip,
+  Plus,
   Send,
   Smile,
   SquareTerminal,
   Trash2,
   X,
 } from 'lucide-react';
-import type { AssetDescriptor, FlowMessage } from '@sdk';
+import { TypeId, type AssetDescriptor, type FlowMessage } from '@sdk';
 import type { TaskableMessage } from '@sdk/entities/task';
 import { sendReply, sendToChannel } from '@sdk/entities/notifications';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@src/components/ui/dropdown-menu';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { genericEntityShareSource, type ShareSource } from '@src/hooks/share-sources';
+import { displayLabelForDescriptor } from '@src/components/asset-manager/asset-row-helpers';
 import { MAX_FILE_SIZE_LABEL } from './constants';
 import { AssetRefChips, useAssetRefSelection } from './AttachMenu';
 import { mergePickedFiles } from './FileAttachmentPicker';
@@ -198,6 +209,9 @@ export function MessageComposer({
   // A live-session prompt survives navigating away and back, like a tab session's draft.
   const draftScope = !isDraftMode && liveSessionId ? `live-session:${liveSessionId}` : undefined;
   const [text, setText] = useState(draft?.text ?? readDraft(draftScope));
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [credentialPickerOpen, setCredentialPickerOpen] = useState(false);
+  const [secretShareSource, setSecretShareSource] = useState<ShareSource | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   // "Task it" on send: the next send also becomes a task. One send's worth — resets after it.
@@ -213,7 +227,15 @@ export function MessageComposer({
 
   // The session-start control lives on the plain conversation composer only:
   // inside a session view every send is already a turn of that session.
-  const canStartSession = !!sessionHost && !!onStartLiveSession && !liveSessionId && !isDraftMode;
+  // Why the live-session and prompt buttons are disabled (null = available); the buttons show it.
+  const sessionUnavailableReason = isDraftMode
+    ? t`Send the first message to start the conversation, then a live session can run`
+    : !sessionHost
+      ? t`No other participant's machine in this conversation to run on`
+      : !onStartLiveSession
+        ? t`Live sessions are not available here`
+        : null;
+  const canStartSession = !liveSessionId && sessionUnavailableReason === null;
   const terminal = variant === 'terminal';
   useEffect(() => {
     if (autoFocus) textareaRef.current?.focus();
@@ -528,39 +550,56 @@ export function MessageComposer({
     />
   );
 
-  /** File / Asset / Repo — flat buttons, each opening a self-contained surface
-   *  (no nested popovers). This is the attach row both modes render. */
+  const chooseCredentialForSecureShare = (descriptor: AssetDescriptor) => {
+    const typeId = new TypeId(descriptor.typeid);
+    setCredentialPickerOpen(false);
+    setSecretShareSource(genericEntityShareSource(typeId, { label: displayLabelForDescriptor(descriptor) }));
+  };
+
+  /** Emoji stays one click away; the plus menu holds the remaining composer actions. */
   const attachButtons = (
     <>
       {canAttach && (
-        <>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={attachmentsDisabled}
-            title={t`Attach files`}
-            data-testid="attach-file-button"
-            className={ICON_BUTTON_CLASS}
-          >
-            <Paperclip className="h-3.5 w-3.5" />
-          </button>
-          <AssetManagerPopover
-            trigger={
-              <button
-                type="button"
-                disabled={assetsDisabled}
-                title={t`Attach an asset (skill, agent, doc, spec)`}
-                data-testid="attach-asset-button"
-                className={ICON_BUTTON_CLASS}
-              >
-                <Boxes className="h-3.5 w-3.5" />
-              </button>
-            }
-            {...assetSelection}
-            side="top"
-            searchPlaceholder={t`Search assets…`}
-          />
-        </>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              disabled={isDisabled}
+              title={t`More actions`}
+              aria-label={t`More actions`}
+              data-testid="composer-more-actions"
+              className={ICON_BUTTON_CLASS}
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="top">
+            <DropdownMenuItem
+              disabled={attachmentsDisabled}
+              onSelect={() => fileInputRef.current?.click()}
+              data-testid="attach-file-button"
+            >
+              <Paperclip className="mr-2 h-3.5 w-3.5" />
+              <Trans>Attach files</Trans>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={assetsDisabled}
+              onSelect={() => setAssetPickerOpen(true)}
+              data-testid="attach-asset-button"
+            >
+              <Boxes className="mr-2 h-3.5 w-3.5" />
+              <Trans>Attach an asset</Trans>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={isDisabled}
+              onSelect={() => setCredentialPickerOpen(true)}
+              data-testid="composer-secured-transfer"
+            >
+              <Lock className="mr-2 h-3.5 w-3.5" />
+              <Trans>Secured transfer</Trans>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
       <EmojiPicker
         side="top"
@@ -583,50 +622,59 @@ export function MessageComposer({
   /** The live-session icon: opens the conversation's live session (starting one when none is
    *  open) — the turns are typed in the session view, never in this box. */
   const hostName = sessionHost?.name?.trim() || t`the other participant`;
-  const sessionToggle = canStartSession ? (
-    <button
-      type="button"
-      onClick={() => onStartLiveSession?.()}
-      disabled={isDisabled}
-      title={
-        sessionHost?.hasOpenSession
-          ? t`Open the live session on ${hostName}'s machine`
-          : t`Start a live session on ${hostName}'s machine`
-      }
-      data-testid="composer-session-toggle"
-      className={cn(
-        ICON_BUTTON_CLASS,
-        sessionHost?.hasOpenSession && 'text-emerald-700 hover:text-emerald-700 dark:text-emerald-300',
-      )}
-    >
-      <MonitorPlay className="h-3.5 w-3.5" />
-    </button>
-  ) : null;
+  const sessionToggle = liveSessionId ? null : (
+    <span title={sessionUnavailableReason ? t`Live session: ${sessionUnavailableReason}` : undefined}>
+      <button
+        type="button"
+        onClick={() => onStartLiveSession?.()}
+        disabled={isDisabled || !canStartSession}
+        title={
+          sessionUnavailableReason
+            ? undefined
+            : sessionHost?.hasOpenSession
+              ? t`Open the live session on ${hostName}'s machine`
+              : t`Start a live session on ${hostName}'s machine`
+        }
+        data-testid="composer-session-toggle"
+        className={cn(
+          ICON_BUTTON_CLASS,
+          'disabled:pointer-events-none',
+          sessionHost?.hasOpenSession && 'text-emerald-700 hover:text-emerald-700 dark:text-emerald-300',
+        )}
+      >
+        <MonitorPlay className="h-3.5 w-3.5" />
+      </button>
+    </span>
+  );
 
   // A prompt call is offered wherever a live session is: the same other machine, run once, async.
-  const promptCallToggle = canStartSession ? (
-    <button
-      type="button"
-      onClick={() => setPromptCallOn((on) => !on)}
-      disabled={isDisabled}
-      aria-pressed={promptCallOn}
-      title={
-        promptCallOn
-          ? t`This message is a prompt — ${hostName} approves it, it runs once on their machine, you get its status`
-          : t`Attach a prompt — runs once on ${hostName}'s machine after they approve it`
-      }
-      data-testid="composer-prompt-call"
-      className={cn(
-        'flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors disabled:opacity-40',
-        promptCallOn
-          ? 'border border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300'
-          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-      )}
-    >
-      <SquareTerminal className="h-3.5 w-3.5" />
-      {promptCallOn && <Trans>Prompt</Trans>}
-    </button>
-  ) : null;
+  const promptCallToggle = liveSessionId ? null : (
+    <span title={sessionUnavailableReason ? t`Prompt request: ${sessionUnavailableReason}` : undefined}>
+      <button
+        type="button"
+        onClick={() => setPromptCallOn((on) => !on)}
+        disabled={isDisabled || !canStartSession}
+        aria-pressed={promptCallOn}
+        title={
+          sessionUnavailableReason
+            ? undefined
+            : promptCallOn
+              ? t`This message is a prompt — ${hostName} approves it, it runs once on their machine, you get its status`
+              : t`Attach a prompt — runs once on ${hostName}'s machine after they approve it`
+        }
+        data-testid="composer-prompt-call"
+        className={cn(
+          'flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors disabled:pointer-events-none disabled:opacity-40',
+          promptCallOn
+            ? 'border border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+        )}
+      >
+        <SquareTerminal className="h-3.5 w-3.5" />
+        {promptCallOn && <Trans>Prompt</Trans>}
+      </button>
+    </span>
+  );
 
   // Offered on the plain reply box only: a channel send returns no message id, a prompt is a run.
   const canTaskIt = !!onTaskIt && !channel && !isDraftMode && !liveSessionId;
@@ -828,6 +876,34 @@ export function MessageComposer({
       {chipLists}
       {error && <p className="text-xs text-destructive">{error}</p>}
       {hiddenFileInput}
+      <AssetManagerPopover
+        centered
+        open={assetPickerOpen}
+        onOpenChange={setAssetPickerOpen}
+        {...assetSelection}
+        searchPlaceholder={t`Search assets…`}
+      />
+      <AssetManagerPopover
+        centered
+        open={credentialPickerOpen}
+        onOpenChange={setCredentialPickerOpen}
+        selectedTypeIds={[]}
+        onPick={chooseCredentialForSecureShare}
+        onUnpick={() => undefined}
+        filter={(descriptor) => new TypeId(descriptor.typeid).type === 'credential'}
+        searchPlaceholder={t`Choose a credential to share securely…`}
+      />
+      {secretShareSource && (
+        <ShareToConversationDialog
+          open
+          onClose={() => setSecretShareSource(null)}
+          source={secretShareSource}
+          initialShareValues
+          initialValuesRoute="secured"
+          heading={t`Secured transfer`}
+          submitLabel={t`Share secrets`}
+        />
+      )}
     </div>
   );
 }

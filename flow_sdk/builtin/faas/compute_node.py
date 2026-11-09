@@ -314,7 +314,18 @@ class ComputeNode(
             node = await cls._get_local_legacy()
         if node is None and create:
             node = await cls.create_local()
+        if node is not None:
+            await node._adopt_assigned_size()
         return node
+
+    async def _adopt_assigned_size(self) -> None:
+        """On a hub box, report the size the hub created it at (``configure-box`` stored it), not the default."""
+        from flow_sdk.instance_settings.runtime import get_assigned_node_size  # noqa: PLC0415
+
+        size = get_assigned_node_size()
+        if size and self.node_size != size:
+            self.node_size = ComputeNodeSize(size)
+            await self.update()
 
     @classmethod
     async def create_local(cls, *, owner: "Any | None" = None) -> "ComputeNode":
@@ -616,11 +627,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         script_path = self.compute_provider.path_join(temp_folder, "_machine_id.py")
         await self.write_files(script_path, machine_id_script)
         python_cmd = sys.executable if self.node_provider_type == ComputeProviderEnum.LOCAL_MACHINE.value else "python"
-        cmd = await self.run_command(f"{python_cmd} {script_path}", background=False)
-        await cmd.wait()
-        if cmd.exit_code != 0:
-            raise RuntimeError(f"Failed to get machine ID: {cmd.all_stderr}")
-        machine_id = cmd.all_stdout.strip()
+        # argv, quoted by the executor for this node's OS: the script path may hold spaces.
+        result = await self.get_command_executor().run([python_cmd, script_path])
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to get machine ID: {result.stderr}")
+        machine_id = result.stdout.strip()
         if len(machine_id) != 64:
             raise RuntimeError(f"Invalid machine ID format: {machine_id}")
         return machine_id
@@ -1215,10 +1226,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             )
 
         target_dir = os.path.join(workspace_root, leaf)
-        suggested = self._next_free_leaf(leaf, base=workspace_root)
+        suggested = await self._free_project_leaf(leaf, base=workspace_root)
         if suggested != leaf:
-            # The caller chose this name and it is taken — refuse; offer the
-            # next-free `<leaf>-N` so the dialog can suggest it.
+            # The name is taken — by a folder here, or by another project (a hub
+            # project not set up here holds its name too): refuse BEFORE cloning,
+            # and offer the next `<leaf>-N` free both ways so the dialog suggests it.
             return ApiFailResponse(
                 message=f"'{leaf}' already exists in workspace",
                 data={"suggested_name": suggested, "attempted_name": leaf},
@@ -1269,6 +1281,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 "dependencies": _dependencies_report(declared),
             }
         )
+
+    @classmethod
+    async def _free_project_leaf(cls, leaf: str, base: str | None = None) -> str:
+        """``leaf``, or the first ``leaf-N`` that is both a free folder under ``base`` and
+        a name no visible project holds — a clone's folder name becomes its project's name."""
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        return await Project.free_name(leaf, taken=lambda name: cls._next_free_leaf(name, base=base) != name)
 
     @staticmethod
     def _next_free_leaf(leaf: str, base: str | None = None) -> str:

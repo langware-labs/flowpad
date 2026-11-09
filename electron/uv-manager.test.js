@@ -1433,33 +1433,38 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
   }
 
   {
-    // Package dialog supersession: while the "Update Available" dialog for X is open,
-    // supersedePackageDialog() closes it as "Later" (X deferred), and a fresh check
-    // offers the newer version.
+    // Post-boot (`onReady`): a newer release is prepared in the background and announced as ready — never a
+    // dialog, never an install by itself. A failed prepare is not offered (the next check prepares it again).
     const electronId = require.resolve('electron');
     const savedElectron = require.cache[electronId];
+    const shown = [];
     require.cache[electronId] = { id: electronId, filename: electronId, loaded: true,
-      exports: { dialog: { showMessageBox: (_w, opts) => new Promise((resolve) => {
-        opts.signal.addEventListener('abort', () => resolve({ response: opts.cancelId }));
-      }) } } };
+      exports: { dialog: { showMessageBox: async (_w, opts) => { shown.push(opts); return { response: 0 }; } } } };
     try {
-      const m = new UvManager(silentLog);
-      let latest = '0.2.160';
-      m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.150', latestVersion: latest, required: true });
       const mainWindow = { isDestroyed: () => false, loadFile: async () => {}, loadURL: () => {} };
-      eq(m.openPackageDialogVersion(), null, 'no package dialog open initially');
-      const first = m.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true });
-      await new Promise((r) => setTimeout(r, 0));
-      eq(m.openPackageDialogVersion(), '0.2.160', 'dialog for 0.2.160 is open');
-      latest = '0.2.161';
-      m.supersedePackageDialog();
-      eq(await first, false, 'superseded dialog resolves as Later');
-      eq(m.openPackageDialogVersion(), null, 'dialog closed');
-      eq(m._deferredPackageVersion, '0.2.160', 'old version recorded as deferred');
-      const second = m.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true });
-      await new Promise((r) => setTimeout(r, 0));
-      eq(m.openPackageDialogVersion(), '0.2.161', 'fresh check offers the newer version');
-      m.supersedePackageDialog(); await second;
+      const make = ({ prepare, prepared }) => {
+        const m = new UvManager(silentLog);
+        m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.150', latestVersion: '0.2.160', required: true });
+        m.getInstalledVersionSync = () => '0.2.150';
+        m.prepareEngine = prepare;
+        m.preparedEngine = () => prepared;
+        m.upgrade = async () => { throw new Error('must not install'); };
+        return m;
+      };
+      const ready = [];
+      const ok1 = make({ prepare: async () => ({ version: '0.2.160' }), prepared: { version: '0.2.160' } });
+      eq(await ok1.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true, onReady: (v) => ready.push(v) }), false, 'nothing installed by the check');
+      eq([ready, shown.length], [['0.2.160'], 0], 'prepared and checked: announced as ready, no dialog');
+      const failing = make({ prepare: async () => { throw new Error('offline'); }, prepared: null });
+      eq(await failing.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true, onReady: (v) => ready.push(v) }), false, 'a failed prepare installs nothing');
+      eq([ready.length, shown.length], [1, 0], 'and is neither announced nor asked about');
+      // The newest needs a newer desktop: the newest one THIS desktop runs was prepared — it is offered.
+      const older = make({ prepare: async () => ({ version: '0.2.159' }), prepared: { version: '0.2.159' } });
+      await older.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true, onReady: (v) => ready.push(v) });
+      eq([ready, shown.length], [['0.2.160', '0.2.159'], 0], 'a compatible release older than the newest is offered');
+      const none = make({ prepare: async () => ({ version: '0.2.150' }), prepared: { version: '0.2.150' } });
+      await none.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true, onReady: (v) => ready.push(v) });
+      eq(ready.length, 2, 'nothing newer than the installed engine prepared: nothing offered');
     } finally {
       if (savedElectron) require.cache[electronId] = savedElectron; else delete require.cache[electronId];
     }
@@ -2061,8 +2066,27 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       await assert.rejects(() => m._assertCandidateCompatible('0.2.70'), /invalid compatibility metadata/); passed++;
       m._readCandidateMinDesktop = async () => ({ minDesktopVersion: '0.2.40' });
       await m._assertCandidateCompatible('0.2.70'); passed++; // resolves: compatible
-      m._readCandidateMinDesktop = async () => null; // indeterminate → the post-install check decides
-      await m._assertCandidateCompatible('0.2.70'); passed++;
+      // Fail closed: an update never installs a release it could not check.
+      m._readCandidateMinDesktop = async () => null; // indeterminate (offline, blocked, unreadable wheel)
+      await assert.rejects(() => m._assertCandidateCompatible('0.2.70'), /metadata could not be read.*existing installation has been preserved/s); passed++;
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: null, missing: true }); // the wheel ships no compat.json
+      await assert.rejects(() => m._assertCandidateCompatible('0.2.70'), /metadata is missing from the release/); passed++;
+    }
+    {
+      // The resolver, for an UPDATE (the default): a release it cannot check is skipped, never picked; when none
+      // can be checked it says so (not "none is compatible"). A first install / repair (requireMetadata: false)
+      // keeps accepting it — no engine works there, and the post-install check is the gate.
+      const m = new UvManager(silentLog, { appVersion: '0.2.45' });
+      m._getPypiData = async () => ({ info: { version: '0.2.70' }, releases: { '0.2.70': [{}], '0.2.69': [{}], '0.2.68': [{}] } });
+      const meta = { '0.2.70': null, '0.2.69': { minDesktopVersion: null, missing: true }, '0.2.68': { minDesktopVersion: '0.2.40' } };
+      m._readCandidateMinDesktop = async (v) => meta[v];
+      eq(await m.resolveCompatibleEngineVersion(), { version: '0.2.68', minDesktopVersion: '0.2.40' },
+        'update: the unreadable 0.2.70 and the metadata-less 0.2.69 are skipped — the newest CHECKED compatible release');
+      eq(await m.resolveCompatibleEngineVersion({ requireMetadata: false }), { version: '0.2.70', minDesktopVersion: null },
+        'first install / repair: the newest release, the post-install check decides');
+      meta['0.2.68'] = null;
+      await assert.rejects(() => m.resolveCompatibleEngineVersion(), /Could not verify which FlowPad engine release is compatible/); passed++;
+      eq(await m._compatibleEngineSpec('flowpad'), 'flowpad==0.2.70', 'the repair spec does not fail closed');
     }
     {
       // _verifyInstalledPairOrRollback: a bad pair after an install puts the previous pin back and throws.
@@ -2180,7 +2204,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       eq(await m._readCandidateMinDesktop('0.2.70'), { minDesktopVersion: '0.2.60' }, 'and it is cached for the session');
 
       m = make(inMemory(wheel(false)));
-      eq(await m._readCandidateMinDesktop('0.2.10'), { minDesktopVersion: null }, 'a wheel without compat.json is a pre-contract release (legacy)');
+      eq(await m._readCandidateMinDesktop('0.2.10'), { minDesktopVersion: null, missing: true }, 'a wheel without compat.json declares nothing (marked: an update refuses it)');
       eq(uvCalls, [], 'still no uv');
 
       m = make(inMemory(wheel(true), { honourRange: false }));
@@ -2648,6 +2672,110 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       eq(m._bytecodeChild, null, `${via}: the child is forgotten once it ends`);
     }
 
+    // The staged engine must meet what this desktop asks of an engine: its start module and /health/status, and the
+    // console entry point the desktop probes (`flow --help`) — run from the STAGING venv, nothing live touched.
+    {
+      const { m, runs } = mkPrep();
+      await m.prepareEngine();
+      const check = runs.find((r) => r.args[0] === '-I');
+      ok(/import flow_sdk\.server\.launch/.test(check.args[2]) && check.args[2].includes("'/status'"), 'prepare: the start contract is checked (launch module, /health/status)');
+      const help = runs.find((r) => r.args[0] === '--help');
+      ok(help && /[\\/]bin[\\/]flow(\.exe)?$/.test(help.cmd) && help.cmd.includes('stage-'), 'prepare: the STAGED `flow --help` runs');
+      eq(help.opts.shell, false, 'prepare: never through a shell');
+    }
+    {
+      const { m } = mkPrep();
+      m._runStreaming = async (cmd, args) => { if (args[0] === '--help') throw new Error('flow: entry point not found'); return { stdout: '' }; };
+      await assert.rejects(() => m.prepareEngine(), /did not pass its check \(`flow --help`\)/); passed++;
+      eq(m.preparedEngine(), null, 'prepare: an engine whose `flow --help` fails is not recorded — nothing to install from');
+      m._runStreaming = async (cmd, args) => { if (args[0] === '-I') throw new Error("no /health/status route"); return { stdout: '' }; };
+      await assert.rejects(() => m.prepareEngine(), /start contract.*no \/health\/status route/); passed++;
+      eq(m.preparedEngine(), null, 'prepare: an engine without the health route is not recorded');
+    }
+
+    // An UPDATE never installs an unchecked release: with a desktop to check against and PyPI not answering, upgrade()
+    // refuses instead of the old "flowpad@latest", and the working engine is untouched.
+    {
+      const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+      let installed = false;
+      m._uvToolInstallForce = async () => { installed = true; };
+      m._getPypiData = async () => null;
+      m.getInstalledVersionSync = () => '0.2.40';
+      await assert.rejects(() => m.upgrade(), /Could not check which FlowPad engine release is compatible.*preserved/s); passed++;
+      eq(installed, false, 'upgrade(): PyPI silent → nothing installed (fail closed)');
+    }
+    // ...but the update-cycle harness's forced spec is not "PyPI did not answer": resolution is skipped on purpose
+    // (resolveCompatibleEngineVersion → null) and the forced spec is installed.
+    {
+      const saved = { t: process.env.FLOWPAD_UPDATE_TEST, s: process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC };
+      process.env.FLOWPAD_UPDATE_TEST = '1';
+      process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC = 'flowpad==0.2.77';
+      try {
+        const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+        const specs = [];
+        m._uvToolInstallForce = async (args) => { specs.push(args[2]); };
+        m._getPypiData = async () => { throw new Error('PyPI must not be asked under a forced spec'); };
+        m._pythonPinForUpgrade = async () => '3.12';
+        m._ensureShimOnPath = async () => {};
+        m._resolveFlowBin = async () => '/fake/flow';
+        m._verifyInstalledPairOrRollback = async () => {};
+        m.getInstalledVersionSync = () => '0.2.40';
+        await m.upgrade();
+        eq(specs, ['flowpad==0.2.77'], 'upgrade(): the harness-forced spec is installed, not refused');
+      } finally {
+        for (const [k, v] of [['FLOWPAD_UPDATE_TEST', saved.t], ['FLOWPAD_UPDATE_TEST_ENGINE_SPEC', saved.s]]) {
+          if (v === undefined) delete process.env[k]; else process.env[k] = v;
+        }
+      }
+    }
+
+    // Failed activation: a successful upgrade is remembered until its engine is seen healthy; one that never came up is
+    // put back — the engine that worked — and never an engine that did come up.
+    {
+      const m = new UvManager(silentLog);
+      let version = '0.2.40';
+      m.getInstalledVersionSync = () => version;
+      m._uvToolInstallForce = async () => { version = '0.2.41'; };
+      m._ensureShimOnPath = async () => {};
+      m._resolveFlowBin = async () => '/fake/flow';
+      m._getPypiVersionInfo = async (v) => ({ version: v });
+      const restored = [];
+      m._restoreEngine = async (v) => { restored.push(v); version = v; };
+      await m.upgrade({ version: '0.2.41' });
+      eq(m.hasUnconfirmedActivation(), true, 'activation: upgraded, not yet seen healthy');
+      m.markEngineHealthy();
+      eq([m.hasUnconfirmedActivation(), await m.restorePreviousEngine(), restored], [false, false, []], 'seen healthy: nothing is ever rolled back');
+      version = '0.2.40';
+      await m.upgrade({ version: '0.2.41' });
+      eq(await m.restorePreviousEngine({ why: 'did not start' }), true, 'never came up: restored');
+      eq([restored, version, m.hasUnconfirmedActivation()], [['0.2.40'], '0.2.40', false], 'the engine that worked is back (once)');
+      version = '0.2.40';
+      await m.upgrade({ version: '0.2.41' });
+      version = '0.2.45'; // moved by something else since
+      eq(await m.restorePreviousEngine(), false, 'the engine in place is not the one installed: nothing put back');
+    }
+    {
+      // The post-boot / popover recovery stops the upgraded engine and puts the previous one back BEFORE it starts —
+      // starting the new one again is what left the app on "restoring Flowpad". Without an unconfirmed upgrade
+      // (a failed desktop restart, say) it never touches the engine.
+      for (const [activation, expected] of [
+        [{ from: '0.2.40', to: '0.2.41' }, ['stop', 'restore 0.2.40', 'start 0.2.40']],
+        [null, ['start 0.2.41']],
+      ]) {
+        const m = new UvManager(silentLog);
+        let version = '0.2.41';
+        m.getInstalledVersionSync = () => version;
+        m._activation = activation;
+        const calls = [];
+        m.stop = async () => { calls.push('stop'); };
+        m._restoreEngine = async (v) => { calls.push(`restore ${v}`); version = v; };
+        m.getInstalledFlowBin = () => '/fake/flow';
+        m.start = async () => { calls.push(`start ${version}`); };
+        const back = await m._recoverRunningBackendAfterFailedUpgrade(null, { waitForBackend: async () => true, backendUrl: null, sendStatus: () => {} });
+        eq([back, calls], [true, expected], `recover (${activation ? 'an upgrade that never came up' : 'no upgrade pending'})`);
+      }
+    }
+
     // The reverse floor is checked for THIS desktop only: another desktop's is not known here.
     {
       const m = new UvManager(silentLog, { appVersion: '0.2.60' });
@@ -2661,7 +2789,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       } finally { engineCompatForFixtures.desktopMinBackendVersion = floorBefore; }
     }
 
-    // The post-boot check prepares BEFORE it asks; a failed prepare still asks, as before.
+    // The post-boot check prepares and only then may announce it; it never asks — not even when the prepare failed.
     {
       const electronId = require.resolve('electron');
       const savedElectron = require.cache[electronId];
@@ -2675,8 +2803,8 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
           m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.40', latestVersion: '0.2.41', required: true });
           m.prepareEngine = async () => { order.push('prepare'); if (fails) throw new Error('offline'); return null; };
           const mainWindow = { isDestroyed: () => false, loadFile: async () => {}, loadURL: () => {} };
-          await m.checkForUpdatesInBackground(mainWindow, { sendStatus: () => {}, compareWithPypi: true });
-          eq(order, ['prepare', 'dialog'], `post-boot check: prepare, then the same question${fails ? ' (prepare failed)' : ''}`);
+          await m.checkForUpdatesInBackground(mainWindow, { sendStatus: () => {}, compareWithPypi: true, onReady: () => order.push('ready') });
+          eq(order, ['prepare'], `post-boot check: prepare — nothing to announce (nothing was prepared${fails ? ': it failed' : ''}), no question`);
         }
         // A desktop update found while it prepared: the engine waits for it — no question.
         {
@@ -2685,16 +2813,16 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
           m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.40', latestVersion: '0.2.41', required: true });
           m.prepareEngine = async () => { order.push('prepare'); return null; };
           await m.checkForUpdatesInBackground({ isDestroyed: () => false, loadFile: async () => {} }, {
-            sendStatus: () => {}, compareWithPypi: true, engineChangeAllowed: () => false,
+            sendStatus: () => {}, compareWithPypi: true, engineChangeAllowed: () => false, onReady: () => order.push('ready'),
           });
-          eq(order, ['prepare'], 'post-boot check: a desktop found during the prepare goes first — no engine dialog');
+          eq(order, ['prepare'], 'post-boot check: a desktop found during the prepare goes first — nothing announced');
         }
         const { m } = mkPrep();
         m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.40', latestVersion: '0.2.41', required: true });
         order.length = 0;
         m.prepareEngine = async () => { order.push('prepare'); return null; };
         await m.checkForUpdatesInBackground({ isDestroyed: () => false, loadFile: async () => {} }, { beforeBackendStart: true });
-        eq(order, ['dialog'], 'pre-start check: no download before the start');
+        eq(order, ['dialog'], 'pre-start check (recovery): the question, no download before the start');
       } finally {
         if (savedElectron) require.cache[electronId] = savedElectron; else delete require.cache[electronId];
       }

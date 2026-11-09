@@ -11,7 +11,7 @@ import { Popover, PopoverContent } from '@src/components/ui/popover';
 import { Check, Copy, SquareTerminal } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { buildSessionResumeCommand, getWorkerCliCapabilities } from './process-cli-presentation';
+import { buildSessionResumeCommand, getWorkerCliCapabilities, workerCliVendor } from './process-cli-presentation';
 import { automationLineage } from '@src/hooks/conversation/useMessageAutomationSessions';
 
 /** Shared style for the tiny per-row icon buttons (copy / open-in-terminal). */
@@ -250,7 +250,7 @@ function SessionInfoBody({
         <h4 className="text-xs font-semibold">
           <Trans>Harness Session Details</Trans>
         </h4>
-        <CopyDetailsButton value={`${sessionName || process.name || ''}:${process.session_id || ''}`} />
+        <CopyDetailsButton value={`${workerCliVendor(process.worker_type)} session id: ${process.session_id || ''}`} />
       </div>
       <div className="space-y-1 px-3 py-2">
         {rows.map(([label, value]) => (

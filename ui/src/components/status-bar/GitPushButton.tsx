@@ -1,5 +1,6 @@
 import { useGitPush } from '@src/hooks/use-git-push';
 import type { GitWorkdir } from '@sdk';
+import { Check } from 'lucide-react';
 import React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GitPushIcon } from './GitPushIcon';
@@ -19,10 +20,21 @@ export const GitPushButton: React.FC = () => {
   const status = useGitStatus();
   const computeNodeId = status?.computeNodeId ?? null;
   const workdir = status?.workdir ?? null;
-  const { push, busy } = useGitPush(computeNodeId, workdir, status?.refresh, pushCommitsOnly);
+  const { push, busy, pushed } = useGitPush(computeNodeId, workdir, status?.refresh, pushCommitsOnly, true);
   const { t } = useLingui();
 
   const ahead = status?.ahead ?? 0;
+  if (pushed) {
+    return (
+      <span
+        className="inline-flex h-5 items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
+        data-testid="git-push-done"
+      >
+        <Check className="h-3 w-3" />
+        <Trans>Pushed</Trans>
+      </span>
+    );
+  }
   if (!status || !status.hasRepo || status.conflict || ahead === 0 || !computeNodeId || !workdir) {
     return null;
   }

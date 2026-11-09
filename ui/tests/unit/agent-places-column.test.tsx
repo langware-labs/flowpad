@@ -56,6 +56,11 @@ describe('Deployments of an agent', () => {
     expect(screen.getByTestId(`agent-place-state-${CLOUD_ID}`)).toHaveTextContent('Paused');
   });
 
+  it('a planned cloud deployment (refused, no machine) is "Not started", never "Running"', () => {
+    renderColumn([deployment(CLOUD_ID, false, 'planned')]);
+    expect(screen.getByTestId(`agent-place-state-${CLOUD_ID}`)).toHaveTextContent('Not started');
+  });
+
   it('a row opens the deployment on its project — and only navigates', () => {
     renderColumn([deployment(CLOUD_ID, false)]);
     fireEvent.click(screen.getByTestId(`agent-place-row-${CLOUD_ID}`));
@@ -67,13 +72,9 @@ describe('Deployments of an agent', () => {
     });
   });
 
-  it('Deploy opens the project’s Deployments with this agent preset as main', () => {
+  it('with no deployment says it runs nowhere yet (Deploy lives on the editor header)', () => {
     renderColumn([]);
     expect(screen.getByTestId('agent-places-empty')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('agent-new-deployment'));
-    expect(nav.openDock.mock.calls[0][0]).toMatchObject({
-      pointer: `${PROJECT_ID}/project-deployments`,
-      options: { deploy_main_agent: AGENT_ID },
-    });
+    expect(screen.queryByTestId('agent-new-deployment')).toBeNull();
   });
 });

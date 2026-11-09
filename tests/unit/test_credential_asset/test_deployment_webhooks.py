@@ -5,9 +5,8 @@ sources that read them. The hub is the in-memory double (``tests/utils/fake_hub_
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
-
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import ValidationError
@@ -16,14 +15,13 @@ from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.credential_service import drop_folder, place_values, save_credential, use_mine
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
-from flow_sdk.builtin.readiness import NotReady
 from flow_sdk.ingest.driver_runtime import DRIVERS
 from flow_sdk.ingest.testing import make_data_source
 from flow_sdk.schema.data_spec.data_driver_spec import CURRENT_SCHEMA, AuthSpec, DataDriverSpec
 from flow_sdk.schema.data_spec.webhook_spec import DriverWebhookSpec
 from flow_sdk.sources.families import RecordSource
 from tests.utils import fake_hub_store
-from tests.utils.deploy_run import deploy_ended, deploy_steps, plan_for
+from tests.utils.deploy_run import deploy_ended, plan_for
 from tests.utils.deployments import make_deployment
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -116,8 +114,6 @@ async def test_the_hub_stores_the_url_so_use_mine_never_copies_this_computers(ho
     monkeypatch.setattr(Agent, "ensure_on_hub", _published)
     monkeypatch.setattr("flow_sdk.builtin.project.Project.ensure_on_hub", AsyncMock(return_value=False))
 
-    with pytest.raises(NotReady):
-        await deploy_steps(agent, "user-1", "production", provider="e2b")
     deployment = await plan_for(agent, "production", provider="e2b")
     copied = await use_mine(str(deployment.id))
     await deploy_ended(agent, "user-1", "production", provider="e2b", deployment_id=str(deployment.id))

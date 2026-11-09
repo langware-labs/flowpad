@@ -71,3 +71,32 @@ async def test_comment_appears_in_list_and_disappears_on_delete(bootstrapped_cli
     assert not any(c["id"] == comment_id for c in listed_after), (
         f"comment {comment_id} still listed after delete"
     )
+
+
+_FORM = {"form_id": "q", "title": "Launch", "fields": [{"id": "d", "label": "Date", "type": "date"}]}
+
+
+@pytest.mark.parametrize(
+    ("data", "ok"),
+    [
+        ({"line": 3}, True),  # a line-gutter comment is not a doc comment: untouched
+        ({"kind": "questions", "anchor": {"quote": "week"}, "form": _FORM}, True),
+        ({"kind": "questions", "anchor": {"quote": "week"}, "form": _FORM, "answers": {"form_id": "q", "values": {"d": "2026-12-01"}}}, True),
+        ({"kind": "questions", "anchor": {"quote": "week"}, "form": _FORM, "answers": {"form_id": "q", "values": {"d": "soon"}}}, False),
+        ({"kind": "questions", "anchor": {"quote": "week"}}, False),  # questions need a form
+        ({"kind": "change_request", "anchor": {"quote": "a"}, "change": {"instruction": "shorter"}}, True),
+        ({"kind": "change_request", "anchor": {"quote": "a"}}, False),
+        ({"kind": "text", "anchor": {"quote": "a"}, "status": "maybe"}, False),
+        ({"reply": True, "reply_to": "comment-1", "chat": {"process_id": "p", "at": "2026-11-08T10:00:00Z"}}, True),
+        ({"reply": True, "reply_to": "comment-1", "status": "done"}, True),  # status/answers change = a reply
+        ({"reply": True, "reply_to": "comment-1", "status": "maybe"}, False),
+        ({"reply": True, "reply_to": "comment-1", "anchor": {"quote": "new text"}}, True),  # re-anchor
+        ({"reply": True}, False),  # a reply names its root
+    ],
+)
+def test_doc_comment_data_is_checked_on_construct(data, ok):
+    if ok:
+        assert Comment(raw_content="x", data=data).data == data
+    else:
+        with pytest.raises(ValueError):
+            Comment(raw_content="x", data=data)

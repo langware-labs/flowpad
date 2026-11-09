@@ -6,6 +6,7 @@ import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { DialogTitle } from '@src/components/ui/dialog';
 import { participantFromContact, participantKey, useAddressBookScan } from './use-contacts';
+import { personName } from '@src/components/conversation/participant-display';
 
 /** The Contacts dialog title, with the address-book scan behind Refresh. */
 export function ContactsTitle({ refetch, testId }: { refetch: () => void; testId: string }) {
@@ -84,7 +85,7 @@ export function ContactRows({ contacts, testId, onOpen, selection }: ContactRows
               title={t`View contact details`}
               data-testid={`${testId}-open-${u.id}`}
             >
-              <span className="flex-1 truncate">{u.name || u.email || 'unknown'}</span>
+              <span className="flex-1 truncate">{personName(u)}</span>
               {idOnly && (
                 <IdCard className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={t`Known by user id only`} />
               )}
