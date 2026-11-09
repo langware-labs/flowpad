@@ -107,9 +107,10 @@ def _is_project_root(directory: Path) -> bool:
     reports it as unreadable instead of the scan failing on its EACCES.
     """
     try:
-        return (directory / AGENTIC_ASSETS_DIR).is_dir()
+        is_root = (directory / AGENTIC_ASSETS_DIR).is_dir()
     except PermissionError:
-        return False
+        is_root = False
+    return is_root
 
 
 class AssetFolder(DataSpec):
