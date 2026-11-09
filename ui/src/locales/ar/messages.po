@@ -2363,6 +2363,10 @@ msgstr "مثيل سطح مكتب أو جهاز، ومعرّف قناة عليه"
 msgid "A document is saved, a folder gets a new file."
 msgstr "يُحفظ مستند، ويُضاف ملف جديد إلى مجلد."
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "A few words about what went wrong help us look in the right place."
+msgstr ""
+
 #: src/components/data-sources/source-attention.ts
 msgid "A file changed both here and remotely, so write-back wrote neither."
 msgstr "تغيّر ملف هنا وعن بُعد معًا، فلم تكتب الكتابة الراجعة أيًّا منهما."

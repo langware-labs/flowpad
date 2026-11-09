@@ -354,7 +354,8 @@ def bottom_line(d) -> str:
         name = d.cause_asset or "a dependency"
         return f"This comes from {name}, a dependency — not Flowpad."
     if d.cause is DiagnosisCause.UNKNOWN:
-        return "The cause is unclear — Flowpad support can look into it."
+        # What the diagnosis found out leads; the fixed sentence is for one that wrote nothing down.
+        return d.title or d.summary or "The cause is unclear — Flowpad support can look into it."
     if d.status is DiagnosisStatus.FIXED:
         return "Fixed: " + (d.title or d.fix or d.summary)
     return "In your " + ("project" if d.cause is DiagnosisCause.PROJECT else "computer") + ": " + (d.title or d.summary)

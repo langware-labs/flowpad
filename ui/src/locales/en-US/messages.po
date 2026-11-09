@@ -2363,6 +2363,10 @@ msgstr "A desktop instance or a machine, and a channel id on it"
 msgid "A document is saved, a folder gets a new file."
 msgstr "A document is saved, a folder gets a new file."
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "A few words about what went wrong help us look in the right place."
+msgstr "A few words about what went wrong help us look in the right place."
+
 #: src/components/data-sources/source-attention.ts
 msgid "A file changed both here and remotely, so write-back wrote neither."
 msgstr "A file changed both here and remotely, so write-back wrote neither."
