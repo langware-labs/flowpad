@@ -1,6 +1,7 @@
 import '@src/styles/highlightjs.css';
 import { useAsyncSdkInit } from '@src/hooks/use-async-sdk-init';
 import { trackEvent } from '@src/utils/analytics';
+import { loadGoogleTagManager } from '@src/utils/google-tag-manager';
 import { trackSignUpWhenConsented, watchConsentForHeldSignUp } from '@src/utils/pending-signup';
 import { config, dataContext, navigator } from '@sdk';
 import { useLocation } from 'react-router';
@@ -105,6 +106,7 @@ const GlobalEvents = () => {
 const AppContent = ({ children }: { children: React.ReactNode }) => {
   useAsyncSdkInit();
   const { user, someone } = useAuth();
+  const { pathname } = useLocation();
   const analyticsTrackingRef = useRef(false);
 
   // Wire all WS-driven notifications (hub errors, bootstrap notice, skill/task badges).
@@ -144,6 +146,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
   }, [someone, user]);
 
   useEffect(() => watchConsentForHeldSignUp(), []);
+
+  // On the route, not at page start: the login callback lands on `/`, which redirects to the hub home.
+  useEffect(() => loadGoogleTagManager(pathname), [pathname]);
 
   return (
     <QueryClientProvider client={queryClient}>

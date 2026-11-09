@@ -1,22 +1,22 @@
 import { hubModeReady, isHubOnly } from '@sdk';
+import { HUB_HOME_PATH } from '@src/lib/hub-page-url';
+
 const GOOGLE_TAG_MANAGER_ID = 'GTM-WHLSBH6Q';
 const GTM_SCRIPT_URL = 'https://www.googletagmanager.com/gtm.js';
 
 /**
- * Measure analytics on hub UI only and not on vite dev server.
+ * The only paths GTM may load on. An allowlist because its tags report the full URL, and other
+ * routes carry secrets in theirs (`/invite/:token`). `/launch` is the launch funnel's own page.
  */
-export function measured(): boolean {
-  return isHubOnly() && !import.meta.env.DEV;
+const MEASURED_PATHS = new Set<string>([HUB_HOME_PATH, '/launch']);
+
+/** Measure analytics on the hub UI only, on allowed paths, and never on the vite dev server. */
+export function measured(pathname: string): boolean {
+  return isHubOnly() && !import.meta.env.DEV && MEASURED_PATHS.has(pathname);
 }
 
-/**
- * Inject the GTM container, once per page.
- *
- * No gate of its own: the page-wide call below decides whether this page is measured.
- * The DOM check, not a module flag, is the guard — this module is also a separate
- * `index.html` entry, and a second copy of it must not load the container twice.
- */
-export function injectGoogleTagManager(): void {
+/** Inject the GTM container, once per page: this runs on every navigation. */
+function injectGoogleTagManager(): void {
   window.dataLayer = window.dataLayer || [];
   if (document.querySelector(`script[src^="${GTM_SCRIPT_URL}"]`)) return;
 
@@ -29,7 +29,9 @@ export function injectGoogleTagManager(): void {
   else document.head.appendChild(script);
 }
 
-// Load Google Tag Manager page-wide on the hub. Hub mode is unknown until bootstrap answers.
-void hubModeReady().then(() => {
-  if (measured()) injectGoogleTagManager();
-});
+/** Load GTM if `pathname` is measured. Hub mode is unknown until bootstrap answers. */
+export function loadGoogleTagManager(pathname: string): void {
+  void hubModeReady().then(() => {
+    if (measured(pathname)) injectGoogleTagManager();
+  });
+}

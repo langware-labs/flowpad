@@ -1,4 +1,5 @@
 import { trackEvent } from '@src/utils/analytics';
+import { measured } from '@src/utils/google-tag-manager';
 
 /** Set while a sign-up waits for the visitor's cookie choice. Holds a timestamp and nothing else. */
 const PENDING_KEY = '_pending_signup';
@@ -44,6 +45,8 @@ function settleHeldSignUp(): void {
   const consent = readConsent();
   const expired = Date.now() - heldAt > MAX_AGE_MS;
   if (consent === 'undecided' && !expired) return;
+  // Without GTM on this page the event would go nowhere. CookieScript announces again where it loads.
+  if (consent === 'granted' && !expired && !measured(window.location.pathname)) return;
 
   if (consent === 'granted' && !expired && !sessionStorage.getItem(SENT_KEY)) {
     sessionStorage.setItem(SENT_KEY, '1');

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ trackEvent: vi.fn() }));
+const mocks = vi.hoisted(() => ({ trackEvent: vi.fn(), measured: vi.fn(() => true) }));
 vi.mock('@src/utils/analytics', () => ({ trackEvent: mocks.trackEvent }));
+vi.mock('@src/utils/google-tag-manager', () => ({ measured: mocks.measured }));
 
 import { trackSignUpWhenConsented, watchConsentForHeldSignUp } from '@src/utils/pending-signup';
 
@@ -26,6 +27,7 @@ describe('sign-up held until consent', () => {
     sessionStorage.clear();
     document.cookie = `${COOKIE}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
     mocks.trackEvent.mockClear();
+    mocks.measured.mockReturnValue(true);
     stopWatching = watchConsentForHeldSignUp();
   });
 
@@ -57,6 +59,19 @@ describe('sign-up held until consent', () => {
     trackSignUpWhenConsented();
     accept(['performance', 'targeting']);
     announceConsent();
+    announceConsent();
+    expect(mocks.trackEvent).toHaveBeenCalledExactlyOnceWith({ event: 'sign_up' });
+    expect(held()).toBeNull();
+  });
+
+  it('holds on a page without GTM even when allowed, and sends where GTM loads', () => {
+    accept(['performance']);
+    mocks.measured.mockReturnValue(false);
+    trackSignUpWhenConsented();
+    expect(mocks.trackEvent).not.toHaveBeenCalled();
+    expect(held()).not.toBeNull();
+
+    mocks.measured.mockReturnValue(true);
     announceConsent();
     expect(mocks.trackEvent).toHaveBeenCalledExactlyOnceWith({ event: 'sign_up' });
     expect(held()).toBeNull();
