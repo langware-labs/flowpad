@@ -183,6 +183,17 @@ describe('My automations', () => {
     expect(screen.getByTestId('automation-row-b')).toBeTruthy();
   });
 
+  it('Flowpad’s own are locked, except one it ships off: that switch is the person’s', () => {
+    state.automations = [
+      automation({ id: 'b', group: 'builtin', read_only: true, switchable: false }),
+      automation({ id: 'u', group: 'builtin', read_only: true, switchable: true }),
+    ];
+    render(<AutomationsView />);
+    fireEvent.click(screen.getByTestId('automations-builtin-toggle'));
+    expect((screen.getByTestId('automation-toggle-b') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId('automation-toggle-u') as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('a starter opens the builder prefilled', () => {
     render(<AutomationsView />);
     fireEvent.click(screen.getByTestId('automation-recipe-morning-briefing'));

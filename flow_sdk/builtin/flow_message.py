@@ -118,6 +118,9 @@ class FlowMessageKind(str, Enum):
     #: A help request's diagnosis, posted when the background run finishes: its text is the bottom line, its
     #: ``diagnosis.value.json`` the details. Receivers re-derive it from that file when the hub strips the field.
     DIAGNOSIS = "diagnosis"
+    #: What an automation answered (the Daily usage summary): its text the headline, a ``<kind>.value.json`` the
+    #: details. Local only -- an automation's conversation is private to this computer.
+    AUTOMATION_RESULT = "automation_result"
 
     @classmethod
     def hub_only(cls, value: "str | None") -> bool:
@@ -130,7 +133,7 @@ class FlowMessageKind(str, Enum):
         to USER. USER is implicit; INVITATION is a local-only first-row
         placeholder no caller mints; SESSION_EVENT and SEALED_NOTE are the
         explicitly sendable non-default kinds, and HELP_REQUEST is Ask for help's."""
-        return next((k for k in (cls.SESSION_EVENT, cls.SEALED_NOTE, cls.HELP_REQUEST, cls.DIAGNOSIS) if value == k.value), None)
+        return next((k for k in (cls.SESSION_EVENT, cls.SEALED_NOTE, cls.HELP_REQUEST, cls.DIAGNOSIS, cls.AUTOMATION_RESULT) if value == k.value), None)
 
 
 class DeliveryStatus(str, Enum):

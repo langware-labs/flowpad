@@ -58,6 +58,8 @@ export enum FlowMessageKind {
   HELP_REQUEST = 'help_request',
   /** A help request's diagnosis: its text is the bottom line, ``diagnosis.value.json`` the details. */
   DIAGNOSIS = 'diagnosis',
+  /** What an automation answered: its text the headline, a ``<kind>.value.json`` the details. */
+  AUTOMATION_RESULT = 'automation_result',
 }
 
 /** The file a diagnosis message carries once shared -- re-derives the kind when the hub drops it. */

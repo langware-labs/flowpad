@@ -210,6 +210,15 @@ _IGNORED_TYPES: frozenset[str] = frozenset(
         "atis-latch",
         "cost-state",
         "session-owner",  # Claude 2.1.318+: written after last-prompt
+        "artifact-autoreact-ledger",
+        "history-suppression",
+        "artifact-comment-monitor",
+        "api-request",
+        "api-request-blob",
+        "api-request-shape",
+        "file-history-delta",
+        "frame-link",
+        "tools-used",
     }
 )
 
