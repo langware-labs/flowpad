@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { dataContext } from '@sdk';
 import { credentialsService, Project, type Agent } from '@sdk';
-import { isHubOnly } from '@sdk/utils/hub-runtime';
 
 import {
   projectCredentials,
@@ -27,7 +27,7 @@ export interface AgentSecrets {
 function useAgentProjectId(agent: Agent): string | null {
   const own = agent.project_id ?? null;
   const origin = (agent as { git_origin?: { kind?: string; repo?: string } | null }).git_origin;
-  const repo = !own && isHubOnly() && origin?.kind === 'hub_repo' ? (origin.repo ?? null) : null;
+  const repo = !own && !dataContext.caps.localFiles && origin?.kind === 'hub_repo' ? (origin.repo ?? null) : null;
   const [fromRepo, setFromRepo] = useState<string | null>(null);
   useEffect(() => {
     if (!repo) return;
@@ -60,7 +60,7 @@ export function useAgentSecrets(agent: Agent): AgentSecrets {
     }
     const [names, declared] = await Promise.all([
       project.secretNames().catch(() => [] as string[]),
-      isHubOnly()
+      !dataContext.caps.localFiles
         ? Promise.resolve<DeclaredCredential[] | null>(null)
         : credentialsService
             .status(project.id)

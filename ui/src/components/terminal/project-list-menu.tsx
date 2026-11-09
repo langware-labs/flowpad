@@ -45,7 +45,6 @@ import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { Cloud, FolderOpen, Globe, Loader2, RotateCcw, X } from 'lucide-react';
 import React, { useMemo, useRef, useState } from 'react';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
-import { isHubOnly } from '@src/navigation/hub-runtime';
 import { WorkspacePickerRow } from '@src/components/workspace/workspace-switcher';
 
 /**
@@ -840,7 +839,7 @@ function HubProjectList({ menu }: { menu: ProjectListMenu }) {
 }
 
 export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
-  if (isHubOnly()) return <HubProjectList menu={menu} />;
+  if (!dataContext.caps.localFiles) return <HubProjectList menu={menu} />;
   const {
     buckets,
     currentProjectId,

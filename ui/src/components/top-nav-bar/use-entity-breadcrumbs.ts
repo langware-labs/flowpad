@@ -1,4 +1,5 @@
 import { i18n } from '@lingui/core';
+import { dataContext } from '@sdk';
 import { msg } from '@lingui/core/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, type LucideIcon } from 'lucide-react';
@@ -29,7 +30,6 @@ import { useWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { subjectEditorPointer } from '@src/navigation/subject-editor';
 import { resolveAncestorChain, type AncestorNode } from '@src/navigation/entity-ancestors';
 import { useContext } from '@src/hooks/useContext';
@@ -475,7 +475,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         key: 'project',
         label: projectLabel ?? project.displayName,
         Icon: iconForType(Project.type),
-        pointer: isHubOnly() ? home.withPage(PageId.HUB) : home,
+        pointer: !dataContext.caps.localFiles ? home.withPage(PageId.HUB) : home,
         kind: 'project',
       });
     }

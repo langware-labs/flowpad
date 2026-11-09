@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
+import { dataContext } from '@sdk';
 import { Loader2 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { credentialsService, type Agent, type Project } from '@sdk';
-import { isHubOnly } from '@sdk/utils/hub-runtime';
 
 import { Button } from '@src/components/ui/button';
 import {
@@ -41,7 +41,7 @@ const STATUS_CLASS: Record<SecretRow['status'], string> = {
  */
 export function AgentEnvTab({ agent, secrets }: AgentEnvTabProps) {
   const { t } = useLingui();
-  const hub = isHubOnly();
+  const hub = !dataContext.caps.localFiles;
   const { project, rows, setNames, reload } = secrets;
   const [placed, setPlaced] = useState<Record<string, Placed>>({});
   const [busy, setBusy] = useState<string | null>(null);
