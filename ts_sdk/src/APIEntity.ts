@@ -197,7 +197,6 @@ const BASE_WIRE_FIELDS = new Set<string>([
   'key',
   'namespace',
   'tags',
-  'labels',
   'system',
   'created_by',
   'created_date',
@@ -279,7 +278,6 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * though `deepAssign` puts it on the instance.
    */
   last_active_at?: number | string | null;
-  labels?: string[];
   root_vfs_path?: string;
   fs_storage_mount_path?: string | null;
   visitor_roles?: string[];
@@ -1477,43 +1475,6 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     }
   }
 
-  /**
-   * Add a label to the entity locally (does not save to server).
-   */
-  public add_label_local(label: string): void {
-    if (!this.labels) {
-      this.labels = [];
-    }
-    // Check if label already exists
-    if (!this.labels.includes(label)) {
-      this.labels.push(label);
-      this.dirty = true;
-    }
-  }
-
-  /**
-   * Remove a label from the entity locally (does not save to server). Returns true if removed, false if not found.
-   */
-  public remove_label_local(label: string): boolean {
-    if (!this.labels) {
-      return false;
-    }
-    const originalCount = this.labels.length;
-    this.labels = this.labels.filter((l) => l !== label);
-    if (this.labels.length < originalCount) {
-      this.dirty = true;
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Get all labels for the entity.
-   */
-  public get_labels(): string[] {
-    return [...(this.labels || [])];
-  }
-
   // ── context_entities surface ──────────────────────────────────────────
   //
   // Two buckets, split by the rule "if it came over the wire it is shared,
@@ -1677,71 +1638,25 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return [...parsed];
   }
 
-  /**
-   * Add a label to the entity using the label API.
-   */
-  public async add_label(label: string, description?: string, color?: string): Promise<boolean> {
-    try {
-      // POST to label action with the new label, returns full labels list
-      const actionInfo = new ActionInfo('label', this.typeId.type, this.typeId.id, 'POST');
-      actionInfo.subpath = label; // Include label name in URL path
-      actionInfo.bodyParameters = {
-        description: description,
-        color: color,
-      };
-
-      const result = await dataManager.callAction<any, string[]>(actionInfo);
-
-      // Update local labels with the returned full list
-      if (Array.isArray(result)) {
-        this.labels = result;
-        this.dirty = true;
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Failed to add label:', error);
-      return false;
-    }
+  /** Add a tag to this entity; `tags` becomes the list the backend returns. */
+  public async addTag(name: string): Promise<void> {
+    await this.callTagAction(name, 'POST');
   }
 
-  /**
-   * Remove a label from the entity using the label API.
-   */
-  public async remove_label(label: string): Promise<boolean> {
-    try {
-      // DELETE to label action with the label to remove, returns full labels list
-      const actionInfo = new ActionInfo('label', this.typeId.type, this.typeId.id, 'DELETE');
-      actionInfo.subpath = label; // Include label name in URL path
-
-      const result = await dataManager.callAction<any, string[]>(actionInfo);
-
-      // Update local labels with the returned full list
-      if (Array.isArray(result)) {
-        this.labels = result;
-        this.dirty = true;
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Failed to remove label:', error);
-      return false;
-    }
+  /** Remove a tag from this entity; `tags` becomes the list the backend returns. */
+  public async removeTag(name: string): Promise<void> {
+    await this.callTagAction(name, 'DELETE');
   }
 
-  /**
-   * Get all available labels from the ontology.
-   */
-  public async get_ontology_labels(): Promise<any[]> {
-    try {
-      const actionInfo = new ActionInfo('ontology', this.typeId.type, this.typeId.id, 'GET');
-      const result = await dataManager.callAction(actionInfo);
-
-      return (result as any)?.labels || [];
-    } catch (error) {
-      console.error('Failed to get ontology labels:', error);
-      return [];
-    }
+  private async callTagAction(name: string, method: 'POST' | 'DELETE'): Promise<void> {
+    const actionInfo = new ActionInfo('tags', this.typeId.type, this.typeId.id, method);
+    actionInfo.subpath = name;
+    const result = await dataManager.callAction<undefined, { tags: string[] }>(actionInfo);
+    if (!Array.isArray(result?.tags)) return;
+    // The backend already stored it: assigning notifies subscribers, and must not leave the entity dirty.
+    const wasDirty = this.dirty;
+    this.tags = result.tags;
+    this.dirty = wasDirty;
   }
 
   /**

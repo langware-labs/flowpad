@@ -5,9 +5,9 @@ tag subtree). Consumed by both the context route (``flow tag get``) and
 the tag graph projection, so the derivation logic lives exactly once.
 
 Carriers:
-* markdown frontmatter ``tags:`` → entity rows (``Docs.tags``)
-* skill frontmatter ``tags:``    → ``skill.metadata.tags`` (generic dump)
-* source-file ``tag`` capsules   → filesystem scan under a root
+* an entity's ``tags`` field — ANY type (a doc's and a skill's come from the
+  file header, every other type's from the row; see ``Entity.set_tags``)
+* source-file ``tag`` capsules — filesystem scan under a root
 """
 
 from __future__ import annotations
@@ -16,51 +16,40 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from flow_sdk.tags.grammar import normalize_tag, tag_is_within
+from flow_sdk.tags.grammar import normalize_tag, tag_is_within, to_tags
 
 _CAPSULE_MARKER = "flowpad:capsule tag"
 _MAX_SCAN_FILE_BYTES = 2_000_000
 
 
-def _normalized_tags(values: object) -> list[str]:
-    """Canonical taxonomy bindings selected from free-form tag metadata."""
-    if not isinstance(values, list):
-        return []
-    valid: set[str] = set()
-    for value in values:
-        if not isinstance(value, str):
-            continue
-        try:
-            valid.add(normalize_tag(value))
-        except (TypeError, ValueError):
-            continue
-    return sorted(valid)
-
-
 def _matched(tags: object, name: Optional[str]) -> list[str]:
-    valid = _normalized_tags(tags)
+    valid = sorted(to_tags(tags))
     if name is None:
         return valid
     return [t for t in valid if tag_is_within(t, name)]
 
 
-async def _rows_of_type(types: tuple[str, ...]) -> list[tuple[str, str, dict[str, Any]]]:
-    """One scan for every carrier type — ``[(type, id, data), ...]``.
+async def _tagged_rows(*, blessed: bool = False, only_type: Optional[str] = None) -> list[tuple[str, str, dict[str, Any]]]:
+    """Every row that carries a tag, in ONE scan — ``[(type, id, data), ...]``.
 
-    Deliberately a single query: inside a request all ``session()`` blocks
-    share one AsyncSession, so separate reads cannot run concurrently anyway;
-    collapsing them removes N table scans and N round trips.
+    ``blessed`` adds the ``Tag`` rows themselves (the taxonomy's own entities).
+    A single query on purpose: inside a request all ``session()`` blocks share one
+    AsyncSession, so separate reads cannot run concurrently anyway.
     """
-    from sqlalchemy import select as sa_select  # noqa: PLC0415
+    from sqlalchemy import text  # noqa: PLC0415
 
     from flow_sdk.db import session as _session  # noqa: PLC0415
-    from flow_sdk.db.drivers.sqlite.connection import EntitySchema  # noqa: PLC0415
 
+    where = "json_array_length(json_extract(data, '$.tags')) > 0"
+    params: dict[str, Any] = {}
+    if only_type:
+        where = f"type = :only_type AND {where}"
+        params["only_type"] = only_type
+    if blessed:
+        where = f"type = 'tag' OR ({where})"
     out: list[tuple[str, str, dict[str, Any]]] = []
     async with _session(write=False) as s:
-        result = await s.execute(
-            sa_select(EntitySchema.type, EntitySchema.id, EntitySchema.data).where(EntitySchema.type.in_(types))
-        )
+        result = await s.execute(text(f"SELECT type, id, data FROM entities WHERE {where}"), params)
         for row_type, row_id, raw in result.all():
             try:
                 data = raw if isinstance(raw, dict) else json.loads(raw or "{}")
@@ -70,69 +59,44 @@ async def _rows_of_type(types: tuple[str, ...]) -> list[tuple[str, str, dict[str
     return out
 
 
-def _doc_binding(row_id: str, data: dict[str, Any], name: Optional[str], with_body: bool) -> Optional[dict[str, Any]]:
+def _binding(row_type: str, row_id: str, data: dict[str, Any], name: Optional[str]) -> Optional[dict[str, Any]]:
     matched = _matched(data.get("tags") or [], name)
     if not matched:
         return None
-    binding = {
+    return {
+        "type": row_type,
         "id": row_id,
         "title": data.get("title") or data.get("name") or "",
         "asset_ref": data.get("asset_ref") or "",
         "tags": matched,
     }
-    # The body is only for renderers (``flow tag get --mode full``); the
-    # graph projection never reads it, so it stays out of that payload.
-    if with_body:
-        binding["body"] = data.get("body")
-    return binding
 
 
-def _skill_binding(row_id: str, data: dict[str, Any], name: Optional[str]) -> Optional[dict[str, Any]]:
-    metadata = data.get("metadata") or {}
-    tags = metadata.get("tags") if isinstance(metadata, dict) else None
-    matched = _matched(tags or [], name)
-    if not matched:
-        return None
-    return {"id": row_id, "name": data.get("name") or "", "tags": matched}
+def _by_title(bindings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(bindings, key=lambda b: (b["type"], b["title"], b["id"]))
 
 
-async def all_doc_bindings(name: Optional[str] = None, *, with_body: bool = True) -> list[dict[str, Any]]:
-    """Markdown entities carrying a ``tags`` list (optionally within ``name``)."""
-    out = [
-        binding
-        for _t, row_id, data in await _rows_of_type(("markdown",))
-        if (binding := _doc_binding(row_id, data, name, with_body)) is not None
-    ]
-    out.sort(key=lambda d: (d["title"], d["id"]))
-    return out
-
-
-async def all_skill_bindings(name: Optional[str] = None) -> list[dict[str, Any]]:
-    """Skill entities whose frontmatter carried ``tags:`` (rides the generic
-    ``skill.metadata`` dump). Returns ``[{id, name, tags}]``."""
-    out = [
-        binding
-        for _t, row_id, data in await _rows_of_type(("skill",))
-        if (binding := _skill_binding(row_id, data, name)) is not None
-    ]
-    out.sort(key=lambda d: (d["name"], d["id"]))
-    return out
+async def all_doc_bindings(name: Optional[str] = None) -> list[dict[str, Any]]:
+    """Markdown docs carrying a tag (optionally within ``name``), each with its
+    stored ``body`` — what ``flow tag get`` summarises."""
+    out = []
+    for row_type, row_id, data in await _tagged_rows(only_type="markdown"):
+        binding = _binding(row_type, row_id, data, name)
+        if binding is not None:
+            out.append({**binding, "body": data.get("body")})
+    return _by_title(out)
 
 
 async def all_entity_bindings(
     name: Optional[str] = None, *, include_assets: bool = True
 ) -> dict[str, list[dict[str, Any]]]:
-    """Every entity-carried binding in ONE scan — ``{tags, docs, skills}``.
+    """The blessed ``Tag`` rows and every tagged entity — ``{tags, entities}``.
 
-    The full graph projection needs all three; going through the per-carrier
-    readers would scan the entity table three times for the same rows.
     Tree-only projections pass ``include_assets=False`` to read Tag rows only.
     """
     tags: list[dict[str, Any]] = []
-    docs: list[dict[str, Any]] = []
-    skills: list[dict[str, Any]] = []
-    types = ("tag", "markdown", "skill") if include_assets else ("tag",)
-    for row_type, row_id, data in await _rows_of_type(types):
+    entities: list[dict[str, Any]] = []
+    for row_type, row_id, data in await _tagged_rows(blessed=True, only_type=None if include_assets else "tag"):
         if row_type == "tag":
             tag_name = data.get("name")
             if isinstance(tag_name, str):
@@ -145,15 +109,28 @@ async def all_entity_bindings(
                         "system": bool(data.get("system")),
                     }
                 )
-        elif row_type == "markdown":
-            binding = _doc_binding(row_id, data, name, False)
-            if binding is not None:
-                docs.append(binding)
-        elif (binding := _skill_binding(row_id, data, name)) is not None:
-            skills.append(binding)
-    docs.sort(key=lambda d: (d["title"], d["id"]))
-    skills.sort(key=lambda d: (d["name"], d["id"]))
-    return {"tags": tags, "docs": docs, "skills": skills}
+        elif (binding := _binding(row_type, row_id, data, name)) is not None:
+            entities.append(binding)
+    return {"tags": tags, "entities": _by_title(entities)}
+
+
+async def tag_names() -> list[str]:
+    """Every tag name worth suggesting where a person classifies something: the ones in
+    use and the ones a person blessed. The shipped system vocabulary is left out — it is
+    mostly event names (``entity.created``), which nobody tags a thing with."""
+    from sqlalchemy import text  # noqa: PLC0415
+
+    from flow_sdk.db import session as _session  # noqa: PLC0415
+
+    in_use = "SELECT j.value FROM entities, json_each(entities.data, '$.tags') AS j"
+    blessed = (
+        "SELECT json_extract(data, '$.name') FROM entities WHERE type = 'tag'"
+        " AND NOT COALESCE(json_extract(data, '$.deprecated'), 0)"
+        " AND NOT COALESCE(json_extract(data, '$.system'), 0)"
+    )
+    async with _session(write=False) as s:
+        rows = (await s.execute(text(f"{in_use} UNION {blessed}"))).all()
+    return to_tags([name for (name,) in rows])
 
 
 def scan_code_capsules(root: Path, name: Optional[str] = None) -> list[dict[str, Any]]:

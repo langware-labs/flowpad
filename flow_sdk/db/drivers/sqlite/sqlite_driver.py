@@ -796,8 +796,12 @@ class SQLiteDBDriver(DBDriver):
         status: str | None = None,
         calibration: "SearchCalibration | None" = None,
         match: Literal["all", "any"] = "all",
+        tags: "Sequence[str] | None" = None,
     ) -> list:
         """Execute FTS5 MATCH query and return hydrated Entity objects.
+
+        ``tags``: only rows carrying every one of them, itself or a tag under it — in the
+        query, so ``limit`` counts matches and a tagged row past the first page is found.
 
         ``match="all"``: every term must appear. ``match="any"``: any term may, bm25 ranking the rows
         that match more of them (and rarer ones) first -- for a sentence, whose words are not all
@@ -861,6 +865,13 @@ class SQLiteDBDriver(DBDriver):
             if status:
                 sql += " AND json_extract(e.data, '$.status') = :status"
                 params["status"] = status
+            # ``grammar.tag_is_within`` in SQL (``Entity.has_tag`` is the Python side of the same rule).
+            for i, tag in enumerate(tags or ()):
+                sql += (
+                    " AND EXISTS (SELECT 1 FROM json_each(e.data, '$.tags') AS jt"
+                    f" WHERE jt.value = :tag_{i} OR substr(jt.value, 1, length(:tag_{i}) + 1) = :tag_{i} || '.')"
+                )
+                params[f"tag_{i}"] = tag
 
             order_parts = [bm25_expr]
 

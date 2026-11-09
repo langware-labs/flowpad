@@ -3129,7 +3129,7 @@ msgstr "Add source"
 msgid "Add step"
 msgstr "Add step"
 
-#: src/components/assets/TagFilterBar.tsx
+#: src/components/tags/TagInput.tsx
 msgid "Add tag…"
 msgstr "Add tag…"
 
@@ -16436,8 +16436,8 @@ msgid "label / pattern"
 msgstr "label / pattern"
 
 #: src/components/account/user-info.tsx
-msgid "Labels:"
-msgstr "Labels:"
+#~ msgid "Labels:"
+#~ msgstr "Labels:"
 
 #: src/components/project-home/ProjectLanguageCard.tsx
 #: src/components/settings-view/settings-utils.ts
@@ -25503,6 +25503,10 @@ msgstr "Remove rule"
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Remove service"
 msgstr "Remove service"
+
+#: src/components/tags/TagInput.tsx
+msgid "Remove tag {tag}"
+msgstr "Remove tag {tag}"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Remove the help desk"

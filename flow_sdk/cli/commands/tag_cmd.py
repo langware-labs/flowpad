@@ -5,6 +5,9 @@ bound to a dot-taxonomy tag — docs whose frontmatter lists it, source files
 carrying a ``tag`` capsule, wiki mentions — assembled server-side by
 ``POST /api/v1/tags/context`` (see flow_sdk/server/routes/tags.py).
 
+``flow tag add <name> <type-id>`` / ``flow tag remove <name> <type-id>`` attach a tag
+to (or take it off) ANY entity — the one write door, ``Entity.set_tags``.
+
 ``flow tag create <name>`` blesses a name: the OPTIONAL Tag entity carrying a
 title/description (flow_sdk/builtin/tag.py). Bindings never need it — docs and
 capsules bind to anonymous names — so this only adds documentation, display,
@@ -28,10 +31,16 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    delete_graph_json as _delete_graph_json,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
 )
 from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
+    graph_url as _graph_url,
 )
 from flow_sdk.cli.commands._common import (
     post_graph_json as _post_graph_json,
@@ -82,6 +91,13 @@ def _render(data: dict) -> str:
             lines.append(doc["body"].rstrip())
             suffix = " (TRUNCATED)" if doc.get("truncated") else ""
             lines.append(f"--- END {ref}{suffix} ---")
+
+    entities = data.get("entities") or []
+    if entities:
+        lines.append("")
+        lines.append(f"## Tagged ({len(entities)})")
+        for item in entities:
+            lines.append(f"- {item['type']}-{item['id']} {item.get('title') or ''} [{', '.join(item.get('tags') or [])}]")
 
     code = data.get("code") or []
     lines.append("")
@@ -164,11 +180,46 @@ def tag_create(
     if description:
         payload["description"] = description
 
-    def _on_error(status_code: int, rbody: dict) -> None:
-        message = str(rbody.get("message") or f"HTTP {status_code}")
-        if 400 <= status_code < 500:
-            _fail(EXIT_INVALID_ARG, "INVALID_TAG", message)
-        _fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", message)
-
-    data = _post_graph_json(url, payload, on_error=_on_error)
+    data = _post_graph_json(url, payload, on_error=_on_tag_error)
     typer.echo(f"tag-{data.get('id')}  {data.get('name')}")
+
+
+def _entity_tags_url(name: str, typeid: str) -> str:
+    from urllib.parse import quote  # noqa: PLC0415
+
+    from flow_sdk.cli.commands.record_cmd import _parse_typeid  # noqa: PLC0415
+
+    if not name or not name.strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_TAG", "Empty tag name")
+    entity_type, entity_id = _parse_typeid(typeid.strip())
+    return _graph_url(_discover_port(), f"{entity_type}/{entity_id}/tags/{quote(name.strip(), safe='')}")
+
+
+def _on_tag_error(status_code: int, rbody: dict) -> None:
+    message = str(rbody.get("message") or f"HTTP {status_code}")
+    if 400 <= status_code < 500:
+        _fail(EXIT_INVALID_ARG, "INVALID_TAG", message)
+    _fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", message)
+
+
+def _show_tags(typeid: str, data: dict) -> None:
+    typer.echo(f"{typeid}  [{', '.join(data.get('tags') or [])}]")
+
+
+_TYPEID_HELP = "The entity, e.g. 'task-<uuid>' or 'agent-<uuid>'."
+
+
+@tag_app.command("add", help="Attach a tag to an entity. NAME is converted to a valid tag (\"Hot Lead\" -> hot-lead).")
+def tag_add(
+    name: Annotated[str, typer.Argument(help="Tag name, e.g. crm.lead")],
+    typeid: Annotated[str, typer.Argument(help=_TYPEID_HELP)],
+) -> None:
+    _show_tags(typeid, _post_graph_json(_entity_tags_url(name, typeid), None, on_error=_on_tag_error))
+
+
+@tag_app.command("remove", help="Take a tag off an entity.")
+def tag_remove(
+    name: Annotated[str, typer.Argument(help="Tag name, e.g. crm.lead")],
+    typeid: Annotated[str, typer.Argument(help=_TYPEID_HELP)],
+) -> None:
+    _show_tags(typeid, _delete_graph_json(_entity_tags_url(name, typeid), on_error=_on_tag_error))

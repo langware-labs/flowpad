@@ -2111,7 +2111,7 @@ async def apply_entities_overlay(unpacked_root: Path, owner_typeid: str | None) 
     """Overlay every ``entities.json`` envelope onto its materialized row by id.
 
     The metadata axis of receive: after bodies land + the tree is indexed, the
-    portable entity JSON (parent_type_id, labels, status, …) is applied on top of
+    portable entity JSON (parent_type_id, status, …) is applied on top of
     what the indexer rebuilt from the body. Sender-local fields never travel
     (stripped at pack via ``to_common_json``), so the receiver's own
     scope/project_id/asset_ref — set by the indexer — are left intact. Entries

@@ -227,6 +227,11 @@ Three words were used for neighbours. Say which:
   Renaming `AgenticFlow` removed most of the *workflow* sense, but one spelling is
   deliberately kept: the `flow_id` field on `GraphWorkflowRun` and `GraphWorkflowNode`, which
   is a stored JSON key (renaming it needs a migration — see Phase 2).
+- **An entity's `tags` vs its `kind` vs a `subkind`.** `tags` is what a thing is ABOUT:
+  many, attached by a person or an agent, the one classification field on every entity
+  ([`tags.md`](tags.md)). `kind` is what shape it IS: one, derived. `subkind` is a closed
+  variant inside one type — `Annotation.subkind` (`note | quick_prompt | comment | prompt |
+  plan | lock_break`) is what the retired `labels` markers used to say. There is no `labels`.
 - **`tag` means three unrelated things — say which.** A bus event name
   (`FlowEvent.tag`), a taxonomy `Tag` entity + its `tag` capsule carrier, and
   toplog's runtime *trace* tags (`toplog.log([...])` against

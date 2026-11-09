@@ -6,7 +6,6 @@ import { v4 as uuidv4 } from 'uuid';
 // this module is reachable from the `services` barrel, so a class value-import here
 // puts every entity subclass into whatever loads a service. Type names come from
 // `EntityTypes`, construction from `EntityFactory` (see entities/*-types.ts).
-import { ActionInfo } from '../models/ActionInfo';
 import { ExpansionRequest, QueryFilter, QueryRequest } from './query';
 import type { Plugin, PluginManifest } from '../entities/plugin';
 import type { Visitor } from '../entities/visitor';
@@ -59,14 +58,6 @@ export const UIEvents = {
 } as const;
 
 export type UIEventType = (typeof UIEvents)[keyof typeof UIEvents];
-
-export interface OntologyData {
-  labels: Array<{
-    label: string;
-    description?: string;
-    color?: string;
-  }>;
-}
 
 export interface PluginEntry {
   manifest?: PluginManifest;
@@ -506,8 +497,6 @@ class DataContext extends EventEmitter {
     return this.localUserTypeId || this.visitorTypeId;
   }
 
-  activeOntology: OntologyData | null = null;
-  activeLabels: string[] = [];
   manifests: PluginManifest[] = [];
   plugins: Plugin[] = [];
   snifferHook: SnifferHook | null = null;
@@ -553,7 +542,6 @@ class DataContext extends EventEmitter {
       agenticProcessTypeId: computed,
       agenticProcess: computed,
       activeShell: computed,
-      activeOntology: observable,
       bootstrapError: observable,
       isBootstrapping: observable,
       bootstrapInfo: observable.ref,
@@ -1255,49 +1243,6 @@ class DataContext extends EventEmitter {
       await this.setContextEntityTypeId(contextEnum, activeEntityTypeId);
     }
     await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentActiveEntityTypeId, activeEntityTypeId);
-  }
-
-  async refreshOntology() {
-    if (!this.activeEntity) {
-      this.activeOntology = null;
-      this.emit(ContextEventType.CONTEXT_CHANGED);
-      return;
-    }
-
-    try {
-      const actionInfo = new ActionInfo('ontology', this.activeEntity.typeId.type, this.activeEntity.typeId.id, 'GET');
-      const result = await dataManager.callAction(actionInfo);
-      runInAction(() => {
-        this.activeOntology = (result as any)?.data || this.getCurrentOntology();
-      });
-      this.emit(ContextEventType.CONTEXT_CHANGED);
-    } catch (error) {
-      console.error('Error fetching ontology, using mock data:', error);
-      runInAction(() => {
-        this.activeOntology = this.getCurrentOntology();
-      });
-      this.emit(ContextEventType.CONTEXT_CHANGED);
-    }
-  }
-
-  private getCurrentOntology(): OntologyData {
-    // TODO, Connect the Ontology management
-    return {
-      labels: [
-        { label: 'task.priority.high', description: 'High priority tasks', color: '#dc2626' },
-        { label: 'task.priority.medium', description: 'Medium priority tasks', color: '#f59e0b' },
-        { label: 'task.priority.low', description: 'Low priority tasks', color: '#10b981' },
-        { label: 'project.status.active', description: 'Active projects', color: '#3b82f6' },
-        { label: 'project.status.completed', description: 'Completed projects', color: '#6b7280' },
-        { label: 'project.status.on-hold', description: 'Projects on hold', color: '#f97316' },
-        { label: 'feature.type.enhancement', description: 'Feature enhancements', color: '#8b5cf6' },
-        { label: 'feature.type.bug-fix', description: 'Bug fixes', color: '#ef4444' },
-        { label: 'feature.type.new', description: 'New features', color: '#06b6d4' },
-        { label: 'team.frontend', description: 'Frontend team', color: '#14b8a6' },
-        { label: 'team.backend', description: 'Backend team', color: '#f59e0b' },
-        { label: 'team.design', description: 'Design team', color: '#ec4899' },
-      ],
-    };
   }
 }
 

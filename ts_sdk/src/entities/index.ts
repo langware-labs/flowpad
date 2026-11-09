@@ -22,7 +22,6 @@ export * from './job';
 export * from './job_execution';
 export * from './jobs_enum';
 export * from './knowledge_base';
-export * from './label';
 export * from './bookmark';
 export * from './graph_context';
 export * from './capability';

@@ -15,6 +15,8 @@ import {
   tagMatches,
   tagPatternProblem,
   tagTree,
+  toTag,
+  toTags,
   tryTag,
 } from '@sdk';
 import contract from '../../../tests/fixtures/flow_event_contract.json';
@@ -31,6 +33,15 @@ describe('tag grammar contract (shared fixture)', () => {
         expect(normalizeTag(c.raw), `normalize ${JSON.stringify(c.raw)}`).toBe(c.canonical);
         expect(isValidTag(c.raw)).toBe(true);
       }
+    }
+  });
+
+  it('conversion agrees with the Python grammar', () => {
+    for (const c of GRAMMAR.convert_cases) {
+      expect(toTag(c.raw), `convert ${JSON.stringify(c.raw)}`).toBe(c.tag);
+    }
+    for (const c of GRAMMAR.convert_list_cases) {
+      expect(toTags(c.raw), `convert ${JSON.stringify(c.raw)}`).toEqual(c.tags);
     }
   });
 

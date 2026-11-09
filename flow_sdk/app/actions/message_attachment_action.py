@@ -791,7 +791,7 @@ async def _install(
         return _git_share_failed(e)
 
     # Metadata axis: overlay the portable entity-JSON envelopes (entities.json)
-    # onto the freshly materialized rows — parent_type_id / labels / status /
+    # onto the freshly materialized rows — parent_type_id / status /
     # semantic_lock, etc. Independent of transfer mode; sender-local fields never
     # travel, so the receiver's own scope/project_id/asset_ref stay intact.
     try:

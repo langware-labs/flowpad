@@ -37,12 +37,17 @@ vi.mock('@sdk', async (importOriginal) => {
   };
 });
 
+// The tag control loads its entity; here only its text field matters.
+vi.mock('@src/components/tags/EntityTags', () => ({
+  EntityTags: () => <input data-testid="tag-field" />,
+}));
+
 import { CrumbDetailsPopover } from '@src/components/top-nav-bar/CrumbDetailsPopover';
-import { dataContext, RuntimeKind } from '@sdk';
+import { dataContext, RuntimeKind, TypeId } from '@sdk';
 
 const PATH = '/Users/me/Flowpad workspace/proj/docs/chip_demo.md';
 
-function mount(props: Partial<{ filename: string | null; path: string; directory: boolean }> = {}) {
+function mount(props: Partial<{ filename: string | null; path: string; directory: boolean; typeId: TypeId }> = {}) {
   render(
     <CrumbDetailsPopover label="chip_demo" filename="chip_demo.md" path={PATH} {...props}>
       <button type="button">chip_demo</button>
@@ -121,6 +126,26 @@ describe('the crumb details popover', () => {
     await armDismissal();
     fireEvent.pointerDown(document.body);
 
+    await waitFor(() => expect(screen.queryByTestId('top-nav-crumb-details')).toBeNull());
+  });
+
+  it('stays open while its tag field is being typed in, and still closes on a click outside', async () => {
+    // A hover card closes when the pointer leaves it — which would throw away
+    // a half-typed tag the moment the mouse drifted off the card.
+    const user = userEvent.setup();
+    const trigger = mount({ typeId: new TypeId('markdown', '0b6f3c1e-5a52-4f0e-9d0b-6f1f6f0f3a11') });
+    await user.hover(trigger);
+    const field = await screen.findByTestId('tag-field');
+
+    await user.click(field);
+    await user.type(field, 'meeting');
+    await user.hover(document.body);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect((screen.getByTestId('tag-field') as HTMLInputElement).value).toBe('meeting');
+
+    fireEvent.pointerDown(document.body);
     await waitFor(() => expect(screen.queryByTestId('top-nav-crumb-details')).toBeNull());
   });
 

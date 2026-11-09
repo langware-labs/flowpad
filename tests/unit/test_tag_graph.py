@@ -97,42 +97,27 @@ async def test_code_capsule_ghost_and_tree_only(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_free_form_tags_are_preserved_but_only_valid_dot_paths_bind(tmp_path):
+async def test_free_form_tags_are_converted_and_any_entity_type_binds(tmp_path):
+    from flow_sdk.builtin.usage_report import UsageReport
     from flow_sdk.core.entity.entity_model import Entity
     from flow_sdk.fs_store.fs_ref import FSRef
 
     doc = tmp_path / "mixed-tags.md"
-    doc.write_text(
-        '---\ntitle: Mixed tags\ntags: [" Product Area ", " --TG--.Mixed.Doc "]\n---\n'
-    )
+    doc.write_text('---\ntitle: Mixed tags\ntags: "[Product Area, --TG--.Mixed.Doc]"\n---\n')
     records = SchemaRegistry.get("markdown").from_disk_fn(FSRef(doc), "")
-    assert records[0].tags == [" Product Area ", " --TG--.Mixed.Doc "]
+    assert records[0].tags == ["product-area", "--tg--.mixed.doc"]
     await Entity.from_record(records[0])
 
-    await Skill(
-        name="mixed-tag-skill",
-        metadata={"tags": ["Team Favorite", " --TG--.Mixed.Skill "]},
-    ).save()
+    skill = await Skill(name="mixed-tag-skill", tags=["Team Favorite", " --TG--.Mixed.Skill "]).save()
+    report = await UsageReport(name="mixed-tag-report", period="day", tags=["--tg--.mixed.report"]).save()
 
-    code = tmp_path / "mixed.py"
-    code.write_text("pass\n")
-    AssetCapsule.from_path(code).write(
-        "tag",
-        CapsuleData(
-            1,
-            {"tags": {"Product Area": "free form", " --TG--.Mixed.Code ": "entry"}},
-        ),
-    )
-
-    graph = await build_tag_graph(code_root=tmp_path)
+    graph = await build_tag_graph()
     keys = _keys(graph)
-    assert {
-        "tag---tg--.mixed.doc",
-        "tag---tg--.mixed.skill",
-        "tag---tg--.mixed.code",
-    } <= keys
-    assert "tag- Product Area " not in keys
-    assert "tag-Team Favorite" not in keys
+    assert {"tag-product-area", "tag-team-favorite", "tag---tg--.mixed.doc"} <= keys
+    edges = _edge_set(graph)
+    assert (f"skill-{skill.id}", "tag---tg--.mixed.skill", "bound") in edges
+    assert (f"usage_report-{report.id}", "tag---tg--.mixed.report", "bound") in edges
+
 
 
 @pytest.mark.asyncio

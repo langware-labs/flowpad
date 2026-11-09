@@ -1,0 +1,29 @@
+"""An annotation says what it is with ``subkind``; the ``labels`` markers it replaced are read once."""
+import pytest
+
+from flow_sdk.builtin.annotation import Annotation
+from flow_sdk.builtin.user import User
+from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+
+
+def test_legacy_labels_are_read_into_the_fields_that_replaced_them():
+    assert Annotation(labels=["note:"]).subkind == "note"
+    assert Annotation(labels=["note:", "quick-prompt:"]).subkind == "quick_prompt"
+    assert Annotation(labels=["x"], subkind="plan").subkind == "plan"
+    assert not hasattr(Annotation(), "labels")
+
+    me = User(name="Me", labels=["--user-type--.desktop", "--user--.name-overridden"])
+    assert me.desktop and me.name_overridden
+    assert not User(name="Them").desktop
+
+
+@pytest.mark.asyncio
+async def test_notes_are_queried_by_subkind():
+    target = "task-notes-by-subkind"
+    for subkind in ("note", "quick_prompt", "comment"):
+        await Annotation(subkind=subkind, target_id=target, content=subkind).save()
+
+    notes = QueryFilter(type="annotation")
+    notes.match = ExpressionNode(op=QueryOp.IN, operands=["subkind", ["note", "quick_prompt"]])
+    found = [a for a in await Annotation.get_all(notes) if a.target_id == target]
+    assert sorted(a.subkind for a in found) == ["note", "quick_prompt"]

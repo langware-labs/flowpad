@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.api_key import ApiKey
 
 from fastapi import HTTPException
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
 from flow_sdk.builtin.visitor import Visitor
@@ -119,6 +119,12 @@ class UserAlreadyExistsException(Exception):
         super().__init__(self.message)
 
 
+def flags_of_labels(labels) -> dict[str, bool]:
+    """The two flags a legacy user ``labels`` list carried."""
+    labels = labels or ()
+    return {"desktop": "--user-type--.desktop" in labels, "name_overridden": "--user--.name-overridden" in labels}
+
+
 class User(Entity):
     type: str = APIField(default=BuiltinEntityType.USER.value)
     name: str | None = APIField(None)
@@ -133,6 +139,10 @@ class User(Entity):
     user_id: str | None = APIField(None)
     last_login: datetime | None = APIField(None)
     onboarded: bool = APIField(default=False)
+    #: This machine's own person (the one desktop user), as opposed to a contact.
+    desktop: bool = APIField(default=False, sharing=Sharing.PRIVATE)
+    #: ``name`` was typed by the person, so bootstrap must not replace it from ``git config user.name``.
+    name_overridden: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     # Optional cloud organization the user belongs to (one org, hub-authoritative).
     # Set on cloud login from the hub login payload; the org itself is materialized
     # locally as a remote=True Organization at this id. Role lives on the edge here,
@@ -157,6 +167,16 @@ class User(Entity):
         if v is None or isinstance(v, str):
             return normalize_email(v)
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flags_from_labels(cls, data):
+        """A user row written before these two flags existed carried them as ``labels`` markers."""
+        if isinstance(data, dict) and "labels" in data:
+            data = dict(data)
+            for flag, held in flags_of_labels(data.pop("labels")).items():
+                data[flag] = bool(data.get(flag)) or held
+        return data
 
     def __init__(self, **data):
         super().__init__(**data)

@@ -72,6 +72,7 @@ from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrenc
 from flow_sdk.fs_store.exceptions import AssetRefLookupError
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.tags.grammar import tag_is_within, to_tag, to_tags
 
 from .blob_index_entity_model import BLOB_INDEX_VFS_PATH, BlobIndexEntity
 from .entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
@@ -369,8 +370,11 @@ class Entity(DBEntity):
     visitor_roles: list[str] = EntityField(default_factory=list, sharing=Sharing.PRIVATE)
     authenticated_roles: list[str] = EntityField(default_factory=list, sharing=Sharing.PRIVATE)
     public_roles: list[str] = EntityField(default_factory=list, sharing=Sharing.PRIVATE)
-    labels: List[str] | None = APIField(default=None)
-    tags: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
+    #: What this entity is ABOUT: dot-path tag names (``flow_sdk/tags/grammar``), many,
+    #: attached. Every path in converts through ``to_tags``, so a stored tag is always
+    #: valid. Private to this machine; ``Persist.TRUE`` keeps it in the record shadow for
+    #: a type whose file header does not carry ``tags`` (docs/tags.md "Binding things").
+    tags: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.TRUE)
     system: bool = APIField(
         default=False,
         description="True when this entity belongs to an SDK-shipped system project",
@@ -517,6 +521,11 @@ class Entity(DBEntity):
             "tolerantly on load."
         ),
     )
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _valid_tags(cls, value: Any) -> list[str]:
+        return to_tags(value)
 
     @field_validator("last_active_at", "last_edited_at", mode="before")
     @classmethod
@@ -774,6 +783,7 @@ class Entity(DBEntity):
         status: str | None = None,
         calibration: "Any | None" = None,
         match: Literal["all", "any"] = "all",
+        tags: Sequence[str] | None = None,
     ) -> list[Entity]:
         """Full-text search using FTS5 MATCH. Returns Entity objects. ``match="any"`` ranks rows that
         match any of the words (a sentence) instead of requiring all of them."""
@@ -785,7 +795,8 @@ class Entity(DBEntity):
         if not hasattr(driver, "fts_search"):
             return []
         return await driver.fts_search(
-            query=query, limit=limit, record_type=record_type, status=status, calibration=calibration, match=match
+            query=query, limit=limit, record_type=record_type, status=status, calibration=calibration, match=match,
+            tags=tags,
         )
 
     @classmethod
@@ -1166,6 +1177,10 @@ class Entity(DBEntity):
             for _k in getattr(_mm, "model_fields", None) or {}:
                 if _k in _nested and _k not in data:
                     data[_k] = _nested[_k]
+        if "tags" in data:
+            # Whatever the carrier wrote (a header's one-line string, a lifted ``metadata``
+            # key): the update branch below validates the bare field TYPE, never its validator.
+            data["tags"] = to_tags(data["tags"])
         from flow_sdk.core.asset_type_bindings import compose_asset_row_defaults
         compose_asset_row_defaults(record_type, entity_cls, data)
 
@@ -1257,6 +1272,10 @@ class Entity(DBEntity):
             create_kwargs.update({k: v for k, v in data.items() if k not in ("id", "type")})
             create_kwargs.update(record_domain)
             create_kwargs.update(stamp)
+            # A row rebuilt from its file alone: the machine-local facts no file carries
+            # (``Persist.TRUE`` — an automation's on/off, a tag) come back from the shadow.
+            for name, value in _shadow_kept_fields(entity_cls, record_type, entity_uuid).items():
+                create_kwargs.setdefault(name, value)
             try:
                 # The carrier on disk may name a field its type has since dropped.
                 with lenient_entity_load():
@@ -1555,6 +1574,11 @@ class Entity(DBEntity):
                 continue
             persisted.add(name)
         return self.model_dump(mode="json", include=persisted, exclude_none=True)
+
+    def shadow_kept_payload(self) -> dict:
+        """The ``Persist.TRUE`` slice of ``metadata_payload`` — the machine-local facts no
+        asset file carries, which every rewrite of the record shadow has to keep."""
+        return self.model_dump(mode="json", include=_shadow_kept_names(type(self)), exclude_none=True)
 
     async def store(self) -> "Record | None":
         """Sync entity metadata DOWN to its record on disk.
@@ -2308,7 +2332,7 @@ class Entity(DBEntity):
         #  - ``remote``      — local "do I have a hub counterpart" flag; meaningless on the hub.
         #  - ``system``      — local "ships in an SDK system project" flag.
         #  - ``message_count`` — SDK projection from the conversation jsonl pointer index.
-        #  - ``tags``        — local-only labels; the hub doesn't read them.
+        #  - ``tags``        — private to this machine (docs/tags.md); the hub doesn't read them.
         #  - ``project_id``  — sender's local project; recipients resolve their
         #    own project mapping, so the hub deliberately doesn't store this.
         #  - ``members``     — initial sender-side list (email-only entries).
@@ -3526,25 +3550,34 @@ class Entity(DBEntity):
         await self.remove_role(public_entity.typeid)
         return self
 
-    def add_label(self, label: str) -> None:
-        """Add a label to the entity."""
-        if self.labels is None:
-            self.labels = []
-        # Check if label already exists
-        if label not in self.labels:
-            self.labels.append(label)
+    def has_tag(self, name: str) -> bool:
+        """Whether this entity carries ``name`` or a tag under it (``crm`` finds ``crm.lead``)."""
+        return any(tag_is_within(tag, name) for tag in self.tags)
 
-    def remove_label(self, label_id: str) -> bool:
-        """Remove a label from the entity. Returns True if removed, False if not found."""
-        if self.labels is None:
-            return False
-        original_count = len(self.labels)
-        self.labels = [label for label in self.labels if label != label_id]
-        return len(self.labels) < original_count
+    async def set_tags(self: EntityType, tags: list[str]) -> EntityType:
+        """THE write door for tags: convert, save, and put them where this type keeps them.
 
-    def get_labels(self) -> List[str]:
-        """Get all labels for the entity."""
-        return self.labels or []
+        A type whose file header declares ``tags`` and whose file the entity does not
+        re-render (a doc, a skill) gets the header key written here; without that the
+        next index of the file would put the old list back. Any other type keeps them in
+        the row and its record shadow, which ``save`` already writes.
+        """
+        self.tags = to_tags(tags)
+        await self.save()
+        await _write_header_tags(self)
+        return self
+
+    async def add_tag(self: EntityType, name: str) -> EntityType:
+        tag = to_tag(name)
+        if tag is None:
+            raise ValueError(f"{name!r} has nothing a tag can hold (letters, numbers, '_', '-', '.')")
+        return self if tag in self.tags else await self.set_tags([*self.tags, tag])
+
+    async def remove_tag(self: EntityType, name: str) -> EntityType:
+        tag = to_tag(name)
+        if tag is None:
+            raise ValueError(f"{name!r} has nothing a tag can hold (letters, numbers, '_', '-', '.')")
+        return await self.set_tags([t for t in self.tags if t != tag]) if tag in self.tags else self
 
     # ── context_entities surface ─────────────────────────────────────────
     #
@@ -4187,6 +4220,79 @@ _action_registry.register(
     function_name="semantic_waive",
     handler=_http_semantic_waive,
     methods="post",
+    types="all",
+)
+
+
+@functools.cache
+def _shadow_kept_names(entity_cls: type) -> frozenset[str]:
+    """The names of ``entity_cls``'s ``Persist.TRUE`` fields — a fact of the class."""
+    from flow_sdk.api.api_types.api_field import persist_policy  # noqa: PLC0415
+
+    return frozenset(n for n, f in entity_cls.model_fields.items() if persist_policy(f) == Persist.TRUE)
+
+
+def _shadow_kept_fields(entity_cls: type, record_type: str, entity_id: Any) -> dict[str, Any]:
+    """The ``Persist.TRUE`` values this entity's record shadow still holds.
+
+    Read when a row is created from disk: the extractor reads the asset file only, so
+    without this a full index rebuild would reset every shadow-only field to its default.
+    """
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+
+    kept = _shadow_kept_names(entity_cls)
+    if not kept or not entity_id:
+        return {}
+    try:
+        shadow = FSRecord.load_or_none(record_type, str(entity_id))
+    except Exception:  # noqa: BLE001 — an unreadable shadow is no shadow
+        return {}
+    held = shadow.meta_dict() if shadow is not None else {}
+    return {name: held[name] for name in kept if held.get(name) is not None}
+
+
+async def _write_header_tags(entity: Entity) -> None:
+    """Write ``entity.tags`` into the file header of a type that carries them there."""
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+
+    info = SchemaRegistry.get(entity.get_type())
+    spec = getattr(info, "asset_spec", None)
+    # A shipped asset's file belongs to the SDK install, never to the person tagging it.
+    if spec is None or info.owns_main_ref or "tags" not in spec.model_fields or entity.system:
+        return
+    record = FSRecord.load_or_none(entity.get_type(), str(entity.id))
+    origin = entity._storage_origin(record) if record is not None else None
+    if origin is None or await _asset_ref_is_borrowed(record):
+        return
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.assets.serialization import write_header_field  # noqa: PLC0415
+
+    await asyncio.to_thread(write_header_field, info, info.serializer(origin).root(origin), "tags", list(entity.tags))
+
+
+async def _http_tag(self: Entity):
+    """``POST|DELETE <type>/<id>/tags/<name>`` — add or remove one tag; answers the full list.
+
+    Named ``tags``, not ``tag``: ``tag`` is an entity TYPE, and ``/graph/tag`` must stay its list."""
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+    info = get_current_request_info()
+    name = (getattr(info, "sub_path", None) or "").strip("/")
+    method = str(getattr(getattr(info, "request", None), "method", "") or "").upper()
+    try:
+        await (self.remove_tag(name) if method == "DELETE" else self.add_tag(name))
+    except ValueError as exc:
+        return ApiFailResponse(message=str(exc), status_code=400)
+    return ApiSuccessResponse(data={"tags": list(self.tags)})
+
+
+_action_registry.register(
+    action_name="tags",
+    function_name="tags",
+    handler=_http_tag,
+    methods=["post", "delete"],
     types="all",
 )
 

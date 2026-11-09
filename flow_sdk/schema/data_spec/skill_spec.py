@@ -1,10 +1,13 @@
 """Filesystem contracts independent of application entities."""
 from __future__ import annotations
 
-from typing import ClassVar, Optional
+from typing import Any, ClassVar, List, Optional
+
+from pydantic import field_validator
 
 from flow_sdk.schema.data_spec import FrontMatter
 from flow_sdk.schema.data_spec.io.native import Text
+from flow_sdk.tags.grammar import to_tags
 
 
 class SkillSpec(FrontMatter):
@@ -17,4 +20,10 @@ class SkillSpec(FrontMatter):
 
     name: Optional[str] = None
     description: Optional[str] = None
+    tags: Optional[List[str]] = None
     body: Text = ""
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _tags_list(cls, value: Any) -> Any:
+        return None if value is None else to_tags(value)

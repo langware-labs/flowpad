@@ -621,6 +621,21 @@ def _write_fields(obj: Any, info: Any, root: Path) -> None:
             )
 
 
+def write_header_field(info: Any, root: Path, name: str, value: Any) -> bool:
+    """Set ONE header key of a stored markdown asset, leaving its body and other keys alone.
+
+    For a header fact the entity owns on a type whose file it does not re-render
+    (``owns_main_ref`` False): a doc's or a skill's ``tags``. Answers whether a file was written.
+    """
+    main = _main_doc(info, root)
+    if main is None or main.suffix.casefold() != ".md" or not main.is_file():
+        return False
+    from flow_sdk.assets.document import write_document  # noqa: PLC0415
+
+    write_document(main, fields={name: value})
+    return True
+
+
 def write_asset_tree(obj: Any, info: Any, root: Path, *, force: bool = False) -> str:
     """Store declared filesystem fields and identity, without constructing rows."""
     main = _main_doc(info, root)

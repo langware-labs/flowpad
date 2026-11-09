@@ -46,7 +46,7 @@ After linking, each recipient who is not a project member gets a line under **To
 if you have given them one:
 
 <!-- pinned:when-set -->
-`created_through`, `env_vars`, `group_id`, `helpdesk`, `hub_published_at`, `key`, `labels`, `last_active_at`, `last_edited_at`, `locale`, `namespace`, `origin`, `parent_type_id`, `root_vfs_path`, `schema_version`, `title`, `uname`, `updated_through`
+`created_through`, `env_vars`, `group_id`, `helpdesk`, `hub_published_at`, `key`, `last_active_at`, `last_edited_at`, `locale`, `namespace`, `origin`, `parent_type_id`, `root_vfs_path`, `schema_version`, `title`, `uname`, `updated_through`
 <!-- pinned:/when-set -->
 
 **Never sent.** Two different mechanisms, which fail differently — a

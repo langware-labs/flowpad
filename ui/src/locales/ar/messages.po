@@ -3129,7 +3129,7 @@ msgstr "إضافة مصدر"
 msgid "Add step"
 msgstr "إضافة خطوة"
 
-#: src/components/assets/TagFilterBar.tsx
+#: src/components/tags/TagInput.tsx
 msgid "Add tag…"
 msgstr "إضافة وسم…"
 
@@ -16431,8 +16431,8 @@ msgid "label / pattern"
 msgstr "التسمية / النمط"
 
 #: src/components/account/user-info.tsx
-msgid "Labels:"
-msgstr "التسميات:"
+#~ msgid "Labels:"
+#~ msgstr "التسميات:"
 
 #: src/components/project-home/ProjectLanguageCard.tsx
 #: src/components/settings-view/settings-utils.ts
@@ -25498,6 +25498,10 @@ msgstr "إزالة القاعدة"
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Remove service"
 msgstr ""
+
+#: src/components/tags/TagInput.tsx
+msgid "Remove tag {tag}"
+msgstr "إزالة الوسم {tag}"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Remove the help desk"
