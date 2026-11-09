@@ -45,6 +45,18 @@ def hub_created_drift(local: Optional[Any], hub_payload: dict) -> bool:
     )
 
 
+def hub_adds_attachments(local: Optional[Any], hub_payload: dict) -> bool:
+    """``True`` when the hub's message carries attachments the local row lacks.
+
+    The same trap as ``hub_created_drift``: a message first synced before its viewer could see its
+    attachments (a help-desk ticket's files are the hub's to give once its staff member has picked the
+    ticket up) is stored without them, and any local save after that stamps the row newer than the hub's
+    own clock, so ``is_stale`` calls it current for good and the attachments the hub now sends are never
+    merged. What the hub carries and the row lacks is a change whatever the clocks say.
+    """
+    return local is not None and bool(hub_payload.get("attachment")) and not (getattr(local, "attachment", None) or [])
+
+
 def adopt_hub_created_date(local: Optional[Any], hub_payload: dict) -> bool:
     """Adopt the hub's ``created_date`` onto ``local``; ``True`` if it changed.
 

@@ -9,6 +9,7 @@ import ExecutionMessage from './execution-message/execution-message';
 import { MetaMessageChip } from './MetaMessageChip';
 import { TurnFilesChips } from './TurnFilesChips';
 import { WorkerUnavailableNotice } from './WorkerUnavailableNotice';
+import { useRecentWindow } from './use-recent-window';
 import { ProcessLaunchFailureCard, readLaunchFailure } from '@src/components/launch-failure/LaunchFailureCard';
 import type { WorkerType } from '@src/components/workers/worker-types';
 
@@ -58,6 +59,23 @@ export function isRenderedGroup(g: TurnGroup, showTools: boolean): boolean {
   if (g.flowData.attributes?.['is-meta'] !== 'true') return paintsSomething(g.flowData);
   const content = g.flowData.content ?? '';
   return !isFlowpadPromptEnvelope(String(content));
+}
+
+/** The message group whose time is nearest *at*, or null. */
+export function nearestGroup(groups: readonly TurnGroup[], at: string | null | undefined): number | null {
+  if (!at) return null;
+  const target = Date.parse(at);
+  let best: number | null = null;
+  let bestGap = Infinity;
+  groups.forEach((g, i) => {
+    if (g.kind !== 'message' || !g.flowData.timestamp) return;
+    const gap = Math.abs(Date.parse(g.flowData.timestamp) - target);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = i;
+    }
+  });
+  return best;
 }
 
 /**
@@ -111,6 +129,8 @@ export function TurnGroupsList({
   const rendered = useMemo(() => groups.map((g) => isRenderedGroup(g, showTools)), [groups, showTools]);
   const lastPrompt = lastUserPrompt(groups);
   const visibleGroups = useMemo(() => groups.filter((_, i) => rendered[i]), [groups, rendered]);
+  const anchored = anchorIndex === null ? -1 : visibleGroups.indexOf(groups[anchorIndex]);
+  const { start, sentinel } = useRecentWindow(visibleGroups.length, anchored);
 
   // Skin-layer rule (docs/viewmodes.md): the data is built unconditionally and
   // only the VIEW is gated, so toggling view mode never changes what the chat
@@ -131,7 +151,9 @@ export function TurnGroupsList({
     <>
       {/* A turn whose every group was filtered out still touched files. */}
       {chipsForRow(-1)}
-      {visibleGroups.map((g, i) => {
+      {start > 0 && <div ref={sentinel} aria-hidden data-testid="chat-older-sentinel" />}
+      {visibleGroups.slice(start).map((g, j) => {
+        const i = start + j;
         // Partition index `i` is the tiebreaker: two messages can share a
         // timestamp (and lack an id), which collided on `id ?? timestamp` and
         // tripped React's duplicate-key warning (children duplicated/omitted)
@@ -147,7 +169,7 @@ export function TurnGroupsList({
         return (
           <Fragment key={key}>
             {i > 0 && <TurnDivider />}
-            {anchorIndex !== null && groups[anchorIndex] === g && <span data-chat-anchor className="block scroll-mt-16" />}
+            {anchorIndex !== null && groups[anchorIndex] === g && <span data-chat-anchor className="flowpad-chat-anchor block scroll-mt-16" />}
             {/* TurnGroupRow stays memoized — that memo is what keeps a live
                 frame from re-rendering the whole history (QA D10). The chip row
                 is a sibling, and it sits BEFORE the next divider so it reads as

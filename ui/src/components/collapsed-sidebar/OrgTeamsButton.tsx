@@ -6,6 +6,7 @@ import { useHasOrgOrTeam } from '@src/hooks/use-has-org-or-team';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
+import { PageId } from '@sdk';
 
 /**
  * Org & teams — account-cluster button at the foot of the rail, beside the theme
@@ -35,7 +36,7 @@ export function OrgTeamsButton() {
       // pressed state, not the `bg-sidebar-accent` the menu-shaped rail uses.
       className={cn('h-8 w-8', isActive && 'bg-accent text-accent-foreground')}
       data-testid="org-teams-button"
-      onClick={() => navigation.openTab(ViewType.ORGANIZATION)}
+      onClick={() => navigation.openPage(PageId.HUB, ViewType.ORGANIZATION)}
       title={t`Org & teams`}
     >
       <Building2 className="h-4 w-4" />

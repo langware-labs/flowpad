@@ -13,6 +13,7 @@ from typing import ClassVar, Optional
 
 from pydantic import model_validator
 
+from flow_sdk.schema.data_spec.diagnose_spec import DiagnosePurpose
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 
@@ -35,6 +36,8 @@ class HelpOrigin(str, Enum):
     ASSISTANT = "assistant"
     #: A credential's page: no secret manager to receive from, or no access to it.
     CREDENTIAL = "credential"
+    #: "Diagnose & fix" on an error or warning: a private conversation that repairs what it can.
+    WARNING = "warning"
 
 
 class HelpRecipient(DataSpec):
@@ -102,6 +105,8 @@ class AskForHelpRequest(DataSpec):
     diagnosis_id: Optional[str] = None
     #: The session on screen (a TypeId) -- what the diagnose is told the person was in.
     process: Optional[str] = None
+    #: ``repair`` fixes what it safely can (Diagnose & fix); ``report`` only describes (Ask for help).
+    purpose: DiagnosePurpose = DiagnosePurpose.REPORT
     #: The browser window asked from (its socket's id): what the diagnosis says was on screen.
     connection_id: Optional[str] = None
 
@@ -133,3 +138,7 @@ class HelpRequestCarrier(DataSpec):
     #: The context files on this message (``diagnosis.value.json`` …); empty while not shared.
     context: list[str] = []
     context_shared: bool = False
+    #: A diagnosis runs in the background and lands as its own message in this conversation.
+    diagnosing: bool = False
+    #: "Report it for me": the dependency Flowpad support is asked to pass this on to.
+    pass_on: str = ""

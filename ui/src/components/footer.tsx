@@ -11,7 +11,6 @@ import { VersionPopover } from '@src/components/version-popover';
 import { HubReleaseLabel } from '@src/components/version-popover/hub-release-label';
 import { AdvancedOnly } from '@src/components/view-mode';
 import { WarningsPopover } from '@src/components/warnings-popover';
-import { PrivacyModePopover } from '@src/components/privacy-mode/privacy-mode-popover';
 import { SubAgent, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useMemo } from 'react';
@@ -56,12 +55,9 @@ export function Footer({ className = '' }: FooterProps) {
     >
       <style>{FOOTER_COLLAPSE_STYLE}</style>
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap sm:justify-between">
-        {/* Data-privacy mode + Warnings icons on the left. No mode selector: a
-            mode belongs to a session, and its switch lives in that session. */}
+        {/* Warnings icon on the left. No mode selector: a mode belongs to a
+            session, and its switch lives in that session. */}
         <div className="flex shrink-0 items-center gap-1">
-          <AdvancedOnly reserve={false}>
-            <PrivacyModePopover />
-          </AdvancedOnly>
           <WarningsPopover />
         </div>
 

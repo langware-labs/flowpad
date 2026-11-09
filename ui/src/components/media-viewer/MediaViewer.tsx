@@ -2,6 +2,7 @@ import { Trans } from '@lingui/react/macro';
 import { AssetEditor } from '@sdk';
 import { AlertCircle } from 'lucide-react';
 import { useDownloadUrl } from '@src/hooks/use-download-url';
+import { MediaPager } from './MediaPager';
 
 /**
  * Render an image/video/audio file inline via the backend fs `download`
@@ -17,7 +18,7 @@ export function MediaViewer({
   path: string;
   kind: AssetEditor.IMAGE | AssetEditor.VIDEO | AssetEditor.AUDIO;
 }) {
-  const { url, subPath, revision } = useDownloadUrl(path);
+  const { url, subPath, revision, typeId } = useDownloadUrl(path);
 
   if (!url) {
     return (
@@ -28,7 +29,7 @@ export function MediaViewer({
     );
   }
   return (
-    <div className="flex h-full w-full items-center justify-center overflow-auto bg-background p-4">
+    <div className="group relative flex h-full w-full items-center justify-center overflow-auto bg-background p-4">
       {kind === AssetEditor.IMAGE && (
         <img
           key={revision}
@@ -44,6 +45,7 @@ export function MediaViewer({
       {kind === AssetEditor.AUDIO && (
         <audio key={revision} src={url} controls className="w-full max-w-xl" data-testid="media-viewer-audio" />
       )}
+      {kind !== AssetEditor.AUDIO && typeId && <MediaPager path={path} typeId={typeId} filePath={subPath} />}
     </div>
   );
 }

@@ -105,3 +105,23 @@ async def test_payload_parent_wins_over_envelope(records_root, blob_storage):
     assert ent.parent_type_id == str(doc_parent.typeid)
     assert await _child_ids(doc_parent) == [ent.id]
     assert await _child_ids(envelope_parent) == []
+
+
+@pytest.mark.asyncio
+async def test_new_child_is_announced_after_its_edge(records_root, blob_storage, monkeypatch):
+    """An open page watching the parent's scope only sees a child once it is linked: a
+    NEW child is announced again after its edge exists; a refresh of a known one is not."""
+    conv = Conversation(id=str(uuid.uuid4()), title="edge-announce")
+    await conv.save()
+    seen: list[bool] = []
+
+    async def announce(self):
+        seen.append(await conv._has_child_edge(self))
+
+    monkeypatch.setattr(Comment, "notify_updated", announce)
+    payload = _payload(str(conv.typeid))
+    await Comment.upsert_from_hub_child(payload, None)
+    assert seen == [True]
+
+    await Comment.upsert_from_hub_child({**payload, "raw_content": "edited"}, None)
+    assert seen == [True]

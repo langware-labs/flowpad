@@ -57,7 +57,7 @@ from flow_sdk.stream_inbox.agent_scope import (
     resolve_agent_stream_inbox_scope,
     resolve_local_stream_inbox_scope,
 )
-from flow_sdk.stream_inbox.hub_clock import adopt_hub_created_date, hub_created_drift
+from flow_sdk.stream_inbox.hub_clock import adopt_hub_created_date, hub_adds_attachments, hub_created_drift
 from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
@@ -1586,6 +1586,39 @@ def _ticket_title(text: str) -> str:
     return line if len(line) <= 60 else f"{line[:60].rstrip()}…"
 
 
+async def _materialize_hub_conversation(conv_id: str, someone_typeid: TypeId) -> None:
+    """Bring a hub conversation this machine is now part of onto it: its row, then its messages. The
+    hub's metadata comes first: the local row used to be created as a side effect of the message sync
+    (``ensure_conversation_entity``), which knows nothing about the hub conversation and left ``kind`` at
+    its default, so a support ticket became an ordinary ``direct`` chat on the staff side and the desk's
+    queue view could not recognise it. It is hub-authoritative, through the same metadata seam every
+    other sync path uses (mirrors invitation-accept: join -> fetch -> upsert). Both syncs are best effort."""
+    from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+
+    hub_ws_bridge.remember_hub_conversation(conv_id)
+    try:
+        data = await HubProxy.call("GET", BuiltinEntityType.CONVERSATION, conv_id, strict=True)
+        if isinstance(data, dict) and data.get("id"):
+            await _upsert_hub_conversation_metadata(data, someone_typeid)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[hub conversation] metadata sync failed (non-fatal): %s", e)
+
+    try:
+        await _fetch_conversation_messages(conv_id, someone_typeid)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[hub conversation] message sync failed (non-fatal): %s", e)
+
+
+def _hub_conversation_target() -> tuple[Optional[TypeId], str]:
+    """The signed-in caller and the conversation id named in the URL (empty when it is not one)."""
+    request_info = get_current_request_info()
+    if not request_info or not request_info.someone_typeid:
+        return None, ""
+    target = request_info.target_entity_typeid
+    conv_id = str(target.id) if target is not None and target.type == "conversation" else ""
+    return request_info.someone_typeid, conv_id
+
+
 @action.post(action_name="pickup", types=["conversation"])
 async def conversation_pickup() -> ApiResponse:
     """``POST conversation/<id>/pickup`` — the hub's action, answered here. Staff-side: join a
@@ -1593,12 +1626,9 @@ async def conversation_pickup() -> ApiResponse:
     membership); then the ticket lands here, with its messages. The id comes from the URL: the
     ticket is usually not on this box yet."""
     try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.someone_typeid:
+        someone_typeid, conv_id = _hub_conversation_target()
+        if someone_typeid is None:
             return ApiFailResponse(message="No authenticated user in request context")
-        someone_typeid = request_info.someone_typeid
-        target = request_info.target_entity_typeid
-        conv_id = str(target.id) if target is not None and target.type == "conversation" else ""
         if not conv_id:
             return ApiFailResponse(message="pickup: target conversation required", status_code=400)
 
@@ -1607,34 +1637,50 @@ async def conversation_pickup() -> ApiResponse:
         except HubError as e:
             return e.fail_response("Could not pick up conversation")
 
-        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
-
-        hub_ws_bridge.remember_hub_conversation(conv_id)
-
-        # Take the hub's metadata before syncing messages. Pickup used to
-        # create the local row as a side effect of the message sync
-        # (``ensure_conversation_entity``), which knows nothing about the hub
-        # conversation and therefore left ``kind`` at its default — so a
-        # support ticket materialized on the STAFF side as an ordinary
-        # ``direct`` chat and the desk's queue view could not recognise it.
-        # Pickup is a hub-authoritative materialization; it takes the same
-        # metadata seam every other sync path uses (mirrors invitation-accept:
-        # join → fetch → upsert).
-        try:
-            data = await HubProxy.call("GET", BuiltinEntityType.CONVERSATION, conv_id, strict=True)
-            if isinstance(data, dict) and data.get("id"):
-                await _upsert_hub_conversation_metadata(data, someone_typeid)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[pickup] metadata sync failed (non-fatal): %s", e)
-
-        try:
-            await _fetch_conversation_messages(conv_id, someone_typeid)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[pickup] message sync failed (non-fatal): %s", e)
+        await _materialize_hub_conversation(conv_id, someone_typeid)
         return ApiSuccessResponse(data={"conversation_id": conv_id})
     except Exception as e:
         logger.error("[flow_message_action] pickup error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed to pick up conversation: {str(e)}")
+
+
+@action.post(action_name="open_team_conversation", types=["conversation"])
+async def conversation_open_team_conversation() -> ApiResponse:
+    """``POST conversation/<ticket id>/open_team_conversation {title, text}`` — the hub's action, answered
+    here. The desk opens the private conversation where its staff consult each other about a ticket the
+    caller works (a deployed agent may not create a conversation itself; the hub does it). The hub decides
+    who is in it and answers one conversation per ticket; it lands here, with its messages, so the team's
+    replies reach this machine."""
+    try:
+        someone_typeid, ticket_id = _hub_conversation_target()
+        if someone_typeid is None:
+            return ApiFailResponse(message="No authenticated user in request context")
+        if not ticket_id:
+            return ApiFailResponse(message="open_team_conversation: target ticket required", status_code=400)
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() or {}) if request_info else {}
+        payload = {"title": str(body.get("title") or ""), "text": str(body.get("text") or "")}
+
+        try:
+            team = await HubProxy.call(
+                "POST",
+                BuiltinEntityType.CONVERSATION,
+                ticket_id,
+                "open_team_conversation",
+                payload=payload,
+                strict=True,
+            )
+        except HubError as e:
+            return e.fail_response("Could not open the team conversation")
+        team_id = str((team or {}).get("id") or "") if isinstance(team, dict) else ""
+        if not team_id:
+            return ApiFailResponse(message="the hub opened no team conversation")
+
+        await _materialize_hub_conversation(team_id, someone_typeid)
+        return ApiSuccessResponse(data={"conversation_id": team_id, "title": team.get("title")})
+    except Exception as e:
+        logger.error("[flow_message_action] open_team_conversation error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to open the team conversation: {str(e)}")
 
 
 def _truthy(value) -> bool:
@@ -2013,7 +2059,7 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     if adopt_hub_created_date(existing, raw):
         with remote_reflection():
             await existing.save(notify=False)
-    if existing is not None and not FlowMessage.is_stale(existing, raw):
+    if existing is not None and not FlowMessage.is_stale(existing, raw) and not hub_adds_attachments(existing, raw):
         # Metadata current (body handled above).
         return fm_id
     # Bundle-less: persist the FM payload as-is, then append the pointer to
@@ -2045,6 +2091,11 @@ async def _process_single_hub_message(raw: dict) -> str | None:
         if _conv_id:
             payload["parent_type_id"] = f"{Conversation.get_type()}-{_conv_id}"
         fm = FlowMessage.model_validate(payload)
+        # The same derived fields materialize_flow_message fills on every other arrival path: this pull is the
+        # one a reply takes when it lands before the live push (an IT machine answering within a second).
+        from flow_sdk.builtin.flow_message import derive_it_reply  # noqa: PLC0415
+
+        derive_it_reply(fm, raw)
         await fm.save()
     except Exception as e:  # noqa: BLE001
         logger.warning("[fm-process] bundle-less fm=%s save failed: %s", fm_id[:8], e)
@@ -3425,6 +3476,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
                     not FlowMessage.is_stale(local, raw_fm)
                     and not needs_body_reconcile
                     and not hub_created_drift(local, raw_fm)
+                    and not hub_adds_attachments(local, raw_fm)
                 ):
                     continue
                 try:
@@ -4017,7 +4069,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
             # On the UI path the HTTP response is followed by one local query
             # refetch, so per-entity broadcasts are suppressed while reconciling
             # the batch: emitting every historical invitation one by one
-            # continuously reorders stream inbox rows and can make an otherwise enabled
+            # continuously reorders stream StreamInbox rows and can make an otherwise enabled
             # action physically unclickable until the catch-up finishes. A
             # backend-initiated sweep has no refetch behind it — see
             # ``announce_invitations``.
@@ -4201,6 +4253,23 @@ async def conversation_transcript() -> ApiResponse:
         return ApiSuccessResponse(data=data)
     except Exception as e:
         logger.error("[flow_message_action] conversation-transcript error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+@action.get(action_name="attachments", types=["conversation"])
+async def conversation_attachments() -> ApiResponse:
+    """The files across one conversation, newest first (``Conversation.attachments``) — what the
+    StreamInbox row's paperclip lists; the row's number is ``Conversation.attachment_count``."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+        conv = await Conversation.get_one({"id": str(request_info.target_entity_typeid.id)})
+        if conv is None:
+            return ApiFailResponse(message="conversation not found", status_code=404)
+        return ApiSuccessResponse(data=[f.model_dump(mode="json") for f in await conv.attachments()])
+    except Exception as e:
+        logger.error("[flow_message_action] attachments error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
 
 
@@ -4774,9 +4843,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             else:
                 # Any other shared entity (a machine, a team, an agent…): its hub row, so the mirror is
                 # the real thing (a machine's provider, size, status) and not a name-only husk.
-                hub_row = await HubProxy.try_call(
-                    "GET", membership_target.target_type, membership_target.target_id
-                )
+                hub_row = await HubProxy.try_call("GET", membership_target.target_type, membership_target.target_id)
                 if isinstance(hub_row, dict) and hub_row.get("id") == membership_target.target_id:
                     target_payload.update(hub_row)
             ent = await materialize_remote_membership_entity(

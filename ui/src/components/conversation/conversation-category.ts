@@ -1,9 +1,19 @@
 import { t } from '@lingui/core/macro';
 import type { LucideIcon } from 'lucide-react';
-import { Archive, ArchiveRestore, CheckSquare, CircleCheck, Clock, LifeBuoy, Trash2, UserCheck } from 'lucide-react';
+import {
+  Archive,
+  ArchiveRestore,
+  CheckSquare,
+  CircleCheck,
+  Clock,
+  LifeBuoy,
+  Trash2,
+  UserCheck,
+  Wrench,
+} from 'lucide-react';
 import { Conversation, FlowMessage, FlowMessageKind, Invitation, isHelpdeskKind } from '@sdk';
 import type { EntityMember } from '@sdk/APIEntity';
-import { isClosedConversation } from '@sdk/entities/conversation';
+import { isClosedConversation, isItKind } from '@sdk/entities/conversation';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 
 // ── Conversation category — the single source of truth ──────────────────────
@@ -98,7 +108,7 @@ export function deskChipLabel(deskName: string): string {
 }
 
 export interface ConversationFacets {
-  kind: 'direct' | 'helpdesk';
+  kind: 'direct' | 'helpdesk' | 'it';
   /** Viewer is the pending recipient of an unaccepted invitation. */
   isInvitation: boolean;
   /** `archived_at` is set and not yet revived by newer activity. */
@@ -115,7 +125,7 @@ export interface ConversationFacets {
 export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const { conv, firstMessage, latestMessage, latestPtrTs, invitation, viewer } = inp;
 
-  const kind = isHelpdeskKind(conv.kind) ? 'helpdesk' : 'direct';
+  const kind = isHelpdeskKind(conv.kind) ? 'helpdesk' : isItKind(conv.kind) ? 'it' : 'direct';
 
   // Invitation — viewer-relative. The first message stays `kind === invitation`
   // forever, so the sender (and everyone post-accept) must see a normal row;
@@ -200,6 +210,7 @@ export interface ChipSpec {
 
 const VIOLET_CHIP = 'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400';
 const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
+const SKY_CHIP = 'border-sky-500/40 bg-sky-500/15 text-sky-700 dark:text-sky-300';
 
 /** Whether `senderId` is the viewer. BOTH ids count: a locally written row is
  *  stamped with the desktop user id, a hub-mirrored row with the cloud user id,
@@ -212,31 +223,31 @@ export function isViewer(senderId: string | null | undefined, viewer: CategoryIn
 const AMBER_CHIP = 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300';
 const EMERALD_CHIP = 'border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
 
-/** The state chip for a ticket facet — label depends on whose side the viewer is on. */
-export function ticketChip(tk: TicketFacet): ChipSpec {
-  const staff = tk.perspective === 'staff';
+/** The state chip for a ticket facet, or none. Pick-up is the desk's own business: the requester sees a
+ *  conversation someone answers, so their side shows only that a ticket was closed. */
+export function ticketChip(tk: TicketFacet): ChipSpec | null {
   if (tk.state === 'closed')
     return { key: 'ticket-closed', icon: CircleCheck, label: t`Closed`, className: MUTED_CHIP };
-  if (tk.state === 'waiting') {
-    return {
-      key: 'ticket-waiting',
-      icon: Clock,
-      label: staff ? t`Not picked up` : t`Waiting for pickup`,
-      className: AMBER_CHIP,
-    };
-  }
+  if (tk.perspective !== 'staff') return null;
+  if (tk.state === 'waiting') return { key: 'ticket-waiting', icon: Clock, label: t`Not picked up`, className: AMBER_CHIP };
   const by = tk.pickedBy;
-  const label = !staff || !by ? t`Picked up` : by === 'you' ? t`Picked up by you` : t`Picked up by ${by}`;
+  const label = !by ? t`Picked up` : by === 'you' ? t`Picked up by you` : t`Picked up by ${by}`;
   return { key: 'ticket-picked', icon: UserCheck, label, className: EMERALD_CHIP };
 }
 
 export function chipsFor(f: ConversationFacets): ChipSpec[] {
   const chips: ChipSpec[] = [];
   if (f.kind === 'helpdesk') {
-    chips.push({ key: 'helpdesk', icon: LifeBuoy, label: t`Support`, className: VIOLET_CHIP });
+    // The asker reads it as the help desk answering them; the desk's own rows name it Support.
+    const label = f.ticket?.perspective === 'staff' ? t`Support` : t`Help desk`;
+    chips.push({ key: 'helpdesk', icon: LifeBuoy, label, className: VIOLET_CHIP });
+  }
+  if (f.kind === 'it') {
+    chips.push({ key: 'it', icon: Wrench, label: t`IT`, className: SKY_CHIP });
   }
   // The asker's side is just a conversation: the queue state is the desk's to show, not theirs.
-  if (f.ticket && f.ticket.perspective === 'staff') chips.push(ticketChip(f.ticket));
+  const state = f.ticket && f.ticket.perspective === 'staff' ? ticketChip(f.ticket) : null;
+  if (state) chips.push(state);
   if (f.isArchived) {
     chips.push({ key: 'archived', icon: Archive, label: t`Archived`, className: MUTED_CHIP });
   }

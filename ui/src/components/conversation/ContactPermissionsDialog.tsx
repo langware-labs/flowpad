@@ -14,6 +14,7 @@ import {
   useContactPermissions,
   type ContactKey,
 } from '@src/hooks/use-contact-permissions';
+import { personName } from '@src/components/conversation/participant-display';
 
 interface ContactPermissionsDialogProps {
   open: boolean;
@@ -58,7 +59,7 @@ function ContactDetails({ user }: { user: User }) {
           </span>
         )}
         <div className="min-w-0">
-          <div className="truncate font-medium">{user.name || user.email || 'Unknown'}</div>
+          <div className="truncate font-medium">{personName(user)}</div>
           {user.email && <div className="truncate text-xs text-muted-foreground">{user.email}</div>}
         </div>
       </div>

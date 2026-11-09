@@ -385,13 +385,18 @@ class TurnEngine:
                 if stream:
                     async for event in _follow(ap, start):
                         yield event
-                    text = _last_turn_assistant_text(
-                        transcript_entries(ap)[start:], last_only=True
-                    ) or await _capture_assistant_reply(ap)
+                    entries = transcript_entries(ap)[start:]
+                    # A transcript that exists is the truth, even when the turn left no final message.
+                    text = (
+                        _last_turn_assistant_text(entries, last_only=True)
+                        if entries
+                        else await _capture_assistant_reply(ap)
+                    )
                 else:
                     # The wait is the capture's; the reply is the turn's FINAL message, not its progress lines.
                     text = await _capture_assistant_reply(ap)
-                    text = _last_turn_assistant_text(transcript_entries(ap), last_only=True) or text
+                    entries = transcript_entries(ap)
+                    text = _last_turn_assistant_text(entries, last_only=True) if entries else text
             except TimeoutError:
                 # The wait ended, not necessarily the turn. The STARTED stamp stays:
                 # a redelivery reads the transcript to learn whether it finished.
@@ -999,9 +1004,11 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
     channel = source.channel or source.provider
     from flow_sdk.builtin.agent_mailbox import refresh_policy_for  # noqa: PLC0415
 
-    # The cached allowlist may be stale or never filled on this machine (a cloud placement's):
-    # re-read it once from its owner before refusing.
-    if not admits(source, author) and not (await refresh_policy_for(source) and admits(source, author)):
+    # The cached lists may be stale or never filled on this machine (a cloud placement's, or another
+    # process's): re-read them from the Hub before the gate either way — a sender blocked since the last
+    # read must not keep being answered. At most once per window per source.
+    await refresh_policy_for(source)
+    if not admits(source, author):
         console.info("✗ %s  %s — not an allowed sender, not answered", channel, author)
         _announce(engine.deployment, "refused", data_source_id=str(source.id))
         return await skip_message(message)

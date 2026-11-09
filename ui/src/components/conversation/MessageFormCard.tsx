@@ -212,7 +212,7 @@ export function MessageFormCard({ form, messageId, conversationId, isMine, answe
   );
 }
 
-function FieldControl({
+export function FieldControl({
   field: f,
   id,
   value,

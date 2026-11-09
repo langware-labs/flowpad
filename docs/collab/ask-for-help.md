@@ -205,6 +205,27 @@ drops the `kind` field (`derive_help_request_kind` re-derives it on arrival). Th
   (review before installing) and the sender's `ContentReviewDialog` (review before sending: Share / Leave out) are both it.
 - **The asker's side is a conversation:** no ticket state chip ("Waiting for pickup") and no Close ticket; those are the desk's.
 
+### One backbone: minimal input → background → the conversation (2026-11-07)
+
+**Diagnose & fix** and **Ask for help** are the same request; the diagnosis never holds it up.
+
+- `ask-for-help` writes the conversation and the person's `help_request` message at once and answers; the diagnosis
+  runs in the background (`_diagnose_then_deliver`) and lands as a `diagnosis` message of its own — its text the one
+  bottom line (`bottom_line`), `diagnosis.value.json` the details (held here unless the context is shared). Only then is
+  the request delivered.
+- **Diagnose & fix** (warnings popover, error toasts, the error screen, Error details — `diagnoseAndFix`) is one click,
+  no window: `recipients: []`, `purpose: repair` (the repairing agent, told it was asked to fix and which folders are
+  the project's dependencies). Private by design: nothing reaches the hub until **Report it**.
+- **Whose problem it is** is `DiagnosisSpec.cause` (`flowpad | dependency | project | machine | unknown`, plus
+  `cause_asset`), set by `report.py --cause`. A report is offered only for `flowpad`, `dependency`, `unknown`
+  (`reportable`) — on the diagnosis message, as one button: **Report it** (Flowpad support), **Report it to <the
+  dependency's desk>** (an adopted desk whose root is that dependency), or **Report it for me** (no desk: Flowpad
+  support with `pass_on`). `help-request-report` turns the private conversation into that desk's ticket and sends
+  what was held, in the same conversation; `help-request-diagnosis` says what the message offers.
+- **Ask for help** keeps its three steps; Send opens the conversation at once and the same diagnosis message follows.
+- Removed with this: the Diagnose window and its people picker, "Send report once done", `diagnose-send`, the
+  `/graph/diagnose` stream and `flow_sdk/diagnose/share.py`.
+
 **`AskForHelpDialog`** (the renamed `VibeAssignTaskDialog`; it keeps the `vibe-assign-*` testids)
 - **Recipients:** desk chips from `help-recipients`, plus `ContactPicker`.
   - When no person is picked, the first desk is preselected.

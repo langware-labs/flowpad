@@ -628,3 +628,17 @@ async def test_a_vault_share_reports_delivered_and_validated_per_receiver(world,
     assert row["recipients"] == {"bob": "filled", "carol": "pending"}
     assert row["tests"]["bob"]["state"] == "ok" and row["expired"] is False
     assert not any("acme-gmail" in body or SECRET in body for body in hub.wire)
+
+
+async def test_a_conversation_the_hub_does_not_hold_is_never_asked_about(monkeypatch):
+    """A private help request lives only here: its card is empty, and the hub -- which would answer
+    "not found", raising a warning on every view -- is not asked."""
+    from flow_sdk.builtin.conversation import Conversation
+
+    conv = await Conversation(title="private").save()
+
+    async def no_hub(_conversation_id):
+        raise AssertionError("asked the hub about a conversation it does not hold")
+
+    monkeypatch.setattr(st, "_hub_messages", no_hub)
+    assert await st.state(conv.id) == {"incoming": [], "sent": []}

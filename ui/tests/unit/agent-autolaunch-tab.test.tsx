@@ -3,7 +3,7 @@
  * the open link and each visitor's box; an unpublished agent is told to publish first.
  */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
@@ -46,6 +46,7 @@ const PAYLOAD = {
       code_last4: 'MJHT',
       created_date: null,
       last_used_at: null,
+      it_enabled: true,
     },
     {
       node_typeid: 'compute_node-2',
@@ -60,12 +61,19 @@ const PAYLOAD = {
 };
 
 let urls: string[];
+let bodies: Record<string, unknown>[];
 beforeEach(() => {
   urls = [];
+  bodies = [];
   vi.spyOn(cloudManager, 'cloudAppUrl', 'get').mockReturnValue(HUB);
   vi.spyOn(dataManager, 'callAction').mockImplementation((info) => {
     urls.push(info.fullActionUrl);
+    bodies.push((info.bodyParameters ?? {}) as Record<string, unknown>);
     if (info.fullActionUrl.endsWith('/public_deployments')) return Promise.resolve(PAYLOAD);
+    if (info.fullActionUrl.endsWith('/it_sessions')) {
+      const body = (info.bodyParameters ?? {}) as { targets: string[]; on: boolean };
+      return Promise.resolve({ boxes: [{ node_typeid: body.targets[0], on: body.on }] });
+    }
     return Promise.resolve({ audience: 'visitor', roles: ['reader'] });
   });
 });
@@ -103,5 +111,29 @@ describe('AgentAutoLaunchTab', () => {
     expect(rows[0]).toHaveTextContent('Resume');
     expect(rows[1]).toHaveTextContent('link visitor');
     expect(rows[1]).toHaveTextContent('Pause');
+  });
+
+  it('shows each machine IT Enabled / IT Disabled as the hub reports it, and one click flips it', async () => {
+    render(tab(PUBLISHED));
+
+    const rows = await screen.findAllByTestId('agent-autolaunch-deployment');
+    expect(screen.getByTestId('it-message-send-open')).toHaveTextContent('Send IT message');
+    const enabled = rows[0].querySelector('[data-testid="it-sessions-state"]') as HTMLElement;
+    const unknown = rows[1].querySelector('[data-testid="it-sessions-state"]') as HTMLElement;
+    expect(enabled).toHaveTextContent('IT Enabled'); // reported by the hub on first load
+    expect(unknown).toHaveTextContent('IT —'); // the hub never saw it
+    expect(enabled).toHaveAttribute('aria-label', expect.stringContaining('Click to disable'));
+    expect(enabled).toHaveAttribute('data-it-enabled', 'true');
+    expect(unknown).toHaveAttribute('data-it-enabled', 'unknown');
+
+    fireEvent.click(enabled); // ONE click disables a machine that is enabled
+    await waitFor(() => expect(enabled).toHaveTextContent('IT Disabled'));
+    expect(enabled).toHaveAttribute('data-it-enabled', 'false');
+    const at = urls.findIndex((u) => u.endsWith(`/agent/${AGENT_ID}/it_sessions`));
+    expect(bodies[at]).toEqual({ targets: ['compute_node-1'], on: false });
+
+    fireEvent.click(unknown); // unknown: a click enables it
+    await waitFor(() => expect(unknown).toHaveTextContent('IT Enabled'));
+    expect(bodies[urls.lastIndexOf(urls[at])]).toEqual({ targets: ['compute_node-2'], on: true });
   });
 });

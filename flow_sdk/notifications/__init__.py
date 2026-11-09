@@ -15,6 +15,7 @@ from flow_sdk.notifications.desktop import (
 )
 from flow_sdk.notifications.desktop import (
     notify_desktop_raw as notify_desktop_raw,
+    notify_message_arrival as notify_message_arrival,
 )
 from flow_sdk.notifications.ui_command import (
     broadcast_ui_command as broadcast_ui_command,

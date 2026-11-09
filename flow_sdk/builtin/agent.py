@@ -49,6 +49,7 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec.agent_env_spec import AgentEnvEntry
 from flow_sdk.schema.data_spec.agent_spec import AgentSpec
 from flow_sdk.schema.data_spec.auto_open_spec import AutoOpenEntry
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
@@ -336,6 +337,15 @@ class Agent(Entity):
         description="What this agent needs to run anywhere: credentials, permissions, variables. Names only.",
     )
 
+    # ── env ───────────────────────────────────────────────────────────────
+    # What every deployment of the agent gets: each entry approved (``inject``) by the owner on the Env
+    # tab is placed by the hub. A secret is a name only — its value is in the agent's hub store, write-only;
+    # a plain entry carries its value here. Synced to the hub (``PUT agent/<id>/env``) on publish and save.
+    env: Optional[list[AgentEnvEntry]] = APIField(
+        default=None,
+        description="The agent's Env: variables its deployments get once approved. Secret values never here.",
+    )
+
     _api_visible: ClassVar[bool] = True
 
     # ── MCP servers ───────────────────────────────────────────────────────
@@ -348,8 +358,16 @@ class Agent(Entity):
         a scoped lookup rather than a walk.
         """
         from flow_sdk.builtin.mcp import Mcp  # noqa: PLC0415
+        from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
 
-        return await Mcp.get_all({"match": {"parent_type_id": str(self.typeid)}})
+        rows = await Mcp.get_all({"match": {"parent_type_id": str(self.typeid)}})
+        if not self.asset_ref:
+            return rows
+        # The agent's id rides in git, so another clone's rows (one deleted since) name it as
+        # parent too; only the ones inside THIS folder are its — re-saving another clone's row
+        # would write it back at that clone's path and recreate its folder.
+        home = canonical_posix_path(self.asset_ref)
+        return [m for m in rows if not m.asset_ref or is_path_under(canonical_posix_path(m.asset_ref), home)]
 
     async def resolved_mcp_specs(self) -> list["McpSpec"]:
         """This agent's servers as launch payloads, deduped by name."""
@@ -820,11 +838,13 @@ class Agent(Entity):
         the next deploy repairs the row rather than preserving a deployment that
         cannot load its files (notably ``avatar.png``).
         """
+        from flow_sdk.builtin.agent_env import sync_env_to_hub  # noqa: PLC0415
         from flow_sdk.builtin.agent_places import hub_origin  # noqa: PLC0415
 
         # Published means "in its project's hub repo"; any other origin is
         # republished into the hub repo on the next deploy.
         if self.remote and hub_origin(self) is not None and not force:
+            await sync_env_to_hub(self, if_changed=True)
             return False
 
         from flow_sdk.builtin.asset_publishing import (
@@ -840,6 +860,8 @@ class Agent(Entity):
         if project is not None:
             await project.ensure_on_hub()
         await publish_git_asset(self, actor)
+        # The Env's names, approvals and plain values reach the hub with the agent; secret values never ride.
+        await sync_env_to_hub(self)
         return True
 
     @action.post(action_name="publish")
@@ -861,6 +883,49 @@ class Agent(Entity):
         except Exception as exc:
             return ApiFailResponse(message=f"publish failed: {exc}")
         return ApiSuccessResponse(data={"agent_id": self.id, "published": published, "already_on_hub": not published})
+
+    # ── env ───────────────────────────────────────────────────────────────
+
+    @action.get(action_name="env")
+    async def env_action(self):
+        """`GET /agent/<id>/env` — the agent's Env: its entries (``agent.json``), whether each secret is
+        written and where it was placed, and what Flowpad provides. Asked of the hub when the agent is there;
+        never a secret value."""
+        from flow_sdk.builtin.agent_env import read_env  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=await read_env(self))
+
+    @action.post(action_name="save_env")
+    async def save_env_action(self):
+        """`POST /agent/<id>/save_env {entries}` — write the Env into ``agent.json`` and sync it to the hub
+        (``PUT agent/<id>/env``). A secret's value is never taken here: it goes to ``env-var``."""
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from flow_sdk.builtin.agent_env import save_env  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+        body = await self._body()
+        try:
+            return ApiSuccessResponse(data=await save_env(self, list(body.get("entries") or [])))
+        except ValidationError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        except HubError as exc:
+            return exc.fail_response("Saved here, but could not sync the agent's Env to the hub")
+
+    @action.post(action_name="env_use_mine")
+    async def env_use_mine_action(self):
+        """`POST /agent/<id>/env_use_mine {names}` — copy this computer's values for those secret entries into
+        the agent's hub store. Names come back, never a value."""
+        from flow_sdk.builtin.agent_env import use_mine  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+        body = await self._body()
+        try:
+            return ApiSuccessResponse(data=await use_mine(self, [str(n) for n in body.get("names") or []]))
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=409)
+        except HubError as exc:
+            return exc.fail_response("Could not copy the values to the hub")
 
     # ── its project ───────────────────────────────────────────────────────
 

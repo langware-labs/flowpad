@@ -1,6 +1,6 @@
-"""Ask for help is a conversation and ONE ``help_request`` message: the person's words, and as ordinary file
-attachments the diagnosis and the context they chose to share. Unshared context waits on this computer until
-Share; nobody to ask makes the conversation private.
+"""Ask for help is a conversation: the person's ``help_request`` message, written at once, then the diagnosis as
+a message of its own when the background run ends. Unshared context waits on this computer until Share; nobody
+to ask makes the conversation private -- "Diagnose & fix" -- until Report it sends it where the cause points.
 
 The hub hop is the one seam replaced (``Conversation.deliver``); capture, the diagnose runner and the message
 send are real. The diagnose is a project-style one in a temp folder.
@@ -121,49 +121,67 @@ def _ask(text: str = "my build broke", **over) -> dict:
     }
 
 
-async def test_the_request_is_one_message_carrying_its_diagnosis_and_context(hub):
+async def _settle() -> None:
+    """Wait for the background diagnoses the requests started."""
+    import asyncio
+
+    while afh._DIAGNOSING:
+        await asyncio.gather(*list(afh._DIAGNOSING))
+
+
+async def test_the_request_is_written_at_once_and_the_diagnosis_follows_as_its_own_message(hub):
     body = _ask()
 
     response = await _call(afh.ask_for_help, body)
 
-    assert response.data["shared"] is True and response.data["context_shared"] is True
-    (only,) = await _messages(body["conversation_id"])
-    assert only.kind == FlowMessageKind.HELP_REQUEST
-    files = _files(only)
-    assert {HELP_REQUEST_FILE, afh.DIAGNOSIS_FILE, "screen.value.json"} <= set(files)
-    assert json.loads(files[afh.DIAGNOSIS_FILE])["title"] == "Backend down"
-    assert json.loads(files[HELP_REQUEST_FILE])["context_shared"] is True
+    assert response.data["diagnosing"] is True and response.data["context_shared"] is True
+    (request,) = await _messages(body["conversation_id"])
+    assert request.kind == FlowMessageKind.HELP_REQUEST
+    assert afh.DIAGNOSIS_FILE not in _files(request), "the request never waits for the diagnosis"
+    assert json.loads(_files(request)[HELP_REQUEST_FILE])["diagnosing"] is True
+    hub.assert_not_awaited()
+
+    await _settle()
+
+    _request, diagnosis = await _messages(body["conversation_id"])
+    assert diagnosis.kind == FlowMessageKind.DIAGNOSIS
+    assert json.loads(_files(diagnosis)[afh.DIAGNOSIS_FILE])["title"] == "Backend down"
     hub.assert_awaited()
 
 
 @pytest.mark.parametrize(
     "body, timeout_s",
-    [("def diagnose(ctx):\n    raise RuntimeError('boom')\n", 5), ("import time\ndef diagnose(ctx):\n    time.sleep(3)\n", 0.2)],
+    [
+        ("def diagnose(ctx):\n    raise RuntimeError('boom')\n", 5),
+        ("import time\ndef diagnose(ctx):\n    time.sleep(3)\n", 0.2),
+    ],
     ids=["raises", "hangs"],
 )
-async def test_a_failing_diagnose_still_sends_the_request_with_its_baseline(diagnose_with, body, timeout_s):
+async def test_a_failing_diagnose_still_answers_its_baseline(diagnose_with, body, timeout_s):
     diagnose_with(body, timeout_s)
     ask = _ask()
 
     await _call(afh.ask_for_help, ask)
+    await _settle()
 
-    (only,) = await _messages(ask["conversation_id"])
-    assert json.loads(_files(only)[afh.DIAGNOSIS_FILE])["status"] == "partial"
+    _request, diagnosis = await _messages(ask["conversation_id"])
+    assert json.loads(_files(diagnosis)[afh.DIAGNOSIS_FILE])["status"] == "partial"
 
 
 async def test_unshared_context_stays_here_and_share_sends_it_later(hub):
     ask = _ask(share_context=False)
 
     await _call(afh.ask_for_help, ask)
+    await _settle()
 
-    (request,) = await _messages(ask["conversation_id"])
-    assert set(_files(request)) == {HELP_REQUEST_FILE}, "nothing of the context left this computer"
+    request, diagnosis = await _messages(ask["conversation_id"])
+    assert set(_files(request)) == {HELP_REQUEST_FILE} and _files(diagnosis) == {}, "nothing left this computer"
     assert afh.DIAGNOSIS_FILE in afh.held_context(ask["conversation_id"])
 
     shared = await _call(afh.help_request_share, {}, ask["conversation_id"])
 
     assert afh.DIAGNOSIS_FILE in shared.data["shared"]
-    _request, follow = await _messages(ask["conversation_id"])
+    *_, follow = await _messages(ask["conversation_id"])
     assert follow.kind == FlowMessageKind.HELP_REQUEST and afh.DIAGNOSIS_FILE in _files(follow)
     assert afh.held_context(ask["conversation_id"]) == {}
 
@@ -172,6 +190,7 @@ async def test_review_first_sends_nothing_until_share(hub):
     ask = _ask(send="review_first")
 
     response = await _call(afh.ask_for_help, ask)
+    await _settle()
 
     assert response.data["shared"] is False
     conv = await Conversation.get_one({"id": ask["conversation_id"]})
@@ -182,15 +201,93 @@ async def test_review_first_sends_nothing_until_share(hub):
 
     conv = await Conversation.get_one({"id": ask["conversation_id"]})
     assert conv.hub_bound
-    _request, follow = await _messages(ask["conversation_id"])
+    *_, follow = await _messages(ask["conversation_id"])
     assert "logs.txt" not in _files(follow), "what the person left out stays out"
     hub.assert_awaited()
+
+
+def _verdict(cause: str, asset: str = "") -> DiagnosisSpec:
+    return DiagnosisSpec(status="needs_action", title="Plan route rejects plans", cause=cause, cause_asset=asset)
+
+
+@pytest.mark.parametrize(
+    "cause, asset, adopted, desk, pass_on",
+    [
+        ("flowpad", "", None, "support-desk", ""),
+        ("unknown", "", None, "support-desk", ""),
+        ("dependency", "acme-planner", "/w/deps/acme-planner", "acme-desk", ""),
+        ("dependency", "plan-kit", None, "support-desk", "plan-kit"),
+    ],
+    ids=["flowpad", "unknown", "dependency-with-desk", "dependency-no-desk"],
+)
+async def test_diagnose_and_fix_is_private_until_report_it_sends_it_where_the_cause_points(
+    hub, monkeypatch, cause, asset, adopted, desk, pass_on
+):
+    from flow_sdk.app import helpdesk_resolver
+    from flow_sdk.app.actions import flow_message_action
+
+    monkeypatch.setattr(afh, "_diagnose", AsyncMock(return_value=(_verdict(cause, asset), None)))
+    monkeypatch.setattr(
+        flow_message_action, "_hub_default_helpdesk", AsyncMock(return_value=SimpleNamespace(project_id="support-desk"))
+    )
+    found = SimpleNamespace(queue_project_id="acme-desk", mount_path=adopted) if adopted else None
+    monkeypatch.setattr(helpdesk_resolver, "resolve_adopted_helpdesk", AsyncMock(return_value=found))
+    from flow_sdk import notifications
+
+    arrived = AsyncMock()
+    monkeypatch.setattr(notifications, "notify_message_arrival", arrived)
+    ask = _ask(
+        text="Diagnose & fix: Cloud request rejected",
+        recipients=[],
+        purpose="repair",
+        origin="warning",
+        project_id=str(uuid.uuid4()),
+    )
+
+    await _call(afh.ask_for_help, ask)
+    await _settle()
+
+    request, diagnosis = await _messages(ask["conversation_id"])
+    assert diagnosis.kind == FlowMessageKind.DIAGNOSIS and _files(diagnosis) == {}, "private: details held here"
+    hub.assert_not_awaited()
+    # The answer is a message on the Diagnosis channel; its arrival is the one notification.
+    assert (await Conversation.get_one({"id": ask["conversation_id"]})).channel == "diagnosis"
+    arrived.assert_awaited_once()
+    assert arrived.await_args.args == (ask["conversation_id"], diagnosis.id)
+
+    reported = await _call(afh.help_request_report, {}, ask["conversation_id"])
+
+    assert reported.data["pass_on"] == pass_on
+    conv = await Conversation.get_one({"id": ask["conversation_id"]})
+    assert conv.kind == "helpdesk" and conv.remote_project_id == desk and conv.hub_bound
+    assert conv.channel == "diagnosis", "reported, it stays one conversation on the Diagnosis channel"
+    *_, line = await _messages(ask["conversation_id"])
+    assert afh.DIAGNOSIS_FILE in _files(line)
+    assert json.loads(_files(line)[HELP_REQUEST_FILE])["pass_on"] == pass_on
+    assert afh.held_context(ask["conversation_id"]) == {}
+    hub.assert_awaited()
+
+
+@pytest.mark.parametrize(
+    "status, cause, reportable",
+    [
+        ("fixed", "project", False),
+        ("needs_action", "machine", False),
+        ("ok", "flowpad", False),
+        ("needs_action", "flowpad", True),
+        ("fixed", "dependency", True),
+        ("unrecognized", "unknown", True),
+    ],
+)
+def test_a_report_is_offered_only_when_someone_else_owns_the_fix(status, cause, reportable):
+    assert DiagnosisSpec(status=status, cause=cause).reportable is reportable
 
 
 async def test_nobody_to_ask_is_a_private_conversation(hub):
     ask = _ask(recipients=[])
 
     response = await _call(afh.ask_for_help, ask)
+    await _settle()
 
     assert response.data["shared"] is False
     conv = await Conversation.get_one({"id": ask["conversation_id"]})
@@ -214,8 +311,10 @@ async def test_the_same_request_sent_again_is_one_message():
 
     await _call(afh.ask_for_help, ask)
     await _call(afh.ask_for_help, ask)
+    await _settle()
 
-    assert len(await _messages(ask["conversation_id"])) == 1
+    kinds = [m.kind for m in await _messages(ask["conversation_id"])]
+    assert kinds.count(FlowMessageKind.HELP_REQUEST) == 1
 
 
 async def test_a_diagnosis_already_taken_is_attached_as_it_stands(diagnose_with):
@@ -247,7 +346,9 @@ async def test_an_unknown_diagnosis_writes_no_request():
 
 
 async def test_a_receiver_reads_the_kind_from_the_carrier_the_hub_keeps():
-    fm = FlowMessage(text="help", attachment=[Attachment(attachment_type=AttachmentType.FILE, data=f"data/{HELP_REQUEST_FILE}")])
+    fm = FlowMessage(
+        text="help", attachment=[Attachment(attachment_type=AttachmentType.FILE, data=f"data/{HELP_REQUEST_FILE}")]
+    )
 
     derive_help_request_kind(fm)
 
@@ -263,7 +364,9 @@ async def test_a_desk_and_a_person_each_get_the_request_diagnosed_once(monkeypat
         return await real(ask, recorded)
 
     monkeypatch.setattr(afh, "capture_context", counted)
-    ask = _ask(recipients=[{"kind": "desk", "desk_project_id": str(uuid.uuid4())}, {"kind": "person", "email": "dana@x.test"}])
+    ask = _ask(
+        recipients=[{"kind": "desk", "desk_project_id": str(uuid.uuid4())}, {"kind": "person", "email": "dana@x.test"}]
+    )
 
     response = await _call(afh.ask_for_help, ask)
 
@@ -273,3 +376,16 @@ async def test_a_desk_and_a_person_each_get_the_request_diagnosed_once(monkeypat
     assert people.members and str(getattr(ticket.kind, "value", ticket.kind)) == "helpdesk"
     assert len(await _messages(people.id)) == 1 and len(await _messages(ticket.id)) == 1
     assert len(runs) == 1, "one request is diagnosed once"
+
+
+def test_the_warning_learns_the_help_desk_replied_only_from_someone_elses_last_word():
+    def fm(kind, sender):
+        return SimpleNamespace(kind=kind, sender_id=sender)
+
+    def conv(*messages):
+        return list(messages)
+
+    asked = [fm("help_request", "me"), fm("diagnosis", "me"), fm("help_request", "me")]
+    assert not afh._desk_replied(conv(*asked)), "reported, nobody answered yet"
+    assert afh._desk_replied(conv(*asked, fm("user", "dana"))), "the desk answered"
+    assert not afh._desk_replied(conv(*asked, fm("user", "dana"), fm("user", "me"))), "the asker spoke last"

@@ -181,7 +181,9 @@ export function ConversationView({
       return;
     }
     try {
-      setAgentScope(await new Agent({ id: agentId }).streamInboxScope());
+      const agent = await Agent.getById(agentId);
+      if (!agent) throw new Error('agent not found');
+      setAgentScope(await agent.streamInboxScope());
     } catch {
       setAgentScope({ agent_id: agentId, source_id: null, conversation_ids: [], thread_ids: [], flow_message_ids: [] });
     }
@@ -640,7 +642,8 @@ export function ConversationView({
         prev = null;
         continue;
       }
-      const cur = { sender_id: fm.sender_id, at: Date.parse(item.timestamp) };
+      // IT replies are all written by the agent; each machine is its own sender.
+      const cur = { sender_id: fm.it_reply?.node_typeid ?? fm.sender_id, at: Date.parse(item.timestamp) };
       if (continuesGroup(prev, cur)) keys.add(item.key);
       prev = cur;
     }
@@ -954,7 +957,8 @@ export function ConversationView({
   const { canPickup, canSettle } = ticketAffordances({
     helpdesk: isHelpdeskConversation,
     cloudUserId,
-    isOwner: isConversationOwner,
+    // A ticket the hub does not hold yet was written here: I am the one who asked, not desk staff.
+    isOwner: isConversationOwner || conversation?.remote !== true,
     isParticipant,
   });
   useEffect(() => {

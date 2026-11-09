@@ -66,7 +66,7 @@ import {
 } from '@src/components/data-sources/source-attention';
 import { openSourceSetup } from '@src/components/setup-wizard/source-setup-store';
 import { useSourcePull } from '@src/components/data-sources/source-parts';
-import { channelKeyOf, ownerOf } from './channel-owner';
+import { channelKeyOf, DIAGNOSIS_CHANNEL, ownerOf } from './channel-owner';
 
 const EMPTY: DataSource[] = [];
 const NO_OFFERS: ChannelOffer[] = [];
@@ -111,9 +111,9 @@ function useBuiltInEmailOffered(agent: TypeId | null | undefined): boolean {
   useEffect(() => {
     if (!id) return;
     let live = true;
-    new Agent({ id })
-      .mailboxState()
-      .then((state) => live && setOffered(state.offered !== false))
+    Agent.getById(id)
+      .then((found) => found?.mailboxState())
+      .then((state) => live && state && setOffered(state.offered !== false))
       .catch(() => undefined);
     return () => {
       live = false;
@@ -225,6 +225,14 @@ export function AttachedChannelsBar({
           onDelete={setDeleting}
         />
       ))}
+      {/* A person's own StreamInbox also narrows to Diagnosis: Diagnose & fix and the help desk it may go to. */}
+      {owner.type !== Agent.type && (
+        <DiagnosisMark
+          filtering={filtering}
+          pressed={selected.has(DIAGNOSIS_CHANNEL)}
+          onClick={() => pick(DIAGNOSIS_CHANNEL)}
+        />
+      )}
       {offers.map((offer) => (
         <ChannelOfferMark
           key={offer.key}
@@ -345,6 +353,32 @@ function AddChannelDialog({
       initial={initial}
       variant="channel"
     />
+  );
+}
+
+/** The Diagnosis mark: no source behind it, so no listening state — it only narrows the list to the
+ *  conversations on the Diagnosis channel. Its glyph is the channel's own (``conversation_channel.DIAGNOSIS``). */
+function DiagnosisMark({ filtering, pressed, onClick }: { filtering: boolean; pressed: boolean; onClick: () => void }) {
+  const { t } = useLingui();
+  const { Base } = sourceGlyphs({ icon_name: 'Stethoscope' }, DIAGNOSIS_CHANNEL);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={pressed}
+      aria-label={t`Diagnosis — diagnoses and the help desk`}
+      title={t`Diagnosis — diagnoses and the help desk`}
+      className={cn(
+        MARK,
+        'border-border bg-background',
+        pressed && 'border-primary ring-1 ring-primary',
+        filtering && !pressed && MARK_GREYED,
+      )}
+      data-testid="attached-channel"
+      data-provider={DIAGNOSIS_CHANNEL}
+    >
+      <Base className="size-[17px]" />
+    </button>
   );
 }
 

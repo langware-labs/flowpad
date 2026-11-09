@@ -67,6 +67,11 @@ class DeployRequest(DataSpec):
     #: The agent that answers on the box (``agent-<uuid>`` or its id); absent: the project's ``main_agent``
     #: recommendation; ``""`` (given, empty): no agent.
     main_agent_id: Optional[str] = None
+    #: How the main agent answers people (the hub's private mode): ``private`` gives each person their own
+    #: machine on their first message; with it the channels it is reached on and its idle pause. Absent: shared.
+    agent_mode: Optional[Literal["shared", "private"]] = None
+    channels: Optional[list[Literal["email", "slack", "chat_api"]]] = None
+    idle_pause_seconds: Optional[int] = Field(default=None, ge=60)
 
     @field_validator("provider", mode="before")
     @classmethod
@@ -92,6 +97,11 @@ class DeployRequest(DataSpec):
     def main_agent_given(self) -> bool:
         return "main_agent_id" in self.model_fields_set
 
+    @property
+    def mode_fields(self) -> dict[str, Any]:
+        """The agent-mode fields as given, for the hub's ``deploy`` (which owns their meaning)."""
+        return self.model_dump(include={"agent_mode", "channels", "idle_pause_seconds"}, exclude_none=True)
+
 
 class DeployRunning(RuntimeError):
     """A deploy of this project is already running; a second would race it for the same placement."""
@@ -116,6 +126,8 @@ class DeployContext:
     values: Optional[dict[str, dict[str, str]]] = field(default=None, repr=False)
     source_kind: str = "commit"
     source_ref: Optional[str] = None
+    #: ``DeployRequest.mode_fields``, sent with the hub's deploy.
+    mode_fields: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -170,6 +182,7 @@ async def _plan(ctx: DeployContext) -> None:
             token_allocation=ctx.token_allocation,
             deployment_id=deployment_id,
             main_agent=ctx.agent,
+            mode_fields=ctx.mode_fields,
         )
 
     if ctx.deployment_id:
@@ -250,6 +263,7 @@ async def _start_machine(ctx: DeployContext) -> None:
             main_agent_id=_main_typeid(ctx),
             source_kind=ctx.source_kind,
             source_ref=ctx.source_ref,
+            mode_fields=ctx.mode_fields,
         )
     except HubError as exc:
         # A transport failure (the load balancer dropped the answer): the hub's push into the local row is the answer.
@@ -313,6 +327,7 @@ async def run_deployment_steps(
     values: Optional[dict[str, dict[str, str]]] = None,
     source_kind: str = "commit",
     source_ref: Optional[str] = None,
+    mode_fields: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """``DEPLOYMENT_STEPS`` under *project*'s ``deploy`` activity, each as its child — running, then done or failed
     with its error — then the activity's end. The ``inline`` steps run first, a failure raised to the caller (and
@@ -348,6 +363,7 @@ async def run_deployment_steps(
         values=values,
         source_kind=source_kind,
         source_ref=source_ref,
+        mode_fields=dict(mode_fields or {}),
     )
 
     async def run(steps: list[DeployStep]) -> None:
@@ -378,7 +394,8 @@ async def run_deployment_steps(
         root.fail(str(exc) or type(exc).__name__)
         raise
     create_detached_task(
-        run_after_the_answer([step for step in DEPLOYMENT_STEPS if not step.inline]), name=f"project-deploy:{project.id}"
+        run_after_the_answer([step for step in DEPLOYMENT_STEPS if not step.inline]),
+        name=f"project-deploy:{project.id}",
     )
     return {
         "activity": {"path": DEPLOY_ACTIVITY, "subject_entity": subject},

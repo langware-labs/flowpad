@@ -41,6 +41,7 @@ import {
   AttachmentType,
   BodyStatus,
   FlowMessageKind,
+  DIAGNOSIS_FILE,
   HELP_REQUEST_FILE,
   forwardMessage,
   isAttachmentMissing,
@@ -57,13 +58,15 @@ import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
+import { DiagnosisMessageActions } from './DiagnosisMessageActions';
 import { HelpRequestLine } from './HelpRequestLine';
+import { ItReplyLine } from './ItReplyLine';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
 import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
-import { participantLabelByUserId, UNRESOLVED_SENDER_LABEL, warnUnresolvedSender } from './participant-display';
+import { participantLabelByUserId, personName, unresolvedSenderLabel, warnUnresolvedSender } from './participant-display';
 import { useAttachments, type AttachmentTypeChipView } from './useAttachments';
 import { AttachmentDownloadWarning } from './AttachmentDownloadWarning';
 import { dockPointerForLocalFile } from './attachment-url';
@@ -469,7 +472,8 @@ export function FlowMessageBubble({
     cloudUserId: viewerCloudUserId,
     localUserId: localUser?.id ?? null,
   });
-  const creatorLabel = creatorIsLocalArtifact ? null : creator?.name?.trim() || creator?.email?.trim() || null;
+  const hasCreator = !!(creator?.name?.trim() || creator?.email?.trim());
+  const creatorLabel = !creatorIsLocalArtifact && hasCreator ? personName(creator) : null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
   // glyph on legitimate gaps (cold-load before roster fetch returns,
   // departed members, cross-instance bundle imports). Tiered chain:
@@ -490,7 +494,7 @@ export function FlowMessageBubble({
   //      confirmed loaded (rosterReady) AND none of the cushions matched.
   //      That's the "the hub roster says no, no other signal" case worth
   //      alerting on.
-  //   7b. otherwise the benign 'unknown' string (roster still loading, no
+  //   7b. otherwise a short name from the sender id (roster still loading, no
   //      sender_id at all, etc.)
   const rosterLabel = fm.sender_id ? participantLabelByUserId(participants, fm.sender_id) : null;
   const wireSenderName = fm.sender_name?.trim() || null;
@@ -511,9 +515,9 @@ export function FlowMessageBubble({
   } else if (creatorLabel) {
     displayName = creatorLabel;
   } else if (fm.sender_id && rosterReady && !isHelpdesk) {
-    displayName = UNRESOLVED_SENDER_LABEL;
+    displayName = unresolvedSenderLabel(fm.sender_id);
   } else {
-    displayName = t`unknown`;
+    displayName = personName({ user_id: fm.sender_id });
   }
 
   // When task is present, role tracks the original task initiator (sender) vs
@@ -603,6 +607,10 @@ export function FlowMessageBubble({
   // not re-derive it.
   const isHelpRequest =
     fm.kind === FlowMessageKind.HELP_REQUEST || attachmentItems.some((i) => i.filename === HELP_REQUEST_FILE);
+  // Its diagnosis, posted when the background run ends: the text is the bottom line, the details fold away.
+  const isDiagnosis =
+    !isHelpRequest &&
+    (fm.kind === FlowMessageKind.DIAGNOSIS || attachmentItems.some((i) => i.filename === DIAGNOSIS_FILE));
   // The "Download N" button must not re-count what's already surfaced without a
   // download: images shown inline above, and prompt entities (previewed in the
   // prompt row, materialized on Approve & Execute).
@@ -805,9 +813,11 @@ export function FlowMessageBubble({
           canChange={isCurrentUser && formAnswers.latest}
         />
       )}
-      {isHelpRequest && (
-        <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />
+      {fm.it_reply && (
+        <ItReplyLine reply={fm.it_reply} agentId={fm.sender_id ?? ''} conversationId={fm.conversation_id ?? ''} />
       )}
+      {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
+      {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {attachmentFooter}
       {lostChannelFiles.map((a) => (
         <p

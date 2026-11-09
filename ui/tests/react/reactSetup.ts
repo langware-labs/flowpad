@@ -171,3 +171,15 @@ beforeAll(async () => {
   if (instancePreferences.get(PrefKey.DEV_MODE) === true) instancePreferences.set(PrefKey.DEV_MODE, false);
   if (instancePreferences.get(PrefKey.VIEW_MODE) === 'dev') instancePreferences.set(PrefKey.VIEW_MODE, 'advanced');
 });
+
+// jsdom has no IntersectionObserver (the chat's recent-window sentinel uses one): an inert stub.
+if (typeof (globalThis as any).IntersectionObserver === 'undefined') {
+  (globalThis as any).IntersectionObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords() {
+      return [];
+    }
+  };
+}

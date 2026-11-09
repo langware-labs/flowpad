@@ -16,7 +16,7 @@ import { ProcessKind, type AnyEntity } from '@sdk';
 import type { APIEntity, FSRef, TypeId } from '@sdk';
 import { useEntityOps } from '@sdk/react/hooks';
 import { useDocTranslations } from '@src/components/assets/editor/translations/useDocTranslations';
-import { useDocChanges } from '@src/components/assets/editor/changes/useDocChanges';
+import { useDocCommentsLayer } from '@src/components/assets/editor/doc-comments/useDocCommentsLayer';
 import { History } from 'lucide-react';
 import { AssetCollisionProvider } from '../AssetCollisionUI';
 import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
@@ -100,7 +100,9 @@ export function PlainMarkdownAssetEditor({
   // A finished run edited the file on disk: re-read it now rather than wait for the
   // reindex to bump the entity (the editor's reload still guards unsaved edits).
   const rereadFile = useCallback(() => setExternalRevision((revision) => revision + 1), []);
-  const { changesTab, onRequestChange, changeMarks } = useDocChanges(chatTarget, docName, docFile, rereadFile);
+  // Comments on this doc — notes, agent questions, change requests — drawn in the doc
+  // after the passage each quotes; Send runs the ready ones in the doc's session.
+  const { commentsTab, onRequestChange, commentLayer } = useDocCommentsLayer(chatTarget, docName, docFile, rereadFile);
 
   const { navigation } = useDockNavigation();
   // No backing FsRecord entity (raw CLAUDE.md etc.) → no delete button. The
@@ -146,9 +148,9 @@ export function PlainMarkdownAssetEditor({
         editEntity={entity}
         headerLeading={entity ? <PublishedToggle entity={entity} /> : null}
         chatTarget={chatTarget}
-        extraSideTabs={changesTab ? [changesTab, translationsTab, runsTab] : [translationsTab, runsTab]}
+        extraSideTabs={commentsTab ? [commentsTab, translationsTab, runsTab] : [translationsTab, runsTab]}
         onRequestChange={onRequestChange}
-        changeMarks={changeMarks}
+        commentLayer={commentLayer}
         onDelete={deletable?.delete ? onDelete : undefined}
         deleteLabel={deletable?.name ?? undefined}
         reloadKey={reloadKey}

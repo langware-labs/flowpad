@@ -68,7 +68,7 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
             </li>
           ))}
         </ul>
-      ) : visible.length === 0 ? (
+      ) : visible.length === 0 && wired?.deployments.some((d) => d.agent_mode === 'private') ? null : visible.length === 0 ? (
         <span className="text-xs text-muted-foreground" data-testid="agent-places-empty">
           <Trans>Not deployed yet — it runs nowhere until you launch it.</Trans>
         </span>
@@ -162,6 +162,8 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
 
   function stateOf(place: AgentPlace): string {
     if (place.deployment.status?.provider_state === 'paused') return t`Paused`;
+    // Planned and never placed (a refused or not-yet-run deploy): no machine answers, so never "Running".
+    if (!place.is_local && place.deployment.status?.provider_state === 'planned') return t`Not started`;
     return place.is_local ? t`On` : t`Running`;
   }
 }

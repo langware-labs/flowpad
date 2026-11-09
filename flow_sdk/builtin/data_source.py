@@ -76,6 +76,16 @@ class DataSourceAmbiguous(NameAmbiguous):
     plural = "data sources"
 
 
+def _plain_text_of(html: str) -> str:
+    """The readable text of an HTML body: tags dropped, entities decoded, whitespace folded."""
+    import html as html_lib  # noqa: PLC0415
+    import re  # noqa: PLC0415
+
+    body = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html or "")
+    body = re.sub(r"(?i)<br\s*/?>|</(p|div|h[1-6]|li|tr)>", "\n", body)
+    return re.sub(r"[ \t]+", " ", html_lib.unescape(re.sub(r"<[^>]+>", " ", body))).strip()
+
+
 def _address_line(value) -> str:
     """``to`` / ``cc`` as one comma-separated line, from a string or a list."""
     if isinstance(value, (list, tuple)):
@@ -1266,7 +1276,8 @@ class DataSource(SetupSkippable, Entity):
         as a config_error the card can explain. Callers load the driver first (``DataDriver.find``).
         """
         stype = self._driver()
-        if stype is not None and stype.has_setup:
+        set_up = getattr(getattr(stype, "cls", None), "set_up_by_config", None)
+        if stype is not None and stype.has_setup and not (callable(set_up) and set_up(self.config or {})):
             self.status = SourceStatus.SETUP.value
             need = _declared_sign_in(stype)
             if need is not None and not self.setup_needs:
@@ -1519,6 +1530,9 @@ class DataSource(SetupSkippable, Entity):
             raise RuntimeError(f"{self.provider} cannot send")
         if not (text or "").strip() and not (html or "").strip():
             raise ValueError("text is required")
+        if not (text or "").strip():
+            # An HTML-only email still carries a plain part (clients without HTML, and the record's text).
+            text = _plain_text_of(html)
         extra = {k: v for k, v in (("cc", cc), ("html", html)) if v}
         outcome = await driver.send(
             self, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to, **extra

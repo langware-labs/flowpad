@@ -6,10 +6,10 @@ import { DockPointerData } from '../models/DockPointer';
 import { ConnectionManager, DataOp } from '../websocket';
 import { Callable } from '../types';
 import { ViewType } from '../utils/ui/view-types';
-import { ConversationEvents, FlowMessage, type IFlowMessage, type IMessageMark } from './flow-message';
+import { ConversationEvents, FlowMessage, type IFlowMessage, type IMessageMark, type ListedFile } from './flow-message';
 
 export interface ConversationMessage {
-  role: string;       // "sender" | "recipient" | "bot"
+  role: string; // "sender" | "recipient" | "bot"
   content: string;
   sender_id: string;
   timestamp: string;
@@ -98,6 +98,8 @@ export interface ConversationParticipant {
 export enum ConversationKind {
   DIRECT = 'direct',
   HELPDESK = 'helpdesk',
+  /** An agent owner's IT message to its deployments; the hub writes one reply per machine. */
+  IT = 'it',
 }
 
 /** Mirrors ``flow_sdk.builtin.conversation.ConversationStatus``. Only these two
@@ -110,6 +112,11 @@ export enum ConversationStatus {
 /** True when a ticket has been settled and no longer awaits an answer. */
 export function isClosedConversation(status?: ConversationStatus | string | null): boolean {
   return status === ConversationStatus.CLOSED;
+}
+
+/** True when `kind` denotes an IT conversation (an owner's IT message to its deployments). */
+export function isItKind(kind?: ConversationKind | string | null): boolean {
+  return kind === ConversationKind.IT;
 }
 
 /** True when `kind` denotes a helpdesk ticket. */
@@ -135,7 +142,9 @@ export interface IConversation extends IEntity {
   /** Display name of the sender's project (for the mapping dialog copy). */
   remote_project_name?: string | null;
   message_count?: number;
-  message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
+  /** Files attached across the conversation's messages — the StreamInbox row's paperclip. */
+  attachment_count?: number;
+  message_ids?: string | null; // JSON-encoded RawConversationPointer[]
   /** The newest message, for a row that keeps no ``message_ids`` log (the hub's). */
   latest_message_id?: string | null;
   latest_message_at?: string | Date | null;
@@ -213,6 +222,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   remote_project_id?: string | null;
   remote_project_name?: string | null;
   message_count?: number;
+  attachment_count?: number;
   message_ids?: string | null;
   latest_message_id?: string | null;
   latest_message_at?: string | Date | null;
@@ -248,6 +258,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.remote_project_id = entity.remote_project_id;
     this.remote_project_name = entity.remote_project_name;
     this.message_count = entity.message_count;
+    this.attachment_count = entity.attachment_count;
     this.message_ids = entity.message_ids;
     this.latest_message_id = entity.latest_message_id ?? null;
     this.latest_message_at = entity.latest_message_at ?? null;
@@ -304,7 +315,6 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     }
   }
 
-
   // NOTE: FE-side project chip projection moved server-side. The backend's
   // ``Entity.get_implicit_private_context_entities`` projects project_id
   // for every entity that has one; the merged ``private_context_entities``
@@ -346,7 +356,11 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     const logged = latestPointer(this.conversationMessageIds);
     if (logged || !this.latest_message_id) return logged;
     const at = this.latest_message_at;
-    return { type: FlowMessage.type, id: this.latest_message_id, ts: at instanceof Date ? at.toISOString() : (at ?? '') };
+    return {
+      type: FlowMessage.type,
+      id: this.latest_message_id,
+      ts: at instanceof Date ? at.toISOString() : (at ?? ''),
+    };
   }
 
   get conversationMessageIds(): ConversationMessagePointer[] {
@@ -443,15 +457,21 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
    * path, future arrivals) become project assets. Receiver-local — no
    * hub-reflect. Returns the per-attachment outcome buckets.
    */
+  /** The files across a conversation, newest first — one request (the `attachments` action);
+   *  the StreamInbox row's paperclip lists these, and counts them as ``attachment_count``. */
+  static async attachments(conversationId: string): Promise<ListedFile[]> {
+    const action = new ActionInfo('attachments', 'conversation', conversationId, 'GET');
+    return (await dataManager.callAction<null, ListedFile[]>(action)) ?? [];
+  }
+
   async installAttachmentsIntoProject(
     projectId: string,
   ): Promise<{ installed: string[]; skipped: string[]; failed: string[] }> {
     const action = new ActionInfo('install-attachments', this.typeId.type, this.typeId.id, 'POST');
     action.bodyParameters = { project_id: projectId };
-    const res = await dataManager.callAction<
-      unknown,
-      { installed: string[]; skipped: string[]; failed: string[] }
-    >(action);
+    const res = await dataManager.callAction<unknown, { installed: string[]; skipped: string[]; failed: string[] }>(
+      action,
+    );
     return {
       installed: res?.installed ?? [],
       skipped: res?.skipped ?? [],
@@ -478,8 +498,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     const types = Array.isArray(eventType) ? eventType : [eventType];
     // The tap feeds both MESSAGE (inbound creates) and ACK (receipt
     // updates), so install it for either subscription.
-    const needsTap =
-      types.includes(ConversationEvents.MESSAGE) || types.includes(ConversationEvents.ACK);
+    const needsTap = types.includes(ConversationEvents.MESSAGE) || types.includes(ConversationEvents.ACK);
     if (needsTap) {
       this._ensureMessageTap();
     }
@@ -546,7 +565,7 @@ export type CreateProjectConversationParams = {
    *  when none resolves — so the project follows the shared entity, not the
    *  client's active project. */
   shared_context_entities?: string[];
-}
+};
 
 export interface CreateProjectConversationResult {
   conversation_id: string;
@@ -639,10 +658,9 @@ export async function listHelpdeskTickets(
     project_id: projectId ?? '',
     desk_project_id: deskProjectId ?? '',
   };
-  const res = await dataManager.callAction<
-    { project_id: string; desk_project_id: string },
-    ListHelpdeskTicketsResult
-  >(action);
+  const res = await dataManager.callAction<{ project_id: string; desk_project_id: string }, ListHelpdeskTicketsResult>(
+    action,
+  );
   return res ?? { tickets: [], project_id: '' };
 }
 
@@ -688,7 +706,7 @@ export async function syncFromHub(): Promise<SyncFromHubResult> {
 
 export type AcceptInvitationParams = {
   invitation_id: string;
-}
+};
 
 export interface AcceptInvitationResult {
   invitation_id: string;
@@ -703,7 +721,7 @@ export interface AcceptInvitationResult {
 export type DismissConversationParams = {
   conversation_id: string;
   agent_id?: string;
-}
+};
 
 export interface DismissConversationResult {
   conversation_id: string;
@@ -713,9 +731,7 @@ export interface DismissConversationResult {
 /** Strip-only dismiss: stamps ``dismissed_at = now()`` on the conversation so
  *  the Recent strip hides it. The row auto-revives when a FlowMessage newer
  *  than the stamp arrives. Stream Inbox ignores this field. */
-export async function dismissConversation(
-  params: DismissConversationParams,
-): Promise<DismissConversationResult> {
+export async function dismissConversation(params: DismissConversationParams): Promise<DismissConversationResult> {
   const action = new ActionInfo('conversation-dismiss', null, null, 'POST');
   action.bodyParameters = params;
   const res = await dataManager.callAction<DismissConversationParams, DismissConversationResult>(action);
@@ -725,7 +741,7 @@ export async function dismissConversation(
 export type ArchiveConversationParams = {
   conversation_id: string;
   agent_id?: string;
-}
+};
 
 export interface ArchiveConversationResult {
   conversation_id: string;
@@ -742,9 +758,7 @@ export interface ArchiveAllConversationsResult {
  *  Both Stream Inbox and Recent strip hide the row when set; auto-revives when a FlowMessage
  *  newer than the stamp arrives. Per-message ``FlowMessage.is_read`` is
  *  independent and not touched. */
-export async function archiveConversation(
-  params: ArchiveConversationParams,
-): Promise<ArchiveConversationResult> {
+export async function archiveConversation(params: ArchiveConversationParams): Promise<ArchiveConversationResult> {
   const action = new ActionInfo('conversation-archive', null, null, 'POST');
   action.bodyParameters = params;
   const res = await dataManager.callAction<ArchiveConversationParams, ArchiveConversationResult>(action);
@@ -755,9 +769,7 @@ export async function archiveConversation(
  *  manual inverse of archive — the same effect the auto-revive achieves when a
  *  newer FlowMessage arrives. Local-only, like archive (the hub never sees
  *  ``archived_at``). */
-export async function unarchiveConversation(
-  params: ArchiveConversationParams,
-): Promise<ArchiveConversationResult> {
+export async function unarchiveConversation(params: ArchiveConversationParams): Promise<ArchiveConversationResult> {
   const action = new ActionInfo('conversation-unarchive', null, null, 'POST');
   action.bodyParameters = params;
   const res = await dataManager.callAction<ArchiveConversationParams, ArchiveConversationResult>(action);
@@ -804,7 +816,7 @@ export type DeleteConversationParams = {
    *    - ``local``:          purely-local conv, no hub call (rule 2)
    */
   mode: DeleteConversationMode;
-}
+};
 
 export interface DeleteConversationResult {
   id: string;
@@ -843,9 +855,7 @@ export async function leaveConversation(params: {
  * (``syncFromHub``). Keeps accept latency to ~one HTTP round-trip + one bundle
  * download.
  */
-export async function acceptInvitation(
-  params: AcceptInvitationParams,
-): Promise<AcceptInvitationResult> {
+export async function acceptInvitation(params: AcceptInvitationParams): Promise<AcceptInvitationResult> {
   const action = new ActionInfo('invitation-accept', null, null, 'POST');
   action.bodyParameters = params;
   const res = await dataManager.callAction<AcceptInvitationParams, AcceptInvitationResult>(action);

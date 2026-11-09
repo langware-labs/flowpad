@@ -163,6 +163,14 @@ class Deployment(Entity):
     #: When this placement answers from (ISO), set by the hub for a person's placement made by a message: that
     #: message is an arrival here, not history (``agent_serve.bound_at``). None: from when it was bound.
     answers_from: Optional[str] = APIField(default=None)
+    #: The hub's agent mode, kept as the hub wrote it so this machine's screens read it: ``private`` is a template
+    #: -- each person who talks to the agent gets their own placement of it, on ``channels``, paused when idle.
+    agent_mode: Literal["shared", "private"] = APIField(default="shared")
+    channels: list[str] = APIField(default_factory=list)
+    idle_pause_seconds: Optional[int] = APIField(default=None)
+    #: On a person's placement: the private template it was made from, and whose it is.
+    template_deployment_id: Optional[str] = APIField(default=None)
+    person_key: Optional[str] = APIField(default=None)
     #: The main agent's launch overrides on this box (keys: ``PLACE_OVERRIDABLE_FIELDS``).
     main_agent_overrides: dict[str, Any] = APIField(
         default_factory=dict, description="Launch overrides for the main agent on this deployment"
@@ -429,6 +437,14 @@ class Deployment(Entity):
             "secrets": [],
             "authorizations": [],
         }
+
+    async def environment_rows(self) -> dict:
+        """The effective environment of this cloud placement, as the hub has it: each name with its source
+        (``agent`` / ``deployment`` / ``flowpad``), whether it is written, and where it was placed. Names only."""
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+        data = await HubProxy.try_call("GET", self.type, self.id, action="environment")
+        return {"rows": list((data or {}).get("rows") or [])} if isinstance(data, dict) else {"rows": []}
 
     async def funding(self) -> dict | None:
         """What pays for this cloud placement's model turns (``kind``: ``allocation`` | ``default``, the
@@ -978,9 +994,8 @@ class Deployment(Entity):
     @action.post(action_name="pause")
     async def pause_action(self):
         """`POST /deployment/<id>/pause` — stop this placement's machine."""
-        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
-
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         try:
             paused = await self.pause()
@@ -1078,6 +1093,12 @@ class Deployment(Entity):
     async def secrets_action(self):
         """`GET /deployment/<id>/secrets` — what the hub holds for this cloud placement. Names only."""
         return await self._answer("secrets", self.secrets_inventory)
+
+    @action.get(action_name="environment")
+    async def environment_action(self):
+        """`GET /deployment/<id>/environment` — the effective environment the hub places on this machine:
+        inherited from the agent, overridden here, or provided by Flowpad. Names only."""
+        return await self._answer("read the environment", self.environment_rows)
 
     @action.post(action_name="authorize")
     async def authorize_action(self):

@@ -7,11 +7,12 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const sdk = vi.hoisted(() => ({ context: vi.fn(), share: vi.fn() }));
+const sdk = vi.hoisted(() => ({ context: vi.fn(), share: vi.fn(), diagnosis: vi.fn() }));
 vi.mock('@sdk', async (orig) => ({
   ...(await orig<typeof import('@sdk')>()),
-  helpRequestContext: sdk.context,
+  helpRequestHeld: sdk.context,
   helpRequestShare: sdk.share,
+  helpRequestDiagnosis: sdk.diagnosis,
 }));
 import { ContentReviewDialog } from '@src/components/conversation/asset-review/ContentReviewDialog';
 import { HelpRequestLine } from '@src/components/conversation/HelpRequestLine';
@@ -45,7 +46,8 @@ describe('ContentReviewDialog', () => {
 
 describe('HelpRequestLine', () => {
   it('offers Share for context kept here, and sends what was not left out', async () => {
-    sdk.context.mockResolvedValue(ITEMS);
+    sdk.context.mockResolvedValue({ items: ITEMS, private: false });
+    sdk.diagnosis.mockResolvedValue({ diagnosing: false });
     sdk.share.mockResolvedValue(['diagnosis.value.json', 'logs.txt']);
     render(<HelpRequestLine conversationId="c1" isMine />);
 
@@ -53,6 +55,16 @@ describe('HelpRequestLine', () => {
 
     await waitFor(() => expect(sdk.share).toHaveBeenCalledWith('c1', []));
     await waitFor(() => expect(screen.queryByTestId('help-request-not-shared')).toBeNull());
+  });
+
+  it('a private request says its context is kept here as text, with no Share — Report it is on its diagnosis', async () => {
+    sdk.context.mockResolvedValue({ items: ITEMS, private: true });
+    sdk.diagnosis.mockResolvedValue({ diagnosing: true });
+    render(<HelpRequestLine conversationId="c1" isMine />);
+
+    expect(await screen.findByText('Context not shared')).toBeInTheDocument();
+    expect(await screen.findByTestId('help-request-diagnosing')).toBeInTheDocument();
+    expect(screen.queryByTestId('help-request-share')).toBeNull();
   });
 
   it('on the helper side it only names the request', () => {

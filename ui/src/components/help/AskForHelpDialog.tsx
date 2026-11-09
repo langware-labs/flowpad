@@ -170,6 +170,8 @@ export function AskForHelpDialog({
     project_id: projectId,
     origin,
     diagnose: runDiagnosis && !diagnosisId,
+    // The diagnosis is `flow diagnose`'s agent (minutes, reads the report), not the generic quick checks.
+    purpose: 'repair',
     diagnosis_id: diagnosisId,
     share_context: shareContext,
     left_out: leftOut,
@@ -252,7 +254,10 @@ export function AskForHelpDialog({
 
           <ol className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="ask-for-help-steps">
             {steps.map((label, i) => (
-              <li key={label} className={cn('flex items-center gap-1.5', i + 1 === step && 'font-medium text-foreground')}>
+              <li
+                key={label}
+                className={cn('flex items-center gap-1.5', i + 1 === step && 'font-medium text-foreground')}
+              >
                 <span
                   className={cn(
                     'flex h-5 w-5 items-center justify-center rounded-full border text-[10px]',
@@ -485,11 +490,7 @@ export function AskForHelpDialog({
                   disabled={!!busy}
                   data-testid="vibe-assign-submit"
                 >
-                  {busy === 'when_diagnosed'
-                    ? t`Diagnosing…`
-                    : chosen.length
-                      ? t`Send once diagnosed`
-                      : t`Save`}
+                  {busy === 'when_diagnosed' ? t`Diagnosing…` : chosen.length ? t`Send once diagnosed` : t`Save`}
                 </Button>
               </span>
             )}

@@ -25,6 +25,7 @@ import { useLingui } from '@lingui/react/macro';
 import { MessageMarkChip, QuotedMessage, ReactionChips } from './ChannelMessageExtras';
 import type { IMessageReaction } from '@sdk/entities/flow-message';
 import type { WorkerType } from './conversation-session-constants';
+import { personName } from '@src/components/conversation/participant-display';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -334,7 +335,7 @@ export function MessageBubble({
   };
 
   const isBot = message.role === 'bot';
-  const displayName = isBot ? t`Claude` : senderName || t`Unknown`;
+  const displayName = isBot ? t`Claude` : personName({ name: senderName });
   const initial = (displayName.trim()[0] ?? '?').toUpperCase();
   const time = formatTime(message.timestamp);
   const ago = formatTimeAgo(message.timestamp);

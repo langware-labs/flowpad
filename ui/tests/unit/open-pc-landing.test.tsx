@@ -13,8 +13,10 @@ const { default: OpenPcLanding } = await import('@src/pages/entry/OpenPcLanding'
 const AGENT_ID = '11111111-2222-4333-8444-555555555555';
 const URL = 'https://box.example/gate?x=1';
 
-const hubError = (status: number, message: string) =>
-  Object.assign(new Error(`Request failed with status code ${status}`), { response: { status, data: { message } } });
+const hubError = (status: number, message: string, reason?: string) =>
+  Object.assign(new Error(`Request failed with status code ${status}`), {
+    response: { status, data: { message, ...(reason ? { data: { reason } } : {}) } },
+  });
 
 let assign: ReturnType<typeof vi.fn>;
 const originalLocation = window.location;
@@ -78,11 +80,18 @@ describe('OpenPcLanding', () => {
   });
 
   it.each([
-    [404, "this code doesn't work", "This code doesn't work. Check it, or ask whoever gave it to you."],
-    [409, 'all sandboxes for this agent are in use', 'All sandboxes for this agent are in use right now.'],
-    [429, 'too many tries -- try again later', 'Too many tries. Try again later.'],
-  ])('says what a %s means, and keeps the code box', async (status, message, shown) => {
-    codeMode(() => Promise.reject(hubError(status, message)));
+    [404, "this code doesn't work", undefined, "This code doesn't work. Check it, or ask whoever gave it to you."],
+    [409, 'all sandboxes for this agent are in use', 'full', 'All sandboxes for this agent are in use right now.'],
+    // Seen live: a missing repository read "all sandboxes are in use" -- the visitor waited for nothing.
+    [
+      409,
+      'the project repository is missing on the hub; publish the project again',
+      'not_ready',
+      "This agent isn't ready to open yet: the project repository is missing on the hub; publish the project again",
+    ],
+    [429, 'too many tries -- try again later', undefined, 'Too many tries. Try again later.'],
+  ])('says what a %s means, and keeps the code box', async (status, message, reason, shown) => {
+    codeMode(() => Promise.reject(hubError(status, message, reason)));
     renderPage();
     await submitCode();
 

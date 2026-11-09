@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { markdownToPlain } from '@src/components/conversation/message-markdown';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import {
@@ -44,7 +44,7 @@ import {
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
-import { EntityBatchHydrator, useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
+import { EntityBatchHydrator, useEntityBatchState } from '@src/components/entity-batch/EntityBatchHydrator';
 import { useConversationAutomationMarks } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
@@ -68,6 +68,7 @@ import { AttachedChannelsBar, ConnectChannelPrompt, useAttachedChannels } from '
 import { ChannelAttentionBar } from './ChannelAttentionBar';
 import {
   attentionAmong,
+  BUILT_IN_CHANNELS,
   channelKeyOf,
   channelsOwnerFor,
   type ConversationScope,
@@ -94,6 +95,8 @@ import { InviteStateChip } from '@src/components/conversation/InviteCard';
 import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { RowActions } from '@src/components/conversation/RowActions';
 import { attachmentSummary } from '@src/components/conversation/useAttachments';
+import { ConversationAttachmentsButton } from './ConversationAttachmentsButton';
+import { personName } from '@src/components/conversation/participant-display';
 
 /** Row actions on this machine's own state (read marks, archive): the hub page offers none. */
 const PER_MACHINE_ROW_ACTIONS = new Set(['toggle-read', 'archive', 'unarchive']);
@@ -213,7 +216,7 @@ interface ConversationListRowProps {
    *  whether to show the "No conversations" empty state. */
   onVisibilityChange: (convId: string, visible: boolean) => void;
   /** Set while the list is narrowed to some channels: does this message's source pass? */
-  channelMatch?: (message: FlowMessage) => boolean;
+  channelMatch?: (message: FlowMessage, conversation: Conversation) => boolean;
   /** Set while a header column filter is engaged. */
   columnFilter?: ColumnFilter;
   /** The list resolves attribution once and hands each row its answer. */
@@ -222,14 +225,19 @@ interface ConversationListRowProps {
     originLocal?: FlowMessage['origin_local'],
     channelSpec?: Conversation['channel_spec'],
   ) => ChannelAttribution | null;
-  refSetter: (el: HTMLDivElement | null) => void;
+  refSetter: (convId: string, el: HTMLDivElement | null) => void;
   agentId?: string;
   /** A host that shows the conversation itself (a source's page): where a row opens. Still URL-first — the host
    *  navigates. Omitted: the conversation view, scoped to `agentId`. */
   onOpenConversation?: (conversationId: string) => void;
 }
 
-export function ConversationListRow({
+/**
+ * Memoized, so a list re-render (a filter keystroke, a row reporting its visibility, a message
+ * batch landing) repaints only the rows whose own props moved: the StreamInbox re-rendered ~12 times
+ * while opening and every row rendered with it (500 row renders for 100 rows).
+ */
+export const ConversationListRow = memo(function ConversationListRow({
   conv,
   isFocused,
   onArchive,
@@ -249,6 +257,13 @@ export function ConversationListRow({
   onOpenConversation,
   automationMark,
 }: ConversationListRowProps) {
+  const rowId = conv.id;
+  const rowRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (rowId) refSetter(rowId, el);
+    },
+    [rowId, refSetter],
+  );
   const { navigation } = useDockNavigation();
   const desktopStreamInbox = !isHubOnly();
 
@@ -305,7 +320,17 @@ export function ConversationListRow({
   // the message the desk source delivered still names which desk the row belongs to.
   const deskMsg = [latestMessage, firstMessage].find((m) => m?.origin?.kind === 'helpdesk');
   const attributed = deskMsg ?? latestMessage;
-  const attribution = attributionFor(attributed?.origin, attributed?.origin_local, conv.channel_spec);
+  // A thread the hub writes (a Chat API exchange) carries no per-message origin: the conversation's channel names it.
+  // The asker's own ticket is not: a Diagnosis reported to a help desk reads as the help desk (its kind chip),
+  // not as the channel it started on.
+  const asksTicket = facets.kind === 'helpdesk' && facets.ticket?.perspective === 'requester' && !deskMsg;
+  const attribution = asksTicket
+    ? null
+    : attributed?.origin?.kind
+    ? attributionFor(attributed.origin, attributed.origin_local, conv.channel_spec)
+    : conv.channel
+      ? attributionFor({ kind: conv.channel, namespace: '', key: '', url: null }, null, conv.channel_spec)
+      : null;
   // Alias kept so the existing invitation-row rendering reads cleanly below.
   const isInvitationRow = facets.isInvitation;
 
@@ -336,12 +361,12 @@ export function ConversationListRow({
   let isHidden = inLoadingState;
   // The channel filter narrows on the latest message's source; a row whose
   // message is not loaded yet cannot claim a channel, so it waits hidden.
-  if (!isHidden && channelMatch) isHidden = !latestMessage || !channelMatch(latestMessage);
+  if (!isHidden && channelMatch) isHidden = !latestMessage || !channelMatch(latestMessage, conv);
 
   // Gmail-style sender column: comma-joined names of everyone who has
   // participated in the thread, with the latest sender first so the most
   // recent author is the lead name. Deduped case-insensitively.
-  // Falls back to ``Unknown`` when neither the latest message nor any
+  // Falls back to the viewer's own name, then ``No members``, when neither the latest message nor any
   // participant has a name; invitation rows always render the canonical
   // ``Invitation`` placeholder so the violet mail-plus icon reads cleanly.
   // MUST run before the `isHidden` early return so the hook order stays
@@ -374,14 +399,21 @@ export function ConversationListRow({
       for (const p of conv.members ?? []) {
         const email = (p?.email || '').trim().toLowerCase();
         pushName(
-          p?.name || (p?.email ? p.email.split('@')[0] : ''),
+          personName(p),
           isViewer(p?.user_id, viewer) || (!!myEmail && email === myEmail),
         );
       }
     }
     const names = [...others, ...own];
-    return names.length > 0 ? names : [t`Unknown`];
+    if (names.length > 0) return names;
+    // A conversation only the viewer is in (a private Diagnosis, a note to self) is theirs: name them, as the
+    // conversation itself does, rather than "Unknown".
+    const selfName = currentUser?.name || cloudUser?.name;
+    const self = selfName || myEmail ? personName({ name: selfName, email: myEmail }) : '';
+    return [self || t`No members`];
   }, [
+    currentUser?.name,
+    cloudUser?.name,
     isInvitationRow,
     firstMessage,
     latestMessage,
@@ -433,6 +465,7 @@ export function ConversationListRow({
   if (isHidden) return null;
 
   const count = pointers.length || conv.message_count || 0;
+  const fileCount = conv.attachment_count ?? 0;
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
   const isUnread = facets.isUnread;
@@ -475,7 +508,7 @@ export function ConversationListRow({
 
   return (
     <div
-      ref={refSetter}
+      ref={rowRef}
       data-testid="stream-inbox-conversation-row"
       data-conversation-id={conv.id ?? ''}
       data-focused={isFocused ? 'true' : 'false'}
@@ -516,6 +549,9 @@ export function ConversationListRow({
         {!isInvitationRow && count > 1 && (
           <span className="ms-1 shrink-0 font-normal text-muted-foreground">({count})</span>
         )}
+        {!isInvitationRow && convId && fileCount > 0 && (
+          <ConversationAttachmentsButton conversationId={convId} count={fileCount} />
+        )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="stream-inbox-row-subject-line">
         {/* Channel conversations carry exactly one compact source chip; hub
@@ -554,11 +590,17 @@ export function ConversationListRow({
         {latestMessage?.invite && (
           <InviteStateChip state={latestMessage.invite.state} resolvedAt={latestMessage.invite.resolved_at} className="me-1" />
         )}
-        <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
+        {/* dir="auto" isolates each part: an RTL subject + RTL snippet would otherwise
+            merge into one RTL run that pushes the subject past the truncated edge. */}
+        <span dir="auto" className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>
+          {subject}
+        </span>
         {snippet && (
           <>
             <span className="mx-1 text-muted-foreground">—</span>
-            <span className="text-muted-foreground">{snippet}</span>
+            <span dir="auto" className="text-muted-foreground">
+              {snippet}
+            </span>
           </>
         )}
       </span>
@@ -585,6 +627,13 @@ export function ConversationListRow({
       />
     </div>
   );
+});
+
+/** A callback whose identity never changes and that always calls the latest `fn`. */
+function useStableCallback<A extends unknown[]>(fn: (...args: A) => unknown): (...args: A) => void {
+  const latest = useRef(fn);
+  latest.current = fn;
+  return useCallback((...args: A) => void latest.current(...args), []);
 }
 
 const columnInputClass =
@@ -700,7 +749,9 @@ export function StreamInboxView({
   const channelMatch = useMemo(
     () =>
       channelFilter.size
-        ? (m: FlowMessage) => {
+        ? (m: FlowMessage, conv: Conversation) => {
+            // A built-in channel (Diagnosis) is the conversation's own; a source's is its message's.
+            if (conv.channel && channelFilter.has(conv.channel)) return true;
             const source = sourceForOrigin(ownerChannels, m.origin, m.origin_local);
             return !!source && channelFilter.has(channelKeyOf(source));
           }
@@ -827,11 +878,14 @@ export function StreamInboxView({
         : [],
     [ownerChannels, channelFilter],
   );
-  const pickedKey = [...pickedSources].sort().join(','); // a refreshed channel list with the same picks keeps the scope
+  const pickedChannels = useMemo(() => BUILT_IN_CHANNELS.filter((c) => channelFilter.has(c)), [channelFilter]);
+  // a refreshed channel list with the same picks keeps the scope
+  const pickedKey = [...pickedSources].sort().join(',') + '|' + pickedChannels.join(',');
   const scope = useMemo<ConversationScope | null>(() => {
     if (sourceId) return { sourceId };
     if (!channelsOwner) return null;
-    return pickedSources.length ? { owner: channelsOwner, sourceIds: pickedSources } : { owner: channelsOwner };
+    if (!pickedSources.length && !pickedChannels.length) return { owner: channelsOwner };
+    return { owner: channelsOwner, sourceIds: pickedSources, channels: pickedChannels };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's and the picks' string forms
   }, [ownerKey, sourceId, pickedKey]);
   const request = useMemo(() => {
@@ -877,7 +931,15 @@ export function StreamInboxView({
   // The same batch also yields the messages here, to discover which first-messages
   // carry an invitation context — those ids drive a SECOND batch ``$IN`` so the
   // per-row ``useEntity<Invitation>`` also resolves from cache instead of one GET each.
-  const batchedMessages = useEntityBatch<FlowMessage>(FlowMessage.type, flowMessageIds);
+  const { data: batchedMessages, settled: messagesSettled } = useEntityBatchState<FlowMessage>(
+    FlowMessage.type,
+    flowMessageIds,
+  );
+  // The rows mount once their messages are in the cache: a row stays hidden until its latest
+  // message resolves anyway, and mounting before the batch rendered every row twice more as its
+  // first and latest messages arrived. Latched, so a later batch (a new message) never unmounts them.
+  const rowsReady = useRef(false);
+  if (messagesSettled && !initialLoading) rowsReady.current = true;
   // The sessions automations started on the visible conversations' messages — one query, the newest per row.
   const conversationIds = useMemo(() => sorted.map((c) => c.id ?? '').filter(Boolean), [sorted]);
   const automationMarks = useConversationAutomationMarks(conversationIds);
@@ -955,6 +1017,15 @@ export function StreamInboxView({
     },
     [agentId, refetch],
   );
+
+  // The rows get callbacks that never change: an inline arrow per render was a new prop on every
+  // row, so the memoized row re-rendered anyway.
+  const rowArchive = useStableCallback(handleArchive);
+  const rowUnarchive = useStableCallback(handleUnarchive);
+  const rowToggleRead = useStableCallback(handleToggleRead);
+  const setRowRef = useCallback((convId: string, el: HTMLDivElement | null) => {
+    rowRefs.current.set(convId, el);
+  }, []);
 
   const handleMarkAllRead = useCallback(async () => {
     // No optimistic zero: the backend reconciles StreamInboxManager.unread after the
@@ -1650,14 +1721,15 @@ export function StreamInboxView({
             for them instead of each firing a GET (see EntityBatchHydrator). */}
         <EntityBatchHydrator type={Invitation.type} ids={invitationIds} />
         {!initialLoading &&
+          rowsReady.current &&
           sorted.map((conv) => (
             <ConversationListRow
               key={conv.id ?? ''}
               conv={conv}
               isFocused={false}
-              onArchive={(convId) => void handleArchive(convId)}
-              onUnarchive={(convId) => void handleUnarchive(convId)}
-              onToggleRead={(messageId, isRead) => void handleToggleRead(messageId, isRead)}
+              onArchive={rowArchive}
+              onUnarchive={rowUnarchive}
+              onToggleRead={rowToggleRead}
               selected={!!conv.id && selectedIds.has(conv.id)}
               onToggleSelect={toggleSelect}
               selectMode={selectedCount > 0}
@@ -1667,9 +1739,7 @@ export function StreamInboxView({
               channelMatch={channelMatch}
               columnFilter={columnFilterActive ? columnFilter : undefined}
               attributionFor={attributionFor}
-              refSetter={(el) => {
-                if (conv.id) rowRefs.current.set(conv.id, el);
-              }}
+              refSetter={setRowRef}
               agentId={agentId}
               onOpenConversation={onOpenConversation}
               automationMark={conv.id ? automationMarks.get(conv.id) : undefined}

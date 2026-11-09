@@ -36,6 +36,20 @@ class DiagnosisStatus(StrEnum):
     PARTIAL = "partial"
 
 
+class DiagnosisCause(StrEnum):
+    """Whose problem it is -- decides whether a report is offered, and to whom."""
+
+    FLOWPAD = "flowpad"  # Flowpad itself
+    DEPENDENCY = "dependency"  # an external asset: a flow.json dependency, a package, a library
+    PROJECT = "project"  # the person's own project files
+    MACHINE = "machine"  # this computer: a port taken by another app, a full disk
+    UNKNOWN = "unknown"  # could not tell
+
+
+#: Causes a report is offered for: someone else owns the fix.
+REPORTABLE_CAUSES = frozenset({DiagnosisCause.FLOWPAD, DiagnosisCause.DEPENDENCY, DiagnosisCause.UNKNOWN})
+
+
 class DiagnoseSpec(DataSpec):
     """``diagnose.json`` -- a diagnose: which module to call and how long it may take."""
 
@@ -149,6 +163,9 @@ class DiagnosisSpec(DataSpec):
     spec_kind: ClassVar[str] = "diagnosis"
 
     status: DiagnosisStatus = DiagnosisStatus.INFORMATIONAL
+    #: Whose problem it is; ``cause_asset`` names the dependency when it is one.
+    cause: DiagnosisCause = DiagnosisCause.UNKNOWN
+    cause_asset: str = ""
     title: str = ""
     summary: str = ""
     symptoms: str = ""
@@ -165,3 +182,10 @@ class DiagnosisSpec(DataSpec):
     errors: list[str] = Field(default_factory=list)
     started_at: str = ""
     elapsed_ms: int = 0
+
+    @property
+    def reportable(self) -> bool:
+        """Something is wrong and someone else owns the fix -- offer to report it."""
+        if self.status in (DiagnosisStatus.OK, DiagnosisStatus.INFORMATIONAL):
+            return False
+        return self.cause in REPORTABLE_CAUSES

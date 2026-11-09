@@ -1983,6 +1983,7 @@ def setup_desktop_filesystem() -> None:
     default_prefs = {
         "preferences.general.show_system_skills": True,
         "preferences.general.default_terminal": "builtin_xterm",
+        "preferences.general.it_sessions": False,
         "preferences.terminal.buffer_sync_updates": False,
         "preferences.notifications.sound_enabled": False,
         "preferences.notifications.sound_key": "supershort-ping",

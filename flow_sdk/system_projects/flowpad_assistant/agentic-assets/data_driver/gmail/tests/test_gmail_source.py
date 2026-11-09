@@ -531,3 +531,15 @@ async def test_the_forward_read_is_unchanged_by_backward_paging(gmail):
     assert [call for call in gmail.calls if call[0] == "SEARCH"] == [("SEARCH", None, "UID 2:*")]
     assert [item.origin.key for item in page.items] == ["<b1@x>"]
     assert page.resume_cursor == GmailSource.resume_at("44", 2)
+
+
+async def test_mail_in_a_charset_python_does_not_know_still_syncs(gmail):
+    # Hebrew mail often declares iso-8859-8-i, which Python has no codec for.
+    hebrew = (b"From: Dana <dana@example.com>\r\nTo: captain@gmail.com\r\nSubject: Shalom\r\n"
+              b"Message-ID: <hebrew@gmail.test>\r\nDate: Tue, 2 Sep 2025 12:00:00 +0000\r\n"
+              b'Content-Type: text/plain; charset="iso-8859-8-i"\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'
+              + "שלום".encode("iso-8859-8"))
+    gmail.deliver(_raw(), "1", uid=7)
+    gmail.deliver(hebrew, "2", uid=8)
+    result = await DataDriver.loaded("gmail").traverse(_row(), _view(cursor=GmailSource.resume_at("44", 6)))
+    assert sorted(item.body.strip() for item in result.items) == ["The treasure is under the mast.", "שלום"]

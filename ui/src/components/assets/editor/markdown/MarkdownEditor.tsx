@@ -3,7 +3,7 @@ import { ViewerChatSlot } from '../ViewerChatToggle';
 import type { Editor as MilkdownEditorInstance } from '@milkdown/core';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { EditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
-import { MilkdownEditor, type RequestChangeOpts, type RequestedChange } from '@src/components/milkdown-editor/MilkdownEditor';
+import { MilkdownEditor, type CommentLayer, type RequestChangeOpts, type RequestedChange } from '@src/components/milkdown-editor/MilkdownEditor';
 import type { ChangeMark } from '@src/components/milkdown-editor/plugins/change-marks';
 import { ReviewSurface } from '@src/components/assets/editor/markdown/ReviewSurface';
 import { Button } from '@src/components/ui/button';
@@ -47,7 +47,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AssetCollisionBadge, useAssetCollisionSideTab } from '../AssetCollisionUI';
 import { useNestedHost } from '../nested-host';
-import { pointerForResult, resolveSmartLink, type SmartLinkAnswer } from './smart-link';
+import { pointerForResult, pointerForAppLink, resolveSmartLink, type SmartLinkAnswer } from './smart-link';
 import { LinkSuggestDialog } from './LinkSuggestDialog';
 
 export const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
@@ -122,6 +122,8 @@ interface MarkdownEditorProps {
   onRequestChange?: (change: RequestedChange, opts?: RequestChangeOpts) => void;
   /** Queued change requests to mark on the text. */
   changeMarks?: readonly ChangeMark[];
+  /** The doc's comment threads, drawn after the passages they quote. */
+  commentLayer?: CommentLayer;
   /** When true, the "Learning" view-mode chip appears in the header strip. */
   showLearningMode?: boolean;
   /** Body rendered when viewMode === 'learning'. Required when showLearningMode is true. */
@@ -196,6 +198,7 @@ export function MarkdownEditor({
   extraSideTabs,
   onRequestChange,
   changeMarks,
+  commentLayer,
   showLearningMode,
   learningPanel,
   onDelete,
@@ -218,6 +221,7 @@ export function MarkdownEditor({
       extraSideTabs={extraSideTabs}
       onRequestChange={onRequestChange}
       changeMarks={changeMarks}
+      commentLayer={commentLayer}
       showLearningMode={showLearningMode}
       learningPanel={learningPanel}
       onDelete={onDelete}
@@ -278,6 +282,7 @@ function MarkdownEditorContent({
   extraSideTabs,
   onRequestChange,
   changeMarks,
+  commentLayer,
   showLearningMode,
   learningPanel,
   onDelete,
@@ -298,6 +303,7 @@ function MarkdownEditorContent({
   extraSideTabs?: ExtraSideTab[];
   onRequestChange?: MarkdownEditorProps['onRequestChange'];
   changeMarks?: MarkdownEditorProps['changeMarks'];
+  commentLayer?: MarkdownEditorProps['commentLayer'];
   showLearningMode?: boolean;
   learningPanel?: React.ReactNode;
   onDelete?: MarkdownEditorProps['onDelete'];
@@ -590,6 +596,12 @@ function MarkdownEditorContent({
         return;
       }
 
+      const appPointer = pointerForAppLink(href);
+      if (appPointer) {
+        navigation.openDock(appPointer);
+        return;
+      }
+
       // Nested in another editor the page pointer names the PARENT (e.g. `agent`), not this doc.
       const assetType = nested ? 'markdown' : (currentDock?.pointer?.split('/')?.[1] ?? 'claude_memory');
       if (href.startsWith('/')) {
@@ -731,6 +743,7 @@ function MarkdownEditorContent({
       content={body}
       onRequestChange={onRequestChange}
       changeMarks={changeMarks}
+      commentLayer={commentLayer}
       onChange={handleBodyChange}
       onUserEdit={markEntityEdited}
       onLinkClick={handleLinkClick}

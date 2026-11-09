@@ -30,12 +30,15 @@ export function raiseActivityErrors(root: ActivityProgressSpec): void {
   for (const { step, error } of collect(root, [])) {
     const what = step === root ? '' : `${activityWord(step.label || step.name)} `;
     const subject = error.ref ? `${what}${basename(error.ref)}` : what.trim() || job;
+    // Keyed by the job's name, not its run: the same failure from the next run counts up on the
+    // entry it already has instead of adding a copy.
     notify({
-      id: `activity:${root.activity_id}:${step.path}:${error.ref ?? error.message}`,
+      id: `activity:${root.name}:${step.path}:${error.ref ?? error.message}`,
       level: 'error',
       title: i18n._(msg`${job} failed: ${subject}`),
       message: error.message,
       durationMs: null,
+      logOnly: true,
     });
   }
 }
