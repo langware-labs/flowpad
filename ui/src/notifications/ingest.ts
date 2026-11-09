@@ -316,12 +316,16 @@ function onFlowMessageOp(typeId: TypeId, _op: unknown, data: IEntity | undefined
   const open: NotificationAction[] = fm.conversation_id
     ? [{ label: t`Open`, href: DockPointer.forConversation(fm.conversation_id).toUrl() }]
     : [];
+  const retry: NotificationAction[] = fm.conversation_id
+    ? [{ label: t`Retry`, command: 'message.resend', args: { conversationId: fm.conversation_id } }]
+    : [];
   notify({
     id: `delivery:${key}`,
     level: failure.kind === 'signed_out' || failure.kind === 'offline' ? 'warning' : 'error',
     title: failure.kind === 'signed_out' ? t`Saved — it will send after you sign in` : t`Not sent yet`,
     message: failure.message,
-    actions: failure.kind === 'signed_out' ? [{ label: t`Sign in`, command: 'cloud.signin' }, ...open] : open,
+    actions:
+      failure.kind === 'signed_out' ? [{ label: t`Sign in`, command: 'cloud.signin' }, ...open] : [...retry, ...open],
     forceToast: true,
   });
 }

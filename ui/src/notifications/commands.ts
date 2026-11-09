@@ -1,12 +1,14 @@
 import { t } from '@lingui/core/macro';
 import {
   oauthService,
+  resendConversation,
   OAUTH_PROVIDERS,
   AgenticProcess,
   dataContext,
   snifferManager,
   tabManager,
 } from '@sdk';
+import { errorMessage } from '@src/lib/error-message';
 import { gitResolvePrompt } from '@src/lib/git-resolve-prompt';
 import { notify } from './notify';
 import { settleAsk } from './pending-asks';
@@ -56,6 +58,14 @@ export function runAction(action: NotificationAction, id: string, extra?: Comman
 // `Sign in` on the expired-cloud-sign-in toast: relaunch the cloud OAuth flow.
 registerCommand('cloud.signin', () => {
   void oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+});
+
+// `Retry` on the "Not sent yet" toast: deliver what the conversation still owes the hub.
+registerCommand('message.resend', (args, ctx) => {
+  notify.dismiss(ctx.id);
+  void resendConversation(String(args.conversationId)).catch((e: unknown) => {
+    notify.error({ title: t`Could not send`, message: errorMessage(e, '') });
+  });
 });
 
 registerCommand('terminal.terminate', (args) => {
