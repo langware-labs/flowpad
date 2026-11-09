@@ -7621,7 +7621,7 @@ class AgenticProcess(Entity):
     # ── Timeout handling ──────────────────────────────────────────────────────
 
     async def _on_timeout(self) -> None:
-        """Called when API_TIMEOUT is detected (no LLM response for 30s after user prompt).
+        """Called when API_TIMEOUT is detected (no transcript line for API_TIMEOUT_SECONDS after the last prompt).
 
         Invisible processes: kills the worker (SIGTERM → SIGKILL) so they don't
         linger consuming resources. The JSONL will eventually go stale → INACTIVE.

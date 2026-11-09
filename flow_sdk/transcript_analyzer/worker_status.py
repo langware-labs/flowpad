@@ -635,6 +635,12 @@ def tail_status_detail(path: "str | _Path") -> StatusDetail | None:
     return None
 
 
+# A prompt or tool result with nothing after it for this long reads as API_TIMEOUT. Claude writes a
+# streamed reply to the JSONL only when it ends, so minutes of silence are normal mid-turn (a reply
+# launching 15 agents ran 2m13s silent); a real hang ends in Claude's own api_error line first.
+API_TIMEOUT_SECONDS = 600
+
+
 def _tail_status(path: "str | _Path") -> WorkerStatus:
     """Derive WorkerStatus from the tail of a JSONL transcript.
 
@@ -802,7 +808,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     if last_type == "progress":
         return WorkerStatus.TOOL_RUNNING
     if last_type == "user":
-        if last_user_ts and (_time.time() - last_user_ts) > 90:
+        if last_user_ts and (_time.time() - last_user_ts) > API_TIMEOUT_SECONDS:
             return WorkerStatus.API_TIMEOUT
         return WorkerStatus.WORKING
 
