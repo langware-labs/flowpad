@@ -1840,12 +1840,16 @@ class DataSource(SetupSkippable, Entity):
         tree (what its driver needs — a connection, credential values — then its stages, or Verify). The
         questions come to the app; answers at once with the run's address, which a screen claims."""
         from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
+        from flow_sdk.core.wizard.first_run import FirstRunPending  # noqa: PLC0415
 
         project = await self.setup_project()
         if project is None:
             return ApiFailResponse(message=NO_SETUP_PROJECT, status_code=409)
         # The app's Connect button signs the person in; the run only checks a connection (``connect_here``).
-        run = await start_setup(project, root=str(self.typeid), connect_here=False)
+        try:
+            run = await start_setup(project, root=str(self.typeid), connect_here=False)
+        except FirstRunPending as exc:
+            return ApiFailResponse(message=str(exc), status_code=412, data={"error_code": exc.code})
         return ApiSuccessResponse(data={"run": run})
 
     @core_action.get(action_name="setup-run")

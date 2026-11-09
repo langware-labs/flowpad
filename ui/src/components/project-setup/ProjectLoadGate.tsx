@@ -12,6 +12,7 @@ import { useSetupFix } from './use-setup-fix';
 import { SetupTreeView } from './SetupTreeView';
 import { useProjectLoad } from './use-project-load';
 import { useProjectLoadStore } from './project-load-store';
+import { FIRST_RUN_BLOCK, useFirstRunAwaited } from '@src/components/setup-incomplete/first-run-gate';
 
 /** The route has already selected identity. Operational work starts after the tab mounts. */
 export function ProjectLoadGate({
@@ -68,11 +69,16 @@ export function ProjectLoadGate({
   // A question on screen means the run waits on the person: no spinner, and say so.
   // Otherwise working = a load in flight or a setup run going.
   const waiting = !!lifecycle.questionId;
+  // Its setup held for first-run setup: the wizard is in front of the person, or was left unfinished.
+  const firstRunAwaited = useFirstRunAwaited();
+  const heldForFirstRun = result?.blocked === FIRST_RUN_BLOCK;
   // A refused load is an answer, not work in progress: no spinner over it.
   const refused = !!lifecycle.error && !lifecycle.starting;
   const busy = !waiting && !refused && (lifecycle.starting || !result || result.state === 'running');
   const status = waiting ? (
     <Trans>Waiting for your answer</Trans>
+  ) : heldForFirstRun && firstRunAwaited ? (
+    <Trans>Waiting for Flowpad's setup to finish</Trans>
   ) : refused ? (
     <Trans>This could not be opened</Trans>
   ) : busy ? (
@@ -157,7 +163,12 @@ export function ProjectLoadGate({
             <Trans>Set up</Trans>
           </Button>
         )}
-        {fix.show && <SetupFailureActions fix={fix} busy={lifecycle.starting} onCancel={() => void navigate(-1)} />}
+        {heldForFirstRun && !firstRunAwaited && !lifecycle.starting && (
+          <Button className="self-start" onClick={() => void load(true)} data-testid="project-load-finish-first-run">
+            <Trans>Finish setting up Flowpad</Trans>
+          </Button>
+        )}
+        {fix.show && !heldForFirstRun && <SetupFailureActions fix={fix} busy={lifecycle.starting} onCancel={() => void navigate(-1)} />}
       </div>
     </div>
   );

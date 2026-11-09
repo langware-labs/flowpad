@@ -51,6 +51,7 @@ import { PrimaryContentProvider } from '@sdk/react/primary-content';
 import { AddAssetDialogRoot } from '@src/components/install/AddAssetDialog';
 import { AskModalRoot } from '@src/components/ask/AskModal';
 import { WizardPopupRoot } from '@src/components/assets/editor/wizard/WizardPopupRoot';
+import { FirstRunGateRoot } from '@src/components/setup-incomplete/first-run-gate';
 import { UiActionRoot } from '@src/navigation/UiActionRoot';
 
 // Bootstrap-error UX is handled by the router's root `errorElement`
@@ -164,6 +165,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <AskModalRoot />
         {/* A popup wizard (first-run setup) shown over the current page, which stays as it was. */}
         <WizardPopupRoot />
+        {/* A project setup held for first-run setup carries on once that wizard is all green. */}
+        <FirstRunGateRoot />
         <GlobalEvents />
         {/* One-click install from the hub lands here — desktop only (it writes files). */}
         {!isHubOnly() && <AddAssetDialogRoot />}

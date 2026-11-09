@@ -13,6 +13,16 @@ with **Set up** and **Not now**. Not now leaves the requirement intact; it is no
 Explicit approval runs setup and then Load. Later Open calls repeat the checks and restore
 a stopped runtime without repeating satisfied installation steps.
 
+**First-run setup comes first.** No setup run starts (`start_setup`, whoever asks) until the
+first-run wizard (`llm-setup`) last ended with every step green
+(`flow_sdk/core/wizard/first_run.py`). Until then a setup call answers 412
+`error_code: first_run_setup`, and an approved Load answers `failed` with
+`blocked: first_run_setup`. The app shows the wizard, and the setup continues by itself once it
+is all green. If the wizard is closed before that, nothing starts. Starting what is already set
+up (Load's `load` phase) is never held. The gate is open on a test backend
+(`FLOWPAD_SKIP_FIRST_RUN_SETUP`), on a box the hub launched, and where the wizard is not
+shipped or is disabled.
+
 The question lists the provider's first-level steps as the check found them, so a person
 sees what **Set up** would do before anything runs. Its count is of the rows shown. If the
 result behind an open question is forgotten (below), the screen asks again with an

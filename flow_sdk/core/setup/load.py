@@ -199,6 +199,7 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
     from flow_sdk.builtin.project_setup import start_setup
     from flow_sdk.core.setup.derive import ProjectTree
     from flow_sdk.core.setup.execute import execute_setup
+    from flow_sdk.core.wizard.first_run import FirstRunPending
 
     pid = str(project.id)
     target = str(asset.typeid) if asset is not None else ""
@@ -274,9 +275,12 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                     # nobody has given yet, an app beside it) is its own item and never holds this one.
                     run = await start_setup(project, root=target, tree=tree if needs_setup else operational,
                                             load_after=needs_setup, providers=providers,
-                                            dependency_approval=approved, ancestors=(*ancestors, pid))
+                                            dependency_approval=approved, ancestors=(*ancestors, pid),
+                                            load_only=not needs_setup)
                     result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=run,
                                         phase="setup" if needs_setup else "load")
+        except FirstRunPending as exc:
+            result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc), blocked=exc.code)
         except Exception as exc:
             logger.warning("load of project %s failed: %s", pid, exc, exc_info=True)
             result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc))
