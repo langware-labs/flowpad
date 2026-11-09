@@ -224,8 +224,8 @@ class AssetFolder(DataSpec):
                                         break
                                     issue(candidate, f"Missing asset main document: {info.shape.main}")
                                     break
-                    except PermissionError:
-                        pass
+                    except PermissionError as error:
+                        log.info("asset scan: skipping unreadable folder %s: %s", candidate, error)
                 except (OSError, ValueError) as error:
                     issue(candidate, str(error))
                     asset = None
