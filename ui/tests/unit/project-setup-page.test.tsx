@@ -17,6 +17,11 @@ vi.mock('@src/components/credentials/use-credentials', () => ({
   useCredentials: () => ({ status: { credentials: [] }, templates: [], ready: true, refresh: vi.fn() }),
 }));
 vi.mock('@src/components/ask/AskForm', () => ({ AskForm: () => <div data-testid="ask-form" /> }));
+// The first-run wizard is not part of this page's tests: it has come and gone.
+vi.mock('@src/components/setup-incomplete/first-run-gate', () => ({
+  useFirstRunFirst: () => true,
+  pastFirstRun: (call: () => unknown) => call(),
+}));
 vi.mock('@src/components/ask/ask-claims', () => ({
   claimAskRun: () => () => {},
   openQuestionOf: async () => null,

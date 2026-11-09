@@ -21,6 +21,7 @@ import { rowId, rowKey, stepKind } from './setup-labels';
 import { countDrawn, stateGlyph } from './SetupTreeView';
 import { useSetupReadiness, withNotify } from './use-setup-readiness';
 import { useSetupRun } from './use-setup-run';
+import { useFirstRunFirst } from '@src/components/setup-incomplete/first-run-gate';
 
 /**
  * The project's setup as a page (Project Home ☰ → Project setup): every step with how it stands here, Edit and
@@ -169,6 +170,16 @@ export function ProjectSetupPage({ projectId, projectName }: { projectId: string
   const lastRun = whole?.finished_at ? new Date(whole.finished_at) : null;
   const lastRunWords = whole ? LAST_RUN[whole.state] : undefined;
   const lastRunState = lastRunWords ? i18n._(lastRunWords) : (whole?.state ?? '');
+  // First-run setup comes first: this page shows once the first-run wizard's window is closed.
+  const firstRunDone = useFirstRunFirst(true);
+
+  if (!firstRunDone)
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="project-setup-first-run">
+        <Loader2 className="size-4 animate-spin" />
+        <Trans>Waiting for Flowpad's setup</Trans>
+      </div>
+    );
 
   return (
     <div className="flex flex-col gap-6" data-testid="project-setup-page">

@@ -1,56 +1,53 @@
 import { isOk } from '@sdk';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 
 import { openWizardPopup, useWizardPopupStore } from '@src/components/assets/editor/wizard/wizard-popup-store';
 import { describeApiError } from '@src/lib/error-message';
 
 import { findSetupWizard } from './open-setup-wizard';
-import { useFirstRunWizard } from './use-first-run-wizard';
 
 /**
  * First-run setup before project setup (FLOWPAD-2249).
  *
- * The backend holds every project setup run until the first-run wizard's last run ended with every
- * step green (`flow_sdk/core/wizard/first_run.py`): a setup call answers 412 `first_run_setup`, a
- * load answers `blocked: 'first_run_setup'`. The screen that asked does not show that as an error —
- * it calls {@link whenFirstRunDone}, which puts the wizard in front of the person and resolves once
- * it is all green, and then asks again. So the person meets the wizard first, and the project's setup
- * carries on by itself after it.
+ * Before a project's setup appears, the first-run wizard does — unless its last run ended all green.
+ * {@link firstRunFirst} puts it in front of the person and resolves once its window is closed, finished
+ * or not; then the project's setup is shown. It is shown again before the next project setup while it
+ * is not green.
  *
- * Closing the wizard short of all green resolves `false`: the setup does not start, and the screen
- * says why (the backend's refusal). There is no way round it — the gate is the backend's.
+ * The backend keeps the same order for every caller (`flow_sdk/core/wizard/first_run.py`): until the
+ * wizard is green or its window was closed, a setup call answers 412 `first_run_setup` and a load
+ * answers `blocked: 'first_run_setup'`. A screen that meets that refusal shows the wizard, then asks again.
  */
 export const FIRST_RUN_BLOCK = 'first_run_setup';
 
-/** Whether a setup call was refused because first-run setup has not ended all green. */
+/** Whether a setup call was refused because first-run setup comes first. */
 export const blockedByFirstRun = (error: unknown): boolean => describeApiError(error).code === FIRST_RUN_BLOCK;
 
-type Settle = (done: boolean) => void;
+type Settle = (shown: boolean) => void;
 const useGate = create<{ waiting: Settle[] }>(() => ({ waiting: [] }));
 
-/** Whether a project setup is waiting on first-run setup right now. */
+/** Whether a project setup is waiting on the first-run wizard right now. */
 export const useFirstRunAwaited = (): boolean => useGate((s) => s.waiting.length > 0);
 
-function settle(done: boolean): void {
+function settle(shown: boolean): void {
   const { waiting } = useGate.getState();
   useGate.setState({ waiting: [] });
-  for (const resolve of waiting) resolve(done);
+  for (const resolve of waiting) resolve(shown);
 }
 
 /**
- * Show the first-run wizard and resolve once its run ended all green (`true`), or once the person
- * left it short of that (`false`). Several screens waiting share the one wizard on screen.
+ * Show the first-run wizard unless it is all green, and resolve once its window is closed: `true` when
+ * it was shown, `false` when there was nothing to show. Several screens waiting share the one wizard.
  */
-export function whenFirstRunDone(): Promise<boolean> {
+export function firstRunFirst(): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     const first = useGate.getState().waiting.length === 0;
     useGate.setState((s) => ({ waiting: [...s.waiting, resolve] }));
     if (!first) return;
     void findSetupWizard()
       .then(async (setup) => {
-        // Not shipped here, the backend holds nothing for it: nothing to wait on.
-        if (!setup) return settle(true);
+        if (!setup || isOk(setup.run_state?.result)) return settle(false);
         // A run already going (the first-run trigger's) is shown as it is, never restarted.
         if (!useWizardPopupStore.getState().open) await setup.open();
         openWizardPopup(setup.typeId.toString());
@@ -59,48 +56,62 @@ export function whenFirstRunDone(): Promise<boolean> {
   });
 }
 
+/** Tells the backend the wizard's window was closed — project setup may go ahead — then settles. */
+function closed(): void {
+  void findSetupWizard()
+    .then((setup) => setup?.closed())
+    .catch(() => {
+      // Not recorded: the backend then refuses the setup, and the screen says why.
+    })
+    .finally(() => settle(true));
+}
+
 /**
- * Settles the screens waiting in {@link whenFirstRunDone}, from the wizard's own watched record.
+ * Settles the screens waiting in {@link firstRunFirst} once the wizard's window is closed.
  * Mounted once at the app root, beside the wizard popup.
  */
 export function FirstRunGateRoot() {
   const awaited = useFirstRunAwaited();
-  const { wizard, live } = useFirstRunWizard();
   const popupOpen = useWizardPopupStore((s) => s.open);
-  const result = wizard?.run_state?.result;
-  const runId = result?.invocation_id ?? '';
-  // Until the wizard has been on screen (or running) for this wait, a closed popup is one that has
-  // not opened yet — not one the person closed.
+  // Until the wizard has been on screen for this wait, a closed popup is one that has not opened yet.
   const seen = useRef(false);
-  // Green counts only once a run happened in this wait (it went live, or its record changed): the
-  // backend said "not green", so a green this screen still holds from before is stale, not an answer.
-  const ran = useRef(false);
-  const startedOn = useRef<string | null>(null);
   useEffect(() => {
-    if (!awaited) {
-      seen.current = ran.current = false;
-      startedOn.current = null;
-      return;
+    if (!awaited) seen.current = false;
+    else if (popupOpen) seen.current = true;
+    else if (seen.current) {
+      seen.current = false;
+      closed();
     }
-    startedOn.current ??= runId;
-    if (live || runId !== startedOn.current) ran.current = true;
-    if (ran.current && !live && isOk(result)) return settle(true);
-    if (popupOpen || live) seen.current = true;
-    else if (seen.current) settle(false);
-  }, [awaited, result, runId, popupOpen, live]);
+  }, [awaited, popupOpen]);
   return null;
 }
 
+/** Whether a project setup screen that is `active` may show: the first-run wizard came first. */
+export function useFirstRunFirst(active: boolean): boolean {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    setReady(false);
+    if (!active) return undefined;
+    let live = true;
+    void firstRunFirst().then(() => {
+      if (live) setReady(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [active]);
+  return ready;
+}
+
 /**
- * `call` (a setup start), asked again once first-run setup is all green when the backend held it for
- * that — once: a second refusal is the answer. Left short of all green, the refusal is thrown as it
- * came, so the screen says why nothing started.
+ * `call` (a setup start), asked again after the first-run wizard when the backend held it for that —
+ * once: a second refusal is the answer, thrown as it came so the screen says why nothing started.
  */
 export async function pastFirstRun<T>(call: () => Promise<T>): Promise<T> {
   try {
     return await call();
   } catch (error) {
-    if (!blockedByFirstRun(error) || !(await whenFirstRunDone())) throw error;
+    if (!blockedByFirstRun(error) || !(await firstRunFirst())) throw error;
     return await call();
   }
 }

@@ -1,4 +1,4 @@
-"""FLOWPAD-2249: project setup starts only once first-run setup has ended with every step green."""
+"""FLOWPAD-2249: project setup starts only once the first-run wizard ended all green or its window was closed."""
 
 from types import SimpleNamespace
 
@@ -17,6 +17,7 @@ def first_run_wizard(monkeypatch):
     """A shipped, enabled first-run wizard whose last result the test sets."""
     monkeypatch.delenv(SKIP_FIRST_RUN_SETUP_ENV, raising=False)
     monkeypatch.setattr(runtime, "get_assigned_runtime", lambda: None)
+    monkeypatch.setattr(first_run, "_closed", False)
     wizard = SimpleNamespace(id="w1", enabled=True, spec=lambda: SimpleNamespace(enabled=True))
 
     async def by_name(name, **_):
@@ -41,6 +42,13 @@ def first_run_wizard(monkeypatch):
 async def test_setup_waits_for_an_all_green_first_run(first_run_wizard, result, done):
     first_run_wizard["result"] = result
     assert await first_run.first_run_done() is done
+
+
+async def test_closing_the_wizard_lets_setup_through(first_run_wizard):
+    """Closed short of green (a step declined, or never started), the person saw it and chose: setup goes ahead."""
+    first_run_wizard["result"] = WizardResult.refused("node: the person declined the install")
+    first_run.mark_closed()
+    assert await first_run.first_run_done()
 
 
 async def test_start_setup_is_refused_before_first_run_and_load_only_is_not_setup(first_run_wizard, monkeypatch):

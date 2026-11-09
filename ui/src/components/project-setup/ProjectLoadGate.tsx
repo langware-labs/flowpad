@@ -69,7 +69,7 @@ export function ProjectLoadGate({
   // A question on screen means the run waits on the person: no spinner, and say so.
   // Otherwise working = a load in flight or a setup run going.
   const waiting = !!lifecycle.questionId;
-  // Its setup held for first-run setup: the wizard is in front of the person, or was left unfinished.
+  // First-run setup comes first: its wizard is in front of the person, or the backend still holds the setup.
   const firstRunAwaited = useFirstRunAwaited();
   const heldForFirstRun = result?.blocked === FIRST_RUN_BLOCK;
   // A refused load is an answer, not work in progress: no spinner over it.
@@ -77,8 +77,8 @@ export function ProjectLoadGate({
   const busy = !waiting && !refused && (lifecycle.starting || !result || result.state === 'running');
   const status = waiting ? (
     <Trans>Waiting for your answer</Trans>
-  ) : heldForFirstRun && firstRunAwaited ? (
-    <Trans>Waiting for Flowpad's setup to finish</Trans>
+  ) : firstRunAwaited ? (
+    <Trans>Waiting for Flowpad's setup</Trans>
   ) : refused ? (
     <Trans>This could not be opened</Trans>
   ) : busy ? (
@@ -164,8 +164,8 @@ export function ProjectLoadGate({
           </Button>
         )}
         {heldForFirstRun && !firstRunAwaited && !lifecycle.starting && (
-          <Button className="self-start" onClick={() => void load(true)} data-testid="project-load-finish-first-run">
-            <Trans>Finish setting up Flowpad</Trans>
+          <Button className="self-start" onClick={() => void load()} data-testid="project-load-finish-first-run">
+            <Trans>Open Flowpad's setup</Trans>
           </Button>
         )}
         {fix.show && !heldForFirstRun && <SetupFailureActions fix={fix} busy={lifecycle.starting} onCancel={() => void navigate(-1)} />}

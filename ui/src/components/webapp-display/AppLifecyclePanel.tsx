@@ -8,7 +8,7 @@ import { Button } from '@src/components/ui/button';
 import { SetupTreeView } from '@src/components/project-setup/SetupTreeView';
 import { Step } from '@src/components/project-setup/Step';
 import { webappAsset } from '@src/components/project-setup/use-project-load';
-import { FIRST_RUN_BLOCK, useFirstRunAwaited, whenFirstRunDone } from '@src/components/setup-incomplete/first-run-gate';
+import { FIRST_RUN_BLOCK, firstRunFirst, useFirstRunAwaited } from '@src/components/setup-incomplete/first-run-gate';
 import type { AppLifecycle } from './useAppLifecycle';
 
 /**
@@ -111,13 +111,14 @@ export function AppLifecyclePanel({ lifecycle }: { lifecycle: AppLifecycle }) {
 
 /**
  * Its setup held for first-run setup: the wizard is put in front of the person at once, and the app comes up
- * again by itself once that is all green. Left short of it, the button asks again.
+ * by itself once its window is closed. The button shows the wizard again.
  */
 function HeldForFirstRun({ lifecycle }: { lifecycle: AppLifecycle }) {
   const awaited = useFirstRunAwaited();
   const { fixIt } = lifecycle;
   const finish = useCallback(async () => {
-    if (await whenFirstRunDone()) await fixIt();
+    await firstRunFirst();
+    await fixIt();
   }, [fixIt]);
   const asked = useRef(false);
   useEffect(() => {
@@ -129,14 +130,14 @@ function HeldForFirstRun({ lifecycle }: { lifecycle: AppLifecycle }) {
     <Screen state="first_run_setup">
       <h2 className="flex items-center gap-2 text-lg font-semibold">
         {awaited ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
-        {awaited ? <Trans>Waiting for Flowpad's setup to finish</Trans> : <Trans>Finish setting up Flowpad first</Trans>}
+        {awaited ? <Trans>Waiting for Flowpad's setup</Trans> : <Trans>Flowpad's setup comes first</Trans>}
       </h2>
       <p className="text-sm text-muted-foreground">
-        <Trans>This app is set up once Flowpad's own setup is done, so the tools it needs are in place.</Trans>
+        <Trans>This app is set up after Flowpad's own setup window, so the tools it needs are in place.</Trans>
       </p>
       {!awaited && (
         <Button className="self-start" data-testid="app-lifecycle-finish-first-run" onClick={() => void finish()}>
-          <Trans>Finish setting up Flowpad</Trans>
+          <Trans>Open Flowpad's setup</Trans>
         </Button>
       )}
     </Screen>
