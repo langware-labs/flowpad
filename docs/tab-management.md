@@ -297,7 +297,7 @@ The pieces, each at the right layer:
 
 The headless **`TabManager`** (`ts_sdk/src/tabs/tab-manager.ts`) is the single
 client store: it holds the global visible-tab list from `Tab.listAll()` and
-refreshes on the `tabs_changed` ping. Pure membership, topology, ordering, and
+refreshes on the `tabs_changed` ping. A `new_tab` or `set_name` caller that re-reads the list itself passes `pingCaller: false`, and the backend leaves its window out of that ping. Pure membership, topology, ordering, and
 selection projections live beside it in `ts_sdk/src/tabs/`. There is NO reactive
 entity query and NO second (project-scoped) store.
 
@@ -380,11 +380,11 @@ the radix `<Tabs>` ladder are deleted. Agent stream focus is URL-first:
 click → navigation.openDock(pointer)              # click handlers do ONLY this
       → react-router loader runs
       → setupTab(dock)                            # UI content coordinator
-           → tabManager.ensureDock(dock)          # materialize membership
+           → tabManager.ensureDock(dock)          # materialize membership, then re-read the list
            → route setup (loadShellRoute, loadProjectRoute, ...)
            → opened OR open_failed
-           → backend broadcasts tabs_changed
-      → TabManager refreshes → strip + body re-render from the one source
+           → other windows refresh on the tabs_changed ping
+      → strip + body re-render from the one source
 ```
 
 Default-tab pick (pointer-less `/dock/shell`, recovery): the loaders read a
