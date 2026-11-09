@@ -1,13 +1,18 @@
-import { config } from '@sdk';
+import { hubModeReady, isHubOnly } from '@sdk';
 const GOOGLE_TAG_MANAGER_ID = 'GTM-WHLSBH6Q';
 const GTM_SCRIPT_URL = 'https://www.googletagmanager.com/gtm.js';
 
 /**
+ * Measure analytics on hub UI only and not on vite dev server.
+ */
+export function measured(): boolean {
+  return isHubOnly() && !import.meta.env.DEV;
+}
+
+/**
  * Inject the GTM container, once per page.
  *
- * No environment gate of its own: the caller decides whether this page is measured.
- * The page-wide call below measures PRODUCTION builds; the hub's `/launch` page opts
- * in on its own (`launch-analytics.ts`), because the hub serves the desktop build.
+ * No gate of its own: the page-wide call below decides whether this page is measured.
  * The DOM check, not a module flag, is the guard — this module is also a separate
  * `index.html` entry, and a second copy of it must not load the container twice.
  */
@@ -24,5 +29,7 @@ export function injectGoogleTagManager(): void {
   else document.head.appendChild(script);
 }
 
-// Only load Google Tag Manager page-wide in the production environment.
-if (config.DEPLOY_ENV === 'PRODUCTION') injectGoogleTagManager();
+// Load Google Tag Manager page-wide on the hub. Hub mode is unknown until bootstrap answers.
+void hubModeReady().then(() => {
+  if (measured()) injectGoogleTagManager();
+});

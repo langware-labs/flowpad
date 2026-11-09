@@ -1,7 +1,5 @@
-import { isHubOnly } from '@src/navigation/hub-runtime';
 import type { Step } from '@src/hooks/use-sandboxes';
 import { trackEvent } from '@src/utils/analytics';
-import { injectGoogleTagManager } from '@src/utils/google-tag-manager';
 import { useEffect, useRef } from 'react';
 
 /**
@@ -89,14 +87,6 @@ function seconds(ms: number): number {
   return Math.round(ms / 100) / 10;
 }
 
-/**
- * Measured on the hub only, and never from a dev server: the hub serves the desktop build, so
- * the page-wide PRODUCTION gate never loads GTM there. A dev server forcing hub mode would
- * otherwise write test traffic into the production property.
- */
-function measured(): boolean {
-  return isHubOnly() && !import.meta.env.DEV;
-}
 
 export class LaunchTracker {
   private stage: LaunchStage = 'landing';
@@ -232,8 +222,8 @@ export class LaunchTracker {
 }
 
 /**
- * The tracker for one `/launch?agent=` page: loads the container when this page is measured,
- * reports `launch_view` once, and `launch_abandon` on `pagehide`.
+ * The tracker for one `/launch?agent=` page: reports `launch_view` once, and `launch_abandon` on
+ * `pagehide`. The container itself is loaded page-wide on the hub (`google-tag-manager.ts`).
  *
  * `pagehide`, not `visibilitychange`: a setup runs for minutes, and switching tabs while it does
  * is waiting, not quitting. GA4 sends with the beacon transport, which survives the unload.
@@ -244,7 +234,6 @@ export function useLaunchTracker(agentId: string | undefined, signedIn: boolean)
   const tracker = ref.current;
 
   useEffect(() => {
-    if (measured()) injectGoogleTagManager();
     tracker.view(signedIn);
     const onHide = () => tracker.abandon();
     window.addEventListener('pagehide', onHide);

@@ -47,14 +47,17 @@ export async function loadHomePage(args: LoaderArgs) {
   await initSdk(params);
   t.time('initSdk');
 
+  const url = new URL(args.request.url);
+
   // Hub page has no desktop home. When the served backend serves only the hub
   // (no `desk`), the index route lands on the hub home instead of HomeLanding.
+  // The query comes along: the login callback lands on `/?signup` or `/?login`,
+  // and App reads that param for analytics after this redirect.
   if (isHubOnly()) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect('/dock/hub/home');
+    throw redirect(`/dock/hub/home${url.search}`);
   }
 
-  const url = new URL(args.request.url);
   const dock = DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`);
 
   const workspaceEntry = await workspaceEntryDock(dock);

@@ -1,6 +1,7 @@
 import '@src/styles/highlightjs.css';
 import { useAsyncSdkInit } from '@src/hooks/use-async-sdk-init';
 import { trackEvent } from '@src/utils/analytics';
+import { trackSignUpWhenConsented, watchConsentForHeldSignUp } from '@src/utils/pending-signup';
 import { config, dataContext, navigator } from '@sdk';
 import { useLocation } from 'react-router';
 import { useAuth, useGlobalEvents } from '@sdk/react/hooks';
@@ -130,11 +131,19 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
       }
     }
 
+    // A sign-up happens once, on a first load where the cookie banner is usually unanswered.
+    if (eventName === 'sign_up') {
+      trackSignUpWhenConsented();
+      return;
+    }
+
     trackEvent({
       user_id: user?.id ?? null,
       event: eventName,
     });
   }, [someone, user]);
+
+  useEffect(() => watchConsentForHeldSignUp(), []);
 
   return (
     <QueryClientProvider client={queryClient}>
