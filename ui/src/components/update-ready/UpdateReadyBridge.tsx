@@ -30,7 +30,7 @@ export function UpdateReadyBridge() {
         id: UPDATE_READY_TOAST_ID,
         title: t`Update Ready`,
         message: t`A new FlowPad update has been downloaded and is ready to install.`,
-        icon: 'Download',
+        icon: 'CircleArrowDown', // a served lucide icon (flow_sdk/server/icons/lucide) — the top-bar pill's glyph
         durationMs: UPDATE_READY_TOAST_MS,
         actions: [
           { label: t`Restart`, command: 'update.restart' },
