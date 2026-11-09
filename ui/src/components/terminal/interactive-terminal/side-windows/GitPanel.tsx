@@ -1,6 +1,6 @@
 import { i18n } from '@lingui/core';
 import { msg, t } from '@lingui/core/macro';
-import { AgenticProcess, GitWorkdir, type GitRevision, type GitStatus, type GitStatusFile } from '@sdk';
+import { AgenticProcess, GitWorkdir, shellQuote, type GitRevision, type GitStatus, type GitStatusFile } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useGitPush } from '@src/hooks/use-git-push';
 import {
@@ -272,8 +272,8 @@ const HeaderChip: React.FC<{ title?: string; testId?: string; className?: string
 function reviewPrompt(commit?: string, file?: string): string {
   if (file)
     return commit
-      ? `Review the changes to ${file} in commit ${commit} (git show ${commit} -- ${file}).`
-      : `Review the uncommitted changes to ${file} (git diff HEAD -- ${file}).`;
+      ? `Review the changes to ${file} in commit ${commit} (git show ${commit} -- ${shellQuote(file)}).`
+      : `Review the uncommitted changes to ${file} (git diff HEAD -- ${shellQuote(file)}).`;
   return commit
     ? `Review the changes in commit ${commit} (git show ${commit}).`
     : 'Review the uncommitted changes in this repo, staged and unstaged (git diff HEAD).';
@@ -289,7 +289,12 @@ const ReviewInWorker: React.FC<{ workdir: string; commit?: string; file?: string
   const launch = useCallback(
     async (workerType: WorkerType) => {
       try {
-        await AgenticProcess.launch({ workerType, workdir, launchPrompt: reviewPrompt(commit, file), enableAssistant: true });
+        await AgenticProcess.launch({
+          workerType,
+          workdir,
+          launchPrompt: reviewPrompt(commit, file),
+          enableAssistant: true,
+        });
         onLaunched?.();
       } catch (err) {
         console.error('[GitPanel] review launch failed', err);
@@ -654,9 +659,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
     ),
   }));
   const SortArrow = ({ by }: { by: 'insertions' | 'deletions' }) =>
-    sort?.by === by ? (
-      sort.dir === 'desc' ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />
-    ) : null;
+    sort?.by === by ? sort.dir === 'desc' ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" /> : null;
 
   // Line totals across every file, so the chips answer "how big is this
   // change" and not just "how many files". Binary files carry null counts and

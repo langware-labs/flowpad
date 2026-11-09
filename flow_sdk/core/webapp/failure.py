@@ -26,7 +26,7 @@ _VARYING: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bport \d{2,5}\b", re.I), "port <n>"),
     (re.compile(r"\bpid \d+\b", re.I), "pid <n>"),
     (re.compile(r"\(exit -?\d+\)"), "(exit <n>)"),
-    (re.compile(r"— log: \S+"), "— log: <log>"),
+    (re.compile(r"— log: .+$", re.M), "— log: <log>"),  # a log path may hold spaces
     (re.compile(r"\(log: [^)]+\)"), "(log: <log>)"),
     (re.compile(r"\s+"), " "),
 ]

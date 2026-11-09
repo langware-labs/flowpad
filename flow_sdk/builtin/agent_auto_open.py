@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -165,7 +166,8 @@ async def _tab_name(tab: AutoOpenTab) -> str | None:
 def auto_open_commands(tabs: list[AutoOpenTab]) -> list[str]:
     """The ``flow show`` that reopens each opened tab — what the worker is told
     (``auto_open_prompt_block``), kept on the session as ``context_data.auto_open``."""
-    return [f"flow show file {tab.path}" if tab.path is not None else f"flow show view {tab.address}"
+    # Quoted: the worker runs these verbatim, and a box workspace is "Flowpad workspace".
+    return [f"flow show file {shlex.quote(str(tab.path))}" if tab.path is not None else f"flow show view {shlex.quote(str(tab.address))}"
             for tab in tabs]
 
 
