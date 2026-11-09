@@ -1,5 +1,6 @@
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { EntityEnv, EnvVarType } from '../models/env_var';
 import { ExpressionNode, QueryFilter, QueryRequest } from '../FlowSync/query';
 import type { CloudDeployProvider } from './agent';
 import type { IEntity, EntityMerge } from '../IEntity';
@@ -470,6 +471,23 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   async secretsInventory(): Promise<DeploymentSecretsInventory> {
     const data = await this.get<Partial<DeploymentSecretsInventory> | null>('secrets');
     return { secrets: data?.secrets ?? [], authorizations: data?.authorizations ?? [] };
+  }
+
+  /** This deployment's own store on the hub (`deployment/<id>/env-var`): values that override the project's. */
+  private overrideStore(): EntityEnv {
+    return new EntityEnv(new TypeId(this.getType(), this.id), { hubReflect: true });
+  }
+
+  /** Override the project's value for `name` on this deployment only — write-only. `exists`: it already overrides. */
+  async setOverride(name: string, value: string, exists: boolean): Promise<void> {
+    const store = this.overrideStore();
+    if (exists) await store.update(name, { value, var_type: EnvVarType.API_KEY });
+    else await store.create({ name, value, var_type: EnvVarType.API_KEY });
+  }
+
+  /** Forget this deployment's own value for `name`: the project's value applies again. */
+  async resetToProject(name: string): Promise<void> {
+    await this.overrideStore().delete(name);
   }
 
   /** Let this placement's machine use your `provider` connection: it asks the hub for a fresh token

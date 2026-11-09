@@ -33,6 +33,9 @@ import { AgentAssistantSkillsField } from './AgentAssistantSkillsField';
 import { AgentModelSizeField } from './AgentModelSizeField';
 import { AgentVisibilitySection } from './AgentVisibilitySection';
 import { AgentAutoLaunchTab } from './AgentAutoLaunchTab';
+import { AgentEnvTab } from './AgentEnvTab';
+import { undeclaredCount } from './project-secrets';
+import { useAgentSecrets } from './use-agent-secrets';
 import { useAgentMcpSync } from './use-agent-mcp-sync';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import type { AgentDocumentPatch } from './agent-fields';
@@ -72,6 +75,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const { t } = useLingui();
   const hub = isHubOnly();
   const { launch, busyId } = useAgentLauncher();
+  // Held here so the Env tab's badge counts what the project does not declare before the tab is opened.
+  const secrets = useAgentSecrets(agent);
+  const undeclared = undeclaredCount(secrets.rows ?? []);
 
   const agentRef = useRef(agent);
   agentRef.current = agent;
@@ -439,6 +445,14 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   <Trans>Auto-launch</Trans>
                 </TabsTrigger>
               )}
+              <TabsTrigger value="env" data-testid="agent-tab-env">
+                <Trans>Env</Trans>
+                {undeclared > 0 && (
+                  <span className="ms-1.5 text-amber-500" data-testid="agent-tab-env-issues">
+                    ⚠ {undeclared}
+                  </span>
+                )}
+              </TabsTrigger>
             </TabsList>
             <TabsContent
               value="instructions"
@@ -754,6 +768,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 <AgentAutoLaunchTab agent={agent} version={version} />
               </TabsContent>
             )}
+            <TabsContent value="env" className="mt-3">
+              <AgentEnvTab agent={agent} secrets={secrets} />
+            </TabsContent>
           </Tabs>
         </section>
       </div>
