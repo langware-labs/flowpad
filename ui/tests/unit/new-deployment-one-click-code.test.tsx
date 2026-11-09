@@ -72,13 +72,26 @@ describe('NewDeploymentWizard — one-click invite code', () => {
     fireEvent.click(tile);
 
     expect(await screen.findByTestId('one-click-code-value')).toHaveTextContent('ABCD-EFGH');
-    expect(calls.find((c) => c.url.endsWith('/add_public_codes'))?.body).toEqual({ count: 1 });
+    expect(calls.find((c) => c.url.endsWith('/add_public_codes'))?.body).toEqual({ count: 1, machine_size: 'sm' });
     expect(screen.getByTestId('one-click-copy')).toBeInTheDocument();
     expect(screen.getByText(/8 of 8 machines left/)).toBeInTheDocument();
 
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
     fireEvent.click(screen.getByTestId('one-click-open-machine'));
     expect(open).toHaveBeenCalledWith(`${HUB}/open-pc/${AGENT_ID}#code=ABCD-EFGH`, '_blank', 'noopener');
+  });
+
+  it('opens the code on the size picked on the tile', async () => {
+    render(wizard());
+    const tile = await screen.findByTestId('new-deployment-kind-code');
+    await waitFor(() => expect(tile).toHaveTextContent('Get an invite code'));
+    fireEvent.click(screen.getByTestId('invite-size-md'));
+    expect(screen.getByTestId('invite-size-line')).toHaveTextContent('2 CPU · 4 GB');
+    fireEvent.click(tile);
+
+    await screen.findByTestId('one-click-code-value');
+    expect(calls.find((c) => c.url.endsWith('/add_public_codes'))?.body).toEqual({ count: 1, machine_size: 'md' });
+    expect(screen.getByTestId('one-click-size')).toHaveTextContent('Machine: Medium · 2 CPU · 4 GB');
   });
 
   it('saves the typed name on Done and opens the invite deployment', async () => {
@@ -105,7 +118,7 @@ describe('NewDeploymentWizard — one-click invite code', () => {
     fireEvent.click(screen.getByTestId('new-deployment-next'));
 
     expect(await screen.findByTestId('one-click-code-value')).toHaveTextContent('ABCD-EFGH');
-    expect(calls.find((c) => c.url.endsWith('/add_public_codes'))?.body).toEqual({ count: 1 });
+    expect(calls.find((c) => c.url.endsWith('/add_public_codes'))?.body).toEqual({ count: 1, machine_size: 'sm' });
   });
 
   it('a refused read shows the refusal, never the first-time setup', async () => {

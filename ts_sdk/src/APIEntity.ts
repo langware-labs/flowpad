@@ -554,6 +554,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       throw new Error(`Permissions not expanded on entity ${this.getType()}, can not check action permissions`);
     }
     const allowed = (this.expand?.allowed_actions ?? []) as string[];
+    // `*`: the desktop backend's answer for an item's owner -- every action.
+    if (allowed.includes('*')) return true;
     // An owner's expansion names a type's own actions type-qualified (`llm_endpoint.allocate`),
     // an admin's plain (`allocate`): either answers yes.
     return allowed.includes(action) || allowed.includes(`${this.getType()}.${action}`);

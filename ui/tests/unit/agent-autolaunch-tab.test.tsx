@@ -56,6 +56,7 @@ const PAYLOAD = {
       created_date: null,
       last_used_at: null,
       it_enabled: true,
+      machine_size: 'md',
     },
     {
       node_typeid: 'compute_node-2',
@@ -124,6 +125,9 @@ describe('AgentAutoLaunchTab', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent('••••MJHT');
     expect(rows[0]).toHaveTextContent('Resume');
+    // Each machine says its size; a row with no size from the hub shows none.
+    expect(rows[0]).toHaveTextContent('Medium');
+    expect(rows[1].querySelector('[data-testid=invite-machine-size]')).toBeNull();
     expect(rows[1]).toHaveTextContent('link visitor');
     expect(rows[1]).toHaveTextContent('Pause');
     // One line per invite: the used code carries its machine and its name; the unused one only Revoke.

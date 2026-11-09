@@ -1,7 +1,13 @@
-import type { Agent, NewPublicInviteCode, PublicDeploymentMode, PublicDeploymentsState } from '@sdk';
+import {
+  ComputeNodeSize,
+  type Agent,
+  type NewPublicInviteCode,
+  type PublicDeploymentMode,
+  type PublicDeploymentsState,
+} from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ExternalLink, Link2, Loader2, Server, Ticket, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { endpointTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { useLlmEndpoints } from '@src/components/llm-endpoints/use-llm-endpoints';
@@ -20,6 +26,7 @@ import {
   turnOnPublicDeployments,
 } from './AgentAutoLaunchTab';
 import { useVisitorRole } from './AgentVisibilitySection';
+import { defaultInviteSize, MachineSizeChips, useMachineSizeLine } from './MachineSizeChips';
 
 type Step = 'kind' | 'settings' | 'launch' | 'code';
 const STEPS: Step[] = ['kind', 'settings', 'launch'];
@@ -55,6 +62,9 @@ export function NewDeploymentWizard({
   const [oneCode, setOneCode] = useState<NewPublicInviteCode | null>(null);
   const [oneName, setOneName] = useState('');
   const [busy, setBusy] = useState(false);
+  // The size of the machine the next code opens: the agent's own size until one is picked on the tile.
+  const [size, setSize] = useState(() => defaultInviteSize(agent));
+  const sizeLine = useMachineSizeLine();
 
   // The hub's own answer: a visitor budget may be carved from any endpoint the caller may ALLOCATE from
   // (`agent._source_refusal`), which an editor can and an admin of nothing else cannot.
@@ -86,7 +96,7 @@ export function NewDeploymentWizard({
    * named first when a name was typed; the re-read refreshes the "machines left" line. */
   const showNewCode = async () => {
     const rename = oneCode && oneName.trim() ? agent.renamePublicCode(oneCode.id, oneName.trim()) : null;
-    const [[minted]] = await Promise.all([agent.addPublicCodes(1), rename]);
+    const [[minted]] = await Promise.all([agent.addPublicCodes(1, [], size), rename]);
     setOneCode(minted ?? null);
     setOneName('');
     setInvites(await agent.publicDeployments());
@@ -159,19 +169,24 @@ export function NewDeploymentWizard({
     onClick: (() => void) | null,
     testId: string,
     disabledWhy?: string,
+    // Below the click area, inside the tile: a control of its own (a button cannot hold one).
+    extra?: ReactNode,
   ) => (
-    <button
-      type="button"
-      disabled={!onClick}
-      title={disabledWhy}
-      onClick={onClick ?? undefined}
-      className="flex flex-1 flex-col items-start gap-2 rounded-lg border border-border bg-background p-4 text-left hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-      data-testid={testId}
-    >
-      <Icon className="h-7 w-7 shrink-0 text-primary" />
-      <span className="text-sm font-semibold text-foreground">{title}</span>
-      <span className="text-xs text-muted-foreground">{disabledWhy ?? sub}</span>
-    </button>
+    <div className="flex flex-1 flex-col rounded-lg border border-border bg-background">
+      <button
+        type="button"
+        disabled={!onClick}
+        title={disabledWhy}
+        onClick={onClick ?? undefined}
+        className="flex flex-1 flex-col items-start gap-2 rounded-lg p-4 text-left hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+        data-testid={testId}
+      >
+        <Icon className="h-7 w-7 shrink-0 text-primary" />
+        <span className="text-sm font-semibold text-foreground">{title}</span>
+        <span className="text-xs text-muted-foreground">{disabledWhy ?? sub}</span>
+      </button>
+      {extra && <div className="px-4 pb-4">{extra}</div>}
+    </div>
   );
 
   return (
@@ -258,6 +273,8 @@ export function NewDeploymentWizard({
               invitesOn ? t`One click — a new code for one user.` : t`One machine per user. You hand out the codes.`,
               () => pick('code'),
               'new-deployment-kind-code',
+              undefined,
+              <MachineSizeChips value={size} onChange={setSize} disabled={busy} />,
             )}
             {tile(
               Link2,
@@ -314,6 +331,9 @@ export function NewDeploymentWizard({
             />
             <span className="text-xs text-muted-foreground">
               <Trans>Shown once — the hub keeps only {maskCode(oneCode.last4)}.</Trans>
+            </span>
+            <span className="text-xs text-muted-foreground" data-testid="one-click-size">
+              {t`Machine: ${sizeLine(oneCode.machine_size ?? size)}`}
             </span>
           </div>
           <p className="text-xs text-muted-foreground">

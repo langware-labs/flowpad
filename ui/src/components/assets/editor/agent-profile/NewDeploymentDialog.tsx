@@ -14,8 +14,6 @@ import {
   type Project,
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { msg } from '@lingui/core/macro';
-import type { MessageDescriptor } from '@lingui/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAttachedChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
 import { ChevronLeft, ChevronRight, Loader2, Rocket } from 'lucide-react';
@@ -36,6 +34,7 @@ import { AgentDeployChecklist } from './AgentDeployChecklist';
 import { DeploymentSecretsGate, DeploySecretsLine } from './DeploymentSecretsGate';
 import { TokenAllocationField, tokenAllocationComplete } from './TokenAllocationField';
 import { AGENT_MACHINE_SIZES, MACHINE_SIZE_PRICE, MACHINE_SIZE_SPECS, type MachineBilling } from './agent-vocabularies';
+import { machineSizeName } from './MachineSizeChips';
 
 /** A cloud machine's credential environment when nobody names one. */
 const DEFAULT_CLOUD_ENVIRONMENT = 'production';
@@ -65,13 +64,6 @@ const BILLING_PROVIDER: Record<MachineBilling, CloudDeployProvider> = {
   monthly: ComputeProviderType.GCP_VM,
 };
 const BILLINGS: MachineBilling[] = ['hourly', 'monthly'];
-
-/** A size's plain name; its strength is the button's tooltip. */
-const sizeName: Record<ComputeNodeSize, MessageDescriptor> = {
-  [ComputeNodeSize.SMALL]: msg`Small`,
-  [ComputeNodeSize.MEDIUM]: msg`Medium`,
-  [ComputeNodeSize.LARGE]: msg`Large`,
-};
 
 /** The pick-list row for "no main agent" — a web-only deployment. */
 const NO_AGENT = '__none__';
@@ -277,7 +269,7 @@ export function NewDeploymentDialog({
           <span className={cn(step === 'machine' && 'font-medium text-foreground')}>
             {step === 'setup' && size ? (
               <Trans>
-                1 Machine · {t(sizeName[size])} · {price}
+                1 Machine · {t(machineSizeName[size])} · {price}
               </Trans>
             ) : (
               <Trans>1 Machine</Trans>
@@ -347,7 +339,7 @@ export function NewDeploymentDialog({
                         }}
                         data-testid={`new-deployment-size-${s}`}
                       >
-                        {t(sizeName[s])}
+                        {t(machineSizeName[s])}
                       </button>
                     ))}
                   </div>

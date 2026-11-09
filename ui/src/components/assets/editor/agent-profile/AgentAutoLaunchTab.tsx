@@ -32,6 +32,7 @@ import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { useVisitorRole } from './AgentVisibilitySection';
 import { InviteCodesDialog } from './InviteCodesDialog';
 import { ItMessageDialog } from './ItMessageDialog';
+import { machineSizeName, useMachineSizeLine } from './MachineSizeChips';
 
 /** The visitor stamp `visitor-sandbox` is reached through on the hub. */
 const VISITOR_RUNNER_ROLE = 'runner';
@@ -129,6 +130,7 @@ export function AgentAutoLaunchTab({
   onBack?: () => void;
 }) {
   const { t } = useLingui();
+  const sizeLine = useMachineSizeLine();
   const modeLabel = useModeLabel();
   const published = version?.published === true;
   const [role, setRole] = useVisitorRole(agent, published);
@@ -728,6 +730,7 @@ export function AgentAutoLaunchTab({
             <ul className="divide-y rounded-md border border-border" data-testid="agent-invite-lines">
               {lines.map((line) => {
                 const { code, box: d } = line;
+                const rowSize = d?.machine_size ?? code?.machine_size;
                 const key = lineKey(line);
                 const paused = !!d && isPaused(d);
                 const rowLocked = !!d && rowBusy === d.node_typeid;
@@ -758,6 +761,15 @@ export function AgentAutoLaunchTab({
                       <span className="w-40 text-muted-foreground">{t`link visitor`}</span>
                     )}
                     <span className="w-20 font-mono">{code ? maskCode(code.last4) : ''}</span>
+                    {rowSize && (
+                      <span
+                        className="w-14 text-muted-foreground"
+                        title={sizeLine(rowSize)}
+                        data-testid="invite-machine-size"
+                      >
+                        {t(machineSizeName[rowSize])}
+                      </span>
+                    )}
                     {d ? (
                       <>
                         <span className="w-16">{statusLabel(d.status)}</span>

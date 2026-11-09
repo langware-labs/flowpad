@@ -15,6 +15,7 @@ import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { ActivityProgressSpec } from '../activity';
+import type { ComputeNodeSize } from './compute-node/machine-status';
 import { Deployment, type IDeployment } from './deployment';
 
 /** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
@@ -112,6 +113,8 @@ export interface PublicInviteCode {
   node_typeid: string | null;
   created_at: string;
   last_used_at: string | null;
+  /** The size its machine runs (or will run) at: the code's own, else the agent's. */
+  machine_size?: ComputeNodeSize;
 }
 
 /** A freshly minted code: the only time its plaintext is ever answered. */
@@ -120,6 +123,7 @@ export interface NewPublicInviteCode {
   code: string;
   last4: string;
   name?: string;
+  machine_size?: ComputeNodeSize;
 }
 
 /** One visitor's box. `code_id` is null for a link visitor. */
@@ -133,6 +137,8 @@ export interface PublicDeployment {
   last_used_at: string | null;
   /** IT Enabled on that machine: live for a running box, the last seen for a paused one, null when never seen. */
   it_enabled?: boolean | null;
+  /** The size this machine runs at. */
+  machine_size?: ComputeNodeSize;
 }
 
 export interface PublicDeploymentsState {
@@ -614,11 +620,17 @@ export class Agent extends APIEntity<Agent> {
     };
   }
 
-  /** Mint `count` (1..100) codes, optionally named in order; their plaintext is answered this once only. */
-  async addPublicCodes(count: number, names: string[] = []): Promise<NewPublicInviteCode[]> {
+  /** Mint `count` (1..100) codes, optionally named in order; their plaintext is answered this once only.
+   * `machineSize` is the size every one of them opens (omitted: the agent's). */
+  async addPublicCodes(
+    count: number,
+    names: string[] = [],
+    machineSize?: ComputeNodeSize,
+  ): Promise<NewPublicInviteCode[]> {
     const data = await this.publicDeploymentsCall<{ codes?: NewPublicInviteCode[] }>('add_public_codes', 'POST', {
       count,
       ...(names.length ? { names } : {}),
+      ...(machineSize ? { machine_size: machineSize } : {}),
     });
     return data?.codes ?? [];
   }

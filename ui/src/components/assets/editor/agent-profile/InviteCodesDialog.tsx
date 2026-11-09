@@ -10,6 +10,7 @@ import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
 import { FreshCodes, saveCodeNames } from './FreshCodes';
+import { defaultInviteSize, MachineSizeChips } from './MachineSizeChips';
 
 /**
  * "Add invites": mint more codes. Each new code is shown in plaintext once, with an optional name for who it is
@@ -28,6 +29,8 @@ export function InviteCodesDialog({
 }) {
   const { t } = useLingui();
   const [count, setCount] = useState(3);
+  // Every code of this batch opens a machine of this size.
+  const [size, setSize] = useState(() => defaultInviteSize(agent));
   const [busy, setBusy] = useState(false);
   const [fresh, setFresh] = useState<NewPublicInviteCode[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
@@ -43,7 +46,7 @@ export function InviteCodesDialog({
   const add = async () => {
     setBusy(true);
     try {
-      setFresh(await agent.addPublicCodes(count));
+      setFresh(await agent.addPublicCodes(count, [], size));
       await onChanged();
     } catch (e) {
       notify.error({ title: t`Could not add codes`, message: errorMessage(e, t`The hub refused the change.`) });
@@ -106,6 +109,12 @@ export function InviteCodesDialog({
             {busy && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
             <Trans>Add</Trans>
           </Button>
+        </div>
+        <div className="flex items-start gap-2">
+          <span className="pt-0.5 text-xs">
+            <Trans>Machine</Trans>
+          </span>
+          <MachineSizeChips value={size} onChange={setSize} disabled={busy} />
         </div>
 
         {fresh.length > 0 && (
