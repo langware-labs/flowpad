@@ -40,6 +40,8 @@ export function RolesPicker({
           type="button"
           aria-label={ariaLabel}
           data-testid={testId}
+          data-value={value.join(',')}
+          data-roles={roles.join(',')}
           className={cn(
             'inline-flex shrink-0 items-center gap-1 rounded-md border border-input bg-background px-2 capitalize text-foreground outline-none transition-colors hover:border-primary/60 focus:border-primary disabled:opacity-40',
             className,

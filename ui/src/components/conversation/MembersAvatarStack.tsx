@@ -987,26 +987,19 @@ export function MembersAvatarStack({
                               </Avatar>
                               <NameWithSubtitle name={label} subtitle={participantSubtitle(p)} />
                               {offeredRoles.length > 0 && (
-                                <select
-                                  aria-label={t`Invite ${label} as`}
-                                  data-testid={`members-invite-role-${key}`}
-                                  multiple
-                                  value={roleOf(invite)}
+                                <RolesPicker
+                                  ariaLabel={t`Invite ${label} as`}
+                                  testId={`members-invite-role-${key}`}
+                                  roles={offeredRoles}
+                                  value={roleOf(invite) ?? []}
                                   disabled={inviting}
-                                  onChange={(e) => {
-                                    const role = Array.from(e.target.selectedOptions, (option) => option.value);
+                                  onChange={(role) =>
                                     setPending((prev) =>
                                       prev.map((x) => (participantKey(x.participant) === key ? { ...x, role } : x)),
-                                    );
-                                  }}
-                                  className="h-6 shrink-0 rounded border border-transparent bg-background px-1 text-[11px] capitalize text-muted-foreground outline-none transition-colors hover:border-border focus:border-primary disabled:opacity-40"
-                                >
-                                  {offeredRoles.map((r) => (
-                                    <option key={r} value={r}>
-                                      {r}
-                                    </option>
-                                  ))}
-                                </select>
+                                    )
+                                  }
+                                  className="h-6 border-transparent text-[11px] text-muted-foreground hover:border-border"
+                                />
                               )}
                               <button
                                 type="button"
