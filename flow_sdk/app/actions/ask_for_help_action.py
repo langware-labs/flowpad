@@ -318,6 +318,17 @@ def _shares_context(ask: AskForHelpRequest) -> bool:
     return ask.share_context and ask.send is HelpSend.WHEN_DIAGNOSED and bool(ask.recipients)
 
 
+DIAGNOSIS_LINE = "Diagnosis: "
+
+
+def diagnosis_line(*, diagnosing: bool, attached: bool) -> str:
+    """The last line of a help request's text: whether a diagnosis is coming. A receiver reads the text long
+    before it has the message's body (where ``help_request.value.json`` says the same), and a diagnosis that
+    is on its way changes what it should conclude from the request."""
+    state = "on its way" if diagnosing else "attached" if attached else "not requested"
+    return DIAGNOSIS_LINE + state
+
+
 async def _write_request(
     conv, task, ask: AskForHelpRequest, files, context: dict[str, bytes], someone, *, diagnosing: bool = False
 ):
@@ -332,6 +343,7 @@ async def _write_request(
     if task and asked_title and task.title != asked_title and text.startswith(asked_title):
         # The task took the next free title ("… (2)"): the message names the task it carries.
         text = task.title + text[len(asked_title) :]
+    text = f"{text}\n\n{diagnosis_line(diagnosing=diagnosing, attached=bool(ask.diagnosis_id))}"
     user_files = files if isinstance(files, list) else ([files] if files else [])
     extra = {"files": user_files, **({"asset_references": chips, "shared_context_entities": chips} if chips else {})}
     return await _send_help_message(conv, text, context if shared else {}, someone, extra=extra, diagnosing=diagnosing)
