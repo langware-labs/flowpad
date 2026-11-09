@@ -143,6 +143,10 @@ export function AgentAutoLaunchTab({
   const [resetting, setResetting] = useState<PublicDeployment | null>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [itOpen, setItOpen] = useState(false);
+  // Lines picked for a bulk operation, by line key; the bar's operations run on every one of them.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkConfirm, setBulkConfirm] = useState<'reset' | 'revoke' | null>(null);
   // IT Enabled per machine as this screen last set it, over what the hub reported.
   const [itOn, setItOn] = useState<Record<string, boolean>>({});
 
@@ -344,6 +348,93 @@ export function AgentAutoLaunchTab({
       setRowBusy(null);
     }
   };
+
+  const lineKey = (l: InviteLine) => (l.code?.id ?? l.box?.node_typeid) as string;
+  const picked = lines.filter((l) => selected.has(lineKey(l)));
+  const pickedBoxes = picked.flatMap((l) => (l.box ? [l.box] : []));
+  const pickedCodes = picked.flatMap((l) => (l.code ? [l.code] : []));
+  const isPaused = (d: PublicDeployment) => d.status.toUpperCase() === 'PAUSED';
+  const allPicked = lines.length > 0 && picked.length === lines.length;
+  const toggleLine = (key: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  // One operation over every picked line; each failure is counted, the rest still run.
+  const runBulk = async (op: 'pause' | 'resume' | 'reset' | 'revoke' | 'it-on' | 'it-off') => {
+    setBulkBusy(true);
+    let failed = 0;
+    let reason: unknown = null;
+    try {
+      if (op === 'it-on' || op === 'it-off') {
+        const on = op === 'it-on';
+        const boxes = await agent.setItSessions(
+          pickedBoxes.map((d) => d.node_typeid),
+          on,
+        );
+        failed = boxes.filter((b) => b.error).length;
+        reason = boxes.find((b) => b.error)?.error ?? null;
+        setItOn((prev) => ({
+          ...prev,
+          ...Object.fromEntries(boxes.filter((b) => !b.error).map((b) => [b.node_typeid, b.on])),
+        }));
+      } else {
+        const results = await Promise.allSettled(
+          op === 'revoke'
+            ? pickedCodes.map((c) => agent.revokePublicCode(c.id))
+            : pickedBoxes
+                .filter((d) => op === 'reset' || (op === 'pause' ? !isPaused(d) : isPaused(d)))
+                .map((d) => agent.managePublicDeployment(d.node_typeid, op)),
+        );
+        const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+        failed = rejected.length;
+        reason = rejected[0]?.reason ?? null;
+        await load();
+      }
+      if (op === 'revoke') setSelected(new Set());
+    } catch (e) {
+      failed = Math.max(failed, 1);
+      reason = e;
+    } finally {
+      setBulkBusy(false);
+    }
+    if (failed)
+      notify.error({
+        title: t`Could not change ${failed} of the selected`,
+        message: errorMessage(reason, t`The hub refused the change.`),
+      });
+  };
+
+  type BulkOp = Parameters<typeof runBulk>[0];
+  const hasBoxes = pickedBoxes.length > 0;
+  // The bar's buttons: each shows only when some picked line can take it.
+  const bulkActions: { id: BulkOp; label: string; disabled?: boolean; confirm?: 'reset' | 'revoke' }[] = [
+    ...(hasBoxes
+      ? [
+          { id: 'it-on' as const, label: t`IT Enable` },
+          { id: 'it-off' as const, label: t`IT Disable` },
+          { id: 'pause' as const, label: t`Pause`, disabled: !pickedBoxes.some((d) => !isPaused(d)) },
+          { id: 'resume' as const, label: t`Resume`, disabled: !pickedBoxes.some(isPaused) },
+          { id: 'reset' as const, label: t`Reset`, confirm: 'reset' as const },
+        ]
+      : []),
+    ...(pickedCodes.length > 0 ? [{ id: 'revoke' as const, label: t`Revoke`, confirm: 'revoke' as const }] : []),
+  ];
+  const bulkConfirmText = {
+    reset: {
+      title: t`Reset ${pickedBoxes.length} machines?`,
+      description: t`Wipes each machine and starts it fresh from the agent's project. Anything not shared is lost.`,
+      label: t`Reset`,
+    },
+    revoke: {
+      title: t`Revoke ${pickedCodes.length} invites?`,
+      description: t`The codes stop working and their machines are deleted.`,
+      label: t`Revoke`,
+    },
+  }[bulkConfirm ?? 'reset'];
 
   const statusLabel = (s: string) => {
     switch (s.toUpperCase()) {
@@ -561,6 +652,14 @@ export function AgentAutoLaunchTab({
       {(enabled || lines.length > 0) && (
         <div>
           <div className="mb-1 flex items-center gap-2">
+            {lines.length > 0 && (
+              <Checkbox
+                checked={allPicked ? true : picked.length > 0 ? 'indeterminate' : false}
+                onCheckedChange={(v) => setSelected(v === true ? new Set(lines.map(lineKey)) : new Set())}
+                aria-label={t`Select all`}
+                data-testid="agent-invite-select-all"
+              />
+            )}
             <p className="flex-1 text-xs font-medium" data-testid="agent-invite-count">
               <Trans>
                 Invites · {activeCodes} codes · {state.deployments.length} machines
@@ -594,21 +693,56 @@ export function AgentAutoLaunchTab({
               </Button>
             </WikiTip>
           </div>
+          {picked.length > 0 && (
+            <div
+              className="mb-1 flex flex-wrap items-center gap-2 rounded-md bg-accent px-3 py-1.5 text-xs"
+              data-testid="agent-invite-bulk"
+            >
+              <span className="flex-1 font-medium">
+                <Trans>{picked.length} selected</Trans>
+              </span>
+              {bulkBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {bulkActions.map((a) => (
+                <Button
+                  key={a.id}
+                  variant={a.confirm ? 'ghost' : 'outline'}
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  disabled={bulkBusy || a.disabled}
+                  onClick={() => (a.confirm ? setBulkConfirm(a.confirm) : void runBulk(a.id))}
+                  data-testid={`agent-invite-bulk-${a.id}`}
+                >
+                  {a.label}
+                </Button>
+              ))}
+              <Button variant="link" size="sm" className="h-6 px-1 text-xs" onClick={() => setSelected(new Set())}>
+                <Trans>Clear</Trans>
+              </Button>
+            </div>
+          )}
           {lines.length === 0 ? (
             <p className="text-xs text-muted-foreground" data-testid="agent-autolaunch-no-deployments">
               <Trans>No invites yet.</Trans>
             </p>
           ) : (
             <ul className="divide-y rounded-md border border-border" data-testid="agent-invite-lines">
-              {lines.map(({ code, box: d }) => {
-                const paused = d?.status.toUpperCase() === 'PAUSED';
+              {lines.map((line) => {
+                const { code, box: d } = line;
+                const key = lineKey(line);
+                const paused = !!d && isPaused(d);
                 const rowLocked = !!d && rowBusy === d.node_typeid;
                 return (
                   <li
-                    key={code?.id ?? d?.node_typeid}
+                    key={key}
                     className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-xs"
                     data-testid={d ? 'agent-autolaunch-deployment' : 'agent-invite-unused'}
                   >
+                    <Checkbox
+                      checked={selected.has(key)}
+                      onCheckedChange={() => toggleLine(key)}
+                      aria-label={t`Select`}
+                      data-testid="agent-invite-select"
+                    />
                     {code ? (
                       <Input
                         className="h-7 w-40 text-xs"
@@ -734,6 +868,17 @@ export function AgentAutoLaunchTab({
         variant="destructive"
         onConfirm={() => revoking && void revoke(revoking)}
         testId="invite-code-revoke"
+      />
+      <ConfirmDialog
+        open={bulkConfirm !== null}
+        onOpenChange={(o) => !o && setBulkConfirm(null)}
+        title={bulkConfirmText.title}
+        description={bulkConfirmText.description}
+        confirmLabel={bulkConfirmText.label}
+        cancelLabel={t`Cancel`}
+        variant="destructive"
+        onConfirm={() => bulkConfirm && void runBulk(bulkConfirm)}
+        testId="agent-invite-bulk-confirm"
       />
     </div>
   );
