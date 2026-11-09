@@ -692,13 +692,26 @@ async def _on_this_machine(deployment_id: str, environment: str) -> tuple["Deplo
     return row, replace(placement, environment=environment) if environment else placement
 
 
+async def _placed_project(project_id: str, deployment: "Deployment") -> Optional["Project"]:
+    """The project the placed values belong to, on THIS machine. The hub names its own project id; a machine that
+    cloned the project keeps it under a local id, so when that id is unknown here the deployment's main agent says
+    which project it runs in. Without it the project's own Credentials are never seen and every value lands in the
+    catch-all ``deployment-secrets``, where the project's declaration then hides it."""
+    project = await get_project(project_id) if project_id else None
+    if project is not None:
+        return project
+    agent = await deployment.main_agent() if deployment is not None else None
+    local_id = str(getattr(agent, "project_id", "") or "")
+    return await get_project(local_id) if local_id else None
+
+
 async def place_values(deployment_id: str, project_id: str, file: str, environment: str = "") -> dict[str, Any]:
     """Write the values the hub dropped where this machine reads them for ``deployment_id``:
     ``{placed, failed}`` names, and ``verified``: the sources here that read them, verified now."""
 
     values = _take_dropped(file)
     deployment, placement = await _on_this_machine(deployment_id, environment)
-    project = await get_project(project_id) if project_id else None
+    project = await _placed_project(project_id, deployment)
     declared = await _declaring(list(values), project, deployment)
     failed: dict[str, str] = {name: "not declared here" for name in values if name not in declared}
     # One write per store: an env file is rewritten, a vault re-encrypted, once — not once per value.
