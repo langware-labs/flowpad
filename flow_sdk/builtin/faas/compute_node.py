@@ -314,7 +314,18 @@ class ComputeNode(
             node = await cls._get_local_legacy()
         if node is None and create:
             node = await cls.create_local()
+        if node is not None:
+            await node._adopt_assigned_size()
         return node
+
+    async def _adopt_assigned_size(self) -> None:
+        """On a hub box, report the size the hub created it at (``configure-box`` stored it), not the default."""
+        from flow_sdk.instance_settings.runtime import get_assigned_node_size  # noqa: PLC0415
+
+        size = get_assigned_node_size()
+        if size and self.node_size != size:
+            self.node_size = ComputeNodeSize(size)
+            await self.update()
 
     @classmethod
     async def create_local(cls, *, owner: "Any | None" = None) -> "ComputeNode":
