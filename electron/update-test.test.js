@@ -7,7 +7,7 @@
  */
 
 const assert = require('assert');
-const { isEnabled, answerFor, event, parseAnswers, forceRunAfter, checkBoundMs, checkIntervalMs, _setLogLine } = require('./update-test');
+const { isEnabled, isScripted, answerFor, event, parseAnswers, forceRunAfter, checkBoundMs, checkIntervalMs, _setLogLine } = require('./update-test');
 
 let passed = 0;
 function eq(actual, expected, msg) {
@@ -55,6 +55,7 @@ eq(parseAnswers('noequals,=bad,ok=1'), { ok: '1' }, 'malformed entries skipped')
 withEnv({ FLOWPAD_UPDATE_TEST: undefined, FLOWPAD_UPDATE_TEST_ANSWERS: 'both=accept' }, () => {
   eq(isEnabled(), false, 'disabled without env');
   eq(answerFor('both'), null, 'answerFor → null when disabled');
+  eq(isScripted('both'), false, 'isScripted → false when disabled');
   const lines = capture(() => {
     eq(answerFor('both'), null, 'no answer while disabled');
     event('boot', { desktop: '1.0.0' });
@@ -71,6 +72,7 @@ withEnv({ FLOWPAD_UPDATE_TEST: '1', FLOWPAD_UPDATE_TEST_ANSWERS: 'both=accept,en
     eq(answerFor('restart'), 1, 'restart=later → button 1');
     eq(answerFor('unknown-prompt'), 1, 'unscripted prompt → defer (button 1)');
   });
+  eq([isScripted('restart'), isScripted('move')], [true, false], 'isScripted: only the prompts the answers name');
 });
 
 // ── enabled mode: log lines are single-line parseable JSON ───────────────────

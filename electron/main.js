@@ -764,7 +764,8 @@ function announceUpdateReady({ reminder = false } = {}) {
     return;
   }
   announcedReadyKey = key;
-  const scripted = updateTest.answerFor('restart', { version: state.desktop && state.desktop.to, savedEngine: state.engine && state.engine.to });
+  // The toast blocks nothing: a harness run shows it too unless it scripted the answer.
+  const scripted = !updateTest.isScripted('restart') ? null : updateTest.answerFor('restart', { version: state.desktop && state.desktop.to, savedEngine: state.engine && state.engine.to });
   if (scripted === 0) { void activateUpdate('update-test'); return; }
   log.info(`[update] update ready (${state.desktop ? `desktop ${state.desktop.to}` : ''}${state.desktop && state.engine ? ' + ' : ''}${state.engine ? `engine ${state.engine.to}` : ''})${scripted !== null ? ' — scripted Later' : ' — "Update Ready" shown'}; reminded every 90 minutes while pending`);
   if (scripted === null) mainWindow.webContents.send('update-ready-toast', state);
