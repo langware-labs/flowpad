@@ -171,18 +171,24 @@ class ConversationMessageSubject(MessageSubject):
         super().on_fired(state, event)
         import asyncio  # noqa: PLC0415
 
-        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
         if not (state.conversation_id and state.message_id):
             return
 
         async def _tell() -> None:
             try:
-                await hub_ws_bridge.mark_handling(
-                    conversation_id=str(state.conversation_id), flow_message_ids=[str(state.message_id)]
+                # Over HTTP, as every action an agent calls: the hub refuses an agent's write on the WS.
+                await HubProxy.call(
+                    "POST",
+                    BuiltinEntityType.CONVERSATION,
+                    str(state.conversation_id),
+                    "mark_handling",
+                    payload={"flow_message_ids": [str(state.message_id)]},
                 )
             except Exception:  # noqa: BLE001 — a notice, never the fire
-                logger.debug("handling notice to the hub failed", exc_info=True)
+                logger.info("handling notice to the hub failed", exc_info=True)
 
         try:
             task = asyncio.get_running_loop().create_task(_tell())

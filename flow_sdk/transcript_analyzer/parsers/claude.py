@@ -78,13 +78,16 @@ _META_TYPES = frozenset(
         # `{"type":"cost-state",…}` — Claude 2.1.27x writes it after the turn's
         # `last-prompt`; unclassified, it hid the terminal marker, so no turn ended.
         "cost-state",
-        # `api-request` / `api-request-blob` / `api-request-shape` — Claude 2.1.3xx records
-        # each model request it sends. Written when a turn (re)enters the model, so a tail
-        # ending in one read UNKNOWN (not busy) while the model was answering (QA 2026-11-05).
+        "session-owner",  # Claude 2.1.318+: written after last-prompt
+        "artifact-autoreact-ledger",
+        "history-suppression",
+        "artifact-comment-monitor",
         "api-request",
         "api-request-blob",
         "api-request-shape",
-        "session-owner",  # Claude 2.1.318+: written after last-prompt
+        "file-history-delta",
+        "frame-link",
+        "tools-used",
     }
 )
 
@@ -593,7 +596,8 @@ def build_semantic_tool_entry(
         )
     if tool_name in ("Task", "Agent"):
         return AgentSpawnEntry(
-            agent_type=str(ti.get("subagent_type") or ti.get("agent_type") or ""),
+            # No type = Claude Code's default subagent.
+            agent_type=str(ti.get("subagent_type") or ti.get("agent_type") or "general-purpose"),
             prompt=str(ti.get("prompt") or "") or None,
             description=str(ti.get("description") or "") or None,
             **common,

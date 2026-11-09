@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin import trigger_callbacks
-from flow_sdk.builtin.trigger import Trigger, set_trigger_on
+from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.data_spec.trigger_action import ActionType
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
@@ -39,23 +39,6 @@ async def test_idempotent_across_reruns(initialize_test_db):
     await set_service_triggers()
     second = await Trigger.get_by_uname("builtin_toplog_watcher")
     assert second.id == first.id
-
-
-async def test_daily_usage_analysis_is_forced_off(initialize_test_db):
-    """A fresh instance seeds the daily usage report disabled, and an install
-    seeded while it was on by default flips off on the next boot."""
-    await set_service_triggers()
-    trigger = await Trigger.get_by_uname("builtin_daily_usage_analysis")
-    assert trigger.enabled is False
-
-    await set_trigger_on(trigger, True)
-    assert (await Trigger.get_by_uname("builtin_daily_usage_analysis")).enabled is True
-
-    await set_service_triggers()
-
-    reseeded = await Trigger.get_by_uname("builtin_daily_usage_analysis")
-    assert reseeded.id == trigger.id
-    assert reseeded.enabled is False
 
 
 async def test_transcript_route_callback_registered_at_import():

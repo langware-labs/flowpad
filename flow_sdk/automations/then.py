@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+from flow_sdk.schema.data_spec.automation_spec import AutomationRef
 from flow_sdk.schema.data_spec.compute_op_spec import AgentOp, CliOp, ComputeOpSpec, OpSubkind
 from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 from flow_sdk.schema.data_spec.trigger_spec import ThenSpec
@@ -104,6 +105,7 @@ async def run_then(trigger: Any, *, inputs: dict[str, Any], scope_key: str = "",
         trusted=True,
         workdir=folder or Path.cwd(),
         inputs=inputs,
+        input=AutomationRef(trigger_id=str(getattr(trigger, "id", "") or ""), name=str(getattr(trigger, "name", "") or "")),
         context=context,
         parent=getattr(context, "parent", None),
         chain=(f"automation-{getattr(trigger, 'id', '') or trigger.name}",) if context is not None else (),

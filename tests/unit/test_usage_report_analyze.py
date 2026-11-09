@@ -59,3 +59,15 @@ def test_analyze_usage_excludes_out_of_range_sessions(claude_projects):
     assert data.session_count == 0
     assert data.sessions == []
     assert data.busiest_session_id is None
+
+
+def test_active_time_counts_parallel_sessions_once_and_idle_gaps_not_at_all():
+    from types import SimpleNamespace
+
+    from flow_sdk.usage_report.analyze import _active_spans, _union_ms
+
+    at = lambda m: SimpleNamespace(timestamp=f"2026-04-26T10:{m:02d}:00+00:00")  # noqa: E731
+    a = _active_spans([at(0), at(4), at(8), at(30), at(31)])  # 10:00-10:08, then idle, then 10:30-10:31
+    b = _active_spans([at(2), at(6)])  # 10:02-10:06, inside a's first stretch
+    assert len(a) == 2
+    assert _union_ms(a + b) == 9 * 60_000

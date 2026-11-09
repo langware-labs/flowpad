@@ -184,6 +184,8 @@ export interface AutomationSummary {
   fires: number;
   tested: boolean;
   read_only: boolean;
+  /** A person may turn it on or off here (read-only rules too, when Flowpad ships them off). Older backends omit it. */
+  switchable?: boolean;
   asset_ref?: string | null;
   /** Where it runs. Older backends omit it; read it through `placeOf`. */
   place?: AutomationPlace;

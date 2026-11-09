@@ -93,6 +93,9 @@ class HelpdeskSource(MessageSource):
     pages_backward = True
     #: Strangers are the point: an empty allowlist admits every requester.
     open_inbound = True
+    #: A turn's text goes back to the customer only the first time (the acknowledgement); every later word
+    #: to them is an explicit reply that the team approved.
+    answers_once: ClassVar[bool] = True
     identity_config_key = "desk_project_id"
     #: Every thread here is a help-desk ticket.
     conversation_kind = "helpdesk"

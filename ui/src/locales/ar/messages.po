@@ -4520,8 +4520,9 @@ msgstr "اطلبوا من {managers} — الذي يدير الميزانية ا
 msgid "Ask a teammate to join it and write there. The agent answers as you."
 msgstr "اطلبوا من أحد زملاء الفريق الانضمام إليها والكتابة هناك. يردّ الوكيل بصفتكم."
 
-#~ msgid "Ask about this"
-#~ msgstr ""
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "Ask about this"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Ask about this analysis…"
@@ -4829,10 +4830,6 @@ msgstr "إرفاق المزيد من الملفات أو الأصول"
 msgid "Attach session transcript"
 msgstr "إرفاق سجل الجلسة"
 
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Attach the diagnosis"
-msgstr "إرفاق التشخيص"
-
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Attached asset types"
 msgstr "أنواع الأصول المرفقة"
@@ -5023,12 +5020,14 @@ msgstr "تم إنشاء الأتمتة"
 #: src/components/automations/BusView.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/conversation/channel-attribution.tsx
 #: src/types/ViewType.ts
 msgid "Automations"
 msgstr "الأتمتة"
 
-#~ msgid "Automations — what your automations report"
-#~ msgstr ""
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Automations — what your automations report"
+msgstr ""
 
 #: src/components/automations/BusView.tsx
 #: src/components/automations/BusView.tsx
@@ -5104,7 +5103,6 @@ msgstr "منطقة AWS لخدمة Bedrock"
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/git/GitSetupWizard.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
@@ -5152,8 +5150,9 @@ msgstr "العودة إلى المهام"
 msgid "Back to the conversation message that started this session"
 msgstr "العودة إلى رسالة المحادثة التي بدأت هذه الجلسة"
 
-#~ msgid "Back to the session"
-#~ msgstr ""
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "Back to the session"
+msgstr ""
 
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Back to the simple view"
@@ -6277,7 +6276,7 @@ msgstr ""
 
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Checking FlowPad…"
-msgstr ">>>>>>> aea919ba5"
+msgstr "جارٍ التحقق من FlowPad…"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking Git…"
@@ -6405,6 +6404,10 @@ msgstr "اختيار artifact لفتحه"
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Choose an endpoint…"
 msgstr "اختاروا نقطة نهاية…"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Choose another installer"
+msgstr "اختاروا مُثبّتًا آخر"
 
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "Choose another worker"
@@ -7704,6 +7707,7 @@ msgstr "المحتوى"
 
 #: src/components/conversation/ConversationPanel.tsx
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/types/ViewType.ts
 msgid "Context"
@@ -8629,8 +8633,9 @@ msgstr ""
 msgid "Could not open the machine"
 msgstr "تعذّر فتح الجهاز"
 
-#~ msgid "Could not open the session"
-#~ msgstr ""
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "Could not open the session"
+msgstr ""
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
 #: src/components/conversation/asset-review/use-open-git-share.ts
@@ -8968,6 +8973,7 @@ msgid "Could not save to the project"
 msgstr ""
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
+#: src/notifications/commands.ts
 msgid "Could not send"
 msgstr "تعذّر الإرسال"
 
@@ -10778,6 +10784,7 @@ msgstr "تسجيل الدخول عبر الجهاز"
 msgid "Device logins"
 msgstr "تسجيلات دخول الجهاز"
 
+#: src/components/help/AskForHelpDialog.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Diagnose"
 msgstr "تشخيص"
@@ -10785,6 +10792,10 @@ msgstr "تشخيص"
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Diagnose & fix"
 msgstr ""
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Diagnose and Send"
+msgstr "تشخيص وإرسال"
 
 #: src/notifications/diagnose/DiagnoseIconButton.tsx
 msgid "Diagnose this error"
@@ -10814,6 +10825,7 @@ msgstr "جارٍ التشخيص… ستصلك رسالة عند الانتهاء
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 #: src/components/conversation/channel-attribution.tsx
 #: src/components/diagnosis-viewer/DiagnosisViewer.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
 #: src/types/ViewType.ts
 msgid "Diagnosis"
@@ -10822,10 +10834,6 @@ msgstr "التشخيص"
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Diagnosis — diagnoses and the help desk"
 msgstr "التشخيص — التشخيصات ومكتب المساعدة"
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Diagnosis & context"
-msgstr "التشخيص والسياق"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -11312,10 +11320,48 @@ msgstr "تنزيل المرفقات"
 msgid "Download bundle"
 msgstr "تنزيل الحزمة"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Download didn't start?"
+msgstr "لم يبدأ التنزيل؟"
+
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Download file"
 msgstr "تنزيل الملف"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad"
+msgstr "تنزيل FlowPad"
+
+#: src/pages/entry/DesktopDownload.tsx
+#: src/pages/entry/DesktopDownload.tsx
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad for Linux"
+msgstr "تنزيل FlowPad لنظام Linux"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad for macOS"
+msgstr "تنزيل FlowPad لنظام macOS"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad for Windows"
+msgstr "تنزيل FlowPad لنظام Windows"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download for Linux (AppImage)"
+msgstr "تنزيل لنظام Linux (AppImage)"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download for macOS"
+msgstr "تنزيل لنظام macOS"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download for Windows"
+msgstr "تنزيل لنظام Windows"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Download it directly"
+msgstr "نزّلوه مباشرةً"
 
 #: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
@@ -13599,6 +13645,18 @@ msgstr "نتائج Flowpad Cloud"
 msgid "Flowpad Cloud:"
 msgstr "Flowpad Cloud:"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop isn't available for 32-bit Windows — it needs 64-bit Windows."
+msgstr "FlowPad Desktop غير متاح لنظام Windows بإصدار 32 بت — يتطلب Windows بإصدار 64 بت."
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop isn't available for this processor yet — it runs on 64-bit Intel/AMD (x86_64) Linux."
+msgstr "FlowPad Desktop غير متوفر لهذا المعالج بعد — فهو يعمل على Linux بمعمارية 64 بت لمعالجات Intel/AMD (x86_64)."
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop runs on macOS, Windows and Linux. Open this page on your computer, or download it below."
+msgstr "يعمل FlowPad Desktop على macOS وWindows وLinux. افتحوا هذه الصفحة على حاسوبكم، أو نزّلوه من الأسفل."
+
 #: src/i18n/type-labels.ts
 msgid "Flowpad Diagnosis"
 msgstr "تشخيص Flowpad"
@@ -13641,7 +13699,7 @@ msgstr "FlowPad غير متصل - يؤدي الزر \"فتح\" إلى تشغيل
 
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "FlowPad isn't installed on this computer"
-msgstr ">>>>>>> aea919ba5"
+msgstr "FlowPad غير مثبت على هذا الكمبيوتر"
 
 #: src/components/git/GitRepoPicker.tsx
 msgid "Flowpad keeps the repository for you. No GitHub account needed."
@@ -13672,6 +13730,10 @@ msgstr "يُشغّل Flowpad هذه الأتمتة بنفسه. يمكن فحصه
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Flowpad shared pool. Usage draws on Flowpad credits."
 msgstr ""
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad still didn't open. Make sure the installation finished, then click Open FlowPad again."
+msgstr "لم يُفتح FlowPad بعد. تأكدوا من اكتمال التثبيت، ثم انقروا على «فتح FlowPad» مرة أخرى."
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "FlowPad stops, upgrades and starts again on each. Anyone working in them is interrupted, and paused machines are woken."
@@ -14079,12 +14141,10 @@ msgid "Get an invite code"
 msgstr ""
 
 #: src/pages/entry/entry-shell.tsx
-#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get FlowPad at flowpad.ai →"
 msgstr "احصلوا على FlowPad من flowpad.ai ←"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get it at flowpad.ai"
 msgstr "احصلوا عليه من flowpad.ai"
 
@@ -15580,6 +15640,10 @@ msgstr "فشل التثبيت."
 msgid "Install Flowpad on your computer first"
 msgstr "ثبّتوا Flowpad على حاسوبكم أولًا"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Install FlowPad, then come back to this page."
+msgstr "ثبّتوا FlowPad ثم عودوا إلى هذه الصفحة."
+
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Install gh"
 msgstr "تثبيت gh"
@@ -16899,6 +16963,18 @@ msgstr "فشل الربط."
 msgid "Linking…"
 msgstr "جاري الربط…"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Linux AppImage — most distributions (x86_64)"
+msgstr "Linux AppImage — معظم التوزيعات (x86_64)"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Linux DEB — Ubuntu, Debian, Linux Mint"
+msgstr "Linux DEB — Ubuntu وDebian وLinux Mint"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Linux RPM — Fedora, RHEL, Rocky Linux"
+msgstr "Linux RPM — Fedora وRHEL وRocky Linux"
+
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "List"
 msgstr "قائمة"
@@ -17632,6 +17708,10 @@ msgstr "الجهاز: {0}"
 #: src/types/ViewType.ts
 msgid "Machines"
 msgstr "الأجهزة"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "macOS (.dmg) — Intel and Apple Silicon"
+msgstr "macOS (.dmg) — Intel وApple Silicon"
 
 #: src/components/top-nav-bar/use-screen-recorder.ts
 msgid "macOS blocks Flowpad from recording the screen. Allow it under Privacy & Security › Screen & System Audio Recording, then try again."
@@ -19051,7 +19131,6 @@ msgstr "الأحدث أولاً"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/media-viewer/MediaPager.tsx
 #: src/components/ui/pagination.tsx
 #: src/journey/JourneyTray.tsx
@@ -21390,6 +21469,10 @@ msgstr ""
 msgid "On this machine only — undo any time"
 msgstr "على هذا الجهاز فقط — يمكن التراجع في أي وقت"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "On Windows on ARM, FlowPad runs through Windows' built-in x64 emulation."
+msgstr "على Windows لمعالجات ARM، يعمل FlowPad عبر محاكاة x64 المدمجة في Windows."
+
 #. placeholder {0}: port.port
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "On: if another program holds {0}, starting fails instead of moving."
@@ -21411,6 +21494,10 @@ msgstr "مرة واحدة"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Once at {when}"
 msgstr "مرة واحدة في {when}"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Once FlowPad is installed, click Open FlowPad to continue."
+msgstr "بعد تثبيت FlowPad، انقروا على «فتح FlowPad» للمتابعة."
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "once per machine"
@@ -21778,8 +21865,9 @@ msgstr "فتح مشروع المساعد"
 msgid "Open authorization page"
 msgstr "فتح صفحة التفويض"
 
-#~ msgid "Open automation"
-#~ msgstr ""
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "Open automation"
+msgstr ""
 
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
@@ -21857,6 +21945,11 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Open externally: {childPath}"
 msgstr "فتح خارجياً: {childPath}"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Open FlowPad"
+msgstr "فتح FlowPad"
 
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open Flowpad Cloud"
@@ -22728,6 +22821,10 @@ msgstr "أصول أخرى"
 msgid "Other paths with this asset identity"
 msgstr "مسارات أخرى بنفس هوية المورد"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Other platforms"
+msgstr "منصات أخرى"
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Other project"
 msgstr "مشروع آخر"
@@ -22844,6 +22941,10 @@ msgstr "تجميع المفاتيح في بيانات اعتماد"
 #: src/components/top-nav-bar/AppButton.tsx
 msgid "Package"
 msgstr "الحزمة"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Package format"
+msgstr "صيغة الحزمة"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Package removed"
@@ -24097,6 +24198,7 @@ msgid "prompt"
 msgstr "موجّه"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/conversation/AttachMenu.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/quick-create/registry.ts
@@ -24104,6 +24206,10 @@ msgstr "موجّه"
 #: src/i18n/type-labels.ts
 msgid "Prompt"
 msgstr "المطالبة"
+
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
+msgid "Prompt — they approve it, it runs once on their machine…"
+msgstr ""
 
 #: src/components/conversation/PromptCallCard.tsx
 msgid "Prompt · runs once on {otherName}'s machine"
@@ -25340,6 +25446,10 @@ msgstr "إزالة الخيار"
 msgid "Remove package"
 msgstr "إزالة الحزمة"
 
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
+msgid "Remove prompt"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Remove public access"
 msgstr "إزالة الوصول العام"
@@ -26063,6 +26173,7 @@ msgstr "استُؤنِف — سيتم الفحص في الدورة التالي�
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+#: src/notifications/ingest.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Retry"
 msgstr "إعادة المحاولة"
@@ -26146,6 +26257,7 @@ msgstr "إظهار الرسالة التي اشتُقت منها هذه المه
 
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "Review"
 msgstr "مراجعة"
 
@@ -26153,17 +26265,9 @@ msgstr "مراجعة"
 msgid "Review and open the shared project."
 msgstr "يُرجى مراجعة المشروع المشترك وفتحه."
 
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Review before sending"
-msgstr "المراجعة قبل الإرسال"
-
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Review changes"
 msgstr "مراجعة التغييرات"
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Review content"
-msgstr "مراجعة المحتوى"
 
 #: src/components/automations/KindGallery.tsx
 msgid "Review docs on save"
@@ -26449,10 +26553,6 @@ msgstr "يُرجى تشغيل Claude Code في مجلد المشروع لعرض 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Run detail"
 msgstr "تفاصيل التشغيل"
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Run diagnosis"
-msgstr "تشغيل التشخيص"
 
 #: src/components/automations/AutomationsList.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -26856,7 +26956,6 @@ msgstr "تمت ترقية البيئة المعزولة"
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
@@ -27001,7 +27100,6 @@ msgstr ""
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/DetectedKeys.tsx
 #: src/components/cron-view/CronForm.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/top-nav-bar/RecordScreenButton.tsx
@@ -27801,10 +27899,6 @@ msgstr "إرسال رسالة IT"
 msgid "Send message"
 msgstr "إرسال الرسالة"
 
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Send once diagnosed"
-msgstr "إرسال بعد التشخيص"
-
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
 msgstr "إرسال استدعاء بسيط واحد عبر نقطة النهاية هذه"
@@ -27828,6 +27922,10 @@ msgstr "أرسلوا هذا الرابط إلى أي شخص تريدون منح�
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Send this to the person you support — they run it in their terminal:"
 msgstr "أرسلوا هذا إلى الشخص الذي تدعمونه — سيشغّله في الطرفية لديه:"
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Send to"
+msgstr "إرسال إلى"
 
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 msgid "Send to agent"
@@ -28477,10 +28575,6 @@ msgstr "المشاركة بالاسم أو البريد الإلكتروني…"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Share code {0} to invite."
 msgstr "مشاركة الرمز {0} للدعوة."
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Share context"
-msgstr "مشاركة السياق"
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 #: src/components/project-home/ProjectGitShareToggle.tsx
@@ -31706,6 +31800,10 @@ msgstr "خرج العامل فور تشغيله، لذا أُوقفت إعادة
 msgid "Then"
 msgstr "ثم"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Then install it:"
+msgstr "ثم ثبّتوه:"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Then send this to the Flowpad bot:"
 msgstr "ثم أرسلوا هذا إلى بوت Flowpad:"
@@ -31739,6 +31837,10 @@ msgstr "هذه الملفات غير مدرجة في Git وقد تكون خاص�
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "These conversations exist only on this device."
 msgstr "هذه المحادثات موجودة على هذا الجهاز فقط"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "These installers are for 64-bit Intel/AMD (x86_64) Linux."
+msgstr "هذه المُثبّتات مخصصة لنظام Linux بمعمارية 64 بت لمعالجات Intel/AMD (x86_64)."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
@@ -32130,6 +32232,11 @@ msgstr "هذا هو أول تشغيل لها، لذا يستغرق عدة دقا
 
 #~ msgid "This is my usage report ({target}, attached as context). Read it, then wait for my questions."
 #~ msgstr ""
+
+#. placeholder {0}: conversation?.title ?? ''
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "This is what my automation \"{0}\" reported ({target}, attached as context). Read it, then wait for my questions."
+msgstr ""
 
 #: src/components/harness-login/StatusRow.tsx
 msgid "This is your default assistant"
@@ -32764,7 +32871,6 @@ msgid "Times this event happened since Flowpad started"
 msgstr "عدد مرات وقوع هذا الحدث منذ بدء تشغيل Flowpad"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
@@ -33163,7 +33269,6 @@ msgstr "المشغّلات"
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
-#: src/pages/entry/OpenInFlowpadActions.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
@@ -34674,8 +34779,8 @@ msgid "What is this secret used for?"
 msgstr "ما الغرض من هذا السر؟"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "What is wrong"
-msgstr "ما المشكلة"
+msgid "What is wrong, what to attach, and who gets it"
+msgstr "ما المشكلة، وما الذي ترفقه، ومن يستلمه"
 
 #: src/components/automations/RunDetail.tsx
 msgid "What it did"
@@ -34769,8 +34874,8 @@ msgid "What went wrong"
 msgstr "ما الذي حدث من خطأ"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "What went wrong? What did you expect, and what did you already try?"
-msgstr "ما الذي حدث؟ ماذا كنت تتوقع، وماذا جرّبت بالفعل؟"
+msgid "What went wrong? What did you expect, and what did you already try? Paste a screenshot to attach it."
+msgstr "ما الخطأ الذي حدث؟ ما الذي توقعته، وما الذي جربته بالفعل؟ الصق لقطة شاشة لإرفاقها."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"
@@ -34942,10 +35047,6 @@ msgstr ""
 msgid "Who can read"
 msgstr ""
 
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Who gets it"
-msgstr "من يستلمه"
-
 #: src/pages/hub-home/HubHome.tsx
 msgid "Who may log in to this sandbox"
 msgstr "الجهات المخوّلة بتسجيل الدخول إلى هذه البيئة المعزولة"
@@ -35034,6 +35135,10 @@ msgstr "ستتم الترقية"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Window (days)"
 msgstr "النافذة الزمنية (أيام)"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Windows (.exe)"
+msgstr "Windows (.exe)"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Wipes each machine and starts it fresh from the agent's project. Anything not shared is lost."

@@ -96,7 +96,9 @@ export type ConversationScope =
 export const DIAGNOSIS_CHANNEL = 'diagnosis';
 /** Standard Flowpad messages (``conversation_channel.FLOWPAD``); a conversation written before channels were stamped carries none. */
 export const FLOWPAD_CHANNEL = 'flowpad';
-export const BUILT_IN_CHANNELS: readonly string[] = [FLOWPAD_CHANNEL, DIAGNOSIS_CHANNEL];
+/** What Flowpad's automations answer (``conversation_channel.AUTOMATIONS``): one conversation per automation. */
+export const AUTOMATIONS_CHANNEL = 'automations';
+export const BUILT_IN_CHANNELS: readonly string[] = [FLOWPAD_CHANNEL, DIAGNOSIS_CHANNEL, AUTOMATIONS_CHANNEL];
 
 /** A scope as a string: what keys a memo or a request on it. */
 export const scopeKey = (scope: ConversationScope) =>

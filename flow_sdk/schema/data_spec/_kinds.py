@@ -80,9 +80,8 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.deployment_timeline_spec  # noqa: F401  — registers ``deployment.timeline`` / ``deployment.timeline_event`` / ``deployment.thread(s)`` / ``deployment.process`` / ``deployment.code``
     import flow_sdk.schema.data_spec.diagnose_spec  # noqa: F401  — registers ``diagnose`` / ``diagnosis`` / ``flow.context``
     import flow_sdk.schema.data_spec.diagnosis_request_spec  # noqa: F401  — registers ``diagnosis.funding`` / ``diagnosis.attachment`` / ``diagnosis.request.open`` / ``diagnosis.request.edit`` / ``diagnosis.run``
-    import flow_sdk.schema.data_spec.secret_vault_spec  # noqa: F401  — registers ``secrets.project_vault``
-    import flow_sdk.schema.data_spec.sealed_value_spec  # noqa: F401  — registers ``secrets.device_key`` / ``secrets.sealed_value``
     import flow_sdk.schema.data_spec.diskio_spec  # noqa: F401  — registers ``diskio.*``, the disk-I/O kernel's values
+    import flow_sdk.schema.data_spec.doc_comment_spec  # noqa: F401  — registers ``doc.comment`` / ``doc.anchor`` / ``doc.change_request``
     import flow_sdk.schema.data_spec.dock_pointer_spec  # noqa: F401  — registers ``dock.pointer``
     import flow_sdk.schema.data_spec.eval_spec  # noqa: F401  — registers ``eval.spec`` / ``eval.row`` / ``eval.run``
     import flow_sdk.schema.data_spec.flow_json_spec  # noqa: F401  — registers ``flow.json`` / ``flow.dependency*``
@@ -90,12 +89,13 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.git_share_spec  # noqa: F401  — registers ``project.git_share``
     import flow_sdk.schema.data_spec.health_spec  # noqa: F401  — registers ``health.endpoint`` / ``health.node``
     import flow_sdk.schema.data_spec.help_request_spec  # noqa: F401  — registers ``help.recipient`` / ``help.request``
-    import flow_sdk.schema.data_spec.message_invite_spec  # noqa: F401  — registers ``message.invite``
     import flow_sdk.schema.data_spec.hub_failure_spec  # noqa: F401  — registers ``hub.failure``
     import flow_sdk.schema.data_spec.icon_spec  # noqa: F401  — registers ``icon`` / ``icon.pack``
     import flow_sdk.schema.data_spec.launch_failure_spec  # noqa: F401  — registers ``agent.launch_failure``
     import flow_sdk.schema.data_spec.llm_source_spec  # noqa: F401  — registers ``llm.source``
     import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``
+    import flow_sdk.schema.data_spec.message_form_spec  # noqa: F401  — registers ``message.form`` / ``message.form_answers``
+    import flow_sdk.schema.data_spec.message_invite_spec  # noqa: F401  — registers ``message.invite``
     import flow_sdk.schema.data_spec.message_reaction_spec  # noqa: F401  — registers ``message.reaction``
     import flow_sdk.schema.data_spec.message_sender_spec  # noqa: F401  — registers ``message.sender``
     import flow_sdk.schema.data_spec.message_state_spec  # noqa: F401  — registers ``stream_inbox.message.state``
@@ -103,16 +103,17 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.permission_spec  # noqa: F401  — registers ``permission.mapping`` / ``permission.need`` / ``permission.authorization``
     import flow_sdk.schema.data_spec.phone_spec  # noqa: F401  — registers ``phone_number``
     import flow_sdk.schema.data_spec.process_call_spec  # noqa: F401  — registers ``process.call``
-    import flow_sdk.schema.data_spec.doc_comment_spec  # noqa: F401  — registers ``doc.comment`` / ``doc.anchor`` / ``doc.change_request``
-    import flow_sdk.schema.data_spec.message_form_spec  # noqa: F401  — registers ``message.form`` / ``message.form_answers``
     import flow_sdk.schema.data_spec.project_cleanup_spec  # noqa: F401  — registers ``project.cleanup`` and friends
     import flow_sdk.schema.data_spec.project_manifest_spec  # noqa: F401  — registers ``project.manifest`` / ``project.manifest.entry``
     import flow_sdk.schema.data_spec.project_setup_spec  # noqa: F401  — registers ``project.setup.requirement`` / ``project.setup.var``
+    import flow_sdk.schema.data_spec.project_status_spec  # noqa: F401  — registers ``project.status`` / ``project.status.part``
     import flow_sdk.schema.data_spec.rag_spec  # noqa: F401  — registers ``rag.chunk`` / ``rag.hit``
     import flow_sdk.schema.data_spec.requirement_spec  # noqa: F401  — registers ``agent.requirement`` / ``agent.readiness`` / ``agent.readiness.item``
     import flow_sdk.schema.data_spec.returned_value_spec  # noqa: F401  — registers ``compute.returned`` and its ``.cli`` / ``.prompt`` / ``.ask`` / ``.wizard`` / ``.decision`` answers
     import flow_sdk.schema.data_spec.runtime_info_spec  # noqa: F401 — registers ``runtime.info``
     import flow_sdk.schema.data_spec.schema_tree_spec  # noqa: F401  — registers ``schema.tree`` and its ``.node`` / ``.field`` / ``.use`` / ``.dataset``
+    import flow_sdk.schema.data_spec.sealed_value_spec  # noqa: F401  — registers ``secrets.device_key`` / ``secrets.sealed_value``
+    import flow_sdk.schema.data_spec.secret_vault_spec  # noqa: F401  — registers ``secrets.project_vault``
     import flow_sdk.schema.data_spec.server_failure_spec  # noqa: F401  — registers ``server.failure_record`` / ``server.runtime_fingerprint``
     import flow_sdk.schema.data_spec.service_endpoint_spec  # noqa: F401  — registers ``web.app`` / ``api.rest`` / ``api.chat.openai`` / ``api.mcp`` / ``flowpad.workspace``
     import flow_sdk.schema.data_spec.session_spec  # noqa: F401  — registers ``session.start``
@@ -121,9 +122,9 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.status_spec  # noqa: F401  — registers ``status`` / ``status.harness`` / ``status.key`` / ``status.hub`` / ``status.account``
     import flow_sdk.schema.data_spec.token_allocation_spec  # noqa: F401
     import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action`` / ``trigger.then``
-    import flow_sdk.schema.data_spec.webapp_spec  # noqa: F401  — registers ``webapp.mount`` / ``webapp.service``
-    import flow_sdk.schema.data_spec.project_status_spec  # noqa: F401  — registers ``project.status`` / ``project.status.part``
+    import flow_sdk.schema.data_spec.usage_report_spec  # noqa: F401  — registers ``usage.summary`` / ``usage.summary.session``
     import flow_sdk.schema.data_spec.webapp_lifecycle_spec  # noqa: F401  — registers ``webapp.lifecycle`` / ``webapp.failure`` / ``webapp.handling``
+    import flow_sdk.schema.data_spec.webapp_spec  # noqa: F401  — registers ``webapp.mount`` / ``webapp.service``
     import flow_sdk.schema.data_spec.webhook_spec  # noqa: F401
     import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.plan`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``
     import flow_sdk.secrets  # noqa: F401  — registers ``secrets.store_ref`` / ``secrets.vault``

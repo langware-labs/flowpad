@@ -2,9 +2,9 @@
  * "Ask someone for help" from the vibe workspace — the ONE get-help affordance,
  * driven through the REAL browser UI, across two instances.
  *
- *   alice (dev-1, browser): opens her vibe workspace, clicks the raised-hand button and walks the
- *          three cards: what is wrong → diagnosis & context (both on by default; Review content
- *          opens the message review on what will be sent) → who gets it (bob), Send once diagnosed.
+ *   alice (dev-1, browser): opens her vibe workspace, clicks the raised-hand button and fills the
+ *          one screen: what is wrong, diagnosis & context (both on by default; Review opens the
+ *          message review on what will be sent), who gets it (bob), Diagnose and Send.
  *   → ONE help request: a TASK assigned to bob, and a conversation holding ONE help_request message
  *     with the issue text, the task chip, and the diagnosis + context as ordinary files.
  *   bob (dev-2): the task arrives unassisted; the message's files are staged on his side, and in
@@ -146,15 +146,13 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     await ask.click();
     await page.getByTestId('ask-for-help-helpdesk-button').waitFor({ state: 'visible', timeout: 10_000 });
 
-    // Card 1 — what is wrong: one box.
+    // One screen — what is wrong.
     const notes = page.getByTestId('vibe-assign-notes');
     await notes.waitFor({ state: 'visible', timeout: 10_000 });
     await notes.fill(`${TITLE}\n\n${NOTES}`);
-    await page.getByTestId('ask-for-help-next').click();
 
-    // Card 2 — diagnosis & context, both on by default (asserted, not set). Review content is the
-    // message review of exactly what will be sent.
-    await page.getByTestId('ask-for-help-card-context').waitFor({ state: 'visible', timeout: 10_000 });
+    // Diagnosis & context, both on by default (asserted, not set). Review is the message review
+    // of exactly what will be sent.
     expect(await page.getByTestId('ask-for-help-run-diagnosis').isChecked()).toBe(true);
     expect(await page.getByTestId('ask-for-help-share-context').isChecked()).toBe(true);
     await page.getByTestId('ask-for-help-review-content').click();
@@ -164,12 +162,10 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     expect(await page.getByText('Context to share — review before sending.').count()).toBe(1);
     await page.getByTestId('content-review-share').click();
     await review.waitFor({ state: 'detached', timeout: 10_000 });
-    await page.getByTestId('ask-for-help-next').click();
 
-    // Card 3 — who gets it. The radix focus trap swallows the first keystrokes: click, settle, type.
-    await page.getByTestId('ask-for-help-card-who').waitFor({ state: 'visible', timeout: 10_000 });
+    // Who gets it. The radix focus trap swallows the first keystrokes: click, settle, type.
     const remove = page.getByTestId('ask-for-help-desk-remove');
-    // The desks load after the card opens: wait for them, then ask bob only.
+    // The desks load after the dialog opens: wait for them, then ask bob only.
     await remove.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
     if (await remove.count()) await remove.click();
     const person = page.getByTestId('vibe-assign-person');
@@ -316,75 +312,8 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
   }, 60_000);
 });
 
-describe('review before sending: nothing leaves until Share', () => {
-  const REVIEW = `review me first ${token}`;
-  let reviewConv = '';
-
-  it('alice keeps the request here: the conversation says its context is not shared', async () => {
-    const { page } = alicePage;
-    await page.goto(`${alicePage.feUrl}/dock/shell/agentic_process-${processId}?viewMode=vibe&scope-mode=project&scope-activeProjectId=${projectId}`, {
-      waitUntil: 'domcontentloaded',
-    });
-    const ask = page.getByTestId('vibe-assign-task');
-    await ask.waitFor({ state: 'visible', timeout: 25_000 });
-    await ask.click();
-    const newAsk = page.getByTestId('vibe-help-new');
-    if (await newAsk.count()) await newAsk.click(); // the button lists the open request first
-    await page.getByTestId('vibe-assign-notes').fill(REVIEW);
-    await page.getByTestId('ask-for-help-next').click();
-    await page.getByTestId('ask-for-help-next').click();
-    await page.getByTestId('ask-for-help-card-who').waitFor({ state: 'visible', timeout: 10_000 });
-    const remove = page.getByTestId('ask-for-help-desk-remove');
-    await remove.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
-    if (await remove.count()) await remove.click();
-    const person = page.getByTestId('vibe-assign-person');
-    await person.click();
-    await page.waitForTimeout(500);
-    await person.pressSequentially(bob.email, { delay: 15 });
-    await person.blur();
-    await page.getByTestId('ask-for-help-review-first').click();
-
-    await page.getByTestId('help-request-not-shared').waitFor({ state: 'visible', timeout: 25_000 });
-    reviewConv = page.url().match(/conversation\/([0-9a-f-]{36})/)?.[1] ?? '';
-    expect(reviewConv, page.url()).toBeTruthy();
-    const conv: any = await alice.sdk.Conversation.getById(reviewConv);
-    expect(conv.remote ?? false, 'kept on this computer').toBe(false);
-  }, 90_000);
-
-  it('Open is the same message review, of what is held here', async () => {
-    const { page } = alicePage;
-    await page.getByTestId('help-request-open').click();
-    const review = page.getByTestId('content-review-dialog');
-    await review.waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByTestId('content-review-row-diagnosis.value.json').waitFor({ state: 'visible' });
-    await page.keyboard.press('Escape');
-    await review.waitFor({ state: 'detached', timeout: 10_000 });
-  }, 30_000);
-
-  it('Share sends it: bob gets the request and its context', async () => {
-    const { page } = alicePage;
-    await page.screenshot({ path: path.join(os.tmpdir(), `ask-help-review-${token}.png`) });
-    await page.getByTestId('help-request-share').click();
-    await page.getByTestId('help-request-not-shared').waitFor({ state: 'detached', timeout: 25_000 });
-
-    await syncAssignedConversation(bob, reviewConv);
-    const withContext = await pollUntil(
-      async () => {
-        const rows: any[] = ((await bob.sdk.FlowMessage.query(
-          new bob.sdk.QueryRequest({ type: 'flow_message', query: { conversation_id: reviewConv }, name: 'shared ctx' }),
-          true,
-        ).catch(() => [])) ?? []) as any[];
-        return rows.find((m) => (m.attachment ?? []).some((a: any) => String(a.data).endsWith('diagnosis.value.json'))) ?? null;
-      },
-      25_000,
-      'the shared context on bob',
-    );
-    expect(withContext.kind).toBe('help_request');
-  }, 60_000);
-});
-
 describe('the help desk (preselected): it is just a conversation', () => {
-  it('Send once diagnosed opens the conversation — no ticket state, no Close ticket', async () => {
+  it('Diagnose and Send opens the conversation — no ticket state, no Close ticket', async () => {
     const { page } = alicePage;
     await page.goto(`${alicePage.feUrl}/dock/shell/agentic_process-${processId}?viewMode=vibe&scope-mode=project&scope-activeProjectId=${projectId}`, {
       waitUntil: 'domcontentloaded',
@@ -395,8 +324,6 @@ describe('the help desk (preselected): it is just a conversation', () => {
     const newAsk = page.getByTestId('vibe-help-new');
     if (await newAsk.count()) await newAsk.click();
     await page.getByTestId('vibe-assign-notes').fill(`desk please ${token}`);
-    await page.getByTestId('ask-for-help-next').click();
-    await page.getByTestId('ask-for-help-next').click();
     await page.getByTestId('ask-for-help-desks').waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByTestId('vibe-assign-submit').click();
 

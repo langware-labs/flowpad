@@ -1,0 +1,18 @@
+{
+  "name": "Daily usage summary",
+  "description": "Each morning, a short summary of yesterday's agent sessions: cost, time and what was used.",
+  "recommended": false,
+  "schedule": {
+    "every": "cron",
+    "expr": "0 7 * * *"
+  },
+  "then": {
+    "steps": [
+      {
+        "id": "summary",
+        "ref": "usage-summary",
+        "input_from": "$input"
+      }
+    ]
+  }
+}

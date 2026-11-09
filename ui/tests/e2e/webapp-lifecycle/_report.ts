@@ -1,7 +1,6 @@
 /**
  * Custom Playwright reporter: report.json + a self-contained report.html, written OUTSIDE the
- * repo to ${WL_REPORT_DIR:-~/Downloads/webapp-lifecycle/<stamp>}. Writes `tiers-1-2.pass` there
- * when every tier-1 and tier-2 test ran and passed (tier 3 is gated on it).
+ * repo to ${WL_REPORT_DIR:-~/Downloads/webapp-lifecycle/<stamp>}.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
@@ -48,8 +47,6 @@ export default class WlReporter implements Reporter {
     };
     writeFileSync(`${this.dir}/report.json`, JSON.stringify(doc, null, 2));
     writeFileSync(`${this.dir}/report.html`, html(doc));
-    const t12 = this.rows.filter((r) => /tier[12]_/.test(r.file));
-    if (t12.length && t12.every((r) => r.status === 'passed')) writeFileSync(`${this.dir}/tiers-1-2.pass`, doc.finished);
     console.log(`\nwebapp-lifecycle report: ${this.dir}/report.html`);
   }
 }
