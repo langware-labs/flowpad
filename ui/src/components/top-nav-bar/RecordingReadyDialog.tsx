@@ -3,6 +3,7 @@ import { FolderInput, RotateCcw, Share2, Trash2, Video } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { ActionInfo, dataManager, TypeId, VFSPath } from '@sdk';
 import { Button } from '@src/components/ui/button';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { useFileShareSource } from '@src/hooks/use-file-share-source';
@@ -78,7 +79,7 @@ export function RecordingReadyDialog({ recording }: { recording: Recording }) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && dismissRecording()}>
-      <DialogContent className="sm:max-w-md" data-testid="recording-ready-dialog">
+      <DialogContent className="sm:max-w-lg" data-testid="recording-ready-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Video className="h-5 w-5 text-primary" />
@@ -96,38 +97,43 @@ export function RecordingReadyDialog({ recording }: { recording: Recording }) {
             data-testid="recording-preview"
           />
           <div className="flex flex-col gap-1">
-            <p className="truncate font-mono text-xs text-foreground" data-testid="recording-file-name">
-              {fileName}
-            </p>
+            <div className="flex min-w-0 items-center gap-1">
+              <p className="truncate font-mono text-xs text-foreground" data-testid="recording-file-name">
+                {fileName}
+              </p>
+              <CopyButton value={recording.absPath} title={t`Copy path`} testId="recording-copy-path" />
+            </div>
             <p className="text-xs text-muted-foreground">
               {formatElapsed(recording.durationMs)} · {formatBytes(recording.file.size)} ·{' '}
               {saved ? t`in the project under recordings/` : t`kept in Flowpad's temp folder until you save it`}
             </p>
           </div>
         </div>
-        <DialogFooter className="gap-2">
+        <DialogFooter className="flex-row flex-wrap items-center gap-2 sm:justify-between sm:space-x-0">
           {!saved && (
-            <>
-              <Button variant="ghost" className="sm:mr-auto" onClick={() => void discard(false)} disabled={saving} data-testid="recording-discard">
+            <div className="flex gap-1">
+              <Button variant="ghost" size="sm" onClick={() => void discard(false)} disabled={saving} data-testid="recording-discard">
                 <Trash2 className="h-4 w-4" />
                 {t`Discard`}
               </Button>
-              <Button variant="outline" onClick={() => void discard(true)} disabled={saving} data-testid="recording-record-again">
+              <Button variant="ghost" size="sm" onClick={() => void discard(true)} disabled={saving} data-testid="recording-record-again">
                 <RotateCcw className="h-4 w-4" />
                 {t`Record again`}
               </Button>
-            </>
+            </div>
           )}
-          {!saved && (
-            <Button variant="outline" onClick={() => void saveToProject()} disabled={saving || !project?.id} data-testid="recording-save-to-project">
-              <FolderInput className="h-4 w-4" />
-              {t`Save to project`}
+          <div className="ml-auto flex gap-2">
+            {!saved && (
+              <Button variant="outline" onClick={() => void saveToProject()} disabled={saving || !project?.id} data-testid="recording-save-to-project">
+                <FolderInput className="h-4 w-4" />
+                {t`Save`}
+              </Button>
+            )}
+            <Button onClick={() => setSharing(true)} data-testid="recording-share">
+              <Share2 className="h-4 w-4" />
+              {t`Share`}
             </Button>
-          )}
-          <Button onClick={() => setSharing(true)} data-testid="recording-share">
-            <Share2 className="h-4 w-4" />
-            {t`Share`}
-          </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

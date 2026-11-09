@@ -16,6 +16,7 @@ import {
   dataManager,
   FlowMessage,
   gitOriginCloneUrl,
+  fsStore,
   isImagePath,
   launchWizard,
   MessageAttachment,
@@ -52,6 +53,9 @@ import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageRunStatus } from './MessageRunStatus';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
+import { isLightboxMedia } from '@src/components/ui/media-lightbox';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
+import { basename } from '@src/components/asset-manager/asset-row-helpers';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { CredentialValueLock } from './CredentialValueLock';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -639,20 +643,12 @@ export function FlowMessageBubble({
         {/* Locally-available images always render as image cards — no project
             gate, no download step. The sender sees them immediately. */}
         {localImageItems.map((item) => (
-          <AttachmentChip
+          <LocalAttachmentChip
             key={item.key}
             url={item.url ?? ''}
             filename={item.filename}
             state={item.state}
             localPath={item.localPath}
-            onOpenInEditor={
-              item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
-            }
-            onRevealInFolder={
-              item.localPath
-                ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
-                : undefined
-            }
           />
         ))}
         {/* Entity chips render as soon as the entity resolves locally — no
@@ -698,20 +694,12 @@ export function FlowMessageBubble({
         )}
         {/* Sender's own local files (no staged row): open/reveal off local_path. */}
         {senderLocalFileItems.map((item) => (
-          <AttachmentChip
+          <LocalAttachmentChip
             key={item.key}
             url={item.url ?? ''}
             filename={item.filename}
             state={item.state}
             localPath={item.localPath}
-            onOpenInEditor={
-              item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
-            }
-            onRevealInFolder={
-              item.localPath
-                ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
-                : undefined
-            }
           />
         ))}
         {senderLocalFileItems.length > 1 && (
@@ -1118,6 +1106,24 @@ function ProjectMessageChip({
   );
 }
 
+/** A file card for bytes on this machine: open opens it in the editor, reveal shows it in Finder/Explorer. */
+function LocalAttachmentChip({
+  localPath,
+  ...chip
+}: { url: string; filename: string; state?: AttachmentChipState; localPath: string | null }) {
+  const { navigation } = useDockNavigation();
+  return (
+    <AttachmentChip
+      {...chip}
+      localPath={localPath}
+      onOpenInEditor={localPath ? () => navigation.openDock(dockPointerForLocalFile(localPath)) : undefined}
+      onRevealInFolder={
+        localPath ? () => void openExternalFromComputeNode('@local', localPath, { select: true }) : undefined
+      }
+    />
+  );
+}
+
 export function MessageEntityChip({
   typeId,
   conversationId,
@@ -1272,6 +1278,19 @@ export function MessageEntityChip({
   // Built on click, not in render: constructing an entity while rendering notifies the cache
   // (eslint-rules/no-entity-construct-in-render.js).
   const artifactData = typeId.type === Artifact.type && data ? data : null;
+  // An artifact that stands for one local picture or video (a shared screen
+  // recording) shows the media itself, like a raw media attachment does.
+  const artifactFile = artifactData as { path?: string | null; asset_ref?: string } | null;
+  const mediaPath = artifactFile?.path || artifactFile?.asset_ref || null;
+  if (mediaPath && isLightboxMedia(mediaPath)) {
+    return (
+      <LocalAttachmentChip
+        url={fsStore.getState().getServeUrl(LOCAL_COMPUTE_NODE, mediaPath)}
+        filename={basename(mediaPath)}
+        localPath={mediaPath}
+      />
+    );
+  }
   // Installed via a MessageAttachment: behavior splits by view mode.
   //  • Advanced (or Dev): the chip KEEPS opening the review modal, where
   //    uninstall / test live and an "Open" button jumps to the entity view.
