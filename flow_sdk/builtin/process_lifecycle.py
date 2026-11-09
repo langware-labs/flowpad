@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import os
 import signal
-from pathlib import Path
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.instances.restart_marker import BACKEND_RESTART_MARKER_FILENAME, request_backend_restart  # noqa: F401

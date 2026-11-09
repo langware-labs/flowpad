@@ -257,8 +257,10 @@ describe('TabManager tab list versions', () => {
     const stale = deferred<Tab[]>();
     const listAll = vi.fn<TabGateway['listAll']>().mockReturnValueOnce(stale.promise);
     const gateway = gatewayWith(listAll);
-    gateway.setNameById = vi.fn(async () =>
-      Object.assign(listed(undefined, 'a'), { all: [row('a') as Tab, row('new') as Tab], version: 'e1:5' }),
+    gateway.setNameById = vi.fn(() =>
+      Promise.resolve(
+        Object.assign(listed(undefined, 'a'), { all: [row('a') as Tab, row('new') as Tab], version: 'e1:5' }),
+      ),
     ) as TabGateway['setNameById'];
     const { manager } = wired(gateway);
 
