@@ -89,3 +89,19 @@ What each variable does (all in `ui/vite.config.ts`):
 Why the login is needed: the prod session cookie belongs to `app.flowpad.ai`, so `localhost` has no session.
 A plain proxy bounces you to the hub's login, which lands back on `app.flowpad.ai`. Never copy that cookie or
 the JWT by hand; the OAuth path above is the sanctioned one.
+
+### Writing to prod from it (narrow), and the traps
+
+- `PROD_WRITE_ALLOW=<regex>`: with `PROD_READ_ONLY=1`, the writes whose URL matches still pass — open only what one
+  validation needs, e.g. one agent's invite actions:
+  `PROD_WRITE_ALLOW='^/api/v1/graph/agent/<id>/(add_public_codes|rename_public_code|revoke_public_code|manage_public_deployment|visitor-sandbox)(\?|$)'`.
+  Drop it (restart without it) when done; a blocked write answers 403 `read-only dev proxy`.
+- **Which account it is.** `HUB_LOGIN` signs in as whoever is signed in to `app.flowpad.ai` in that Chrome profile.
+  The token lives only in the Vite process: every restart signs in again, and after switching accounts on
+  app.flowpad.ai, restart Vite or it keeps the old one. Never copy cookies or tokens to switch.
+- **One server, one owner.** The 4121 server may be in use by another session or by the person (an open-pc link, a
+  tab). Do not restart someone else's server to change its flags — run your own on another port (4131, …).
+- **Shared dependency cache.** Every Vite in `ui/` shares `ui/node_modules/.vite`. A `--force` restart (or a second
+  server optimizing at once) rewrites it under the others, which then load a blank page
+  (`The file does not exist at …/.vite/deps/chunk-….js … optimize deps directory`). Avoid `--force` while other
+  servers run; if one goes blank, restart that one server once.
