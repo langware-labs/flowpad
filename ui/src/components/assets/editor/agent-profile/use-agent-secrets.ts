@@ -21,11 +21,33 @@ export interface AgentSecrets {
 }
 
 /**
+ * The agent's project id. On the hub an agent row carries no `project_id`: its `git_origin` names the hosted repo,
+ * resolved to the project the same way the page finds it (`Project.forHostedRepo`, see `load-asset.ts`).
+ */
+function useAgentProjectId(agent: Agent): string | null {
+  const own = agent.project_id ?? null;
+  const origin = (agent as { git_origin?: { kind?: string; repo?: string } | null }).git_origin;
+  const repo = !own && isHubOnly() && origin?.kind === 'hub_repo' ? (origin.repo ?? null) : null;
+  const [fromRepo, setFromRepo] = useState<string | null>(null);
+  useEffect(() => {
+    if (!repo) return;
+    let alive = true;
+    Project.forHostedRepo(repo)
+      .then((p) => alive && setFromRepo(p?.id ?? null))
+      .catch(() => alive && setFromRepo(null));
+    return () => {
+      alive = false;
+    };
+  }, [repo]);
+  return own ?? (repo ? fromRepo : null);
+}
+
+/**
  * The agent's credentials joined with the project's Credentials and the project's hub store — names only.
  * The project's own declarations are read on this computer; the hub page cannot, so nothing reads as undeclared there.
  */
 export function useAgentSecrets(agent: Agent): AgentSecrets {
-  const projectId = agent.project_id ?? null;
+  const projectId = useAgentProjectId(agent);
   const project = useMemo(() => (projectId ? new Project({ id: projectId }) : null), [projectId]);
   const required = useMemo(() => requiredCredentials(agent.requirements), [agent.requirements]);
   const [rows, setRows] = useState<SecretRow[] | null>(null);
