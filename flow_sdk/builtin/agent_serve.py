@@ -1057,6 +1057,10 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
     if getattr(driver_cls, "replies_explicitly", False):
         await skip_message(message)
         return True
+    if getattr(driver_cls, "answers_once", False) and await _answered_before(message, source):
+        console.info("✗ %s  %s — already answered once; the turn's text is not sent", channel, who)
+        await skip_message(message)
+        return True
     # quote=None: the answer quotes the message only when the person wrote again meanwhile.
     await message.reply(await message.reply_spec(body=outcome.text or "", files=answer_files))
     console.info("→ %s  %s: %s", channel, who, _line(outcome.text))
@@ -1201,6 +1205,25 @@ def _announce(deployment, kind: str, **data) -> None:
 
     if deployment is not None:
         announce(str(deployment.id), kind, **data)
+
+
+def spoke_before(senders: "list[str]", own_ids: "set[str]") -> bool:
+    """True when one of a conversation's *senders* is us (*own_ids*): we have already said something there."""
+    return any(str(sender or "") in own_ids for sender in senders)
+
+
+async def _answered_before(message, source) -> bool:
+    """Whether this agent already wrote in the message's conversation. A source that ``answers_once`` sends
+    the turn's text back by itself only the first time (a help desk's acknowledgement); anything the agent
+    says after that goes through its own commands, where a person's approval is asked."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    conversation = await conversation_of(message, source)
+    if not conversation:
+        return False
+    rows = await FlowMessage.get_all({"conversation_id": conversation})
+    return spoke_before([getattr(row, "sender_id", "") for row in rows], set(await User.self_ids()))
 
 
 async def skip_message(message) -> bool:

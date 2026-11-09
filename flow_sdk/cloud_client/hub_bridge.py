@@ -922,9 +922,14 @@ class HubWsBridge:
                 "delivery_status",
                 "delivered_at",
                 "received_at",
+                "handling_at",
                 "body_status",
                 "attachment_filename",
             ):
+                # The hub leaves a cleared field out of a full message: no ``handling_at`` on a message that is
+                # otherwise whole means "not working any more".
+                if field == "handling_at" and field not in data and ("sender_id" in data or "delivery_status" in data):
+                    data = {**data, "handling_at": None}
                 if field not in data:
                     continue
                 if (
@@ -1343,20 +1348,6 @@ class HubWsBridge:
                 "target_typeid": {"type": "conversation", "id": conversation_id},
                 "action": "add_message",
                 "body": body,
-            },
-            timeout=timeout,
-        )
-
-    async def mark_handling(self, *, conversation_id: str, flow_message_ids: list[str], timeout: float = 5.0) -> dict:
-        """Tell the hub this box started working on an answer to these messages: the sender's "working..."."""
-        return await self.manager.send_request(
-            {
-                "message_type": "rest_api_msg",
-                "method": "POST",
-                "scope": [],
-                "target_typeid": {"type": "conversation", "id": conversation_id},
-                "action": "mark_handling",
-                "body": {"flow_message_ids": list(flow_message_ids)},
             },
             timeout=timeout,
         )
