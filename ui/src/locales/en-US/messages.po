@@ -13709,6 +13709,10 @@ msgstr "Flowpad.ai Logo"
 msgid "Flowpad's number · linked sender"
 msgstr "Flowpad's number · linked sender"
 
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Flowpad's setup comes first"
+msgstr "Flowpad's setup comes first"
+
 #: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "Focus local graph"
@@ -21866,6 +21870,11 @@ msgstr "Open externally: {childPath}"
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open Flowpad Cloud"
 msgstr "Open Flowpad Cloud"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Open Flowpad's setup"
+msgstr "Open Flowpad's setup"
 
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
@@ -31900,6 +31909,10 @@ msgstr "This app is not installed here. Add its project again from the project t
 msgid "This app is served externally via Flowpad. Open it in a new tab."
 msgstr "This app is served externally via Flowpad. Open it in a new tab."
 
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "This app is set up after Flowpad's own setup window, so the tools it needs are in place."
+msgstr "This app is set up after Flowpad's own setup window, so the tools it needs are in place."
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr "This asset has no file path."
@@ -34404,6 +34417,12 @@ msgstr "Waiting for authorization… (expires in {mm}:{ss})"
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Waiting for FlowPad to open…"
 msgstr "Waiting for FlowPad to open…"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Waiting for Flowpad's setup"
+msgstr "Waiting for Flowpad's setup"
 
 #: src/pages/keychain-approval.tsx
 msgid "Waiting for keychain approval…"

@@ -13704,6 +13704,10 @@ msgstr "לוגו Flowpad.ai"
 msgid "Flowpad's number · linked sender"
 msgstr "מספר Flowpad · שולח מקושר"
 
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Flowpad's setup comes first"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "Focus local graph"
@@ -21860,6 +21864,11 @@ msgstr "פתחו חיצונית: {childPath}"
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open Flowpad Cloud"
 msgstr "פתחו את Flowpad Cloud"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Open Flowpad's setup"
+msgstr ""
 
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
@@ -31894,6 +31903,10 @@ msgstr "האפליקציה אינה מותקנת כאן. הוסיפו שוב א�
 msgid "This app is served externally via Flowpad. Open it in a new tab."
 msgstr "האפליקציה מוגשת מבחוץ דרך Flowpad. פתחו אותה בכרטיסייה חדשה."
 
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "This app is set up after Flowpad's own setup window, so the tools it needs are in place."
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr "לנכס זה אין נתיב קובץ."
@@ -34397,6 +34410,12 @@ msgstr "מחכה להרשאה... (פג תוקף ב-{mm}:{ss})"
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Waiting for FlowPad to open…"
 msgstr "ממתינים לפתיחת FlowPad…"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Waiting for Flowpad's setup"
+msgstr ""
 
 #: src/pages/keychain-approval.tsx
 msgid "Waiting for keychain approval…"
