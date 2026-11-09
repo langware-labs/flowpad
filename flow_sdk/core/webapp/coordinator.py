@@ -69,6 +69,8 @@ _DETERMINISTIC: dict[FailureCode, HandlingAction] = {
     FailureCode.PORT_HELD: HandlingAction.NEEDS_PERSON,
     # A credential, a sign-in: only the person has it — never an agent's to invent or work around.
     FailureCode.CREDENTIAL_MISSING: HandlingAction.NEEDS_PERSON,
+    # First-run setup comes first: the person finishes that wizard, then the app's setup goes on.
+    FailureCode.FIRST_RUN_SETUP: HandlingAction.NEEDS_PERSON,
 }
 
 
@@ -231,7 +233,7 @@ async def _setup_owed(app, *, display: str) -> Optional[WebappFailureSpec]:
     try:
         run = await start_setup(project, root=target, tree=tree, load_after=False, connect_here=False)
     except FirstRunPending as exc:
-        return make(FailurePhase.DEPENDENCY, FailureCode.SETUP_OWED, str(exc), folder=app.asset_ref)
+        return make(FailurePhase.DEPENDENCY, FailureCode.FIRST_RUN_SETUP, str(exc), folder=app.asset_ref)
     await record.set_state(str(app.id), LifecycleState.STARTING, f"setting up what it needs: {owed}", setup_owed=owed)
     task = _RUNS.get((str(project.id), target))
     result = await asyncio.shield(task) if task is not None else None
@@ -401,7 +403,7 @@ async def _setup_node(app, node_id: str) -> Optional[WebappFailureSpec]:
     try:
         await start_setup(project, root=node_id, load_after=True, connect_here=False)
     except FirstRunPending as exc:
-        return make(FailurePhase.DEPENDENCY, FailureCode.SETUP_OWED, str(exc), folder=app.asset_ref)
+        return make(FailurePhase.DEPENDENCY, FailureCode.FIRST_RUN_SETUP, str(exc), folder=app.asset_ref)
     task = _RUNS.get((str(project.id), node_id))
     result = await asyncio.shield(task) if task is not None else None
     if result is not None and result.ok:

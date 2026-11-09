@@ -1,5 +1,6 @@
 import { Trans } from '@lingui/react/macro';
 import { Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Project, type WebAppLifecycle } from '@sdk';
 import { AskForm } from '@src/components/ask/AskForm';
@@ -7,6 +8,7 @@ import { Button } from '@src/components/ui/button';
 import { SetupTreeView } from '@src/components/project-setup/SetupTreeView';
 import { Step } from '@src/components/project-setup/Step';
 import { webappAsset } from '@src/components/project-setup/use-project-load';
+import { FIRST_RUN_BLOCK, useFirstRunAwaited, whenFirstRunDone } from '@src/components/setup-incomplete/first-run-gate';
 import type { AppLifecycle } from './useAppLifecycle';
 
 /**
@@ -81,6 +83,7 @@ export function AppLifecyclePanel({ lifecycle }: { lifecycle: AppLifecycle }) {
       );
     case 'needs_person':
     case 'failed':
+      if (record.failure?.code === FIRST_RUN_BLOCK) return <HeldForFirstRun lifecycle={lifecycle} />;
       return (
         <Screen state={record.state}>
           <h2 className="text-lg font-semibold">
@@ -104,6 +107,40 @@ export function AppLifecyclePanel({ lifecycle }: { lifecycle: AppLifecycle }) {
     default:
       return <Checking />;
   }
+}
+
+/**
+ * Its setup held for first-run setup: the wizard is put in front of the person at once, and the app comes up
+ * again by itself once that is all green. Left short of it, the button asks again.
+ */
+function HeldForFirstRun({ lifecycle }: { lifecycle: AppLifecycle }) {
+  const awaited = useFirstRunAwaited();
+  const { fixIt } = lifecycle;
+  const finish = useCallback(async () => {
+    if (await whenFirstRunDone()) await fixIt();
+  }, [fixIt]);
+  const asked = useRef(false);
+  useEffect(() => {
+    if (asked.current) return;
+    asked.current = true;
+    void finish();
+  }, [finish]);
+  return (
+    <Screen state="first_run_setup">
+      <h2 className="flex items-center gap-2 text-lg font-semibold">
+        {awaited ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
+        {awaited ? <Trans>Waiting for Flowpad's setup to finish</Trans> : <Trans>Finish setting up Flowpad first</Trans>}
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        <Trans>This app is set up once Flowpad's own setup is done, so the tools it needs are in place.</Trans>
+      </p>
+      {!awaited && (
+        <Button className="self-start" data-testid="app-lifecycle-finish-first-run" onClick={() => void finish()}>
+          <Trans>Finish setting up Flowpad</Trans>
+        </Button>
+      )}
+    </Screen>
+  );
 }
 
 function Screen({ state, children }: { state: string; children: React.ReactNode }) {
