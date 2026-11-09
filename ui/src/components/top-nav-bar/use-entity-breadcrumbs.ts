@@ -29,6 +29,7 @@ import { useWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { subjectEditorPointer } from '@src/navigation/subject-editor';
 import { resolveAncestorChain, type AncestorNode } from '@src/navigation/entity-ancestors';
 import { useContext } from '@src/hooks/useContext';
@@ -466,16 +467,15 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     // The project always leads — except on the hub, or in the transient window
     // where no project is selected, where there simply isn't one.
     //
-    // The one crumb that does NOT navigate: clicking it opens the projects
-    // list, which is what the chip it replaced did. Opening the project itself
-    // is the briefcase button up in the nav cluster — a destination, next to
-    // the other destinations, rather than a second meaning for this click.
+    // The project crumb opens the project's own page (the hub's project page on the hub); switching
+    // project is the project chevron's and the footer's job.
     if (project && !isAgentScoped && !isUserScoped && !isMachineScoped) {
+      const home = DockPointer.forProject(project.id);
       out.push({
         key: 'project',
         label: projectLabel ?? project.displayName,
         Icon: iconForType(Project.type),
-        pointer: null,
+        pointer: isHubOnly() ? home.withPage(PageId.HUB) : home,
         kind: 'project',
       });
     }
