@@ -8,6 +8,7 @@ catalog — the project's published view among them (500 on
 """
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,8 @@ import pytest
 from flow_sdk.assets.folder import AssetFolder, collect_asset_scan
 
 pytestmark = pytest.mark.skipif(
-    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads a mode-000 folder; EACCES needs a normal user"
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="needs a normal POSIX user: chmod 0 does not lock a folder on Windows, and root reads it anyway",
 )
 
 
