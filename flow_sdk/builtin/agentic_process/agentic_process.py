@@ -6995,6 +6995,7 @@ class AgenticProcess(Entity):
         "worker_status",
         "worker_status_detail",
         "worker_status_detail_id",
+        "goal_met",
         "busy",
         "ready_for_input",
         "queue",
@@ -7260,15 +7261,10 @@ class AgenticProcess(Entity):
         return discovered
 
     def _goal_met(self) -> bool:
-        """The worker's ``/goal`` was judged met (newest goal check in the transcript)."""
-        try:
-            from flow_sdk.transcript_analyzer.worker_status import goal_met
-
-            path = transcript_cache.transcript_path(self)
-            return goal_met(path) if path else False
-        except Exception:
-            logger.debug("goal_met lookup failed", exc_info=True)
-            return False
+        """The worker's ``/goal`` was judged met. Only vendors with goals (Claude) answer."""
+        check = getattr(self.driver, "goal_met", None)
+        path = transcript_cache.transcript_path(self) if check else None
+        return bool(path) and check(path)
 
     def _worker_status_detail(self, worker_status: "WorkerStatus | None") -> "StatusDetail | None":
         """The CLI's own error entry — its sentence and its entry id — when the

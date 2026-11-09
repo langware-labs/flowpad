@@ -77,8 +77,12 @@ export function ChatHistoryRow({
   const liveStatus = useWorkerStatus(entry.agentic_process_id);
   const workerStatus = liveStatus ?? process?.workerStatus;
   // Busy → spinner; a met /goal → green check; else the worker status's own mark.
-  const goalMet = !busy && process?.goal_met === true;
-  const statusCfg = busy || goalMet ? undefined : compactWorkerStatusConfig(workerStatus);
+  const cfg = compactWorkerStatusConfig(workerStatus);
+  const mark = busy
+    ? { key: 'busy', icon: Loader2, cls: 'animate-spin text-emerald-500', label: t`Working…` }
+    : process?.goal_met
+      ? { key: 'goal_met', icon: Check, cls: 'text-emerald-500', label: t`Goal completed` }
+      : cfg && { key: workerStatus, icon: cfg.icon, cls: cn(cfg.color, cfg.animate && 'animate-spin'), label: cfg.label };
   // Project · branch survive only as a hover tooltip on the row (no visible subline).
   const meta = [entry.project_name, entry.git_branch].filter(Boolean).join(' · ');
   const hasMsgs = !!entry.message_count && entry.message_count > 0;
@@ -111,19 +115,17 @@ export function ChatHistoryRow({
       title={meta || undefined}
     >
       <div className="flex items-center gap-1.5">
-        {/* Leftmost status gutter — fills with a spinner only while this chat's
-            worker is actively doing work; reserved so rows stay aligned. */}
+        {/* Leftmost status gutter — spinner while working, green check for a met
+            /goal, else the worker status's mark; reserved so rows stay aligned. */}
         <span
           className="flex h-3 w-3 shrink-0 items-center justify-center"
-          title={busy ? t`Working…` : goalMet ? t`Goal completed` : statusCfg?.label}
-          aria-label={busy ? t`Working` : goalMet ? t`Goal completed` : statusCfg?.label}
+          title={mark?.label}
+          aria-label={mark?.label}
           data-testid="chat-history-row-busy"
           data-busy={busy ? 'true' : 'false'}
-          data-status={busy ? 'busy' : goalMet ? 'goal_met' : statusCfg && workerStatus}
+          data-status={mark?.key}
         >
-          {busy && <Loader2 className="h-3 w-3 animate-spin text-emerald-500" />}
-          {goalMet && <Check className="h-3 w-3 text-emerald-500" />}
-          {statusCfg && <statusCfg.icon className={cn('h-3 w-3', statusCfg.color, statusCfg.animate && 'animate-spin')} />}
+          {mark && <mark.icon className={cn('h-3 w-3', mark.cls)} />}
         </span>
         <WorkerIcon workerType={entry.worker_type} />
         <span className={cn('min-w-0 flex-1 font-medium text-foreground', detailed ? 'line-clamp-2 break-words' : 'truncate')}>

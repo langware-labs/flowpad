@@ -1,6 +1,6 @@
 import json
 
-from flow_sdk.transcript_analyzer.worker_status import goal_met
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.goal import goal_met
 
 
 def _goal(met, **extra):
@@ -24,3 +24,12 @@ def test_no_goal_or_missing_file_is_false(tmp_path):
     p.write_text(json.dumps({"type": "user"}) + "\n")
     assert goal_met(p) is False
     assert goal_met(tmp_path / "missing.jsonl") is False
+
+
+def test_cold_read_is_bounded_to_the_tail(tmp_path, monkeypatch):
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude import goal
+
+    monkeypatch.setattr(goal, "_TAIL_MAX_BYTES", 200)
+    p = tmp_path / "t.jsonl"
+    p.write_text(_goal(True, reason="old") + "\n" + ("x" * 300 + "\n") + _goal(False, reason="new") + "\n")
+    assert goal_met(p) is False  # only the newest verdict, inside the window
