@@ -2363,6 +2363,10 @@ msgstr "مثيل سطح مكتب أو جهاز، ومعرّف قناة عليه"
 msgid "A document is saved, a folder gets a new file."
 msgstr "يُحفظ مستند، ويُضاف ملف جديد إلى مجلد."
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "A few words about what went wrong help us look in the right place."
+msgstr "بضع كلمات عمّا حدث من خطأ تساعدنا على البحث في المكان الصحيح."
+
 #: src/components/data-sources/source-attention.ts
 msgid "A file changed both here and remotely, so write-back wrote neither."
 msgstr "تغيّر ملف هنا وعن بُعد معًا، فلم تكتب الكتابة الراجعة أيًّا منهما."
@@ -2423,6 +2427,10 @@ msgstr "دقيقة"
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "a name in scope, or a literal"
 msgstr "اسم ضمن النطاق، أو قيمة حرفية"
+
+#: src/components/update-ready/UpdateReadyBridge.tsx
+msgid "A new FlowPad update has been downloaded and is ready to install."
+msgstr "تم تنزيل تحديث جديد لـ FlowPad وهو جاهز للتثبيت."
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
@@ -3012,7 +3020,7 @@ msgstr "إضافة أشخاص"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Add people — pick a person or type an email"
-msgstr ""
+msgstr "إضافة أشخاص — اختر شخصًا أو اكتب بريدًا إلكترونيًا"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Add people to {teamName}"
@@ -3855,6 +3863,10 @@ msgstr "اسم عملية"
 msgid "An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE)."
 msgstr "السجل اليتيم هو صف في قاعدة البيانات (أو مجلد سجل ظل) فُقد ملفه المصدر من القرص. يوفر حوار التنظيف خيار حذف صف قاعدة البيانات فقط (تجاهل، مع الاحتفاظ بمجلد الظل لأغراض التحقيق) أو حذف الصف والظل معًا (حذف)."
 
+#: src/components/top-nav-bar/UpdateReadyIndicator.tsx
+msgid "An update is downloaded and ready to install"
+msgstr "تم تنزيل تحديث وهو جاهز للتثبيت"
+
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Analyses (AgentTrace) of this session — run, list and open"
 msgstr "تحليلات (AgentTrace) لهذه الجلسة — تشغيل وسرد وفتح"
@@ -4008,6 +4020,14 @@ msgstr "مشروع آخر"
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Another step already uses this id — their results will overwrite each other."
 msgstr "خطوة أخرى تستخدم هذا المعرّف بالفعل — ستستبدل نتائجهما بعضها بعضًا."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Another update is in progress."
+msgstr "يجري تحديث آخر حاليًا."
+
+#: src/components/update-ready/update-ready.ts
+msgid "Another update is in progress. Try again when it is done."
+msgstr "يجري تحديث آخر حاليًا. حاول مرة أخرى عند انتهائه."
 
 #: src/notifications/error-detail.ts
 msgid "Answer"
@@ -4497,7 +4517,7 @@ msgstr "اسألوا مساعد Flowpad عن أي شيء يخص هذه الصف�
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Ask the help desk too"
-msgstr ""
+msgstr "اطلب من مكتب المساعدة أيضًا"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
@@ -4522,7 +4542,7 @@ msgstr "اطلب رابطًا جديدًا ممن شارك هذا."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Asked before? Your open requests are in the help desk."
-msgstr ""
+msgstr "طلبت من قبل؟ طلباتك المفتوحة في مكتب المساعدة."
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Asked by"
@@ -4728,7 +4748,7 @@ msgstr "إرفاق ملفات"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Attach files or a screenshot"
-msgstr ""
+msgstr "إرفاق ملفات أو لقطة شاشة"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Attach more files or assets"
@@ -4740,7 +4760,7 @@ msgstr "إرفاق سجل الجلسة"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Attach the diagnosis"
-msgstr ""
+msgstr "إرفاق التشخيص"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Attached asset types"
@@ -4906,8 +4926,8 @@ msgid "Auto-send"
 msgstr "إرسال تلقائي"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Auto-updates check hourly."
-msgstr "يتم التحقق من التحديثات تلقائياً كل ساعة."
+#~ msgid "Auto-updates check hourly."
+#~ msgstr "يتم التحقق من التحديثات تلقائياً كل ساعة."
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
@@ -6257,7 +6277,7 @@ msgstr "نجحت الفحوصات"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Checks this computer when you send"
-msgstr ""
+msgstr "يفحص هذا الكمبيوتر عند الإرسال"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -7085,7 +7105,7 @@ msgstr "تجميع كل قرار للتنقل الذكي (النص المكتو�
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Collecting…"
-msgstr ""
+msgstr "جارٍ الجمع…"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/ui/agent-avatar-picker.tsx
@@ -7636,7 +7656,11 @@ msgstr "إجراءات قائمة السياق"
 
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Context not shared"
-msgstr ""
+msgstr "السياق غير مشارَك"
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Context shared"
+#~ msgstr "السياق مشارَك"
 
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 msgid "Context to share — review before sending."
@@ -8170,7 +8194,7 @@ msgstr "تعذر التحقق من تسجيل الدخول"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Could not collect the context"
-msgstr ""
+msgstr "تعذّر جمع السياق"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
@@ -8902,7 +8926,7 @@ msgstr ""
 
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Could not share"
-msgstr ""
+msgstr "تعذّرت المشاركة"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -10591,6 +10615,7 @@ msgstr "تصميم صفحة التسعير"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 #: src/pages/desktop/DesktopPage.tsx
 #: src/types/ViewType.ts
 msgid "Desktop"
@@ -10599,6 +10624,10 @@ msgstr "سطح المكتب"
 #: src/components/inbound/DestinationPicker.tsx
 msgid "Desktop instance"
 msgstr "مثيل سطح المكتب"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Desktop updates are checked every 20 minutes."
+msgstr "يتم التحقق من تحديثات التطبيق كل 20 دقيقة."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
@@ -10684,11 +10713,11 @@ msgstr "تم التشخيص: {0}"
 
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Diagnosing privately… you can leave, the answer lands here."
-msgstr ""
+msgstr "يجري التشخيص بشكل خاص… يمكنك المغادرة، وستصل الإجابة هنا."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Diagnosing…"
-msgstr ""
+msgstr "جارٍ التشخيص…"
 
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Diagnosing… you'll get a message when it's done"
@@ -10709,7 +10738,11 @@ msgstr "التشخيص — التشخيصات ومكتب المساعدة"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Diagnosis & context"
-msgstr ""
+msgstr "التشخيص والسياق"
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Diagnosis attached"
+#~ msgstr "التشخيص مرفق"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -10746,6 +10779,10 @@ msgstr "طلب تشخيص"
 #: src/components/quick-create/registry.ts
 msgid "Diagnosis request created"
 msgstr "تم إنشاء طلب التشخيص"
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Diagnosis runs when you send"
+#~ msgstr "سيُجرى التشخيص عند الإرسال"
 
 #: src/components/assets/editor/chart/chartControls.tsx
 msgid "Diagram"
@@ -11218,12 +11255,21 @@ msgstr "تنزيل الحزمة مع تفاصيل المهمة."
 msgid "Downloaded"
 msgstr "تم التحميل"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloaded and checked — ready to install."
+msgstr "تم التنزيل والتحقق — جاهز للتثبيت."
+
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloading…"
 msgstr "جاري التنزيل…"
+
+#. placeholder {0}: String(desktopAction.percent)
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading… {0}%"
+msgstr "جارٍ التنزيل… {0}%"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Draft"
@@ -11765,6 +11811,10 @@ msgstr "معرّف نقطة النهاية"
 #: src/components/assets/LlmEndpointsAssetList.tsx
 msgid "Endpoints appear here once the hub allocates one to you, or somebody shares theirs."
 msgstr "ستظهر نقاط النهاية هنا بعد أن يخصّص المركز نقطة نهاية لكم، أو عندما يشارك أحدهم نقطته."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Engine"
+msgstr "المحرّك"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Ensure the claude CLI is installed and authenticated."
@@ -13533,6 +13583,10 @@ msgstr "صندوق بريد Flowpad · لا يصل إلى {0} إلا المرس�
 msgid "Flowpad messages always reach it."
 msgstr "تصل إليه رسائل Flowpad دائمًا."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad restarts to apply it."
+msgstr "سيُعاد تشغيل FlowPad لتطبيقه."
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
 msgstr "يُشغّل Flowpad هذه الأتمتة بنفسه. يمكن فحصها وتشغيلها ومتابعة عمليات تشغيلها، لكن لا يمكن تغييرها."
@@ -14464,7 +14518,7 @@ msgstr "مستودعات المساعدة أو المهارات المراد ت�
 
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Help request"
-msgstr ""
+msgstr "طلب مساعدة"
 
 #: src/components/credentials/VariableDetails.tsx
 msgid "Help URL"
@@ -15438,6 +15492,11 @@ msgstr ""
 msgid "Install failed"
 msgstr "فشل التثبيت"
 
+#: src/components/update-ready/update-ready.ts
+msgid "Install failed: {error}"
+msgstr "فشل التثبيت: {error}"
+
+#: src/components/update-ready/update-ready.ts
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Install failed."
@@ -16373,6 +16432,10 @@ msgstr "الأحدث استخدامًا أولًا · انقر للتشغيل"
 #: src/components/hooks-manager/index.tsx
 msgid "Last:"
 msgstr "الأخير:"
+
+#: src/components/update-ready/UpdateReadyBridge.tsx
+msgid "Later"
+msgstr "لاحقًا"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Latest on GitHub"
@@ -20272,6 +20335,10 @@ msgstr "المعالج {0} غير مثبّت."
 msgid "No working directory for this project."
 msgstr "لا يوجد دليل عمل لهذا المشروع."
 
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Nobody — a private conversation on this computer"
+#~ msgstr "لا أحد — محادثة خاصة على هذا الكمبيوتر"
+
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Nobody can log in to this sandbox, including its owner."
 msgstr "لا يستطيع أحد تسجيل الدخول إلى هذه البيئة المعزولة، ولا حتى المالك."
@@ -20294,7 +20361,7 @@ msgstr "لا يمكن لأحد مراسلة هذا الوكيل بعد — أض�
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Nobody picked: it stays a private conversation on this computer, with the diagnosis."
-msgstr ""
+msgstr "لم يُختر أحد: تبقى محادثة خاصة على هذا الكمبيوتر، مع التشخيص."
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Nobody yet"
@@ -20623,6 +20690,10 @@ msgstr "لم يُرسل"
 #: src/notifications/ingest.ts
 msgid "Not sent yet"
 msgstr "لم تُرسَل بعد"
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Not sent yet — check your request, edit it if needed, then press Send."
+#~ msgstr "لم يُرسل بعد — راجع طلبك وعدّله عند الحاجة، ثم اضغط إرسال."
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "not set"
@@ -23501,6 +23572,10 @@ msgstr "الأولوية"
 msgid "Private"
 msgstr "خاص"
 
+#: src/components/conversation/HelpRequestLine.tsx
+#~ msgid "Private · Not sent to anyone"
+#~ msgstr "خاص · لم يُرسل إلى أحد"
+
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "Private · one machine per person"
 msgstr "خاص · جهاز واحد لكل شخص"
@@ -25074,7 +25149,7 @@ msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Remove the help desk"
-msgstr ""
+msgstr "إزالة مكتب المساعدة"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Remove this argument"
@@ -25617,6 +25692,7 @@ msgstr ""
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+#: src/components/update-ready/UpdateReadyBridge.tsx
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "Restart"
@@ -25652,6 +25728,11 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
 msgid "Restart to apply: {names}"
 msgstr ""
+
+#. placeholder {0}: String(desktopAction.version)
+#: src/components/version-popover/version-popover.tsx
+msgid "Restart to update to v{0}"
+msgstr "أعد التشغيل للتحديث إلى الإصدار v{0}"
 
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -25849,7 +25930,7 @@ msgstr "يُرجى مراجعة المشروع المشترك وفتحه."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Review before sending"
-msgstr ""
+msgstr "المراجعة قبل الإرسال"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Review changes"
@@ -25857,7 +25938,7 @@ msgstr "مراجعة التغييرات"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Review content"
-msgstr ""
+msgstr "مراجعة المحتوى"
 
 #: src/components/automations/KindGallery.tsx
 msgid "Review docs on save"
@@ -27496,7 +27577,7 @@ msgstr "إرسال الرسالة"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Send once diagnosed"
-msgstr ""
+msgstr "إرسال بعد التشخيص"
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
@@ -27584,6 +27665,10 @@ msgstr "تم الإرسال"
 #: src/components/voice/CallControls.tsx
 msgid "Sent — the spoken answer lands in the conversation."
 msgstr "أُرسل — ستظهر الإجابة المنطوقة في المحادثة."
+
+#: src/components/conversation/HelpRequestLine.tsx
+#~ msgid "Sent · Context kept on this computer"
+#~ msgstr "أُرسل · بقي السياق على هذا الكمبيوتر"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Sent along"
@@ -28167,7 +28252,7 @@ msgstr "مشاركة الرمز {0} للدعوة."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Share context"
-msgstr ""
+msgstr "مشاركة السياق"
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 #: src/components/project-home/ProjectGitShareToggle.tsx
@@ -30815,6 +30900,10 @@ msgstr "مساحة العمل الافتراضية. تنتمي إليها كل �
 msgid "The deployment failed."
 msgstr "فشل النشر."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "The desktop update could not be started."
+msgstr "تعذّر بدء تحديث التطبيق."
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "عاد التشخيص. افتحوه في FlowPad لقراءة كل تشغيل، أو اطلبوا من وكيل أن يشرحه."
@@ -30831,6 +30920,11 @@ msgstr "تعذّر نقل المستند إلى المركز في آخر مرة 
 msgid "The document could not be read."
 msgstr "تعذّرت قراءة المستند."
 
+#. placeholder {0}: String(desktopUpdate?.error)
+#: src/components/version-popover/version-popover.tsx
+msgid "The download failed: {0}"
+msgstr "فشل التنزيل: {0}"
+
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code and its tests. Pick one to see its config and the sources made from it."
 msgstr "المشغّلات المثبّتة هنا هي القوالب التي تُنشأ منها المصادر. كل مشغّل مجلد يضم بيانه وشيفرته واختباراته. اختاروا مشغّلًا لعرض إعداداته والمصادر المنشأة منه."
@@ -30843,6 +30937,10 @@ msgstr "الخزنة المشفّرة غير مفعّلة على هذا الجه
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "The endpoint was not removed."
 msgstr "لم تتم إزالة نقطة النهاية."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The engine is replaced and the window reloads — FlowPad itself does not restart."
+msgstr "يُستبدل المحرّك وتُعاد تحميل النافذة — ولا يُعاد تشغيل FlowPad نفسه."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "the existing desk"
@@ -31059,7 +31157,7 @@ msgstr "الرقم قبل النقطتين في رمز البوت."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "The one you already took"
-msgstr ""
+msgstr "التشخيص الذي أجريته بالفعل"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -31279,6 +31377,18 @@ msgstr "يعمل الرمز بصفة {0}"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "بدأ النص المحفوظ على القرص ضمن مشروع آخر — الارتباط هنا مجمَّد لتفادي الانحراف الصامت. أعيدوا التحميل لإعادة التحديد، أو افتحوا الجلسة ضمن مشروعها الحقيقي."
+
+#: src/components/update-ready/update-ready.ts
+msgid "The update could not be applied: {error}"
+msgstr "تعذّر تطبيق التحديث: {error}"
+
+#: src/components/update-ready/update-ready.ts
+msgid "The update could not be applied. Try again."
+msgstr "تعذّر تطبيق التحديث. حاول مرة أخرى."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The update server did not answer. Try again in a few minutes."
+msgstr "لم يستجب خادم التحديثات. حاول مرة أخرى بعد بضع دقائق."
 
 #: src/components/account/secrets-section.tsx
 msgid "The value is stored in your operating system keychain and never readable from this UI."
@@ -31665,6 +31775,10 @@ msgstr "لم تعد بيانات الاعتماد هذه موجودة."
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "This deployment"
 msgstr "هذا النشر"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "This desktop is already the newest version."
+msgstr "التطبيق محدّث بالفعل إلى أحدث إصدار."
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "This destroys the cloud machine. Its runs and chats on that machine are lost."
@@ -32259,6 +32373,10 @@ msgstr "هذه الواجهة مُقدَّمة من سحابة Flowpad."
 msgid "This UI is served by your own desktop."
 msgstr "هذه الواجهة مُقدَّمة من حاسوبكم المكتبي."
 
+#: src/components/update-ready/update-ready.ts
+msgid "This update is no longer ready to install. FlowPad offers it again once it is."
+msgstr "لم يعد هذا التحديث جاهزًا للتثبيت. سيعرضه FlowPad مجددًا عندما يصبح جاهزًا."
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "this week"
 msgstr "هذا الأسبوع"
@@ -32415,6 +32533,10 @@ msgstr "إلى"
 #: src/pages/entry/entry-shell.tsx
 msgid "To open the {label}:"
 msgstr "للفتح:"
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "To:"
+#~ msgstr "إلى:"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "today"
@@ -33220,6 +33342,10 @@ msgstr "تحديث"
 msgid "Update ({0} newer)"
 msgstr "حدّثوا ({0} أحدث)"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Update & Restart"
+msgstr "تحديث وإعادة التشغيل"
+
 #: src/components/version-popover/version-chip.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -33235,6 +33361,19 @@ msgstr "قناة التحديث للتحديثات التلقائية"
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Update CHART.md"
 msgstr "تحديث CHART.md"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Update desktop"
+msgstr "تحديث التطبيق"
+
+#. placeholder {0}: String(desktopAction.version)
+#: src/components/version-popover/version-popover.tsx
+msgid "Update desktop to v{0}"
+msgstr "تحديث التطبيق إلى الإصدار v{0}"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Update Engine"
+msgstr "تحديث المحرّك"
 
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsList.tsx
@@ -33253,6 +33392,15 @@ msgstr "تحديث الخطة"
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Update plan based on <plan-note> sections"
 msgstr "تحديث الخطة استناداً إلى أقسام <plan-note>"
+
+#: src/components/top-nav-bar/UpdateReadyIndicator.tsx
+#: src/components/version-popover/version-popover.tsx
+msgid "Update ready"
+msgstr "التحديث جاهز"
+
+#: src/components/update-ready/UpdateReadyBridge.tsx
+msgid "Update Ready"
+msgstr "التحديث جاهز"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Update to"
@@ -34305,7 +34453,7 @@ msgstr "ما الغرض من هذا السر؟"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "What is wrong"
-msgstr ""
+msgstr "ما المشكلة"
 
 #: src/components/automations/RunDetail.tsx
 msgid "What it did"
@@ -34400,7 +34548,7 @@ msgstr "ما الذي حدث من خطأ"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "What went wrong? What did you expect, and what did you already try?"
-msgstr ""
+msgstr "ما الذي حدث؟ ماذا كنت تتوقع، وماذا جرّبت بالفعل؟"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"
@@ -34573,7 +34721,7 @@ msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Who gets it"
-msgstr ""
+msgstr "من يستلمه"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Who may log in to this sandbox"
@@ -34782,6 +34930,7 @@ msgid "Working Tree"
 msgstr "شجرة العمل"
 
 #: src/components/conversation/ConversationAutomationChip.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "working…"
@@ -34790,6 +34939,7 @@ msgstr "يعمل…"
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/conversation/ConversationActions.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -35261,7 +35411,7 @@ msgstr "البيئة المعزولة الخاصة بكم جاهزة."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Your screen, session and diagnosis"
-msgstr ""
+msgstr "شاشتك وجلستك والتشخيص"
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "your secret manager"

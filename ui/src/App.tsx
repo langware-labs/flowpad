@@ -10,6 +10,7 @@ import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesCo
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
+import { UpdateReadyBridge } from '@src/components/update-ready/UpdateReadyBridge';
 import { flushAgentAutoLaunchWarning } from '@src/agents/agent-auto-launch-warning';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { ActivityDetailsModalRoot } from '@src/components/footer/ActivityDetailsModal';
@@ -155,6 +156,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
       <TooltipProvider>
         <NotificationOutlet />
         <NotificationCommandBridge />
+        <UpdateReadyBridge />
         <DeleteAssetModal />
         <InputPromptModal />
         <ImageAnnotatorRoot />
