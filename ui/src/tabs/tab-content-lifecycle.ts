@@ -110,6 +110,7 @@ async function materializeTab(
         iconKey: existingTab.icon_key,
         worktree: existingTab.worktree,
         parentTabId,
+        pingCaller: false,
       }),
     );
     await perfTime('materializeTab.refresh(reparent-adopt)', () => tabManager.refresh());
@@ -208,7 +209,11 @@ async function materializeTab(
   // footer projects-chip to a single project. Use the scoped list only to find
   // the materialized tab, then re-read the UNSCOPED global list for adoption.
   const { tabs: scoped } = await perfTime('materializeTab.ensureDock', () =>
-    tabManager.ensureDock(dock, { parentTabId: detach ? '' : parentTabId, viewMode: dock.viewMode }),
+    tabManager.ensureDock(dock, {
+      parentTabId: detach ? '' : parentTabId,
+      viewMode: dock.viewMode,
+      pingCaller: false,
+    }),
   );
   const scopedTab = tabForDockKey(scoped, dock.tabHash);
 

@@ -81,7 +81,6 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
     from flow_sdk.rag import reconcile as _rag_reconcile  # noqa: F401  decorator side-effect
     from flow_sdk.server import system_heartbeat as _heartbeat  # noqa: F401  decorator side-effect
     from flow_sdk.transcript_streamer.triggers import transcript_watcher_trigger_specs
-    from flow_sdk.usage_report import callback as _usage_report_cb  # noqa: F401  decorator side-effect
 
     settings = get_instance_settings()
     specs: list[dict[str, Any]] = [
@@ -100,25 +99,6 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
                     callback_name="builtin_toplog_filter_apply",
                 )
             ],
-        ),
-        dict(
-            uname="builtin_daily_usage_analysis",
-            name="Daily usage summary",
-            # Dev: when enabled, fires the daily-analysis flow (analyze function →
-            # publish) every day at 07:00 local; no direct action, the flow routes it.
-            description="Off unless you turn it on: a short daily summary of how you used Flowpad, "
-            "on your Home page. It stays on this computer.",
-            trigger_type=TriggerType.SCHEDULE,
-            sched_trigger_type="cron",
-            expr="0 7 * * *",
-            # Off by default, and FORCED off: the upsert re-applies every spec
-            # key on each boot, so existing installs flip off on restart and a
-            # user who enables it is reset on the next one.
-            enabled=False,
-            # No direct action: the daily-analysis GraphWorkflow (service_graph_workflows)
-            # routes this trigger's `fired` through analyze → publish —
-            # a direct action here would double-fire the report.
-            actions=[],
         ),
         dict(
             uname="builtin_system_heartbeat",

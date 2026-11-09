@@ -1,10 +1,16 @@
 import {
+  dataManager,
+  Tab,
+  tabManager,
   TabLifecycleState,
   TabManager,
-  type Tab,
   type TabGateway,
   type TabRow,
 } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { presentDockTab } from '@src/navigation/present-dock-tab';
+import { resetTabContentLifecycleForTests, setupTab } from '@src/tabs/tab-content-lifecycle';
+import { ViewType } from '@src/types/ViewType';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const managers: TabManager[] = [];
@@ -172,5 +178,80 @@ describe('TabManager tabs_changed subscription', () => {
     manager.resetForTests();
     expect(connection.off).toHaveBeenCalledTimes(1);
     expect(handlers.has('on_broadcast')).toBe(false);
+  });
+});
+
+describe('pingCaller', () => {
+  const TAB_ID = '00000000-0000-4000-8000-00000000abcd';
+  const HOST_ID = '00000000-0000-4000-8000-00000000beef';
+  const dock = new DockPointer(ViewType.SHELL, 'shell-5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  const openRow = () => new Tab({ id: TAB_ID, pointer: dock.toJSON() ?? '', name: 'old', visible: true });
+
+  afterEach(() => {
+    resetTabContentLifecycleForTests();
+    tabManager.resetForTests();
+  });
+
+  function captureWrites() {
+    const writes: { carriesInitiator: boolean; bodyParameters: object }[] = [];
+    vi.spyOn(dataManager, 'callAction').mockImplementation((info: never) => {
+      writes.push(info);
+      return Promise.resolve({ tabs: [] } as never);
+    });
+    return writes;
+  }
+
+  it('by default a write names no window and sends no ping_caller', async () => {
+    const writes = captureWrites();
+    await Tab.ensure('pointer');
+    await Tab.setNameById(TAB_ID, 'name');
+    expect(writes).toHaveLength(2);
+    for (const write of writes) {
+      expect(write.carriesInitiator).toBe(false);
+      expect(write.bodyParameters).not.toHaveProperty('ping_caller');
+    }
+  });
+
+  it('false names this window and sends ping_caller: false', async () => {
+    const writes = captureWrites();
+    await Tab.ensure('pointer', { pingCaller: false });
+    await Tab.setNameById(TAB_ID, 'name', { pingCaller: false });
+    expect(writes).toHaveLength(2);
+    for (const write of writes) {
+      expect(write.carriesInitiator).toBe(true);
+      expect(write.bodyParameters).toMatchObject({ ping_caller: false });
+    }
+  });
+
+  it('syncDockName passes false and re-reads', async () => {
+    const setName = vi.spyOn(Tab, 'setNameById').mockResolvedValue([]);
+    const listAll = vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+    tabManager.adoptGlobal([openRow()]);
+    await tabManager.syncDockName(dock.tabHash, 'new');
+    expect(setName).toHaveBeenCalledWith(TAB_ID, 'new', { pingCaller: false });
+    expect(listAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('opening a tab through materializeTab passes false', async () => {
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+    const ensure = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [openRow()], created: false });
+    await setupTab(dock);
+    expect(ensure.mock.calls[0][1]).toMatchObject({ pingCaller: false });
+  });
+
+  it('a reparent through materializeTab passes false', async () => {
+    tabManager.adoptGlobal([openRow()]);
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([openRow()]);
+    vi.spyOn(Tab, 'activateById').mockResolvedValue(undefined);
+    const newTab = vi.spyOn(Tab, 'newTab').mockResolvedValue([]);
+    await setupTab(dock, { parentTabId: HOST_ID });
+    expect(newTab.mock.calls[0][1]).toMatchObject({ parentTabId: HOST_ID, pingCaller: false });
+  });
+
+  it('presentDockTab passes false', async () => {
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+    const ensure = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [], created: false });
+    await presentDockTab(dock, {});
+    expect(ensure.mock.calls[0][1]).toMatchObject({ pingCaller: false });
   });
 });

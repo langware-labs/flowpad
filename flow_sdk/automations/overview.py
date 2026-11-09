@@ -146,6 +146,7 @@ async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = Non
         fires=int(trigger.counter or 0),
         tested=is_tested(trigger, runs),
         read_only=group == "builtin",
+        switchable=trigger.switchable,
         asset_ref=trigger.asset_ref or None,
         place=place,
         agent_type_id=agent_of(trigger),

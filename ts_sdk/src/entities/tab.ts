@@ -185,9 +185,20 @@ export interface TabEnsureResult {
   created: boolean;
 }
 
+/** `pingCaller: false` is for a caller that re-reads the list right after the write: the
+ *  backend leaves this window out of the write's `tabs_changed` ping. The default pings
+ *  everyone, and a caller with no re-read of its own depends on that ping. */
+function applyPingCaller(info: ActionInfo, pingCaller: boolean | undefined): void {
+  if (pingCaller !== false) return;
+  info.carriesInitiator = true;
+  info.bodyParameters = { ...info.bodyParameters, ping_caller: false };
+}
+
 export interface INewTabOpts extends IEnsureTabOpts {
   /** The opener (current active tab id): a fresh tab lands right after it. */
   afterTabId?: string | null;
+  /** False: this caller re-reads the list itself (`applyPingCaller`). */
+  pingCaller?: boolean;
 }
 
 /** Backward-compatible name for older call sites/tests during the Tab migration. */
@@ -401,6 +412,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       after_tab_id: opts.afterTabId ?? null,
       parent_tab_id: opts.parentTabId ?? null,
     };
+    applyPingCaller(info, opts.pingCaller);
     const res = await dataManager.callAction<unknown, { tabs: ITab[]; created?: boolean }>(info);
     return { tabs: Tab.fromResponse(res?.tabs ?? []), created: res?.created ?? false };
   }
@@ -455,7 +467,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
 
   static async getFromDockPointer(
     dock: IDockPointer,
-    opts: { parentTabId?: string | null; afterTabId?: string | null } = {},
+    opts: { parentTabId?: string | null; afterTabId?: string | null; pingCaller?: boolean } = {},
   ): Promise<TabEnsureResult> {
     const pointerJson = dock.toJSON?.();
     if (!pointerJson) return { tabs: [], created: false };
@@ -478,6 +490,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       // navigating (`flow show` outside vibe) has no such opener, so it names
       // the tab it belongs beside.
       afterTabId: opts.afterTabId ?? null,
+      pingCaller: opts.pingCaller,
     });
   }
 
@@ -564,9 +577,10 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  already saved the live name onto its Shell/AgenticProcess; this keeps the
    *  durable `Tab.name` in step so the chip stays right once inactive. NOT `rename`
    *  (which would pin `auto_rename=false` and stop future auto-titles). */
-  static async setNameById(id: string, name: string): Promise<Tab[]> {
+  static async setNameById(id: string, name: string, opts: { pingCaller?: boolean } = {}): Promise<Tab[]> {
     const info = new ActionInfo('set_name', Tab.type, id, 'POST');
     info.bodyParameters = { name };
+    applyPingCaller(info, opts.pingCaller);
     const res = await dataManager.callAction<{ name: string }, { tabs: ITab[] }>(info);
     return Tab.fromResponse(res?.tabs ?? []);
   }

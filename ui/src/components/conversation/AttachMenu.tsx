@@ -1,6 +1,6 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
-import { Paperclip, FileUp, Boxes, X, ChevronDown } from 'lucide-react';
+import { Paperclip, FileUp, Boxes, X, ChevronDown, Terminal } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import type { AssetDescriptor } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -42,6 +42,8 @@ interface AttachMenuProps {
   hideAssetList?: boolean;
   /** Which assets the picker offers. Default: everything. */
   assetFilter?: (descriptor: AssetDescriptor) => boolean;
+  /** When set, the menu offers "Prompt" — a one-shot prompt the receiver approves and runs. */
+  onPromptPicked?: () => void;
 }
 
 /**
@@ -60,6 +62,7 @@ export function AttachMenu({
   disabled,
   hideAssetList,
   assetFilter,
+  onPromptPicked,
 }: AttachMenuProps) {
   const inputId = useId();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -110,6 +113,20 @@ export function AttachMenu({
               <Boxes className="h-3.5 w-3.5" />
               <Trans>Asset</Trans>
             </button>
+            {onPromptPicked && (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-start text-sm hover:bg-accent"
+                onClick={() => {
+                  setOpen(false);
+                  onPromptPicked();
+                }}
+                data-testid="attach-menu-prompt"
+              >
+                <Terminal className="h-3.5 w-3.5" />
+                <Trans>Prompt</Trans>
+              </button>
+            )}
           </PopoverContent>
         </Popover>
 

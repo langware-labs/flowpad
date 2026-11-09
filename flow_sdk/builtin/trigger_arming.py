@@ -122,10 +122,10 @@ async def arm_after_index(record: Any) -> None:
         return
     from flow_sdk.builtin.trigger import _project_setup_changed, set_trigger_on  # noqa: PLC0415
 
-    # Flowpad's own follow their file, as they always did; on a machine the hub runs ONLY for a deployed agent,
+    # Flowpad's own follow their file, as they always did -- but one Flowpad ships off is the person's once decided; on a machine the hub runs ONLY for a deployed agent,
     # the deploy was its owner's choice, so recommended rules are on (nobody is at that box to answer setup).
     # Every other rule's switch is the person's here, and an index never moves it.
-    if entity.is_builtin:
+    if entity.is_builtin and not (entity.switchable and entity.decided):
         target = entity.recommended
     elif not entity.decided and entity.recommended and _deployed_agent_machine():
         target = True

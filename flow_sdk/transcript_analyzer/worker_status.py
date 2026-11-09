@@ -189,29 +189,15 @@ _TAIL_MAX_BYTES = 2 * 1024 * 1024
 
 # Content-free Claude/Flowpad transcript line types — they carry no worker-state
 # signal and MUST be skipped when scanning the tail for the last meaningful entry.
-# Kept in sync with ``transcript_analyzer/parsers/claude.py`` ``_META_TYPES``
-# (minus ``last-prompt``, which ``_tail_status`` classifies explicitly). The
-# contract test ``test_ignored_types_match_meta_types`` enforces that parity, so a
-# future Claude format-drift — which is exactly how ``mode`` / ``agent-name`` /
-# ``bridge-session`` slipped in and regressed this set to masking real status as
-# UNKNOWN — can't silently happen again.
-_IGNORED_TYPES: frozenset[str] = frozenset(
-    {
-        "file-history-snapshot",
-        "queue-operation",
-        "custom-title",
-        "ai-title",
-        "pr-link",
-        "attachment",
-        "permission-mode",
-        "mode",
-        "agent-name",
-        "bridge-session",
-        "atis-latch",
-        "cost-state",
-        "session-owner",  # Claude 2.1.318+: written after last-prompt
-    }
-)
+# Derived from the parser's ``_META_TYPES`` (one list to keep up with Claude's format
+# drift) minus ``last-prompt``, which ``_tail_status`` classifies explicitly.
+def _ignored_types() -> frozenset[str]:
+    from flow_sdk.transcript_analyzer.parsers.claude import _META_TYPES  # noqa: PLC0415
+
+    return _META_TYPES - {"last-prompt"}
+
+
+_IGNORED_TYPES: frozenset[str] = _ignored_types()
 
 
 # ``system`` lines Claude writes AFTER a turn has ended — bookkeeping about the turn,

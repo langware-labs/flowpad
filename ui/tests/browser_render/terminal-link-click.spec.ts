@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { build } from 'esbuild';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -42,13 +42,14 @@ async function bundleTerminalLinks(): Promise<string> {
   return out.outputFiles[0].text;
 }
 
-test('a link click held across a TUI repaint still opens the link', async ({ page }) => {
+/** A real xterm with the real link wiring, a link on its first row. Answers the screen point of a column on that row. */
+async function openTerminalWithLink(page: Page, { repainting = false } = {}) {
   await page.setContent('<div id="term" style="width:900px;height:400px"></div>');
   await page.addStyleTag({ path: XTERM_CSS });
   await page.addScriptTag({ path: XTERM_JS });
   await page.addScriptTag({ content: await bundleTerminalLinks() });
 
-  const link = await page.evaluate(async () => {
+  const row = await page.evaluate(async (repaint) => {
     const w = window as unknown as {
       Terminal: new (o: unknown) => any;
       TerminalLinks: { registerTerminalLinks: (t: unknown, h: unknown) => void };
@@ -66,10 +67,17 @@ test('a link click held across a TUI repaint still opens the link', async ({ pag
     // (`ESC[H` + `ESC[<n>B`, as recorded from the live PTY); xterm re-renders the whole
     // viewport on each one, including the link's row.
     let n = 0;
-    setInterval(() => term.write(`\x1b[s\x1b[H\x1b[5BDetermining… ${++n}\x1b[u`), 30);
+    if (repaint) setInterval(() => term.write(`\x1b[s\x1b[H\x1b[5BDetermining… ${++n}\x1b[u`), 30);
     const r = term.element.querySelector('.xterm-screen').getBoundingClientRect();
-    return { x: r.left + (r.width / term.cols) * 10, y: r.top + (r.height / term.rows) * 0.5 };
-  });
+    return { left: r.left, cell: r.width / term.cols, y: r.top + (r.height / term.rows) * 0.5 };
+  }, repainting);
+  return (column: number) => ({ x: row.left + row.cell * column, y: row.y });
+}
+
+const opened = (page: Page) => page.evaluate(() => (window as unknown as { opened: string[] }).opened);
+
+test('a link click held across a TUI repaint still opens the link', async ({ page }) => {
+  const link = (await openTerminalWithLink(page, { repainting: true }))(10);
 
   // A human click: the pointer rests on the link, then press and release ~120 ms apart.
   await page.mouse.move(link.x, link.y);
@@ -79,7 +87,29 @@ test('a link click held across a TUI repaint still opens the link', async ({ pag
   await page.mouse.up();
   await page.waitForTimeout(100);
 
-  expect(await page.evaluate(() => (window as unknown as { opened: string[] }).opened)).toEqual([
-    '/Users/me/project/README.md',
-  ]);
+  expect(await opened(page)).toEqual(['/Users/me/project/README.md']);
+});
+
+test('dragging a selection across a link and back does not open it', async ({ page }) => {
+  const at = await openTerminalWithLink(page);
+  const [press, away, release] = [at(10), at(22), at(6)];
+
+  await page.mouse.move(press.x, press.y);
+  await page.mouse.down();
+  await page.mouse.move(away.x, away.y, { steps: 5 });
+  await page.mouse.move(release.x, release.y, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+
+  expect(await opened(page)).toEqual([]);
+});
+
+test('a double-click on a link counts as two clicks', async ({ page }) => {
+  const link = (await openTerminalWithLink(page))(10);
+
+  await page.mouse.move(link.x, link.y);
+  await page.mouse.dblclick(link.x, link.y);
+  await page.waitForTimeout(100);
+
+  expect(await opened(page)).toEqual(['/Users/me/project/README.md', '/Users/me/project/README.md']);
 });

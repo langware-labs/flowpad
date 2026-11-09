@@ -13,7 +13,7 @@ import { cn } from '@src/lib/utils';
 import { COMPACT } from './CategoryChips';
 import { deskChipLabel } from './conversation-category';
 import { humanizeType } from '@src/utils/humanize';
-import { DIAGNOSIS_CHANNEL } from '@src/components/stream-inbox-view/channel-owner';
+import { AUTOMATIONS_CHANNEL, DIAGNOSIS_CHANNEL } from '@src/components/stream-inbox-view/channel-owner';
 
 /**
  * ONE resolver from a message's channel to its glyph + label, and the compact
@@ -106,6 +106,7 @@ export function useChannelAttribution() {
         kindSpec?.title ||
         // Flowpad's own Diagnosis channel is named in the person's language, like its 🩺 mark.
         (kind === DIAGNOSIS_CHANNEL ? t`Diagnosis` : undefined) ||
+        (kind === AUTOMATIONS_CHANNEL ? t`Automations` : undefined) ||
         // A channel no source delivers (the hub's Chat API thread) is named by the conversation's own spec.
         (channelSpec?.name === kind ? channelSpec.title : undefined) ||
         channelLabel(kind);

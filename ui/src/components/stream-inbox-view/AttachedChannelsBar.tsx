@@ -66,7 +66,7 @@ import {
 } from '@src/components/data-sources/source-attention';
 import { openSourceSetup } from '@src/components/setup-wizard/source-setup-store';
 import { useSourcePull } from '@src/components/data-sources/source-parts';
-import { channelKeyOf, DIAGNOSIS_CHANNEL, FLOWPAD_CHANNEL, ownerOf } from './channel-owner';
+import { AUTOMATIONS_CHANNEL, channelKeyOf, DIAGNOSIS_CHANNEL, FLOWPAD_CHANNEL, ownerOf } from './channel-owner';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
 
 const EMPTY: DataSource[] = [];
@@ -203,7 +203,7 @@ export function AttachedChannelsBar({
   const allKeys = [
     ...(owner.type !== Agent.type ? [FLOWPAD_CHANNEL] : []),
     ...groups.map((g) => g.key),
-    ...(owner.type !== Agent.type ? [DIAGNOSIS_CHANNEL] : []),
+    ...(owner.type !== Agent.type ? [DIAGNOSIS_CHANNEL, AUTOMATIONS_CHANNEL] : []),
   ];
   const lit = (key: string) => !filtering || selected.has(key);
   const pick = (key: string) => {
@@ -252,6 +252,15 @@ export function AttachedChannelsBar({
           glyph={<DiagnosisGlyph />}
           pressed={lit(DIAGNOSIS_CHANNEL)}
           onClick={() => pick(DIAGNOSIS_CHANNEL)}
+        />
+      )}
+      {owner.type !== Agent.type && (
+        <BuiltInMark
+          channel={AUTOMATIONS_CHANNEL}
+          label={t`Automations — what your automations report`}
+          glyph={<AutomationsGlyph />}
+          pressed={lit(AUTOMATIONS_CHANNEL)}
+          onClick={() => pick(AUTOMATIONS_CHANNEL)}
         />
       )}
       {offers.map((offer) => (
@@ -379,6 +388,11 @@ function AddChannelDialog({
 
 function DiagnosisGlyph() {
   const { Base } = sourceGlyphs({ icon_name: 'Stethoscope' }, DIAGNOSIS_CHANNEL);
+  return <Base className="size-[17px]" />;
+}
+
+function AutomationsGlyph() {
+  const { Base } = sourceGlyphs({ icon_name: 'Zap' }, AUTOMATIONS_CHANNEL);
   return <Base className="size-[17px]" />;
 }
 

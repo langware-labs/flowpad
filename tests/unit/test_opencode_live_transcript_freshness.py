@@ -159,6 +159,31 @@ def test_projection_refreshes_after_a_wal_only_write(db, tmp_path, monkeypatch):
     assert len(second.read_text().splitlines()) == 2, "projection cache never invalidated"
 
 
+def test_projection_rebuilds_when_a_write_lands_in_its_own_tick(db, tmp_path, monkeypatch):
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode import session_history
+
+    monkeypatch.setattr(
+        session_history,
+        "opencode_session_projection_path",
+        lambda pid, sid: tmp_path / f"proj-{sid}.jsonl",
+        raising=False,
+    )
+    _add_turn(db, "ses_x", 1)
+    first = session_history.assemble_session_jsonl("ses_x", "p1")
+    assert first is not None
+    _add_turn(db, "ses_x", 2)
+
+    # The projection and the store now carry one timestamp: a write in the projection's own tick.
+    tick = 2_000_000_000
+    for path in (first, db, db.with_name(db.name + "-wal"), db.with_name(db.name + "-shm")):
+        if path.exists():
+            os.utime(path, (tick, tick))
+
+    second = session_history.assemble_session_jsonl("ses_x", "p1")
+    assert second is not None
+    assert len(second.read_text().splitlines()) == 2, "an equal mtime hid the write"
+
+
 # ── the descriptor ──────────────────────────────────────────────────────────
 
 

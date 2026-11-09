@@ -48,6 +48,7 @@ import { isMove, type RunsOn } from '@src/components/assets/editor/agent-profile
 import { useAgentPlaces } from '@src/components/assets/editor/agent-profile/use-agent-places';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useContext } from '@src/hooks/useContext';
+import { canSwitch } from './AutomationRow';
 import { recipeById } from './automation-recipes';
 import { sentenceText, useAutomationWords } from './automation-words';
 import type { AutomationsRoute } from './automations-pointer';
@@ -222,7 +223,7 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
           <Switch
             checked={draft.enabled}
             onCheckedChange={onToggle}
-            disabled={readOnly || setEnabled.isPending}
+            disabled={(automation ? !canSwitch(automation) : readOnly) || setEnabled.isPending}
             aria-label={draft.enabled ? t`Turn off` : t`Turn on`}
             data-testid="automation-page-toggle"
           />

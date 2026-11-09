@@ -25,6 +25,7 @@ export async function presentDockTab(
     afterTabId: placement.afterTabId,
     parentTabId: placement.parentTabId,
     viewMode: placed.viewMode,
+    pingCaller: false,
   });
   // ensureDock returns a scoped list; only the unscoped list can be adopted globally.
   tabManager.adoptGlobal(await tabManager.listAll());

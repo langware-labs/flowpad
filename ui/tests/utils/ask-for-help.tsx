@@ -43,7 +43,7 @@ export interface AskOutcome {
   ms: number;
 }
 
-/** One ask through the real wizard: what is wrong, files, the person, Send — until it is saved or shows its
+/** One ask through the real dialog: what is wrong, files, the person, Send — until it is saved or shows its
  *  error row. Scoped to its own dialog, so several can run at once. */
 export async function askForHelp(opts: {
   projectId: string | null;
@@ -59,19 +59,13 @@ export async function askForHelp(opts: {
   const dialogs = container.ownerDocument.querySelectorAll('[role="dialog"]');
   const dialog = dialogs[dialogs.length - 1] as HTMLElement;
   const q = within(dialog);
-  // Card 1: what is wrong.
+  // One screen: what is wrong, the files, the person.
   fireEvent.change(q.getByTestId('vibe-assign-notes'), { target: { value: opts.title } });
-  fireEvent.click(q.getByTestId('ask-for-help-next'));
-  // Card 2: diagnosis & context, and the files.
-  await waitFor(() => expect(q.getByTestId('ask-for-help-card-context')).toBeTruthy());
   const files = opts.files ?? [];
   if (files.length) {
     fireEvent.change(dialog.querySelector('input[type="file"]')!, { target: { files } });
     await waitFor(() => expect(q.getAllByText(files[files.length - 1].name).length).toBeGreaterThan(0));
   }
-  fireEvent.click(q.getByTestId('ask-for-help-next'));
-  // Card 3: who gets it.
-  await waitFor(() => expect(q.getByTestId('ask-for-help-card-who')).toBeTruthy());
   const person = q.getByTestId('vibe-assign-person');
   fireEvent.change(person, { target: { value: opts.to } });
   fireEvent.blur(person);

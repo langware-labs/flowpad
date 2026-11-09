@@ -35,6 +35,7 @@ from pydantic import ValidationError
 from flow_sdk.actions.action_registry import action
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.app.actions.share_action import LOCAL_MODE_SHARE_MESSAGE, _local_mode_share_blocked
+from flow_sdk.app.automation_message import Upload, post_message, value_json
 from flow_sdk.builtin.conversation import Conversation, ConversationKind
 from flow_sdk.builtin.conversation_channel import DIAGNOSIS
 from flow_sdk.builtin.flow_message import (
@@ -86,17 +87,6 @@ IDEMPOTENT_TICKETS = "idempotent_guest_conversation"
 DIAGNOSIS_FILE = "diagnosis.value.json"
 #: The context a help request can carry, in the order the review lists it.
 CONTEXT_FILES = (DIAGNOSIS_FILE, "screen.value.json", "session.value.json", "logs.txt")
-
-
-class _Upload:
-    """An in-memory file for the message send (what an upload looks like to it)."""
-
-    def __init__(self, filename: str, content: bytes) -> None:
-        self.filename = filename
-        self._content = content
-
-    async def read(self) -> bytes:
-        return self._content
 
 
 def _parse_request(body: dict) -> AskForHelpRequest:
@@ -195,12 +185,6 @@ async def _recorded(diagnosis_id: str):
     return await diagnosis_value(record) if record is not None else None
 
 
-def _value_json(value) -> bytes:
-    from flow_sdk.schema.data_spec.spec import spec_tag  # noqa: PLC0415
-
-    return json.dumps({"spec_kind": spec_tag(value), **value.model_dump(mode="json")}, indent=2).encode("utf-8")
-
-
 async def capture_context(ask: AskForHelpRequest, recorded=None) -> dict[str, bytes]:
     """The context files of a request: where the person was, the session on screen, the recent logs, and --
     when asked -- the diagnosis (``run_diagnose`` never raises: a failing diagnose answers its baseline).
@@ -222,10 +206,10 @@ async def capture_context(ask: AskForHelpRequest, recorded=None) -> dict[str, by
         to = ", ".join(r.name or r.email or "the help desk" for r in ask.recipients) or "you"
         diagnosis = await run_diagnose(ctx, label=f"Diagnosing for {to}")
     if diagnosis is not None:
-        files[DIAGNOSIS_FILE] = _value_json(diagnosis.model_copy(update={"logs": [], "context": None}))
-    files["screen.value.json"] = _value_json(ctx.model_copy(update={"session": None, "other_sessions": []}))
+        files[DIAGNOSIS_FILE] = value_json(diagnosis.model_copy(update={"logs": [], "context": None}))
+    files["screen.value.json"] = value_json(ctx.model_copy(update={"session": None, "other_sessions": []}))
     if ctx.session is not None or ctx.other_sessions:
-        files["session.value.json"] = _value_json(ctx)
+        files["session.value.json"] = value_json(ctx)
     logs = diagnosis.logs if diagnosis is not None and diagnosis.logs else await asyncio.to_thread(log_tails)
     if logs:
         files["logs.txt"] = "\n\n".join(f"== {t.file}\n" + "\n".join(t.lines) for t in logs).encode("utf-8")
@@ -293,7 +277,7 @@ async def _send_help_message(
         pass_on=pass_on,
     )
     extra = dict(extra or {})
-    files = [_Upload(HELP_REQUEST_FILE, _value_json(carrier)), *(_Upload(n, c) for n, c in context.items())]
+    files = [Upload(HELP_REQUEST_FILE, value_json(carrier)), *(Upload(n, c) for n, c in context.items())]
     body = {
         "conversation_id": conv.id,
         "text": text,
@@ -457,30 +441,23 @@ async def _diagnose_then_deliver(conv_ids: list[str], ask: AskForHelpRequest, so
 
 
 async def _post_diagnosis(conv, ask: AskForHelpRequest, diagnosis, diagnosis_id, someone) -> None:
-    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
-
     if diagnosis is None:
         text, files = "The diagnosis could not run. You can still report it.", {}
     else:
         text = bottom_line(diagnosis)
-        files = {DIAGNOSIS_FILE: _value_json(diagnosis.model_copy(update={"logs": [], "context": None}))}
+        files = {DIAGNOSIS_FILE: value_json(diagnosis.model_copy(update={"logs": [], "context": None}))}
     shared = _shares_context(ask) and DIAGNOSIS_FILE not in set(ask.left_out)
     if files and not shared:
         await asyncio.to_thread(_hold, conv.id, files)
-    body = {
-        "conversation_id": conv.id,
-        "text": text,
-        "kind": FlowMessageKind.DIAGNOSIS.value,
+    await post_message(
+        conv.id, text,
+        kind=FlowMessageKind.DIAGNOSIS,
+        sender_name="Flowpad Diagnosis",
+        someone=someone,
         # Private: the details stay here until Report or Share; the bottom line is all the message holds.
-        "files": [_Upload(n, c) for n, c in files.items()] if shared else [],
-        **({"asset_references": [f"flowpad_diagnosis-{diagnosis_id}"]} if diagnosis_id else {}),
-    }
-    added = await handle_add_message(body, someone)
-    # The answer is a message; its arrival is the one notification (CLAUDE.md "Notifications = message arrival only").
-    if isinstance(added, ApiSuccessResponse) and (added.data or {}).get("id"):
-        from flow_sdk.notifications import notify_message_arrival  # noqa: PLC0415
-
-        await notify_message_arrival(conv.id, added.data["id"], sender_name="Flowpad Diagnosis", text=text)
+        files=files if shared else None,
+        asset_references=[f"flowpad_diagnosis-{diagnosis_id}"] if diagnosis_id else None,
+    )
 
 
 def _held_diagnosis(conv_id: str):
@@ -677,8 +654,8 @@ async def help_request_diagnosis() -> ApiResponse:
 
 @action.post(action_name="help-request-preview", types=None)
 async def help_request_preview() -> ApiResponse:
-    """``POST {request}`` — what Ask would attach, before anything is written: the review of card 2, and the
-    title card 3 shows. Diagnoses only when the request asks to."""
+    """``POST {request}`` — what Ask would attach, before anything is written: the dialog's Review, and a
+    suggested title. Diagnoses only when the request asks to."""
     request_info = get_current_request_info()
     body = (await request_info.get_post_data() or {}) if request_info else {}
     try:
