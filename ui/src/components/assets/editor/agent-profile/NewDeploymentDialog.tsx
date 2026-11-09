@@ -33,7 +33,7 @@ import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 import { AgentModeFields, DEFAULT_AGENT_MODE, type AgentModeValue } from './AgentModeFields';
 import { AgentDeployChecklist } from './AgentDeployChecklist';
-import { DeploymentSecretsGate } from './DeploymentSecretsGate';
+import { DeploymentSecretsGate, DeploySecretsLine } from './DeploymentSecretsGate';
 import { TokenAllocationField, tokenAllocationComplete } from './TokenAllocationField';
 import { AGENT_MACHINE_SIZES, MACHINE_SIZE_PRICE, MACHINE_SIZE_SPECS, type MachineBilling } from './agent-vocabularies';
 
@@ -124,6 +124,8 @@ export function NewDeploymentDialog({
   const [launching, setLaunching] = useState(false);
   // Tri-state from the checklist: `null` (still checking) never disables Launch.
   const [ready, setReady] = useState<boolean | null>(null);
+  // Required credentials with no value in the project yet: Launch still goes ahead.
+  const [secretsMissing, setSecretsMissing] = useState(0);
   const [environment, setEnvironment] = useState(DEFAULT_CLOUD_ENVIRONMENT);
   const [environments, setEnvironments] = useState([DEFAULT_CLOUD_ENVIRONMENT]);
   const [environmentChosen, setEnvironmentChosen] = useState(false);
@@ -467,6 +469,7 @@ export function NewDeploymentDialog({
                 className={cn('flex flex-col gap-3', setupTab !== 'values' && 'hidden')}
                 data-testid="new-deployment-tab-values"
               >
+                {mainAgent && <DeploySecretsLine key={mainAgent.id} agent={mainAgent} onMissing={setSecretsMissing} />}
                 <AgentDeployChecklist project={project} agent={mainAgent} onReadinessChange={setReady} />
                 <div className="flex flex-wrap items-center gap-2">
                   <Label htmlFor="new-deployment-environment" className="text-xs">
@@ -591,6 +594,12 @@ export function NewDeploymentDialog({
                 <span className="me-auto text-xs text-muted-foreground" data-testid="new-deployment-blocked">
                   <Trans>Finish the setup above first.</Trans>
                 </span>
+              ) : mainAgent && secretsMissing > 0 ? (
+                <span className="me-auto text-xs text-muted-foreground" data-testid="new-deployment-secrets-missing">
+                  {secretsMissing === 1
+                    ? t`1 credential missing — it can be set later on the Env tab.`
+                    : t`${secretsMissing} credentials missing — they can be set later on the Env tab.`}
+                </span>
               ) : null}
               <Button
                 variant="ghost"
@@ -607,7 +616,7 @@ export function NewDeploymentDialog({
                 ) : (
                   <Rocket className="me-1.5 h-4 w-4" />
                 )}
-                <Trans>Launch</Trans>
+                {mainAgent && secretsMissing > 0 ? <Trans>Launch anyway</Trans> : <Trans>Launch</Trans>}
               </Button>
             </>
           )}
