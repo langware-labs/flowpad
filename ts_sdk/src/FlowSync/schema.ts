@@ -8,7 +8,8 @@ export type ActionType =
   | 'delete'
   | 'members'
   | 'get_related_workspace'
-  | 'parents_path';
+  | 'parents_path'
+  | 'allocate';
 
 /**
  * View-mode visibility tier — mirrors the backend ``ViewMode`` StrEnum

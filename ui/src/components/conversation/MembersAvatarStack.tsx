@@ -853,7 +853,7 @@ export function MembersAvatarStack({
                           ariaLabel={t`Role`}
                           testId="members-invite-role"
                           roles={offeredRoles}
-                          value={effectiveInviteRole}
+                          value={effectiveInviteRole ?? []}
                           disabled={inviting}
                           onChange={setInviteRole}
                           className="h-9 text-xs"
@@ -946,19 +946,15 @@ export function MembersAvatarStack({
                                   <Trans>Team</Trans>
                                 </span>
                               </span>
-                              <RolesPicker
-                                ariaLabel={t`Invite ${label} as`}
-                                testId={`members-invite-role-${key}`}
-                                roles={offeredRoles}
-                                value={roleOf(invite)}
-                                disabled={inviting}
-                                onChange={(role) =>
-                                  setPending((prev) =>
-                                    prev.map((x) => (participantKey(x.participant) === key ? { ...x, role } : x)),
-                                  )
-                                }
-                                className="h-6 border-transparent text-[11px] text-muted-foreground hover:border-border"
-                              />
+                              <select
+                                aria-label={t`Invite ${label} as`}
+                                data-testid={`members-invite-role-${key}`}
+                                value={teamRole}
+                                disabled
+                                className="h-6 shrink-0 rounded border border-transparent bg-background px-1 text-[11px] capitalize text-muted-foreground outline-none disabled:opacity-60"
+                              >
+                                <option value={teamRole}>{teamRole}</option>
+                              </select>
                               <button
                                 type="button"
                                 aria-label={t`Remove ${label} from the list`}
