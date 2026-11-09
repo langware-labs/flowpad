@@ -36,6 +36,7 @@ describe('role', () => {
     expect(canDo(e, 'deploy')).toBe(true);
     expect(canDo(e, 'delete')).toBe(false);
     expect(canDo({}, 'deploy')).toBeUndefined();
+    expect(canDo({ expand: { allowed_actions: ['*'] } }, 'public_deployments')).toBe(true);
   });
 });
 

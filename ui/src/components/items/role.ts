@@ -40,6 +40,8 @@ export function roleOf(entity: Expandable | null | undefined): ItemRole | undefi
 export function canDo(entity: Expandable | null | undefined, action: string): boolean | undefined {
   const allowed = entity?.expand?.allowed_actions;
   if (!allowed) return undefined;
+  // `*`: the desktop backend's answer for an item's owner -- every action.
+  if (allowed.includes('*')) return true;
   const type = entity?.getType?.();
   return allowed.includes(action) || (!!type && allowed.includes(`${type}.${action}`));
 }

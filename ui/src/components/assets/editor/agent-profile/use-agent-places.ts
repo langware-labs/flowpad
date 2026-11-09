@@ -32,3 +32,11 @@ export function useAgentPlaces(agent: Agent | null | undefined): {
   );
   return { places, reload: refetch };
 }
+
+/**
+ * An invite (public) deployment: the agent's public template or a visitor's box placed under it. They are shown
+ * by the invite section (`AgentAutoLaunchTab`), never as plain places: the template has no machine of its own.
+ */
+export function isPublicPlace(deployment: { agent_mode?: string; template_deployment_id?: string | null }): boolean {
+  return deployment.agent_mode === 'public' || !!deployment.template_deployment_id;
+}

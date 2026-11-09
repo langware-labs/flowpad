@@ -7,8 +7,8 @@ placement on the hub, store the values typed for it, check readiness, have the h
 to readiness before it answers, so a refusal (a missing value, a publish problem) is the answer; the machine after,
 the activity telling the screen how it goes.
 
-Model funding never refuses a deploy (``requirement_spec.ADVISORY_KINDS``): a placement with nothing to spend is
-placed all the same, and the readiness step says so.
+Model funding and secrets never refuse a deploy (``requirement_spec.ADVISORY_KINDS``): a placement with nothing to spend,
+or a credential with no value yet, is placed all the same, and the readiness step says so.
 """
 
 from __future__ import annotations
@@ -21,7 +21,11 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional
 from pydantic import ConfigDict, Field, field_validator
 
 from flow_sdk.schema.data_spec.credential_contract import is_valid_environment
-from flow_sdk.schema.data_spec.requirement_spec import REQUIREMENT_FUNDING
+from flow_sdk.schema.data_spec.requirement_spec import (
+    REQUIREMENT_CREDENTIAL,
+    REQUIREMENT_FUNDING,
+    REQUIREMENT_VARIABLE,
+)
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.data_spec.token_allocation_spec import TokenAllocationSpec
 
@@ -214,13 +218,15 @@ async def _store_values(ctx: DeployContext) -> None:
 
 async def _check_readiness(ctx: DeployContext) -> str:
     # The gate: the placement's store must hold every value the project and its main agent need before a
-    # machine is paid for (the hub checks the same names again). Funding is reported, never a refusal.
+    # machine is paid for (the hub checks the same names again). Funding and credentials are reported, never a refusal.
     from flow_sdk.builtin.readiness import NotReady, readiness  # noqa: PLC0415
 
     ctx.ready = await readiness(ctx.agent, ctx.deployment, project=ctx.project)
     if not ctx.ready.ready:
         raise NotReady(ctx.ready, ctx.deployment)
-    return "; ".join(funding_warnings(ctx.agent, ctx.ready)) if ctx.agent is not None else ""
+    if ctx.agent is None:
+        return ""
+    return "; ".join([*funding_warnings(ctx.agent, ctx.ready), *credential_warnings(ctx.ready)])
 
 
 def funding_warnings(agent: "Agent", ready: "ReadinessSpec") -> list[str]:
@@ -229,6 +235,15 @@ def funding_warnings(agent: "Agent", ready: "ReadinessSpec") -> list[str]:
         f"No LLM funding for {agent.name or agent.id}: {item.fix}"
         for item in ready.advisories()
         if item.requirement.kind == REQUIREMENT_FUNDING
+    ]
+
+
+def credential_warnings(ready: "ReadinessSpec") -> list[str]:
+    """The credentials a deploy proceeds without: one sentence per missing item, names only."""
+    return [
+        f"Secret {item.requirement.name} missing: set it on the agent's Env tab; machines get it then"
+        for item in ready.advisories()
+        if item.requirement.kind in (REQUIREMENT_CREDENTIAL, REQUIREMENT_VARIABLE)
     ]
 
 
@@ -284,7 +299,7 @@ DEPLOYMENT_STEPS = [
     DeployStep("dependencies", "Share its dependencies", _share_dependencies, inline=True),
     DeployStep("plan", "Plan the deployment", _plan, inline=True),
     DeployStep("values", "Store the values you typed", _store_values, inline=True),
-    # The gate: a missing value refuses the deploy before a machine is paid for, as the request's answer.
+    # The gate: a missing blocking item refuses the deploy before a machine is paid for; a missing secret warns.
     DeployStep("readiness", "Check what it needs", _check_readiness, inline=True),
     DeployStep("machine", "Start a machine", _start_machine),
 ]

@@ -1,5 +1,7 @@
 """Machine status types for process and network monitoring."""
 
+import shlex
+
 from pydantic import BaseModel, Field
 
 from flow_sdk.flowpad_types.runtime_environment import ExecutionEnvironmentStatus
@@ -254,4 +256,4 @@ def python_command(script_path: str, os_type: str) -> str:
     """
     if os_type == "Windows":
         return f'where py >nul 2>nul & if errorlevel 1 (python "{script_path}") else (py -3 "{script_path}")'
-    return f"python3 {script_path}"
+    return f"python3 {shlex.quote(script_path)}"

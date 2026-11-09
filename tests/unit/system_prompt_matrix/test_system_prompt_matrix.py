@@ -59,6 +59,7 @@ MARKERS: dict[L, str] = {
     L.AGENTS: "<<agents-block>>",  # resolved per row: persona header or catalogue header
     L.AUTO_OPEN: "# Opened for you at session start",
     L.LANGUAGE: "# Language\nAlways respond in Hebrew.",
+    L.CREDENTIALS: "Credentials:\n",
 }
 PERSONA_HEADER = "# You are the '{name}' agent"
 CATALOGUE_HEADER = "# Embedded agent specs"
@@ -209,6 +210,16 @@ async def _project_language(e: Env) -> AgenticProcess:
                                 project_id=project.id, pty_mode=False).save()
 
 
+async def _project_credentials(e: Env) -> AgenticProcess:
+    from flow_sdk.builtin.credential_service import declare_credential  # noqa: PLC0415
+
+    project = await e.project()
+    await declare_credential({"name": "xhostd", "setup": "manual", "vars": {"XHOSTD_TOKEN": {}}},
+                             project_id=str(project.id), require_setup=False)
+    return await AgenticProcess(worker_type=e.worker_type, workdir=project.fs_storage_mount_path,
+                                project_id=project.id, pty_mode=False).save()
+
+
 async def _project_always_use_skills(e: Env) -> AgenticProcess:
     workdir = Path(e.workdir())
     (workdir / "flow.json").write_text(json.dumps({"always_use_skills": ["help-desk"]}), encoding="utf-8")
@@ -297,6 +308,7 @@ ROWS: tuple[Row, ...] = (
         sites=("flow_sdk/graph_workflow_manager/manager.py",)),
     Row("trigger", _trigger, (L.COMMON,), sites=("flow_sdk/automations/compat.py",)),
     Row("project_language", _project_language, (L.COMMON, L.LANGUAGE)),
+    Row("project_credentials", _project_credentials, (L.COMMON, L.CREDENTIALS)),
     Row("project_always_use_skills", _project_always_use_skills, (L.COMMON, L.ALWAYS_USE_SKILLS)),
     Row("ts_sdk_script", _ts_sdk_script, (L.COMMON,), sites=("flow_sdk/builtin/faas/scan_actions.py",)),
     Row("app_vibe", _app_vibe, (L.COMMON, L.COMMON_UI, L.AGENTS), persona="vibe"),

@@ -105,8 +105,9 @@ export function parseTaskNotificationSummary(content: string): string | null {
 }
 
 /** Skill injections carry "Base directory for this skill: …/skills/<name>". */
-function parseSkillDir(content: string): string | null {
-  const m = content.match(/Base directory for this skill:\s*(\S+)/);
+export function parseSkillDir(content: string): string | null {
+  // The rest of the line: a folder may hold spaces.
+  const m = content.match(/Base directory for this skill:[ \t]*(.+?)[ \t]*$/m);
   return m ? m[1] : null;
 }
 

@@ -57,3 +57,51 @@ FLOWPAD_COOKIE_GATE=off uv run -m flow_sdk.server.run
 
 `scripts/instance_ctl.sh`, `docker/docker-compose.yml`, CI e2e and the test suite already set it.
 The switch is read when the backend starts: restart the backend after changing it.
+
+## Hub UI with hot reload against prod (localhost:4121)
+
+Run the hub UI from this working tree, with Vite HMR, against the real prod hub (`app.flowpad.ai`).
+Edits under `ui/src` show up live on prod data. A deploy or a hub-served SPA cannot show them,
+because the hub serves the released `flowpad` bundle.
+
+```bash
+cd ui
+PROXY_TARGET=https://app.flowpad.ai VITE_API_URL=http://localhost:4121 \
+PROD_READ_ONLY=1 HUB_LOGIN=1 node_modules/.bin/vite --port 4121 --strictPort
+```
+
+Then open `http://localhost:4121/dock/hub/home`.
+
+What each variable does (all in `ui/vite.config.ts`):
+
+- `VITE_API_URL=http://localhost:4121`: the SPA calls its own origin, so the browser stays same-origin.
+- `PROXY_TARGET`: where the dev server forwards `/api` (plus `/assets`, `/sdk`, the WS). Point it straight at
+  the hub, not at a desktop on 9007. Through the desktop, the bootstrap says "desktop", and you get the desk
+  page instead of the hub UI.
+- `HUB_LOGIN=1`: signs the dev server in to the hub like the desktop does, through the hub's own OAuth
+  (`client_id=flowpad-desktop`, PKCE S256, loopback redirect `http://localhost:4121/__hub_login/callback`).
+  The SPA's `/api/v1/login` is answered by the dev server. The token is kept in the Vite process's memory
+  only, and goes on every proxied request (HTTP and WS) as `Authorization: Bearer`. Restarting Vite means
+  signing in again.
+- `PROD_READ_ONLY=1`: only GET, HEAD and OPTIONS pass. Every write gets a 403, except the auth paths
+  (`login`, `logout`, `auth`, `token`, `oauth`).
+
+Why the login is needed: the prod session cookie belongs to `app.flowpad.ai`, so `localhost` has no session.
+A plain proxy bounces you to the hub's login, which lands back on `app.flowpad.ai`. Never copy that cookie or
+the JWT by hand; the OAuth path above is the sanctioned one.
+
+### Writing to prod from it (narrow), and the traps
+
+- `PROD_WRITE_ALLOW=<regex>`: with `PROD_READ_ONLY=1`, the writes whose URL matches still pass — open only what one
+  validation needs, e.g. one agent's invite actions:
+  `PROD_WRITE_ALLOW='^/api/v1/graph/agent/<id>/(add_public_codes|rename_public_code|revoke_public_code|manage_public_deployment|visitor-sandbox)(\?|$)'`.
+  Drop it (restart without it) when done; a blocked write answers 403 `read-only dev proxy`.
+- **Which account it is.** `HUB_LOGIN` signs in as whoever is signed in to `app.flowpad.ai` in that Chrome profile.
+  The token lives only in the Vite process: every restart signs in again, and after switching accounts on
+  app.flowpad.ai, restart Vite or it keeps the old one. Never copy cookies or tokens to switch.
+- **One server, one owner.** The 4121 server may be in use by another session or by the person (an open-pc link, a
+  tab). Do not restart someone else's server to change its flags — run your own on another port (4131, …).
+- **Shared dependency cache.** Every Vite in `ui/` shares `ui/node_modules/.vite`. A `--force` restart (or a second
+  server optimizing at once) rewrites it under the others, which then load a blank page
+  (`The file does not exist at …/.vite/deps/chunk-….js … optimize deps directory`). Avoid `--force` while other
+  servers run; if one goes blank, restart that one server once.

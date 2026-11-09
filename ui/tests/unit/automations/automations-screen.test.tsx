@@ -14,6 +14,10 @@ const nav = vi.hoisted(() => ({ openDock: vi.fn() }));
 const dock = vi.hoisted(() => ({ current: null as null | { pointer?: string; options?: Record<string, string> } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: nav, currentDock: dock.current }),
+  useCurrentDock: () => dock.current,
+}));
+vi.mock('@src/hooks/use-default-scope-filter', () => ({
+  useDefaultScopeFilter: () => [{ mode: 'all' }, vi.fn(), 'p1'],
 }));
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: { id: 'p1' } }) }));
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
