@@ -99,5 +99,5 @@ A node may sit under another declared node (`"subject": "asset_setup:<name>"`). 
 - `project/<id>` actions: `load` / `load-state` map a web app's record onto a `project.load` value; `app-start`,
   `app-stop`, `app-lifecycle`, `app-handling`.
 - CLI: `flow app open|restart|stop|status`, `flow app handling add|test`.
-- Validation: `ui/tests/e2e/webapp-lifecycle/` drives a real instance in a browser — stub apps, Spora with a stub
-  tenant, then real Spora — and asserts record transitions, fixer-run counts and zero warm-return backend calls.
+- Validation: `ui/tests/e2e/webapp-lifecycle/` drives a real instance in a browser with stub apps and asserts record
+  transitions, fixer-run counts and zero warm-return backend calls.
