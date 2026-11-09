@@ -692,7 +692,7 @@ async def _on_this_machine(deployment_id: str, environment: str) -> tuple["Deplo
     return row, replace(placement, environment=environment) if environment else placement
 
 
-async def _placed_project(project_id: str, deployment: "Deployment") -> Optional["Project"]:
+async def _placed_project(project_id: str, deployment: "Deployment", names: Iterable[str] = ()) -> Optional["Project"]:
     """The project the placed values belong to, on THIS machine. The hub names its own project id; a machine that
     cloned the project keeps it under a local id, so when that id is unknown here the deployment's main agent says
     which project it runs in. Without it the project's own Credentials are never seen and every value lands in the
@@ -702,7 +702,28 @@ async def _placed_project(project_id: str, deployment: "Deployment") -> Optional
         return project
     agent = await deployment.main_agent() if deployment is not None else None
     local_id = str(getattr(agent, "project_id", "") or "")
-    return await get_project(local_id) if local_id else None
+    if local_id and (project := await get_project(local_id)) is not None:
+        return project
+    return await _project_declaring(names)
+
+
+async def _project_declaring(names: Iterable[str]) -> Optional["Project"]:
+    """The one project on this machine whose own Credentials declare ``names`` -- an invite box's deployment is
+    this computer, with no main agent, while the box holds exactly the project it was opened for. ``None`` when
+    no project, or more than one, declares them: never a guess."""
+    from flow_sdk.builtin.credential_resolver import declared_vars  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT  # noqa: PLC0415
+
+    wanted = set(names)
+    if not wanted:
+        return None
+    found = []
+    for project in await Project.get_all({}) or []:
+        declared = await declared_vars(project)
+        if any(n in declared and declared[n].scope.scope == SCOPE_PROJECT for n in wanted):
+            found.append(project)
+    return found[0] if len(found) == 1 else None
 
 
 async def place_values(deployment_id: str, project_id: str, file: str, environment: str = "") -> dict[str, Any]:
@@ -711,7 +732,7 @@ async def place_values(deployment_id: str, project_id: str, file: str, environme
 
     values = _take_dropped(file)
     deployment, placement = await _on_this_machine(deployment_id, environment)
-    project = await _placed_project(project_id, deployment)
+    project = await _placed_project(project_id, deployment, values)
     declared = await _declaring(list(values), project, deployment)
     failed: dict[str, str] = {name: "not declared here" for name in values if name not in declared}
     # One write per store: an env file is rewritten, a vault re-encrypted, once — not once per value.
