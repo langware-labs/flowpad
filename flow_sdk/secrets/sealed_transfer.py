@@ -238,6 +238,17 @@ async def publish_device_key(*, rotate: bool = False) -> Optional[DeviceKeyAdver
     return advert
 
 
+def _stored_device_id() -> Optional[str]:
+    """The keyring's device id, or None when the keychain can't be read: withdraw still removes what it can match."""
+    from keyring.errors import KeyringError  # noqa: PLC0415
+
+    try:
+        return (_key_store.load() or {}).get("device_id")
+    except (KeyringError, RuntimeError, ValueError) as error:
+        logger.warning("sealed withdraw: keychain unreadable (%s)", type(error).__name__)
+        return None
+
+
 async def withdraw_device_key() -> None:
     """Remove EVERY advert this install published (its current device and any it started over from), so nobody seals
     to a key this install no longer holds. Asks the hub, not the local record: an advert left by an older keyring is
@@ -249,7 +260,7 @@ async def withdraw_device_key() -> None:
     install = instance_uid()
     # The keyring's own device id and the one last published are ours too: they carry an older instance uid when
     # config.json was reset while the keys survived, and matching the uid alone would leave that advert on the hub.
-    known = {d for d in ((_key_store.load() or {}).get("device_id"), _read_json("published.json").get("device_id")) if d}
+    known = {d for d in (_stored_device_id(), _read_json("published.json").get("device_id")) if d}
     for advert in mine:
         did = str((advert or {}).get("device_id") or "")
         if did in known or did == install or did.startswith(f"{install}."):
