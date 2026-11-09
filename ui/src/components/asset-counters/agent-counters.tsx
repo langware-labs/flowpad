@@ -1,10 +1,15 @@
-import { Agent, Deployment, QueryRequest } from '@sdk';
+import { Agent, ComputeNode, Deployment, Issue, QueryRequest, type InboundNumber } from '@sdk';
 import { useEntitiesQuery, useProject } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { Badge } from '@src/components/ui/badge';
 import { useProjectAgents } from '@src/hooks/use-project-agents';
-import { useMemo } from 'react';
+import { isHubOnly } from '@sdk/utils/hub-runtime';
+import { type MouseEvent, type ReactNode, useMemo } from 'react';
+import { useAgentChannels } from '@src/components/agent-resources/AgentWebhooksSection';
+import { needsGitConnection } from '@src/components/assets/editor/git-connection';
+import { type DrillIn, useDrillIn, useHomeItems } from '@src/components/items/drill-in';
+import { cn } from '@src/lib/utils';
 import { crossCounters, useScopes } from './axes';
 import { isLiveDeployment, isRunning, runPauseStatuses } from './placement';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -153,15 +158,123 @@ export function DeploymentBadges({ deployments }: { deployments: Deployment[] })
   );
 }
 
+function SummaryRow({
+  label,
+  count,
+  live,
+  onOpen,
+  testId,
+}: {
+  label: ReactNode;
+  count: number;
+  live?: boolean;
+  onOpen: (() => void) | null;
+  testId: string;
+}) {
+  const click = (e: MouseEvent) => {
+    e.stopPropagation();
+    onOpen?.();
+  };
+  return (
+    <button
+      type="button"
+      onClick={click}
+      disabled={!onOpen}
+      className="flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left transition-colors hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
+      data-testid={testId}
+    >
+      <span className="text-muted-foreground">{label}</span>
+      {live && <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />}
+      <span className={cn('ml-auto tabular-nums', count > 0 ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+        {count}
+      </span>
+    </button>
+  );
+}
+
+/** The Channels row: the agent's links, read from the hub (`agent.channels()`), shown once they arrive. */
+function ChannelsRow({ agent, open }: { agent: Agent; open: ((d: Omit<DrillIn, 'label'>) => void) | null }) {
+  const channels = useAgentChannels(agent);
+  const ids = useMemo(() => new Set(channels?.webhooks.map((w) => w.id) ?? []), [channels]);
+  if (!channels) return null;
+  return (
+    <SummaryRow
+      label={<Trans>Channels</Trans>}
+      count={channels.webhooks.length}
+      onOpen={open && (() => open({ type: 'webhook', test: (n: InboundNumber) => ids.has(n.claim.id) }))}
+      testId="agent-summary-channels"
+    />
+  );
+}
+
+/** An agent card's footer: what it runs as, on, through and what is wrong — each row opens that list for the agent. */
+export function AgentSummaryTable({ row }: { row: AgentRow }) {
+  const drillIn = useDrillIn();
+  const issues = useHomeItems<Issue>(Issue.type);
+  const machines = useHomeItems<{ node: ComputeNode }>(ComputeNode.type);
+  const { agent, deployments } = row;
+  const typeid = agent.typeId.toString();
+  const nodeIds = useMemo(
+    () => new Set(deployments.map((d) => d.computeNodeId).filter((id): id is string => !!id)),
+    [deployments],
+  );
+  const concerns = (i: Issue) => i.subject_typeid === typeid || i.affected.includes(typeid);
+  const issueCount = issues?.filter(concerns).length ?? 0;
+  const open = drillIn && ((d: Omit<DrillIn, 'label'>) => drillIn({ ...d, label: agent.displayName }));
+  return (
+    <div className="grid w-full grid-cols-2 gap-x-3 gap-y-0.5 text-xs" data-testid="agent-summary">
+      <SummaryRow
+        label={<Trans>Deployments</Trans>}
+        count={deployments.length}
+        live={deployments.some(isLiveDeployment)}
+        onOpen={
+          open &&
+          (() => open({ type: Deployment.type, test: (d: Deployment) => d.mainAgentTypeId?.toString() === typeid }))
+        }
+        testId="agent-summary-deployments"
+      />
+      <SummaryRow
+        label={<Trans>Machines</Trans>}
+        // Machines that exist: a deployment row can still name a machine that is gone.
+        count={machines ? machines.filter((m) => nodeIds.has(m.node.id)).length : nodeIds.size}
+        onOpen={
+          open && (() => open({ type: ComputeNode.type, test: (m: { node: ComputeNode }) => nodeIds.has(m.node.id) }))
+        }
+        testId="agent-summary-machines"
+      />
+      {isHubOnly() && <ChannelsRow agent={agent} open={open} />}
+      {issues && (
+        <SummaryRow
+          label={<Trans>Issues</Trans>}
+          count={issueCount}
+          onOpen={open && (() => open({ type: Issue.type, test: concerns }))}
+          testId="agent-summary-issues"
+        />
+      )}
+    </div>
+  );
+}
+
+/** On the hub, an agent with no git link cannot be opened there: it has to be published from the desktop first. */
+const agentNeedsGit = (agent: Agent) => isHubOnly() && needsGitConnection(true, 'git', agent);
+
 /** An agent as an item card — the same on hub and desktop. */
 export const agentCard = (row: AgentRow): ItemCardValue => ({
   title: row.agent.displayName,
   icon: iconForType(Agent.type),
   state: agentState(row.deployments.length > 0, isRunning(row)),
   role: roleOf(row.agent),
+  warning: agentNeedsGit(row.agent) ? (
+    <>
+      <Trans>Needs git</Trans>
+      <span className="block text-muted-foreground" data-testid="agent-needs-git">
+        <Trans>Publish it from the desktop app</Trans>
+      </span>
+    </>
+  ) : undefined,
   description: row.agent.description || undefined,
   at: { date: row.agent.updated_date },
-  footer: row.deployments.length > 0 ? <DeploymentBadges deployments={row.deployments} /> : undefined,
+  footer: <AgentSummaryTable row={row} />,
 });
 
 export const agentCounterGroup: AssetCounterGroup<AgentRow> = {
