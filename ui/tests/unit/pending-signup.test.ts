@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ trackEvent: vi.fn(), measured: vi.fn(() => true) }));
@@ -16,6 +18,7 @@ const setConsent = (value: Record<string, unknown>): void => {
 const accept = (categories: string[]): void => setConsent({ action: 'accept', categories: JSON.stringify(categories) });
 const announceConsent = (): void => {
   document.dispatchEvent(new CustomEvent('CookieScriptCurrentState'));
+  vi.runOnlyPendingTimers();
 };
 const held = (): string | null => localStorage.getItem('_pending_signup');
 
@@ -23,6 +26,7 @@ describe('sign-up held until consent', () => {
   let stopWatching: () => void;
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     localStorage.clear();
     sessionStorage.clear();
     document.cookie = `${COOKIE}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
@@ -33,6 +37,46 @@ describe('sign-up held until consent', () => {
 
   afterEach(() => {
     stopWatching();
+    vi.useRealTimers();
+  });
+
+  it('leaves the send to the page CookieScript reloads into', () => {
+    trackSignUpWhenConsented();
+    accept(['performance']);
+    document.dispatchEvent(new CustomEvent('CookieScriptCurrentState'));
+    expect(mocks.trackEvent).not.toHaveBeenCalled();
+    expect(held()).not.toBeNull();
+
+    stopWatching();
+    stopWatching = watchConsentForHeldSignUp();
+    expect(mocks.trackEvent).toHaveBeenCalledExactlyOnceWith({ event: 'sign_up' });
+    expect(held()).toBeNull();
+  });
+
+  describe('sign-up made in the popup', () => {
+    const runPopupPage = (search: string): void => {
+      const html = readFileSync(resolve(process.cwd(), 'public/auth-popup-done.html'), 'utf8');
+      const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1] ?? '';
+      window.history.pushState({}, '', `/auth-popup-done.html${search}`);
+      vi.spyOn(window, 'close').mockImplementation(() => undefined);
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval -- the static page's own inline script
+      new Function(script)();
+    };
+
+    it('is held under the key the app settles', () => {
+      runPopupPage('?next=%2Flaunch&signup');
+      expect(held()).not.toBeNull();
+
+      accept(['performance']);
+      stopWatching();
+      stopWatching = watchConsentForHeldSignUp();
+      expect(mocks.trackEvent).toHaveBeenCalledExactlyOnceWith({ event: 'sign_up' });
+    });
+
+    it('holds nothing for a login', () => {
+      runPopupPage('?next=%2Flaunch&login');
+      expect(held()).toBeNull();
+    });
   });
 
   it('sends at once when analytics is already allowed', () => {

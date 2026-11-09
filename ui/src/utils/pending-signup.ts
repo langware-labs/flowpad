@@ -1,7 +1,10 @@
 import { trackEvent } from '@src/utils/analytics';
 import { measured } from '@src/utils/google-tag-manager';
 
-/** Set while a sign-up waits for the visitor's cookie choice. Holds a timestamp and nothing else. */
+/**
+ * Set while a sign-up waits for the visitor's cookie choice. Holds a timestamp and nothing else.
+ * `public/auth-popup-done.html` writes the same key for a sign-up made in the popup.
+ */
 const PENDING_KEY = '_pending_signup';
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Set once `sign_up` was sent in this tab. Survives the reload CookieScript does after a choice. */
@@ -12,6 +15,11 @@ const CONSENT_COOKIE = 'CookieScriptConsent';
 const ANALYTICS_CATEGORY = 'performance';
 /** Fires on load, accept and reject. On accept, CookieScript has already updated Google consent. */
 const CONSENT_EVENT = 'CookieScriptCurrentState';
+/**
+ * CookieScript reloads the page about 20 ms after a choice, which can cancel a hit sent in that moment.
+ * Waiting past that leaves the send to the reloaded page; with no reload, it still happens here.
+ */
+const AFTER_CHOICE_WAIT_MS = 1000;
 
 type Consent = 'granted' | 'denied' | 'undecided';
 
@@ -64,6 +72,14 @@ export function trackSignUpWhenConsented(): void {
 /** Settle a sign-up held on an earlier page load, and any held later. Returns the cleanup. */
 export function watchConsentForHeldSignUp(): () => void {
   settleHeldSignUp();
-  document.addEventListener(CONSENT_EVENT, settleHeldSignUp);
-  return () => document.removeEventListener(CONSENT_EVENT, settleHeldSignUp);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const settleAfterWait = (): void => {
+    clearTimeout(timer);
+    timer = setTimeout(settleHeldSignUp, AFTER_CHOICE_WAIT_MS);
+  };
+  document.addEventListener(CONSENT_EVENT, settleAfterWait);
+  return () => {
+    document.removeEventListener(CONSENT_EVENT, settleAfterWait);
+    clearTimeout(timer);
+  };
 }
