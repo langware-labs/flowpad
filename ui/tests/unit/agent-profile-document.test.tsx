@@ -40,8 +40,8 @@ vi.mock('@src/navigation/useDockNavigation', async () => {
 vi.mock('@sdk/react/hooks', async (original) => ({ ...(await original<object>()), useProject: () => ({ project: null }) }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-function fixture(extraFields: Record<string, unknown> = {}) {
-  const agent = new Agent({ id: '11111111-1111-4111-8111-111111111111', name: 'profile', title: 'Original', enabled: true });
+function fixture(extraFields: Record<string, unknown> = {}, agentFields: Record<string, unknown> = {}) {
+  const agent = new Agent({ id: '11111111-1111-4111-8111-111111111111', name: 'profile', title: 'Original', enabled: true, ...agentFields });
   const mainRef = new FSRef('/selected-copy/agent.md', new TypeId('compute_node', '@local'));
   let stored: AssetDocument = { body_ref: mainRef.toJSON(), raw_text: '', body: 'Original prompt', fields: {name: 'profile', title: 'Original', metadata: {owner: 'team'}, ...extraFields}, body_start_line: 7, revision: 'first' };
   vi.spyOn(mainRef, 'readDocument').mockImplementation(() => Promise.resolve(stored));
@@ -158,5 +158,20 @@ describe('Unreadable definition', () => {
     // Deployments sit on their own tab and stay reachable with no definition.
     fireEvent.mouseDown(screen.getByTestId('agent-tab-deployments'));
     expect(await screen.findByTestId('agent-places')).toBeInTheDocument();
+  });
+});
+
+describe('Who sees deployments', () => {
+  it('a reader sees no New deployment, no Deployments tab and no Deploy', async () => {
+    fixture({}, { expand: { roles: ['reader'], allowed_actions: ['agent.read'] } });
+    await screen.findByTestId('agent-tab-summary');
+    expect(screen.queryByTestId('agent-new-deployment')).toBeNull();
+    expect(screen.queryByTestId('agent-tab-deployments')).toBeNull();
+    expect(screen.queryByTestId('agent-summary-deployments')).toBeNull();
+  });
+  it('an admin deploys like the owner', async () => {
+    fixture({}, { expand: { roles: ['admin'], allowed_actions: ['agent.read', 'agent.public_deployments'] } });
+    expect(await screen.findByTestId('agent-new-deployment')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-tab-deployments')).toBeInTheDocument();
   });
 });

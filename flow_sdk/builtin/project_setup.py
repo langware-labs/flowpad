@@ -338,6 +338,23 @@ def is_derived(row: Any) -> bool:
     return bool(getattr(row, "derived", False)) or row.kind == "oauth" or str(row.kind) == "oauth"
 
 
+def _undeclared_for_agents(
+    name: str, roots: list[RootRef], rows: dict[str, "CredentialStatusRowSpec"]
+) -> Optional[SetupRequirementSpec]:
+    """An agent requires credential ``name`` (``REQUIREMENT_CREDENTIAL``) and the project does not declare it:
+    an issue — its deployments get only what the project declares. A row in the user's own scope does not count.
+    None when declared, or when nothing declares it at all (that gap is said once, by the caller)."""
+    agents = [root for root in roots if root.kind == ROOT_AGENT]
+    row = rows.get(name)
+    if not agents or row is None or row.scope == "project":
+        return None
+    return SetupRequirementSpec(
+        kind=REQUIREMENT_GAP, name=name, used_by=_names(agents), roots=agents,
+        note=f"{', '.join(_names(agents))} requires {name}; this project does not declare it, "
+             "so its machines start without it",
+    )
+
+
 async def _collect(project: "Project", deployment_id: str = "") -> tuple[list[SetupRequirementSpec], _Needs]:
     from flow_sdk.builtin import credential_service  # noqa: PLC0415
     from flow_sdk.builtin.credential_resolver import credentials_in_scope  # noqa: PLC0415
@@ -372,6 +389,8 @@ async def _collect(project: "Project", deployment_id: str = "") -> tuple[list[Se
 
     out = await _undeclared_connections(project, undeclared, templates, skips)
     for name, roots in packs.items():
+        if gap := _undeclared_for_agents(name, roots, rows):
+            out.append(gap)
         if name in rows:
             req = _from_row(rows[name], roots, project)
             if wider := narrow.get(name):  # the setup step widens the row (``requirement_step``) before connecting

@@ -4,7 +4,6 @@ from typing import ClassVar, Optional
 
 from flow_sdk.schema.data_spec import AssetDocumentSpec
 from flow_sdk.schema.data_spec._form import ShapeForm
-from flow_sdk.schema.data_spec.agent_env_spec import AgentEnvEntry
 from flow_sdk.schema.data_spec.auto_open_spec import AutoOpenEntry
 from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
@@ -68,9 +67,6 @@ class AgentSpec(AssetDocumentSpec):
     #: What the agent needs wherever it runs — credentials, permissions, variables — derived from what
     #: it owns and kept with any authored entries, so it ships with the agent. Never a value.
     requirements: Optional[list[RequirementSpec]] = None
-    #: The agent's Env: the variables every deployment of it gets once approved (``inject``). A secret is a
-    #: name only (its value is in the agent's hub store); a plain entry carries its value.
-    env: Optional[list[AgentEnvEntry]] = None
     input: Optional[ShapeForm] = None
     output: Optional[ShapeForm] = None
     system_prompt: Text = ""

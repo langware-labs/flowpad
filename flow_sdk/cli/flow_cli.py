@@ -872,7 +872,9 @@ def auth_configure_box(
     runs only with both `--login-port` and `--api-key`, through the app's own route
     (it owns the live state a login changes), presenting the gate armed above.
 
-    Prints one JSON line: {"cookie_gate", "runtime", "compute_node", "login_status"}.
+    The size the hub created the machine at arrives in the env (``FLOWPAD_NODE_SIZE``) and is stored too.
+
+    Prints one JSON line: {"cookie_gate", "runtime", "compute_node", "node_size", "login_status"}.
     """
     import json
     import urllib.error
@@ -880,9 +882,13 @@ def auth_configure_box(
     import urllib.request
 
     from flow_sdk.instance_settings.cookie_gate import set_cookie
-    from flow_sdk.instance_settings.runtime import set_assigned_compute_node, set_assigned_runtime
+    from flow_sdk.instance_settings.runtime import (
+        set_assigned_compute_node,
+        set_assigned_node_size,
+        set_assigned_runtime,
+    )
 
-    report: dict = {"cookie_gate": None, "runtime": None, "compute_node": None, "login_status": None}
+    report: dict = {"cookie_gate": None, "runtime": None, "compute_node": None, "node_size": None, "login_status": None}
 
     def _done(code: int = 0):
         typer.echo(json.dumps(report))
@@ -906,6 +912,15 @@ def auth_configure_box(
             report["compute_node"] = "ok"
         except ValueError as e:
             report["compute_node"] = f"error: {e}"
+
+    # The size the hub created this machine at, from the standard box env. Not fatal: an unknown or
+    # missing size only leaves the box reporting the default.
+    if size := os.environ.get("FLOWPAD_NODE_SIZE"):
+        try:
+            set_assigned_node_size(size)
+            report["node_size"] = "ok"
+        except ValueError as e:
+            report["node_size"] = f"error: {e}"
 
     if login_port and api_key:
         query = urllib.parse.urlencode({"flowpad-api-key": api_key, "next": "/"})

@@ -1130,6 +1130,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * it at all. Null once answered; computed on every process payload.
    */
   pending_user_input?: { tool_use_id: string; tool_name: string; input: Record<string, unknown> } | null;
+  /** The worker's `/goal` was judged met (newest goal check in its transcript). */
+  goal_met?: boolean;
 
   get workerStatus(): WorkerStatus | undefined {
     return this._workerStatus;

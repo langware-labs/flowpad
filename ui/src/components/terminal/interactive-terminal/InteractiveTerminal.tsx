@@ -486,7 +486,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         // Full-resolution fallback: the inline copy the CLI keeps may be downsized,
         // so also reference the file by path.
         const fullPath = `${inputDirInfo.absPath}/${file.name}`;
-        await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
+        await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${shellQuote(fullPath)}\n`);
         // The caption rides as a note after the file line — bracketed, so a
         // multi-line note is typed into the prompt, never submitted line by line.
         if (caption) await shellRef.current?.sendInput(bracketedPaste(`User note: ${caption}`));
@@ -1574,7 +1574,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       await Promise.all(uploads.map((u) => u.waitForCompletion()));
       for (const file of files) {
         const fullPath = `${inputDirInfo.absPath}/${file.name}`;
-        await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
+        await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${shellQuote(fullPath)}\n`);
       }
       openSideTab(SideTabId.Files);
       requestAnimationFrame(() => terminalRef.current?.focus());
@@ -1607,7 +1607,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       const uploads = await fsStore.getState().uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, files);
       await Promise.all(uploads.map((u) => u.waitForCompletion()));
       openSideTab(SideTabId.Files);
-      const refs = files.map((file) => `File ${file.name} is available here: ${inputDirInfo.absPath}/${file.name}`);
+      const refs = files.map(
+        (file) => `File ${file.name} is available here: ${shellQuote(`${inputDirInfo.absPath}/${file.name}`)}`,
+      );
       // The caption is the user's own prompt text — it follows the refs as-is.
       return caption ? [...refs, caption] : refs;
     },

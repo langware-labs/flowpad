@@ -23,7 +23,12 @@ import { getWikiResolveResult, setWikiResolveResult } from './wiki-resolve-store
 // The fields the loader derives context from. `project_id` is a backend
 // projection, not a typed field on the base entity, so resolved entities are
 // narrowed to this shape rather than carried as their full type.
-type ContextEntity = { typeId: TypeId; project_id?: string; asset_ref?: string };
+type ContextEntity = {
+  typeId: TypeId;
+  project_id?: string;
+  asset_ref?: string;
+  git_origin?: { kind?: string; repo?: string } | null;
+};
 
 /** True when `path` is `mount` or lives inside it (path-segment safe). */
 function mountContains(mount: string, path: string): boolean {
@@ -50,13 +55,26 @@ function mountContains(mount: string, path: string): boolean {
 async function setEntityContext(entity: ContextEntity | null, keepProject = false): Promise<void> {
   if (!entity) return;
   await dataContext.setActiveEntityTypeId(entity.typeId);
-  if (keepProject || !entity.project_id || entity.project_id === dataContext.project?.id) return;
+  if (keepProject) return;
+  // On the hub an asset row has no `project_id`: the hosted repo it lives in names its project.
+  const projectId = entity.project_id || (await hubRepoProjectId(entity));
+  if (!projectId || projectId === dataContext.project?.id) return;
   const currentMount = dataContext.project?.fs_storage_mount_path;
   if (currentMount && entity.asset_ref && mountContains(currentMount, entity.asset_ref)) return;
   await dataContext.setContextEntityTypeId(
     ContextEntitiesEnum.CurrentProjectTypeId,
-    new TypeId(Project.type, entity.project_id),
+    new TypeId(Project.type, projectId),
   );
+}
+
+async function hubRepoProjectId(entity: ContextEntity): Promise<string | null> {
+  const origin = entity.git_origin;
+  if (!!dataContext.caps.localFiles || origin?.kind !== 'hub_repo' || !origin.repo) return null;
+  try {
+    return (await Project.forHostedRepo(origin.repo))?.id ?? null;
+  } catch {
+    return null; // best-effort, like the rest of the project choice
+  }
 }
 
 /** Machine paths `/assets/entity` answered with nothing, this session. */

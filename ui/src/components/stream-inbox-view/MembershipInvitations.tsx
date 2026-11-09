@@ -115,24 +115,25 @@ export function InvitesChannelChip({
   pending: number;
   onClick: () => void;
 }) {
+  // Same round mark as the channels beside it; lit while the Invites view is open.
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      title={t`Everything shared with you`}
+      aria-label={t`Invites — everything shared with you`}
+      title={t`Invites — everything shared with you`}
       data-testid="stream-inbox-invites-chip"
       className={cn(
-        'flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-xs font-medium transition-colors',
-        active
-          ? 'border-violet-500/60 bg-violet-500/15 text-foreground'
-          : 'border-border/60 text-muted-foreground hover:text-foreground',
+        'relative grid size-8 shrink-0 place-items-center rounded-full border-[1.5px] bg-background transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        active ? 'border-violet-500' : 'border-border [&>:first-child]:opacity-45 [&>:first-child]:grayscale',
       )}
     >
-      <MailPlus className="h-3.5 w-3.5 text-violet-500" />
-      <Trans>Invites</Trans>
+      <MailPlus className="size-[17px] text-violet-500" />
       {pending > 0 && (
-        <span className="rounded bg-violet-500 px-1 text-[10px] leading-tight text-white">{pending}</span>
+        <span className="absolute -bottom-0.5 -end-0.5 grid min-w-3.5 place-items-center rounded-full border-2 border-background bg-violet-500 px-0.5 text-[9px] leading-none text-white">
+          {pending}
+        </span>
       )}
     </button>
   );

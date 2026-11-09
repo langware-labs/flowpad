@@ -83,15 +83,28 @@ function openInvite(inviteRoles?: readonly string[]) {
 const input = () => screen.getByTestId('members-invite-input');
 const addRole = () => screen.getByTestId('members-invite-role');
 const rowRole = (key: string) => screen.getByTestId(`members-invite-role-${key}`);
-const options = (select: HTMLSelectElement) => Array.from(select.options).map((o) => o.value);
+// The roles picker: a button carrying its chosen roles (`data-value`) and its offer (`data-roles`).
+const options = (picker: HTMLElement) => (picker.dataset.roles ?? '').split(',').filter(Boolean);
+const roleValue = (picker: HTMLElement) => picker.dataset.value ?? '';
 const addButton = () => screen.getByTestId('members-invite-add');
 const applyButton = () => screen.getByTestId('members-invite-submit');
 
 function type(text: string) {
   fireEvent.change(input(), { target: { value: text } });
 }
+/** Make `role` the add row's only role: tick it, then untick the rest. */
+function setRole(picker: () => HTMLElement, role: string) {
+  const testId = picker().dataset.testid;
+  const pick = (r: string) => {
+    fireEvent.keyDown(picker(), { key: 'Enter' });
+    fireEvent.click(screen.getByTestId(`${testId}-${r}`));
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+  };
+  if (!roleValue(picker()).split(',').includes(role)) pick(role);
+  for (const r of roleValue(picker()).split(',')) if (r && r !== role) pick(r);
+}
 function chooseRole(role: string) {
-  fireEvent.change(addRole(), { target: { value: role } });
+  setRole(addRole, role);
 }
 function add() {
   fireEvent.click(addButton());
@@ -107,7 +120,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
     it('offers member and admin to an owner, defaulting to member', () => {
       openInvite(PROJECT_ROLES);
 
-      expect(addRole().value).toBe('reader');
+      expect(roleValue(addRole())).toBe('reader');
       expect(options(addRole())).toEqual(['reader', 'admin']);
     });
 
@@ -150,7 +163,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       chooseRole('admin');
       add();
 
-      expect(rowRole('new@example.com').value).toBe('admin');
+      expect(roleValue(rowRole('new@example.com'))).toBe('admin');
       expect(input().value).toBe('');
       expect(addMembers).not.toHaveBeenCalled();
     });
@@ -162,7 +175,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       type('new@example.com');
       add();
 
-      expect(rowRole('new@example.com').value).toBe('admin');
+      expect(roleValue(rowRole('new@example.com'))).toBe('admin');
     });
 
     it('resolves a typed name to the contact it names', () => {
@@ -172,7 +185,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       type('Bob');
       add();
 
-      expect(rowRole('bob@example.com').value).toBe('reader');
+      expect(roleValue(rowRole('bob@example.com'))).toBe('reader');
     });
 
     it('adds the contact picked from the suggestions', () => {
@@ -215,8 +228,8 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       chooseRole('reader');
       add();
 
-      expect(rowRole('noa@example.com').value).toBe('admin');
-      expect(rowRole('bob@example.com').value).toBe('reader');
+      expect(roleValue(rowRole('noa@example.com'))).toBe('admin');
+      expect(roleValue(rowRole('bob@example.com'))).toBe('reader');
       expect(screen.getByTestId('members-invite-count').textContent).toBe('2 to invite');
     });
 
@@ -230,7 +243,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       add();
 
       expect(screen.getAllByTestId(/^members-invite-row-/)).toHaveLength(1);
-      expect(rowRole('noa@example.com').value).toBe('admin');
+      expect(roleValue(rowRole('noa@example.com'))).toBe('admin');
     });
 
     it('refuses text that names no one', () => {
@@ -267,7 +280,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       chooseRole('admin');
       fireEvent.click(screen.getByTestId('address-book-tick-stone'));
 
-      expect(rowRole('hub-id-only').value).toBe('admin');
+      expect(roleValue(rowRole('hub-id-only'))).toBe('admin');
     });
 
     it('drops a row with its remove button', () => {
@@ -297,7 +310,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       type('Bob');
       add();
       // A row's role can still change after Add.
-      fireEvent.change(rowRole('noa@example.com'), { target: { value: 'admin' } });
+      setRole(() => rowRole('noa@example.com'), 'admin');
       fireEvent.click(applyButton());
 
       await waitFor(() =>
@@ -317,7 +330,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
 
       type('stone');
       add();
-      fireEvent.change(rowRole('hub-id-only'), { target: { value: 'admin' } });
+      setRole(() => rowRole('hub-id-only'), 'admin');
       fireEvent.click(applyButton());
 
       await waitFor(() => expect(addMembers).toHaveBeenCalledWith([{ idOrEmail: 'hub-id-only', roles: ['admin'] }]));
@@ -411,7 +424,7 @@ describe('roster — change-role dropdown offers the backend share roles', () =>
   /** The backend's `share-roles` answer, as ProjectHome passes it. */
   const SHARE_ROLES = ['editor', 'reader', 'admin'];
   const rowOptions = (name: string) =>
-    Array.from(screen.getByLabelText(`Change role of ${name}`).options).map((o) => o.value);
+    options(screen.getByLabelText(`Change role of ${name}`));
 
   function openRoster(inviteRoles?: readonly string[]) {
     render(<MembersAvatarStack typeId={PROJECT} inviteRoles={inviteRoles} />);

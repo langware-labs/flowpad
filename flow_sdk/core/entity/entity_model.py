@@ -14,6 +14,8 @@ import types
 from typing import (
     Any,
     AsyncIterator,
+    Awaitable,
+    Callable,
     ClassVar,
     Dict,
     List,
@@ -62,7 +64,7 @@ from flow_sdk.core.entity.projected_fields import derived_field_names
 from flow_sdk.db import DBEntity
 from flow_sdk.db.db_entity import EntityExpansion
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
-from flow_sdk.db.drivers.db_driver import RelationshipDirection
+from flow_sdk.db.drivers.db_driver import PROVEN_NEW_ROW, RelationshipDirection
 from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
 from flow_sdk.db.load_context import lenient_entity_load, lenient_load_active
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
@@ -132,6 +134,20 @@ def suppress_store():
 _VERIFIED_ABSENT: "ContextVar[set[str] | None]" = ContextVar("_verified_absent", default=None)
 
 _MIRROR_DELETE: "ContextVar[bool]" = ContextVar("_mirror_delete", default=False)
+
+
+def _as_proven_new(entity_id: str, persist: Callable[[], Awaitable[None]]) -> Callable[[], Awaitable[None]]:
+    """``persist`` for a create of a ``_VERIFIED_ABSENT`` id: the driver skips the existence read and
+    the FTS delete of a row that cannot be there (``PROVEN_NEW_ROW``) — two of a new row's five
+    statements, each a round trip to the database."""
+    async def run() -> None:
+        token = PROVEN_NEW_ROW.set(entity_id)
+        try:
+            await persist()
+        finally:
+            PROVEN_NEW_ROW.reset(token)
+
+    return run
 
 
 @contextmanager
@@ -2969,10 +2985,12 @@ class Entity(DBEntity):
         # genuine update must NOT merge: `remove_context_dir` and the share
         # prune drop a link on purpose, and unioning would make removal
         # impossible.
+        proven_new = False
         if was_create:
             verified_absent = _VERIFIED_ABSENT.get()
             if verified_absent is not None and str(self.id) in verified_absent:
                 verified_absent.discard(str(self.id))
+                proven_new = True
             else:
                 await self._merge_stored_context_links()
         create_target = await self._prepare_for_storage()
@@ -3011,6 +3029,8 @@ class Entity(DBEntity):
                     # per-type store()).
                     await self.store()
 
+        if proven_new:
+            persist_prepared_entity = _as_proven_new(str(self.id), persist_prepared_entity)
         if create_target is None:
             await persist_prepared_entity()
         else:
