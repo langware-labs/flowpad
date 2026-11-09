@@ -641,8 +641,8 @@ async def help_request_diagnosis() -> ApiResponse:
 
 @action.post(action_name="help-request-preview", types=None)
 async def help_request_preview() -> ApiResponse:
-    """``POST {request}`` — what Ask would attach, before anything is written: the review of card 2, and the
-    title card 3 shows. Diagnoses only when the request asks to."""
+    """``POST {request}`` — what Ask would attach, before anything is written: the dialog's Review, and a
+    suggested title. Diagnoses only when the request asks to."""
     request_info = get_current_request_info()
     body = (await request_info.get_post_data() or {}) if request_info else {}
     try:

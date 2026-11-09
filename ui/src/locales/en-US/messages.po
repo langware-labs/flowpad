@@ -10782,6 +10782,10 @@ msgstr "Device logins"
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Diagnose"
 msgstr "Diagnose"
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Diagnose and Send"
+msgstr "Diagnose and Send"
+
 
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Diagnose & fix"
@@ -10823,10 +10827,6 @@ msgstr "Diagnosis"
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Diagnosis — diagnoses and the help desk"
 msgstr "Diagnosis — diagnoses and the help desk"
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Diagnosis & context"
-msgstr "Diagnosis & context"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -26154,17 +26154,9 @@ msgstr "Review"
 msgid "Review and open the shared project."
 msgstr "Review and open the shared project."
 
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Review before sending"
-msgstr "Review before sending"
-
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Review changes"
 msgstr "Review changes"
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Review content"
-msgstr "Review content"
 
 #: src/components/automations/KindGallery.tsx
 msgid "Review docs on save"
@@ -26450,10 +26442,6 @@ msgstr "Run Claude Code in a project directory to see it here."
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Run detail"
 msgstr "Run detail"
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Run diagnosis"
-msgstr "Run diagnosis"
 
 #: src/components/automations/AutomationsList.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -27802,10 +27790,6 @@ msgstr "Send IT message"
 msgid "Send message"
 msgstr "Send message"
 
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Send once diagnosed"
-msgstr "Send once diagnosed"
-
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
 msgstr "Send one minimal call through this endpoint"
@@ -27833,6 +27817,10 @@ msgstr "Send this to the person you support — they run it in their terminal:"
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 msgid "Send to agent"
 msgstr "Send to agent"
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Send to"
+msgstr "Send to"
 
 #: src/components/conversation/MessageFormCard.tsx
 msgid "Send updated answers"
@@ -28478,10 +28466,6 @@ msgstr "Share by name or email…"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Share code {0} to invite."
 msgstr "Share code {0} to invite."
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Share context"
-msgstr "Share context"
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 #: src/components/project-home/ProjectGitShareToggle.tsx
@@ -34676,8 +34660,8 @@ msgid "What is this secret used for?"
 msgstr "What is this secret used for?"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "What is wrong"
-msgstr "What is wrong"
+msgid "What is wrong, what to attach, and who gets it"
+msgstr "What is wrong, what to attach, and who gets it"
 
 #: src/components/automations/RunDetail.tsx
 msgid "What it did"
@@ -34771,8 +34755,8 @@ msgid "What went wrong"
 msgstr "What went wrong"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "What went wrong? What did you expect, and what did you already try?"
-msgstr "What went wrong? What did you expect, and what did you already try?"
+msgid "What went wrong? What did you expect, and what did you already try? Paste a screenshot to attach it."
+msgstr "What went wrong? What did you expect, and what did you already try? Paste a screenshot to attach it."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"
@@ -34943,10 +34927,6 @@ msgstr "Who can open it: <0>{0}</0>"
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Who can read"
 msgstr "Who can read"
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Who gets it"
-msgstr "Who gets it"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Who may log in to this sandbox"

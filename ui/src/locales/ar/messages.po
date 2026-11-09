@@ -4826,10 +4826,6 @@ msgstr "إرفاق المزيد من الملفات أو الأصول"
 msgid "Attach session transcript"
 msgstr "إرفاق سجل الجلسة"
 
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Attach the diagnosis"
-msgstr ""
-
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Attached asset types"
 msgstr "أنواع الأصول المرفقة"
@@ -10786,6 +10782,10 @@ msgstr "تشخيص"
 msgid "Diagnose & fix"
 msgstr ""
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Diagnose and Send"
+msgstr "تشخيص وإرسال"
+
 #: src/notifications/diagnose/DiagnoseIconButton.tsx
 msgid "Diagnose this error"
 msgstr "تشخيص هذا الخطأ"
@@ -10822,10 +10822,6 @@ msgstr "التشخيص"
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Diagnosis — diagnoses and the help desk"
 msgstr "التشخيص — التشخيصات ومكتب المساعدة"
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Diagnosis & context"
-msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -26153,17 +26149,9 @@ msgstr "مراجعة"
 msgid "Review and open the shared project."
 msgstr "يُرجى مراجعة المشروع المشترك وفتحه."
 
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Review before sending"
-msgstr ""
-
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Review changes"
 msgstr "مراجعة التغييرات"
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Review content"
-msgstr ""
 
 #: src/components/automations/KindGallery.tsx
 msgid "Review docs on save"
@@ -26449,10 +26437,6 @@ msgstr "يُرجى تشغيل Claude Code في مجلد المشروع لعرض 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Run detail"
 msgstr "تفاصيل التشغيل"
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Run diagnosis"
-msgstr "تشغيل التشخيص"
 
 #: src/components/automations/AutomationsList.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -27801,10 +27785,6 @@ msgstr "إرسال رسالة IT"
 msgid "Send message"
 msgstr "إرسال الرسالة"
 
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Send once diagnosed"
-msgstr ""
-
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
 msgstr "إرسال استدعاء بسيط واحد عبر نقطة النهاية هذه"
@@ -27838,6 +27818,10 @@ msgid "Send updated answers"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Send to"
+msgstr "إرسال إلى"
+
 msgid "Send without it"
 msgstr "إرسال بدونه"
 
@@ -28477,10 +28461,6 @@ msgstr "المشاركة بالاسم أو البريد الإلكتروني…"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Share code {0} to invite."
 msgstr "مشاركة الرمز {0} للدعوة."
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Share context"
-msgstr ""
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 #: src/components/project-home/ProjectGitShareToggle.tsx
@@ -34675,8 +34655,8 @@ msgid "What is this secret used for?"
 msgstr "ما الغرض من هذا السر؟"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "What is wrong"
-msgstr ""
+msgid "What is wrong, what to attach, and who gets it"
+msgstr "ما المشكلة، وما الذي ترفقه، ومن يستلمه"
 
 #: src/components/automations/RunDetail.tsx
 msgid "What it did"
@@ -34770,8 +34750,8 @@ msgid "What went wrong"
 msgstr "ما الذي حدث من خطأ"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "What went wrong? What did you expect, and what did you already try?"
-msgstr ""
+msgid "What went wrong? What did you expect, and what did you already try? Paste a screenshot to attach it."
+msgstr "ما الخطأ الذي حدث؟ ما الذي توقعته، وما الذي جربته بالفعل؟ الصق لقطة شاشة لإرفاقها."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"
@@ -34941,10 +34921,6 @@ msgstr ""
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Who can read"
-msgstr ""
-
-#: src/components/help/AskForHelpDialog.tsx
-msgid "Who gets it"
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx

@@ -12,7 +12,6 @@ import {
   helpRecipients,
   type HelpRecipients,
   helpRequestPreview,
-  type HelpSend,
   normalizeEmail,
   TypeId,
 } from '@sdk';
@@ -36,6 +35,9 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateTo, notify } from '@src/notifications';
 import { guardCloudAction } from '@src/services/privacy-guard';
+
+/** A small toggle pill: Diagnosis, Context. */
+const PILL = 'flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground';
 
 export interface AskForHelpDialogProps {
   open: boolean;
@@ -63,16 +65,12 @@ export interface AskForHelpDialogProps {
   diagnosisId?: string | null;
 }
 
-type Step = 1 | 2 | 3;
-
 /**
- * Ask for help — the ONE dialog every surface opens. Three cards, then it is just a conversation:
- *
- * 1. What is wrong — one box. The Help desk chip (the footer's, moved here) opens the help desk.
- * 2. Diagnosis & context — Run diagnosis, Share context, and Review content: the message review
- *    (``ContentReviewDialog``) of exactly what would be attached.
- * 3. Who gets it — the title (written for you), the help desk (removable), people. Nobody: a private
- *    conversation that stays here. Review before sending keeps it here until Share.
+ * Ask for help — the ONE dialog every surface opens. One screen, then it is just a conversation:
+ * what is wrong (a pasted image attaches), Diagnosis / Context with Review (``ContentReviewDialog``
+ * of exactly what would be attached), and Send to — the help desk (removable) and people. Nobody: a
+ * private conversation that stays here, and the button reads Diagnose instead of Diagnose and Send.
+ * The title is the server's (``_ticket_title`` of the text).
  *
  * The request is a conversation with ONE ``help_request`` message; its context rides as ordinary files.
  * Test ids keep their ``vibe-assign-*`` names: the dialog grew out of the Vibe one.
@@ -96,9 +94,7 @@ export function AskForHelpDialog({
 }: AskForHelpDialogProps) {
   const { t } = useLingui();
   const ensureCloudLogin = useCloudLoginGate();
-  const [step, setStep] = useState<Step>(1);
   const [text, setText] = useState('');
-  const [title, setTitle] = useState('');
   const [runDiagnosis, setRunDiagnosis] = useState(true);
   const [shareContext, setShareContext] = useState(true);
   const [leftOut, setLeftOut] = useState<string[]>([]);
@@ -109,11 +105,11 @@ export function AskForHelpDialog({
   const [deskId, setDeskId] = useState<string | null>(desk?.desk_project_id ?? null);
   const [deskOn, setDeskOn] = useState(true);
   const [showDesk, setShowDesk] = useState(false);
-  const [busy, setBusy] = useState<HelpSend | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // One request per dialog: a resubmit after a lost answer is the SAME request, never a second.
   const conversationId = useRef<string>(crypto.randomUUID());
-  const picker = usePickedFiles({ enabled: true, disabled: !!busy });
+  const picker = usePickedFiles({ enabled: true, disabled: busy });
   const handlePaste = useAnnotatedImagePaste(picker.addFiles, { enabled: !busy, setText });
 
   const { addFiles } = picker;
@@ -123,7 +119,6 @@ export function AskForHelpDialog({
 
   useEffect(() => {
     if (!open) return;
-    setStep(1);
     setText([initialTitle, initialNotes].filter(Boolean).join('\n\n'));
   }, [open, initialTitle, initialNotes]);
 
@@ -162,10 +157,9 @@ export function AskForHelpDialog({
     ? openTasks.find((row) => normalizeEmail(row.task.assignee) === pickedEmail)
     : undefined;
 
-  const request = (send: HelpSend): AskForHelpRequest => ({
+  const request = (): AskForHelpRequest => ({
     conversation_id: conversationId.current,
     recipients: chosen,
-    title: title.trim(),
     text: text.trim(),
     project_id: projectId,
     origin,
@@ -175,23 +169,15 @@ export function AskForHelpDialog({
     diagnosis_id: diagnosisId,
     share_context: shareContext,
     left_out: leftOut,
-    send,
+    send: 'when_diagnosed',
     process: sessionTypeId ? sessionTypeId.toString() : null,
     connection_id: connectionManager.id,
   });
 
-  const toCard3 = () => {
-    setStep(3);
-    // The title is written for the person (a small, fast model; the first line when none answers).
-    void helpRequestPreview({ ...request('when_diagnosed'), diagnose: false })
-      .then((p) => setTitle((current) => current || p.title))
-      .catch(() => setTitle((current) => current || text.trim().split('\n')[0].slice(0, 80)));
-  };
-
   const openReview = async () => {
     setReviewing(true);
     try {
-      const preview = await helpRequestPreview({ ...request('when_diagnosed'), left_out: [] });
+      const preview = await helpRequestPreview({ ...request(), left_out: [] });
       setReview(preview.items);
     } catch (e: unknown) {
       notify.error({ title: t`Could not collect the context`, message: errorMessage(e, ''), forceToast: true });
@@ -200,13 +186,13 @@ export function AskForHelpDialog({
     }
   };
 
-  const submit = async (send: HelpSend) => {
+  const submit = async () => {
     if (!text.trim() || busy) return;
-    if (send === 'when_diagnosed' && chosen.length && !guardCloudAction('share')) return;
-    setBusy(send);
+    if (chosen.length && !guardCloudAction('share')) return;
+    setBusy(true);
     setError(null);
     try {
-      const result = await askForHelp(request(send), picker.files);
+      const result = await askForHelp(request(), picker.files);
       const openIt = { label: t`Open`, href: DockPointer.forConversation(result.conversation_id).toUrl() };
       onOpenChange(false);
       onAsked?.(result);
@@ -228,14 +214,14 @@ export function AskForHelpDialog({
       setError(message);
       notify.error({ title: t`Could not ask for help`, message, forceToast: true });
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
 
   const holdWhileBusy = (event: Event) => {
     if (busy) event.preventDefault();
   };
-  const steps = [t`What is wrong`, t`Diagnosis & context`, t`Who gets it`];
+  const sendLabel = chosen.length ? t`Diagnose and Send` : t`Diagnose`;
 
   return (
     <>
@@ -243,134 +229,86 @@ export function AskForHelpDialog({
         <DialogContent
           className="max-w-lg"
           data-testid="ask-for-help-dialog"
-          data-step={step}
           onEscapeKeyDown={holdWhileBusy}
           onInteractOutside={holdWhileBusy}
         >
           <DialogHeader>
             <DialogTitle>{t`Ask for help`}</DialogTitle>
-            <DialogDescription className="sr-only">{steps[step - 1]}</DialogDescription>
+            <DialogDescription className="sr-only">{t`What is wrong, what to attach, and who gets it`}</DialogDescription>
           </DialogHeader>
-
-          <ol className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="ask-for-help-steps">
-            {steps.map((label, i) => (
-              <li
-                key={label}
-                className={cn('flex items-center gap-1.5', i + 1 === step && 'font-medium text-foreground')}
-              >
-                <span
-                  className={cn(
-                    'flex h-5 w-5 items-center justify-center rounded-full border text-[10px]',
-                    i + 1 <= step && 'border-primary bg-primary/10 text-primary',
-                  )}
-                >
-                  {i + 1}
-                </span>
-                {label}
-                {i < 2 && <span className="h-px w-4 bg-border" />}
-              </li>
-            ))}
-          </ol>
 
           {note && (
             <p className="rounded border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">{note}</p>
           )}
 
-          {step === 1 && (
-            <div className="flex flex-col gap-3" data-testid="ask-for-help-card-what">
-              <Textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onPaste={handlePaste}
-                placeholder={t`What went wrong? What did you expect, and what did you already try?`}
-                rows={5}
-                className="resize-none"
-                autoFocus
-                data-testid="vibe-assign-notes"
-              />
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>{t`Asked before? Your open requests are in the help desk.`}</span>
-                <button
-                  type="button"
-                  onClick={() => setShowDesk(true)}
-                  className="flex shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] text-violet-600 transition-colors hover:bg-accent hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
-                  title={t`Open the help desk`}
-                  aria-label={t`Help desk`}
-                  data-testid="ask-for-help-helpdesk-button"
-                >
-                  <LifeBuoy className="h-3.5 w-3.5" />
-                  {t`Help desk`}
-                </button>
-              </div>
-            </div>
-          )}
+          <div className="flex flex-col gap-3" data-testid="ask-for-help-form">
+            <Textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onPaste={handlePaste}
+              placeholder={t`What went wrong? What did you expect, and what did you already try? Paste a screenshot to attach it.`}
+              rows={4}
+              className="resize-none"
+              autoFocus
+              disabled={busy}
+              data-testid="vibe-assign-notes"
+            />
+            <PickedFileList
+              files={picker.files}
+              rejected={picker.rejected}
+              disabled={busy}
+              onRemoveAt={picker.removeAt}
+            />
 
-          {step === 2 && (
-            <div className="flex flex-col gap-2" data-testid="ask-for-help-card-context">
-              <label className="flex items-center gap-3 rounded-md border px-3 py-2.5">
-                <Stethoscope className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm">{diagnosisId ? t`Attach the diagnosis` : t`Run diagnosis`}</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {diagnosisId ? t`The one you already took` : t`Checks this computer when you send`}
-                  </span>
-                </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <label
+                className={PILL}
+                title={diagnosisId ? t`The one you already took` : t`Checks this computer when you send`}
+              >
+                <Stethoscope className="h-3 w-3" />
+                {t`Diagnosis`}
                 <input
                   type="checkbox"
                   checked={runDiagnosis}
                   onChange={(e) => setRunDiagnosis(e.target.checked)}
+                  disabled={busy}
                   data-testid="ask-for-help-run-diagnosis"
                 />
               </label>
-              <label className="flex items-center gap-3 rounded-md border px-3 py-2.5">
-                <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm">{t`Share context`}</span>
-                  <span className="block text-xs text-muted-foreground">{t`Your screen, session and diagnosis`}</span>
-                </span>
-                <button
-                  type="button"
-                  className="rounded-full border border-primary bg-primary/10 px-2.5 py-0.5 text-xs"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void openReview();
-                  }}
-                  disabled={reviewing}
-                  data-testid="ask-for-help-review-content"
-                >
-                  {reviewing ? t`Collecting…` : t`Review content`}
-                </button>
+              <label
+                className={PILL}
+                title={t`Your screen, session and diagnosis`}
+              >
+                <Paperclip className="h-3 w-3" />
+                {t`Context`}
                 <input
                   type="checkbox"
                   checked={shareContext}
                   onChange={(e) => setShareContext(e.target.checked)}
+                  disabled={busy}
                   data-testid="ask-for-help-share-context"
                 />
               </label>
-              <PickedFileList
-                files={picker.files}
-                rejected={picker.rejected}
-                disabled={!!busy}
-                onRemoveAt={picker.removeAt}
+              <button
+                type="button"
+                className="text-xs text-primary underline"
+                onClick={() => void openReview()}
+                disabled={reviewing || busy}
+                data-testid="ask-for-help-review-content"
+              >
+                {reviewing ? t`Collecting…` : t`Review`}
+              </button>
+              <AttachFilesButton
+                inputId={picker.inputId}
+                onFiles={picker.addFiles}
+                disabled={busy}
+                title={t`Attach files or a screenshot`}
+                testId="vibe-assign-attach"
               />
-              <div>
-                <AttachFilesButton
-                  inputId={picker.inputId}
-                  onFiles={picker.addFiles}
-                  disabled={!!busy}
-                  title={t`Attach files or a screenshot`}
-                  testId="vibe-assign-attach"
-                />
-              </div>
             </div>
-          )}
 
-          {step === 3 && (
-            <div className="flex flex-col gap-3" data-testid="ask-for-help-card-who">
-              <div className="rounded-md border p-2 text-sm">
-                <span className="text-xs text-muted-foreground">{t`Title`}</span>
-                <div data-testid="ask-for-help-title">{title || '…'}</div>
-              </div>
+            <div className="flex flex-col gap-1.5" data-testid="ask-for-help-send-to">
+              <span className="text-xs text-muted-foreground">{t`Send to`}</span>
               {deskChoice && deskOn && (
                 <div className="flex flex-wrap gap-1.5" data-testid="ask-for-help-desks">
                   {(desks.length ? desks : [deskChoice]).map((d) => (
@@ -443,7 +381,22 @@ export function AskForHelpDialog({
                 </p>
               )}
             </div>
-          )}
+
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{t`Asked before? Your open requests are in the help desk.`}</span>
+              <button
+                type="button"
+                onClick={() => setShowDesk(true)}
+                className="flex shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] text-violet-600 transition-colors hover:bg-accent hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
+                title={t`Open the help desk`}
+                aria-label={t`Help desk`}
+                data-testid="ask-for-help-helpdesk-button"
+              >
+                <LifeBuoy className="h-3.5 w-3.5" />
+                {t`Help desk`}
+              </button>
+            </div>
+          </div>
 
           {error && (
             <p className="rounded border border-destructive/60 bg-destructive/10 px-3 py-2 text-sm text-foreground">
@@ -452,48 +405,16 @@ export function AskForHelpDialog({
           )}
 
           <div className="flex items-center justify-between gap-2 pt-2">
-            {step === 1 ? (
-              <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={!!busy}>
-                {t`Cancel`}
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                onClick={() => setStep((s) => (s - 1) as Step)}
-                disabled={!!busy}
-                data-testid="ask-for-help-back"
-              >
-                {t`Back`}
-              </Button>
-            )}
-            {step < 3 && (
-              <Button
-                onClick={step === 1 ? () => setStep(2) : toCard3}
-                disabled={step === 1 && !text.trim()}
-                data-testid="ask-for-help-next"
-              >
-                {t`Next`}
-              </Button>
-            )}
-            {step === 3 && (
-              <span className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => void submit('review_first')}
-                  disabled={!!busy}
-                  data-testid="ask-for-help-review-first"
-                >
-                  {busy === 'review_first' ? t`Saving…` : t`Review before sending`}
-                </Button>
-                <Button
-                  onClick={() => void submit('when_diagnosed')}
-                  disabled={!!busy}
-                  data-testid="vibe-assign-submit"
-                >
-                  {busy === 'when_diagnosed' ? t`Diagnosing…` : chosen.length ? t`Send once diagnosed` : t`Save`}
-                </Button>
-              </span>
-            )}
+            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
+              {t`Cancel`}
+            </Button>
+            <Button
+              onClick={() => void submit()}
+              disabled={busy || !text.trim()}
+              data-testid="vibe-assign-submit"
+            >
+              {busy ? t`Diagnosing…` : sendLabel}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
