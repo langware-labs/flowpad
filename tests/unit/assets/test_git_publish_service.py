@@ -18,6 +18,7 @@ from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError, Git
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.asset_publishing import publish_git_asset
 from flow_sdk.builtin.project import Project
+from flow_sdk.builtin.skill import Skill
 from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
 from flow_sdk.fs_store.type_id import TypeId
@@ -174,6 +175,52 @@ async def test_republishing_unchanged_content_pushes_nothing(tmp_path, monkeypat
     assert again.git["pushed"] is False
     assert again.git["tree"] == first.git["tree"]
     assert _git(bare, "rev-list", "--count", "main") == "1"
+
+
+async def test_a_hub_edit_landing_during_a_publish_is_not_overwritten_by_the_next_one(
+    tmp_path, monkeypatch, hub
+) -> None:
+    """The hub answers ``publish_asset`` with its repo's head at register time, which can be newer than
+    what this desk pushed. Taking that answer as "last synced" makes the newer edit look already seen."""
+    bare, _, _ = hub
+    rel = ".claude/skills/review"
+    root = tmp_path / "project"
+    project = Project(id=mint_uuid(), name="p", remote=True, fs_storage_mount_path=str(root))
+    skill_md = root / rel / "SKILL.md"
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text("from the desk\n", encoding="utf-8")
+    skill = Skill(id=mint_uuid(), name="review", project_id=project.id, asset_ref=str(skill_md))
+    _own(monkeypatch, project)
+    monkeypatch.setattr(Skill, "save", lambda self, *_a, **_k: _async(self))
+    monkeypatch.setattr(Skill, "notify_updated", lambda self: _async(None))
+    actor = TypeId(type="user", id=mint_uuid())
+    await publish_git_asset(skill, actor)
+
+    recorded_call = HubProxy.call
+    clone = tmp_path / "other"
+
+    async def hub_edit_lands_before_the_register(method, entity_type, entity_id=None, action=None, **kwargs):
+        answer = await recorded_call(method, entity_type, entity_id, action, **kwargs)
+        if action != "publish_asset":
+            return answer
+        _git(tmp_path, "clone", "-q", str(bare), str(clone))
+        (clone / rel / "SKILL.md").write_text("edited on the hub\n", encoding="utf-8")
+        _git(clone, "-c", "user.name=hub", "-c", "user.email=hub@x", "commit", "-qam", "hub edit")
+        _git(clone, "push", "-q", "origin", "HEAD:main")
+        return {
+            **answer,
+            "head_commit": _git(bare, "rev-parse", "main"),
+            "tree": _git(bare, "rev-parse", f"main:{rel}"),
+        }
+
+    monkeypatch.setattr(HubProxy, "call", staticmethod(hub_edit_lands_before_the_register))
+    await publish_git_asset(skill, actor)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(recorded_call))
+
+    await publish_git_asset(skill, actor)
+
+    assert _git(bare, "show", f"main:{rel}/SKILL.md") == "edited on the hub"
+    assert skill_md.read_text(encoding="utf-8") == "edited on the hub\n"
 
 
 async def test_an_asset_outside_its_project_is_refused(tmp_path, monkeypatch, hub) -> None:
