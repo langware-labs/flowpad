@@ -294,6 +294,8 @@ export class Agent extends APIEntity<Agent> {
   shipped?: boolean;
   /** The project holding this agent; null for one in the user scope, which cannot be deployed to the cloud. */
   project_id?: string | null;
+  /** What the agent needs wherever it runs (`agent.json` → `requirements`): credentials by name, never a value. */
+  requirements?: AgentRequirement[] | null;
   /** Where the hub keeps this agent's files. A published agent lives in its project's
    *  hub-hosted repository (`kind: 'hub_repo'`, the agent's folder as `rel_path`); an
    *  agent published before that carries a GitHub `kind: 'git'` origin. Hub-written
@@ -360,6 +362,7 @@ export class Agent extends APIEntity<Agent> {
     this.asset_ref = entity.asset_ref;
     this.shipped = entity.shipped;
     this.project_id = entity.project_id ?? null;
+    this.requirements = entity.requirements ?? null;
     this.git_origin = entity.git_origin;
 
     this.intro = entity.intro;
