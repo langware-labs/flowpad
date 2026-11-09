@@ -1017,9 +1017,11 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
     files = tuple(getattr(message, "files", ()) or ())
     if not body and not files:
         return await skip_message(message)
-    # Three facts a source may declare about its messages (the driver class says; nothing here names one):
+    # Four facts a source may declare about its messages (the driver class says; nothing here names one):
     # a ``quiet`` message is the log, not a call to act; ``turn_session`` names the session a message is
-    # answered in; ``replies_explicitly`` means the turn's text is not sent back by itself.
+    # answered in; ``replies_explicitly`` means the turn's text is not sent back by itself; ``answers_once``
+    # means it is sent back by itself only until the agent has written in the conversation (a desk's
+    # acknowledgement), every later word being an explicit reply.
     driver_cls = _driver_cls(source)
     if getattr(getattr(message, "data", None), "quiet", False):
         return await skip_message(message)
@@ -1057,7 +1059,9 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
     if getattr(driver_cls, "replies_explicitly", False):
         await skip_message(message)
         return True
-    if getattr(driver_cls, "answers_once", False) and await _answered_before(message, source):
+    if getattr(driver_cls, "answers_once", False) and not sends_turn_text(
+        driver_cls, spoke=await _answered_before(message, source)
+    ):
         console.info("✗ %s  %s — already answered once; the turn's text is not sent", channel, who)
         await skip_message(message)
         return True
@@ -1205,6 +1209,14 @@ def _announce(deployment, kind: str, **data) -> None:
 
     if deployment is not None:
         announce(str(deployment.id), kind, **data)
+
+
+def sends_turn_text(driver_cls, *, spoke: bool) -> bool:
+    """Whether a turn's text goes back to the person by itself: not when the source replies explicitly, and
+    not when it ``answers_once`` and the agent has already written in the conversation (*spoke*)."""
+    if getattr(driver_cls, "replies_explicitly", False):
+        return False
+    return not (getattr(driver_cls, "answers_once", False) and spoke)
 
 
 def spoke_before(senders: "list[str]", own_ids: "set[str]") -> bool:

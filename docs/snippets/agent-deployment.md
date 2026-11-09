@@ -231,7 +231,8 @@ async with workflow("acme-support"):                          # names the durabl
   `answer(engine, m, process=p)` runs the turn on a live process you already hold instead.
 - **The routing is yours; the gates are not.** `answer` still drops the agent's own echoes,
   senders the source does not admit, empty and quiet messages, and leaves a
-  `replies_explicitly` channel to reply by itself. A message it does not answer is acked; a turn
+  `replies_explicitly` channel to reply by itself, and a channel that `answers_once` (a help desk) after the
+  agent has written in the conversation. A message it does not answer is acked; a turn
   the process refused is not.
 - **`workflow(name)` is the cursor.** A restart resumes after the last acked message; without it
   the position lives only as long as the loop.
