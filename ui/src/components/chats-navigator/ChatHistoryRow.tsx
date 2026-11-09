@@ -76,13 +76,15 @@ export function ChatHistoryRow({
   // Live tracker first; a non-live chat falls back to its cached process.
   const liveStatus = useWorkerStatus(entry.agentic_process_id);
   const workerStatus = liveStatus ?? process?.workerStatus;
-  // Busy → spinner; a met /goal → green check; else the worker status's own mark.
+  // Every busy state draws one spinner; the tooltip names the actual status.
+  // A met /goal → green check; else the worker status's own mark.
   const cfg = compactWorkerStatusConfig(workerStatus);
-  const mark = busy
-    ? { key: 'busy', icon: Loader2, cls: 'animate-spin text-emerald-500', label: t`Working…` }
-    : process?.goal_met
-      ? { key: 'goal_met', icon: Check, cls: 'text-emerald-500', label: t`Goal completed` }
-      : cfg && { key: workerStatus, icon: cfg.icon, cls: cn(cfg.color, cfg.animate && 'animate-spin'), label: cfg.label };
+  const mark =
+    busy || cfg?.animate
+      ? { key: 'busy', icon: Loader2, cls: 'animate-spin text-emerald-500', label: cfg?.label ?? t`Working…` }
+      : process?.goal_met
+        ? { key: 'goal_met', icon: Check, cls: 'text-emerald-500', label: t`Goal completed` }
+        : cfg && { key: workerStatus, icon: cfg.icon, cls: cfg.color, label: cfg.label };
   // Project · branch survive only as a hover tooltip on the row (no visible subline).
   const meta = [entry.project_name, entry.git_branch].filter(Boolean).join(' · ');
   const hasMsgs = !!entry.message_count && entry.message_count > 0;
