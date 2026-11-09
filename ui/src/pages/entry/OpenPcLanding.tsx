@@ -54,7 +54,8 @@ export default function OpenPcLanding() {
   const name = agent ? agent.getDisplayName() || agent.name : '';
   const [phase, setPhase] = useState<'probing' | 'code' | 'opening' | 'failed'>('probing');
   const [askCode, setAskCode] = useState(false);
-  const [code, setCode] = useState('');
+  // A code handed over in the link's fragment (`#code=…`, from the owner's Open machine) is already in the box.
+  const [code, setCode] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('code') ?? '');
   const [problem, setProblem] = useState<string | null>(null);
 
   const problemOf = (e: unknown, sentCode: boolean): string => {

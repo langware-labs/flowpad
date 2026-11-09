@@ -5,8 +5,6 @@ import {
   credentialsService,
   type AgentReadiness,
   type Deployment,
-  type DeploymentEnvRow,
-  type DeploymentEnvSource,
   type DeploymentSecretsInventory,
   type Project,
 } from '@sdk';
@@ -14,9 +12,11 @@ import {
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { formatTimeAgoShort } from '@src/utils/format-time-ago';
-import { SecretValueInput } from '@src/components/credentials/SecretValueInput';
+
+import { Input } from '@src/components/ui/input';
 
 import { BusyButton, DeploymentSecretsGate } from './DeploymentSecretsGate';
+import { overrideRows, type DeclaredCredential } from './project-secrets';
 
 interface AgentPlaceSecretsProps {
   project: Project;
@@ -24,31 +24,30 @@ interface AgentPlaceSecretsProps {
 }
 
 /** An audit timestamp (epoch seconds) the way the agent profile shows times. */
+const when = (ts?: number) => formatTimeAgoShort(ts ? ts * 1000 : null);
+
 /**
- * A cloud placement's environment as the hub places it: each variable with where it comes from — the agent's
- * Env, this deployment's own value overriding it, or Flowpad — and the connections the machine may use. Names
- * only — a value never reaches this page. Override sets this deployment's own value; Reset forgets it, so the
- * agent's applies again. "Use mine" copies this computer's value into this deployment (a rotation; the hub
+ * A cloud placement's secrets as the hub holds them: each value's name, when it was last written
+ * and last placed on the machine, and the connections the machine may use. Names only — a value
+ * never reaches this page. "Use mine" re-copies this computer's value (a rotation; the hub
  * re-places it on a running machine); Revoke takes a connection back.
  */
 export function AgentPlaceSecrets({ project, deployment }: AgentPlaceSecretsProps) {
   const { t } = useLingui();
   const [inventory, setInventory] = useState<DeploymentSecretsInventory | null>(null);
-  const [rows, setRows] = useState<DeploymentEnvRow[]>([]);
-  const [overriding, setOverriding] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
   const [readiness, setReadiness] = useState<AgentReadiness | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // "Override here": the credential being typed for this deployment only, and its values until saved.
+  const [overriding, setOverriding] = useState<string | null>(null);
+  const [typed, setTyped] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
-    const [held, ready, env] = await Promise.all([
+    const [held, ready] = await Promise.all([
       deployment.secretsInventory(),
       project.readiness(deployment.id, deployment.main_agent_id),
-      deployment.environmentRows(),
     ]);
     setInventory(held);
     setReadiness(ready);
-    setRows(env);
   }, [project, deployment]);
 
   useEffect(() => {
@@ -69,17 +68,13 @@ export function AgentPlaceSecrets({ project, deployment }: AgentPlaceSecretsProp
     }
   };
 
-  const sourceLabel = (source: DeploymentEnvSource) =>
-    source === 'agent' ? t`From the agent` : source === 'deployment' ? t`This deployment` : t`Provided by Flowpad`;
-
-  /** This deployment's own value for `name`, through the credential that declares it (its name, when none does). */
-  const override = async (name: string, value: string) => {
-    const status = await credentialsService.status(project.id, deployment.id);
-    const owner = status.credentials.find((c) => c.vars.some((v) => v.env_var === name));
-    await credentialsService.setByName(owner?.name ?? name, { [name]: value }, project.id, deployment.id);
-  };
-
   if (!inventory) return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+
+  // The credentials this deployment's agent requires, each on the project's value or overridden here.
+  const required: DeclaredCredential[] = (readiness?.items ?? [])
+    .filter((i) => i.requirement.kind === 'credential')
+    .map((i) => ({ name: i.requirement.name, vars: i.vars.length > 0 ? i.vars : i.requirement.vars }));
+  const overrides = overrideRows(required, inventory);
 
   const small = (label: string, key: string, run: () => Promise<unknown>, testId: string) => (
     <BusyButton
@@ -106,83 +101,92 @@ export function AgentPlaceSecrets({ project, deployment }: AgentPlaceSecretsProp
           }}
         />
       )}
-      <section className="flex flex-col gap-1" data-testid="deployment-environment">
+      {overrides.length > 0 && (
+        <section className="flex flex-col gap-1" data-testid="agent-place-overrides">
+          <p className="font-medium text-muted-foreground">
+            <Trans>Credentials</Trans>
+          </p>
+          {overrides.map((row) => (
+            <div key={row.name} className="flex flex-col gap-1" data-testid={`agent-place-override-${row.name}`}>
+              <div className="flex items-center gap-2">
+                <span className="font-mono">{row.name}</span>
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                  {row.overridden ? t`Overridden here` : t`Project value`} ·{' '}
+                  <span className="font-mono">{row.vars.join(', ')}</span>
+                </span>
+                {row.overridden
+                  ? small(
+                      t`Reset to project`,
+                      row.name,
+                      () => Promise.all(row.vars.map((v) => deployment.resetToProject(v))),
+                      `agent-place-reset-${row.name}`,
+                    )
+                  : overriding !== row.name && (
+                      <BusyButton
+                        label={t`Override here`}
+                        testId={`agent-place-override-open-${row.name}`}
+                        variant="outline"
+                        busy={false}
+                        disabled={busy !== null}
+                        onClick={() => setOverriding(row.name)}
+                      />
+                    )}
+              </div>
+              {overriding === row.name && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {row.vars.map((v) => (
+                    <Input
+                      key={v}
+                      type="password"
+                      autoComplete="off"
+                      className="h-7 w-64 font-mono text-xs"
+                      placeholder={v}
+                      aria-label={v}
+                      title={t`Write-only: it cannot be shown again.`}
+                      value={typed[v] ?? ''}
+                      onChange={(e) => setTyped((prev) => ({ ...prev, [v]: e.target.value }))}
+                      data-testid={`agent-place-override-value-${v}`}
+                    />
+                  ))}
+                  {small(
+                    t`Save`,
+                    row.name,
+                    async () => {
+                      const held = new Set(inventory.secrets.map((x) => x.name));
+                      const values = row.vars.filter((v) => (typed[v] ?? '').length > 0);
+                      await Promise.all(values.map((v) => deployment.setOverride(v, typed[v], held.has(v))));
+                      setTyped({});
+                      setOverriding(null);
+                    },
+                    `agent-place-override-save-${row.name}`,
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+      <section className="flex flex-col gap-1">
         <p className="font-medium text-muted-foreground">
-          <Trans>Environment</Trans>
+          <Trans>Values the hub holds</Trans>
         </p>
-        {rows.length === 0 && (
+        {inventory.secrets.length === 0 && (
           <p className="text-muted-foreground">
             <Trans>None yet.</Trans>
           </p>
         )}
-        {rows.map((row) => (
-          <div key={row.name} className="flex flex-col gap-1" data-testid={`deployment-env-row-${row.name}`}>
-            <div className="flex items-center gap-2">
-              <span className="font-mono">{row.name}</span>
-              <span
-                className="shrink-0 rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground"
-                data-testid={`deployment-env-source-${row.name}`}
-              >
-                {sourceLabel(row.source)}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                {row.written ? t`set` : t`missing`}
-                {row.placed_at && ` · ${t`placed ${formatTimeAgoShort(row.placed_at)}`}`}
-              </span>
-              {row.source !== 'flowpad' && (
-                <>
-                  {row.kind === 'secret' &&
-                    small(
-                      t`Use mine`,
-                      row.name,
-                      () => credentialsService.useMine(deployment.id, [row.name]),
-                      `agent-place-secret-rotate-${row.name}`,
-                    )}
-                  <BusyButton
-                    label={t`Override`}
-                    testId={`deployment-env-override-${row.name}`}
-                    variant="outline"
-                    busy={false}
-                    disabled={busy !== null}
-                    onClick={() => {
-                      setOverriding(overriding === row.name ? null : row.name);
-                      setDraft('');
-                    }}
-                  />
-                  {row.source === 'deployment' &&
-                    small(
-                      t`Reset`,
-                      `reset-${row.name}`,
-                      () => deployment.forget(row.name),
-                      `deployment-env-reset-${row.name}`,
-                    )}
-                </>
-              )}
-            </div>
-            {overriding === row.name && (
-              <div className="flex items-center gap-1.5 ps-2">
-                <SecretValueInput
-                  className="h-7 text-xs"
-                  value={draft}
-                  secret={row.kind !== 'plain'}
-                  onValueChange={setDraft}
-                  aria-label={t`Value of ${row.name} on this deployment`}
-                  data-testid={`deployment-env-override-value-${row.name}`}
-                />
-                <BusyButton
-                  label={t`Save`}
-                  testId={`deployment-env-override-save-${row.name}`}
-                  busy={busy === `override-${row.name}`}
-                  disabled={busy !== null || !draft}
-                  onClick={() =>
-                    void act(`override-${row.name}`, async () => {
-                      await override(row.name, draft);
-                      setOverriding(null);
-                      setDraft('');
-                    })
-                  }
-                />
-              </div>
+        {inventory.secrets.map((row) => (
+          <div key={row.name} className="flex items-center gap-2" data-testid={`agent-place-secret-${row.name}`}>
+            <span className="font-mono">{row.name}</span>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">
+              {t`written ${when(row.written)}`}
+              {row.placed && ` · ${row.placed.event} ${when(row.placed.ts)}`}
+            </span>
+            {small(
+              t`Use mine`,
+              row.name,
+              () => credentialsService.useMine(deployment.id, [row.name]),
+              `agent-place-secret-rotate-${row.name}`,
             )}
           </div>
         ))}

@@ -16,6 +16,7 @@ import { NavIconButton } from './NavIconButton';
 import { ProjectSetupButton } from './ProjectSetupButton';
 import { RuntimeChip } from './RuntimeChip';
 import { TopBarActions } from './TopBarActions';
+import { UpdateReadyIndicator } from './UpdateReadyIndicator';
 import { TopBarAskForHelp } from './TopBarAskForHelp';
 import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
 import { NewWorkspaceDialogHost } from '@src/components/workspace/workspace-switcher';
@@ -127,6 +128,7 @@ export function TopNavBar() {
           onAsk={assistant ? () => setMode('ask') : undefined}
         />
       )}
+      <UpdateReadyIndicator />
       <TopBarActions targetTypeId={targetTypeId} targetTitle={targetTitle} dock={currentDock} />
     </div>
   );

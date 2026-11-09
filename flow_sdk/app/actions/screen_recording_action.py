@@ -3,6 +3,7 @@ moves into a project.
 
   GET  /api/v1/graph/recording-folder
   POST /api/v1/graph/recording-save-to-project   {name, project_id}
+  POST /api/v1/graph/recording-discard           {name}
 
 The renderer records with ``getDisplayMedia`` + ``MediaRecorder`` and uploads the WebM
 through the generic ``fs`` upload into the folder the first action names:
@@ -38,6 +39,12 @@ class SaveRecordingRequest(DataSpec):
 
     name: str
     project_id: str
+
+
+class DiscardRecordingRequest(DataSpec):
+    """``POST /api/v1/graph/recording-discard`` body: which temp-folder recording to delete."""
+
+    name: str
 
 
 def recordings_temp_folder() -> Path:
@@ -76,6 +83,16 @@ async def recording_folder_action() -> ApiResponse:
     return await _place_answer(folder)
 
 
+def _temp_recording(name: str) -> Path:
+    """The temp-folder file ``name`` names; a path (or ``..``) is refused."""
+    if not name or Path(name).name != name or name in (".", ".."):
+        raise PermissionError(f"not a recording name: {name!r}")
+    source = recordings_temp_folder() / name
+    if not source.is_file():
+        raise FileNotFoundError(f"no recording {name!r} in {source.parent}")
+    return source
+
+
 def move_recording_into_project(name: str, project_folder: Path) -> Path:
     """Move the recording ``name`` from the temp folder under ``<project_folder>/recordings/``.
 
@@ -84,11 +101,7 @@ def move_recording_into_project(name: str, project_folder: Path) -> Path:
     reach the folder it owns — and a destination that already exists is refused too, so a
     re-click cannot overwrite a saved recording.
     """
-    if not name or Path(name).name != name or name in (".", ".."):
-        raise PermissionError(f"not a recording name: {name!r}")
-    source = recordings_temp_folder() / name
-    if not source.is_file():
-        raise FileNotFoundError(f"no recording {name!r} in {source.parent}")
+    source = _temp_recording(name)
     dest_dir = project_folder / RECORDINGS_DIR_NAME
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / name
@@ -133,3 +146,21 @@ async def save_recording_to_project_action() -> ApiResponse:
         logger.warning("[recording] index after move skipped (non-fatal): %s", e)
 
     return await _place_answer(dest)
+
+
+@action.post(action_name="recording-discard", types=None)
+async def discard_recording_action() -> ApiResponse:
+    """Delete a recording that is still in the temp folder (never one saved to a project)."""
+    request_info = get_current_request_info()
+    if not request_info:
+        return ApiFailResponse(message="No request info found", status_code=400)
+    try:
+        body = DiscardRecordingRequest.model_validate(await request_info.get_post_data() or {})
+        _temp_recording(body.name).unlink()
+    except ValidationError as e:
+        return ApiFailResponse(message=f"Invalid discard request: {e}", status_code=400)
+    except PermissionError as e:
+        return ApiFailResponse(message=str(e), status_code=403)
+    except FileNotFoundError as e:
+        return ApiFailResponse(message=str(e), status_code=404)
+    return ApiSuccessResponse(data={"name": body.name})

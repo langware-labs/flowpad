@@ -197,13 +197,13 @@ for (const bad of ['0.2.223rc1', '0.2.205rc2', '0.2.223a1', '0.2.223b2', '0.2.22
       desktopVersion: '0.1.0', minBackendVersion: null,
       readEngineCompat: async () => ({ minDesktopVersion: '9.9.9' }), limit: 4, stats,
     });
-    eq(stats, { checked: 4, stoppedAtLimit: true }, 'stopped by the limit after 4');
+    eq(stats, { checked: 4, stoppedAtLimit: true, unverifiable: 0 }, 'stopped by the limit after 4');
     const all = {};
     await selectCompatibleRelease({
       releases: [{ version: '0.2.2' }, { version: '0.2.1' }], desktopVersion: '0.1.0', minBackendVersion: null,
       readEngineCompat: async () => ({ minDesktopVersion: '9.9.9' }), stats: all,
     });
-    eq(all, { checked: 2, stoppedAtLimit: false }, 'every eligible candidate was looked at');
+    eq(all, { checked: 2, stoppedAtLimit: false, unverifiable: 0 }, 'every eligible candidate was looked at');
   }
   {
     // Nothing passes the desktop's own floor → null without reading any metadata.

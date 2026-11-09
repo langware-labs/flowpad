@@ -11,7 +11,10 @@ import type { AutomationKind, AutomationSummary } from '@sdk';
 import { AlertTriangle, ChevronDown, ChevronRight, CloudOff, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
-import { useContext } from '@src/hooks/useContext';
+import { ProjectChip } from '@src/components/project/ProjectChip';
+import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
+import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
+import { projectIdInScope } from '@src/lib/scope-filter';
 import {
   useAutomations,
   useRunOnce,
@@ -37,14 +40,22 @@ export function AutomationsList() {
   const { t } = useLingui();
   const words = useAutomationWords();
   const { navigation } = useDockNavigation();
-  const projectId = useContext().project?.id ?? null;
-  const { data: automations = [], isLoading, error, cloudWarning } = useAutomations();
+  const [scope, setScope, projectId] = useDefaultScopeFilter();
+  const { data: all = [], isLoading, error, cloudWarning } = useAutomations();
   const runOnce = useRunOnce();
   const setEnabled = useSetAutomationEnabled();
   const setPackage = useSetPackageEnabled();
   const [kind, setKind] = useState<AutomationKind | null>(null);
   const [showBuiltin, setShowBuiltin] = useState(false);
   const [choosing, setChoosing] = useState(false);
+  // Flowpad's own rules follow no scope; yours follow the scope bar ("mine" = user scope).
+  const automations = useMemo(
+    () =>
+      all.filter(
+        (a) => a.group === 'builtin' || projectIdInScope(a.group === 'project' ? a.project_id : null, scope, projectId),
+      ),
+    [all, scope, projectId],
+  );
 
   const counts = useMemo(() => {
     const c: Partial<Record<AutomationKind, number>> = {};
@@ -97,7 +108,7 @@ export function AutomationsList() {
       },
     );
 
-  const rows = (list: AutomationSummary[]) =>
+  const rows = (list: AutomationSummary[], showProject = false) =>
     list.map((a) => (
       <AutomationRow
         key={a.id}
@@ -105,6 +116,7 @@ export function AutomationsList() {
         onOpen={() => open(a)}
         onToggle={(on) => onToggle(a, on)}
         onRunOnce={() => onRunOnce(a)}
+        project={showProject ? <ProjectChip projectId={a.project_id} /> : undefined}
         busy={
           (runOnce.isPending && runOnce.variables?.triggerId === a.id) ||
           (setEnabled.isPending && setEnabled.variables?.triggerId === a.id)
@@ -113,7 +125,7 @@ export function AutomationsList() {
     ));
 
   // A package — the rules an agent (or wizard) holds — is ONE line with one switch; the rest are their own lines.
-  const byParent = (list: AutomationSummary[]) => {
+  const byParent = (list: AutomationSummary[], showProject = false) => {
     const parents = new Map<string, AutomationSummary[]>();
     for (const a of list) if (a.parent_type_id) parents.set(a.parent_type_id, [...(parents.get(a.parent_type_id) ?? []), a]);
     return (
@@ -140,18 +152,18 @@ export function AutomationsList() {
             }
           />
         ))}
-        {rows(list.filter((a) => !a.parent_type_id))}
+        {rows(list.filter((a) => !a.parent_type_id), showProject)}
       </>
     );
   };
 
-  const group = (key: string, title: string, list: AutomationSummary[]) =>
+  const group = (key: string, title: string, list: AutomationSummary[], showProject = false) =>
     list.length ? (
       <section key={key} data-testid={`automations-group-${key}`}>
         <h3 className="px-4 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
           {title}
         </h3>
-        {byParent(list)}
+        {byParent(list, showProject)}
       </section>
     ) : null;
 
@@ -194,6 +206,7 @@ export function AutomationsList() {
     <div className="flex h-full min-h-0 flex-col" data-testid="automations-list">
       <header className="flex flex-wrap items-center justify-between gap-3 px-6 pb-3 pt-6">
         {!empty && <IfThenGraphic />}
+        <ScopeFilterBar scope={scope} currentProjectId={projectId} onScopeChange={setScope} />
         {!empty && (
           <Button className="gap-1.5" onClick={() => setChoosing((c) => !c)} data-testid="automation-new">
             <Plus className="size-4" aria-hidden />
@@ -286,7 +299,7 @@ export function AutomationsList() {
             <div className="overflow-hidden rounded-lg border border-border [&>section:first-child>h3]:pt-3">
               {group('project', t`This project`, groups.project)}
               {group('mine', t`Mine, everywhere`, groups.mine)}
-              {group('other', t`Other projects`, groups.otherProjects)}
+              {group('other', t`Other projects`, groups.otherProjects, true)}
               {builtinSection}
             </div>
             {visible.length === 0 && (

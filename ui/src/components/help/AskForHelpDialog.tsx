@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { LifeBuoy, Paperclip, Stethoscope, X } from 'lucide-react';
 import {
   askForHelp,
@@ -36,6 +36,7 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateTo, notify } from '@src/notifications';
 import { guardCloudAction } from '@src/services/privacy-guard';
+import { describesAProblem } from './describes-a-problem';
 
 export interface AskForHelpDialogProps {
   open: boolean;
@@ -288,6 +289,11 @@ export function AskForHelpDialog({
                 autoFocus
                 data-testid="vibe-assign-notes"
               />
+              {text.trim() && !describesAProblem(text) && (
+                <p className="text-xs text-amber-600 dark:text-amber-400" data-testid="ask-for-help-short-hint">
+                  <Trans>A few words about what went wrong help us look in the right place.</Trans>
+                </p>
+              )}
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>{t`Asked before? Your open requests are in the help desk.`}</span>
                 <button

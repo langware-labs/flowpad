@@ -3,11 +3,12 @@
  * tabs — Overview (chain tree + limits remaining + effective filters), Usage,
  * Models. The active tab is the URL's, so switching is a navigation.
  */
-import { LLM_MODEL_SIZES, type LLMChain, type LLMEndpoint, type LLMEndpointKind } from '@sdk';
+import { LLM_MODEL_SIZES, LLMEndpoint, TypeId, type LLMChain, type LLMEndpointKind } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowLeft, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
 
+import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
 import { Button } from '@src/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -19,6 +20,7 @@ import { CredentialChip, EndpointLink, KindBadge, ProviderBadge } from './LlmEnd
 import { ModelsList } from './ModelsList';
 import { UsagePanel } from './UsagePanel';
 import { canConfigure, canRemove, canShare, endpointTypeId, kindFromChain } from './endpoint-catalog';
+import { ENDPOINT_INVITE_ROLES } from './share-endpoint';
 import { LLM_ENDPOINT_TABS, openLlmEndpoint, type LlmEndpointTab } from './llm-endpoints-pointer';
 import { useLlmEndpointChain } from './use-llm-endpoints';
 
@@ -33,7 +35,6 @@ export interface LlmEndpointDetailProps {
   /** `kind` is the chain-resolved one; the entity's own is always `root`. */
   onEdit: (endpoint: LLMEndpoint, kind?: LLMEndpointKind | null) => void;
   onDelete: (endpoint: LLMEndpoint) => void;
-  onShare: (endpoint: LLMEndpoint) => void;
 }
 
 function EffectiveFilters({ filters }: { filters: Record<string, unknown> }) {
@@ -107,7 +108,6 @@ export function LlmEndpointDetail({
   onTab,
   onEdit,
   onDelete,
-  onShare,
 }: LlmEndpointDetailProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -121,6 +121,8 @@ export function LlmEndpointDetail({
   const kind = kindFromChain(chain.data, endpointId);
   const openEndpoint = (id: string) => openLlmEndpoint(navigation, id);
   const consumers = useMemo(() => consumerRows(endpointId, all), [endpointId, all]);
+  // One TypeId per endpoint: `useMembers` keys its fetch on the object, so a fresh one per render would refetch.
+  const membersTypeId = useMemo(() => (endpoint?.id ? new TypeId(LLMEndpoint.type, endpoint.id) : null), [endpoint?.id]);
   const tabLabels: Record<LlmEndpointTab, string> = { overview: t`Overview`, usage: t`Usage`, models: t`Models` };
 
   return (
@@ -146,10 +148,13 @@ export function LlmEndpointDetail({
             <Trans>Edit</Trans>
           </Button>
         )}
-        {endpoint && canShare(endpoint) && (
-          <Button variant="outline" size="sm" onClick={() => onShare(endpoint)} data-testid="llm-detail-share">
-            <Trans>Share</Trans>
-          </Button>
+        {/* The project's own access control: who holds which role, and Invite for whoever may add members. */}
+        {endpoint && membersTypeId && (
+          <MembersAvatarStack
+            typeId={membersTypeId}
+            showInviteButton={canShare(endpoint)}
+            inviteRoles={ENDPOINT_INVITE_ROLES}
+          />
         )}
         {endpoint && canRemove(endpoint) && (
           <Button

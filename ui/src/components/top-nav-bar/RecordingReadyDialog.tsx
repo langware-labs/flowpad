@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { FolderInput, Share2, Video } from 'lucide-react';
+import { FolderInput, RotateCcw, Share2, Trash2, Video } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { ActionInfo, dataManager, TypeId, VFSPath } from '@sdk';
 import { Button } from '@src/components/ui/button';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { useFileShareSource } from '@src/hooks/use-file-share-source';
@@ -11,7 +12,7 @@ import { notify } from '@src/notifications/notify';
 import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 import { formatBytes } from '@src/utils/format-bytes';
 import type { UploadDir } from '@src/utils/upload-to-input-dir';
-import { dismissRecording, formatElapsed, setRecordingPlace, type Recording, type RecordingPlace } from './use-screen-recorder';
+import { dismissRecording, formatElapsed, setRecordingPlace, startRecording, type Recording, type RecordingPlace } from './use-screen-recorder';
 
 /** The toast's Open: the saved recording in its viewer (URL-first, like every toast link). */
 function recordingHref(place: RecordingPlace): string {
@@ -56,13 +57,29 @@ export function RecordingReadyDialog({ recording }: { recording: Recording }) {
     }
   };
 
+  // Discard deletes the temp file; Record again does that, then starts a new recording.
+  const discard = async (again: boolean) => {
+    setSaving(true);
+    try {
+      const action = new ActionInfo('recording-discard', null, null, 'POST');
+      action.bodyParameters = { name: fileName };
+      await dataManager.callAction(action);
+    } catch (error) {
+      notify.error({ title: t`Could not delete the recording`, message: error instanceof Error ? error.message : String(error), transient: true });
+      setSaving(false);
+      return;
+    }
+    dismissRecording();
+    if (again) void startRecording();
+  };
+
   if (sharing) {
     return source && <ShareToConversationDialog open onClose={dismissRecording} source={source} projectId={project?.id ?? null} />;
   }
 
   return (
     <Dialog open onOpenChange={(open) => !open && dismissRecording()}>
-      <DialogContent className="sm:max-w-md" data-testid="recording-ready-dialog">
+      <DialogContent className="sm:max-w-lg" data-testid="recording-ready-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Video className="h-5 w-5 text-primary" />
@@ -80,26 +97,43 @@ export function RecordingReadyDialog({ recording }: { recording: Recording }) {
             data-testid="recording-preview"
           />
           <div className="flex flex-col gap-1">
-            <p className="truncate font-mono text-xs text-foreground" data-testid="recording-file-name">
-              {fileName}
-            </p>
+            <div className="flex min-w-0 items-center gap-1">
+              <p className="truncate font-mono text-xs text-foreground" data-testid="recording-file-name">
+                {fileName}
+              </p>
+              <CopyButton value={recording.absPath} title={t`Copy path`} testId="recording-copy-path" />
+            </div>
             <p className="text-xs text-muted-foreground">
               {formatElapsed(recording.durationMs)} · {formatBytes(recording.file.size)} ·{' '}
               {saved ? t`in the project under recordings/` : t`kept in Flowpad's temp folder until you save it`}
             </p>
           </div>
         </div>
-        <DialogFooter className="gap-2">
+        <DialogFooter className="flex-row flex-wrap items-center gap-2 sm:justify-between sm:space-x-0">
           {!saved && (
-            <Button variant="outline" onClick={() => void saveToProject()} disabled={saving || !project?.id} data-testid="recording-save-to-project">
-              <FolderInput className="h-4 w-4" />
-              {t`Save to project`}
-            </Button>
+            <div className="flex gap-1">
+              <Button variant="ghost" size="sm" onClick={() => void discard(false)} disabled={saving} data-testid="recording-discard">
+                <Trash2 className="h-4 w-4" />
+                {t`Discard`}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => void discard(true)} disabled={saving} data-testid="recording-record-again">
+                <RotateCcw className="h-4 w-4" />
+                {t`Record again`}
+              </Button>
+            </div>
           )}
-          <Button onClick={() => setSharing(true)} data-testid="recording-share">
-            <Share2 className="h-4 w-4" />
-            {t`Share`}
-          </Button>
+          <div className="ml-auto flex gap-2">
+            {!saved && (
+              <Button variant="outline" onClick={() => void saveToProject()} disabled={saving || !project?.id} data-testid="recording-save-to-project">
+                <FolderInput className="h-4 w-4" />
+                {t`Save`}
+              </Button>
+            )}
+            <Button onClick={() => setSharing(true)} data-testid="recording-share">
+              <Share2 className="h-4 w-4" />
+              {t`Share`}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

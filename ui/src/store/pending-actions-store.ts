@@ -374,6 +374,16 @@ export function useIsBurning(processId: string | null | undefined): boolean {
   return useSyncExternalStore(subscribe, getBurning, getBurning);
 }
 
+/** This process's live worker status, or undefined when no tracker holds it.
+ *  Primitive snapshot, so a row re-renders only when its own status changes. */
+export function useWorkerStatus(processId: string | null | undefined): string | undefined {
+  const get = useCallback(
+    (): string | undefined => (processId ? trackers.get(processId)?.workerStatus : undefined),
+    [processId],
+  );
+  return useSyncExternalStore(subscribe, get, get);
+}
+
 /** Shared shape for a tracked worker surfaced to a React view. */
 export interface ActiveProcessEntry {
   processId: string;

@@ -20,6 +20,7 @@ import contextlib
 import json
 import logging
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from flow_sdk.agentic_warmup import await_worker_started
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.cli.commands._common import quiet_logs
 from flow_sdk.cli.commands._common import safe_echo as _safe_echo
+from flow_sdk.diagnose.report_text import describes_a_problem, no_description_instruction
 
 # The id keys report.py's result JSON carries. ``diagnosis_id`` is always an id;
 # the support pair is either both ids (an issue) or both ``None`` (a clean sweep).
@@ -476,6 +478,7 @@ async def _run_diagnose(
     origin = "cli" if isinstance(emit, _TerminalSink) else "footer"
     sweep = await _sweep(message, project_id, origin=origin, emit=emit, connection_id=connection_id)
 
+    no_description_note = f"{no_description_instruction(message)}\n\n" if not describes_a_problem(message) else ""
     prompt_text = (
         f"Read the flow-diagnose skill at {skill_dir}/SKILL.md and follow it to "
         "diagnose Flowpad and record the result.\n\n"
@@ -488,6 +491,7 @@ async def _run_diagnose(
         "--status ok). Do NOT end your turn before it has printed its JSON.\n\n"
         "User-reported text — free text or a pasted error; empty means run a full "
         f'sweep:\n"{message}"\n\n'
+        f"{no_description_note}"
         "A fixed diagnostic sweep ALREADY RAN on this machine. Start from what it found — do not "
         "repeat those checks — and use its findings in what you record:\n"
         f"```json\n{_sweep_for_prompt(sweep)}\n```"
@@ -808,7 +812,7 @@ def _request_context(attach_dir: Path, received: list[dict]) -> str:
         "This run only DIAGNOSES: change nothing on this computer -- repair nothing, edit or delete no "
         "file (the file-editing tools are off for this run). Describe the fix for the person who asked "
         "instead. Write what they should see with a shell command, e.g. "
-        f"`cat > {attach_dir}/<short-name>.txt`."
+        f"`cat > {shlex.quote(f'{attach_dir}/<short-name>.txt')}`."
     )
     return "\n\n".join(parts)
 

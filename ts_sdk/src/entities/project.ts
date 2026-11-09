@@ -9,7 +9,7 @@ import {
 } from '../APIEntity';
 import type { IEntity } from '../IEntity';
 import { getRaw } from '../client';
-import { QueryRequest } from '../FlowSync/query';
+import { ExpressionNode, QueryFilter, QueryRequest } from '../FlowSync/query';
 import {
   ActionInfo,
   TypeId,
@@ -27,6 +27,7 @@ import { DockPointerData } from '../models/DockPointer';
 import { type GitShare, gitShareFrom } from '../models/GitShare';
 import type { AssetSource } from '../process/asset-descriptor';
 import { isHubOnly } from '../utils/hub-runtime';
+import { EntityEnv, EnvVarType } from '../models/env_var';
 import { ViewType } from '../utils/ui/view-types';
 import type { CredentialRequirement, CredentialVarKind } from './credential';
 import { SubAgent } from './subagent';
@@ -284,6 +285,13 @@ export interface ProjectStatusPart<T = unknown> {
 export interface ProjectStatus {
   project_id: string;
   parts: { setup?: ProjectStatusPart<ProjectReadiness> } & Record<string, ProjectStatusPart | undefined>;
+}
+
+/** What "Use mine" copied into the project's hub store (`secrets_use_mine`). Names only. */
+export interface ProjectSecretsUseMine {
+  copied: string[];
+  not_here: string[];
+  hub_funded: string[];
 }
 
 /** `GET project/<id>/setup-requirements` — is this project ready here? */
@@ -630,6 +638,23 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
+   * The hub project whose hosted repo is `repoTypeId` (an asset's `git_origin.repo` when it lives in a hub repo),
+   * or null. On the hub an asset row carries no `project_id`: its repository is the link to its project.
+   */
+  static async forHostedRepo(repoTypeId: string): Promise<Project | null> {
+    if (!repoTypeId) return null;
+    const found = await Project.query<Project>(
+      new QueryRequest({
+        type: Project.type,
+        query: new QueryFilter({ type: Project.type, match: new ExpressionNode({ hosted_repo: repoTypeId }) }),
+        name: 'Project.forHostedRepo',
+      }),
+    );
+    // Exactly one: a filter the server did not apply would answer every project, never a guess at one of them.
+    return found.length === 1 ? found[0] : null;
+  }
+
+  /**
    * Invite people and whole teams to this Project through the ``share`` action,
    * and return what happened to each person.
    *
@@ -720,6 +745,40 @@ export class Project extends APIEntity<Project> {
   /** The environment and source a deploy starts on, the environments to offer, and the recommended main agent. */
   async deployDefaults(): Promise<ProjectDeployDefaults> {
     return this.get<ProjectDeployDefaults>('deploy_defaults');
+  }
+
+  /** The project's secret store on the hub (`project/<id>/env-var`): the owner and admins write, nobody reads a value. */
+  private secretStore(): EntityEnv {
+    return new EntityEnv(new TypeId(Project.type, this.id), { hubReflect: true });
+  }
+
+  /** The variable names the project's hub store holds a value for. Never a value. */
+  async secretNames(): Promise<string[]> {
+    return (await this.secretStore().list()).map((row) => row.name);
+  }
+
+  /** Write one value into the project's hub store — write-only. `exists`: the name is already set (changed, not created). */
+  async setSecret(name: string, value: string, exists: boolean): Promise<void> {
+    const store = this.secretStore();
+    if (exists) await store.update(name, { value, var_type: EnvVarType.API_KEY });
+    else await store.create({ name, value, var_type: EnvVarType.API_KEY });
+  }
+
+  /** Copy this computer's values for `names` into the project's hub store. Names come back, never a value. */
+  async secretsUseMine(names: string[]): Promise<ProjectSecretsUseMine> {
+    const res = await this.post<Partial<ProjectSecretsUseMine> | null>('secrets_use_mine', { names });
+    return { copied: res?.copied ?? [], not_here: res?.not_here ?? [], hub_funded: res?.hub_funded ?? [] };
+  }
+
+  /**
+   * Tell the hub these values changed (`POST project/<id>/credentials-changed`): `all` re-places them on the
+   * running machines (paused ones take them at their next start), `new` leaves running machines as they are.
+   */
+  async credentialsChanged(names: string[], scope: 'all' | 'new'): Promise<void> {
+    const info = new ActionInfo('credentials-changed', Project.type, this.id, 'POST');
+    info.hubReflect = true;
+    info.bodyParameters = { names, scope };
+    await dataManager.callAction<unknown, unknown>(info);
   }
 
   /** What a deployment of this project needs — its credentials plus the main agent's. Names only. */

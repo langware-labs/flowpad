@@ -114,9 +114,15 @@ test.afterAll(async ({ browser }) => {
 });
 
 test('a user moves a deployment onto an lg sub-budget of their own allowance, from the hub page', async ({ page }) => {
-  // Hub home → Deployments: the deployment and who pays for it.
+  // Hub home → the agent's card → Deployments (Agents › agent › Deployments): the deployment and who pays for it.
   await ready(page);
-  await page.getByTestId('hub-tab-hub-deployments').click();
+  await page.getByTestId('hub-items-search').fill(`${STAMP} procurement`);
+  await page
+    .getByTestId('hub-items-card')
+    .filter({ hasText: `${STAMP} procurement` })
+    .getByTestId('agent-summary-deployments')
+    .click();
+  await expect(page.getByTestId('hub-items-breadcrumb')).toBeVisible();
   // Seen on its card (the default view) and in the list view.
   await expect(page.getByTestId(`funded-by-${ids.deployment}`)).toContainText('owner default');
   await page.getByTestId('hub-items-view-list').click();

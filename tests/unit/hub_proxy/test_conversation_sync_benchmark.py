@@ -63,6 +63,13 @@ async def test_the_walk_over_2400_conversations_pages_well_inside_the_budget(des
     assert slowest < PAGE_BUDGET_S / 4, f"a page took {slowest:.2f}s, near the {PAGE_BUDGET_S}s per-page timeout"
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.conversation_sync_statements.rules: FAILING? never raise the 12 s cap - read this
+#       tag's rules first; the cost is SQL statements per created row, not the logic
+# flowpad:endcapsule tag
 async def test_the_conversation_list_over_2400_hub_conversations_end_to_end(desktop, hub_with_conversations):
     from flow_sdk.app.actions import flow_message_action
     from flow_sdk.builtin.conversation import Conversation
@@ -82,7 +89,8 @@ async def test_the_conversation_list_over_2400_hub_conversations_end_to_end(desk
     if flow_message_action._deferred_reconcile is not None:
         await flow_message_action._deferred_reconcile
     background_s = time.monotonic() - started
-    # Measured ~3.4 s + ~1.3 s for 2,400 rows (one transaction per row took ~20 s in all).
+    # Measured ~3.2 s + 0 s for 2,400 rows (one transaction per row took ~20 s in all; with an existence
+    # read and an FTS delete per created row, ~3.4 s + ~1.3 s here and 12-17 s on a loaded CI runner).
     assert cold_s + background_s < adjusted(12), f"the first sync took {cold_s:.2f}s + {background_s:.2f}s in the background"
     hub_ids = {row["id"] for row in echo_hub.paged[CONVERSATIONS]}
     assert hub_ids <= {c.id for c in await Conversation.get_all({})}, "the walk did not bring every row in"
