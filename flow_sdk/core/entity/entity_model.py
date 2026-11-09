@@ -64,7 +64,7 @@ from flow_sdk.core.entity.projected_fields import derived_field_names
 from flow_sdk.db import DBEntity
 from flow_sdk.db.db_entity import EntityExpansion
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
-from flow_sdk.db.drivers.db_driver import RelationshipDirection
+from flow_sdk.db.drivers.db_driver import PROVEN_NEW_ROW, RelationshipDirection
 from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
 from flow_sdk.db.load_context import lenient_entity_load, lenient_load_active
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
@@ -139,9 +139,7 @@ _MIRROR_DELETE: "ContextVar[bool]" = ContextVar("_mirror_delete", default=False)
 def _as_proven_new(entity_id: str, persist: Callable[[], Awaitable[None]]) -> Callable[[], Awaitable[None]]:
     """``persist`` for a create of a ``_VERIFIED_ABSENT`` id: the driver skips the existence read and
     the FTS delete of a row that cannot be there (``PROVEN_NEW_ROW``) — two of a new row's five
-    statements, each a round trip to the SQLite thread."""
-    from flow_sdk.db.drivers.sqlite.sqlite_driver import PROVEN_NEW_ROW  # noqa: PLC0415
-
+    statements, each a round trip to the database."""
     async def run() -> None:
         token = PROVEN_NEW_ROW.set(entity_id)
         try:

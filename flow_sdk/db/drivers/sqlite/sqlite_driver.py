@@ -31,6 +31,7 @@ from flow_sdk.db.drivers.db_base_record import (
 )
 from flow_sdk.db.drivers.db_driver import (
     _DB_LIFECYCLE_LOCK,
+    PROVEN_NEW_ROW,
     DBConfig,
     DBDriver,
     DBResetProfile,
@@ -88,12 +89,6 @@ _standalone_session_var: "ContextVar[Optional[AsyncSession]]" = ContextVar(
     "_sqlite_driver_standalone_session", default=None
 )
 _AFTER_COMMIT_KEY = "flow_after_commit"
-
-#: The id of the row being created that its writer proved absent inside the current writer
-#: transaction (``Entity.mirror_batch``). Its ``save`` skips the existence read and its FTS write
-#: skips the delete — neither row can be there. A first sync creates thousands of rows, and each
-#: statement is a round trip to the SQLite thread.
-PROVEN_NEW_ROW: "ContextVar[Optional[str]]" = ContextVar("_sqlite_proven_new_row", default=None)
 
 # One segment of a field path. A path is pasted into SQL text (``json_extract`` takes its path as a
 # literal for index matching), so every segment is checked against this before it gets there.

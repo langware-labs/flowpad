@@ -61,6 +61,13 @@ async def test_the_walk_over_2400_conversations_pages_well_inside_the_budget(des
     assert slowest < PAGE_BUDGET_S / 4, f"a page took {slowest:.2f}s, near the {PAGE_BUDGET_S}s per-page timeout"
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.conversation_sync_statements.rules: FAILING? never raise the 12 s cap - read this
+#       tag's rules first; the cost is SQL statements per created row, not the logic
+# flowpad:endcapsule tag
 async def test_the_conversation_list_over_2400_hub_conversations_end_to_end(desktop, hub_with_conversations):
     from flow_sdk.app.actions import flow_message_action
     from flow_sdk.builtin.conversation import Conversation
