@@ -28,7 +28,10 @@ async def prepare(input: PreparedAutomation, *, context) -> ReturnedValue:
     from flow_sdk.automations.decision_subjects import NotCaught, for_target, for_trigger
 
     trigger = context.trigger
-    if not getattr(trigger, "gate", None):
+    # A rule with no gate asks nothing, but the agent it wakes still takes the thing that woke it: the event's
+    # subject (a message, its conversation) is built here as the gated rule's is, and `then` hands it over.
+    gated = bool(getattr(trigger, "gate", None))
+    if not gated and (context.event is None or for_target(context.event.target) is None):
         return ReturnedValue.satisfied(value=input, ran=False)
     subject = for_target(context.event.target) if context.event is not None else for_trigger(trigger)
     if subject is None:
@@ -210,11 +213,8 @@ async def then(input: PreparedAutomation, *, context) -> ReturnedValue:
                     }
                 }
             )
-    # A rule with no gate builds no state, so the agent took no input at all: it was woken and not told by what.
-    # The event itself (its target and ids) is then what it takes.
-    scope_key = input.scope_key or (EVENT_KEY if context.event is not None else "")
     try:
-        answer = await run_then(trigger, inputs=inputs, scope_key=scope_key, context=context)
+        answer = await run_then(trigger, inputs=inputs, scope_key=input.scope_key, context=context)
     except Exception as exc:
         answer = ReturnedValue.not_yet(f"then: {exc}")
     from flow_sdk.builtin.trigger import _failure_of
