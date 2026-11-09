@@ -6277,7 +6277,7 @@ msgstr ""
 
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Checking FlowPad…"
-msgstr ">>>>>>> aea919ba5"
+msgstr "جارٍ التحقق من FlowPad…"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking Git…"
@@ -13694,7 +13694,7 @@ msgstr "FlowPad غير متصل - يؤدي الزر \"فتح\" إلى تشغيل
 
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "FlowPad isn't installed on this computer"
-msgstr ">>>>>>> aea919ba5"
+msgstr "FlowPad غير مثبت على هذا الكمبيوتر"
 
 #: src/components/git/GitRepoPicker.tsx
 msgid "Flowpad keeps the repository for you. No GitHub account needed."
