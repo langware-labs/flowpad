@@ -443,7 +443,7 @@ async function runScheduledUpdateCheck({ bypassSchedule = false, launchDesktop =
     // The engine half runs on scheduled passes (but not ones due only to the FEED's backoff — the
     // engine is not what failed), on its own retry, and on a follow-up that owes it.
     if ((pass === 'scheduled' && !feedBackoffOnly) || pass === 'engine-retry' || packageWasBlocked) {
-      const pkg = await checkPackageUpdateInBackground();
+      const pkg = await checkPackageUpdateInBackground({ desktopJustChecked: pass === 'scheduled' }); // that pass just looked at the feed
       if (pkg === 'blocked') followUpPackage = true;
       // 'offer-open': the offer's .finally re-arms the engine debt once, when its dialog closes.
       // 'held': nothing owed — the hold lifts only via a restart, which re-checks the engine; an
@@ -561,7 +561,7 @@ let desktopPromptClosed = Promise.resolve();
  * under a live dev backend), while a previous check/upgrade is still running,
  * and while the desktop restart prompt is open.
  */
-async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 'periodic' } = {}) {
+async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 'periodic', desktopJustChecked = false } = {}) {
   if (isDev) return;
   if (!uvManager || !mainWindow || mainWindow.isDestroyed()) return;
   if (!uvManager.getInstalledFlowBin()) {
@@ -570,7 +570,7 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
     log.info(`[uv] ${label} package check skipped: flowpad is not installed`);
     return;
   }
-  if (engineChangeAllowed(`${label} package check`) !== 'allow') {
+  if (await engineChangeAllowedAfterRecheck(`${label} package check`, { desktopJustChecked }) !== 'allow') {
     // A newer desktop is on its way — or we could not tell whether one is. The engine is updated BY the new
     // desktop (it may need a Python pin, or a start contract, that only the new desktop knows) — an old desktop
     // upgrading it first is what left users stuck. So: no separate engine dialog until the desktop is current.
@@ -615,7 +615,7 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
       cloudUrl: FLOWPAD_CLOUD_URL,
       compareWithPypi,
       // Asked again after the background prepare: a desktop found meanwhile goes first.
-      engineChangeAllowed: () => engineChangeAllowed(`${label} package check, after the prepare`) === 'allow',
+      engineChangeAllowed: async () => (await engineChangeAllowedAfterRecheck(`${label} package check, after the prepare`)) === 'allow',
     });
     return (uvManager.pypiLookupFailures || 0) > lookupFailuresBefore ? 'failed' : 'ran';
   } catch (err) {
@@ -941,7 +941,12 @@ function recordDesktopOnlyCheck(status) {
  * cadence; a failed one starts the backoff instead (FLOWPAD-2308).
  */
 function recordCheck(status) {
-  const answered = setDesktopStatus(status);
+  // A failed check never replaces a newer desktop already known: it is still out there, and the engine still waits for
+  // it (the persisted lastResult is kept the same way by recordFailure).
+  const keepKnown = status.state === 'unknown' && desktopStatus.state === 'available'
+    && desktopStatus.version && isNewer(app.getVersion(), desktopStatus.version);
+  const answered = keepKnown ? { ...status } : setDesktopStatus(status);
+  if (keepKnown) log.info(`[update] the desktop check failed (${status.reason || 'no answer'}) — keeping the known desktop ${desktopStatus.version}`);
   scheduleStore.write(answered.state === 'unknown'
     ? updateSchedule.recordFailure(scheduleStore.read(), { at: Date.now() })
     : updateSchedule.recordSuccess(scheduleStore.read(), { result: answered, at: Date.now() }));
@@ -951,8 +956,10 @@ function recordCheck(status) {
 // What the last desktop update check found — the input of engineChangePolicy (update-plan.js). 'unknown' until a
 // check answers: a check that failed or is still running is NOT "no newer desktop".
 let desktopStatus = { state: 'unknown', reason: 'not checked yet' };
+let lastDesktopAnswer = null; // the last status the feed actually answered (current / available / unsupported)
 function setDesktopStatus(status) {
   desktopStatus = { version: null, ...status };
+  if (desktopStatus.state !== 'unknown') lastDesktopAnswer = desktopStatus;
   updateTest.event('desktop-check', { running: app.getVersion(), ...desktopStatus });
   return desktopStatus;
 }
@@ -972,6 +979,45 @@ function engineChangeAllowed(context, { mustInstall = false } = {}) {
     updateTest.event('engine-change', { context, policy, reason: why });
   }
   return policy;
+}
+
+/**
+ * engineChangeAllowed, but a hold that rests only on an unanswered desktop check ('unknown': a GitHub 504, a dropped
+ * or switched network) looks at the feed again first — the desktop-only check, bounded like the launch check. No
+ * answer is no newer desktop either, and the next scheduled look can be hours away (the failure backoff): seen on a
+ * 0.2.59 desktop, the newest, whose engine upgrade was held for over an hour by one ERR_NETWORK_CHANGED. Used where
+ * an engine change would otherwise wait on that old failure: the popover's Upgrade, the post-boot and engine-retry
+ * checks, the postponed prepare. A pass that has just looked at the feed passes `desktopJustChecked` — no second look.
+ */
+async function engineChangeAllowedAfterRecheck(context, { desktopJustChecked = false } = {}) {
+  let policy = engineChangeAllowed(context);
+  const onlyUnanswered = () => policy !== 'allow' && !pendingDesktopVersion && desktopStatus.state === 'unknown';
+  if (!onlyUnanswered()) return policy;
+  if (!desktopJustChecked) {
+    log.info(`[update] ${context}: the desktop update status is unknown (${desktopStatus.reason || 'no answer'}) — checking the feed again`);
+    await updateRecovery.boundedCheck(() => getDesktopUpdateVersion({ desktopOnly: true }), { ms: updateTest.checkBoundMs() });
+    policy = engineChangeAllowed(`${context}, after checking the feed again`);
+    if (!onlyUnanswered()) return policy;
+  }
+  // The feed still does not answer (a GitHub outage, a proxy that blocks it). Desktop-first stays whenever a newer
+  // desktop is KNOWN — from this session or the last answer kept on disk. Otherwise the engine is not held hostage to
+  // the feed: it is checked against THIS desktop's compatibility contract instead — every path from here resolves and
+  // asserts the release fail-closed (resolveCompatibleEngineVersion / _assertCandidateCompatible: unreadable or missing
+  // metadata is refused), stages and checks it before asking, and verifies the installed pair (rollback) after.
+  const known = lastKnownNewerDesktop();
+  if (known) {
+    log.info(`[update] ${context}: the desktop feed does not answer, and desktop ${known} was found before — the engine waits for it`);
+    return policy;
+  }
+  log.info(`[update] ${context}: the desktop feed does not answer and no newer desktop is known — the engine is checked against this desktop's compatibility contract instead`);
+  updateTest.event('engine-change', { context, policy: 'allow', reason: 'desktop feed unavailable: compatibility-checked fallback' });
+  return 'allow';
+}
+
+/** A newer desktop known before the feed stopped answering: this session's last answer, or the one kept on disk. */
+function lastKnownNewerDesktop() {
+  const newer = (r) => (r && r.state === 'available' && r.version && isNewer(app.getVersion(), r.version) ? r.version : null);
+  return newer(lastDesktopAnswer) || newer((scheduleStore.read() || {}).lastResult);
 }
 
 /**
@@ -1028,9 +1074,10 @@ async function engineForUpdatedDesktop(installed, agreed) {
  * download it. Prepare it now, with the engine up, so the next "Upgrade" (the next launch asks again) is
  * a short offline swap. Not while a newer desktop is pending: its own engine is prepared with its download.
  */
-function prepareDeferredEngineUpdate() {
-  if (!uvManager || !uvManager.deferredPackageVersion() || engineChangeAllowed('preparing the postponed engine update') !== 'allow') return;
-  uvManager.prepareEngine()
+async function prepareDeferredEngineUpdate() {
+  if (!uvManager || !uvManager.deferredPackageVersion()) return;
+  if (await engineChangeAllowedAfterRecheck('preparing the postponed engine update') !== 'allow') return;
+  return uvManager.prepareEngine()
     .then((rec) => { if (rec) log.info(`[update] the postponed engine update ${rec.version} is prepared for the next upgrade`); })
     .catch((err) => log.info(`[update] the postponed engine update was not prepared (the upgrade downloads it): ${String((err && err.message) || err).split('\n')[0]}`));
 }
@@ -2781,18 +2828,26 @@ async function startApp() {
   // (PyPI fetch + bytecode warm-up + AV scan on Windows), so widen the
   // window when we know we just ran uv install/upgrade.
   // (Skipped when the fatal-record path above already brought the backend up.)
-  const backendWait = backendReady ? { ready: true, reason: 'healthy', elapsedSec: 0 } : await (async () => {
+  let backendWait = backendReady ? { ready: true, reason: 'healthy', elapsedSec: 0 } : await (async () => {
     sendStatus('Waiting for server');
     const waitOpts = backendJustUpgraded ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined;
     return waitForBackend(waitOpts);
   })();
   if (backendWaitAborted(backendWait)) return;
+  // An engine this launch just installed (the one following a desktop update, an agreed or pre-start upgrade, a pair
+  // repair) did not come up: put back the engine it replaced and start that, once — never a failure panel over an
+  // engine that worked a minute ago.
+  if (!backendWait.ready && uvManager && uvManager.hasUnconfirmedActivation()) {
+    const restored = await restorePreviousEngineAndStart(backendWait.reason);
+    if (restored) backendWait = restored;
+    if (backendWaitAborted(backendWait)) return;
+  }
   backendReady = backendWait.ready;
   if (backendWait.ready) {
     noteEngineHealthy();
     updateTest.event('engine-ready', { desktop: app.getVersion(), engine: (uvManager && uvManager.getInstalledVersionSync()) || null });
     if (uvManager) void uvManager.compileBytecodeInBackground(); // after a prepared (bytecode-less) upgrade; else a no-op
-    prepareDeferredEngineUpdate();
+    void prepareDeferredEngineUpdate().catch((err) => log.info(`[update] the postponed engine update was not prepared: ${err && err.message}`));
   }
 
   if (!backendWait.ready && (backendWait.reason === 'policy-blocked' || backendWait.reason === 'fatal-failure')) {
@@ -3431,7 +3486,11 @@ ipcMain.handle('upgrade-flowpad', async (_event, version) => {
   if (!uvManager) return { success: false, error: 'No uv manager' };
   const target = isInstallableVersion(version) ? version : null;
   // Desktop first: refuse before touching the running server or the window.
-  if (engineChangeAllowed('upgrade-flowpad IPC') !== 'allow') {
+  // An old failed desktop check is looked at again first: the user is asking NOW (engineChangeAllowedAfterRecheck).
+  const policy = await engineChangeAllowedAfterRecheck('upgrade-flowpad IPC');
+  if (policy !== 'allow') {
+    // Only a newer desktop (pending or known) refuses here: a feed that does not answer falls back to the
+    // compatibility-checked path inside engineChangeAllowedAfterRecheck.
     return { success: false, desktopUpdatePending: true, error: 'A newer FlowPad desktop must be installed first; the engine is updated after it.' };
   }
   if (target) {
@@ -3469,15 +3528,27 @@ async function upgradeFlowpadAndRestart(version = null) {
     await uvManager.start();
 
     sendStatus('Waiting for server');
-    const { ready } = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
+    let { ready } = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
+    // Installed, but it does not come up: the engine that worked goes back, and the app runs on it again.
+    let restoredPrevious = false;
+    if (!ready && uvManager.hasUnconfirmedActivation()) {
+      const wait = await restorePreviousEngineAndStart('did not become healthy');
+      restoredPrevious = !!(wait && wait.ready);
+      ready = restoredPrevious;
+    }
 
     if (ready && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL(BACKEND_URL);
     }
-    if (ready) void uvManager.compileBytecodeInBackground(); // after a prepared (bytecode-less) upgrade; else a no-op
+    if (ready) {
+      noteEngineHealthy();
+      void uvManager.compileBytecodeInBackground(); // after a prepared (bytecode-less) upgrade; else a no-op
+    }
     if (!ready) showUpgradeFailurePanel(new Error('the upgraded FlowPad engine did not become healthy'));
 
-    return { success: ready };
+    return restoredPrevious
+      ? { success: false, restoredPrevious: true, error: 'The new FlowPad engine did not start, so the previous one was restored.' }
+      : { success: ready };
   } catch (err) {
     // The server is down and the upgrade failed (the install rolled back what it could): bring the running
     // version back, as the engine dialog's upgrade does — never the loading screen with no backend.
@@ -3487,6 +3558,31 @@ async function upgradeFlowpadAndRestart(version = null) {
       if (!restored) showUpgradeFailurePanel(err);
     }
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * The launch's freshly installed engine did not come up (`reason`): stop it, put back the engine it replaced
+ * (UvManager.restorePreviousEngine — the cache first) and wait for THAT one. The new wait's result, or null when
+ * nothing could be put back (then the caller's own failure handling runs on the original result).
+ */
+async function restorePreviousEngineAndStart(reason) {
+  try {
+    sendStatus('Restoring the previous FlowPad engine');
+    try { await uvManager.stop(); } catch (err) { log.warn(`[update] stopping the new engine failed: ${err.message}`); }
+    uvManager.isShuttingDown = false;
+    const restored = await uvManager.restorePreviousEngine({
+      why: `did not start (${reason})`,
+      onProgress: installProgress('Restoring the previous FlowPad engine'),
+    });
+    if (!restored) return null;
+    sendStatus('Starting flowpad');
+    await uvManager.start();
+    sendStatus('Waiting for server');
+    return await waitForBackend();
+  } catch (err) {
+    log.warn(`[update] restoring the previous engine failed: ${err.message}`);
+    return null;
   }
 }
 

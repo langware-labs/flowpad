@@ -576,10 +576,6 @@ msgstr "فشلت {0} من الأتمتة في آخر تشغيل لها."
 msgid "{0} available"
 msgstr "{0} متاح"
 
-#: src/components/llm-endpoints/ShareEndpointDialog.tsx
-#~ msgid "{0} can now spend {1}."
-#~ msgstr "يمكن لـ {0} الآن استخدام {1}."
-
 #. placeholder {0}: deployment.name
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "{0} cannot pay for its next turn"
@@ -1222,10 +1218,6 @@ msgstr "{count, plural, one {لديكم خطأ واحد للمعالجة} two {�
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "{count} {0} attached"
 msgstr "{count} {0} مرفقة"
-
-#: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
-#~ msgid "{count} codes · ${0}"
-#~ msgstr ""
 
 #: src/components/assets/ContextFolderGitBadge.tsx
 msgid "{count} pending change(s) — click to view diff"
@@ -2176,10 +2168,6 @@ msgstr "🤖 الموجِّه - الاستعلام من الذكاء الاصط�
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "$ per user"
 msgstr ""
-
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "$ per visitor"
-#~ msgstr "$ لكل زائر"
 
 #. placeholder {0}: cap ?? 0
 #. placeholder {0}: invite.settings.cap_usd
@@ -4182,10 +4170,6 @@ msgstr ""
 msgid "Anyone you share with can open, use and delete this sandbox."
 msgstr "يمكن لأي شخص تشاركونه معه فتح هذا الصندوق الرملي واستخدامه وحذفه."
 
-#: src/components/llm-endpoints/ShareEndpointDialog.tsx
-#~ msgid "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
-#~ msgstr "يمكن لمن تشاركونه استخدام هذه الميزانية ورؤية تكلفتها. يعتمد على الحدود نفسها التي تعتمدون عليها أنتم — وليس على حصة منفصلة — ولا يمكنه تغيير الحدود أو مفتاح المزوّد أو المشاركة مع آخرين."
-
 #: src/components/automations/automation-words.ts
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "anything"
@@ -4805,10 +4789,6 @@ msgid "Attach an asset"
 msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
-#~ msgid "Attach an asset (skill, agent, doc, spec)"
-#~ msgstr "إرفاق أصل (مهارة، وكيل، وثيقة، مواصفة)"
-
-#: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/session-input/session-input.tsx
 msgid "Attach files"
@@ -4959,10 +4939,6 @@ msgstr "الكشف التلقائي عن الاتجاه من أول حرف قو�
 #: src/components/settings-view/settings-utils.ts
 msgid "Auto-enable all project-level MCP servers"
 msgstr "تفعيل جميع خوادم MCP على مستوى المشروع تلقائياً"
-
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#~ msgid "Auto-launch"
-#~ msgstr "التشغيل التلقائي"
 
 #: src/agents/agent-auto-launch-warning.ts
 msgid "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
@@ -5439,10 +5415,6 @@ msgstr ""
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Budget in dollars"
 msgstr "الميزانية بالدولار"
-
-#: src/components/llm-endpoints/ShareEndpointDialog.tsx
-#~ msgid "Budget shared"
-#~ msgstr "تمت مشاركة الميزانية"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Budget source"
@@ -5972,10 +5944,6 @@ msgstr "السلسلة"
 msgid "Chain session"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/useChainSession.tsx
-#~ msgid "Chain this session into which project?"
-#~ msgstr ""
-
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/inbound/InboundView.tsx
@@ -6439,10 +6407,6 @@ msgstr "اختر نوع كل صف"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "Choose the LLM endpoint users spend"
 msgstr ""
-
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "Choose the LLM endpoint visitors spend"
-#~ msgstr "نقطة نهاية LLM التي يُنفَق منها على الزوار"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Choose the project it loads, and any asset packages to bring with it."
@@ -7132,10 +7096,6 @@ msgstr "ينتهي الرمز في"
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "codes"
 msgstr "رموز"
-
-#: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
-#~ msgid "Codes"
-#~ msgstr ""
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
@@ -8180,10 +8140,6 @@ msgstr "التكلفة (USD)، الإجمالي"
 msgid "Could not activate the organization"
 msgstr "تعذّر تفعيل المؤسسة"
 
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Could not add {name}"
-#~ msgstr ""
-
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Could not add codes"
 msgstr "تعذّرت إضافة الرموز"
@@ -8273,10 +8229,6 @@ msgstr "تعذّر تغيير البيئة المعزولة"
 msgid "Could not change where the project runs"
 msgstr "تعذّر تغيير مكان تشغيل المشروع"
 
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
-#~ msgid "Could not check — {failed}"
-#~ msgstr "تعذّر التحقق — {failed}"
-
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Could not check sign-in"
 msgstr "تعذر التحقق من تسجيل الدخول"
@@ -8299,10 +8251,6 @@ msgstr "تعذّر الاتصال بـ {displayName}."
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 msgid "Could not convert the chart"
 msgstr "تعذّر تحويل المخطط"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Could not copy {0}"
-#~ msgstr ""
 
 #: src/components/links/link-handlers.ts
 msgid "Could not copy link"
@@ -8473,10 +8421,6 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Could not fix {key}"
 msgstr "تعذّر إصلاح {key}"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Could not forget {0}"
-#~ msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Could not forward diagnosis"
@@ -8698,10 +8642,6 @@ msgstr "تعذّر الوصول إلى الخادم. يُرجى المحاولة
 #: src/components/assets/editor/agent-profile/AgentPlaceActivity.tsx
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr "تعذّر الوصول إلى هذا الجهاز السحابي. قد يكون متوقفاً مؤقتاً."
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Could not read the agent's Env"
-#~ msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Could not read the diagnosis"
@@ -9657,10 +9597,6 @@ msgid "Credential"
 msgstr "بيانات الاعتماد"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
-#~ msgid "Credential environment"
-#~ msgstr ""
-
-#: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Credential environment this deployment reads"
 msgstr "بيئة بيانات الاعتماد التي يقرأها هذا النشر"
 
@@ -9707,10 +9643,6 @@ msgstr "الحالي"
 #: src/journey/JourneyViewer.tsx
 msgid "Current"
 msgstr "الحالي"
-
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "Current deployments"
-#~ msgstr "عمليات النشر الحالية"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Current Directory"
@@ -11261,10 +11193,6 @@ msgstr "مكتمل"
 msgid "Done — access given"
 msgstr "تم منح الوصول"
 
-#: src/components/warnings-popover/warnings-popover.tsx
-#~ msgid "Done — remove"
-#~ msgstr ""
-
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Done editing"
 msgstr ""
@@ -11527,10 +11455,6 @@ msgstr "مثال: /path/to/script.sh أو if [[ \"$tool_input\" == *.md ]]; then
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Each code opens its own machine. Give one code to each user."
 msgstr ""
-
-#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#~ msgid "Each code opens its own sandbox. Give one code to each visitor."
-#~ msgstr "كل رمز يفتح بيئته المعزولة الخاصة. يُرجى إعطاء رمز واحد لكل زائر."
 
 #: src/components/inbound/RouteCheck.tsx
 msgid "Each hop, without sending a message."
@@ -12359,10 +12283,6 @@ msgstr ""
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Everything required is set up."
 msgstr "تم إعداد كل المتطلبات الضرورية."
-
-#: src/components/stream-inbox-view/MembershipInvitations.tsx
-#~ msgid "Everything shared with you"
-#~ msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Everything the budget above allows"
@@ -13418,10 +13338,6 @@ msgstr "أكملوا تسجيل الدخول في نافذة المتصفح ال
 msgid "Finish signing in on the page that opened in your browser."
 msgstr "أكملوا تسجيل الدخول في الصفحة التي فُتحت في متصفحكم."
 
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
-#~ msgid "Finish that, then press Verify again."
-#~ msgstr "أكملوا ذلك، ثم اضغطوا «تحقق» مرة أخرى."
-
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Finish the setup above first."
 msgstr "أكمل الإعداد أعلاه أولاً."
@@ -13526,10 +13442,6 @@ msgstr "أصلحوا الإعداد — بيانات الاعتماد أو ال�
 #: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "Fix…"
 msgstr "إصلاح…"
-
-#: src/components/warnings-popover/warnings-popover.tsx
-#~ msgid "Fixed"
-#~ msgstr ""
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
@@ -13834,10 +13746,6 @@ msgstr "UUID المؤسسة المفروضة لتسجيل الدخول"
 msgid "Force login to a specific organization"
 msgstr "فرض الدخول إلى مؤسسة محددة"
 
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Forget"
-#~ msgstr ""
-
 #: src/navigation/record-type-nav.ts
 msgid "Fork"
 msgstr "تفريع"
@@ -13939,10 +13847,6 @@ msgstr "من فهرس الوسوم"
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "From the tag index; the last refresh failed"
 msgstr "من فهرس الوسوم؛ فشل آخر تحديث"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "From this agent's credentials"
-#~ msgstr ""
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "From this block's own sites list"
@@ -15492,14 +15396,6 @@ msgstr "تهيئة مستودع Git"
 msgid "Initializing…"
 msgstr "جاري التهيئة…"
 
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Inject"
-#~ msgstr ""
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Inject {0} into deployments"
-#~ msgstr ""
-
 #: src/components/graph-workflows/panels/InjectPanel.tsx
 msgid "Inject ▶"
 msgstr "حقن ▶"
@@ -15896,10 +15792,6 @@ msgstr "برمز الدعوة فقط"
 msgid "Invite codes"
 msgstr "رموز الدعوة"
 
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "Invite codes ({activeCodes})"
-#~ msgstr "رموز الدعوة ({activeCodes})"
-
 #: src/components/account/organization-panel.tsx
 #: src/components/organization/invite-row.tsx
 msgid "Invite failed"
@@ -15926,10 +15818,6 @@ msgstr "ادعوا البوت إلى قناة خاصة باستخدام /invite 
 #: src/components/organization/invite-row.tsx
 msgid "Invited {trimmed}."
 msgstr "تمت دعوة {trimmed}."
-
-#: src/components/stream-inbox-view/MembershipInvitations.tsx
-#~ msgid "Invites"
-#~ msgstr ""
 
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
@@ -16598,10 +16486,6 @@ msgstr "الأحدث على PyPI"
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Launch"
 msgstr "تشغيل"
-
-#: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
-#~ msgid "Launch — hand out the codes"
-#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "Launch — share the link"
@@ -17670,7 +17554,7 @@ msgstr "حجم الجهاز"
 msgid "Machine type"
 msgstr "نوع الجهاز"
 
-#. placeholder {0}: sizeLine((oneCode.machine_size as ComputeNodeSize) || size)
+#. placeholder {0}: sizeLine(oneCode.machine_size ?? size)
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "Machine: {0}"
 msgstr "الجهاز: {0}"
@@ -18977,10 +18861,6 @@ msgstr "خادم MCP جديد"
 msgid "New messages"
 msgstr "رسائل جديدة"
 
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
-#~ msgid "New messages will appear here on the next poll."
-#~ msgstr "ستظهر الرسائل الجديدة هنا في الجلب التالي."
-
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New name"
 msgstr "الاسم الجديد"
@@ -19374,10 +19254,6 @@ msgstr "لم يتم تحديد نقطة فحص"
 #: src/components/summary-dashboard/SummaryDashboard.tsx
 msgid "No Claude Code data found. Run Claude Code in a project to see stats here."
 msgstr "لم يُعثر على بيانات Claude Code. شغّل Claude Code في مشروع لعرض الإحصاءات هنا."
-
-#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#~ msgid "No codes yet."
-#~ msgstr "لا توجد رموز بعد."
 
 #: src/components/collaboration/CollaborationPage.tsx
 msgid "No collaboration open"
@@ -20537,14 +20413,6 @@ msgstr "لم يتم اكتشاف قيمة"
 msgid "No value in the project yet — set it on the agent's Env tab; machines get it then."
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "No variables yet."
-#~ msgstr ""
-
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "No visitor has opened one yet."
-#~ msgstr "لم يفتح أي زائر نسخة بعد."
-
 #: src/components/webapp-viewer.tsx
 msgid "No web app available"
 msgstr "لا يوجد تطبيق ويب متاح"
@@ -21296,10 +21164,6 @@ msgstr "إخطار الأشخاص بهذا الإرسال"
 #: src/components/stream-inbox-view/StreamInboxPager.tsx
 msgid "Now"
 msgstr "الآن"
-
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
-#~ msgid "Now listening."
-#~ msgstr "يستمع الآن."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Now send your messages to the hub. Paste these into your server's webhook settings:"
@@ -23475,24 +23339,11 @@ msgstr "إزاحة Y بالبكسل من أعلى منطقة العرض المر
 msgid "Placed"
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
-#~ msgid "placed {0}"
-#~ msgstr ""
-
 #. placeholder {0}: where.on
 #. placeholder {1}: where.of
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "placed on {0} of {1}"
 msgstr ""
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "placed on {placedOn} of {total}"
-#~ msgstr ""
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Plain"
-#~ msgstr ""
 
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/hooks/event-summaries.tsx
@@ -24316,11 +24167,6 @@ msgstr "يتحقق من البوت (getMe). يُحفظ للكتابة فقط."
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Proves the number on your server. Stored write-only."
 msgstr "يتحقق من الرقم على خادمك. يُحفظ للكتابة فقط."
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
-#~ msgid "Provided by Flowpad"
-#~ msgstr ""
 
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
@@ -25897,10 +25743,6 @@ msgstr "فشلت عملية إعادة التعيين"
 msgid "Reset failed."
 msgstr "تعذّرت إعادة الضبط."
 
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "Reset sandbox"
-#~ msgstr "إعادة تعيين البيئة المعزولة"
-
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Reset to default"
 msgstr "إعادة تعيين إلى الافتراضي"
@@ -26301,18 +26143,6 @@ msgstr "إلغاء {0} دعوات؟"
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Revoke {revokingWho}'s invite?"
 msgstr ""
-
-#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#~ msgid "Revoke code"
-#~ msgstr "إلغاء الرمز"
-
-#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#~ msgid "Revoke code ••••{revokingLast4}? Its sandbox is deleted and the code stops working."
-#~ msgstr "إلغاء الرمز ••••{revokingLast4}؟ ستُحذف بيئته المعزولة ويتوقف الرمز عن العمل."
-
-#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#~ msgid "Revoked"
-#~ msgstr "مُلغى"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Right-click the channel → Copy → Copy link, and paste it here:"
@@ -27031,10 +26861,6 @@ msgstr "يُرجى حفظ هذا المفتاح الآن، فلن يكون با�
 msgid "Save this task into the project as a folder, where git tracks it"
 msgstr "حفظ هذه المهمة في المشروع كمجلد يتتبّعه Git"
 
-#: src/components/top-nav-bar/RecordingReadyDialog.tsx
-#~ msgid "Save to project"
-#~ msgstr ""
-
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Save version"
 msgstr "حفظ الإصدار"
@@ -27556,11 +27382,6 @@ msgstr "جارٍ البحث داخل الجلسات…"
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Searching…"
 msgstr "جاري البحث…"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Secret"
-#~ msgstr ""
 
 #: src/components/credentials/VariableDetails.tsx
 msgid "Secret (mask value)"
@@ -29091,10 +28912,6 @@ msgstr "تظهر عند الموافقة"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "Shown once — the hub keeps only {0}."
 msgstr ""
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Shown once the agent is published."
-#~ msgstr ""
 
 #: src/components/ui/sidebar.tsx
 msgid "Sidebar"
@@ -31876,10 +31693,6 @@ msgstr "سيغادرون {0} وكل فريق فيها، ويفقدون المي�
 msgid "They will leave {0} and lose the budget it gave them. Money already spent is not affected."
 msgstr "سيغادرون {0} ويفقدون الميزانية التي منحها لهم. لا تتأثر الأموال التي أُنفقت بالفعل."
 
-#: src/components/llm-endpoints/ShareEndpointDialog.tsx
-#~ msgid "They'll get an email with a link that opens this budget."
-#~ msgstr "سيتلقون بريدًا إلكترونيًا يحتوي على رابط يفتح هذه الميزانية."
-
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "They'll get an email with a link that opens this sandbox."
 msgstr "سيصلهم بريد إلكتروني فيه رابط يفتح هذا الصندوق الرملي."
@@ -32018,10 +31831,6 @@ msgstr "لا توجد جلسة قابلة للاستئناف في هذه الم�
 msgid "This code doesn't work. Check it, or ask whoever gave it to you."
 msgstr "هذا الرمز لا يعمل. يُرجى التحقق منه أو سؤال من منحكم إياه."
 
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "This code gets a fresh machine. Everything on the current one is erased; the same code opens the new one."
-#~ msgstr "يحصل هذا الرمز على جهاز جديد. يُمحى كل ما في الجهاز الحالي، ويفتح الرمز نفسه الجهاز الجديد."
-
 #: src/routes/loaders/load-project.ts
 msgid "This collaboration room no longer exists or is unavailable."
 msgstr "لم تعد غرفة التعاون هذه موجودة أو أنها غير متاحة."
@@ -32049,10 +31858,6 @@ msgstr "هذا الحاسوب · ليس في السحابة"
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "This computer (fetches its own)"
 msgstr "هذا الكمبيوتر (يجلب رسائله بنفسه)"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "This computer holds no value for {0}"
-#~ msgstr ""
 
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "This computer is not signed in to the secret manager yet — Set up signs in, then fetches."
@@ -33252,10 +33057,6 @@ msgstr "المشغّلات"
 msgid "Try again"
 msgstr "إعادة المحاولة"
 
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
-#~ msgid "Try again in a moment."
-#~ msgstr "حاولوا مرة أخرى بعد قليل."
-
 #: src/components/ask/AskAssist.tsx
 msgid "Try AI Assist again"
 msgstr "جرّبوا مساعدة الذكاء الاصطناعي مرة أخرى"
@@ -33488,11 +33289,6 @@ msgstr "الوحدة"
 #: src/components/assets/DependencyChips.tsx
 msgid "unknown"
 msgstr "غير معروفة"
-
-#: src/components/conversation/MessageBubble.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
-#~ msgid "Unknown"
-#~ msgstr "غير معروف"
 
 #: src/components/graph-view/ui/HeatLegend.tsx
 msgid "Unknown · {unknown}"
@@ -34120,15 +33916,6 @@ msgstr "قيمة {0}"
 msgid "Value for {key}"
 msgstr "قيمة {key}"
 
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "Value of {0}"
-#~ msgstr ""
-
-#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
-#~ msgid "Value of {0} on this deployment"
-#~ msgstr ""
-
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Value shared"
 msgstr ""
@@ -34185,10 +33972,6 @@ msgstr "القيم التي يحتفظ بها المركز"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Variable name"
 msgstr "اسم المتغير"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "VARIABLE_NAME"
-#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/credentials-view/CredentialView.tsx
@@ -34450,10 +34233,6 @@ msgstr "مرئي"
 msgid "Visitor"
 msgstr "زائر"
 
-#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-#~ msgid "Visitor LLM source"
-#~ msgstr "مصدر نموذج اللغة للزوار"
-
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Waiting for {hostName} to approve the live session…"
 msgstr "في انتظار موافقة {hostName} على الجلسة المباشرة…"
@@ -34485,10 +34264,6 @@ msgstr "في انتظار فتح FlowPad…"
 #: src/pages/keychain-approval.tsx
 msgid "Waiting for keychain approval…"
 msgstr "في انتظار موافقة Keychain…"
-
-#: src/components/conversation/conversation-category.ts
-#~ msgid "Waiting for pickup"
-#~ msgstr "بانتظار الاستلام"
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "Waiting for sign-in"
@@ -34707,10 +34482,6 @@ msgstr "ماذا تريدون أن تفعلوا؟"
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"
 msgstr "ما الذي يمكنكم العمل عليه؟"
-
-#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
-#~ msgid "What every deployment of this agent gets. Only the variables you approve with Inject are placed on its machines. A secret's value is kept by Flowpad Cloud and is never shown again."
-#~ msgstr ""
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "What Flowpad found when it checked this project's Git setup."
@@ -35007,10 +34778,6 @@ msgstr "على أي مشروع يجب أن يعمل؟"
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Which set of values the machine reads. It joins the hub you are signed in to either way."
 msgstr "أي مجموعة من القيم يقرأها الجهاز. وفي كل الأحوال ينضم إلى hub الذي سجّلت الدخول إليه."
-
-#: src/components/terminal/interactive-terminal/useChainSession.tsx
-#~ msgid "Which worker reviews it?"
-#~ msgstr ""
 
 #: src/components/inbound/RouteCheck.tsx
 msgid "While it is offline, the hub answers 503 and your server retries — nothing is lost and nothing is stored. Messages from other senders keep flowing."

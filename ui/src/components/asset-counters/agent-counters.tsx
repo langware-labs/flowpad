@@ -1,10 +1,10 @@
 import { Agent, ComputeNode, Deployment, Issue, QueryRequest, type InboundNumber } from '@sdk';
+import { dataContext } from '@sdk';
 import { useEntitiesQuery, useProject } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { Badge } from '@src/components/ui/badge';
 import { useProjectAgents } from '@src/hooks/use-project-agents';
-import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { type MouseEvent, type ReactNode, useMemo } from 'react';
 import { useAgentChannels } from '@src/components/agent-resources/AgentWebhooksSection';
 import { needsGitConnection } from '@src/components/assets/editor/git-connection';
@@ -242,7 +242,7 @@ export function AgentSummaryTable({ row }: { row: AgentRow }) {
         }
         testId="agent-summary-machines"
       />
-      {isHubOnly() && <ChannelsRow agent={agent} open={open} />}
+      {!dataContext.caps.localFiles && <ChannelsRow agent={agent} open={open} />}
       {issues && (
         <SummaryRow
           label={<Trans>Issues</Trans>}
@@ -256,7 +256,7 @@ export function AgentSummaryTable({ row }: { row: AgentRow }) {
 }
 
 /** On the hub, an agent with no git link cannot be opened there: it has to be published from the desktop first. */
-const agentNeedsGit = (agent: Agent) => isHubOnly() && needsGitConnection(true, 'git', agent);
+const agentNeedsGit = (agent: Agent) => !dataContext.caps.localFiles && needsGitConnection(true, 'git', agent);
 
 /** An agent as an item card — the same on hub and desktop. */
 export const agentCard = (row: AgentRow): ItemCardValue => ({

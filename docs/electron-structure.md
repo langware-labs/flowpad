@@ -30,7 +30,7 @@ Electron (main.js)
 | File | Role |
 | --- | --- |
 | `main.js` | Entry point (no exports). Window, menu, deep links, IPC, desktop updates, the startup/install flow (`startApp`, `installAndStartBackend`), the error panel. |
-| `uv-manager.js` | The `UvManager` class. Downloads `uv`, installs/upgrades/reinstalls the engine, picks the Python version, manages the install-in-progress marker, WDAC fallback, `checkForUpdatesInBackground`. A post-boot engine update is first prepared in the background (`prepareEngine`: staged in a throwaway tool dir, then checked to import and report the release; the record is `~/.flow/prepared-engine.json`; the staging dir is removed in the background — a file Windows still holds is tried 3 times, then left to the next prepare's sweep), so the upgrade after "Upgrade" — now, or at a later launch — installs offline in seconds. "Later" to the engine dialog at launch prepares it once the app is up (`prepareDeferredEngineUpdate`), so the next launch's "Upgrade" is fast too. The engine that rides along with a desktop update is prepared the same way while the desktop downloads, for the NEW desktop, which installs it offline after the restart. |
+| `uv-manager.js` | The `UvManager` class. Downloads `uv`, installs/upgrades/reinstalls the engine, picks the Python version, manages the install-in-progress marker, WDAC fallback, `checkForUpdatesInBackground`. A post-boot engine update is first prepared in the background (`prepareEngine`: staged in a throwaway tool dir, then checked to import, report the release and meet the start contract — its launch module, `/health/status`, `flow --help` — without starting a server; the record is `~/.flow/prepared-engine.json`; the staging dir is removed in the background — a file Windows still holds is tried 3 times, then left to the next prepare's sweep), so the upgrade after "Upgrade" — now, or at a later launch — installs offline in seconds. "Later" to the engine dialog at launch prepares it once the app is up (`prepareDeferredEngineUpdate`), so the next launch's "Upgrade" is fast too. The engine that rides along with a desktop update is prepared the same way while the desktop downloads, for the NEW desktop, which installs it offline after the restart. |
 | `preload.js` | `contextBridge` bridge to the renderer. |
 | `loading.html`, `loading-renderer.js` | Loading screen, progress, and the error panel (including "Send Report"). |
 
@@ -133,7 +133,25 @@ Electron (main.js)
   After a consented "Restart now", the new desktop installs exactly `flowpad==X` (`planAfterDesktopUpdate` → `upgrade({version})`).
 - **"Later":** a reminder every 90 minutes (`READY_REMINDER_MS`). If the app is closed after Later, the regular engine
   dialog appears — no silent install.
-- **A newer desktop** refreshes X. Engine dialogs are **held back** while a desktop update is pending.
+- **A newer desktop** refreshes X. Engine dialogs are **held back** while a desktop update is pending or KNOWN — a
+  failed check never overwrites a known newer desktop (in memory, and `lastResult` on disk is kept by `recordFailure`).
+  A desktop check that has not answered (`unknown`) is no newer desktop: such a hold looks at the feed again first
+  (`engineChangeAllowedAfterRecheck`, the desktop-only check, bounded like the launch check — a scheduled pass that has
+  just looked does not look twice), and when the feed still does not answer and no newer desktop is known
+  (`lastKnownNewerDesktop`), the engine change goes on against THIS desktop's compatibility contract instead — a
+  GitHub outage or a proxy never strands the engine. Every engine update is checked fail-closed: a release whose
+  compatibility metadata cannot be read, or that ships none, is never picked (`resolveCompatibleEngineVersion`) or
+  installed (`_assertCandidateCompatible`), and `upgrade()` never falls back to an unchecked `@latest`; only a first
+  install or a repair (no working engine) still relies on the post-install check. Used by the popover's "Upgrade",
+  the post-boot and engine-retry checks, the postponed prepare and the gate after a prepare (the pre-start prompt
+  still holds: the post-boot check follows it). The popover refuses only for a newer desktop to install first
+  (`desktopUpdatePending`).
+- **Activation:** an upgraded engine is remembered until it is seen healthy (`markEngineHealthy`). One that does not
+  come up — after the post-boot dialog, from the popover, or installed at launch — is stopped and the engine it
+  replaced is put back (`restorePreviousEngine`: uv's cache first, then PyPI) and started; before activation the staged
+  engine was checked against the start contract (`_validateStaged`: imports, version, `flow_sdk.server.launch`, the
+  `/health/status` route, `flow --help`). An incompatible pair after an install is rolled back the same way
+  (`_verifyInstalledPairOrRollback`).
 - **A yanked X** is replaced by the latest release (`_resolveEngineTarget`).
 - Engine-only update: the regular dialog. Desktop-only update: background download and the "ready" prompt.
 - electron-updater: `autoDownload=false`, `autoInstallOnAppQuit=true`, NSIS with `oneClick:false`

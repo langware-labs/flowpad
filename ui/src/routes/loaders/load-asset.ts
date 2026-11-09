@@ -14,7 +14,6 @@
  * its own missing/error state); never throws into the parent dock loader.
  */
 import { ContextEntitiesEnum, EventBus, Project, TypeId, VFSPath, dataContext, dataManager } from '@sdk';
-import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetMode, AssetRoutingMethod, isBrowseListPointer, isFileOnlyEditor } from '@src/navigation/asset-doc-types';
 import { resolveWikiWord } from '@src/components/wiki/resolve-wiki';
@@ -70,7 +69,7 @@ async function setEntityContext(entity: ContextEntity | null, keepProject = fals
 
 async function hubRepoProjectId(entity: ContextEntity): Promise<string | null> {
   const origin = entity.git_origin;
-  if (!isHubOnly() || origin?.kind !== 'hub_repo' || !origin.repo) return null;
+  if (!!dataContext.caps.localFiles || origin?.kind !== 'hub_repo' || !origin.repo) return null;
   try {
     return (await Project.forHostedRepo(origin.repo))?.id ?? null;
   } catch {

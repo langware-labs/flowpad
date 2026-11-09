@@ -1,7 +1,7 @@
 import { Trans, useLingui } from '@lingui/react/macro';
+import { dataContext } from '@sdk';
 import { ChevronDown } from 'lucide-react';
 import { PageId, Project, RuntimeKind } from '@sdk';
-import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -176,7 +176,7 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                       onClick={() => {
                         // On the hub the project's home is the hub page's own (members, roles, assets).
                         const home = DockPointer.forProject(project.id);
-                        navigation.openDock(isHubOnly() ? home.withPage(PageId.HUB) : home);
+                        navigation.openDock(!dataContext.caps.localFiles ? home.withPage(PageId.HUB) : home);
                       }}
                       data-testid="top-nav-project"
                       aria-label={homeLabel}
