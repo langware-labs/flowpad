@@ -712,14 +712,15 @@ async def _project_declaring(names: Iterable[str]) -> Optional["Project"]:
     this computer, with no main agent, while the box holds exactly the project it was opened for. ``None`` when
     no project, or more than one, declares them: never a guess."""
     from flow_sdk.builtin.credential_resolver import declared_vars  # noqa: PLC0415
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT  # noqa: PLC0415
 
     wanted = set(names)
     if not wanted:
         return None
     found = []
-    for project in await Project.get_all({}) or []:
+    from flow_sdk.fs_store.operations.all_projects import get_cached_projects  # noqa: PLC0415
+
+    for project in await get_cached_projects() or []:
         declared = await declared_vars(project)
         if any(n in declared and declared[n].scope.scope == SCOPE_PROJECT for n in wanted):
             found.append(project)
