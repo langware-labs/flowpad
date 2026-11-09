@@ -1458,9 +1458,13 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       const failing = make({ prepare: async () => { throw new Error('offline'); }, prepared: null });
       eq(await failing.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true, onReady: (v) => ready.push(v) }), false, 'a failed prepare installs nothing');
       eq([ready.length, shown.length], [1, 0], 'and is neither announced nor asked about');
-      const other = make({ prepare: async () => ({ version: '0.2.159' }), prepared: { version: '0.2.159' } });
-      await other.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true, onReady: (v) => ready.push(v) });
-      eq([ready.length, shown.length], [1, 0], 'a prepared release other than the newest is not offered as it');
+      // The newest needs a newer desktop: the newest one THIS desktop runs was prepared — it is offered.
+      const older = make({ prepare: async () => ({ version: '0.2.159' }), prepared: { version: '0.2.159' } });
+      await older.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true, onReady: (v) => ready.push(v) });
+      eq([ready, shown.length], [['0.2.160', '0.2.159'], 0], 'a compatible release older than the newest is offered');
+      const none = make({ prepare: async () => ({ version: '0.2.150' }), prepared: { version: '0.2.150' } });
+      await none.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true, onReady: (v) => ready.push(v) });
+      eq(ready.length, 2, 'nothing newer than the installed engine prepared: nothing offered');
     } finally {
       if (savedElectron) require.cache[electronId] = savedElectron; else delete require.cache[electronId];
     }

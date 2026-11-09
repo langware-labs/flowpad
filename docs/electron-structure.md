@@ -137,8 +137,12 @@ Electron (main.js)
   Later, gone after 30 s (`ui/.../update-ready/UpdateReadyBridge.tsx`) — and an "Update ready" indicator in the top bar
   for as long as it stays ready; it opens the version popover, which lists the set and applies it. The same set is
   toasted once; the 90-minute reminder (`READY_REMINDER_MS`) toasts it again while it stays pending. Later, the X
-  and the timeout only close the toast.
-- **Restart** (`update-activate`, one at a time) uses the existing paths: a desktop update is the old "Restart now" —
+  and the timeout only close the toast. A toast asked for while the UI is still mounting is not lost: the UI takes
+  it on mount (`update-ready-take-toast`, handed out once). A prepared engine is the newest release THIS desktop runs
+  — PyPI's newest, or an older one when the newest needs a newer desktop — and is offered while it is newer than the
+  installed one. A new desktop download replaces the downloaded installer, so that one stops being ready.
+- **Restart** (`update-activate`, one at a time; `busy` while a background check or prepare runs, `not-ready` once
+  the set is gone — a Restart from the toast that does not apply opens the popover to say why) uses the existing paths: a desktop update is the old "Restart now" —
   consent to the saved engine version X (`pending-engine.json`), then `restartApplier`; the new desktop installs
   exactly `flowpad==X` (`planAfterDesktopUpdate` → `upgrade({version})`). An engine-only update is the popover's
   upgrade (`upgradeEngine`: the offline swap, the server restarted, the window reloaded) — the desktop keeps running.
@@ -220,7 +224,7 @@ On macOS, an app running from a transient location is offered, once per version,
 ## 5. IPC channels
 
 - `handle`: capture-region, close-auth-window, copy-to-clipboard, desktop-update-download, desktop-update-info,
-  desktop-update-install, get-app-version, get-backend-url, update-activate, update-ready-info,
+  desktop-update-install, get-app-version, get-backend-url, update-activate, update-ready-info, update-ready-take-toast,
   engine-upgrade-target, get-startup-logs, notify-attention, notify-os, open-auth-window, open-external,
   open-logs-folder, restart-backend, set-badge, share-logs, upgrade-flowpad.
   The version popover's "Upgrade to vX": `engine-upgrade-target` names the newest release THIS desktop runs
@@ -229,7 +233,8 @@ On macOS, an app running from a transient location is offered, once per version,
   The popover's desktop button: `desktop-update-info` (what the updater can offer, pushed on every change as
   `desktop-update-state`), `desktop-update-download` (looks at the feed and starts the offer's download — the
   usual "Update Ready" follows), `desktop-update-install` (its Restart). The ready set: `update-ready-info` (pushed as
-  `update-ready-state` for the top bar's indicator; `update-ready-toast` asks the UI for the toast) and
+  `update-ready-state` for the top bar's indicator; `update-ready-toast` asks the UI for the toast, which it takes
+  with `update-ready-take-toast` — also on mount, for one sent before it listened) and
   `update-activate` (Restart, from the toast or the popover).
 - `on`: quit-app, set-menu-visible, unwatch-startup-logs, watch-startup-logs.
 - `once`: retry-startup.

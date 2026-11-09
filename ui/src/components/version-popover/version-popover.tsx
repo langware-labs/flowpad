@@ -11,9 +11,12 @@ import {
   type DesktopUpdateInfo,
 } from '@src/components/version-popover/desktop-update-action';
 import {
+  activationProblem,
   getUpdateReadyApi,
   OPEN_VERSION_POPOVER_EVENT,
   useUpdateReady,
+  type ActivationResult,
+  type OpenVersionPopoverDetail,
 } from '@src/components/update-ready/update-ready';
 import apiClient from '@sdk/client';
 import { connectionManager } from '@sdk/websocket';
@@ -299,7 +302,7 @@ interface VersionPopoverProps {
 
 export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverProps) {
   const { navigation } = useDockNavigation();
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const [open, setOpen] = useState(false);
   // Closing the popover genie-minimizes it into the version button.
   const { sourceRef, targetRef, handleOpenChange } = useMinimizeOnClose(setOpen);
@@ -418,20 +421,40 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
     };
   }, [open, electronApi]);
 
+  // Why "Restart" did not apply the update (update-ready.ts) — null when it did.
+  const activationMessage = useCallback(
+    (r: ActivationResult): string | null => {
+      const problem = activationProblem(r);
+      return problem ? i18n._(problem) : null;
+    },
+    [i18n],
+  );
+
+  // One request at a time: a fast double click would otherwise start a second one, refused as "busy".
+  const [desktopRequestPending, setDesktopRequestPending] = useState(false);
   const handleDesktopUpdate = useCallback(async () => {
     if (!electronApi?.downloadDesktopUpdate || !electronApi.installDesktopUpdate) return;
     setDesktopUpdateError(null);
-    const r =
-      desktopUpdate?.state === 'ready'
-        ? await electronApi.installDesktopUpdate()
-        : await electronApi.downloadDesktopUpdate();
-    if (r.started) return;
-    if (r.reason === 'no-update') setDesktopUpdateError(t`This desktop is already the newest version.`);
-    else if (r.reason === 'check-failed')
-      setDesktopUpdateError(t`The update server did not answer. Try again in a few minutes.`);
-    else if (r.reason === 'busy') setDesktopUpdateError(t`Another update is in progress. Try again when it is done.`);
-    else setDesktopUpdateError(t`The desktop update could not be started.`);
-  }, [electronApi, desktopUpdate?.state, t]);
+    setDesktopRequestPending(true);
+    try {
+      const r =
+        desktopUpdate?.state === 'ready'
+          ? await electronApi.installDesktopUpdate()
+          : await electronApi.downloadDesktopUpdate();
+      if (r.started) return;
+      if (r.reason === 'no-update') setDesktopUpdateError(t`This desktop is already the newest version.`);
+      else if (r.reason === 'check-failed')
+        setDesktopUpdateError(t`The update server did not answer. Try again in a few minutes.`);
+      else if (r.reason === 'unsupported') setDesktopUpdateError(t`The desktop update could not be started.`);
+      else setDesktopUpdateError(activationMessage(r));
+    } catch (err) {
+      setDesktopUpdateError(
+        activationMessage({ started: false, error: err instanceof Error ? err.message : String(err) }),
+      );
+    } finally {
+      setDesktopRequestPending(false);
+    }
+  }, [electronApi, desktopUpdate?.state, t, activationMessage]);
 
   // The ONE ready update set (desktop and/or engine), applied from here or from the "Update Ready" toast; the top
   // bar's indicator opens this popover for it.
@@ -439,23 +462,27 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
   const [activating, setActivating] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
   useEffect(() => {
-    const openIt = () => setOpen(true);
+    const openIt = (e: Event) => {
+      setOpen(true);
+      const activation = (e as CustomEvent<OpenVersionPopoverDetail | null>).detail?.activation;
+      setActivateError(activation ? activationMessage(activation) : null); // a plain open shows no stale error
+    };
     window.addEventListener(OPEN_VERSION_POPOVER_EVENT, openIt);
     return () => window.removeEventListener(OPEN_VERSION_POPOVER_EVENT, openIt);
-  }, []);
+  }, [activationMessage]);
   const handleActivate = useCallback(async () => {
     const api = getUpdateReadyApi();
     if (!api?.activateUpdate) return;
     setActivating(true);
     setActivateError(null);
     try {
-      const r = await api.activateUpdate();
-      if (!r.started) setActivateError(t`Another update is in progress. Try again when it is done.`);
-      else if (r.success === false) setActivateError(r.error ?? t`Install failed.`);
+      setActivateError(activationMessage(await api.activateUpdate()));
+    } catch (err) {
+      setActivateError(activationMessage({ started: false, error: err instanceof Error ? err.message : String(err) }));
     } finally {
       setActivating(false);
     }
-  }, [t]);
+  }, [activationMessage]);
 
   const upgradeVersion = upgradeOfferVersion({
     desktop: Boolean(electronApi?.upgradeFlowpad),
@@ -555,8 +582,11 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
         <VersionChip
           ref={targetRef}
           version={runningVersion}
-          // On the desktop the top bar's "Update ready" is the one indicator; a browser tab keeps the dot.
-          updateAvailable={!electronApi && Boolean(pypi?.update_available || githubUpdateAvailable)}
+          // A desktop with the ready state shows the top bar's "Update ready" instead; a browser tab, and an
+          // older desktop running this UI (no getUpdateReadyInfo), keep the dot.
+          updateAvailable={
+            !getUpdateReadyApi()?.getUpdateReadyInfo && Boolean(pypi?.update_available || githubUpdateAvailable)
+          }
           data-testid="version-popover-trigger"
         />
       </PopoverTrigger>
@@ -645,8 +675,13 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
                 {activating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                 {updateReady.restart ? t`Update & Restart` : t`Update Engine`}
               </button>
-              {activateError && <p className="text-[10px] text-destructive">{activateError}</p>}
             </section>
+          )}
+          {/* Under the section, not in it: an update that is no longer ready has no section, but still says why. */}
+          {activateError && (
+            <p className="text-[10px] text-destructive" data-testid="version-update-ready-error">
+              {activateError}
+            </p>
           )}
 
           {/* Dev-only: render the local desktop server's hub page for testing/debugging. */}
@@ -898,7 +933,7 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
                 <button
                   type="button"
                   onClick={() => void handleDesktopUpdate()}
-                  disabled={desktopAction.kind === 'downloading' || desktopUpdate?.busy}
+                  disabled={desktopAction.kind === 'downloading' || desktopUpdate?.busy || desktopRequestPending}
                   data-testid="desktop-update-button"
                   className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
                 >

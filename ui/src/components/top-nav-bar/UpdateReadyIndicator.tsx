@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react/macro';
 import { ArrowDownCircle } from 'lucide-react';
-import { OPEN_VERSION_POPOVER_EVENT, useUpdateReady } from '@src/components/update-ready/update-ready';
+import { openVersionPopover, useUpdateReady } from '@src/components/update-ready/update-ready';
 
 /**
  * "Update ready" in the top bar while a downloaded, prepared and checked update waits to be applied — the one
@@ -16,7 +16,7 @@ export function UpdateReadyIndicator() {
     <button
       type="button"
       data-testid="top-nav-update-ready"
-      onClick={() => window.dispatchEvent(new Event(OPEN_VERSION_POPOVER_EVENT))}
+      onClick={() => openVersionPopover()}
       title={t`An update is downloaded and ready to install`}
       className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 text-[11px] font-medium text-primary transition-colors hover:bg-primary/20"
     >

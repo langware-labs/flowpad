@@ -4021,8 +4021,7 @@ msgstr "خطوة أخرى تستخدم هذا المعرّف بالفعل — س
 msgid "Another update is in progress."
 msgstr "يجري تحديث آخر حاليًا."
 
-#: src/components/version-popover/version-popover.tsx
-#: src/components/version-popover/version-popover.tsx
+#: src/components/update-ready/update-ready.ts
 msgid "Another update is in progress. Try again when it is done."
 msgstr "يجري تحديث آخر حاليًا. حاول مرة أخرى عند انتهائه."
 
@@ -15477,7 +15476,11 @@ msgstr ""
 msgid "Install failed"
 msgstr "فشل التثبيت"
 
-#: src/components/version-popover/version-popover.tsx
+#: src/components/update-ready/update-ready.ts
+msgid "Install failed: {error}"
+msgstr "فشل التثبيت: {error}"
+
+#: src/components/update-ready/update-ready.ts
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Install failed."
@@ -31343,6 +31346,14 @@ msgstr "يعمل الرمز بصفة {0}"
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "بدأ النص المحفوظ على القرص ضمن مشروع آخر — الارتباط هنا مجمَّد لتفادي الانحراف الصامت. أعيدوا التحميل لإعادة التحديد، أو افتحوا الجلسة ضمن مشروعها الحقيقي."
 
+#: src/components/update-ready/update-ready.ts
+msgid "The update could not be applied: {error}"
+msgstr "تعذّر تطبيق التحديث: {error}"
+
+#: src/components/update-ready/update-ready.ts
+msgid "The update could not be applied. Try again."
+msgstr "تعذّر تطبيق التحديث. حاول مرة أخرى."
+
 #: src/components/version-popover/version-popover.tsx
 msgid "The update server did not answer. Try again in a few minutes."
 msgstr "لم يستجب خادم التحديثات. حاول مرة أخرى بعد بضع دقائق."
@@ -32329,6 +32340,10 @@ msgstr "هذه الواجهة مُقدَّمة من سحابة Flowpad."
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "This UI is served by your own desktop."
 msgstr "هذه الواجهة مُقدَّمة من حاسوبكم المكتبي."
+
+#: src/components/update-ready/update-ready.ts
+msgid "This update is no longer ready to install. FlowPad offers it again once it is."
+msgstr "لم يعد هذا التحديث جاهزًا للتثبيت. سيعرضه FlowPad مجددًا عندما يصبح جاهزًا."
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "this week"

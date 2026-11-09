@@ -3061,20 +3061,21 @@ class UvManager {
           this.log.warn(`[uv] preparing the update failed — not offered; the next check prepares it again: ${String((err && err.message) || err).split('\n')[0]}`);
           return false;
         }
+        // What was prepared is the newest release THIS desktop can run — `latest` itself, or an older one when
+        // `latest` needs a newer desktop. Either is offered, as long as it is newer than the installed engine.
+        const prepared = this.preparedEngine();
         const now = this.getInstalledVersionSync() || null;
-        if (now && !isNewer(now, latest)) return false; // upgraded meanwhile (the version panel)
+        if (!prepared || (now && !isNewer(now, prepared.version))) { // none newer, or upgraded meanwhile (the panel)
+          this.log.info(`[uv] no engine newer than ${now || 'the installed one'} was prepared for this desktop — nothing offered`);
+          return false;
+        }
         // The prepare can take minutes: a newer desktop found meanwhile goes first (the engine follows it).
         if (!(await engineChangeAllowed())) { // may look at the desktop feed again first (main.js)
-          this.log.info(`[uv] not offering engine ${latest} now: a desktop update came first while it was prepared`);
+          this.log.info(`[uv] not offering engine ${prepared.version} now: a desktop update came first while it was prepared`);
           return false;
         }
-        const prepared = this.preparedEngine();
-        if (!prepared || prepared.version !== latest) {
-          this.log.info(`[uv] engine ${latest} was not prepared for this desktop — not offered`);
-          return false;
-        }
-        this.log.info(`[uv] engine ${latest} is prepared and checked — offered as ready`);
-        onReady(latest);
+        this.log.info(`[uv] engine ${prepared.version} is prepared and checked — offered as ready${prepared.version !== latest ? ` (${latest} needs a newer desktop)` : ''}`);
+        onReady(prepared.version);
         return false;
       }
 

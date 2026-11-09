@@ -725,7 +725,9 @@ function updateReadyState() {
     };
   }
   const prepared = uvManager && engineChangeAllowedNow() ? uvManager.preparedEngine() : null;
-  if (prepared) return { ready: true, restart: false, desktop: null, engine: { from: installedEngine, to: prepared.version } };
+  if (prepared && (!installedEngine || isNewer(installedEngine, prepared.version))) {
+    return { ready: true, restart: false, desktop: null, engine: { from: installedEngine, to: prepared.version } };
+  }
   return { ready: false, restart: false, desktop: null, engine: null };
 }
 const readyKey = (s) => (s.ready ? `${(s.desktop && s.desktop.to) || ''}|${(s.engine && s.engine.to) || ''}` : null);
@@ -739,7 +741,10 @@ function updateToastCanShow() {
 /** Tell the UI what is ready (the indicator and the popover); a reminder ends once nothing is pending. */
 function pushUpdateReadyState() {
   const state = updateReadyState();
-  if (!state.ready) readyReminder.stop();
+  if (!state.ready) {
+    readyReminder.stop();
+    pendingToast = false;
+  }
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-ready-state', state);
   return state;
 }
@@ -750,6 +755,9 @@ function pushUpdateReadyState() {
  * set is toasted once; only the reminder repeats it. Nothing here waits for the user: Restart is update-activate.
  */
 let announcedReadyKey = null;
+// A toast asked for and not yet taken by the UI (update-ready-take-toast): the renderer may still be mounting when
+// it is sent, so it takes it on mount too — once, whichever comes first.
+let pendingToast = false;
 function announceUpdateReady({ reminder = false } = {}) {
   const state = pushUpdateReadyState();
   const key = readyKey(state);
@@ -768,7 +776,10 @@ function announceUpdateReady({ reminder = false } = {}) {
   const scripted = !updateTest.isScripted('restart') ? null : updateTest.answerFor('restart', { version: state.desktop && state.desktop.to, savedEngine: state.engine && state.engine.to });
   if (scripted === 0) { void activateUpdate('update-test'); return; }
   log.info(`[update] update ready (${state.desktop ? `desktop ${state.desktop.to}` : ''}${state.desktop && state.engine ? ' + ' : ''}${state.engine ? `engine ${state.engine.to}` : ''})${scripted !== null ? ' — scripted Later' : ' — "Update Ready" shown'}; reminded every 90 minutes while pending`);
-  if (scripted === null) mainWindow.webContents.send('update-ready-toast', state);
+  if (scripted === null) {
+    pendingToast = true;
+    mainWindow.webContents.send('update-ready-toast', state);
+  }
 }
 
 /**
@@ -782,10 +793,11 @@ async function activateUpdate(source) {
   if (activationInFlight || restartApplier.busy) return { started: false, reason: 'busy' };
   const state = updateReadyState();
   if (!state.ready) return { started: false, reason: 'not-ready' };
+  // A background check or prepare still running: its prepare could replace (or clear) the engine being applied.
+  if (packageUpdateInFlight || (uvManager && uvManager.isInstalling())) return { started: false, reason: 'busy' };
   activationInFlight = true;
   try {
     if (state.desktop) {
-      if (packageUpdateInFlight || (uvManager && uvManager.isInstalling())) return { started: false, reason: 'busy' };
       log.info(`[update] applying desktop ${state.desktop.to}${state.engine ? ` + engine ${state.engine.to}` : ''} (${source}): restarting`);
       readyReminder.stop();
       markPendingEngineConsented(pendingEngineStore); // agreeing to restart = agreeing to the saved engine version
@@ -976,6 +988,12 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
   }
   desktopDownloadInFlight = true;
   desktopDownloadVersion = version;
+  if (desktopDownloadedVersion) {
+    // electron-updater removes the installer it downloaded before: it is no longer there to apply.
+    log.info(`[electron-updater] ${desktopDownloadedVersion} is no longer ready: downloading ${version || 'a newer build'}`);
+    desktopDownloadedVersion = null;
+    pushUpdateReadyState();
+  }
   desktopDownloadToken = new CancellationToken();
   desktopDownloadPercent = 0;
   desktopDownloadError = null;
@@ -3489,6 +3507,12 @@ ipcMain.handle('desktop-update-install', async () => {
 // The one ready update set (updateReadyState), and "Restart" — from the "Update Ready" toast or the top bar's indicator.
 ipcMain.handle('update-ready-info', () => updateReadyState());
 ipcMain.handle('update-activate', () => activateUpdate('Update Ready'));
+ipcMain.handle('update-ready-take-toast', () => {
+  const state = updateReadyState();
+  const take = pendingToast && state.ready;
+  pendingToast = false;
+  return take ? state : null;
+});
 
 ipcMain.handle('upgrade-flowpad', async (_event, version) => upgradeEngine(version));
 

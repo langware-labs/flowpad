@@ -21,7 +21,7 @@ const { EventEmitter } = require('events');
 const MAIN = path.join(__dirname, 'main.js');
 const EXPOSE = `
 module.exports.__t = {
-  offerDesktopUpdate, offerPostponedRestartPrompt, backendWaitAborted, announceUpdateReady, updateReadyState, activateUpdate, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground, waitForBackend,
+  offerDesktopUpdate, offerPostponedRestartPrompt, backendWaitAborted, announceUpdateReady, updateReadyState, activateUpdate, downloadDesktopUpdateInBackground, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground, waitForBackend,
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier, getDesktopUpdateVersion, engineChangeAllowed,
   runScheduledUpdateCheck, startLaunchDesktopCheck, startOffer, prepareDeferredEngineUpdate, offerDesktopFoundAtLaunch, postBootUpdates,
   setLaunchDesktopLook: (p) => { launchDesktopLook = p; },
@@ -226,6 +226,17 @@ const HOUR = 60 * 60 * 1000;
     eq(env.dialogCalls.length, 0, 'and no dialog');
     eq(readyStates(env).at(-1).ready, true, 'the top bar indicator is told');
     ok(reminderTimer(env), 'the 90-minute reminder runs while it is pending');
+    {
+      // A newer build starts downloading over it: electron-updater deletes the 0.2.48 installer — not offered anymore.
+      const env2 = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+      env2.t.setupElectronAutoUpdater();
+      env2.t.downloadDesktopUpdateInBackground({ version: '0.2.48' });
+      env2.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); env2.autoUpdater.finishDownload(); await tick(); await tick();
+      eq(env2.t.updateReadyState().desktop, { from: '0.2.47', to: '0.2.48' }, 'downloaded: ready');
+      env2.t.downloadDesktopUpdateInBackground({ version: '0.2.49' });
+      eq([env2.t.updateReadyState().ready, readyStates(env2).at(-1).ready], [false, false], 'a newer download starts: the old one is no longer ready, and the indicator is told');
+      eq(await env2.ipc['update-activate'](), { started: false, reason: 'not-ready' }, 'so Restart cannot try to apply a deleted installer');
+    }
     const [first, second] = await Promise.all([env.t.activateUpdate('test'), env.t.activateUpdate('test')]);
     eq([first.started, second], [true, { started: false, reason: 'busy' }], '"Restart" applies it once — a second click is refused');
     eq(env.readState().consented, true, '"Restart" = agreement to install the saved engine version');
@@ -915,6 +926,14 @@ const HOUR = 60 * 60 * 1000;
     await env.t.checkPackageUpdateInBackground();
     eq(toasts(env).length, 1, 'the next check finds the same prepared release: no second toast');
     ok(reminderTimer(env), 'the 90-minute reminder runs while it is pending');
+    // The UI may still be mounting when the toast is sent: it takes it then — once.
+    eq((await env.ipc['update-ready-take-toast']()).engine.to, '0.2.181', 'the UI takes the toast it may have missed');
+    eq(await env.ipc['update-ready-take-toast'](), null, 'once: a remount does not show it again');
+    // A background check or prepare still running could replace the prepared engine: Restart waits for it.
+    env.t.setPackageUpdateInFlight(true);
+    eq(await env.ipc['update-activate'](), { started: false, reason: 'busy' }, 'engine Restart during a background check: busy');
+    eq(env.uv.upgrades.length, 0, 'and nothing is installed');
+    env.t.setPackageUpdateInFlight(false);
     const realFetch = global.fetch;
     global.fetch = async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' });
     let result;

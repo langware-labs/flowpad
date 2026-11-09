@@ -45,7 +45,7 @@ function isEnabled() {
   return process.env.FLOWPAD_UPDATE_TEST === '1';
 }
 
-/** "both=later,engine=accept" → { both: 'later', engine: 'accept' } */
+/** "restart=later,engine=accept" → { restart: 'later', engine: 'accept' } */
 function parseAnswers(raw) {
   const out = {};
   for (const part of String(raw || '').split(',')) {

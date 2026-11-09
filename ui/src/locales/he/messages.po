@@ -4021,8 +4021,7 @@ msgstr "שלב אחר כבר משתמש במזהה הזה — התוצאות ש�
 msgid "Another update is in progress."
 msgstr "עדכון אחר מתבצע כעת."
 
-#: src/components/version-popover/version-popover.tsx
-#: src/components/version-popover/version-popover.tsx
+#: src/components/update-ready/update-ready.ts
 msgid "Another update is in progress. Try again when it is done."
 msgstr "עדכון אחר מתבצע כעת. נסו שוב כשיסתיים."
 
@@ -15477,7 +15476,11 @@ msgstr ""
 msgid "Install failed"
 msgstr "ההתקנה נכשלה"
 
-#: src/components/version-popover/version-popover.tsx
+#: src/components/update-ready/update-ready.ts
+msgid "Install failed: {error}"
+msgstr "ההתקנה נכשלה: {error}"
+
+#: src/components/update-ready/update-ready.ts
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Install failed."
@@ -31343,6 +31346,14 @@ msgstr "האסימון פועל בשם {0}"
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "התמליל בדיסק הופעל תחת פרויקט אחר — הקישור כאן מוקפא כדי למנוע סטייה שקטה. טענו מחדש כדי לפתור שוב, או פתחו את הסשן תחת הפרויקט האמיתי שלו."
 
+#: src/components/update-ready/update-ready.ts
+msgid "The update could not be applied: {error}"
+msgstr "לא ניתן היה להחיל את העדכון: {error}"
+
+#: src/components/update-ready/update-ready.ts
+msgid "The update could not be applied. Try again."
+msgstr "לא ניתן היה להחיל את העדכון. נסו שוב."
+
 #: src/components/version-popover/version-popover.tsx
 msgid "The update server did not answer. Try again in a few minutes."
 msgstr "שרת העדכונים לא הגיב. נסו שוב בעוד כמה דקות."
@@ -32329,6 +32340,10 @@ msgstr "ממשק זה מוגש מהענן של Flowpad."
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "This UI is served by your own desktop."
 msgstr "ממשק זה מוגש מהמחשב השולחני שלכם."
+
+#: src/components/update-ready/update-ready.ts
+msgid "This update is no longer ready to install. FlowPad offers it again once it is."
+msgstr "העדכון הזה כבר לא מוכן להתקנה. FlowPad יציע אותו שוב כשיהיה מוכן."
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "this week"

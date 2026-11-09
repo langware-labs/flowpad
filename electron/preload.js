@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // indicator, the "Update Ready" toast main asks for (once, then every 90 minutes while pending), and "Restart".
   getUpdateReadyInfo: () => ipcRenderer.invoke('update-ready-info'),
   activateUpdate: () => ipcRenderer.invoke('update-activate'),
+  /** The "Update Ready" toast the desktop asked for and the UI has not shown yet (null when none): taken once. */
+  takeUpdateReadyToast: () => ipcRenderer.invoke('update-ready-take-toast'),
   onUpdateReadyState: (callback) => {
     const handler = (_event, state) => callback(state);
     ipcRenderer.on('update-ready-state', handler);
