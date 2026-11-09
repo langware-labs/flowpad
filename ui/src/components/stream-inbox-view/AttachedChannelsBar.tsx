@@ -197,12 +197,17 @@ export function AttachedChannelsBar({
   const groups = useMemo(() => groupChannels(rows), [rows]);
   const attachedProviders = useMemo(() => new Set(rows.map((r) => r.provider)), [rows]);
 
+  // Every mark is lit (shown) by default; a press dims it (filtered out) or lights it again.
+  // `selected` holds the lit ones while filtering — empty means all lit. The last lit mark stays lit.
+  const allKeys = [...groups.map((g) => g.key), ...(owner.type !== Agent.type ? [DIAGNOSIS_CHANNEL] : [])];
+  const lit = (key: string) => !filtering || selected.has(key);
   const pick = (key: string) => {
     if (onMarkPress) return onMarkPress(key);
-    const next = new Set(selected);
+    const next = new Set(filtering ? selected : allKeys);
     if (next.has(key)) next.delete(key);
     else next.add(key);
-    onSelectedChange?.(next);
+    if (next.size === 0) return;
+    onSelectedChange?.(allKeys.every((k) => next.has(k)) ? new Set() : next);
   };
 
   return (
@@ -220,7 +225,7 @@ export function AttachedChannelsBar({
           group={group}
           spec={specFor(group.provider)}
           filtering={filtering}
-          pressed={selected.has(group.key)}
+          pressed={lit(group.key)}
           onClick={() => pick(group.key)}
           onDelete={setDeleting}
         />
@@ -229,7 +234,7 @@ export function AttachedChannelsBar({
       {owner.type !== Agent.type && (
         <DiagnosisMark
           filtering={filtering}
-          pressed={selected.has(DIAGNOSIS_CHANNEL)}
+          pressed={lit(DIAGNOSIS_CHANNEL)}
           onClick={() => pick(DIAGNOSIS_CHANNEL)}
         />
       )}
@@ -371,8 +376,7 @@ function DiagnosisMark({ filtering, pressed, onClick }: { filtering: boolean; pr
       className={cn(
         MARK,
         'border-border bg-background',
-        pressed && 'border-primary ring-1 ring-primary',
-        filtering && !pressed && MARK_GREYED,
+        !pressed && MARK_GREYED,
       )}
       data-testid="attached-channel"
       data-provider={DIAGNOSIS_CHANNEL}
@@ -423,8 +427,7 @@ function ChannelMark({
             MARK,
             'bg-background',
             state === 'off' ? 'border-dashed border-border' : 'border-border',
-            pressed && 'border-primary ring-1 ring-primary',
-            ((filtering && !pressed) || state === 'off') && MARK_GREYED,
+            (!pressed || state === 'off') && MARK_GREYED,
           )}
           data-testid="attached-channel"
           data-provider={group.provider}

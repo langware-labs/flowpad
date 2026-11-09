@@ -138,6 +138,16 @@ function formatGmailTime(iso?: string | Date | null): string {
 // Single line: [sender(s)] [subject — snippet…] [time]
 // Click anywhere on the row opens the conversation via its dockPointer.
 
+function readStoredChannels(key: string | null): string[] {
+  if (!key) return [];
+  try {
+    const v = JSON.parse(window.localStorage.getItem(key) ?? '[]');
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 // ── Column filters ──────────────────────────────────────────────────────────
 // One filter per row column, typed into the header line above that column:
 // From narrows on the sender names, Subject on the subject + preview text,
@@ -732,16 +742,25 @@ export function StreamInboxView({
   // The picked channels live in the URL (`?channel=`), like the view and the search: Back, reload and
   // a shared link land on the same pick. `initialChannel` is the default when the URL names none.
   const rawChannels = currentDock?.options?.[STREAM_INBOX_CHANNEL_PARAM];
+  // With neither, the last pick on this machine is remembered per owner.
+  const channelStoreKey = channelsOwner ? `stream-inbox-channels:${channelsOwner.toString()}` : null;
   const channelFilter = useMemo(
-    () => new Set(currentDock?.streamInboxChannels ?? (initialChannel ? [initialChannel] : [])),
+    () => new Set(currentDock?.streamInboxChannels ?? (initialChannel ? [initialChannel] : readStoredChannels(channelStoreKey))),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the raw option is the pick; the dock object changes on every navigation
-    [rawChannels, initialChannel],
+    [rawChannels, initialChannel, channelStoreKey],
   );
   const setChannelFilter = useCallback(
     (next: Set<string>) => {
+      if (!initialChannel && channelStoreKey) {
+        try {
+          window.localStorage.setItem(channelStoreKey, JSON.stringify([...next]));
+        } catch {
+          // Storage is unavailable: the pick holds for this visit only.
+        }
+      }
       if (currentDock) navigation.openDock(currentDock.withStreamInboxChannels([...next], !!initialChannel));
     },
-    [currentDock, navigation, initialChannel],
+    [currentDock, navigation, initialChannel, channelStoreKey],
   );
   // The picked channels that are not listening: the strip above the list explains each one.
   const attention = useMemo(() => attentionAmong(ownerChannels, channelFilter), [ownerChannels, channelFilter]);

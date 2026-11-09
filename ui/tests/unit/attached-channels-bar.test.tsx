@@ -89,7 +89,7 @@ describe('AttachedChannelsBar', () => {
     expect(screen.getByTestId('attached-channel-attention').textContent).toBe('!');
   });
 
-  it('several sources of one kind share a mark with a count; clicking it filters to that kind', () => {
+  it('several sources of one kind share a mark with a count; clicking it dims (filters out) that kind', () => {
     const rows = [fake('a'), fake('b'), fake('c', 'disabled'), fake('g', 'active', 'gmail')];
     const save = vi.spyOn(rows[0], 'save');
     const onSelectedChange = mount(rows);
@@ -99,8 +99,10 @@ describe('AttachedChannelsBar', () => {
       ['slack', '3', 'on'],
     ]);
     expect(screen.getByTestId('attached-channel-count').textContent).toBe('3');
+    // All marks are lit by default; a press dims that one and keeps the rest shown.
+    expect(marks.map((e) => e.getAttribute('aria-pressed'))).toEqual(['true', 'true']);
     fireEvent.click(marks[1]);
-    expect(onSelectedChange).toHaveBeenCalledWith(new Set(['slack|slack']));
+    expect(onSelectedChange).toHaveBeenCalledWith(new Set(['gmail|gmail', 'diagnosis']));
     expect(save).not.toHaveBeenCalled();
   });
 
