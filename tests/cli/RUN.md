@@ -1,9 +1,9 @@
 # tests/cli - how to run
 
-**What**: 44 test files of the `flow` CLI and app config. Tier: mock/in-process; the `server` fixture in `tests/cli/conftest.py` can start a real local server thread on port 9007 (default) and talk HTTP to it. No hub, no LLM.
+**What**: 44 test files of the `flow` CLI and app config. Tier: mock/in-process; the `local_server` fixture in `tests/cli/conftest.py` can start a real local server thread on port 9007 (default) and talk HTTP to it. No hub, no LLM.
 
 ## Prerequisites
-- `uv sync`. Port 9007 free for tests that use the `server` fixture. No credentials.
+- `uv sync`. Port 9007 free for tests that use the `local_server` fixture. No credentials.
 
 ## Commands (repo root)
 ```bash
@@ -16,8 +16,8 @@ uv run pytest tests/cli/test_app_config.py::test_name
 `FLOWPAD_TEMP_DIR` / `TMPDIR` only. `FLOW_INSTANCE` is stripped from child-process environments by a fixture so spawned processes are not mistaken for instance carriers.
 
 ## Pitfalls
-- Port 9007 is also the default dev backend port: stop (do not kill with broad patterns) anything listening there, or the fixture-based tests collide.
-- Server boot wait is 30 s-class; too tight on slow sandboxes. Report, do not widen.
+- Port 9007 is the default PROD backend port (dev is 9008), so these tests collide with an installed Flowpad running on this machine. Never stop a prod backend to free the port: run them where 9007 is free, such as a sandbox.
+- The `local_server` fixture waits a fixed 1 s for the server to boot, which can be too short on slow sandboxes. Report it, do not widen it.
 - Tests redirect `FLOW_HOME` to a tmp tree; never point them at a real `~/.flow`.
 
 ## Common (all pytest folders)

@@ -12,7 +12,7 @@
 ## Commands (repo root)
 ```bash
 export DEEP_TESTING=1
-uv run pytest tests/long_tests -x                      # whole folder (hours; prefer subsets)
+uv run pytest tests/long_tests --long -x               # whole folder (hours; prefer subsets)
 uv run pytest tests/long_tests/test_shell_pty.py
 uv run pytest tests/long_tests/test_shell_pty.py::test_name
 FLOWPAD_E2E_INSTANCE=<a> FLOWPAD_E2E_PEER_INSTANCE=<b> uv run pytest tests/long_tests/test_ws_reconnect_message_catchup.py   # instance-bound file, example
@@ -23,7 +23,8 @@ DEEP_TESTING=1 ANTHROPIC_API_KEY=... uv run pytest tests/long_tests/stress_matri
 `DEEP_TESTING`, `FLOWPAD_E2E_INSTANCE` / `FLOWPAD_E2E_PEER_INSTANCE` / `FLOWPAD_DEPLOY_E2E_INSTANCE` / `FLOWPAD_STAGING_MATRIX_INSTANCE`, `FLOW_INSTANCE`, `FLOW_HOME`, `FLOWPAD_HUB_URL`, `OPENROUTER_API_KEY`, `FLOWPAD_MAIN_CHECKOUT`.
 
 ## Pitfalls
-- Files that talk to a hub need `-p no:env` (pytest-env pins the hub URL to dead port 127.0.0.1:9).
+- Files that talk to a hub need `FLOWPAD_HUB_URL` exported to your local hub; otherwise pytest-env pins it to the dead port 127.0.0.1:9. Do not use `-p no:env`: with no URL exported it removes that pin, which is what keeps test credentials off the prod hub.
+- `@pytest.mark.long` tests (for example in `test_project_setup_cli.py`) are deselected unless you pass `--long`, even when you name the file.
 - The conftest restores the real HOME for CLI auth; tests drive real accounts. Use disposable instances, never prod.
 - Tests that start their own backend need a free port and a 30 s boot wait that is tight on slow sandboxes.
 - Capacity-bound PTY stress files can fail only for environmental reasons on a busy host; do not widen budgets.
@@ -31,7 +32,7 @@ DEEP_TESTING=1 ANTHROPIC_API_KEY=... uv run pytest tests/long_tests/stress_matri
 
 ## Common (all pytest folders)
 
-- Run from the repo root. `pytest.ini` wins over pyproject: `asyncio_mode=auto`, `--timeout=30` per test, and an `env =` block applied by pytest-env.
+- Run from the repo root. `pytest.ini` (not pyproject) sets the options: `asyncio_mode=auto`, `--timeout=30` per test, `pythonpath=.`. Env: pytest-env (>=1.2) reads pyproject's `[tool.pytest_env]` and then IGNORES the `env =` block in pytest.ini.
 - Fixtures come from `tests/pytest_plugin.py`: throwaway `HOME`, DB and records root per run (the real home is kept in `FLOWPAD_PRE_SANDBOX_HOME`).
 - Never raise a committed timeout. If your branch has an ADJUSTABLE_TIMEOUT helper (`tests/adjustable_timeout.py`), it ADDS seconds / scales caps on slow hosts: a pass under a scaled budget is not a default-budget pass; say so.
 - `/tmp` may be small (about 1 GB): `export TMPDIR=<bigger volume>/tmp` first.

@@ -10,7 +10,7 @@
 uv run pytest tests/pty_fuzz
 uv run pytest tests/pty_fuzz/test_strategies_selfcheck.py::test_name
 cd ui && npx vitest run --project unit tests/unit/pty-replay-equivalence.test.ts   # the matrix
-node tests/pty_fuzz/xterm-utf8-split-repro.mjs                                       # repro (from repo root, needs ui deps)
+cp tests/pty_fuzz/xterm-utf8-split-repro.mjs ui/_repro.mjs && (cd ui && node _repro.mjs; rm _repro.mjs)   # repro: a temporary copy under ui/ resolves @xterm/headless
 ```
 
 ## Env vars

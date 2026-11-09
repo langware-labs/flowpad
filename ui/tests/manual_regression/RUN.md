@@ -8,23 +8,25 @@
 - Chat/terminal areas: a signed-in, onboarded `claude` CLI and an LLM credential.
 
 ## Commands (from `ui/`)
-Each area folder has its own `playwright.config.ts` (the root one re-exports `general/playwright.config`; 34 area configs):
+Each area folder has its own `playwright.config.ts` (the root one re-exports `general/playwright.config`; 36 area configs):
 ```bash
 npx playwright test --config=tests/manual_regression/chat/playwright.config.ts
 npx playwright test --config=tests/manual_regression/chat/playwright.config.ts tests/manual_regression/chat/chat_input_controls.md.ts
 npx playwright test --config=tests/manual_regression/chat/playwright.config.ts -g "test name" --headed
-npx playwright test --config=tests/manual_regression/playwright.config.ts          # general area
+npx playwright test --config=tests/manual_regression/general/playwright.config.ts   # general area
+npx playwright test --config=tests/manual_regression/playwright.config.ts tests/manual_regression/migration.md.ts tests/manual_regression/run_test_instructions.md.ts   # root-level runbooks
 ```
 
 ## Env vars
 `VITE_PORT` (frontend port), `API_URL` or backend port per area (see each spec).
 
 ## Pitfalls
-- Always pass `--config` for the area; configs use `testMatch: '*.md.ts'`, so without it nothing matches or the wrong area runs.
+- Always pass `--config` for the area; most configs use `testMatch: '*.md.ts'`, so without it nothing matches or the wrong area runs.
 - Areas share backend state: tests are serial; a leftover entity from a failed run can break the next; use a disposable instance.
 - Config sets `slowMo: 50` and 60 s per test (15 s expect); real LLM replies may need more: that is a finding.
 - "0 tests found" for a file means it is a manual runbook, not a failure of your command.
-- The two `*.spec.ts` files (`graph-workflows/demo-workflows.spec.ts`, `tags/tag-vocabulary.spec.ts`) do NOT match the area configs' `testMatch: '*.md.ts'`, so `--config` of their area finds no tests for them; they need their own harness.
+- The two `*.spec.ts` files (`graph-workflows/demo-workflows.spec.ts`, `tags/tag-vocabulary.spec.ts`) run under their own area's `--config`: those two configs use `testMatch: '*.spec.ts'`.
+- The root config re-exports the general one, but its `testDir: '.'` resolves to `manual_regression/` and matches recursively: with no file paths it loads every area's runbooks. Always name the files.
 
 ## Common (all Playwright folders)
 

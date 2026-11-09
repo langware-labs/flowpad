@@ -25,7 +25,7 @@ None are read; the URL is hard-coded.
 ## Common (all Playwright folders)
 
 - Run from `ui/`. Browser: `npx playwright install chromium` (a cached Chromium is enough). `npx playwright install --with-deps chromium` additionally needs apt/network and passwordless sudo, so it fails in plain sandboxes: skip `--with-deps` if system libs are already present.
-- `workers: 1`, `fullyParallel: false`, `retries: 0` everywhere: tests are serial and a failure is real, not retried away.
+- No config here, so Playwright's defaults apply: the two spec files can run in parallel (workers default to half the CPU cores) and `retries` is 0, so a failure is not retried away.
 - Never raise committed timeouts. ADJUSTABLE_TIMEOUT / `ui/tests/adjustableTimeout.ts` (`adjusted()`), if present on your branch, ADDS seconds on slow hosts; a pass under a scaled budget is not a default-budget pass.
 - Failure traces: `npx playwright show-trace test-results/<dir>/trace.zip`.
 

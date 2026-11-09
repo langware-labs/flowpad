@@ -1,20 +1,20 @@
 # ui/tests/react - how to run
 
-**What**: ~94 files of React component/hook tests with Testing Library in jsdom (`reactSetup.ts`). Tier: mock (no live backend). The config reads `FLOW_INSTANCE`'s generated env only to set the jsdom URL.
+**What**: 123 files of React component/hook tests with Testing Library in jsdom (`reactSetup.ts`). Tier: LIVE LOCAL BACKEND: some suites use the real SDK and write entities and host files, and `reactSetup.ts` refuses to run without a matching backend.
 
 ## Prerequisites
-`cd ui && npm ci`. No credentials, no backend.
+`cd ui && npm ci`. A running DISPOSABLE backend: `scripts/instance_ctl.sh launch <name>` from this checkout. No credentials.
 
 ## Commands (from `ui/`)
 ```bash
-npm run test:vitest:react
-npx vitest run --project react --no-file-parallelism            # no bail
-npx vitest run --project react tests/react/message-run-status-counters.test.tsx
-npx vitest run --project react tests/react/message-run-status-counters.test.tsx -t "name"
+env -u LOCAL_SERVER_PORT FLOW_INSTANCE=<name> npm run test:vitest:react
+env -u LOCAL_SERVER_PORT FLOW_INSTANCE=<name> npx vitest run --project react --no-file-parallelism   # no bail
+env -u LOCAL_SERVER_PORT FLOW_INSTANCE=<name> npx vitest run --project react tests/react/message-run-status-counters.test.tsx
+env -u LOCAL_SERVER_PORT FLOW_INSTANCE=<name> npx vitest run --project react tests/react/message-run-status-counters.test.tsx -t "name"
 ```
 
 ## Env vars
-Optional `FLOW_INSTANCE` (only affects jsdom URL / API URL when its `.env.<name>.local` matches). Leave it unset for a pure mock run.
+`FLOW_INSTANCE` (required) names the launcher-owned backend. Its `.env.<name>.local`, launcher registry, port and backend PID must all agree, or setup throws before any test runs. `LOCAL_SERVER_PORT`: unset it, a value in the shell overrides the env file.
 
 ## Pitfalls
 - `--bail 1` in the npm script (see Common).

@@ -17,7 +17,7 @@ None specific (the file is not DEEP_TESTING-gated); the usual pytest sandbox var
 
 ## Pitfalls
 - The pytest test is 300 s-capped (`pytest.mark.timeout(300)`, "do not increase without approval"); vite startup on a slow host eats into it.
-- Needs a free port for the app and one for Vite; a 30 s boot wait is tight on slow sandboxes.
+- Needs a free port for the app and one for Vite; the boot waits of about 20 s (app) and 60 s (Vite) are tight on slow sandboxes.
 - Driver reports page errors and the ask API calls (`/api/v1/ask`); read that output before blaming the product.
 - Missing Chromium makes the driver exit non-zero at launch.
 

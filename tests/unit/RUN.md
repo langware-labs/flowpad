@@ -1,6 +1,6 @@
 # tests/unit - how to run
 
-**What**: ~970 files of fast unit tests of `flow_sdk` (pure logic, in-process, monkeypatched). Tier: mock, no backend, no hub, no LLM.
+**What**: ~1440 files of fast unit tests of `flow_sdk` (pure logic, in-process, monkeypatched). Tier: mock, no backend, no hub, no LLM.
 
 ## Prerequisites
 - `uv sync` (dev deps: pytest, pytest-asyncio, pytest-timeout, pytest-env, pytest-rerunfailures).
