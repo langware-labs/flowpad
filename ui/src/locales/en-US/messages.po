@@ -2363,6 +2363,10 @@ msgstr "A desktop instance or a machine, and a channel id on it"
 msgid "A document is saved, a folder gets a new file."
 msgstr "A document is saved, a folder gets a new file."
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "A few words about what went wrong help us look in the right place."
+msgstr "A few words about what went wrong help us look in the right place."
+
 #: src/components/data-sources/source-attention.ts
 msgid "A file changed both here and remotely, so write-back wrote neither."
 msgstr "A file changed both here and remotely, so write-back wrote neither."
@@ -7654,6 +7658,10 @@ msgstr "Context list actions"
 msgid "Context not shared"
 msgstr "Context not shared"
 
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Context shared"
+#~ msgstr "Context shared"
+
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 msgid "Context to share — review before sending."
 msgstr "Context to share — review before sending."
@@ -10732,6 +10740,10 @@ msgstr "Diagnosis — diagnoses and the help desk"
 msgid "Diagnosis & context"
 msgstr "Diagnosis & context"
 
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Diagnosis attached"
+#~ msgstr "Diagnosis attached"
+
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Diagnosis copied to clipboard"
@@ -10767,6 +10779,10 @@ msgstr "Diagnosis Request"
 #: src/components/quick-create/registry.ts
 msgid "Diagnosis request created"
 msgstr "Diagnosis request created"
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Diagnosis runs when you send"
+#~ msgstr "Diagnosis runs when you send"
 
 #: src/components/assets/editor/chart/chartControls.tsx
 msgid "Diagram"
@@ -20319,6 +20335,10 @@ msgstr "No wizard named {0} is installed."
 msgid "No working directory for this project."
 msgstr "No working directory for this project."
 
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Nobody — a private conversation on this computer"
+#~ msgstr "Nobody — a private conversation on this computer"
+
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Nobody can log in to this sandbox, including its owner."
 msgstr "Nobody can log in to this sandbox, including its owner."
@@ -20670,6 +20690,10 @@ msgstr "Not sent"
 #: src/notifications/ingest.ts
 msgid "Not sent yet"
 msgstr "Not sent yet"
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Not sent yet — check your request, edit it if needed, then press Send."
+#~ msgstr "Not sent yet — check your request, edit it if needed, then press Send."
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "not set"
@@ -23547,6 +23571,10 @@ msgstr "Priority"
 #: src/components/graph-context/ContextGraphCanvas.tsx
 msgid "Private"
 msgstr "Private"
+
+#: src/components/conversation/HelpRequestLine.tsx
+#~ msgid "Private · Not sent to anyone"
+#~ msgstr "Private · Not sent to anyone"
 
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "Private · one machine per person"
@@ -27637,6 +27665,10 @@ msgstr "Sent"
 #: src/components/voice/CallControls.tsx
 msgid "Sent — the spoken answer lands in the conversation."
 msgstr "Sent — the spoken answer lands in the conversation."
+
+#: src/components/conversation/HelpRequestLine.tsx
+#~ msgid "Sent · Context kept on this computer"
+#~ msgstr "Sent · Context kept on this computer"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Sent along"
@@ -32502,6 +32534,10 @@ msgstr "To"
 msgid "To open the {label}:"
 msgstr "To open the {label}:"
 
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "To:"
+#~ msgstr "To:"
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "today"
 msgstr "today"
@@ -34894,6 +34930,7 @@ msgid "Working Tree"
 msgstr "Working Tree"
 
 #: src/components/conversation/ConversationAutomationChip.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "working…"
@@ -34902,6 +34939,7 @@ msgstr "working…"
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/conversation/ConversationActions.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx

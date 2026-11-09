@@ -161,6 +161,24 @@ The global `~/.flow/logs/server/` and `~/.flow/logs/monitor/` are **dead directo
 since the backend moved to per-instance logging. Reading them yields nothing and will make you
 conclude "no evidence" while hundreds of MB sit in `$LOGS/`. See the `flowpad_logs` skill.
 
+### When no problem was described
+
+Your prompt says so when the person wrote nothing, or only a word like `hi9` or `test`: that is a test
+message, not a symptom. The sweep still runs, but you must not let what it finds pass for the cause of a
+report that named none. An old crash that headlines a ticket which said nothing reads as the problem the
+person had.
+
+* **Say it first.** `--title` starts "No problem described" and `--symptoms` quotes what they wrote
+  ("User wrote only 'hi9'"). `--summary` opens with: "No problem was described, so the whole log history
+  was swept."
+* **Now, apart from then.** Judge what is wrong NOW from the last hour or so of logs and the live checks.
+  If nothing fails now, `--status ok` (or `informational` when something older is worth knowing) and say
+  "Nothing is failing now" before anything else.
+* **Older events go in their own block**, in `--summary` after the line above and in the Details: one line
+  each, with its date, headed "Older events, not related to the report:". Never put an older event in the
+  title, never use it as `--rca`, and never set a `--cause` for it (`unknown`).
+* Do not repair anything for an event that is already over.
+
 ### Step 2 — Full diagnostic sweep (no error text given)
 
 Run ALL checks below, collect all results, THEN report. Do not stop at the first finding.
