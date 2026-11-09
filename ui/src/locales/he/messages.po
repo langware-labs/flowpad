@@ -6276,7 +6276,7 @@ msgstr ""
 
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Checking FlowPad…"
-msgstr ">>>>>>> aea919ba5"
+msgstr "בדיקת FlowPad…"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking Git…"
@@ -6404,6 +6404,10 @@ msgstr "בחרו artifact לפתיחה"
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Choose an endpoint…"
 msgstr "בחרו נקודת קצה…"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Choose another installer"
+msgstr "בחירת קובץ התקנה אחר"
 
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "Choose another worker"
@@ -11316,10 +11320,48 @@ msgstr "הורדת קבצים מצורפים"
 msgid "Download bundle"
 msgstr "הורידו חבילה"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Download didn't start?"
+msgstr "ההורדה לא התחילה?"
+
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Download file"
 msgstr "הורידו קובץ"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad"
+msgstr "הורדת FlowPad"
+
+#: src/pages/entry/DesktopDownload.tsx
+#: src/pages/entry/DesktopDownload.tsx
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad for Linux"
+msgstr "הורדת FlowPad ל-Linux"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad for macOS"
+msgstr "הורדת FlowPad ל-macOS"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad for Windows"
+msgstr "הורדת FlowPad ל-Windows"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download for Linux (AppImage)"
+msgstr "הורדה ל-Linux (AppImage)"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download for macOS"
+msgstr "הורדה ל-macOS"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download for Windows"
+msgstr "הורדה ל-Windows"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Download it directly"
+msgstr "הורידו ישירות"
 
 #: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
@@ -13602,6 +13644,18 @@ msgstr "תוצאות Flowpad Cloud"
 msgid "Flowpad Cloud:"
 msgstr "Flowpad Cloud:"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop isn't available for 32-bit Windows — it needs 64-bit Windows."
+msgstr "FlowPad Desktop לא זמין ל-Windows של 32 ביט — הוא דורש Windows של 64 ביט."
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop isn't available for this processor yet — it runs on 64-bit Intel/AMD (x86_64) Linux."
+msgstr "FlowPad Desktop עדיין לא זמין למעבד הזה — הוא רץ על Linux של 64 ביט במעבדי Intel/AMD (x86_64)."
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop runs on macOS, Windows and Linux. Open this page on your computer, or download it below."
+msgstr "FlowPad Desktop רץ על macOS, Windows ו-Linux. פתחו את הדף הזה במחשב, או הורידו אותו כאן."
+
 #: src/i18n/type-labels.ts
 msgid "Flowpad Diagnosis"
 msgstr "אבחון Flowpad"
@@ -13644,7 +13698,7 @@ msgstr "FlowPad אינו מחובר - הפעולה 'פתיחה' מפעילה א�
 
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "FlowPad isn't installed on this computer"
-msgstr ">>>>>>> aea919ba5"
+msgstr "FlowPad לא מותקן במחשב הזה"
 
 #: src/components/git/GitRepoPicker.tsx
 msgid "Flowpad keeps the repository for you. No GitHub account needed."
@@ -13675,6 +13729,10 @@ msgstr "Flowpad מריץ את זה בעצמו. ניתן לבדוק, להריץ �
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Flowpad shared pool. Usage draws on Flowpad credits."
 msgstr ""
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad still didn't open. Make sure the installation finished, then click Open FlowPad again."
+msgstr "FlowPad עדיין לא נפתח. ודאו שההתקנה הסתיימה, ואז לחצו שוב על „פתיחת FlowPad”."
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "FlowPad stops, upgrades and starts again on each. Anyone working in them is interrupted, and paused machines are woken."
@@ -14082,12 +14140,10 @@ msgid "Get an invite code"
 msgstr ""
 
 #: src/pages/entry/entry-shell.tsx
-#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get FlowPad at flowpad.ai →"
 msgstr "הורידו את FlowPad ב-flowpad.ai ←"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get it at flowpad.ai"
 msgstr "אפשר להוריד אותו ב-flowpad.ai"
 
@@ -15583,6 +15639,10 @@ msgstr "ההתקנה נכשלה."
 msgid "Install Flowpad on your computer first"
 msgstr "התקינו תחילה את Flowpad במחשב שלכם"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Install FlowPad, then come back to this page."
+msgstr "התקינו את FlowPad וחזרו לדף הזה."
+
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Install gh"
 msgstr "התקנת gh"
@@ -16902,6 +16962,18 @@ msgstr "הקישור נכשל."
 msgid "Linking…"
 msgstr "מקשר…"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Linux AppImage — most distributions (x86_64)"
+msgstr "Linux AppImage — רוב ההפצות (x86_64)"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Linux DEB — Ubuntu, Debian, Linux Mint"
+msgstr "Linux DEB — Ubuntu, Debian, Linux Mint"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Linux RPM — Fedora, RHEL, Rocky Linux"
+msgstr "Linux RPM — Fedora, RHEL, Rocky Linux"
+
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "List"
 msgstr "רשימה"
@@ -17635,6 +17707,10 @@ msgstr "מכונה: {0}"
 #: src/types/ViewType.ts
 msgid "Machines"
 msgstr "מכונות"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "macOS (.dmg) — Intel and Apple Silicon"
+msgstr "macOS (.dmg) — Intel ו-Apple Silicon"
 
 #: src/components/top-nav-bar/use-screen-recorder.ts
 msgid "macOS blocks Flowpad from recording the screen. Allow it under Privacy & Security › Screen & System Audio Recording, then try again."
@@ -21392,6 +21468,10 @@ msgstr ""
 msgid "On this machine only — undo any time"
 msgstr "במחשב הזה בלבד — אפשר לבטל בכל עת"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "On Windows on ARM, FlowPad runs through Windows' built-in x64 emulation."
+msgstr "ב-Windows על ARM, ‏FlowPad רץ דרך אמולציית ה-x64 המובנית של Windows."
+
 #. placeholder {0}: port.port
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "On: if another program holds {0}, starting fails instead of moving."
@@ -21413,6 +21493,10 @@ msgstr "פעם אחת"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Once at {when}"
 msgstr "פעם אחת ב-{when}"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Once FlowPad is installed, click Open FlowPad to continue."
+msgstr "אחרי ש-FlowPad מותקן, לחצו על „פתיחת FlowPad” כדי להמשיך."
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "once per machine"
@@ -21860,6 +21944,11 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Open externally: {childPath}"
 msgstr "פתחו חיצונית: {childPath}"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Open FlowPad"
+msgstr "פתיחת FlowPad"
 
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open Flowpad Cloud"
@@ -22731,6 +22820,10 @@ msgstr "נכסים אחרים"
 msgid "Other paths with this asset identity"
 msgstr "נתיבים נוספים עם אותה זהות נכס"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Other platforms"
+msgstr "פלטפורמות אחרות"
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Other project"
 msgstr "פרויקט אחר"
@@ -22847,6 +22940,10 @@ msgstr "איגוד מפתחות לאישורים"
 #: src/components/top-nav-bar/AppButton.tsx
 msgid "Package"
 msgstr "חבילה"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Package format"
+msgstr "סוג החבילה"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Package removed"
@@ -31702,6 +31799,10 @@ msgstr "העובד יצא מיד לאחר ההפעלה, ולכן ההפעלה מ
 msgid "Then"
 msgstr "אז"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Then install it:"
+msgstr "ואז התקינו:"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Then send this to the Flowpad bot:"
 msgstr "לאחר מכן שלחו את זה אל הבוט של Flowpad:"
@@ -31735,6 +31836,10 @@ msgstr "אלה אינם נשמרים ב-git ועשויים להיות פרטיי
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "These conversations exist only on this device."
 msgstr "שיחות אלה קיימות רק בהתקן זה."
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "These installers are for 64-bit Intel/AMD (x86_64) Linux."
+msgstr "קובצי ההתקנה האלה מיועדים ל-Linux של 64 ביט במעבדי Intel/AMD (x86_64)."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
@@ -33163,7 +33268,6 @@ msgstr "טריגרים"
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
-#: src/pages/entry/OpenInFlowpadActions.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
@@ -35030,6 +35134,10 @@ msgstr "תשודרג"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Window (days)"
 msgstr "חלון (ימים)"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Windows (.exe)"
+msgstr "Windows (.exe)"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Wipes each machine and starts it fresh from the agent's project. Anything not shared is lost."
