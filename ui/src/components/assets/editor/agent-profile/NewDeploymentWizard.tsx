@@ -1,6 +1,6 @@
-import type { Agent, NewPublicInviteCode, PublicDeploymentMode } from '@sdk';
+import type { Agent, NewPublicInviteCode, PublicDeploymentMode, PublicDeploymentsState } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Link2, Loader2, Server, Ticket, X } from 'lucide-react';
+import { ExternalLink, Link2, Loader2, Server, Ticket, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { endpointTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
@@ -12,11 +12,17 @@ import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
-import { DEFAULT_CAP_USD, DEFAULT_MAX_DEPLOYMENTS, openPcLink, turnOnPublicDeployments } from './AgentAutoLaunchTab';
+import {
+  DEFAULT_CAP_USD,
+  DEFAULT_MAX_DEPLOYMENTS,
+  maskCode,
+  openPcLink,
+  turnOnPublicDeployments,
+} from './AgentAutoLaunchTab';
 import { useVisitorRole } from './AgentVisibilitySection';
 import { FreshCodes, saveCodeNames } from './FreshCodes';
 
-type Step = 'kind' | 'settings' | 'launch';
+type Step = 'kind' | 'settings' | 'launch' | 'code';
 const STEPS: Step[] = ['kind', 'settings', 'launch'];
 
 /**
@@ -42,7 +48,12 @@ export function NewDeploymentWizard({
   const [max, setMax] = useState<number | null>(DEFAULT_MAX_DEPLOYMENTS);
   const [source, setSource] = useState('');
   const [cap, setCap] = useState<number | null>(DEFAULT_CAP_USD);
-  const [invitesOn, setInvitesOn] = useState<boolean | null>(null);
+  const [invites, setInvites] = useState<PublicDeploymentsState | null>(null);
+  const [invitesRead, setInvitesRead] = useState(false);
+  const invitesOn = invitesRead ? invites?.settings?.allow_visitor_deployment === true : null;
+  // The one-click code: minted the moment the tile is clicked, named on the same card.
+  const [oneCode, setOneCode] = useState<NewPublicInviteCode | null>(null);
+  const [oneName, setOneName] = useState('');
   const [busy, setBusy] = useState(false);
   const [fresh, setFresh] = useState<NewPublicInviteCode[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
@@ -58,8 +69,9 @@ export function NewDeploymentWizard({
     let live = true;
     agent
       .publicDeployments()
-      .then((s) => live && setInvitesOn(s.settings?.allow_visitor_deployment === true))
-      .catch(() => live && setInvitesOn(false));
+      .then((s) => live && setInvites(s))
+      .catch(() => undefined)
+      .finally(() => live && setInvitesRead(true));
     return () => {
       live = false;
     };
@@ -70,8 +82,42 @@ export function NewDeploymentWizard({
   const link = openPcLink(agent);
   const ready = Boolean(chosenSource) && cap !== null && cap > 0 && (mode === 'link' || (count >= 1 && count <= 100));
 
+  // Invites already on: the code tile is one click to a new code; the link tile opens the invite deployment.
+  const mintOne = async () => {
+    setBusy(true);
+    try {
+      if (oneCode && oneName.trim()) await agent.renamePublicCode(oneCode.id, oneName.trim());
+      const [minted] = await agent.addPublicCodes(1);
+      setOneCode(minted ?? null);
+      setOneName('');
+      setInvites(await agent.publicDeployments());
+      setStep('code');
+    } catch (e) {
+      notify.error({ title: t`Could not create a code`, message: errorMessage(e, t`The hub refused the change.`) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const finishOne = async () => {
+    setBusy(true);
+    try {
+      if (oneCode && oneName.trim()) await agent.renamePublicCode(oneCode.id, oneName.trim());
+      onOpenInvite();
+    } catch (e) {
+      notify.error({ title: t`Could not name the invite`, message: errorMessage(e, t`The hub refused the change.`) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // The student page with this code already in its box (a fragment: it never reaches a server or its logs).
+  const openMachineUrl = link && oneCode ? `${link}#code=${encodeURIComponent(oneCode.code)}` : null;
+  const inUse = invites?.deployments.length ?? 0;
+  const maxAtOnce = invites?.settings?.max_deployments ?? null;
+
   const pick = (next: PublicDeploymentMode) => {
-    if (invitesOn) return onOpenInvite();
+    if (invitesOn) return next === 'code' ? void mintOne() : onOpenInvite();
     setMode(next);
     setStep('settings');
   };
@@ -139,30 +185,44 @@ export function NewDeploymentWizard({
     <section data-testid="new-deployment-wizard" className="w-full rounded-xl border bg-card p-5 text-left shadow-sm">
       <div className="mb-2 flex items-center justify-between gap-2">
         <nav className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs" data-testid="new-deployment-crumbs">
-          {STEPS.map((s, i) => (
-            <span key={s} className="flex items-center gap-1.5">
-              {i > 0 && <span className="text-muted-foreground">›</span>}
-              {i < at ? (
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
-                  onClick={() => step !== 'launch' && setStep(s)}
-                >
-                  ✓ {crumbs[i]}:<span className="text-foreground">{i === 0 ? kindDone : settingsDone}</span>
-                </button>
-              ) : (
-                <span className={i === at ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
-                  {i + 1}. {crumbs[i]}
-                </span>
-              )}
-            </span>
-          ))}
+          {step === 'code' ? (
+            <>
+              <span className="inline-flex items-center gap-1 text-muted-foreground">
+                ✓ {t`Kind`}:<span className="text-foreground">{t`Invite code`}</span>
+              </span>
+              <span className="text-muted-foreground">›</span>
+              <span className="font-semibold text-foreground">{t`Your code`}</span>
+            </>
+          ) : (
+            STEPS.map((s, i) => (
+              <span key={s} className="flex items-center gap-1.5">
+                {i > 0 && <span className="text-muted-foreground">›</span>}
+                {i < at ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
+                    onClick={() => step !== 'launch' && setStep(s)}
+                  >
+                    ✓ {crumbs[i]}:<span className="text-foreground">{i === 0 ? kindDone : settingsDone}</span>
+                  </button>
+                ) : (
+                  <span className={i === at ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
+                    {i + 1}. {crumbs[i]}
+                  </span>
+                )}
+              </span>
+            ))
+          )}
         </nav>
         <div className="flex shrink-0 items-center gap-2">
           <span className="text-xs text-muted-foreground">
-            <Trans>
-              Step {at + 1} of {STEPS.length}
-            </Trans>
+            {step === 'code' ? (
+              <Trans>Ready</Trans>
+            ) : (
+              <Trans>
+                Step {at + 1} of {STEPS.length}
+              </Trans>
+            )}
           </span>
           <Button
             variant="ghost"
@@ -181,6 +241,7 @@ export function NewDeploymentWizard({
       <div className="mb-3">
         <h2 className="text-base font-semibold">
           {step === 'kind' && <Trans>New deployment — who will use it?</Trans>}
+          {step === 'code' && <Trans>Here is the code — give it to one user</Trans>}
           {step === 'settings' && <Trans>Settings — how many, and who pays</Trans>}
           {step === 'launch' &&
             (mode === 'code' ? <Trans>Launch — hand out the codes</Trans> : <Trans>Launch — share the link</Trans>)}
@@ -194,8 +255,8 @@ export function NewDeploymentWizard({
           <div className="flex flex-col gap-3 sm:flex-row">
             {tile(
               Ticket,
-              t`Invite codes`,
-              invitesOn ? t`Already on — open it to add codes.` : t`One machine per user. You hand out the codes.`,
+              invitesOn ? t`Get an invite code` : t`Invite codes`,
+              invitesOn ? t`One click — a new code for one user.` : t`One machine per user. You hand out the codes.`,
               () => pick('code'),
               'new-deployment-kind-code',
             )}
@@ -218,6 +279,70 @@ export function NewDeploymentWizard({
             )}
           </div>
         ))}
+
+      {step === 'code' && oneCode && (
+        <div className="flex flex-col gap-3" data-testid="one-click-code">
+          <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-4">
+            <span className="font-mono text-2xl font-semibold tracking-wider" data-testid="one-click-code-value">
+              {oneCode.code}
+            </span>
+            <CopyButton
+              value={oneCode.code}
+              label={<Trans>Copy</Trans>}
+              testId="one-click-copy"
+              className="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent"
+            />
+            {openMachineUrl && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8"
+                title={t`Opens the student page in a new tab with this code filled in`}
+                onClick={() => window.open(openMachineUrl, '_blank', 'noopener')}
+                data-testid="one-click-open-machine"
+              >
+                <Trans>Open machine</Trans>
+                <ExternalLink className="ms-1.5 h-3.5 w-3.5" />
+              </Button>
+            )}
+            <Input
+              className="h-8 w-56 text-xs"
+              placeholder={t`Name (optional)`}
+              value={oneName}
+              onChange={(e) => setOneName(e.target.value)}
+              aria-label={t`Name for ${oneCode.code}`}
+              data-testid="one-click-name"
+            />
+            <span className="text-xs text-muted-foreground">
+              <Trans>Shown once — the hub keeps only {maskCode(oneCode.last4)}.</Trans>
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {maxAtOnce !== null ? (
+              <Trans>
+                They open the link and type the code. {Math.max(maxAtOnce - inUse, 0)} of {maxAtOnce} machines left.
+              </Trans>
+            ) : (
+              <Trans>They open the link and type the code.</Trans>
+            )}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void mintOne()}
+              disabled={busy}
+              data-testid="one-click-another"
+            >
+              {busy && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
+              <Trans>Another code</Trans>
+            </Button>
+            <Button size="sm" onClick={() => void finishOne()} disabled={busy} data-testid="one-click-done">
+              <Trans>Done</Trans>
+            </Button>
+          </div>
+        </div>
+      )}
 
       {step === 'settings' && (
         <div className="flex flex-col gap-3">
