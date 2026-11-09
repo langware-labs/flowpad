@@ -2424,6 +2424,10 @@ msgstr "דקה אחת"
 msgid "a name in scope, or a literal"
 msgstr "שם בטווח, או ערך מילולי"
 
+#: src/components/update-ready/UpdateReadyBridge.tsx
+msgid "A new FlowPad update has been downloaded and is ready to install."
+msgstr "עדכון חדש של FlowPad הורד ומוכן להתקנה."
+
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
 msgstr "תיקיית פרויקט חדשה — כל מה שייווצר בה ישויך אליה"
@@ -3855,6 +3859,10 @@ msgstr "שם של פעולה"
 msgid "An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE)."
 msgstr "יתום הוא שורת DB (או תיקיית צל של רשומה) שקובץ המקור שלו אבד מהדיסק. דיאלוג הניקוי מאפשר לכם להסיר רק את שורת DB (IGNORE, שומר על תיקיית צל פורנזית) או גם שורה + צל (DELETE)."
 
+#: src/components/top-nav-bar/UpdateReadyIndicator.tsx
+msgid "An update is downloaded and ready to install"
+msgstr "עדכון הורד ומוכן להתקנה"
+
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Analyses (AgentTrace) of this session — run, list and open"
 msgstr "ניתוחים (AgentTrace) של הסשן הזה — הרצה, הצגה ופתיחה"
@@ -4013,6 +4021,7 @@ msgstr "שלב אחר כבר משתמש במזהה הזה — התוצאות ש�
 msgid "Another update is in progress."
 msgstr "עדכון אחר מתבצע כעת."
 
+#: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Another update is in progress. Try again when it is done."
 msgstr "עדכון אחר מתבצע כעת. נסו שוב כשיסתיים."
@@ -10599,6 +10608,7 @@ msgstr "עצבו דף תמחור"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 #: src/pages/desktop/DesktopPage.tsx
 #: src/types/ViewType.ts
 msgid "Desktop"
@@ -11230,6 +11240,10 @@ msgstr "הורידו את החבילה יחד עם פרטי המשימה."
 msgid "Downloaded"
 msgstr "הורדה הושלמה"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloaded and checked — ready to install."
+msgstr "הורד ונבדק — מוכן להתקנה."
+
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
@@ -11782,6 +11796,10 @@ msgstr "מזהה נקודת הקצה"
 #: src/components/assets/LlmEndpointsAssetList.tsx
 msgid "Endpoints appear here once the hub allocates one to you, or somebody shares theirs."
 msgstr "נקודות קצה יופיעו כאן לאחר שה-Hub יקצה לכם נקודה, או כשמישהו ישתף נקודה משלו."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Engine"
+msgstr "מנוע"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Ensure the claude CLI is installed and authenticated."
@@ -13549,6 +13567,10 @@ msgstr "תיבת הדואר של Flowpad · רק שולחים מורשים מג�
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 msgid "Flowpad messages always reach it."
 msgstr "הודעות Flowpad תמיד מגיעות אליו."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad restarts to apply it."
+msgstr "FlowPad יופעל מחדש כדי להחיל אותו."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
@@ -15457,6 +15479,7 @@ msgstr "ההתקנה נכשלה"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 msgid "Install failed."
 msgstr "ההתקנה נכשלה."
 
@@ -16390,6 +16413,10 @@ msgstr "האחרון בשימוש ראשון · לחיצה מריצה"
 #: src/components/hooks-manager/index.tsx
 msgid "Last:"
 msgstr "אחרונה:"
+
+#: src/components/update-ready/UpdateReadyBridge.tsx
+msgid "Later"
+msgstr "מאוחר יותר"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Latest on GitHub"
@@ -25634,6 +25661,7 @@ msgstr ""
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+#: src/components/update-ready/UpdateReadyBridge.tsx
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "Restart"
@@ -30875,6 +30903,10 @@ msgstr "הכספת המוצפנת עדיין לא הופעלה במחשב זה."
 msgid "The endpoint was not removed."
 msgstr "נקודת הקצה לא הוסרה."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "The engine is replaced and the window reloads — FlowPad itself does not restart."
+msgstr "המנוע מוחלף והחלון נטען מחדש — FlowPad עצמו לא מופעל מחדש."
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "the existing desk"
 msgstr "הדסק הקיים"
@@ -33259,6 +33291,10 @@ msgstr "עדכנו"
 msgid "Update ({0} newer)"
 msgstr "עדכנו ({0} חדשות יותר)"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Update & Restart"
+msgstr "עדכון והפעלה מחדש"
+
 #: src/components/version-popover/version-chip.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -33284,6 +33320,10 @@ msgstr "עדכון האפליקציה"
 msgid "Update desktop to v{0}"
 msgstr "עדכון האפליקציה לגרסה v{0}"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Update Engine"
+msgstr "עדכון המנוע"
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsList.tsx
 #: src/components/automations/AutomationsList.tsx
@@ -33301,6 +33341,15 @@ msgstr "עדכנו תכנית"
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Update plan based on <plan-note> sections"
 msgstr "עדכנו תכנית בהתאם לסעיפי <plan-note>"
+
+#: src/components/top-nav-bar/UpdateReadyIndicator.tsx
+#: src/components/version-popover/version-popover.tsx
+msgid "Update ready"
+msgstr "עדכון מוכן"
+
+#: src/components/update-ready/UpdateReadyBridge.tsx
+msgid "Update Ready"
+msgstr "עדכון מוכן"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Update to"

@@ -11,12 +11,11 @@
  * In test mode:
  *
  *   FLOWPAD_UPDATE_TEST_ANSWERS scripts the update dialogs, e.g.
- *     FLOWPAD_UPDATE_TEST_ANSWERS="both=later,restart=later,engine=upgrade"
+ *     FLOWPAD_UPDATE_TEST_ANSWERS="restart=later,engine=upgrade"
  *   Prompt ids (button 0 always accepts, 1 defers):
  *     move    — macOS: the app runs from a transient place     ("Move to Applications" / "Not now")
- *     both    — desktop + engine both have a new version   ("Update now" / "Later")
- *     restart — the desktop update is downloaded           ("Restart now" / "Later")
- *     engine  — an engine-only update                      ("Upgrade" / "Later")
+ *     restart — an update set is ready: "Update Ready" ("Restart" applies it / "Later" leaves the toast unshown)
+ *     engine  — the recovery's pre-start engine question  ("Upgrade" / "Later")
  *   Accepted values: accept|update|upgrade|restart|yes|0 → button 0; anything else → button 1. An UNSCRIPTED
  *   prompt answers button 1 (defer), so a harness run can never hang on an unexpected native dialog.
  *

@@ -10,6 +10,11 @@ import {
   isNewerVersion,
   type DesktopUpdateInfo,
 } from '@src/components/version-popover/desktop-update-action';
+import {
+  getUpdateReadyApi,
+  OPEN_VERSION_POPOVER_EVENT,
+  useUpdateReady,
+} from '@src/components/update-ready/update-ready';
 import apiClient from '@sdk/client';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
@@ -428,6 +433,30 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
     else setDesktopUpdateError(t`The desktop update could not be started.`);
   }, [electronApi, desktopUpdate?.state, t]);
 
+  // The ONE ready update set (desktop and/or engine), applied from here or from the "Update Ready" toast; the top
+  // bar's indicator opens this popover for it.
+  const updateReady = useUpdateReady();
+  const [activating, setActivating] = useState(false);
+  const [activateError, setActivateError] = useState<string | null>(null);
+  useEffect(() => {
+    const openIt = () => setOpen(true);
+    window.addEventListener(OPEN_VERSION_POPOVER_EVENT, openIt);
+    return () => window.removeEventListener(OPEN_VERSION_POPOVER_EVENT, openIt);
+  }, []);
+  const handleActivate = useCallback(async () => {
+    const api = getUpdateReadyApi();
+    if (!api?.activateUpdate) return;
+    setActivating(true);
+    setActivateError(null);
+    try {
+      const r = await api.activateUpdate();
+      if (!r.started) setActivateError(t`Another update is in progress. Try again when it is done.`);
+      else if (r.success === false) setActivateError(r.error ?? t`Install failed.`);
+    } finally {
+      setActivating(false);
+    }
+  }, [t]);
+
   const upgradeVersion = upgradeOfferVersion({
     desktop: Boolean(electronApi?.upgradeFlowpad),
     desktopTarget,
@@ -526,7 +555,8 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
         <VersionChip
           ref={targetRef}
           version={runningVersion}
-          updateAvailable={Boolean(pypi?.update_available || githubUpdateAvailable)}
+          // On the desktop the top bar's "Update ready" is the one indicator; a browser tab keeps the dot.
+          updateAvailable={!electronApi && Boolean(pypi?.update_available || githubUpdateAvailable)}
           data-testid="version-popover-trigger"
         />
       </PopoverTrigger>
@@ -575,6 +605,49 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             </button>
           </div>
+
+          {updateReady?.ready && (
+            <section
+              className="space-y-1.5 rounded-md border border-primary/30 bg-primary/5 p-2"
+              data-testid="version-update-ready"
+            >
+              <h4 className="text-xs font-semibold">
+                <Trans>Update ready</Trans>
+              </h4>
+              <p className="text-[11px] text-muted-foreground">
+                <Trans>Downloaded and checked — ready to install.</Trans>
+              </p>
+              {updateReady.desktop && (
+                <VersionRow label={t`Desktop`} version={`${updateReady.desktop.from} → v${updateReady.desktop.to}`} />
+              )}
+              {updateReady.engine && (
+                <VersionRow
+                  label={t`Engine`}
+                  version={
+                    updateReady.engine.from
+                      ? `${updateReady.engine.from} → v${updateReady.engine.to}`
+                      : updateReady.engine.to
+                  }
+                />
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                {updateReady.restart
+                  ? t`FlowPad restarts to apply it.`
+                  : t`The engine is replaced and the window reloads — FlowPad itself does not restart.`}
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleActivate()}
+                disabled={activating}
+                data-testid="version-update-ready-button"
+                className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+              >
+                {activating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                {updateReady.restart ? t`Update & Restart` : t`Update Engine`}
+              </button>
+              {activateError && <p className="text-[10px] text-destructive">{activateError}</p>}
+            </section>
+          )}
 
           {/* Dev-only: render the local desktop server's hub page for testing/debugging. */}
           {isDev && (
@@ -817,7 +890,8 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
               <ReleaseNotes title={`Notes for v${electronVersion}`} release={electronCurrentRelease} />
             )}
             {githubLatest && <ReleaseNotes title={`Notes for v${githubLatest.tag}`} release={githubLatest} />}
-            {desktopAction && (
+            {/* A downloaded desktop is applied from "Update ready" above — not a second button here. */}
+            {desktopAction && !(desktopAction.kind === 'install' && updateReady?.ready) && (
               <div className="pt-1">
                 {/* The updater's own download and restart: the same "update ready" prompt follows, and the
                     engine is updated by the new desktop after the restart. */}

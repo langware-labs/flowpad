@@ -3009,34 +3009,22 @@ class UvManager {
     return this._deferredPackageVersion || null;
   }
 
-  /** Undo deferPackageVersion for a version whose offer was withdrawn (superseded, never answered). */
-  undeferPackageVersion(version) {
-    if (version && this._deferredPackageVersion === version) this._deferredPackageVersion = null;
-  }
-
   /** @param {((text: string) => Promise<{ok: boolean, error?: string}>)|null} fn */
   setFailureSharer(fn) {
     this._failureSharer = typeof fn === 'function' ? fn : null;
   }
 
-  /** Version offered by the package dialog currently on screen, or null. */
-  openPackageDialogVersion() {
-    return this._packageDialog ? this._packageDialog.version : null;
-  }
-
-  /** Close the open package dialog as if the user chose "Later" (a newer release supersedes it). */
-  supersedePackageDialog() {
-    if (this._packageDialog) this._packageDialog.abort.abort();
-  }
-
   /**
-   * Run a background update check after the UI is loaded.
-   * Non-blocking — failures are logged and silently ignored.
-   * Shows a native OS dialog if an update is required.
+   * Run a background update check. Post-boot (the app is up): a newer release is prepared in the background —
+   * downloaded, staged and checked while the running engine keeps serving — and `onReady()` is called once it is
+   * (main.js announces it as "Update Ready"; the user installs it from there). Nothing is asked before it is
+   * ready, and a failed prepare is only logged (the next check prepares it again). Pre-start (recovery only:
+   * main.js calls it when the last start failed or the install is broken): the native dialog offers the
+   * install before the backend starts. Failures are logged and swallowed.
    */
   async checkForUpdatesInBackground(
     mainWindow,
-    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null, engineChangeAllowed = () => true }
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null, engineChangeAllowed = () => true, onReady = null }
   ) {
     try {
       // Pre-start: the backend is down and the install may even be broken, so
@@ -3062,16 +3050,16 @@ class UvManager {
       }
       this.log.info(`[uv] Update available: ${status.currentVersion || 'unknown'} → ${latest}`);
 
-      if (!beforeBackendStart && this._preparedPath()) {
-        // Post-boot: download, stage and check the release first, while the running engine keeps serving,
-        // so "Upgrade" below is a short offline swap. Pre-start nothing waits for a download: a release
-        // prepared earlier (an earlier "Later") is used by upgrade(), anything else installs as before.
-        // A failed prepare changes nothing — the question is asked and the upgrade downloads as it always did.
+      if (!beforeBackendStart && onReady) {
+        // Post-boot: download, stage and check the release while the running engine keeps serving, and offer it
+        // only once it is ready — the install the user then asks for is a short offline swap. A failed prepare
+        // is not offered: the running engine is untouched, and the next check prepares it again.
         try {
           await this.prepareEngine();
         } catch (err) {
           if (err && err.cancelled) return false;
-          this.log.warn(`[uv] preparing the update failed — the upgrade will download it: ${String((err && err.message) || err).split('\n')[0]}`);
+          this.log.warn(`[uv] preparing the update failed — not offered; the next check prepares it again: ${String((err && err.message) || err).split('\n')[0]}`);
+          return false;
         }
         const now = this.getInstalledVersionSync() || null;
         if (now && !isNewer(now, latest)) return false; // upgraded meanwhile (the version panel)
@@ -3080,18 +3068,22 @@ class UvManager {
           this.log.info(`[uv] not offering engine ${latest} now: a desktop update came first while it was prepared`);
           return false;
         }
+        const prepared = this.preparedEngine();
+        if (!prepared || prepared.version !== latest) {
+          this.log.info(`[uv] engine ${latest} was not prepared for this desktop — not offered`);
+          return false;
+        }
+        this.log.info(`[uv] engine ${latest} is prepared and checked — offered as ready`);
+        onReady(latest);
+        return false;
       }
 
       if (!mainWindow || mainWindow.isDestroyed()) return false;
 
-      // Abortable: a newer release found while this is on screen closes it (as
-      // "Later") via supersedePackageDialog(), so only one dialog, for the latest
-      // version, is ever shown.
-      this._packageDialog = { version: latest, abort: new AbortController() };
-      let response;
-      try {
-        response = updateTest.answerFor('engine', { engine: status.currentVersion || null, engineLatest: latest });
-        if (response === null) ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
+      // The install the recovery offers before the start (no prepared release to announce as ready instead).
+      let response = updateTest.answerFor('engine', { engine: status.currentVersion || null, engineLatest: latest });
+      if (response === null) {
+        ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
           type: 'info',
           title: 'Update Available',
           message: `A new version of FlowPad is available (${latest}).`,
@@ -3101,10 +3093,7 @@ class UvManager {
           buttons: ['Upgrade', 'Later'],
           defaultId: 0,
           cancelId: 1, // Esc / close = Later, never an implicit Upgrade
-          signal: this._packageDialog.abort.signal,
         }));
-      } finally {
-        this._packageDialog = null;
       }
       if (response !== 0) this._deferredPackageVersion = latest;
       if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;

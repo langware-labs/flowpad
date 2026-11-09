@@ -45,7 +45,7 @@ Electron (main.js)
 | `backend-wait.js` | Waiting for the server to come up. |
 | `flow-rs-keychain.js` | Reading keys from the keychain. |
 | `progress-watchdog.js` | Progress guard: 30 s windows, 3 quiet windows in a row = stalled. Gated by `canStall`, async sampling, overlap-safe. |
-| `update-restart.js` | `createRestartApplier` — "Restart now": the window stays up on "Installing the update" (never hidden before the quit begins), stops the backend, installs, and brings the app back if the restart fails. |
+| `update-restart.js` | `createRestartApplier` — "Restart" on a desktop update: the window stays up on "Installing the update" (never hidden before the quit begins), stops the backend, installs, and brings the app back if the restart fails. |
 | `update-schedule.js` | When automatic update checks happen (FLOWPAD-2308): per-account cadence (hourly for @langware.ai, daily otherwise) plus a desktop-only look at the feed every launch and every 20 minutes for every account (`desktopCheckDue`), failure backoff, launch-check planning, the offered-version watermark. Pure decisions; `main.js` owns the timers and the fs. |
 | `update-plan.js` | The combined update flow: `decideOffer`, `savePendingEngine`, `markPendingEngineConsented`, `planAfterDesktopUpdate`, `createReadyReminder`. |
 | `startup-error.js` | `describeStartupFailure` and `summarizeOutput` — panel text and which steps to show. |
@@ -102,20 +102,20 @@ Electron (main.js)
   the instance dir, re-armed by the tick if it dies). The launch check is skipped while a recent answer said
   "current" (the status is seeded, so engine updates are not held), but a relaunch inside a failure backoff
   retries for real; recovery panels and the update-cycle harness bypass the schedule.
-  The DESKTOP feed is also looked at on every launch and every hour, whatever the account (a new desktop
+  The DESKTOP feed is also looked at on every launch and every 20 minutes, whatever the account (a new desktop
   leads; the engine follows its dependencies): a desktop-only check (`getDesktopUpdateVersion({desktopOnly})`)
   stamps `lastDesktopCheckAt` (and keeps its answer in `lastResult`) and never moves the shared anchor or the
   backoff, so the engine keeps its cadence. At a launch inside the interval it runs in the background — the
   start never waits for the feed — and a newer desktop it finds is offered once the app is up, never mid-start.
   That launch asks no engine question pre-start (it would come before the feed answers): once the app is up,
   `postBootUpdates` waits for the background look (bounded by the launch check's 20 s; the app is usable
-  meanwhile), offers a desktop it found first — with a newer engine in the same one screen — and only then
-  the engine alone (PyPI comparison, prepared before it asks). A look that gives up defers nothing further; a
+  meanwhile), offers a desktop it found first — with a newer engine riding it — and only then
+  the engine alone (PyPI comparison, prepared before it is announced). A look that gives up defers nothing further; a
   desktop it finds later still goes first. Not after a failed start (the previous run never got up, per the
   startup journal, or the error panel's Retry): an engine that does not boot never gets to `postBootUpdates`,
   so there the engine question is asked pre-start, as before (`engineOfferCanWaitForBoot`). An engine
   prepared in the background is offered only if no desktop update turned up while it prepared. After a desktop
-  UPGRADE — "Restart now", or installed on quit after "Later" — the new desktop
+  UPGRADE — "Restart" on "Update Ready", or installed on the next quit — the new desktop
   installs the newest engine it accepts without a question (`engineForUpdatedDesktop`; offline when it was
   prepared with the desktop download; PyPI silent → the version saved with the update). A downgrade (an older
   installer run by hand) changes no engine by itself: the installed-pair check repairs a forbidden pair, and
@@ -123,17 +123,26 @@ Electron (main.js)
   cannot be announced (offered before a restart, or a feed regression after a pull) is adopted silently —
   downloaded deferred, installed on the next quit, surfaced by the reminder (`decideDesktopAction`).
   Each channel keeps its own failure streak: a PyPI outage retries engine-only on its backoff without
-  re-hitting the GitHub feed, and vice versa. There is never more than ONE update window (`startOffer` is
-  the only entry point, and launching it does not block the scheduler); a newer release found while the
-  "Updates available" screen waits supersedes it — the old window closes unanswered (nothing recorded,
-  its saved engine state withdrawn) and one window for the newest version replaces it. Work blocked by an
-  open dialog or running download is a per-half follow-up debt, finished from the cached answer on a near
-  tick and capped at 3 consecutive failed retries per interval.
-- **Desktop and engine both new:** one screen, "Update now / Later". The engine version X is saved to `pending-engine.json`.
-  After a consented "Restart now", the new desktop installs exactly `flowpad==X` (`planAfterDesktopUpdate` → `upgrade({version})`).
-- **"Later":** a reminder every 90 minutes (`READY_REMINDER_MS`). If the app is closed after Later, the regular engine
-  dialog appears — no silent install.
-- **A newer desktop** refreshes X. Engine dialogs are **held back** while a desktop update is pending or KNOWN — a
+  re-hitting the GitHub feed, and vice versa. There is ONE offer at a time (`startOffer` is the only entry
+  point, and launching it does not block the scheduler); a newer release found while the previous one
+  downloads cancels that download and is offered instead. Work blocked by a running offer, check or download
+  is a per-half follow-up debt, finished from the cached answer on a near tick and capped at 3 consecutive
+  failed retries per interval.
+- **Nothing is asked before an update is ready** (VS Code's model): a newer desktop downloads in the background, a
+  newer engine is prepared in the background (downloaded, staged and checked while the running engine serves), and
+  an optional update never holds the start. Only the recovery asks pre-start: after a failed start, or for an
+  install that cannot say its version, the native engine question stays (a fix on PyPI is the way out).
+- **"Update Ready":** once a set is ready (`updateReadyState`: the downloaded desktop with the engine saved to ride
+  it, or a prepared engine alone while no desktop goes first), ONE non-blocking toast — "Update Ready", Restart /
+  Later, gone after 30 s (`ui/.../update-ready/UpdateReadyBridge.tsx`) — and an "Update ready" indicator in the top bar
+  for as long as it stays ready; it opens the version popover, which lists the set and applies it. The same set is
+  toasted once; the 90-minute reminder (`READY_REMINDER_MS`) toasts it again while it stays pending. Later, the X
+  and the timeout only close the toast.
+- **Restart** (`update-activate`, one at a time) uses the existing paths: a desktop update is the old "Restart now" —
+  consent to the saved engine version X (`pending-engine.json`), then `restartApplier`; the new desktop installs
+  exactly `flowpad==X` (`planAfterDesktopUpdate` → `upgrade({version})`). An engine-only update is the popover's
+  upgrade (`upgradeEngine`: the offline swap, the server restarted, the window reloaded) — the desktop keeps running.
+- **A newer desktop** refreshes X. Engine updates are **held back** while a desktop update is pending or KNOWN — a
   failed check never overwrites a known newer desktop (in memory, and `lastResult` on disk is kept by `recordFailure`).
   A desktop check that has not answered (`unknown`) is no newer desktop: such a hold looks at the feed again first
   (`engineChangeAllowedAfterRecheck`, the desktop-only check, bounded like the launch check — a scheduled pass that has
@@ -143,17 +152,15 @@ Electron (main.js)
   compatibility metadata cannot be read, or that ships none, is never picked (`resolveCompatibleEngineVersion`) or
   installed (`_assertCandidateCompatible`), and `upgrade()` never falls back to an unchecked `@latest`; only a first
   install or a repair (no working engine) still relies on the post-install check. Used by the popover's "Upgrade",
-  the post-boot and engine-retry checks, the postponed prepare and the gate after a prepare (the pre-start prompt
-  still holds: the post-boot check follows it). The popover refuses only for a newer desktop to install first
+  the post-boot and engine-retry checks, the postponed prepare and the gate after a prepare. The popover refuses only for a newer desktop to install first
   (`desktopUpdatePending`).
 - **Activation:** an upgraded engine is remembered until it is seen healthy (`markEngineHealthy`). One that does not
-  come up — after the post-boot dialog, from the popover, or installed at launch — is stopped and the engine it
+  come up — applied from "Update Ready", from the popover, or installed at launch — is stopped and the engine it
   replaced is put back (`restorePreviousEngine`: uv's cache first, then PyPI) and started; before activation the staged
   engine was checked against the start contract (`_validateStaged`: imports, version, `flow_sdk.server.launch`, the
   `/health/status` route, `flow --help`). An incompatible pair after an install is rolled back the same way
   (`_verifyInstalledPairOrRollback`).
 - **A yanked X** is replaced by the latest release (`_resolveEngineTarget`).
-- Engine-only update: the regular dialog. Desktop-only update: background download and the "ready" prompt.
 - electron-updater: `autoDownload=false`, `autoInstallOnAppQuit=true`, NSIS with `oneClick:false`
   (`quitAndInstall` is handled in `update-restart.js`); setup is idempotent (`updaterInitialized`).
 
@@ -213,16 +220,17 @@ On macOS, an app running from a transient location is offered, once per version,
 ## 5. IPC channels
 
 - `handle`: capture-region, close-auth-window, copy-to-clipboard, desktop-update-download, desktop-update-info,
-  desktop-update-install, get-app-version, get-backend-url,
+  desktop-update-install, get-app-version, get-backend-url, update-activate, update-ready-info,
   engine-upgrade-target, get-startup-logs, notify-attention, notify-os, open-auth-window, open-external,
   open-logs-folder, restart-backend, set-badge, share-logs, upgrade-flowpad.
   The version popover's "Upgrade to vX": `engine-upgrade-target` names the newest release THIS desktop runs
   (PyPI's newest may need a newer desktop); `upgrade-flowpad(version)` installs exactly it — checked against the
   desktop before the server is stopped, and a failed install brings the running version back (or the error panel).
   The popover's desktop button: `desktop-update-info` (what the updater can offer, pushed on every change as
-  `desktop-update-state`), `desktop-update-download` (looks at the feed and starts the offer's "Update now"
-  download — the usual "update ready" prompt follows), `desktop-update-install` (that prompt's "Restart now",
-  also for an update postponed with "Later"). Nothing else changes: the engine follows the new desktop after the restart.
+  `desktop-update-state`), `desktop-update-download` (looks at the feed and starts the offer's download — the
+  usual "Update Ready" follows), `desktop-update-install` (its Restart). The ready set: `update-ready-info` (pushed as
+  `update-ready-state` for the top bar's indicator; `update-ready-toast` asks the UI for the toast) and
+  `update-activate` (Restart, from the toast or the popover).
 - `on`: quit-app, set-menu-visible, unwatch-startup-logs, watch-startup-logs.
 - `once`: retry-startup.
 - `app` events: activate, before-quit, open-url, second-instance, window-all-closed.
@@ -262,10 +270,10 @@ On macOS, an app running from a transient location is offered, once per version,
    nothing. *Fix:* before installing, check free space and write access; keep a hard-linked backup of the current
    AppImage and restore it if the move fails. For deb/rpm installs the update needs elevated rights (`pkexec`), which is
    a separate path to handle.
-9. **The combined update dialog can offer an update that cannot be downloaded.** `getDesktopUpdateVersion` in `main.js`
+9. **The desktop offer can start an update that cannot be downloaded.** `getDesktopUpdateVersion` in `main.js`
    trusts `updateInfo.version` and ignores `isUpdateAvailable` from electron-updater. A staged rollout percentage,
    `minimumSystemVersion`, or a semver difference can make `downloadUpdate` refuse ("Please check update first") while
-   our dialog still offers the update — on every launch. *Fix:* gate the offer on `isUpdateAvailable` and add a test
+   the offer still starts it — on every launch. *Fix:* gate the offer on `isUpdateAvailable` and add a test
    with a staged-rollout response.
 10. **Install-guard gaps.** The "install in progress" guard (`_installing`) covers only `_uvToolInstallForce`. It does
     not cover the `ensureUv` download, the PyPI version lookup, or the PATH shim step (`update-shell`), so quitting

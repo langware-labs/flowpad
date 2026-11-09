@@ -57,6 +57,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('desktop-update-state', handler);
     return () => ipcRenderer.removeListener('desktop-update-state', handler);
   },
+  // The ONE ready update set (desktop and/or engine: downloaded, prepared, checked): its state for the top bar's
+  // indicator, the "Update Ready" toast main asks for (once, then every 90 minutes while pending), and "Restart".
+  getUpdateReadyInfo: () => ipcRenderer.invoke('update-ready-info'),
+  activateUpdate: () => ipcRenderer.invoke('update-activate'),
+  onUpdateReadyState: (callback) => {
+    const handler = (_event, state) => callback(state);
+    ipcRenderer.on('update-ready-state', handler);
+    return () => ipcRenderer.removeListener('update-ready-state', handler);
+  },
+  onUpdateReadyToast: (callback) => {
+    const handler = (_event, state) => callback(state);
+    ipcRenderer.on('update-ready-toast', handler);
+    return () => ipcRenderer.removeListener('update-ready-toast', handler);
+  },
 
   // Startup-timeout recovery panel (loading.html): show the panel, copy the
   // recovery commands to the clipboard, and quit from the panel.
