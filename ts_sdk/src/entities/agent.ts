@@ -147,7 +147,7 @@ export interface PublicDeploymentsState {
   deployments: PublicDeployment[];
 }
 
-export type PublicDeploymentOp = 'open' | 'pause' | 'resume' | 'reset';
+export type PublicDeploymentOp = 'open' | 'pause' | 'resume' | 'reset' | 'refill';
 
 /** Which public machines an IT message (or an IT Sessions switch) reaches: all of them, or these `node_typeid`s. */
 export type ItTargets = 'all' | string[];
@@ -621,16 +621,19 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /** Mint `count` (1..100) codes, optionally named in order; their plaintext is answered this once only.
-   * `machineSize` is the size every one of them opens (omitted: the agent's). */
+   * `machineSize` is the size every one of them opens (omitted: the agent's). `codes`: the owner's own values
+   * (`XXXX-XXXX`), minted instead of `count` random ones; a revoked one is issued again. */
   async addPublicCodes(
     count: number,
     names: string[] = [],
     machineSize?: ComputeNodeSize,
+    codes: string[] = [],
   ): Promise<NewPublicInviteCode[]> {
     const data = await this.publicDeploymentsCall<{ codes?: NewPublicInviteCode[] }>('add_public_codes', 'POST', {
       count,
       ...(names.length ? { names } : {}),
       ...(machineSize ? { machine_size: machineSize } : {}),
+      ...(codes.length ? { codes } : {}),
     });
     return data?.codes ?? [];
   }
@@ -645,9 +648,18 @@ export class Agent extends APIEntity<Agent> {
     await this.publicDeploymentsCall('revoke_public_code', 'POST', { code_id: codeId });
   }
 
-  /** `reset` gives the same deployment a brand-new machine, filled from scratch; it answers like `open`. */
-  async managePublicDeployment(nodeTypeId: string, op: PublicDeploymentOp): Promise<PublicDeploymentOpResult> {
-    return this.publicDeploymentsCall('manage_public_deployment', 'POST', { node_typeid: nodeTypeId, op });
+  /** `reset` gives the same deployment a brand-new machine, filled from scratch; it answers like `open`.
+   * `refill` gives it a new, unspent LLM budget of `capUsd` (omitted: the deployment's $ per user). */
+  async managePublicDeployment(
+    nodeTypeId: string,
+    op: PublicDeploymentOp,
+    capUsd?: number,
+  ): Promise<PublicDeploymentOpResult> {
+    return this.publicDeploymentsCall('manage_public_deployment', 'POST', {
+      node_typeid: nodeTypeId,
+      op,
+      ...(capUsd ? { cap_usd: capUsd } : {}),
+    });
   }
 
   /**

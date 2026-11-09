@@ -143,6 +143,9 @@ export function AgentAutoLaunchTab({
   // Names as typed, before the hub has them: the poll must not overwrite what is being edited.
   const [names, setNames] = useState<Record<string, string>>({});
   const [resetting, setResetting] = useState<PublicDeployment | null>(null);
+  // Refill: the lines whose machines get a new, unspent budget, and its $ (empty: the deployment's).
+  const [refilling, setRefilling] = useState<PublicDeployment[] | null>(null);
+  const [refillUsd, setRefillUsd] = useState('');
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [itOpen, setItOpen] = useState(false);
   // Lines picked for a bulk operation, by line key; the bar's operations run on every one of them.
@@ -366,7 +369,11 @@ export function AgentAutoLaunchTab({
     });
 
   // One operation over every picked line; each failure is counted, the rest still run.
-  const runBulk = async (op: 'pause' | 'resume' | 'reset' | 'revoke' | 'it-on' | 'it-off') => {
+  // `boxes`: the machines it runs on (a line's own Refill passes its one machine).
+  const runBulk = async (
+    op: 'pause' | 'resume' | 'reset' | 'refill' | 'revoke' | 'it-on' | 'it-off',
+    boxes: PublicDeployment[] = pickedBoxes,
+  ) => {
     setBulkBusy(true);
     let failed = 0;
     let reason: unknown = null;
@@ -387,9 +394,15 @@ export function AgentAutoLaunchTab({
         const results = await Promise.allSettled(
           op === 'revoke'
             ? pickedCodes.map((c) => agent.revokePublicCode(c.id))
-            : pickedBoxes
-                .filter((d) => op === 'reset' || (op === 'pause' ? !isPaused(d) : isPaused(d)))
-                .map((d) => agent.managePublicDeployment(d.node_typeid, op)),
+            : boxes
+                .filter((d) => op === 'reset' || op === 'refill' || (op === 'pause' ? !isPaused(d) : isPaused(d)))
+                .map((d) =>
+                  agent.managePublicDeployment(
+                    d.node_typeid,
+                    op,
+                    op === 'refill' ? Number(refillUsd) || undefined : undefined,
+                  ),
+                ),
         );
         const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
         failed = rejected.length;
@@ -421,6 +434,7 @@ export function AgentAutoLaunchTab({
           { id: 'pause' as const, label: t`Pause`, disabled: !pickedBoxes.some((d) => !isPaused(d)) },
           { id: 'resume' as const, label: t`Resume`, disabled: !pickedBoxes.some(isPaused) },
           { id: 'reset' as const, label: t`Reset`, confirm: 'reset' as const },
+          { id: 'refill' as const, label: t`Refill budget` },
         ]
       : []),
     ...(pickedCodes.length > 0 ? [{ id: 'revoke' as const, label: t`Revoke`, confirm: 'revoke' as const }] : []),
@@ -711,7 +725,13 @@ export function AgentAutoLaunchTab({
                   size="sm"
                   className="h-6 px-2 text-xs"
                   disabled={bulkBusy || a.disabled}
-                  onClick={() => (a.confirm ? setBulkConfirm(a.confirm) : void runBulk(a.id))}
+                  onClick={() =>
+                    a.id === 'refill'
+                      ? setRefilling(pickedBoxes)
+                      : a.confirm
+                        ? setBulkConfirm(a.confirm)
+                        : void runBulk(a.id)
+                  }
                   data-testid={`agent-invite-bulk-${a.id}`}
                 >
                   {a.label}
@@ -817,6 +837,16 @@ export function AgentAutoLaunchTab({
                         >
                           <Trans>Reset</Trans>
                         </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          disabled={rowLocked}
+                          onClick={() => setRefilling([d])}
+                          data-testid="agent-invite-refill"
+                        >
+                          <Trans>Refill</Trans>
+                        </Button>
                       </>
                     ) : (
                       <>
@@ -866,6 +896,38 @@ export function AgentAutoLaunchTab({
         onConfirm={() => resetting && void manage(resetting, 'reset')}
         testId="agent-autolaunch-reset"
       />
+      <ConfirmDialog
+        open={refilling !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setRefilling(null);
+            setRefillUsd('');
+          }
+        }}
+        title={t`Refill the LLM budget of ${refilling?.length ?? 0} machines?`}
+        description={t`Each machine gets a new budget with nothing spent. The machine and its work stay as they are.`}
+        confirmLabel={t`Refill`}
+        cancelLabel={t`Cancel`}
+        onConfirm={() => refilling && void runBulk('refill', refilling)}
+        testId="agent-invite-refill-confirm"
+      >
+        <div className="flex items-center gap-2 text-xs">
+          <span>
+            <Trans>$ per user</Trans>
+          </span>
+          <Input
+            type="number"
+            min={0.5}
+            step={0.5}
+            className="h-8 w-24 text-xs"
+            value={refillUsd}
+            placeholder={String(saved.capUsd ?? '')}
+            onChange={(e) => setRefillUsd(e.target.value)}
+            aria-label={t`New budget in dollars`}
+            data-testid="agent-invite-refill-usd"
+          />
+        </div>
+      </ConfirmDialog>
       <ConfirmDialog
         open={revoking !== null}
         onOpenChange={(o) => !o && setRevoking(null)}
