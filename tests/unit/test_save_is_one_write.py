@@ -108,6 +108,44 @@ async def test_a_mirror_batch_is_one_writer_acquisition_for_all_its_rows(monkeyp
 
 
 @async_context
+async def test_a_row_the_batch_proved_absent_is_created_without_reading_for_it():
+    """Each statement is a round trip to the SQLite thread, and on a busy machine they ARE the cost
+    of a first sync. A row the batch read as absent cannot be there: its create neither reads for the
+    row nor deletes its FTS entry. A row the batch found still reads (and updates)."""
+    import uuid
+
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    from flow_sdk.builtin.conversation import Conversation
+
+    held_id, new_id = str(uuid.uuid4()), str(uuid.uuid4())
+    await Conversation(id=held_id, title="held").save(notify=False)
+    statements: list[str] = []
+
+    def record(conn, cursor, statement, params, context, executemany):
+        statements.append(" ".join(statement.split()))
+
+    event.listen(Engine, "before_cursor_execute", record)
+    try:
+        async with Conversation.mirror_batch([held_id, new_id]):
+            statements.clear()  # the batch's own read of its ids
+            await Conversation.mirror_from_hub({"id": new_id, "title": "new"}, existing=None, notify=False)
+            created = list(statements)
+            statements.clear()
+            await Conversation(id=held_id, title="held again").save(notify=False)
+            saved_over = list(statements)
+    finally:
+        event.remove(Engine, "before_cursor_execute", record)
+
+    assert not [s for s in created if s.startswith("SELECT") and "WHERE entities.id = ?" in s], created
+    assert not [s for s in created if s.startswith("DELETE FROM entities_fts")], created
+    assert [s for s in saved_over if s.startswith("SELECT") and "WHERE entities.id = ?" in s], saved_over
+    assert (await Conversation.get_by_id(new_id)).title == "new"
+    assert (await Conversation.get_by_id(held_id)).title == "held again"
+
+
+@async_context
 async def test_a_mirror_batch_still_keeps_links_on_a_create_over_an_existing_row():
     """Only ids the batch itself read as absent skip the read-back. A fresh instance saved over a row
     the batch found — or a second fresh instance for an id it just created — still merges the stored

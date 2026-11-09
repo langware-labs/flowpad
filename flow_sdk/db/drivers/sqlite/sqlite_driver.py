@@ -31,6 +31,7 @@ from flow_sdk.db.drivers.db_base_record import (
 )
 from flow_sdk.db.drivers.db_driver import (
     _DB_LIFECYCLE_LOCK,
+    PROVEN_NEW_ROW,
     DBConfig,
     DBDriver,
     DBResetProfile,
@@ -780,8 +781,11 @@ class SQLiteDBDriver(DBDriver):
         if not entries:
             return
 
+        proven_new = PROVEN_NEW_ROW.get()
         async with self._session_ctx() as session:
-            await self._fts_delete_batch(session, [e.entity_id for e in entries], batch_size)
+            stale = [e.entity_id for e in entries if str(e.entity_id) != proven_new]
+            if stale:
+                await self._fts_delete_batch(session, stale, batch_size)
             await self._fts_insert_batch(session, entries, batch_size)
 
     async def fts_search(
@@ -1462,6 +1466,8 @@ class SQLiteDBDriver(DBDriver):
     async def save(self, entity: DBBaseRecord, owner: TypeId | None = None) -> DBBaseRecord:
         """Save entity (create or update)."""
         async with self._session_ctx() as session:
+            if PROVEN_NEW_ROW.get() == str(entity.id):
+                return await self._create_entity(entity, owner, session)
             # Check if entity exists by ID
             result = await session.execute(select(EntitySchema).where(EntitySchema.id == entity.id))
             existing = result.scalar_one_or_none()

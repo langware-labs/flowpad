@@ -18,6 +18,12 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.entity_factory import type_registry as _entity_registry
 from flow_sdk.settings import is_desktop
 
+#: The id of the row being created that its writer proved absent inside the current writer
+#: transaction (``Entity.mirror_batch``). A driver may skip what only an existing row needs — the
+#: SQLite driver skips the existence read in ``save`` and the FTS delete. A first sync creates
+#: thousands of rows, and each statement is a round trip to the database.
+PROVEN_NEW_ROW: "ContextVar[Optional[str]]" = ContextVar("_db_proven_new_row", default=None)
+
 
 # Stub for transaction handling
 class TransactionHandler:
