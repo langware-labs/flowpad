@@ -183,21 +183,22 @@ export interface IEnsureTabOpts {
 export interface TabEnsureResult {
   tabs: Tab[];
   created: boolean;
-  /** The GLOBAL list read with the write (``all_tabs``) and its version — a writer adopts it
-   *  instead of re-listing. Absent from an older backend. */
-  all?: Tab[];
-  version?: string;
-  /** Set by `TabManager.ensureDock`: the manager adopted `all` (no refetch needed). */
-  adopted?: boolean;
 }
 
-/** A list answer. `version`: the list's version (`<epoch>:<seq>`) — the `tabs_changed`
- *  pings at or before it are in it. On a write's answer, `all`: the GLOBAL list read with it. */
-export type TabList = Tab[] & { all?: Tab[]; version?: string };
+/** `pingCaller: false` is for a caller that re-reads the list right after the write: the
+ *  backend leaves this window out of the write's `tabs_changed` ping. The default pings
+ *  everyone, and a caller with no re-read of its own depends on that ping. */
+function applyPingCaller(info: ActionInfo, pingCaller: boolean | undefined): void {
+  if (pingCaller !== false) return;
+  info.carriesInitiator = true;
+  info.bodyParameters = { ...info.bodyParameters, ping_caller: false };
+}
 
 export interface INewTabOpts extends IEnsureTabOpts {
   /** The opener (current active tab id): a fresh tab lands right after it. */
   afterTabId?: string | null;
+  /** False: this caller re-reads the list itself (`applyPingCaller`). */
+  pingCaller?: boolean;
 }
 
 /** Backward-compatible name for older call sites/tests during the Tab migration. */
@@ -411,15 +412,9 @@ export class Tab extends APIEntity<Tab> implements ITab {
       after_tab_id: opts.afterTabId ?? null,
       parent_tab_id: opts.parentTabId ?? null,
     };
-    const res = await dataManager.callAction<
-      unknown,
-      { tabs: ITab[]; created?: boolean; all_tabs?: ITab[]; version?: string }
-    >(info);
-    return {
-      tabs: Tab.fromResponse(res?.tabs ?? []),
-      created: res?.created ?? false,
-      ...(res?.all_tabs && res.version ? { all: Tab.fromResponse(res.all_tabs), version: res.version } : {}),
-    };
+    applyPingCaller(info, opts.pingCaller);
+    const res = await dataManager.callAction<unknown, { tabs: ITab[]; created?: boolean }>(info);
+    return { tabs: Tab.fromResponse(res?.tabs ?? []), created: res?.created ?? false };
   }
 
   /**
@@ -472,7 +467,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
 
   static async getFromDockPointer(
     dock: IDockPointer,
-    opts: { parentTabId?: string | null; afterTabId?: string | null } = {},
+    opts: { parentTabId?: string | null; afterTabId?: string | null; pingCaller?: boolean } = {},
   ): Promise<TabEnsureResult> {
     const pointerJson = dock.toJSON?.();
     if (!pointerJson) return { tabs: [], created: false };
@@ -495,6 +490,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       // navigating (`flow show` outside vibe) has no such opener, so it names
       // the tab it belongs beside.
       afterTabId: opts.afterTabId ?? null,
+      pingCaller: opts.pingCaller,
     });
   }
 
@@ -502,15 +498,13 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  resolved, in global order. The single unscoped projection that the developer
    *  sessions view + footer projects-chip read; replaces the old reactive
    *  `tab?visible=true` entity query. (Project-scoped views use `list`.) */
-  static async listAll(): Promise<TabList> {
+  static async listAll(): Promise<Tab[]> {
     // Hub mode runs ephemeral: the hub backend has no `tab` entity, so a
     // `list_all` would 422. Return an empty set — tabs are never persisted here.
     if (isHubOnly()) return [];
     const info = new ActionInfo('list_all', Tab.type, null, 'GET');
-    const res = await dataManager.callAction<undefined, { tabs: ITab[]; version?: string }>(info);
-    const tabs: TabList = Tab.fromResponse(res?.tabs ?? []);
-    if (res?.version) tabs.version = res.version;
-    return tabs;
+    const res = await dataManager.callAction<undefined, { tabs: ITab[] }>(info);
+    return Tab.fromResponse(res?.tabs ?? []);
   }
 
   /** POST /graph/tab/order — drag-drop commit. Splices `reorderId` into the
@@ -583,18 +577,12 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  already saved the live name onto its Shell/AgenticProcess; this keeps the
    *  durable `Tab.name` in step so the chip stays right once inactive. NOT `rename`
    *  (which would pin `auto_rename=false` and stop future auto-titles). */
-  static async setNameById(id: string, name: string): Promise<TabList> {
+  static async setNameById(id: string, name: string, opts: { pingCaller?: boolean } = {}): Promise<Tab[]> {
     const info = new ActionInfo('set_name', Tab.type, id, 'POST');
     info.bodyParameters = { name };
-    const res = await dataManager.callAction<{ name: string }, { tabs: ITab[]; all_tabs?: ITab[]; version?: string }>(
-      info,
-    );
-    const tabs: TabList = Tab.fromResponse(res?.tabs ?? []);
-    if (res?.all_tabs && res.version) {
-      tabs.all = Tab.fromResponse(res.all_tabs);
-      tabs.version = res.version;
-    }
-    return tabs;
+    applyPingCaller(info, opts.pingCaller);
+    const res = await dataManager.callAction<{ name: string }, { tabs: ITab[] }>(info);
+    return Tab.fromResponse(res?.tabs ?? []);
   }
 
   /** A closed tab: `visible=false` is the whole of "closed" (the row is never deleted). */

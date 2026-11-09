@@ -1835,67 +1835,36 @@ async def _build_list(project: str | None) -> list[dict]:
 # (was: creating synthetic tab ID = uuid5(__tabs_changed_signal__), which was horrible design)
 
 
-# The tab list's version: ``<epoch>:<seq>``. ``seq`` moves on every ``tabs_changed``
-# broadcast (after the change it announces is saved); ``epoch`` names this process, so a
-# version from before a restart never reads as current. A list read at version V holds
-# every change announced at or before V — the client skips the refetch a ping would
-# otherwise cost when the list it holds is already that fresh (its own write's answer).
-_TABS_EPOCH = uuid.uuid4().hex[:12]
-_tabs_seq = 0
-
-
-def tabs_version() -> str:
-    return f"{_TABS_EPOCH}:{_tabs_seq}"
-
-
-async def broadcast_tabs_changed() -> None:
+async def broadcast_tabs_changed(skip_connection_id: str = "") -> None:
     """Global ``tabs-changed`` ping so every client refetches the list — covers
     backend-originated changes (death/orphan-cleanup, rename, second window). Sends
-    a proper broadcast message to all connected clients, carrying the list version
-    the change produced."""
-    global _tabs_seq
-    _tabs_seq += 1
+    a proper broadcast message to all connected clients, except ``skip_connection_id``
+    when given (``_connection_to_skip``)."""
     try:
         from flow_sdk.api.messages import BroadcastMessage  # noqa: PLC0415
         from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415
 
-        await broadcast(BroadcastMessage(broadcast_type="tabs_changed", version=tabs_version()).model_dump_json())
+        await broadcast(BroadcastMessage(broadcast_type="tabs_changed").model_dump_json(), skip_connection_id)
     except Exception as e:
         logger.debug(f"broadcast_tabs_changed failed: {e}")
 
 
-async def _global_tab_list() -> list[Tab]:
-    """EVERY visible Tab, fully resolved, in global order — what ``list_all`` answers."""
-    tabs, target_map = await _visible_tabs_sorted_with_targets()
-    remote_target_map = await _load_remote_targets(tabs, target_map)
-    await _resolve_tab_projects(tabs, remote_target_map)
-    await _populate_tab_statuses(tabs, target_map)
-    _populate_tab_target_fields(tabs, remote_target_map)
-    return tabs
+def _connection_to_skip(ping_caller: bool) -> str:
+    """The window a tab write's ping leaves out: the caller, when it said it re-reads the
+    list itself (``ping_caller=False``) and named its connection. Empty pings everyone."""
+    if ping_caller:
+        return ""
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    return request_info.initiator_connection_id if request_info else ""
 
 
-async def _list_response(project: str | None, *, with_all: bool = False, **extra: object):
-    """The project-scoped list a write answers. ``with_all``: also the GLOBAL list
-    (``all_tabs``) from the same read, and its ``version`` — the writer adopts it and
-    has no refetch to make (its write's own ping is then already covered)."""
+async def _list_response(project: str | None, **extra: object):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
-    if not with_all:
-        tabs = await _build_tab_list(project)
-        return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs], **extra})
-    version = tabs_version()
-    every = await _global_tab_list()
-    scope = _normalize_project(project)
-    project_of: dict[str, str | None] = {t.id: t.project_id for t in every}
-    scoped = filter_for_project([t.id for t in every], project_of, scope)
-    rows = [_serialize_row(t) for t in every]
-    row_of = {t.id: row for row, t in zip(rows, every)}
-    return ApiSuccessResponse(data={
-        "tabs": [row_of[tab_id] for tab_id in scoped],
-        "all_tabs": rows,
-        "version": version,
-        **extra,
-    })
+    tabs = await _build_tab_list(project)
+    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs], **extra})
 
 
 async def _http_new_tab(
@@ -1909,6 +1878,7 @@ async def _http_new_tab(
     worktree: bool = False,
     after_tab_id: str | None = None,
     parent_tab_id: str | None = None,
+    ping_caller: bool = True,
 ):
     """POST /graph/tab/new_tab — loader-driven get-or-create. A fresh tab lands
     right after ``after_tab_id`` (the opener); a reopen keeps its slot unless an opener is given. Returns the
@@ -1925,8 +1895,8 @@ async def _http_new_tab(
         after_tab_id=after_tab_id,
         parent_tab_id=parent_tab_id,
     )
-    await broadcast_tabs_changed()
-    return await _list_response(tab.project_id, with_all=True, created=created)
+    await broadcast_tabs_changed(_connection_to_skip(ping_caller))
+    return await _list_response(tab.project_id, created=created)
 
 
 _action_registry.register(
@@ -1964,9 +1934,12 @@ async def _http_list_all(cls):
     ping) that replaces the old reactive ``tab?visible=true`` entity query."""
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
-    version = tabs_version()  # read BEFORE the load: the list holds at least this version
-    tabs = await _global_tab_list()
-    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs], "version": version})
+    tabs, target_map = await _visible_tabs_sorted_with_targets()
+    remote_target_map = await _load_remote_targets(tabs, target_map)
+    await _resolve_tab_projects(tabs, remote_target_map)
+    await _populate_tab_statuses(tabs, target_map)
+    _populate_tab_target_fields(tabs, remote_target_map)
+    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 
 
 _action_registry.register(
@@ -2168,7 +2141,7 @@ _action_registry.register(
 )
 
 
-async def _http_set_name(self: Tab):
+async def _http_set_name(self: Tab, ping_caller: bool = True):
     """POST /graph/tab/<id>/set_name {name} — set ONLY the Tab label, no entity
     reflect and no ``auto_rename`` change.
 
@@ -2185,8 +2158,8 @@ async def _http_set_name(self: Tab):
     before = self.name
     await self.set_label(name)
     if self.name != before:
-        await broadcast_tabs_changed()
-    return await _list_response(self.project_id, with_all=True)
+        await broadcast_tabs_changed(_connection_to_skip(ping_caller))
+    return await _list_response(self.project_id)
 
 
 _action_registry.register(

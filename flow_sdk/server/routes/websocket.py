@@ -190,13 +190,15 @@ async def send_personal_message(message: str, websocket: WebSocket):
             logger.error(f"Error sending personal message: {e}")
 
 
-async def broadcast(message: str):
-    """Broadcast a message to all connected clients."""
+async def broadcast(message: str, skip_connection_id: str = ""):
+    """Broadcast a message to all connected clients, except ``skip_connection_id`` when given."""
     if not _active_connections:
         return
 
     disconnected = []
     for connection_id, info in _active_connections.items():
+        if connection_id == skip_connection_id:
+            continue
         try:
             await info.ws.send_text(message)
         except Exception as e:

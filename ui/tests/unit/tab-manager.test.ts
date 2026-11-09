@@ -1,10 +1,16 @@
 import {
+  dataManager,
+  Tab,
+  tabManager,
   TabLifecycleState,
   TabManager,
-  type Tab,
   type TabGateway,
   type TabRow,
 } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { presentDockTab } from '@src/navigation/present-dock-tab';
+import { resetTabContentLifecycleForTests, setupTab } from '@src/tabs/tab-content-lifecycle';
+import { ViewType } from '@src/types/ViewType';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const managers: TabManager[] = [];
@@ -175,100 +181,77 @@ describe('TabManager tabs_changed subscription', () => {
   });
 });
 
-describe('TabManager tab list versions', () => {
-  type Listener = (...args: unknown[]) => void;
-  function wired(gateway: TabGateway) {
-    const handlers = new Map<string, Listener>();
-    const connection = {
-      on: vi.fn((event: string, handler: Listener) => handlers.set(event, handler)),
-      off: vi.fn(),
-    };
-    const manager = new TabManager({ gateway, connection });
-    managers.push(manager);
-    manager.attachTabsChangedPing();
-    const ping = (version?: string) => handlers.get('on_broadcast')?.({ broadcast_type: 'tabs_changed', version });
-    return { manager, ping };
+describe('pingCaller', () => {
+  const TAB_ID = '00000000-0000-4000-8000-00000000abcd';
+  const HOST_ID = '00000000-0000-4000-8000-00000000beef';
+  const dock = new DockPointer(ViewType.SHELL, 'shell-5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  const openRow = () => new Tab({ id: TAB_ID, pointer: dock.toJSON() ?? '', name: 'old', visible: true });
+
+  afterEach(() => {
+    resetTabContentLifecycleForTests();
+    tabManager.resetForTests();
+  });
+
+  function captureWrites() {
+    const writes: { carriesInitiator: boolean; bodyParameters: object }[] = [];
+    vi.spyOn(dataManager, 'callAction').mockImplementation((info: never) => {
+      writes.push(info);
+      return Promise.resolve({ tabs: [] } as never);
+    });
+    return writes;
   }
-  const listed = (version: string | undefined, ...ids: string[]) =>
-    Object.assign(ids.map((id) => row(id) as Tab), version ? { version } : {});
-  const flush = async () => {
-    for (let i = 0; i < 6; i += 1) await Promise.resolve();
-  };
 
-  it('a ping the held list already covers costs no re-list; a newer or unversioned one does', async () => {
-    const listAll = vi.fn<TabGateway['listAll']>().mockResolvedValue(listed('e1:3', 'a'));
-    const { manager, ping } = wired(gatewayWith(listAll));
-    await manager.refresh();
-    expect(listAll).toHaveBeenCalledTimes(1);
-
-    ping('e1:3');
-    ping('e1:2');
-    await flush();
-    expect(listAll).toHaveBeenCalledTimes(1);
-
-    ping('e1:4');
-    await flush();
-    expect(listAll).toHaveBeenCalledTimes(2);
-    ping('e2:1'); // another backend process: never covered
-    await flush();
-    expect(listAll).toHaveBeenCalledTimes(3);
-    ping(undefined); // an older backend's ping
-    await flush();
-    expect(listAll).toHaveBeenCalledTimes(4);
+  it('by default a write names no window and sends no ping_caller', async () => {
+    const writes = captureWrites();
+    await Tab.ensure('pointer');
+    await Tab.setNameById(TAB_ID, 'name');
+    expect(writes).toHaveLength(2);
+    for (const write of writes) {
+      expect(write.carriesInitiator).toBe(false);
+      expect(write.bodyParameters).not.toHaveProperty('ping_caller');
+    }
   });
 
-  it("a write's own ping is answered by the write: its global list is adopted, no re-list", async () => {
-    const listAll = vi.fn<TabGateway['listAll']>().mockResolvedValue(listed('e1:1', 'a'));
-    const gateway = gatewayWith(listAll);
-    const answer = deferred<Tab[]>();
-    gateway.setNameById = vi.fn(() => answer.promise) as TabGateway['setNameById'];
-    const { manager, ping } = wired(gateway);
-    await manager.refresh();
-
-    const naming = manager.setName('a', 'renamed');
-    ping('e1:2'); // the server pings before the write's answer lands
-    await flush();
-    expect(listAll).toHaveBeenCalledTimes(1);
-
-    answer.resolve(Object.assign(listed(undefined, 'a'), { all: [row('a', 'renamed') as Tab, row('b') as Tab], version: 'e1:2' }));
-    await naming;
-    await flush();
-    expect(listAll).toHaveBeenCalledTimes(1);
-    expect(manager.getSnapshot().map((t) => t.id)).toEqual(['a', 'b']);
+  it('false names this window and sends ping_caller: false', async () => {
+    const writes = captureWrites();
+    await Tab.ensure('pointer', { pingCaller: false });
+    await Tab.setNameById(TAB_ID, 'name', { pingCaller: false });
+    expect(writes).toHaveLength(2);
+    for (const write of writes) {
+      expect(write.carriesInitiator).toBe(true);
+      expect(write.bodyParameters).toMatchObject({ ping_caller: false });
+    }
   });
 
-  it('a ping newer than the write still re-lists once the write lands', async () => {
-    const listAll = vi.fn<TabGateway['listAll']>().mockResolvedValue(listed('e1:3', 'a', 'b', 'c'));
-    const gateway = gatewayWith(listAll);
-    const answer = deferred<Tab[]>();
-    gateway.setNameById = vi.fn(() => answer.promise) as TabGateway['setNameById'];
-    const { manager, ping } = wired(gateway);
-
-    const naming = manager.setName('a', 'renamed');
-    ping('e1:2');
-    ping('e1:3'); // someone else's change after ours
-    answer.resolve(Object.assign(listed(undefined, 'a'), { all: [row('a') as Tab, row('b') as Tab], version: 'e1:2' }));
-    await naming;
-    await flush();
+  it('syncDockName passes false and re-reads', async () => {
+    const setName = vi.spyOn(Tab, 'setNameById').mockResolvedValue([]);
+    const listAll = vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+    tabManager.adoptGlobal([openRow()]);
+    await tabManager.syncDockName(dock.tabHash, 'new');
+    expect(setName).toHaveBeenCalledWith(TAB_ID, 'new', { pingCaller: false });
     expect(listAll).toHaveBeenCalledTimes(1);
   });
 
-  it('an answer older than the held list is not adopted', async () => {
-    const stale = deferred<Tab[]>();
-    const listAll = vi.fn<TabGateway['listAll']>().mockReturnValueOnce(stale.promise);
-    const gateway = gatewayWith(listAll);
-    gateway.setNameById = vi.fn(() =>
-      Promise.resolve(
-        Object.assign(listed(undefined, 'a'), { all: [row('a') as Tab, row('new') as Tab], version: 'e1:5' }),
-      ),
-    ) as TabGateway['setNameById'];
-    const { manager } = wired(gateway);
+  it('opening a tab through materializeTab passes false', async () => {
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+    const ensure = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [openRow()], created: false });
+    await setupTab(dock);
+    expect(ensure.mock.calls[0][1]).toMatchObject({ pingCaller: false });
+  });
 
-    const refreshing = manager.refresh(); // started before the write
-    await manager.setName('a', 'x');
-    stale.resolve(listed('e1:4', 'a'));
-    await refreshing;
-    expect(manager.getSnapshot().map((t) => t.id)).toEqual(['a', 'new']);
+  it('a reparent through materializeTab passes false', async () => {
+    tabManager.adoptGlobal([openRow()]);
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([openRow()]);
+    vi.spyOn(Tab, 'activateById').mockResolvedValue(undefined);
+    const newTab = vi.spyOn(Tab, 'newTab').mockResolvedValue([]);
+    await setupTab(dock, { parentTabId: HOST_ID });
+    expect(newTab.mock.calls[0][1]).toMatchObject({ parentTabId: HOST_ID, pingCaller: false });
+  });
+
+  it('presentDockTab passes false', async () => {
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+    const ensure = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [], created: false });
+    await presentDockTab(dock, {});
+    expect(ensure.mock.calls[0][1]).toMatchObject({ pingCaller: false });
   });
 });
-

@@ -2,7 +2,7 @@ import type { IEntity } from '../IEntity';
 import type { IDockPointer } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { EntityTypes } from '../schema/types';
-import { Tab, type INewTabOpts, type ITab, type TabEnsureResult, type TabList } from '../entities/tab';
+import { Tab, type INewTabOpts, type ITab, type TabEnsureResult } from '../entities/tab';
 import { ConnectionManager, type BroadcastMessage, type DataOpType } from '../websocket';
 import { TabLifecycleRegistry } from './tab-lifecycle-registry';
 import { ViewModeEvent, viewModeMemory } from './view-mode-memory';
@@ -27,14 +27,14 @@ export interface TabGateway {
   newTab(pointer: string, options?: INewTabOpts): Promise<Tab[]>;
   getFromDockPointer(
     dock: IDockPointer,
-    options?: { parentTabId?: string | null; afterTabId?: string | null },
+    options?: { parentTabId?: string | null; afterTabId?: string | null; pingCaller?: boolean },
   ): Promise<TabEnsureResult>;
   resolveDockTarget(dock: IDockPointer): ReturnType<typeof Tab.resolveDockTarget>;
   activateById(tabId: string): Promise<void>;
   closeById(tabId: string): Promise<Tab[]>;
   closeManyByIds(tabIds: string[], projectId?: string | null): Promise<Tab[]>;
   renameById(tabId: string, name: string): Promise<Tab[]>;
-  setNameById(tabId: string, name: string): Promise<Tab[]>;
+  setNameById(tabId: string, name: string, options?: { pingCaller?: boolean }): Promise<Tab[]>;
   reorder(
     tabId: string,
     afterId: string | null,
@@ -49,21 +49,6 @@ export interface TabManagerOptions {
 }
 
 const defaultConnection = (): TabConnection => ConnectionManager.getInstance();
-
-/** `<epoch>:<seq>` → its parts; null when it is not one. */
-function parseVersion(version: string | null | undefined): { epoch: string; seq: number } | null {
-  const at = version ? version.lastIndexOf(':') : -1;
-  if (!version || at <= 0) return null;
-  const seq = Number(version.slice(at + 1));
-  return Number.isFinite(seq) ? { epoch: version.slice(0, at), seq } : null;
-}
-
-/** Whether a list at version `held` already holds every change announced at `wanted`. */
-export function versionCovers(held: string | null | undefined, wanted: string | null | undefined): boolean {
-  const h = parseVersion(held);
-  const w = parseVersion(wanted);
-  return !!h && !!w && h.epoch === w.epoch && h.seq >= w.seq;
-}
 
 function coerceTab(tab: Tab | ITab): Tab {
   if (tab instanceof Tab) return tab;
@@ -120,13 +105,6 @@ export class TabManager {
   private broadcastHandler: ((message: BroadcastMessage) => void) | null = null;
   private attachedConnection: TabConnection | null = null;
   private pendingIntentKey: string | null = null;
-  /** The version of the adopted list (null: unknown — every ping refetches). */
-  private adoptedVersion: string | null = null;
-  /** This manager's own tab writes in flight. Their answers carry the global list, so a ping
-   *  arriving meanwhile (usually the write's own) waits for them before it costs a refetch. */
-  private ownWrites = 0;
-  /** A ping held while own writes were in flight: its version, or '' when it carried none. */
-  private heldPing: string | null = null;
 
   constructor(options: TabManagerOptions = {}) {
     this.gateway = options.gateway ?? Tab;
@@ -160,16 +138,7 @@ export class TabManager {
     if (this.attached) return;
     const connection = this.getConnection();
     const handler = (message: BroadcastMessage): void => {
-      if (message?.broadcast_type !== 'tabs_changed') return;
-      const version = message.version ?? '';
-      if (versionCovers(this.adoptedVersion, version)) return; // already in the list we hold
-      if (this.ownWrites > 0) {
-        // Most likely our own write's ping: its answer brings the list. Decide once it lands.
-        this.heldPing = this.heldPing === null || versionCovers(version, this.heldPing) ? version : this.heldPing;
-        if (!version) this.heldPing = '';
-        return;
-      }
-      this.refreshInBackground();
+      if (message?.broadcast_type === 'tabs_changed') this.refreshInBackground();
     };
     connection.on('on_broadcast', handler);
     this.attached = true;
@@ -194,17 +163,14 @@ export class TabManager {
       return this.refreshInFlight;
     }
 
-    const listOnce = async (): Promise<Tab[]> => {
-      const tabs: TabList = await this.gateway.listAll();
-      this.adoptGlobal(tabs, tabs.version);
-      return tabs;
-    };
     this.refreshInFlight = (async () => {
       try {
-        let tabs = await listOnce();
+        let tabs = await this.gateway.listAll();
+        this.adoptGlobal(tabs);
         while (this.refreshRequestedAgain) {
           this.refreshRequestedAgain = false;
-          tabs = await listOnce();
+          tabs = await this.gateway.listAll();
+          this.adoptGlobal(tabs);
         }
         return tabs;
       } finally {
@@ -215,14 +181,8 @@ export class TabManager {
     return this.refreshInFlight;
   }
 
-  /** Replace the canonical store with an unscoped `list_all` projection. `version`: the
-   *  list's version when known — an answer OLDER than the list held is not adopted (a
-   *  refetch that started before a write must not undo the write's newer list). */
-  adoptGlobal(tabs: readonly (Tab | ITab)[], version?: string | null): void {
-    if (version && this.adoptedVersion && version !== this.adoptedVersion && versionCovers(this.adoptedVersion, version)) {
-      return;
-    }
-    this.adoptedVersion = version ?? null;
+  /** Replace the canonical store with an unscoped `list_all` projection. */
+  adoptGlobal(tabs: readonly (Tab | ITab)[]): void {
     this.snapshot = tabs.map(coerceTab);
     this.hydrated = true;
     // Lifecycle observers must settle before tab observers render this list.
@@ -315,10 +275,15 @@ export class TabManager {
    *  a minted row reports it to view-mode memory as `TabCreate`. */
   async ensureDock(
     dock: IDockPointer,
-    options: { parentTabId?: string | null; afterTabId?: string | null; viewMode?: string | null } = {},
+    options: {
+      parentTabId?: string | null;
+      afterTabId?: string | null;
+      viewMode?: string | null;
+      pingCaller?: boolean;
+    } = {},
   ): Promise<TabEnsureResult> {
     const { viewMode, ...placement } = options;
-    const result = await this.ownWrite(() => this.gateway.getFromDockPointer(dock, placement));
+    const result = await this.gateway.getFromDockPointer(dock, placement);
     if (result.created) {
       const tab = tabForDockKey(result.tabs, dock.tabHash);
       if (tab) this.recordViewModeEvent(tab, ViewModeEvent.TabCreate, viewMode);
@@ -378,45 +343,8 @@ export class TabManager {
     return this.gateway.renameById(tabId, name);
   }
 
-  async setName(tabId: string, name: string): Promise<Tab[]> {
-    return (await this.setNameAdopting(tabId, name)).tabs;
-  }
-
-  /** `setName`, adopting the global list the write answers with; `adopted` says whether it did. */
-  private async setNameAdopting(tabId: string, name: string): Promise<{ tabs: Tab[]; adopted: boolean }> {
-    let tabs: TabList = [];
-    const { adopted } = await this.ownWrite(async () => {
-      tabs = await this.gateway.setNameById(tabId, name);
-      return { all: tabs.all, version: tabs.version };
-    });
-    return { tabs, adopted };
-  }
-
-  /**
-   * Run one of this manager's tab writes. Its answer's global list (``all`` + ``version``) is
-   * adopted, and a `tabs_changed` ping held while it ran costs a refetch only when that list
-   * does not already hold it.
-   */
-  private async ownWrite<T extends { all?: Tab[]; version?: string }>(
-    write: () => Promise<T>,
-  ): Promise<T & { adopted: boolean }> {
-    this.ownWrites += 1;
-    let adopted = false;
-    try {
-      const result = await write();
-      if (result.all && result.version) {
-        this.adoptGlobal(result.all, result.version);
-        adopted = versionCovers(this.adoptedVersion, result.version);
-      }
-      return { ...result, adopted };
-    } finally {
-      this.ownWrites -= 1;
-      if (this.ownWrites === 0 && this.heldPing !== null) {
-        const held = this.heldPing;
-        this.heldPing = null;
-        if (!versionCovers(this.adoptedVersion, held)) this.refreshInBackground();
-      }
-    }
+  setName(tabId: string, name: string, options?: { pingCaller?: boolean }): Promise<Tab[]> {
+    return this.gateway.setNameById(tabId, name, options);
   }
 
   reorder(
@@ -456,8 +384,8 @@ export class TabManager {
     if (!tabHash || !trimmed) return;
     const tab = this.findByDockKey(tabHash);
     if (!tab || tab.name === trimmed) return;
-    const { adopted } = await this.setNameAdopting(tab.id, trimmed);
-    if (!adopted) await this.refresh();
+    await this.setName(tab.id, trimmed, { pingCaller: false });
+    await this.refresh();
   }
 
   attachContentEntitySync(): () => void {
@@ -476,8 +404,8 @@ export class TabManager {
       const remoteChanged = typeof remote === 'boolean' && tab.target_remote !== remote;
       if (!nameChanged && !remoteChanged) return;
       void (async () => {
-        const adopted = nameChanged ? (await this.setNameAdopting(tab.id, name)).adopted : false;
-        if (!adopted) await this.refresh();
+        if (nameChanged) await this.setName(tab.id, name, { pingCaller: false });
+        await this.refresh();
       })().catch(() => undefined);
     };
     connection.on('on_data_op', handler);
@@ -509,9 +437,6 @@ export class TabManager {
     this.hydrated = false;
     this.broadcastHandler = null;
     this.attachedConnection = null;
-    this.adoptedVersion = null;
-    this.ownWrites = 0;
-    this.heldPing = null;
     this.pendingIntentKey = null;
     this.lifecycle.resetForTests();
   }
