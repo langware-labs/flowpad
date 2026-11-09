@@ -26,7 +26,7 @@ module.exports.__t = {
   runScheduledUpdateCheck, startLaunchDesktopCheck, startOffer, prepareDeferredEngineUpdate, offerDesktopFoundAtLaunch, postBootUpdates,
   setLaunchDesktopLook: (p) => { launchDesktopLook = p; },
   setJournal: (j) => { journal = j; },
-  getNewestLogFile,
+  getNewestLogFile, restorePreviousEngineAndStart,
   getFoundAtLaunch: () => desktopFoundAtLaunch, getFollowUpDesktop: () => followUpDesktop,
   primeLaunchCheck: () => { launchDesktopCheck = startLaunchDesktopCheck(); },
   fireAccountWatch: (f) => accountWatchEvent && accountWatchEvent(f),
@@ -132,6 +132,8 @@ function load(opts = {}) {
     async resolveCompatibleEngineVersion() { if (opts.compatThrows) throw new Error(opts.compatThrows); return opts.compatibleRelease || null; }
     async _assertCandidateCompatible(v) { uv.asserted = (uv.asserted || []).concat(v); if ((opts.incompatible || []).includes(v)) throw new Error(`flowpad ${v} needs a newer desktop`); }
     cancelBackgroundWork(why) { uv.cancelled = (uv.cancelled || []).concat(why); }
+    hasUnconfirmedActivation() { return !!opts.activation; }
+    async restorePreviousEngine(o) { uv.calls.push(`restore ${o && o.why}`); if (!opts.activation) return false; opts.activation = null; return true; }
     async _pypiUpdateStatus() { return opts.engineStatus === undefined ? { currentVersion: '0.2.168', latestVersion: '0.2.180', required: true } : opts.engineStatus; }
     deferPackageVersion(v) { uv.deferred.push(v); }
     undeferPackageVersion(v) { uv.undeferred.push(v); }
@@ -148,8 +150,8 @@ function load(opts = {}) {
     async probeManagedInterpreter() {}
     async installLatest() { uv.installs = (uv.installs || 0) + 1; }
     async reinstall() { uv.reinstalls = (uv.reinstalls || 0) + 1; }
-    async start() { uv.started = (uv.started || 0) + 1; }
-    async stop() { uv.stopped = (uv.stopped || 0) + 1; }
+    async start() { uv.started = (uv.started || 0) + 1; uv.calls.push('start'); }
+    async stop() { uv.stopped = (uv.stopped || 0) + 1; uv.calls.push('stop'); }
     isInstalling() { return false; }
     setFailureSharer(fn) { this.sharer = fn; }
     backfillEngineOwnership() { uv.ownershipBackfills = (uv.ownershipBackfills || 0) + 1; uv.installsAtBackfill = uv.installs || 0; }
@@ -328,12 +330,19 @@ const HOUR = 60 * 60 * 1000;
     eq(env.uv.checks, 0, 'a newer desktop exists → no engine check, even with no pending offer');
   }
   {
-    // The desktop check FAILED: "could not tell" is not "up to date".
+    // The desktop check FAILED: "could not tell" is not "up to date" — but with no newer desktop KNOWN, the feed's
+    // outage does not hold the engine: after one more look, the engine check runs (its own compatibility checks).
     const env = load({ desktopCheckThrows: 'HTTP 500' });
     await env.t.getDesktopUpdateVersion();
     eq(env.t.getDesktopStatus().state, 'unknown', 'status: unknown after a failed check');
     await env.t.checkPackageUpdateInBackground();
-    eq(env.uv.checks, 0, 'unknown desktop status → the engine is held');
+    eq(env.uv.checks, 1, 'unknown, no newer desktop known → the compatibility-checked engine check runs (fallback)');
+    // ...but a newer desktop found BEFORE the outage keeps desktop-first, from the answer kept on disk.
+    const known = load({ desktopCheckThrows: 'HTTP 500' });
+    known.writeSchedule({ lastResult: { state: 'available', version: '0.2.48' }, lastSuccessAt: new Date().toISOString(), lastAttemptAt: new Date().toISOString(), failureCount: 1 });
+    await known.t.getDesktopUpdateVersion();
+    await known.t.checkPackageUpdateInBackground();
+    eq(known.uv.checks, 0, 'unknown, desktop 0.2.48 known from before → the engine is held');
     ok(env.logLines.some((l) => /engine change hold .*status is unknown \(update check failed: HTTP 500\)/.test(l)), 'and the log names the cause');
   }
   {
@@ -714,6 +723,117 @@ const HOUR = 60 * 60 * 1000;
       await env.ipc['upgrade-flowpad']({}, '0.2.181; rm -rf ~');
     } finally { global.fetch = realFetch; }
     eq(env.uv.upgrades.map((o) => o.version), ['0.2.181', null], 'the named release exactly; a non-version is ignored');
+  }
+  {
+    // The desktop check failed (GitHub 504): no newer desktop is known, only no answer. "Upgrade" looks at the feed
+    // again — seen on a 0.2.59 desktop, the newest, refused with "a newer desktop must be installed first". When the
+    // feed still does not answer, the click goes on against THIS desktop's compatibility contract (the fallback).
+    const env = load({ appVersion: '0.2.59', desktopFeed: '0.2.59' });
+    let failing = true;
+    const answer = env.autoUpdater.checkForUpdates;
+    env.autoUpdater.checkForUpdates = async () => { if (failing) { env.autoUpdater.checks++; throw new Error('HttpError: 504 Gateway Time-out'); } return answer(); };
+    await env.t.getDesktopUpdateVersion();
+    eq(env.t.getDesktopStatus().state, 'unknown', 'a failed check leaves the status unknown');
+    const realFetch = global.fetch;
+    global.fetch = async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' });
+    try {
+      const checksBefore = env.autoUpdater.checks;
+      const r = await env.ipc['upgrade-flowpad']({}, '0.2.181');
+      eq(env.autoUpdater.checks, checksBefore + 1, 'the click looks at the feed again first');
+      eq(r.desktopUpdatePending, undefined, 'still no answer, no newer desktop known: not refused');
+      eq(env.uv.asserted, ['0.2.181'], 'the release is checked against this desktop (fail closed) before anything is touched');
+      eq(env.uv.upgrades.map((o) => o.version), ['0.2.181'], 'and installed');
+      // the fallback never skips the compatibility check: a release this desktop cannot run is still refused
+      const bad = load({ appVersion: '0.2.59', desktopFeed: '0.2.59', desktopCheckThrows: 'HttpError: 504', incompatible: ['0.2.190'] });
+      await bad.t.getDesktopUpdateVersion();
+      const refused = await bad.ipc['upgrade-flowpad']({}, '0.2.190');
+      eq([refused.success, /newer desktop/.test(refused.error), bad.uv.flowStops || 0, bad.uv.upgrades.length], [false, true, 0, 0],
+        'fallback + an incompatible candidate: refused before the server is touched');
+    } finally { global.fetch = realFetch; }
+  }
+  {
+    // The automatic engine paths: a hold that rests only on a failed desktop check looks at the feed again, and when the
+    // feed still does not answer and no newer desktop is known, the (compatibility-checked) engine check runs anyway.
+    const failingThenOk = (env) => {
+      const answer = env.autoUpdater.checkForUpdates;
+      env.failing = true;
+      env.autoUpdater.checkForUpdates = async () => { if (env.failing) { env.autoUpdater.checks++; throw new Error('net::ERR_NETWORK_CHANGED'); } return answer(); };
+    };
+    // post-boot / periodic engine check: the feed answers now → the engine check runs
+    const up = load({ appVersion: '0.2.59', desktopFeed: '0.2.59' });
+    failingThenOk(up);
+    await up.t.getDesktopUpdateVersion();
+    up.failing = false;
+    const before = up.autoUpdater.checks;
+    eq(await up.t.checkPackageUpdateInBackground({ label: 'post-boot' }), 'ran', 'post-boot: the feed answers current now — the engine check runs');
+    eq([up.autoUpdater.checks - before, up.uv.checks], [1, 1], 'after one more look at the feed');
+    // still failing, nothing newer known → the engine check runs, after exactly one more look
+    const down = load({ appVersion: '0.2.59', desktopFeed: '0.2.59' });
+    failingThenOk(down);
+    await down.t.getDesktopUpdateVersion();
+    const b2 = down.autoUpdater.checks;
+    eq(await down.t.checkPackageUpdateInBackground({ label: 'post-boot' }), 'ran', 'still no answer, nothing newer known: the fallback runs the engine check');
+    eq([down.autoUpdater.checks - b2, down.uv.checks], [1, 1], 'one more look, then the engine check');
+    // a scheduled pass that has just looked at the feed (and failed) does not look twice — and falls back the same way
+    const pass = load({ appVersion: '0.2.59', desktopFeed: '0.2.59' });
+    pass.t.setupElectronAutoUpdater();
+    failingThenOk(pass);
+    const b3 = pass.autoUpdater.checks;
+    await pass.t.runScheduledUpdateCheck({ bypassSchedule: true });
+    eq([pass.autoUpdater.checks - b3, pass.uv.checks], [1, 1], 'scheduled pass: one look at the feed, none for the engine half, which falls back');
+    // the postponed prepare ("Later" at launch) looks again too
+    const later = load({ appVersion: '0.2.59', desktopFeed: '0.2.59', deferredEngine: '0.2.180' });
+    failingThenOk(later);
+    await later.t.getDesktopUpdateVersion();
+    later.failing = false;
+    await later.t.prepareDeferredEngineUpdate();
+    eq(later.uv.prepares.length, 1, 'the postponed update is prepared once the feed answers');
+  }
+  {
+    // Failed activation at launch / from the popover: the engine just installed did not come up — stop it, put back
+    // the one it replaced, start THAT and wait for it. Nothing to put back → null (the caller's failure path runs).
+    const realFetch = global.fetch;
+    global.fetch = async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' });
+    try {
+      const env = load({ activation: true });
+      const w = await env.t.restorePreviousEngineAndStart('timeout');
+      eq([w && w.ready, env.uv.calls], [true, ['stop', 'restore did not start (timeout)', 'start']], 'stopped, restored, started, healthy');
+      const none = load({ activation: false });
+      eq([await none.t.restorePreviousEngineAndStart('timeout'), none.uv.calls.includes('start')], [null, false], 'nothing to put back: null, nothing started');
+    } finally { global.fetch = realFetch; }
+  }
+  {
+    // Preserve the last known desktop: a newer desktop found before the feed failed keeps desktop-first.
+    // 1. in memory: a failed check does not overwrite it
+    const mem = load({ appVersion: '0.2.59', desktopFeed: '0.2.60' });
+    await mem.t.getDesktopUpdateVersion();
+    mem.autoUpdater.checkForUpdates = async () => { mem.autoUpdater.checks++; throw new Error('HttpError: 504'); };
+    await mem.t.getDesktopUpdateVersion();
+    eq([mem.t.getDesktopStatus().state, mem.t.getDesktopStatus().version], ['available', '0.2.60'], 'a failed check keeps the known desktop 0.2.60');
+    eq(mem.readSchedule().lastResult, { state: 'available', version: '0.2.60' }, 'and so does the file (recordFailure keeps lastResult)');
+    eq(await mem.t.checkPackageUpdateInBackground({ label: 'post-boot' }), 'held', 'the engine waits for it');
+    const r = await mem.ipc['upgrade-flowpad']({}, '0.2.181');
+    eq([r.desktopUpdatePending, mem.uv.upgrades.length], [true, 0], 'and the click names it: a newer desktop first');
+    // 2. from disk only (a new session, the feed down from the start)
+    const disk = load({ appVersion: '0.2.59', desktopCheckThrows: 'HttpError: 504' });
+    disk.writeSchedule({ lastResult: { state: 'available', version: '0.2.60' }, failureCount: 2 });
+    await disk.t.getDesktopUpdateVersion();
+    eq(disk.t.getDesktopStatus().state, 'unknown', 'this session never got an answer');
+    eq(await disk.t.checkPackageUpdateInBackground({ label: 'post-boot' }), 'held', 'the known desktop on disk still holds the engine');
+    // 3. a STALE known desktop (already installed) holds nothing
+    const stale = load({ appVersion: '0.2.60', desktopCheckThrows: 'HttpError: 504' });
+    stale.writeSchedule({ lastResult: { state: 'available', version: '0.2.60' }, failureCount: 2 });
+    await stale.t.getDesktopUpdateVersion();
+    eq(await stale.t.checkPackageUpdateInBackground({ label: 'post-boot' }), 'ran', 'the kept "0.2.60 available" is this desktop: no hold, the fallback runs');
+  }
+  {
+    // A newer desktop IS known: refused as before, without asking the feed again.
+    const env = load({ appVersion: '0.2.59', desktopFeed: '0.2.60' });
+    await env.t.getDesktopUpdateVersion();
+    const checksBefore = env.autoUpdater.checks;
+    const r = await env.ipc['upgrade-flowpad']({}, '0.2.181');
+    eq([r.success, r.desktopUpdatePending, /newer FlowPad desktop must be installed first/.test(r.error)], [false, true, true], 'a newer desktop: that message');
+    eq(env.autoUpdater.checks, checksBefore, 'no extra look at the feed');
   }
   {
     // A named release this desktop cannot run is refused BEFORE the server is touched: the app stays as it was.
