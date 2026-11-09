@@ -7,7 +7,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
-  useLlmSources: () => ({ status: { available: [] }, isLoading: false }),
+  useLlmSources: () => ({
+    status: { available: [{ id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', kind: 'hub', name: 'Course', can_administer: true }] },
+    isLoading: false,
+  }),
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: {} }) }));
 vi.mock('@src/components/assets/editor/agent-profile/AgentVisibilitySection', () => ({
@@ -19,7 +22,8 @@ const { NewDeploymentWizard } = await import('@src/components/assets/editor/agen
 
 const AGENT_ID = '11111111-2222-4333-8444-555555555555';
 const HUB = 'https://app.flowpad.ai';
-const STATE = {
+let STATE: Record<string, unknown>;
+const ON = {
   settings: { allow_visitor_deployment: true, mode: 'code', max_deployments: 8, llm_source: null, cap_usd: 5 },
   codes: [],
   deployments: [],
@@ -28,6 +32,7 @@ const STATE = {
 let calls: { url: string; body: Record<string, unknown> }[];
 beforeEach(() => {
   calls = [];
+  STATE = ON;
   vi.spyOn(cloudManager, 'cloudAppUrl', 'get').mockReturnValue(HUB);
   vi.spyOn(dataManager, 'callAction').mockImplementation((info) => {
     calls.push({ url: info.fullActionUrl, body: (info.bodyParameters ?? {}) as Record<string, unknown> });
@@ -79,5 +84,26 @@ describe('NewDeploymentWizard — one-click invite code', () => {
 
     await waitFor(() => expect(onOpenInvite).toHaveBeenCalled());
     expect(calls.find((c) => c.url.endsWith('/rename_public_code'))?.body).toEqual({ code_id: 'n1', name: 'Noa' });
+  });
+
+  it('with invites off, setting them up ends on the same one-machine code', async () => {
+    STATE = { settings: { allow_visitor_deployment: false }, codes: [], deployments: [] };
+    render(wizard());
+    const tile = await screen.findByTestId('new-deployment-kind-code');
+    await waitFor(() => expect(tile).toHaveTextContent('Invite codes'));
+    fireEvent.click(tile);
+    expect(screen.queryByTestId('new-deployment-count')).toBeNull();
+    STATE = ON;
+    fireEvent.click(screen.getByTestId('new-deployment-next'));
+
+    expect(await screen.findByTestId('one-click-code-value')).toHaveTextContent('ABCD-EFGH');
+    expect(calls.find((c) => c.url.endsWith('/add_public_codes'))?.body).toEqual({ count: 1 });
+  });
+
+  it('a refused read shows the refusal, never the first-time setup', async () => {
+    vi.spyOn(dataManager, 'callAction').mockRejectedValue(new Error('only the owner or an admin can manage deployments'));
+    render(wizard());
+    expect(await screen.findByTestId('new-deployment-read-error')).toHaveTextContent('only the owner or an admin');
+    expect(screen.queryByTestId('new-deployment-kind-code')).toBeNull();
   });
 });

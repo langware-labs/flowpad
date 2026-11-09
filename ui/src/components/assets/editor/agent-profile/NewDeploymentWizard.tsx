@@ -20,7 +20,6 @@ import {
   turnOnPublicDeployments,
 } from './AgentAutoLaunchTab';
 import { useVisitorRole } from './AgentVisibilitySection';
-import { FreshCodes, saveCodeNames } from './FreshCodes';
 
 type Step = 'kind' | 'settings' | 'launch' | 'code';
 const STEPS: Step[] = ['kind', 'settings', 'launch'];
@@ -44,19 +43,18 @@ export function NewDeploymentWizard({
   const [role] = useVisitorRole(agent, true);
   const [step, setStep] = useState<Step>('kind');
   const [mode, setMode] = useState<PublicDeploymentMode>('code');
-  const [count, setCount] = useState(8);
   const [max, setMax] = useState<number | null>(DEFAULT_MAX_DEPLOYMENTS);
   const [source, setSource] = useState('');
   const [cap, setCap] = useState<number | null>(DEFAULT_CAP_USD);
   const [invites, setInvites] = useState<PublicDeploymentsState | null>(null);
   const [invitesRead, setInvitesRead] = useState(false);
+  // A refused read is an answer, never "invites are off": that took an admin into a first-time setup.
+  const [readError, setReadError] = useState<string | null>(null);
   const invitesOn = invitesRead ? invites?.settings?.allow_visitor_deployment === true : null;
   // The one-click code: minted the moment the tile is clicked, named on the same card.
   const [oneCode, setOneCode] = useState<NewPublicInviteCode | null>(null);
   const [oneName, setOneName] = useState('');
   const [busy, setBusy] = useState(false);
-  const [fresh, setFresh] = useState<NewPublicInviteCode[]>([]);
-  const [names, setNames] = useState<Record<string, string>>({});
 
   const { status } = useLlmSources();
   const sources = useMemo(
@@ -70,7 +68,7 @@ export function NewDeploymentWizard({
     agent
       .publicDeployments()
       .then((s) => live && setInvites(s))
-      .catch(() => undefined)
+      .catch((e) => live && setReadError(errorMessage(e, t`Could not read this agent's deployments.`)))
       .finally(() => live && setInvitesRead(true));
     return () => {
       live = false;
@@ -80,7 +78,7 @@ export function NewDeploymentWizard({
   const deployPage = agent.deployPagePointer;
   const at = STEPS.indexOf(step);
   const link = openPcLink(agent);
-  const ready = Boolean(chosenSource) && cap !== null && cap > 0 && (mode === 'link' || (count >= 1 && count <= 100));
+  const ready = Boolean(chosenSource) && cap !== null && cap > 0;
 
   // Invites already on: the code tile is one click to a new code; the link tile opens the invite deployment.
   const mintOne = async () => {
@@ -130,8 +128,13 @@ export function NewDeploymentWizard({
         { mode, max_deployments: max, llm_source: chosenSource, cap_usd: cap as number },
         role,
       );
-      if (mode === 'code') setFresh(await agent.addPublicCodes(count));
-      setStep('launch');
+      if (mode === 'code') {
+        // Invites turned on: the same one-machine code card as when they already were.
+        const [minted] = await agent.addPublicCodes(1);
+        setOneCode(minted ?? null);
+        setInvites(await agent.publicDeployments());
+        setStep('code');
+      } else setStep('launch');
     } catch (e) {
       notify.error({
         title: t`Could not launch the deployment`,
@@ -143,21 +146,11 @@ export function NewDeploymentWizard({
     }
   };
 
-  const done = async () => {
-    setBusy(true);
-    try {
-      await saveCodeNames(agent, fresh, names);
-      onOpenInvite();
-    } catch (e) {
-      notify.error({ title: t`Could not name the invites`, message: errorMessage(e, t`The hub refused the change.`) });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const done = () => onOpenInvite();
 
   const crumbs = [t`Kind`, t`Settings`, t`Launch`];
   const kindDone = mode === 'code' ? t`Invite codes` : t`Public link`;
-  const settingsDone = mode === 'code' ? t`${count} codes · $${cap ?? 0}` : t`$${cap ?? 0} per user`;
+  const settingsDone = t`$${cap ?? 0} per user`;
 
   const tile = (
     Icon: typeof Ticket,
@@ -243,12 +236,17 @@ export function NewDeploymentWizard({
           {step === 'kind' && <Trans>New deployment — who will use it?</Trans>}
           {step === 'code' && <Trans>Here is the code — give it to one user</Trans>}
           {step === 'settings' && <Trans>Settings — how many, and who pays</Trans>}
-          {step === 'launch' &&
-            (mode === 'code' ? <Trans>Launch — hand out the codes</Trans> : <Trans>Launch — share the link</Trans>)}
+          {step === 'launch' && <Trans>Launch — share the link</Trans>}
         </h2>
       </div>
 
+      {step === 'kind' && readError && (
+        <p className="text-sm text-destructive" data-testid="new-deployment-read-error">
+          {readError}
+        </p>
+      )}
       {step === 'kind' &&
+        !readError &&
         (invitesOn === null ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
@@ -347,22 +345,6 @@ export function NewDeploymentWizard({
       {step === 'settings' && (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap gap-4">
-            {mode === 'code' && (
-              <label className="flex flex-col gap-1 text-xs">
-                <span className="font-medium">
-                  <Trans>Codes</Trans>
-                </span>
-                <Input
-                  type="number"
-                  min={1}
-                  max={100}
-                  className="h-8 w-24 text-xs"
-                  value={count}
-                  onChange={(e) => setCount(Number(e.target.value))}
-                  data-testid="new-deployment-count"
-                />
-              </label>
-            )}
             <label className="flex flex-col gap-1 text-xs">
               <span className="font-medium">
                 <Trans>At most machines at once</Trans>
@@ -431,9 +413,6 @@ export function NewDeploymentWizard({
 
       {step === 'launch' && (
         <div className="flex flex-col gap-3">
-          {fresh.length > 0 && (
-            <FreshCodes codes={fresh} names={names} onName={(id, v) => setNames((p) => ({ ...p, [id]: v }))} />
-          )}
           {link && (
             <div className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
               <span className="min-w-0 flex-1 truncate font-mono text-xs" data-testid="new-deployment-link">
@@ -447,7 +426,7 @@ export function NewDeploymentWizard({
             </div>
           )}
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => void done()} disabled={busy} data-testid="new-deployment-done">
+            <Button size="sm" onClick={done} disabled={busy} data-testid="new-deployment-done">
               <Trans>Done</Trans>
             </Button>
           </div>

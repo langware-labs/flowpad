@@ -125,7 +125,12 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const [moreOpened, setMoreOpened] = useState(false);
   // The open tab lives in the URL (`?tab=`), like the deployment card's: saving the agent re-renders the editor, and a
   // tab kept only in state would snap back to Summary (seen when saving a value on the Env tab).
-  const tab = currentDock?.options?.[EDITOR_TAB_OPTION] || 'summary';
+  // Who may deploy: the hub lets an agent's owner or admin manage its deployments; anyone else sees none of it.
+  // On the desktop the agent is the author's own (its read carries no role).
+  const role = roleOf(agent);
+  const canDeploy = role === undefined ? !hub : role === 'owner' || role === 'admin';
+  const askedTab = currentDock?.options?.[EDITOR_TAB_OPTION] || 'summary';
+  const tab = !canDeploy && askedTab === 'deployments' ? 'summary' : askedTab;
   const openTab = (next: string) => {
     if (next === 'settings') setMoreOpened(true);
     if (currentDock) navigation.openDock(currentDock.withOption(EDITOR_TAB_OPTION, next === 'summary' ? null : next));
@@ -335,7 +340,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
             data-testid="agent-version"
           >
             {/* The same role chip and time line as the agent's card (components/items). */}
-            <RoleChip role={roleOf(agent)} />
+            <RoleChip role={role} />
             {agentTime && <span data-testid="item-time">{agentTime}</span>}
             {hub ? (
               <Trans>Published version — edit it on the author's computer</Trans>
@@ -424,7 +429,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
 
           {/* The agent's toolbar, above its tabs. */}
           <div className="flex items-center gap-2" data-testid="agent-toolbar">
-            {!wizardOpen && (
+            {canDeploy && !wizardOpen && (
               <Button
                 size="sm"
                 variant="outline"
@@ -437,7 +442,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
               </Button>
             )}
           </div>
-          {wizardOpen && (
+          {canDeploy && wizardOpen && (
             <NewDeploymentWizard
               agent={agent}
               onClose={() => setWizardOpen(false)}
@@ -463,17 +468,19 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
               <TabsTrigger value="settings" data-testid="agent-tab-settings">
                 <Trans>Settings</Trans>
               </TabsTrigger>
-              <TabsTrigger value="deployments" data-testid="agent-tab-deployments">
-                <Trans>Deployments</Trans>
-                {shownPlaces > 0 && (
-                  <span
-                    className="ms-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums leading-none text-primary-foreground"
-                    data-testid="agent-tab-deployments-count"
-                  >
-                    {shownPlaces}
-                  </span>
-                )}
-              </TabsTrigger>
+              {canDeploy && (
+                <TabsTrigger value="deployments" data-testid="agent-tab-deployments">
+                  <Trans>Deployments</Trans>
+                  {shownPlaces > 0 && (
+                    <span
+                      className="ms-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums leading-none text-primary-foreground"
+                      data-testid="agent-tab-deployments-count"
+                    >
+                      {shownPlaces}
+                    </span>
+                  )}
+                </TabsTrigger>
+              )}
               {!hub && (
                 <TabsTrigger value="env" data-testid="agent-tab-env">
                   <Trans>Env</Trans>
@@ -762,44 +769,48 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   )}
                 </p>
               )}
-              <div className="flex items-center gap-3 text-sm">
-                <span data-testid="agent-summary-deployments">
-                  {places === null ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  ) : cloudPlaces === 1 ? (
-                    t`1 cloud deployment`
-                  ) : (
-                    t`${cloudPlaces} cloud deployments`
+              {canDeploy && (
+                <div className="flex items-center gap-3 text-sm">
+                  <span data-testid="agent-summary-deployments">
+                    {places === null ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : cloudPlaces === 1 ? (
+                      t`1 cloud deployment`
+                    ) : (
+                      t`${cloudPlaces} cloud deployments`
+                    )}
+                  </span>
+                  {deployPage && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigation.openDock(deployPage)}
+                      data-testid="agent-summary-new-deployment"
+                    >
+                      <Plus className="me-1.5 h-3.5 w-3.5" />
+                      <Trans>Deploy</Trans>
+                    </Button>
                   )}
-                </span>
-                {deployPage && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigation.openDock(deployPage)}
-                    data-testid="agent-summary-new-deployment"
-                  >
-                    <Plus className="me-1.5 h-3.5 w-3.5" />
-                    <Trans>Deploy</Trans>
-                  </Button>
-                )}
-              </div>
+                </div>
+              )}
             </TabsContent>
             {/* One list of every deployment; the invite deployment is one row of it and opens in place -- the same
                 component on the desktop and the hub. Not force-mounted: read on first open, and the invite view's
                 10s poll stops when another tab is shown. */}
-            <TabsContent value="deployments" className="mt-3">
-              {inviteOpen ? (
-                // The hub row IS the published agent: there is no local version to read there.
-                <AgentAutoLaunchTab
-                  agent={agent}
-                  version={hub ? HUB_PUBLISHED : version}
-                  onBack={() => setInviteOpen(false)}
-                />
-              ) : (
-                <AgentPlacesColumn agent={agent} onOpenInvite={() => setInviteOpen(true)} />
-              )}
-            </TabsContent>
+            {canDeploy && (
+              <TabsContent value="deployments" className="mt-3">
+                {inviteOpen ? (
+                  // The hub row IS the published agent: there is no local version to read there.
+                  <AgentAutoLaunchTab
+                    agent={agent}
+                    version={hub ? HUB_PUBLISHED : version}
+                    onBack={() => setInviteOpen(false)}
+                  />
+                ) : (
+                  <AgentPlacesColumn agent={agent} onOpenInvite={() => setInviteOpen(true)} />
+                )}
+              </TabsContent>
+            )}
             {!hub && (
               <TabsContent value="env" className="mt-3">
                 <AgentEnvTab agent={agent} />
