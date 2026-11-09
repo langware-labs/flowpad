@@ -11,7 +11,7 @@ import { cn } from '@src/lib/utils';
 import { errorMessage } from '@src/lib/error-message';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { RoleChip, useItemTime } from '@src/components/items/ItemCard';
-import { roleOf } from '@src/components/items/role';
+import { canDo, roleOf } from '@src/components/items/role';
 import { AgentAvatarPicker } from '@src/components/ui/agent-avatar-picker';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { prepareAvatarImage } from '@src/lib/prepare-avatar-image';
@@ -130,10 +130,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const [moreOpened, setMoreOpened] = useState(false);
   // The open tab lives in the URL (`?tab=`), like the deployment card's: saving the agent re-renders the editor, and a
   // tab kept only in state would snap back to Summary (seen when saving a value on the Env tab).
-  // Who may deploy: the hub lets an agent's owner or admin manage its deployments; anyone else sees none of it.
-  // On the desktop the agent is the author's own (its read carries no role).
-  const role = roleOf(agent);
-  const canDeploy = role === undefined ? !hub : role === 'owner' || role === 'admin';
+  // Who may deploy is the hub's policy (owner or admin): anyone else sees none of it. On the desktop the agent is the
+  // author's own (its read carries no permissions).
+  const canDeploy = canDo(agent, 'public_deployments') ?? !hub;
   const askedTab = currentDock?.options?.[EDITOR_TAB_OPTION] || 'summary';
   const tab = !canDeploy && askedTab === 'deployments' ? 'summary' : askedTab;
   const openTab = (next: string) => {
@@ -345,7 +344,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
             data-testid="agent-version"
           >
             {/* The same role chip and time line as the agent's card (components/items). */}
-            <RoleChip role={role} />
+            <RoleChip role={roleOf(agent)} />
             {agentTime && <span data-testid="item-time">{agentTime}</span>}
             {hub ? (
               <Trans>Published version — edit it on the author's computer</Trans>
@@ -447,7 +446,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
               </Button>
             )}
           </div>
-          {canDeploy && wizardOpen && (
+          {wizardOpen && (
             <NewDeploymentWizard
               agent={agent}
               onClose={() => setWizardOpen(false)}
@@ -805,20 +804,18 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
             {/* One list of every deployment; the invite deployment is one row of it and opens in place -- the same
                 component on the desktop and the hub. Not force-mounted: read on first open, and the invite view's
                 10s poll stops when another tab is shown. */}
-            {canDeploy && (
-              <TabsContent value="deployments" className="mt-3">
-                {inviteOpen ? (
-                  // The hub row IS the published agent: there is no local version to read there.
-                  <AgentAutoLaunchTab
-                    agent={agent}
-                    version={hub ? HUB_PUBLISHED : version}
-                    onBack={() => setInviteOpen(false)}
-                  />
-                ) : (
-                  <AgentPlacesColumn agent={agent} onOpenInvite={() => setInviteOpen(true)} />
-                )}
-              </TabsContent>
-            )}
+            <TabsContent value="deployments" className="mt-3">
+              {inviteOpen ? (
+                // The hub row IS the published agent: there is no local version to read there.
+                <AgentAutoLaunchTab
+                  agent={agent}
+                  version={hub ? HUB_PUBLISHED : version}
+                  onBack={() => setInviteOpen(false)}
+                />
+              ) : (
+                <AgentPlacesColumn agent={agent} onOpenInvite={() => setInviteOpen(true)} />
+              )}
+            </TabsContent>
             <TabsContent value="env" className="mt-3">
               <AgentEnvTab agent={agent} secrets={secrets} />
             </TabsContent>

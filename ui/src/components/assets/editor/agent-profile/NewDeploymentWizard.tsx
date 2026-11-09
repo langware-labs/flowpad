@@ -82,16 +82,22 @@ export function NewDeploymentWizard({
   const link = openPcLink(agent);
   const ready = Boolean(chosenSource) && cap !== null && cap > 0;
 
+  /** One new code on the one-machine card -- the end of every invite path. A new one replaces the shown one,
+   * named first when a name was typed; the re-read refreshes the "machines left" line. */
+  const showNewCode = async () => {
+    const rename = oneCode && oneName.trim() ? agent.renamePublicCode(oneCode.id, oneName.trim()) : null;
+    const [[minted]] = await Promise.all([agent.addPublicCodes(1), rename]);
+    setOneCode(minted ?? null);
+    setOneName('');
+    setInvites(await agent.publicDeployments());
+    setStep('code');
+  };
+
   // Invites already on: the code tile is one click to a new code; the link tile opens the invite deployment.
   const mintOne = async () => {
     setBusy(true);
     try {
-      if (oneCode && oneName.trim()) await agent.renamePublicCode(oneCode.id, oneName.trim());
-      const [minted] = await agent.addPublicCodes(1);
-      setOneCode(minted ?? null);
-      setOneName('');
-      setInvites(await agent.publicDeployments());
-      setStep('code');
+      await showNewCode();
     } catch (e) {
       notify.error({ title: t`Could not create a code`, message: errorMessage(e, t`The hub refused the change.`) });
     } finally {
@@ -130,13 +136,8 @@ export function NewDeploymentWizard({
         { mode, max_deployments: max, llm_source: chosenSource, cap_usd: cap as number },
         role,
       );
-      if (mode === 'code') {
-        // Invites turned on: the same one-machine code card as when they already were.
-        const [minted] = await agent.addPublicCodes(1);
-        setOneCode(minted ?? null);
-        setInvites(await agent.publicDeployments());
-        setStep('code');
-      } else setStep('launch');
+      if (mode === 'code') await showNewCode();
+      else setStep('launch');
     } catch (e) {
       notify.error({
         title: t`Could not launch the deployment`,
@@ -148,11 +149,8 @@ export function NewDeploymentWizard({
     }
   };
 
-  const done = () => onOpenInvite();
-
   const crumbs = [t`Kind`, t`Settings`, t`Launch`];
   const kindDone = mode === 'code' ? t`Invite codes` : t`Public link`;
-  const settingsDone = t`$${cap ?? 0} per user`;
 
   const tile = (
     Icon: typeof Ticket,
@@ -198,7 +196,8 @@ export function NewDeploymentWizard({
                     className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
                     onClick={() => step !== 'launch' && setStep(s)}
                   >
-                    ✓ {crumbs[i]}:<span className="text-foreground">{i === 0 ? kindDone : settingsDone}</span>
+                    ✓ {crumbs[i]}:
+                    <span className="text-foreground">{i === 0 ? kindDone : t`$${cap ?? 0} per user`}</span>
                   </button>
                 ) : (
                   <span className={i === at ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
@@ -428,7 +427,7 @@ export function NewDeploymentWizard({
             </div>
           )}
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={done} disabled={busy} data-testid="new-deployment-done">
+            <Button size="sm" onClick={onOpenInvite} data-testid="new-deployment-done">
               <Trans>Done</Trans>
             </Button>
           </div>

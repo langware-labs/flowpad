@@ -163,14 +163,14 @@ describe('Unreadable definition', () => {
 
 describe('Who sees deployments', () => {
   it('a reader sees no New deployment, no Deployments tab and no Deploy', async () => {
-    fixture({}, { expand: { roles: ['reader'] } });
+    fixture({}, { expand: { roles: ['reader'], allowed_actions: ['agent.read'] } });
     await screen.findByTestId('agent-tab-summary');
     expect(screen.queryByTestId('agent-new-deployment')).toBeNull();
     expect(screen.queryByTestId('agent-tab-deployments')).toBeNull();
     expect(screen.queryByTestId('agent-summary-deployments')).toBeNull();
   });
   it('an admin deploys like the owner', async () => {
-    fixture({}, { expand: { roles: ['admin'] } });
+    fixture({}, { expand: { roles: ['admin'], allowed_actions: ['agent.read', 'agent.public_deployments'] } });
     expect(await screen.findByTestId('agent-new-deployment')).toBeInTheDocument();
     expect(screen.getByTestId('agent-tab-deployments')).toBeInTheDocument();
   });
