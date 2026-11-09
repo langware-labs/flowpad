@@ -6410,6 +6410,10 @@ msgstr "Choose an artifact to open"
 msgid "Choose an endpoint…"
 msgstr "Choose an endpoint…"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Choose another installer"
+msgstr "Choose another installer"
+
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "Choose another worker"
 msgstr "Choose another worker"
@@ -11317,10 +11321,48 @@ msgstr "Download attachments"
 msgid "Download bundle"
 msgstr "Download bundle"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Download didn't start?"
+msgstr "Download didn't start?"
+
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Download file"
 msgstr "Download file"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad"
+msgstr "Download FlowPad"
+
+#: src/pages/entry/DesktopDownload.tsx
+#: src/pages/entry/DesktopDownload.tsx
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad for Linux"
+msgstr "Download FlowPad for Linux"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad for macOS"
+msgstr "Download FlowPad for macOS"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download FlowPad for Windows"
+msgstr "Download FlowPad for Windows"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download for Linux (AppImage)"
+msgstr "Download for Linux (AppImage)"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download for macOS"
+msgstr "Download for macOS"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Download for Windows"
+msgstr "Download for Windows"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Download it directly"
+msgstr "Download it directly"
 
 #: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
@@ -13603,6 +13645,18 @@ msgstr "Flowpad Cloud Results"
 msgid "Flowpad Cloud:"
 msgstr "Flowpad Cloud:"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop isn't available for 32-bit Windows — it needs 64-bit Windows."
+msgstr "FlowPad Desktop isn't available for 32-bit Windows — it needs 64-bit Windows."
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop isn't available for this processor yet — it runs on 64-bit Intel/AMD (x86_64) Linux."
+msgstr "FlowPad Desktop isn't available for this processor yet — it runs on 64-bit Intel/AMD (x86_64) Linux."
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "FlowPad Desktop runs on macOS, Windows and Linux. Open this page on your computer, or download it below."
+msgstr "FlowPad Desktop runs on macOS, Windows and Linux. Open this page on your computer, or download it below."
+
 #: src/i18n/type-labels.ts
 msgid "Flowpad Diagnosis"
 msgstr "Flowpad Diagnosis"
@@ -13676,6 +13730,10 @@ msgstr "Flowpad runs this one itself. You can check it, run it and see its runs,
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Flowpad shared pool. Usage draws on Flowpad credits."
 msgstr "Flowpad shared pool. Usage draws on Flowpad credits."
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad still didn't open. Make sure the installation finished, then click Open FlowPad again."
+msgstr "FlowPad still didn't open. Make sure the installation finished, then click Open FlowPad again."
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "FlowPad stops, upgrades and starts again on each. Anyone working in them is interrupted, and paused machines are woken."
@@ -14087,12 +14145,10 @@ msgid "Get an invite code"
 msgstr "Get an invite code"
 
 #: src/pages/entry/entry-shell.tsx
-#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get FlowPad at flowpad.ai →"
 msgstr "Get FlowPad at flowpad.ai →"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get it at flowpad.ai"
 msgstr "Get it at flowpad.ai"
 
@@ -15588,6 +15644,10 @@ msgstr "Install failed."
 msgid "Install Flowpad on your computer first"
 msgstr "Install Flowpad on your computer first"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Install FlowPad, then come back to this page."
+msgstr "Install FlowPad, then come back to this page."
+
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Install gh"
 msgstr "Install gh"
@@ -16907,6 +16967,18 @@ msgstr "Linking failed."
 msgid "Linking…"
 msgstr "Linking…"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Linux AppImage — most distributions (x86_64)"
+msgstr "Linux AppImage — most distributions (x86_64)"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Linux DEB — Ubuntu, Debian, Linux Mint"
+msgstr "Linux DEB — Ubuntu, Debian, Linux Mint"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Linux RPM — Fedora, RHEL, Rocky Linux"
+msgstr "Linux RPM — Fedora, RHEL, Rocky Linux"
+
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "List"
 msgstr "List"
@@ -17640,6 +17712,10 @@ msgstr "Machine: {0}"
 #: src/types/ViewType.ts
 msgid "Machines"
 msgstr "Machines"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "macOS (.dmg) — Intel and Apple Silicon"
+msgstr "macOS (.dmg) — Intel and Apple Silicon"
 
 #: src/components/top-nav-bar/use-screen-recorder.ts
 msgid "macOS blocks Flowpad from recording the screen. Allow it under Privacy & Security › Screen & System Audio Recording, then try again."
@@ -21398,6 +21474,10 @@ msgstr "On this machine"
 msgid "On this machine only — undo any time"
 msgstr "On this machine only — undo any time"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "On Windows on ARM, FlowPad runs through Windows' built-in x64 emulation."
+msgstr "On Windows on ARM, FlowPad runs through Windows' built-in x64 emulation."
+
 #. placeholder {0}: port.port
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "On: if another program holds {0}, starting fails instead of moving."
@@ -21419,6 +21499,10 @@ msgstr "Once"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Once at {when}"
 msgstr "Once at {when}"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Once FlowPad is installed, click Open FlowPad to continue."
+msgstr "Once FlowPad is installed, click Open FlowPad to continue."
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "once per machine"
@@ -21866,6 +21950,11 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Open externally: {childPath}"
 msgstr "Open externally: {childPath}"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Open FlowPad"
+msgstr "Open FlowPad"
 
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open Flowpad Cloud"
@@ -22742,6 +22831,10 @@ msgstr "Other assets"
 msgid "Other paths with this asset identity"
 msgstr "Other paths with this asset identity"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Other platforms"
+msgstr "Other platforms"
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Other project"
 msgstr "Other project"
@@ -22858,6 +22951,10 @@ msgstr "Pack keys into credentials"
 #: src/components/top-nav-bar/AppButton.tsx
 msgid "Package"
 msgstr "Package"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Package format"
+msgstr "Package format"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Package removed"
@@ -31720,6 +31817,10 @@ msgstr "The worker exited immediately after launch, so auto-relaunch is paused. 
 msgid "Then"
 msgstr "Then"
 
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Then install it:"
+msgstr "Then install it:"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Then send this to the Flowpad bot:"
 msgstr "Then send this to the Flowpad bot:"
@@ -31753,6 +31854,10 @@ msgstr "These are kept out of git and may be private. They would be sent too:"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "These conversations exist only on this device."
 msgstr "These conversations exist only on this device."
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "These installers are for 64-bit Intel/AMD (x86_64) Linux."
+msgstr "These installers are for 64-bit Intel/AMD (x86_64) Linux."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
@@ -33182,7 +33287,6 @@ msgstr "Triggers"
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
-#: src/pages/entry/OpenInFlowpadActions.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
@@ -35059,6 +35163,10 @@ msgstr "Will upgrade"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Window (days)"
 msgstr "Window (days)"
+
+#: src/pages/entry/DesktopDownload.tsx
+msgid "Windows (.exe)"
+msgstr "Windows (.exe)"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Wipes each machine and starts it fresh from the agent's project. Anything not shared is lost."
