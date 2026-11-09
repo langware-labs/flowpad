@@ -128,18 +128,20 @@ def analyze_usage(start: datetime, end: datetime) -> UsageSummarySpec:
         # its activity lands inside it, so we keep any session that *could* overlap
         # and let the per-event filter below decide. Skip only sessions that
         # provably can't: started at/after `end`, or last written before `start`.
+        # The mtime check is a stat; run it before parsing so a daily run never
+        # reads the sessions that were last written before the window.
+        try:
+            last_activity = datetime.fromtimestamp(Path(path).stat().st_mtime, tz=timezone.utc)
+        except OSError:
+            last_activity = None
+        if last_activity is not None and last_activity < start:
+            continue
         try:
             rec = extract_claude_session_from_path(path, include_content=False)
         except Exception:  # noqa: BLE001 — a single unreadable session must not abort the run
             continue
         started = _session_start(rec)
         if started is not None and started >= end:
-            continue
-        try:
-            last_activity = datetime.fromtimestamp(Path(path).stat().st_mtime, tz=timezone.utc)
-        except OSError:
-            last_activity = None
-        if last_activity is not None and last_activity < start:
             continue
 
         # Single source of truth for cost + tokens: the transcript analyzer.

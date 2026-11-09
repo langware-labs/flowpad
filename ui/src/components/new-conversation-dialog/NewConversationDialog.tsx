@@ -22,6 +22,7 @@ import { SendProgressNotice } from '@src/components/conversation/SendProgressNot
 import { errorMessage } from '@src/lib/error-message';
 import { Check, ChevronDown, Loader2, MessageSquarePlus, Pencil, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Textarea } from '@src/components/ui/textarea';
 
 /**
  * A special destination in place of the participant picker -- e.g. "IT · <agent> deployments". The dialog is
@@ -344,9 +345,9 @@ export function NewConversationDialog({ open, onClose, destination = null }: New
               <AssetRefChips assetRefs={assetRefs} onChange={setAssetRefs} disabled={busy} />
               {callPrompt !== null && !destination && (
                 <div className="relative" data-testid="new-conversation-prompt">
-                  <textarea
+                  <Textarea
                     autoFocus
-                    className="min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 pe-8 font-mono text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="pe-8 font-mono text-xs md:text-xs"
                     value={callPrompt}
                     onChange={(e) => setCallPrompt(e.target.value)}
                     disabled={busy}
