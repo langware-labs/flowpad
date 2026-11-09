@@ -82,10 +82,10 @@ export function ChatHistoryRow({
   const cfg = compactWorkerStatusConfig(workerStatus);
   const mark =
     busy || cfg.animate
-      ? { key: 'busy', icon: Loader2, cls: 'animate-spin text-emerald-500', label: cfg.label }
+      ? { key: 'busy', icon: Loader2, cls: 'animate-spin text-emerald-500', label: cfg.animate ? cfg.label : t`Working…` }
       : process?.goal_met
         ? { key: 'goal_met', icon: Check, cls: 'text-emerald-500', label: t`Goal completed` }
-        : { key: workerStatus ?? 'unknown', icon: cfg.icon, cls: cfg.color, label: cfg.label };
+        : { key: workerStatus ?? WorkerStatus.UNKNOWN, icon: cfg.icon, cls: cfg.color, label: cfg.label };
   // Project · branch survive only as a hover tooltip on the row (no visible subline).
   const meta = [entry.project_name, entry.git_branch].filter(Boolean).join(' · ');
   const hasMsgs = !!entry.message_count && entry.message_count > 0;
