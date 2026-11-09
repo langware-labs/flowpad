@@ -474,11 +474,11 @@ function NewProjectDialog({
     try {
       await onCreate(projectName.trim(), parentFolder.trim());
     } catch (err) {
-      setError(errorMessage(err, 'Failed to create project'));
+      setError(errorMessage(err, t`Failed to create project`));
     } finally {
       setIsSubmitting(false);
     }
-  }, [projectName, parentFolder, onCreate]);
+  }, [projectName, parentFolder, onCreate, t]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
