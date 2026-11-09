@@ -649,6 +649,45 @@ def tail_status_detail(path: "str | _Path") -> StatusDetail | None:
     return None
 
 
+# path -> (bytes read, latest verdict). A goal check can sit far back in a long
+# transcript, so each call reads only what was appended since the last one.
+_goal_seen: dict[str, tuple[int, bool]] = {}
+
+
+def goal_met(path: "str | _Path") -> bool:
+    """True when the newest ``/goal`` check in a Claude transcript says it was met.
+
+    Claude Code writes an ``attachment`` of type ``goal_status`` each time it
+    evaluates the session's goal; the newest one is the verdict. Best-effort:
+    an unreadable file is ``False``.
+    """
+    key = str(path)
+    offset, met = _goal_seen.get(key, (0, False))
+    try:
+        size = _Path(path).stat().st_size
+        if size < offset:  # rewritten — start over
+            offset, met = 0, False
+        if size == offset:
+            return met
+        with open(path, "rb") as f:
+            f.seek(offset)
+            data = f.read(size - offset)
+    except OSError:
+        return False
+    end = data.rfind(b"\n") + 1  # leave a half-written last line for next time
+    for line in data[:end].splitlines():
+        if b'"goal_status"' not in line:
+            continue
+        try:
+            att = json.loads(line).get("attachment") or {}
+        except Exception:
+            continue
+        if att.get("type") == "goal_status" and not att.get("sentinel"):
+            met = att.get("met") is True
+    _goal_seen[key] = (offset + end, met)
+    return met
+
+
 def _tail_status(path: "str | _Path") -> WorkerStatus:
     """Derive WorkerStatus from the tail of a JSONL transcript.
 

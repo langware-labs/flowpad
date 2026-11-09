@@ -7164,6 +7164,7 @@ class AgenticProcess(Entity):
         # keyed on it never re-opened after the user dismissed it once.
         data["worker_status_detail_id"] = detail.entry_id if detail else None
         data[PENDING_USER_INPUT_KEY] = self.pending_user_input()
+        data["goal_met"] = self._goal_met()
         data["status"] = self.status
         busy = is_turn_busy(self, computed)
         data["busy"] = busy
@@ -7257,6 +7258,17 @@ class AgenticProcess(Entity):
         if self.status == ProcessStatus.STOPPED.value:
             return discovered if discovered and is_worker_terminal(discovered) else None
         return discovered
+
+    def _goal_met(self) -> bool:
+        """The worker's ``/goal`` was judged met (newest goal check in the transcript)."""
+        try:
+            from flow_sdk.transcript_analyzer.worker_status import goal_met
+
+            path = transcript_cache.transcript_path(self)
+            return goal_met(path) if path else False
+        except Exception:
+            logger.debug("goal_met lookup failed", exc_info=True)
+            return False
 
     def _worker_status_detail(self, worker_status: "WorkerStatus | None") -> "StatusDetail | None":
         """The CLI's own error entry — its sentence and its entry id — when the

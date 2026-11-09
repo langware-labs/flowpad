@@ -1,7 +1,7 @@
 import { AgenticProcess, TypeId } from '@sdk';
 import { useMemo } from 'react';
 import { cn, RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
-import { List, Loader2, MessageSquare, Star, Trash2 } from 'lucide-react';
+import { Check, List, Loader2, MessageSquare, Star, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { WorkerIcon, pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { formatTimeAgoShort } from '@src/utils/format-time-ago';
@@ -76,7 +76,9 @@ export function ChatHistoryRow({
   // Live tracker first; a non-live chat falls back to its cached process.
   const liveStatus = useWorkerStatus(entry.agentic_process_id);
   const workerStatus = liveStatus ?? process?.workerStatus;
-  const statusCfg = busy ? undefined : compactWorkerStatusConfig(workerStatus);
+  // Busy → spinner; a met /goal → green check; else the worker status's own mark.
+  const goalMet = !busy && process?.goal_met === true;
+  const statusCfg = busy || goalMet ? undefined : compactWorkerStatusConfig(workerStatus);
   // Project · branch survive only as a hover tooltip on the row (no visible subline).
   const meta = [entry.project_name, entry.git_branch].filter(Boolean).join(' · ');
   const hasMsgs = !!entry.message_count && entry.message_count > 0;
@@ -113,14 +115,15 @@ export function ChatHistoryRow({
             worker is actively doing work; reserved so rows stay aligned. */}
         <span
           className="flex h-3 w-3 shrink-0 items-center justify-center"
-          title={busy ? t`Working…` : statusCfg?.label}
-          aria-label={busy ? t`Working` : statusCfg?.label}
+          title={busy ? t`Working…` : goalMet ? t`Goal completed` : statusCfg?.label}
+          aria-label={busy ? t`Working` : goalMet ? t`Goal completed` : statusCfg?.label}
           data-testid="chat-history-row-busy"
           data-busy={busy ? 'true' : 'false'}
-          data-status={busy ? 'busy' : statusCfg && workerStatus}
+          data-status={busy ? 'busy' : goalMet ? 'goal_met' : statusCfg && workerStatus}
         >
           {busy && <Loader2 className="h-3 w-3 animate-spin text-emerald-500" />}
-          {statusCfg && <statusCfg.icon className={cn('h-3 w-3', statusCfg.color)} />}
+          {goalMet && <Check className="h-3 w-3 text-emerald-500" />}
+          {statusCfg && <statusCfg.icon className={cn('h-3 w-3', statusCfg.color, statusCfg.animate && 'animate-spin')} />}
         </span>
         <WorkerIcon workerType={entry.worker_type} />
         <span className={cn('min-w-0 flex-1 font-medium text-foreground', detailed ? 'line-clamp-2 break-words' : 'truncate')}>
