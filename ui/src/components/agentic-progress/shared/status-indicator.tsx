@@ -188,6 +188,14 @@ export const workerStatusConfig: Record<WorkerStatus, StatusConfig> = {
   },
 };
 
+/** Calm states draw nothing in a compact status gutter (a list row). */
+const QUIET_WORKER_STATUSES = new Set<WorkerStatus>([WorkerStatus.IDLE, WorkerStatus.COMPLETE, WorkerStatus.UNKNOWN]);
+
+/** Icon config for a compact status gutter, or undefined when the status is quiet / not a worker status. */
+export function compactWorkerStatusConfig(v: unknown): StatusConfig | undefined {
+  return isWorkerStatus(v) && !QUIET_WORKER_STATUSES.has(v) ? workerStatusConfig[v] : undefined;
+}
+
 function isWorkerStatus(v: unknown): v is WorkerStatus {
   return (
     typeof v === 'string' &&

@@ -7,7 +7,8 @@ import { WorkerIcon, pickHistoryTitle } from '@src/components/entity-execution-p
 import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
-import { useIsBurning } from '@src/store/pending-actions-store';
+import { useIsBurning, useWorkerStatus } from '@src/store/pending-actions-store';
+import { compactWorkerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
 import { ChatPromptsPopover } from './ChatPromptsPopover';
 import { MatchSnippet, type MatchPart } from './matchSnippet';
 
@@ -72,6 +73,10 @@ export function ChatHistoryRow({
   const title = pickHistoryTitle(process, entry);
   // Live "this chat is working" signal — true while its worker is mid-turn.
   const busy = useIsBurning(entry.agentic_process_id);
+  // Live tracker first; a non-live chat falls back to its cached process.
+  const liveStatus = useWorkerStatus(entry.agentic_process_id);
+  const workerStatus = liveStatus ?? process?.workerStatus;
+  const statusCfg = busy ? undefined : compactWorkerStatusConfig(workerStatus);
   // Project · branch survive only as a hover tooltip on the row (no visible subline).
   const meta = [entry.project_name, entry.git_branch].filter(Boolean).join(' · ');
   const hasMsgs = !!entry.message_count && entry.message_count > 0;
@@ -108,12 +113,14 @@ export function ChatHistoryRow({
             worker is actively doing work; reserved so rows stay aligned. */}
         <span
           className="flex h-3 w-3 shrink-0 items-center justify-center"
-          title={busy ? t`Working…` : undefined}
-          aria-label={busy ? t`Working` : undefined}
+          title={busy ? t`Working…` : statusCfg?.label}
+          aria-label={busy ? t`Working` : statusCfg?.label}
           data-testid="chat-history-row-busy"
           data-busy={busy ? 'true' : 'false'}
+          data-status={busy ? 'busy' : statusCfg && workerStatus}
         >
           {busy && <Loader2 className="h-3 w-3 animate-spin text-emerald-500" />}
+          {statusCfg && <statusCfg.icon className={cn('h-3 w-3', statusCfg.color)} />}
         </span>
         <WorkerIcon workerType={entry.worker_type} />
         <span className={cn('min-w-0 flex-1 font-medium text-foreground', detailed ? 'line-clamp-2 break-words' : 'truncate')}>
