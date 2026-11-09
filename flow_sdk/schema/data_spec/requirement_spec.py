@@ -29,7 +29,8 @@ REQUIREMENT_KINDS = (
 )
 #: Kinds a deployment may start without: a missing one is reported, never a reason to refuse it. Funding is
 #: one — a placement whose budget is used up still deploys; its turns are refused until the limit moves.
-ADVISORY_KINDS = frozenset({REQUIREMENT_FUNDING})
+#: Credentials and variables are too: a value set later in the project store reaches the machine then.
+ADVISORY_KINDS = frozenset({REQUIREMENT_FUNDING, REQUIREMENT_CREDENTIAL, REQUIREMENT_VARIABLE})
 
 
 class RequirementSpec(DataSpec):

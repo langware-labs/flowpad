@@ -1,6 +1,7 @@
 """``flow credentials ...`` — a project's credentials by name, from the command line.
 
     flow credentials declare <manifest.json>       — declare a credential in this folder's project
+    flow credentials list [--text]                 — every credential: its variables, available or not
     flow credentials check <name>                  — are its values present? (exit code)
     flow credentials set <name> VAR=VALUE …        — store values (declares it from its template)
     flow credentials set <name> --stdin            — store VAR=VALUE lines read from stdin
@@ -215,6 +216,22 @@ def _missing(row: Optional[dict]) -> list[str]:
 
 
 _DEPLOYMENT = typer.Option("--deployment", help="A deployment id (default: this computer).")
+
+
+@credentials_app.command("list")
+def list_credentials(
+    project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
+    deployment: Annotated[Optional[str], _DEPLOYMENT] = None,
+    text: Annotated[bool, typer.Option("--text", help="Plain lines (name, variables, available) instead of JSON.")] = False,
+) -> None:
+    """Every credential by name, the variables it holds, and whether its values are available here. Never a value."""
+    from flow_sdk.builtin.credential_listing import listing, listing_text  # noqa: PLC0415
+
+    rows = listing(_status(project, deployment))
+    if text:
+        typer.echo(listing_text(rows))
+        return
+    ok({"credentials": rows})
 
 
 @credentials_app.command("check")

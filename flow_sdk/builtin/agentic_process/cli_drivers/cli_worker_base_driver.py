@@ -639,14 +639,8 @@ async def resolve_worker_language(process: "AgenticProcess") -> str | None:
     return name
 
 
-async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
-    """Resolve declared credentials (user scope + the process's project) into
-    this transient worker env.
-
-    This must only be called on spawn-time env dicts. It must not mutate
-    AgentOptions.env_vars because those are persisted and rendered.
-    """
-    from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
+async def _process_project(process: "AgenticProcess"):
+    """The process's project: its ``project_id``, else the project above it; None when there is none."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
     project = None
@@ -658,6 +652,37 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
             project = await Project.get_ancestor(process.typeid)
         except Exception:
             project = None
+    return project
+
+
+async def credentials_prompt_block(process: "AgenticProcess") -> str | None:
+    """The "Credentials:" block a worker's system-prompt file carries: ``flow credentials list`` for the
+    process's project — names, variables, available — and where the values are (this machine's environment).
+    None when the project declares no credential. Never a value."""
+    from flow_sdk.builtin.credential_listing import listing, prompt_block  # noqa: PLC0415
+    from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
+
+    project = await _process_project(process)
+    if project is None:
+        return None
+    try:
+        status = await credentials_status(project, str(getattr(process, "deployment_id", "") or ""), sign_ins=False)
+    except Exception:
+        logger.exception("AgenticProcess %s: could not list the project's credentials", process.id)
+        return None
+    return prompt_block(listing(status.model_dump(mode="json"), scope="project"))
+
+
+async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
+    """Resolve declared credentials (user scope + the process's project) into
+    this transient worker env.
+
+    This must only be called on spawn-time env dicts. It must not mutate
+    AgentOptions.env_vars because those are persisted and rendered.
+    """
+    from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
+
+    project = await _process_project(process)
 
     # Node attachment gates the worker too, not only the connector's commands.
     # None = nothing curated on this node, i.e. every declared variable. With no
