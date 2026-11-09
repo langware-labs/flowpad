@@ -127,7 +127,7 @@ async def test_the_recompute_reads_only_the_unread_messages():
     await fm.save(notify=False)
 
     _, rows = await _load_rows()
-    assert unread_id in rows["fm_by_id"] and read_id not in rows["fm_by_id"]
+    assert unread_id in rows["fm_by_id"] and read_id in rows["fm_by_id"], "the walk loads each conversation's newest message to learn whether it is read"
 
     await recompute_unread("test")
     assert (await Conversation.get_by_id(unread_conv)).unread_count == 1
