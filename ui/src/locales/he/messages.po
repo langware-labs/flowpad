@@ -2165,6 +2165,7 @@ msgid "🤖 Prompt - Query AI (Claude Haiku)"
 msgstr "🤖 פרומפט - בקש מ-AI (Claude Haiku)"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "$ per user"
 msgstr ""
@@ -5713,6 +5714,7 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/delete-asset-modal.tsx
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
@@ -11550,6 +11552,10 @@ msgstr ""
 #: src/components/inbound/RouteCheck.tsx
 msgid "Each hop, without sending a message."
 msgstr "כל שלב בדרך, בלי לשלוח הודעה."
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Each machine gets a new budget with nothing spent. The machine and its work stay as they are."
+msgstr ""
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Each machine is shut down and removed. This cannot be undone."
@@ -18896,6 +18902,10 @@ msgstr "אוטומציה חדשה לאירוע הזה"
 msgid "New bookmark folder"
 msgstr "תיקיית סימניות חדשה"
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "New budget in dollars"
+msgstr ""
+
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "New build"
 msgstr "בנייה חדשה"
@@ -22709,6 +22719,10 @@ msgstr "או שלחו להם את הקישור הזה"
 msgid "Or start from one of these"
 msgstr "או התחילו מאחת מאלה"
 
+#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
+msgid "Or your own codes, one per line (CODE, name):"
+msgstr ""
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Ordered list"
 msgstr "רשימה ממוספרת"
@@ -22908,6 +22922,10 @@ msgstr "סקירה כללית"
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Overwrite"
 msgstr "דרסו"
+
+#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
+msgid "Own codes"
+msgstr ""
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/assets/editor/task/OwnerButton.tsx
@@ -25081,6 +25099,20 @@ msgstr "הפחתת אנימציות ואפקטי תנועה"
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "referenced but not in entities table"
 msgstr "מרובט אך לא בטבלת הישויות"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Refill"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Refill budget"
+msgstr ""
+
+#. placeholder {0}: refilling?.length ?? 0
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Refill the LLM budget of {0} machines?"
+msgstr ""
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx

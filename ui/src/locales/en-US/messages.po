@@ -2165,6 +2165,7 @@ msgid "🤖 Prompt - Query AI (Claude Haiku)"
 msgstr "🤖 Prompt - Query AI (Claude Haiku)"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "$ per user"
 msgstr "$ per user"
@@ -5718,6 +5719,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/delete-asset-modal.tsx
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
@@ -11555,6 +11557,10 @@ msgstr "Each code opens its own machine. Give one code to each user."
 #: src/components/inbound/RouteCheck.tsx
 msgid "Each hop, without sending a message."
 msgstr "Each hop, without sending a message."
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Each machine gets a new budget with nothing spent. The machine and its work stay as they are."
+msgstr "Each machine gets a new budget with nothing spent. The machine and its work stay as they are."
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Each machine is shut down and removed. This cannot be undone."
@@ -18901,6 +18907,10 @@ msgstr "New automation on this event"
 msgid "New bookmark folder"
 msgstr "New bookmark folder"
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "New budget in dollars"
+msgstr "New budget in dollars"
+
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "New build"
 msgstr "New build"
@@ -22714,6 +22724,10 @@ msgstr "Or send them this link"
 msgid "Or start from one of these"
 msgstr "Or start from one of these"
 
+#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
+msgid "Or your own codes, one per line (CODE, name):"
+msgstr "Or your own codes, one per line (CODE, name):"
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Ordered list"
 msgstr "Ordered list"
@@ -22913,6 +22927,10 @@ msgstr "Overview"
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Overwrite"
 msgstr "Overwrite"
+
+#: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
+msgid "Own codes"
+msgstr "Own codes"
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/assets/editor/task/OwnerButton.tsx
@@ -25086,6 +25104,20 @@ msgstr "Reduce animations and motion effects"
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "referenced but not in entities table"
 msgstr "referenced but not in entities table"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Refill"
+msgstr "Refill"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Refill budget"
+msgstr "Refill budget"
+
+#. placeholder {0}: refilling?.length ?? 0
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Refill the LLM budget of {0} machines?"
+msgstr "Refill the LLM budget of {0} machines?"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
