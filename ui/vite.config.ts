@@ -88,6 +88,9 @@ export default defineConfig(({ mode }) => {
       __CHECK_REFRESH_TOKEN__: JSON.stringify(env.VITE_CHECK_REFRESH_TOKEN === 'true'),
       __UI_VERSION__: JSON.stringify(sdkVersion(envDir)),
     },
+    // VITE_CACHE_DIR: a dev server's own optimized-deps cache, so another server's `--force` restart on this
+    // shared checkout cannot delete the chunks this one is serving.
+    ...(env.VITE_CACHE_DIR ? { cacheDir: env.VITE_CACHE_DIR } : {}),
     build: {
       sourcemap: true,
       outDir: 'dist',
