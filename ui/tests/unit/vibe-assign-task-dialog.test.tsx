@@ -44,6 +44,7 @@ import { dataManager, Task, TaskKind } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
 import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
+import { png } from '../utils/ask-for-help';
 
 afterEach(() => {
   cleanup();
@@ -85,15 +86,9 @@ describe('ContactPicker', () => {
   });
 });
 
-/** Walk the wizard: card 1 (what is wrong) → card 2 (diagnosis & context) → card 3 (who gets it). */
-async function toCard(step: 2 | 3, text = 'Popout button is disabled') {
+/** Write what is wrong — the one screen holds everything else already. */
+function describeIt(text = 'Popout button is disabled') {
   fireEvent.change(screen.getByTestId('vibe-assign-notes'), { target: { value: text } });
-  fireEvent.click(screen.getByTestId('ask-for-help-next'));
-  await screen.findByTestId('ask-for-help-card-context');
-  if (step === 3) {
-    fireEvent.click(screen.getByTestId('ask-for-help-next'));
-    await screen.findByTestId('ask-for-help-card-who');
-  }
 }
 
 function pickPerson(email: string) {
@@ -102,24 +97,36 @@ function pickPerson(email: string) {
   fireEvent.blur(person);
 }
 
-describe('AskForHelpDialog — the three cards', () => {
-  it('card 1 is one box, and Next needs something written', () => {
+describe('AskForHelpDialog — one screen', () => {
+  it('everything is on one screen, and sending needs something written', () => {
     render(<AskForHelpDialog open onOpenChange={() => {}} projectId={null} origin="vibe" />);
 
-    expect(screen.getByTestId('ask-for-help-next')).toBeDisabled();
-    expect(screen.queryByTestId('vibe-assign-title')).toBeNull();
+    expect(screen.getByTestId('vibe-assign-submit')).toBeDisabled();
+    expect(screen.getByTestId('ask-for-help-run-diagnosis')).toBeInTheDocument();
+    expect(screen.getByTestId('vibe-assign-person')).toBeInTheDocument();
     expect(screen.getByTestId('ask-for-help-helpdesk-button')).toBeInTheDocument();
-    fireEvent.change(screen.getByTestId('vibe-assign-notes'), { target: { value: 'it broke' } });
-    expect(screen.getByTestId('ask-for-help-next')).toBeEnabled();
+    describeIt('it broke');
+    expect(screen.getByTestId('vibe-assign-submit')).toBeEnabled();
   });
 
-  it('card 3 says a request to nobody stays a private conversation', async () => {
+  it('to nobody it stays private and the button reads Diagnose; a person makes it Diagnose and Send', async () => {
     vi.spyOn(dataManager, 'callAction').mockResolvedValue({ desks: [], default_state: 'not_configured' });
     render(<AskForHelpDialog open onOpenChange={() => {}} projectId={null} origin="vibe" />);
+    describeIt();
 
-    await toCard(3);
+    expect(await screen.findByTestId('ask-for-help-private')).toBeInTheDocument();
+    expect(screen.getByTestId('vibe-assign-submit')).toHaveTextContent(/^Diagnose$/);
+    pickPerson('bob@x.com');
+    expect(screen.getByTestId('vibe-assign-submit')).toHaveTextContent('Diagnose and Send');
+  });
 
-    expect(screen.getByTestId('ask-for-help-private')).toBeInTheDocument();
+  it('an image pasted into the box is attached', async () => {
+    render(<AskForHelpDialog open onOpenChange={() => {}} projectId={null} origin="vibe" />);
+    const shot = png('pasted.png', 16);
+    fireEvent.paste(screen.getByTestId('vibe-assign-notes'), {
+      clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => shot }], files: [shot], getData: () => '' },
+    });
+    expect(await screen.findByText('pasted.png')).toBeInTheDocument();
   });
 });
 
@@ -129,7 +136,7 @@ describe('AskForHelpButton — the current task button', () => {
 
     fireEvent.click(screen.getByTestId('vibe-assign-task'));
 
-    expect(screen.getByTestId('ask-for-help-card-what')).toBeInTheDocument();
+    expect(screen.getByTestId('ask-for-help-form')).toBeInTheDocument();
   });
 
   it('lists my open help tasks here, each opening the conversation it was asked in', async () => {
@@ -212,12 +219,12 @@ describe('AskForHelpButton — the current task button', () => {
     });
     fireEvent.click(await screen.findByTestId('vibe-help-new'));
 
-    expect(screen.getByTestId('ask-for-help-card-what')).toBeInTheDocument();
+    expect(screen.getByTestId('ask-for-help-form')).toBeInTheDocument();
   });
 });
 
 describe('AskForHelpDialog — asking again', () => {
-  const renderWith = async (email: string, onOpenExisting = vi.fn()) => {
+  const renderWith = (email: string, onOpenExisting = vi.fn()) => {
     const row = { task: helpTask(), conversationId: 'conv-1', unread: 0 };
     render(
       <AskForHelpDialog
@@ -230,27 +237,27 @@ describe('AskForHelpDialog — asking again', () => {
         onOpenExisting={onOpenExisting}
       />,
     );
-    await toCard(3);
+    describeIt();
     pickPerson(email);
     return { row, onOpenExisting };
   };
 
-  it('offers the open conversation with the same person (whatever the case of the email)', async () => {
-    const { row, onOpenExisting } = await renderWith('Bob@X.com');
+  it('offers the open conversation with the same person (whatever the case of the email)', () => {
+    const { row, onOpenExisting } = renderWith('Bob@X.com');
 
     fireEvent.click(screen.getByTestId('vibe-assign-open-existing'));
 
     expect(onOpenExisting).toHaveBeenCalledWith(row);
   });
 
-  it('offers nothing for someone not yet asked', async () => {
-    await renderWith('carol@x.com');
+  it('offers nothing for someone not yet asked', () => {
+    renderWith('carol@x.com');
 
     expect(screen.queryByTestId('vibe-assign-already-asked')).not.toBeInTheDocument();
   });
 
-  /** Walk the cards, run `onCard2` there, pick bob, press `button`; returns the one `ask-for-help` call. */
-  async function submit(onCard2: () => void | Promise<void> = () => {}, button = 'vibe-assign-submit') {
+  /** Write what is wrong, run `before`, pick bob, send; returns the one `ask-for-help` call. */
+  async function submit(before: () => void | Promise<void> = () => {}) {
     const calls: unknown[] = [];
     // eslint-disable-next-line @typescript-eslint/require-await -- the mock stands in for an async action
     vi.spyOn(dataManager, 'callAction').mockImplementation(async (info) => {
@@ -269,24 +276,21 @@ describe('AskForHelpDialog — asking again', () => {
       return { desks: [], default_state: 'known' };
     });
     render(<AskForHelpDialog open onOpenChange={() => {}} projectId={P1} sessionTypeId={null} origin="vibe" />);
-    await toCard(2);
-    await onCard2();
-    fireEvent.click(screen.getByTestId('ask-for-help-next'));
-    await screen.findByTestId('ask-for-help-card-who');
+    describeIt();
+    await before();
     pickPerson('bob@x.com');
     act(() => {
-      fireEvent.click(screen.getByTestId(button));
+      fireEvent.click(screen.getByTestId('vibe-assign-submit'));
     });
     await waitFor(() => expect(calls).toHaveLength(1));
     return calls[0];
   }
 
-  it('asking a person is one request, to them, from this project, titled for them', async () => {
+  it('asking a person is one request, to them, from this project; the server titles it', async () => {
     const body = (await submit()) as Record<string, unknown>;
     expect(body).toMatchObject({
       recipients: [{ kind: 'person', email: 'bob@x.com' }],
       text: 'Popout button is disabled',
-      title: 'Popout disabled',
       project_id: P1,
       origin: 'vibe',
       send: 'when_diagnosed',
@@ -307,11 +311,6 @@ describe('AskForHelpDialog — asking again', () => {
     expect(body).toMatchObject({ diagnose: false, share_context: false });
   });
 
-  it('"Review before sending" keeps the request here until Share', async () => {
-    const body = (await submit(() => {}, 'ask-for-help-review-first')) as Record<string, unknown>;
-    expect(body.send).toBe('review_first');
-  });
-
   it('a diagnosis already taken goes as it stands, and nothing is diagnosed again', async () => {
     const calls: Record<string, unknown>[] = [];
     // eslint-disable-next-line @typescript-eslint/require-await -- the mock stands in for an async action
@@ -326,9 +325,6 @@ describe('AskForHelpDialog — asking again', () => {
     render(
       <AskForHelpDialog open onOpenChange={() => {}} projectId={P1} origin="footer" diagnosisId="diag-1" initialTitle="Hub down" />,
     );
-    fireEvent.click(screen.getByTestId('ask-for-help-next'));
-    await screen.findByTestId('ask-for-help-card-context');
-    fireEvent.click(screen.getByTestId('ask-for-help-next'));
     await screen.findByTestId('ask-for-help-desks');
     fireEvent.click(screen.getByTestId('vibe-assign-submit'));
     await waitFor(() => expect(calls).toHaveLength(1));

@@ -25,6 +25,16 @@ AutomationSource = Literal["local", "hub"]
 RunStatus = Literal["running", "launched", "succeeded", "failed", "skipped"]
 
 
+class AutomationRef(DataSpec):
+    """The automation a ``then`` runs for -- the run's input, so a step can answer for its rule
+    (``input_from: "$input"``) without knowing the rule's name."""
+
+    spec_kind: ClassVar[str] = "automation.ref"
+
+    trigger_id: str
+    name: str = ""
+
+
 class RunOnceStarted(DataSpec):
     """What *Run once now* answers: the run began (or finished, for a quick rule).
 
@@ -243,6 +253,8 @@ class AutomationSummary(DataSpec):
     tested: bool = False
     #: Read-only here: Flowpad's own, or defined in a file another tool owns.
     read_only: bool = False
+    #: A person may turn it on or off here -- read-only rules too, when Flowpad ships them off.
+    switchable: bool = True
     #: The rule is a file asset; edits write its trigger.json.
     asset_ref: Optional[str] = None
     place: AutomationPlace = LOCAL_PLACE

@@ -143,7 +143,7 @@ writes them, the row alone, so no re-index, `git pull` or edit to `trigger.json`
 |---|---|
 | made here (the rules API, a schedule added here, a seed) | on |
 | indexed from a file — it came with a project | off, undecided: it does not run |
-| Flowpad's own (`is_builtin`) | as its seed or file says |
+| Flowpad's own (`is_builtin`) | as its seed or file says — except one its file ships off (`recommended: false`, e.g. the Daily usage summary): off, and its switch is the person's (`Trigger.switchable`) |
 | on a machine the hub runs only for a deployed agent (`RuntimeKind.AGENT`) | on when recommended — the deploy was its owner's choice |
 
 A recommended undecided rule is a row of the project's setup (`automation` requirement, `project_setup.

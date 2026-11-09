@@ -62,6 +62,7 @@ import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
+import { AutomationMessageActions } from './AutomationMessageActions';
 import { DiagnosisMessageActions } from './DiagnosisMessageActions';
 import { HelpRequestLine } from './HelpRequestLine';
 import { ItReplyLine } from './ItReplyLine';
@@ -806,6 +807,9 @@ export function FlowMessageBubble({
       )}
       {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
+      {fm.kind === FlowMessageKind.AUTOMATION_RESULT && (
+        <AutomationMessageActions conversationId={fm.conversation_id ?? ''} entities={entities} />
+      )}
       {attachmentFooter}
       {lostChannelFiles.map((a) => (
         <p

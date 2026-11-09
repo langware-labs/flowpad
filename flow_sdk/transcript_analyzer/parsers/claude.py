@@ -79,6 +79,15 @@ _META_TYPES = frozenset(
         # `last-prompt`; unclassified, it hid the terminal marker, so no turn ended.
         "cost-state",
         "session-owner",  # Claude 2.1.318+: written after last-prompt
+        "artifact-autoreact-ledger",
+        "history-suppression",
+        "artifact-comment-monitor",
+        "api-request",
+        "api-request-blob",
+        "api-request-shape",
+        "file-history-delta",
+        "frame-link",
+        "tools-used",
     }
 )
 
@@ -587,7 +596,8 @@ def build_semantic_tool_entry(
         )
     if tool_name in ("Task", "Agent"):
         return AgentSpawnEntry(
-            agent_type=str(ti.get("subagent_type") or ti.get("agent_type") or ""),
+            # No type = Claude Code's default subagent.
+            agent_type=str(ti.get("subagent_type") or ti.get("agent_type") or "general-purpose"),
             prompt=str(ti.get("prompt") or "") or None,
             description=str(ti.get("description") or "") or None,
             **common,

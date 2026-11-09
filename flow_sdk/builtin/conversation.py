@@ -191,7 +191,8 @@ class Conversation(ProjectedFields, Entity):
     # ``channel`` is shared with the hub (its ``Conversation.channel``) so every member and the hub
     # page render the same badge; a hub row that never had one answers ``null``, which the mirror
     # skips, so it never blanks this. A conversation that stays on this machine keeps its own.
-    # ``channel_source_id`` is a row id in OUR database, so it is PRIVATE.
+    # ``channel_source_id`` is a row in OUR database the conversation belongs to -- its data source, or (on the
+    # Automations channel) its automation's ``trigger-<id>`` -- so it is PRIVATE.
     channel: str = APIField(default=HOME_CHANNEL)
     channel_source_id: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     # The driver behind the channel — two drivers can speak one channel (WhatsApp's Cloud API and an

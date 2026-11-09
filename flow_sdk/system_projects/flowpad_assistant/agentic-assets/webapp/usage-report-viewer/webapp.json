@@ -1,0 +1,11 @@
+{
+  "name": "usage-report-viewer",
+  "title": "Usage report viewer",
+  "description": "Shows a usage summary: cost, active time, tokens and prompts, the skills, agents, tools and models used, and each session with a link to its transcript. A list of summaries reads as one row each.",
+  "kind": "application.web.viewer",
+  "build": ".",
+  "views": [
+    {"kind": "usage.summary", "shows": ["single", "collection"]}
+  ],
+  "module": "viewer.js"
+}

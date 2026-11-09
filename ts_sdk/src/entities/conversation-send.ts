@@ -19,6 +19,8 @@ export interface ConversationSendPayload {
   files?: File[];
   /** Serialized TypeIds (e.g. ``"markdown-<uuid>"``) for TYPE_ID attachments. */
   assetReferences?: string[];
+  /** A one-shot prompt the receiver approves and runs once on their machine (`SendReplyExtras.callPrompt`). */
+  callPrompt?: string;
   /** Serialized TypeIds to publish as the FlowMessage's *shared* context. On
    *  the existing-conversation path the local backend (handle_add_message)
    *  also merges these onto the parent Conversation and links them back —
@@ -47,12 +49,13 @@ export async function sendToExistingConversation(
     ...(hasAssetRefs ? { assetReferences: payload.assetReferences } : {}),
     ...(hasSharedCtx ? { sharedContextEntities: payload.sharedContextEntities } : {}),
     ...(payload.shareConfig ? { shareConfig: payload.shareConfig } : {}),
+    ...(payload.callPrompt ? { callPrompt: payload.callPrompt } : {}),
   };
   await sendReply(
     { conversationId },
     payload.text,
     payload.files,
-    hasAssetRefs || hasSharedCtx || !!payload.shareConfig ? extras : undefined,
+    Object.keys(extras).length > 0 ? extras : undefined,
   );
 }
 
@@ -120,7 +123,12 @@ export function withoutReferences(
 /** Whether a send still carries anything the backend will accept (text, files or an attachment —
  *  shared context alone is not a message). */
 export function hasSomethingToSend(payload: ConversationSendPayload): boolean {
-  return !!(payload.text.trim() || payload.files?.length || payload.assetReferences?.length);
+  return !!(
+    payload.text.trim() ||
+    payload.files?.length ||
+    payload.assetReferences?.length ||
+    payload.callPrompt?.trim()
+  );
 }
 
 /**

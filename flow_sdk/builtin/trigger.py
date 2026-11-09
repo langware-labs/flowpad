@@ -384,6 +384,12 @@ class Trigger(ProjectedFields, Entity):
             return is_running_install_path(self.asset_ref)
         return False
 
+    @property
+    def switchable(self) -> bool:
+        """A person may turn it on or off here: every rule but Flowpad's own -- except the ones Flowpad ships
+        off (a ``trigger.json`` that is not ``recommended``, the Daily usage summary): those are an offer."""
+        return not self.is_builtin or (self.is_file_backed and not self.recommended)
+
     #: RUNTIME STATE. `Persist.TRUE` puts these in the SHADOW record (under flow
     #: home, never the asset folder, never git) rather than leaving them to the
     #: DB alone: a spent `fire_once` counter has to survive a full index rebuild,
@@ -746,7 +752,7 @@ class Trigger(ProjectedFields, Entity):
         from flow_sdk.automations.check import SPEC_FIELDS  # noqa: PLC0415
         from flow_sdk.automations.spec_file import SpecFileError, document_path, rewrite  # noqa: PLC0415
 
-        if self.is_builtin and set(body) - {"log_mode"}:
+        if self.is_builtin and set(body) - {"log_mode", *(("enabled",) if self.switchable else ())}:
             return ApiFailResponse(message="This automation is built into Flowpad and can't be changed here.",
                                    status_code=409)
         if "enabled" in body:

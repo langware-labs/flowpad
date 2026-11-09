@@ -49,6 +49,17 @@ DIAGNOSIS = ChannelSpec(
     needs_cloud_login=True,
 )
 
+#: What Flowpad's automations answer (the Daily usage summary): one private conversation per automation, its
+#: runs posted as messages. Local only -- nothing here goes to the hub.
+AUTOMATIONS = ChannelSpec(
+    name="automations",
+    title="Automations",
+    icon_name="Zap",
+    home=True,
+    transport=ChannelTransport.FLOWPAD,
+    accepts_attachments=True,
+)
+
 #: The channel every conversation is born with.
 HOME_CHANNEL = FLOWPAD.name
 
@@ -65,6 +76,8 @@ def channel_spec(name: str | None, provider: str | None = None) -> ChannelSpec:
         return CHAT_API
     if key == DIAGNOSIS.name:
         return DIAGNOSIS
+    if key == AUTOMATIONS.name:
+        return AUTOMATIONS
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415 — builtin must not import drivers at load
     from flow_sdk.sources.protocols import Reacting, actions_of  # noqa: PLC0415
 
@@ -85,4 +98,4 @@ def channel_spec(name: str | None, provider: str | None = None) -> ChannelSpec:
     )
 
 
-__all__ = ["CHAT_API", "DIAGNOSIS", "HOME_CHANNEL", "channel_spec"]
+__all__ = ["AUTOMATIONS", "CHAT_API", "DIAGNOSIS", "HOME_CHANNEL", "channel_spec"]
