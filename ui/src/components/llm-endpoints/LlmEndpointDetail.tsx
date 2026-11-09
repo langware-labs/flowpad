@@ -35,7 +35,6 @@ export interface LlmEndpointDetailProps {
   /** `kind` is the chain-resolved one; the entity's own is always `root`. */
   onEdit: (endpoint: LLMEndpoint, kind?: LLMEndpointKind | null) => void;
   onDelete: (endpoint: LLMEndpoint) => void;
-  onShare: (endpoint: LLMEndpoint) => void;
 }
 
 function EffectiveFilters({ filters }: { filters: Record<string, unknown> }) {
@@ -109,7 +108,6 @@ export function LlmEndpointDetail({
   onTab,
   onEdit,
   onDelete,
-  onShare,
 }: LlmEndpointDetailProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -123,6 +121,8 @@ export function LlmEndpointDetail({
   const kind = kindFromChain(chain.data, endpointId);
   const openEndpoint = (id: string) => openLlmEndpoint(navigation, id);
   const consumers = useMemo(() => consumerRows(endpointId, all), [endpointId, all]);
+  // One TypeId per endpoint: `useMembers` keys its fetch on the object, so a fresh one per render would refetch.
+  const membersTypeId = useMemo(() => (endpoint?.id ? new TypeId(LLMEndpoint.type, endpoint.id) : null), [endpoint?.id]);
   const tabLabels: Record<LlmEndpointTab, string> = { overview: t`Overview`, usage: t`Usage`, models: t`Models` };
 
   return (
@@ -149,9 +149,9 @@ export function LlmEndpointDetail({
           </Button>
         )}
         {/* The project's own access control: who holds which role, and Invite for whoever may add members. */}
-        {endpoint?.id && (
+        {endpoint && membersTypeId && (
           <MembersAvatarStack
-            typeId={new TypeId(LLMEndpoint.type, endpoint.id)}
+            typeId={membersTypeId}
             showInviteButton={canShare(endpoint)}
             inviteRoles={ENDPOINT_INVITE_ROLES}
           />
