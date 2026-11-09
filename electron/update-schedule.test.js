@@ -176,12 +176,12 @@ eq(s.planLaunchCheck({ state: {}, intervalMs: HOUR, now: T0 }).run, true, 'first
   eq(d(adopted48, '0.2.50'), 'announce', 'but a genuinely newer one is');
 }
 
-// ── the desktop feed: every account, hourly, on its own pacing field ──
+// ── the desktop feed: every account, every 20 minutes, on its own pacing field ──
 {
   const due = (state, now = T0) => s.desktopCheckDue({ state, now });
   eq(due({}), true, 'no history: due');
-  eq(due({ lastAttemptAt: iso(T0 - 30 * 60000) }), false, 'a check 30 min ago (any kind): not due');
-  eq(due({ lastAttemptAt: iso(T0 - HOUR) }), true, 'an hour after the last look: due — whatever the account');
+  eq(due({ lastAttemptAt: iso(T0 - 15 * 60000) }), false, 'a check 15 min ago (any kind): not due');
+  eq(due({ lastAttemptAt: iso(T0 - 20 * 60000) }), true, '20 minutes after the last look: due — whatever the account');
   eq(due({ lastAttemptAt: iso(T0 - 5 * HOUR), lastDesktopCheckAt: iso(T0 - 10 * 60000) }), false, 'a recent desktop-only check paces it');
   const st = s.recordDesktopCheck({ lastSuccessAt: iso(T0 - 5 * HOUR), lastAttemptAt: iso(T0 - 5 * HOUR), failureCount: 2 }, { at: T0 });
   eq([st.lastSuccessAt, st.lastAttemptAt, st.failureCount], [iso(T0 - 5 * HOUR), iso(T0 - 5 * HOUR), 2], 'recording it leaves the shared cadence and the backoff alone');

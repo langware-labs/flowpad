@@ -2424,6 +2424,10 @@ msgstr "دقيقة"
 msgid "a name in scope, or a literal"
 msgstr "اسم ضمن النطاق، أو قيمة حرفية"
 
+#: src/components/update-ready/UpdateReadyBridge.tsx
+msgid "A new FlowPad update has been downloaded and is ready to install."
+msgstr "تم تنزيل تحديث جديد لـ FlowPad وهو جاهز للتثبيت."
+
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
 msgstr "مجلد مشروع جديد — كل ما يُنشأ يقتصر عليه"
@@ -3855,6 +3859,10 @@ msgstr "اسم عملية"
 msgid "An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE)."
 msgstr "السجل اليتيم هو صف في قاعدة البيانات (أو مجلد سجل ظل) فُقد ملفه المصدر من القرص. يوفر حوار التنظيف خيار حذف صف قاعدة البيانات فقط (تجاهل، مع الاحتفاظ بمجلد الظل لأغراض التحقيق) أو حذف الصف والظل معًا (حذف)."
 
+#: src/components/top-nav-bar/UpdateReadyIndicator.tsx
+msgid "An update is downloaded and ready to install"
+msgstr "تم تنزيل تحديث وهو جاهز للتثبيت"
+
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Analyses (AgentTrace) of this session — run, list and open"
 msgstr "تحليلات (AgentTrace) لهذه الجلسة — تشغيل وسرد وفتح"
@@ -4008,6 +4016,14 @@ msgstr "مشروع آخر"
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Another step already uses this id — their results will overwrite each other."
 msgstr "خطوة أخرى تستخدم هذا المعرّف بالفعل — ستستبدل نتائجهما بعضها بعضًا."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Another update is in progress."
+msgstr "يجري تحديث آخر حاليًا."
+
+#: src/components/update-ready/update-ready.ts
+msgid "Another update is in progress. Try again when it is done."
+msgstr "يجري تحديث آخر حاليًا. حاول مرة أخرى عند انتهائه."
 
 #: src/notifications/error-detail.ts
 msgid "Answer"
@@ -4906,8 +4922,8 @@ msgid "Auto-send"
 msgstr "إرسال تلقائي"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Auto-updates check hourly."
-msgstr "يتم التحقق من التحديثات تلقائياً كل ساعة."
+#~ msgid "Auto-updates check hourly."
+#~ msgstr "يتم التحقق من التحديثات تلقائياً كل ساعة."
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
@@ -10591,6 +10607,7 @@ msgstr "تصميم صفحة التسعير"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 #: src/pages/desktop/DesktopPage.tsx
 #: src/types/ViewType.ts
 msgid "Desktop"
@@ -10599,6 +10616,10 @@ msgstr "سطح المكتب"
 #: src/components/inbound/DestinationPicker.tsx
 msgid "Desktop instance"
 msgstr "مثيل سطح المكتب"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Desktop updates are checked every 20 minutes."
+msgstr "يتم التحقق من تحديثات التطبيق كل 20 دقيقة."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
@@ -11218,12 +11239,21 @@ msgstr "تنزيل الحزمة مع تفاصيل المهمة."
 msgid "Downloaded"
 msgstr "تم التحميل"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloaded and checked — ready to install."
+msgstr "تم التنزيل والتحقق — جاهز للتثبيت."
+
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloading…"
 msgstr "جاري التنزيل…"
+
+#. placeholder {0}: String(desktopAction.percent)
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading… {0}%"
+msgstr "جارٍ التنزيل… {0}%"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Draft"
@@ -11765,6 +11795,10 @@ msgstr "معرّف نقطة النهاية"
 #: src/components/assets/LlmEndpointsAssetList.tsx
 msgid "Endpoints appear here once the hub allocates one to you, or somebody shares theirs."
 msgstr "ستظهر نقاط النهاية هنا بعد أن يخصّص المركز نقطة نهاية لكم، أو عندما يشارك أحدهم نقطته."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Engine"
+msgstr "المحرّك"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Ensure the claude CLI is installed and authenticated."
@@ -13532,6 +13566,10 @@ msgstr "صندوق بريد Flowpad · لا يصل إلى {0} إلا المرس�
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 msgid "Flowpad messages always reach it."
 msgstr "تصل إليه رسائل Flowpad دائمًا."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad restarts to apply it."
+msgstr "سيُعاد تشغيل FlowPad لتطبيقه."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
@@ -15438,6 +15476,11 @@ msgstr ""
 msgid "Install failed"
 msgstr "فشل التثبيت"
 
+#: src/components/update-ready/update-ready.ts
+msgid "Install failed: {error}"
+msgstr "فشل التثبيت: {error}"
+
+#: src/components/update-ready/update-ready.ts
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Install failed."
@@ -16373,6 +16416,10 @@ msgstr "الأحدث استخدامًا أولًا · انقر للتشغيل"
 #: src/components/hooks-manager/index.tsx
 msgid "Last:"
 msgstr "الأخير:"
+
+#: src/components/update-ready/UpdateReadyBridge.tsx
+msgid "Later"
+msgstr "لاحقًا"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Latest on GitHub"
@@ -25617,6 +25664,7 @@ msgstr ""
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+#: src/components/update-ready/UpdateReadyBridge.tsx
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "Restart"
@@ -25652,6 +25700,11 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
 msgid "Restart to apply: {names}"
 msgstr ""
+
+#. placeholder {0}: String(desktopAction.version)
+#: src/components/version-popover/version-popover.tsx
+msgid "Restart to update to v{0}"
+msgstr "أعد التشغيل للتحديث إلى الإصدار v{0}"
 
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -30815,6 +30868,10 @@ msgstr "مساحة العمل الافتراضية. تنتمي إليها كل �
 msgid "The deployment failed."
 msgstr "فشل النشر."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "The desktop update could not be started."
+msgstr "تعذّر بدء تحديث التطبيق."
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "عاد التشخيص. افتحوه في FlowPad لقراءة كل تشغيل، أو اطلبوا من وكيل أن يشرحه."
@@ -30831,6 +30888,11 @@ msgstr "تعذّر نقل المستند إلى المركز في آخر مرة 
 msgid "The document could not be read."
 msgstr "تعذّرت قراءة المستند."
 
+#. placeholder {0}: String(desktopUpdate?.error)
+#: src/components/version-popover/version-popover.tsx
+msgid "The download failed: {0}"
+msgstr "فشل التنزيل: {0}"
+
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code and its tests. Pick one to see its config and the sources made from it."
 msgstr "المشغّلات المثبّتة هنا هي القوالب التي تُنشأ منها المصادر. كل مشغّل مجلد يضم بيانه وشيفرته واختباراته. اختاروا مشغّلًا لعرض إعداداته والمصادر المنشأة منه."
@@ -30843,6 +30905,10 @@ msgstr "الخزنة المشفّرة غير مفعّلة على هذا الجه
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "The endpoint was not removed."
 msgstr "لم تتم إزالة نقطة النهاية."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The engine is replaced and the window reloads — FlowPad itself does not restart."
+msgstr "يُستبدل المحرّك وتُعاد تحميل النافذة — ولا يُعاد تشغيل FlowPad نفسه."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "the existing desk"
@@ -31280,6 +31346,18 @@ msgstr "يعمل الرمز بصفة {0}"
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "بدأ النص المحفوظ على القرص ضمن مشروع آخر — الارتباط هنا مجمَّد لتفادي الانحراف الصامت. أعيدوا التحميل لإعادة التحديد، أو افتحوا الجلسة ضمن مشروعها الحقيقي."
 
+#: src/components/update-ready/update-ready.ts
+msgid "The update could not be applied: {error}"
+msgstr "تعذّر تطبيق التحديث: {error}"
+
+#: src/components/update-ready/update-ready.ts
+msgid "The update could not be applied. Try again."
+msgstr "تعذّر تطبيق التحديث. حاول مرة أخرى."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The update server did not answer. Try again in a few minutes."
+msgstr "لم يستجب خادم التحديثات. حاول مرة أخرى بعد بضع دقائق."
+
 #: src/components/account/secrets-section.tsx
 msgid "The value is stored in your operating system keychain and never readable from this UI."
 msgstr "تُخزَّن القيمة في نظام Keychain الخاص بنظام التشغيل، ولا يمكن قراءتها إطلاقًا من هذه الواجهة."
@@ -31665,6 +31743,10 @@ msgstr "لم تعد بيانات الاعتماد هذه موجودة."
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "This deployment"
 msgstr "هذا النشر"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "This desktop is already the newest version."
+msgstr "التطبيق محدّث بالفعل إلى أحدث إصدار."
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "This destroys the cloud machine. Its runs and chats on that machine are lost."
@@ -32258,6 +32340,10 @@ msgstr "هذه الواجهة مُقدَّمة من سحابة Flowpad."
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "This UI is served by your own desktop."
 msgstr "هذه الواجهة مُقدَّمة من حاسوبكم المكتبي."
+
+#: src/components/update-ready/update-ready.ts
+msgid "This update is no longer ready to install. FlowPad offers it again once it is."
+msgstr "لم يعد هذا التحديث جاهزًا للتثبيت. سيعرضه FlowPad مجددًا عندما يصبح جاهزًا."
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "this week"
@@ -33220,6 +33306,10 @@ msgstr "تحديث"
 msgid "Update ({0} newer)"
 msgstr "حدّثوا ({0} أحدث)"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Update & Restart"
+msgstr "تحديث وإعادة التشغيل"
+
 #: src/components/version-popover/version-chip.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -33235,6 +33325,19 @@ msgstr "قناة التحديث للتحديثات التلقائية"
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Update CHART.md"
 msgstr "تحديث CHART.md"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Update desktop"
+msgstr "تحديث التطبيق"
+
+#. placeholder {0}: String(desktopAction.version)
+#: src/components/version-popover/version-popover.tsx
+msgid "Update desktop to v{0}"
+msgstr "تحديث التطبيق إلى الإصدار v{0}"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Update Engine"
+msgstr "تحديث المحرّك"
 
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsList.tsx
@@ -33253,6 +33356,15 @@ msgstr "تحديث الخطة"
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Update plan based on <plan-note> sections"
 msgstr "تحديث الخطة استناداً إلى أقسام <plan-note>"
+
+#: src/components/top-nav-bar/UpdateReadyIndicator.tsx
+#: src/components/version-popover/version-popover.tsx
+msgid "Update ready"
+msgstr "التحديث جاهز"
+
+#: src/components/update-ready/UpdateReadyBridge.tsx
+msgid "Update Ready"
+msgstr "التحديث جاهز"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Update to"
