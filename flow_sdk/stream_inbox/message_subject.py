@@ -163,6 +163,29 @@ class ConversationMessageSubject(MessageSubject):
         title = str(getattr(conversation, "title", "") or "")
         return state.model_copy(update={"subject": title}) if title else state
 
+    def on_fired(self, state: MessageState, event: Any) -> None:
+        """A hub conversation message woke a rule: tell the hub we are working on it ("working..." for the sender)."""
+        super().on_fired(state, event)
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+
+        if not (state.conversation_id and state.message_id):
+            return
+
+        async def _tell() -> None:
+            try:
+                await hub_ws_bridge.mark_handling(
+                    conversation_id=str(state.conversation_id), flow_message_ids=[str(state.message_id)]
+                )
+            except Exception:  # noqa: BLE001 — a notice, never the fire
+                logger.debug("handling notice to the hub failed", exc_info=True)
+
+        try:
+            asyncio.get_running_loop().create_task(_tell())
+        except RuntimeError:
+            logger.debug("no loop for the handling notice")
+
     async def test_event(self, subject_id: str) -> dict[str, Any]:
         from flow_sdk.stream_inbox.stream_inbox_on_tag import conversation_message_envelope  # noqa: PLC0415
 

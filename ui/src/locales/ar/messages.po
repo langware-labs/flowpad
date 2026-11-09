@@ -2365,7 +2365,7 @@ msgstr "يُحفظ مستند، ويُضاف ملف جديد إلى مجلد."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "A few words about what went wrong help us look in the right place."
-msgstr ""
+msgstr "بضع كلمات عمّا حدث من خطأ تساعدنا على البحث في المكان الصحيح."
 
 #: src/components/data-sources/source-attention.ts
 msgid "A file changed both here and remotely, so write-back wrote neither."
@@ -3016,7 +3016,7 @@ msgstr "إضافة أشخاص"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Add people — pick a person or type an email"
-msgstr ""
+msgstr "إضافة أشخاص — اختر شخصًا أو اكتب بريدًا إلكترونيًا"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Add people to {teamName}"
@@ -4501,7 +4501,7 @@ msgstr "اسألوا مساعد Flowpad عن أي شيء يخص هذه الصف�
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Ask the help desk too"
-msgstr ""
+msgstr "اطلب من مكتب المساعدة أيضًا"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
@@ -4526,7 +4526,7 @@ msgstr "اطلب رابطًا جديدًا ممن شارك هذا."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Asked before? Your open requests are in the help desk."
-msgstr ""
+msgstr "طلبت من قبل؟ طلباتك المفتوحة في مكتب المساعدة."
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Asked by"
@@ -4732,7 +4732,7 @@ msgstr "إرفاق ملفات"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Attach files or a screenshot"
-msgstr ""
+msgstr "إرفاق ملفات أو لقطة شاشة"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Attach more files or assets"
@@ -4744,7 +4744,7 @@ msgstr "إرفاق سجل الجلسة"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Attach the diagnosis"
-msgstr ""
+msgstr "إرفاق التشخيص"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Attached asset types"
@@ -6261,7 +6261,7 @@ msgstr "نجحت الفحوصات"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Checks this computer when you send"
-msgstr ""
+msgstr "يفحص هذا الكمبيوتر عند الإرسال"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -7089,7 +7089,7 @@ msgstr "تجميع كل قرار للتنقل الذكي (النص المكتو�
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Collecting…"
-msgstr ""
+msgstr "جارٍ الجمع…"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/ui/agent-avatar-picker.tsx
@@ -7640,7 +7640,11 @@ msgstr "إجراءات قائمة السياق"
 
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Context not shared"
-msgstr ""
+msgstr "السياق غير مشارَك"
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Context shared"
+#~ msgstr "السياق مشارَك"
 
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 msgid "Context to share — review before sending."
@@ -8174,7 +8178,7 @@ msgstr "تعذر التحقق من تسجيل الدخول"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Could not collect the context"
-msgstr ""
+msgstr "تعذّر جمع السياق"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
@@ -8906,7 +8910,7 @@ msgstr ""
 
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Could not share"
-msgstr ""
+msgstr "تعذّرت المشاركة"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -10688,11 +10692,11 @@ msgstr "تم التشخيص: {0}"
 
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Diagnosing privately… you can leave, the answer lands here."
-msgstr ""
+msgstr "يجري التشخيص بشكل خاص… يمكنك المغادرة، وستصل الإجابة هنا."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Diagnosing…"
-msgstr ""
+msgstr "جارٍ التشخيص…"
 
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Diagnosing… you'll get a message when it's done"
@@ -10713,7 +10717,11 @@ msgstr "التشخيص — التشخيصات ومكتب المساعدة"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Diagnosis & context"
-msgstr ""
+msgstr "التشخيص والسياق"
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Diagnosis attached"
+#~ msgstr "التشخيص مرفق"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -10750,6 +10758,10 @@ msgstr "طلب تشخيص"
 #: src/components/quick-create/registry.ts
 msgid "Diagnosis request created"
 msgstr "تم إنشاء طلب التشخيص"
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Diagnosis runs when you send"
+#~ msgstr "سيُجرى التشخيص عند الإرسال"
 
 #: src/components/assets/editor/chart/chartControls.tsx
 msgid "Diagram"
@@ -14468,7 +14480,7 @@ msgstr "مستودعات المساعدة أو المهارات المراد ت�
 
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Help request"
-msgstr ""
+msgstr "طلب مساعدة"
 
 #: src/components/credentials/VariableDetails.tsx
 msgid "Help URL"
@@ -20276,6 +20288,10 @@ msgstr "المعالج {0} غير مثبّت."
 msgid "No working directory for this project."
 msgstr "لا يوجد دليل عمل لهذا المشروع."
 
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Nobody — a private conversation on this computer"
+#~ msgstr "لا أحد — محادثة خاصة على هذا الكمبيوتر"
+
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Nobody can log in to this sandbox, including its owner."
 msgstr "لا يستطيع أحد تسجيل الدخول إلى هذه البيئة المعزولة، ولا حتى المالك."
@@ -20298,7 +20314,7 @@ msgstr "لا يمكن لأحد مراسلة هذا الوكيل بعد — أض�
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Nobody picked: it stays a private conversation on this computer, with the diagnosis."
-msgstr ""
+msgstr "لم يُختر أحد: تبقى محادثة خاصة على هذا الكمبيوتر، مع التشخيص."
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Nobody yet"
@@ -20627,6 +20643,10 @@ msgstr "لم يُرسل"
 #: src/notifications/ingest.ts
 msgid "Not sent yet"
 msgstr "لم تُرسَل بعد"
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Not sent yet — check your request, edit it if needed, then press Send."
+#~ msgstr "لم يُرسل بعد — راجع طلبك وعدّله عند الحاجة، ثم اضغط إرسال."
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "not set"
@@ -23505,6 +23525,10 @@ msgstr "الأولوية"
 msgid "Private"
 msgstr "خاص"
 
+#: src/components/conversation/HelpRequestLine.tsx
+#~ msgid "Private · Not sent to anyone"
+#~ msgstr "خاص · لم يُرسل إلى أحد"
+
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "Private · one machine per person"
 msgstr "خاص · جهاز واحد لكل شخص"
@@ -25078,7 +25102,7 @@ msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Remove the help desk"
-msgstr ""
+msgstr "إزالة مكتب المساعدة"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Remove this argument"
@@ -25853,7 +25877,7 @@ msgstr "يُرجى مراجعة المشروع المشترك وفتحه."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Review before sending"
-msgstr ""
+msgstr "المراجعة قبل الإرسال"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Review changes"
@@ -25861,7 +25885,7 @@ msgstr "مراجعة التغييرات"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Review content"
-msgstr ""
+msgstr "مراجعة المحتوى"
 
 #: src/components/automations/KindGallery.tsx
 msgid "Review docs on save"
@@ -27500,7 +27524,7 @@ msgstr "إرسال الرسالة"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Send once diagnosed"
-msgstr ""
+msgstr "إرسال بعد التشخيص"
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
@@ -27588,6 +27612,10 @@ msgstr "تم الإرسال"
 #: src/components/voice/CallControls.tsx
 msgid "Sent — the spoken answer lands in the conversation."
 msgstr "أُرسل — ستظهر الإجابة المنطوقة في المحادثة."
+
+#: src/components/conversation/HelpRequestLine.tsx
+#~ msgid "Sent · Context kept on this computer"
+#~ msgstr "أُرسل · بقي السياق على هذا الكمبيوتر"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Sent along"
@@ -28171,7 +28199,7 @@ msgstr "مشاركة الرمز {0} للدعوة."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Share context"
-msgstr ""
+msgstr "مشاركة السياق"
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 #: src/components/project-home/ProjectGitShareToggle.tsx
@@ -31063,7 +31091,7 @@ msgstr "الرقم قبل النقطتين في رمز البوت."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "The one you already took"
-msgstr ""
+msgstr "التشخيص الذي أجريته بالفعل"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -32419,6 +32447,10 @@ msgstr "إلى"
 #: src/pages/entry/entry-shell.tsx
 msgid "To open the {label}:"
 msgstr "للفتح:"
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "To:"
+#~ msgstr "إلى:"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "today"
@@ -34309,7 +34341,7 @@ msgstr "ما الغرض من هذا السر؟"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "What is wrong"
-msgstr ""
+msgstr "ما المشكلة"
 
 #: src/components/automations/RunDetail.tsx
 msgid "What it did"
@@ -34404,7 +34436,7 @@ msgstr "ما الذي حدث من خطأ"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "What went wrong? What did you expect, and what did you already try?"
-msgstr ""
+msgstr "ما الذي حدث؟ ماذا كنت تتوقع، وماذا جرّبت بالفعل؟"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"
@@ -34577,7 +34609,7 @@ msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Who gets it"
-msgstr ""
+msgstr "من يستلمه"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Who may log in to this sandbox"
@@ -34786,6 +34818,7 @@ msgid "Working Tree"
 msgstr "شجرة العمل"
 
 #: src/components/conversation/ConversationAutomationChip.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "working…"
@@ -34794,6 +34827,7 @@ msgstr "يعمل…"
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/conversation/ConversationActions.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -35265,7 +35299,7 @@ msgstr "البيئة المعزولة الخاصة بكم جاهزة."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Your screen, session and diagnosis"
-msgstr ""
+msgstr "شاشتك وجلستك والتشخيص"
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "your secret manager"

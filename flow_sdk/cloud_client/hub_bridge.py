@@ -1347,6 +1347,20 @@ class HubWsBridge:
             timeout=timeout,
         )
 
+    async def mark_handling(self, *, conversation_id: str, flow_message_ids: list[str], timeout: float = 5.0) -> dict:
+        """Tell the hub this box started working on an answer to these messages: the sender's "working..."."""
+        return await self.manager.send_request(
+            {
+                "message_type": "rest_api_msg",
+                "method": "POST",
+                "scope": [],
+                "target_typeid": {"type": "conversation", "id": conversation_id},
+                "action": "mark_handling",
+                "body": {"flow_message_ids": list(flow_message_ids)},
+            },
+            timeout=timeout,
+        )
+
     async def _fetch_conversation_id(self, fm_id: str) -> Optional[str]:
         """Walk the ownership chain via HTTP /flow_message/<id>/parents_path
         and return the conversation entry, or None (no hub, or this box is signed out)."""
