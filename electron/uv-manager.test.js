@@ -1433,33 +1433,38 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
   }
 
   {
-    // Package dialog supersession: while the "Update Available" dialog for X is open,
-    // supersedePackageDialog() closes it as "Later" (X deferred), and a fresh check
-    // offers the newer version.
+    // Post-boot (`onReady`): a newer release is prepared in the background and announced as ready — never a
+    // dialog, never an install by itself. A failed prepare is not offered (the next check prepares it again).
     const electronId = require.resolve('electron');
     const savedElectron = require.cache[electronId];
+    const shown = [];
     require.cache[electronId] = { id: electronId, filename: electronId, loaded: true,
-      exports: { dialog: { showMessageBox: (_w, opts) => new Promise((resolve) => {
-        opts.signal.addEventListener('abort', () => resolve({ response: opts.cancelId }));
-      }) } } };
+      exports: { dialog: { showMessageBox: async (_w, opts) => { shown.push(opts); return { response: 0 }; } } } };
     try {
-      const m = new UvManager(silentLog);
-      let latest = '0.2.160';
-      m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.150', latestVersion: latest, required: true });
       const mainWindow = { isDestroyed: () => false, loadFile: async () => {}, loadURL: () => {} };
-      eq(m.openPackageDialogVersion(), null, 'no package dialog open initially');
-      const first = m.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true });
-      await new Promise((r) => setTimeout(r, 0));
-      eq(m.openPackageDialogVersion(), '0.2.160', 'dialog for 0.2.160 is open');
-      latest = '0.2.161';
-      m.supersedePackageDialog();
-      eq(await first, false, 'superseded dialog resolves as Later');
-      eq(m.openPackageDialogVersion(), null, 'dialog closed');
-      eq(m._deferredPackageVersion, '0.2.160', 'old version recorded as deferred');
-      const second = m.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true });
-      await new Promise((r) => setTimeout(r, 0));
-      eq(m.openPackageDialogVersion(), '0.2.161', 'fresh check offers the newer version');
-      m.supersedePackageDialog(); await second;
+      const make = ({ prepare, prepared }) => {
+        const m = new UvManager(silentLog);
+        m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.150', latestVersion: '0.2.160', required: true });
+        m.getInstalledVersionSync = () => '0.2.150';
+        m.prepareEngine = prepare;
+        m.preparedEngine = () => prepared;
+        m.upgrade = async () => { throw new Error('must not install'); };
+        return m;
+      };
+      const ready = [];
+      const ok1 = make({ prepare: async () => ({ version: '0.2.160' }), prepared: { version: '0.2.160' } });
+      eq(await ok1.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true, onReady: (v) => ready.push(v) }), false, 'nothing installed by the check');
+      eq([ready, shown.length], [['0.2.160'], 0], 'prepared and checked: announced as ready, no dialog');
+      const failing = make({ prepare: async () => { throw new Error('offline'); }, prepared: null });
+      eq(await failing.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true, onReady: (v) => ready.push(v) }), false, 'a failed prepare installs nothing');
+      eq([ready.length, shown.length], [1, 0], 'and is neither announced nor asked about');
+      // The newest needs a newer desktop: the newest one THIS desktop runs was prepared — it is offered.
+      const older = make({ prepare: async () => ({ version: '0.2.159' }), prepared: { version: '0.2.159' } });
+      await older.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true, onReady: (v) => ready.push(v) });
+      eq([ready, shown.length], [['0.2.160', '0.2.159'], 0], 'a compatible release older than the newest is offered');
+      const none = make({ prepare: async () => ({ version: '0.2.150' }), prepared: { version: '0.2.150' } });
+      await none.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true, onReady: (v) => ready.push(v) });
+      eq(ready.length, 2, 'nothing newer than the installed engine prepared: nothing offered');
     } finally {
       if (savedElectron) require.cache[electronId] = savedElectron; else delete require.cache[electronId];
     }
@@ -2784,7 +2789,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       } finally { engineCompatForFixtures.desktopMinBackendVersion = floorBefore; }
     }
 
-    // The post-boot check prepares BEFORE it asks; a failed prepare still asks, as before.
+    // The post-boot check prepares and only then may announce it; it never asks — not even when the prepare failed.
     {
       const electronId = require.resolve('electron');
       const savedElectron = require.cache[electronId];
@@ -2798,8 +2803,8 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
           m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.40', latestVersion: '0.2.41', required: true });
           m.prepareEngine = async () => { order.push('prepare'); if (fails) throw new Error('offline'); return null; };
           const mainWindow = { isDestroyed: () => false, loadFile: async () => {}, loadURL: () => {} };
-          await m.checkForUpdatesInBackground(mainWindow, { sendStatus: () => {}, compareWithPypi: true });
-          eq(order, ['prepare', 'dialog'], `post-boot check: prepare, then the same question${fails ? ' (prepare failed)' : ''}`);
+          await m.checkForUpdatesInBackground(mainWindow, { sendStatus: () => {}, compareWithPypi: true, onReady: () => order.push('ready') });
+          eq(order, ['prepare'], `post-boot check: prepare — nothing to announce (nothing was prepared${fails ? ': it failed' : ''}), no question`);
         }
         // A desktop update found while it prepared: the engine waits for it — no question.
         {
@@ -2808,16 +2813,16 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
           m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.40', latestVersion: '0.2.41', required: true });
           m.prepareEngine = async () => { order.push('prepare'); return null; };
           await m.checkForUpdatesInBackground({ isDestroyed: () => false, loadFile: async () => {} }, {
-            sendStatus: () => {}, compareWithPypi: true, engineChangeAllowed: () => false,
+            sendStatus: () => {}, compareWithPypi: true, engineChangeAllowed: () => false, onReady: () => order.push('ready'),
           });
-          eq(order, ['prepare'], 'post-boot check: a desktop found during the prepare goes first — no engine dialog');
+          eq(order, ['prepare'], 'post-boot check: a desktop found during the prepare goes first — nothing announced');
         }
         const { m } = mkPrep();
         m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.40', latestVersion: '0.2.41', required: true });
         order.length = 0;
         m.prepareEngine = async () => { order.push('prepare'); return null; };
         await m.checkForUpdatesInBackground({ isDestroyed: () => false, loadFile: async () => {} }, { beforeBackendStart: true });
-        eq(order, ['dialog'], 'pre-start check: no download before the start');
+        eq(order, ['dialog'], 'pre-start check (recovery): the question, no download before the start');
       } finally {
         if (savedElectron) require.cache[electronId] = savedElectron; else delete require.cache[electronId];
       }

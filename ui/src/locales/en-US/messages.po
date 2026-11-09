@@ -2464,6 +2464,10 @@ msgstr "a minute"
 msgid "a name in scope, or a literal"
 msgstr "a name in scope, or a literal"
 
+#: src/components/update-ready/UpdateReadyBridge.tsx
+msgid "A new FlowPad update has been downloaded and is ready to install."
+msgstr "A new FlowPad update has been downloaded and is ready to install."
+
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
 msgstr "A new project folder — everything you create is scoped to it"
@@ -3913,6 +3917,10 @@ msgstr "an op name"
 msgid "An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE)."
 msgstr "An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE)."
 
+#: src/components/top-nav-bar/UpdateReadyIndicator.tsx
+msgid "An update is downloaded and ready to install"
+msgstr "An update is downloaded and ready to install"
+
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Analyses (AgentTrace) of this session — run, list and open"
 msgstr "Analyses (AgentTrace) of this session — run, list and open"
@@ -4070,6 +4078,14 @@ msgstr "another project"
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Another step already uses this id — their results will overwrite each other."
 msgstr "Another step already uses this id — their results will overwrite each other."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Another update is in progress."
+msgstr "Another update is in progress."
+
+#: src/components/update-ready/update-ready.ts
+msgid "Another update is in progress. Try again when it is done."
+msgstr "Another update is in progress. Try again when it is done."
 
 #: src/notifications/error-detail.ts
 msgid "Answer"
@@ -4499,6 +4515,10 @@ msgstr "Ask {managers} — who manages the budget you were given — to make you
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Ask a teammate to join it and write there. The agent answers as you."
 msgstr "Ask a teammate to join it and write there. The agent answers as you."
+
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "Ask about this"
+msgstr "Ask about this"
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Ask about this analysis…"
@@ -4970,8 +4990,8 @@ msgid "Auto-send"
 msgstr "Auto-send"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Auto-updates check hourly."
-msgstr "Auto-updates check hourly."
+#~ msgid "Auto-updates check hourly."
+#~ msgstr "Auto-updates check hourly."
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
@@ -5001,9 +5021,14 @@ msgstr "Automation created"
 #: src/components/automations/BusView.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/conversation/channel-attribution.tsx
 #: src/types/ViewType.ts
 msgid "Automations"
 msgstr "Automations"
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Automations — what your automations report"
+msgstr "Automations — what your automations report"
 
 #: src/components/automations/BusView.tsx
 #: src/components/automations/BusView.tsx
@@ -5126,6 +5151,10 @@ msgstr "Back to tasks"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Back to the conversation message that started this session"
 msgstr "Back to the conversation message that started this session"
+
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "Back to the session"
+msgstr "Back to the session"
 
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Back to the simple view"
@@ -8601,6 +8630,10 @@ msgstr "Could not open the link"
 msgid "Could not open the machine"
 msgstr "Could not open the machine"
 
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "Could not open the session"
+msgstr "Could not open the session"
+
 #: src/components/conversation/asset-review/use-open-git-share.ts
 #: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Could not open the shared version"
@@ -10672,6 +10705,7 @@ msgstr "Design a pricing page"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 #: src/pages/desktop/DesktopPage.tsx
 #: src/types/ViewType.ts
 msgid "Desktop"
@@ -10680,6 +10714,10 @@ msgstr "Desktop"
 #: src/components/inbound/DestinationPicker.tsx
 msgid "Desktop instance"
 msgstr "Desktop instance"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Desktop updates are checked every 20 minutes."
+msgstr "Desktop updates are checked every 20 minutes."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
@@ -11302,12 +11340,21 @@ msgstr "Download the bundle with the task details."
 msgid "Downloaded"
 msgstr "Downloaded"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloaded and checked — ready to install."
+msgstr "Downloaded and checked — ready to install."
+
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloading…"
 msgstr "Downloading…"
+
+#. placeholder {0}: String(desktopAction.percent)
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading… {0}%"
+msgstr "Downloading… {0}%"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Draft"
@@ -11853,6 +11900,10 @@ msgstr "Endpoint id"
 #: src/components/assets/LlmEndpointsAssetList.tsx
 msgid "Endpoints appear here once the hub allocates one to you, or somebody shares theirs."
 msgstr "Endpoints appear here once the hub allocates one to you, or somebody shares theirs."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Engine"
+msgstr "Engine"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Ensure the claude CLI is installed and authenticated."
@@ -13611,6 +13662,10 @@ msgstr "Flowpad mailbox · only allowed senders reach {0}"
 msgid "Flowpad messages always reach it."
 msgstr "Flowpad messages always reach it."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad restarts to apply it."
+msgstr "FlowPad restarts to apply it."
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
 msgstr "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
@@ -14257,6 +14312,10 @@ msgstr "Go to the quoted message"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Go up"
 msgstr "Go up"
+
+#: src/components/chats-navigator/ChatHistoryRow.tsx
+msgid "Goal completed"
+msgstr "Goal completed"
 
 #: src/components/inbound/AddRuleDialog.tsx
 #: src/components/inbound/InboundView.tsx
@@ -15508,6 +15567,11 @@ msgstr "Install command"
 msgid "Install failed"
 msgstr "Install failed"
 
+#: src/components/update-ready/update-ready.ts
+msgid "Install failed: {error}"
+msgstr "Install failed: {error}"
+
+#: src/components/update-ready/update-ready.ts
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Install failed."
@@ -16469,6 +16533,10 @@ msgstr "Last used first · click to run"
 #: src/components/hooks-manager/index.tsx
 msgid "Last:"
 msgstr "Last:"
+
+#: src/components/update-ready/UpdateReadyBridge.tsx
+msgid "Later"
+msgstr "Later"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Latest on GitHub"
@@ -21711,6 +21779,10 @@ msgstr "Open assistant project"
 msgid "Open authorization page"
 msgstr "Open authorization page"
 
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "Open automation"
+msgstr "Open automation"
+
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
 msgstr "Open Backup Folder"
@@ -25847,6 +25919,7 @@ msgstr "REST API"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+#: src/components/update-ready/UpdateReadyBridge.tsx
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "Restart"
@@ -25882,6 +25955,11 @@ msgstr "Restart to apply what changed since this session started"
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
 msgid "Restart to apply: {names}"
 msgstr "Restart to apply: {names}"
+
+#. placeholder {0}: String(desktopAction.version)
+#: src/components/version-popover/version-popover.tsx
+msgid "Restart to update to v{0}"
+msgstr "Restart to update to v{0}"
 
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -31067,6 +31145,10 @@ msgstr "The default workspace. Every project outside another workspace's folder 
 msgid "The deployment failed."
 msgstr "The deployment failed."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "The desktop update could not be started."
+msgstr "The desktop update could not be started."
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
@@ -31083,6 +31165,11 @@ msgstr "The document could not be put on the hub the last time it was published.
 msgid "The document could not be read."
 msgstr "The document could not be read."
 
+#. placeholder {0}: String(desktopUpdate?.error)
+#: src/components/version-popover/version-popover.tsx
+msgid "The download failed: {0}"
+msgstr "The download failed: {0}"
+
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code and its tests. Pick one to see its config and the sources made from it."
 msgstr "The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code and its tests. Pick one to see its config and the sources made from it."
@@ -31095,6 +31182,10 @@ msgstr "The encrypted vault is not enabled on this machine yet."
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "The endpoint was not removed."
 msgstr "The endpoint was not removed."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The engine is replaced and the window reloads — FlowPad itself does not restart."
+msgstr "The engine is replaced and the window reloads — FlowPad itself does not restart."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "the existing desk"
@@ -31538,6 +31629,18 @@ msgstr "the token acts as {0}"
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 
+#: src/components/update-ready/update-ready.ts
+msgid "The update could not be applied: {error}"
+msgstr "The update could not be applied: {error}"
+
+#: src/components/update-ready/update-ready.ts
+msgid "The update could not be applied. Try again."
+msgstr "The update could not be applied. Try again."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The update server did not answer. Try again in a few minutes."
+msgstr "The update server did not answer. Try again in a few minutes."
+
 #: src/components/account/secrets-section.tsx
 msgid "The value is stored in your operating system keychain and never readable from this UI."
 msgstr "The value is stored in your operating system keychain and never readable from this UI."
@@ -31923,6 +32026,10 @@ msgstr "This credential no longer exists."
 msgid "This deployment"
 msgstr "This deployment"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "This desktop is already the newest version."
+msgstr "This desktop is already the newest version."
+
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "This destroys the cloud machine. Its runs and chats on that machine are lost."
 msgstr "This destroys the cloud machine. Its runs and chats on that machine are lost."
@@ -32022,6 +32129,10 @@ msgstr "This is a cloud resource — it will be destroyed in the cloud, not just
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This is its first start, so it takes a few minutes."
 msgstr "This is its first start, so it takes a few minutes."
+
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "This is my usage report ({target}, attached as context). Read it, then wait for my questions."
+msgstr "This is my usage report ({target}, attached as context). Read it, then wait for my questions."
 
 #: src/components/harness-login/StatusRow.tsx
 msgid "This is your default assistant"
@@ -32515,6 +32626,10 @@ msgstr "This UI is served by the Flowpad cloud."
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "This UI is served by your own desktop."
 msgstr "This UI is served by your own desktop."
+
+#: src/components/update-ready/update-ready.ts
+msgid "This update is no longer ready to install. FlowPad offers it again once it is."
+msgstr "This update is no longer ready to install. FlowPad offers it again once it is."
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "this visitor"
@@ -33476,6 +33591,10 @@ msgstr "Update"
 msgid "Update ({0} newer)"
 msgstr "Update ({0} newer)"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Update & Restart"
+msgstr "Update & Restart"
+
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "Update all machines ({machines})"
 msgstr "Update all machines ({machines})"
@@ -33496,6 +33615,19 @@ msgstr "Update channel for auto-updates"
 msgid "Update CHART.md"
 msgstr "Update CHART.md"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Update desktop"
+msgstr "Update desktop"
+
+#. placeholder {0}: String(desktopAction.version)
+#: src/components/version-popover/version-popover.tsx
+msgid "Update desktop to v{0}"
+msgstr "Update desktop to v{0}"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Update Engine"
+msgstr "Update Engine"
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsList.tsx
 #: src/components/automations/AutomationsList.tsx
@@ -33513,6 +33645,15 @@ msgstr "Update Plan"
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Update plan based on <plan-note> sections"
 msgstr "Update plan based on <plan-note> sections"
+
+#: src/components/top-nav-bar/UpdateReadyIndicator.tsx
+#: src/components/version-popover/version-popover.tsx
+msgid "Update ready"
+msgstr "Update ready"
+
+#: src/components/update-ready/UpdateReadyBridge.tsx
+msgid "Update Ready"
+msgstr "Update Ready"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Update to"
@@ -34985,7 +35126,6 @@ msgid "working"
 msgstr "working"
 
 #: src/components/assets/editor/agent-profile/deployment/ThreadStatus.tsx
-#: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/search-index/activity-labels.ts
 #: src/components/search-index/activity-labels.ts
