@@ -1,4 +1,4 @@
-import { tabManager } from '@sdk';
+import { tabManager, type TabList } from '@sdk';
 import { highlightTab } from '@src/tabs/tab-highlight';
 import { DockPointer } from './DockPointer';
 import { ViewType } from '../types/ViewType';
@@ -21,13 +21,16 @@ export async function presentDockTab(
   placement: { afterTabId?: string | null; parentTabId?: string | null; projectId?: string | null },
 ): Promise<DockPointer> {
   const placed = placeDockInProject(dock, placement.projectId);
-  await tabManager.ensureDock(placed, {
+  const ensured = await tabManager.ensureDock(placed, {
     afterTabId: placement.afterTabId,
     parentTabId: placement.parentTabId,
     viewMode: placed.viewMode,
   });
-  // ensureDock returns a scoped list; only the unscoped list can be adopted globally.
-  tabManager.adoptGlobal(await tabManager.listAll());
+  // ensureDock already adopted the global list when the backend sent one; an older backend doesn't.
+  if (!ensured.all) {
+    const tabs: TabList = await tabManager.listAll();
+    tabManager.adoptGlobal(tabs, tabs.version);
+  }
   if (placed.tabHash) highlightTab(placed.tabHash);
   return placed;
 }
