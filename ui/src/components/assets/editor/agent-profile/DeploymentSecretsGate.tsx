@@ -1,12 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Loader2, TriangleAlert, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { credentialsService, type AgentReadiness, type AgentReadinessItem, type Deployment, type Project } from '@sdk';
+import {
+  credentialsService,
+  type Agent,
+  type AgentReadiness,
+  type AgentReadinessItem,
+  type Deployment,
+  type Project,
+} from '@sdk';
 
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
+
+import { deploySecretMarks } from './project-secrets';
+import { useAgentSecrets } from './use-agent-secrets';
 
 interface BusyButtonProps {
   label: string;
@@ -171,6 +181,53 @@ export function DeploymentSecretsGate({ project, deployment, readiness, onChange
           </div>
         );
       })}
+    </div>
+  );
+}
+
+interface DeploySecretsLineProps {
+  agent: Agent;
+  /** How many required credentials have no value in the project yet: a deploy goes ahead, warned. */
+  onMissing?: (missing: number) => void;
+}
+
+/**
+ * The deploy dialog's one Secrets line: each credential the agent requires, ✓ when the project holds its value,
+ * ⚠ missing when not. Never a refusal — a value set later reaches the machines then.
+ */
+export function DeploySecretsLine({ agent, onMissing }: DeploySecretsLineProps) {
+  const { t } = useLingui();
+  const { rows } = useAgentSecrets(agent);
+  const { marks, missing } = deploySecretMarks(rows ?? []);
+  useEffect(() => {
+    if (rows) onMissing?.(missing);
+  }, [rows, missing, onMissing]);
+  if (marks.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" data-testid="new-deployment-secrets">
+      <span>
+        <Trans>Secrets:</Trans>
+      </span>
+      {marks.map((row) => (
+        <span key={row.name} data-testid={`new-deployment-secret-${row.name}`}>
+          <span className="font-mono">{row.name}</span>{' '}
+          {row.ok ? (
+            <span
+              className="text-emerald-700 dark:text-emerald-400"
+              title={t`From the project. Invite machines get it too — anyone with an invite code can read it on their machine.`}
+            >
+              ✓
+            </span>
+          ) : (
+            <span
+              className="text-amber-500"
+              title={t`No value in the project yet — set it on the agent's Env tab; machines get it then.`}
+            >
+              {t`⚠ missing`}
+            </span>
+          )}
+        </span>
+      ))}
     </div>
   );
 }

@@ -6995,6 +6995,7 @@ class AgenticProcess(Entity):
         "worker_status",
         "worker_status_detail",
         "worker_status_detail_id",
+        "goal_met",
         "busy",
         "ready_for_input",
         "queue",
@@ -7164,6 +7165,7 @@ class AgenticProcess(Entity):
         # keyed on it never re-opened after the user dismissed it once.
         data["worker_status_detail_id"] = detail.entry_id if detail else None
         data[PENDING_USER_INPUT_KEY] = self.pending_user_input()
+        data["goal_met"] = self._goal_met()
         data["status"] = self.status
         busy = is_turn_busy(self, computed)
         data["busy"] = busy
@@ -7257,6 +7259,12 @@ class AgenticProcess(Entity):
         if self.status == ProcessStatus.STOPPED.value:
             return discovered if discovered and is_worker_terminal(discovered) else None
         return discovered
+
+    def _goal_met(self) -> bool:
+        """The worker's ``/goal`` was judged met. Only vendors with goals (Claude) answer."""
+        check = getattr(self.driver, "goal_met", None)
+        path = transcript_cache.transcript_path(self) if check else None
+        return bool(path) and check(path)
 
     def _worker_status_detail(self, worker_status: "WorkerStatus | None") -> "StatusDetail | None":
         """The CLI's own error entry — its sentence and its entry id — when the

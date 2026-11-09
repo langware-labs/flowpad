@@ -198,6 +198,31 @@ def set_assigned_compute_node(typeid: str) -> str:
     return typeid
 
 
+_NODE_SIZE_KEY = "node_size"
+
+
+def get_assigned_node_size() -> str | None:
+    """The size the hub created this box at (``sm`` | ``md`` | ``lg``), or ``None`` on a local install.
+
+    The box cannot see its own allocation: the hub sizes the machine from ITS node row and hands the size
+    over in the standard box env (``FLOWPAD_NODE_SIZE``), which ``flow auth configure-box`` stores here.
+    Not memoized: each read is a small config-file read.
+    """
+    from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize  # noqa: PLC0415
+
+    raw = app_config.get_config(_NODE_SIZE_KEY)
+    return raw if raw in {s.value for s in ComputeNodeSize} else None
+
+
+def set_assigned_node_size(size: str) -> str:
+    """Persist the size the hub created this box at. Raises ``ValueError`` on an unknown size."""
+    from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize  # noqa: PLC0415
+
+    value = ComputeNodeSize(size).value
+    app_config.set_config(_NODE_SIZE_KEY, value)
+    return value
+
+
 _INSTANCE_UID_KEY = "instance_uid"
 
 

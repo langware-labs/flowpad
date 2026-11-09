@@ -9,8 +9,9 @@ import { SEGMENTED_ACTIVE, SEGMENTED_BUTTON, SEGMENTED_GROUP, SEGMENTED_IDLE } f
 import { Skeleton } from '@src/components/ui/skeleton';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { LayoutGrid, List } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { ChevronRight, LayoutGrid, List } from 'lucide-react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type DrillIn, type HomeItems, HomeItemsContext } from './drill-in';
 
 /** How many cards a tab shows before "Load more", and how many each click adds. */
 export const PAGE_SIZE = 6;
@@ -32,6 +33,8 @@ export interface TabDef {
   createLabel?: ReactNode;
   /** Shown only while it has items (Issues). */
   hideWhenEmpty?: boolean;
+  /** Never a tab of its own: counted, and opened only by a card's drill-in (an agent's Deployments). */
+  hidden?: boolean;
 }
 
 function readPref(key: string): string | null {
@@ -56,6 +59,12 @@ function useTabCounters(tabs: TabDef[]): AssetCounter<unknown>[][] {
 }
 
 type Access = 'all' | 'mine' | 'shared';
+
+/** A group's widest list: the counter that narrows by neither scope nor status. */
+function widest<T>(counters: AssetCounter<T>[]): T[] {
+  const wide = (key?: string) => !key || key === 'all';
+  return (counters.find((c) => wide(c.scope?.key) && wide(c.status?.key)) ?? counters[0])?.items ?? [];
+}
 
 function TabButton({
   label,
@@ -119,17 +128,31 @@ export function ItemsSection({
   const [selectedKey, setSelectedKey] = useState('all');
   const [query, setQuery] = useState('');
   const [shown, setShown] = useState(PAGE_SIZE);
+  const [drill, setDrill] = useState<DrillIn | null>(null);
 
-  const tabs = TAB_LIST.map((tab, i) => ({
+  const entries = TAB_LIST.map((tab, i) => ({
     tab,
     counters: all[i],
     total: counterAt(all[i], selectionOf(all[i]))?.items.length ?? 0,
-  })).filter(({ tab, total }) => !tab.hideWhenEmpty || total > 0);
-  const current = tabs.find(({ tab }) => tab.group.id === tabId) ?? tabs[0];
+  }));
+  const tabs = entries.filter(({ tab, total }) => !tab.hidden && (!tab.hideWhenEmpty || total > 0));
+  const drilled = drill ? entries.find(({ tab }) => tab.group.type === drill.type) : undefined;
+  const current = drilled ?? tabs.find(({ tab }) => tab.group.id === tabId) ?? tabs[0];
   const { group } = current.tab;
   const selection = selectionOf(current.counters, selectedKey);
   const counter = counterAt(current.counters, selection);
-  const searched = useQuickSearch(group, counter?.items ?? [], query);
+  const counterItems = counter?.items;
+  const drillTest = drilled ? drill?.test : undefined;
+  // A drill-in counts its own rows: the status chips over "Game Builder's deployments" say how many of THOSE run.
+  const shownCounters = useMemo(
+    () => (drillTest ? current.counters.map((c) => ({ ...c, items: c.items.filter(drillTest) })) : current.counters),
+    [current.counters, drillTest],
+  );
+  const listed = useMemo(
+    () => (drillTest ? (counterItems ?? []).filter(drillTest) : (counterItems ?? [])),
+    [counterItems, drillTest],
+  );
+  const searched = useQuickSearch(group, listed, query);
   // Mine / Shared with me reads the role on the card: an owner's item is "mine", anything else was shared.
   // Mine / Shared with me: an item whose role is unknown is in neither, only in All.
   const roleOf = group.role;
@@ -142,7 +165,21 @@ export function ItemsSection({
         });
 
   // Every change of what is listed starts again from the first page.
+  const resetList = () => {
+    setSelectedKey('all');
+    setAccess('all');
+    setQuery('');
+    setShown(PAGE_SIZE);
+  };
+  const clearDrill = useCallback(() => {
+    setDrill(null);
+    setSelectedKey('all');
+    setAccess('all');
+    setQuery('');
+    setShown(PAGE_SIZE);
+  }, []);
   const selectTab = (id: string) => {
+    setDrill(null);
     setTabId(id);
     setSelectedKey('all');
     setAccess('all');
@@ -162,6 +199,25 @@ export function ItemsSection({
     setView(next);
     writePref(VIEW_KEY, next);
   };
+  useEffect(() => {
+    if (!drill) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') clearDrill();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drill, clearDrill]);
+  // Rebuilt each render, like the counters it reads: every card sees the same items the tabs count.
+  const home: HomeItems = {
+    drillIn: (d) => {
+      setDrill(d);
+      resetList();
+    },
+    itemsOf: (type) => {
+      const i = TAB_LIST.findIndex((tab) => tab.group.type === type);
+      return i < 0 ? [] : widest(all[i]);
+    },
+  };
   const open = (item: unknown) => {
     const pointer = group.itemPointer(item);
     if (pointer) navigation.openDockOnThisPage(pointer);
@@ -178,6 +234,12 @@ export function ItemsSection({
           <Skeleton key={i} className="h-28 rounded-xl" />
         ))}
       </div>
+    );
+  } else if (rows.length === 0 && drilled && !query) {
+    body = (
+      <p className="py-10 text-center text-sm text-muted-foreground" data-testid="hub-items-drill-empty">
+        <Trans>Nothing here yet.</Trans>
+      </p>
     );
   } else if (rows.length === 0) {
     body = (
@@ -203,113 +265,138 @@ export function ItemsSection({
   }
 
   return (
-    <section className="w-full" data-testid="hub-items">
-      <div
-        role="tablist"
-        className="sticky top-0 z-10 flex items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-border bg-background"
-        data-testid="hub-items-tabs"
-      >
-        {tabs.map(({ tab, counters, total }) => (
-          <TabButton
-            key={tab.group.id}
-            label={counters[0]?.label}
-            count={total}
-            isLoading={!!counters[0]?.isLoading}
-            selected={tab.group.id === group.id}
-            onClick={() => selectTab(tab.group.id)}
-            testId={`hub-tab-${tab.group.id}`}
-          />
-        ))}
-      </div>
-
-      {current.total === 0 && !isLoading ? (
-        <div
-          className="mt-4 flex flex-col items-center gap-3 rounded-xl border border-dashed border-border bg-card/60 px-6 py-12 text-center"
-          data-testid="hub-items-empty"
-        >
-          <p className="max-w-md text-sm text-muted-foreground">{current.tab.emptyText}</p>
-          {current.tab.createLabel && (
+    <HomeItemsContext.Provider value={home}>
+      <section className="w-full" data-testid="hub-items">
+        {drilled && drill ? (
+          <nav
+            aria-label={t`Breadcrumb`}
+            className="sticky top-0 z-10 flex items-center gap-1.5 overflow-x-auto border-b border-border bg-background px-1 py-2.5 text-sm"
+            data-testid="hub-items-breadcrumb"
+          >
             <button
               type="button"
-              onClick={onCreate}
-              className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-              data-testid="hub-items-create"
+              onClick={clearDrill}
+              className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              data-testid="hub-items-breadcrumb-root"
             >
-              {current.tab.createLabel}
+              {tabs[0]?.counters[0]?.label ?? <Trans>Agents</Trans>}
             </button>
-          )}
-        </div>
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-2 py-3">
-            <QuickSearchInput value={query} onChange={search} className="w-64" testId="hub-items-search" />
-            <CounterAxes
-              counters={current.counters}
-              selection={selection}
-              onSelect={(next) => selectCounter(counterKey(next.scope, next.status))}
-            />
-            {group.role && (
-              <SegmentedControl<Access>
-                options={[
-                  ['all', t`All`],
-                  ['mine', t`Mine`],
-                  ['shared', t`Shared with me`],
-                ]}
-                value={access}
-                onChange={(value) => {
-                  setAccess(value);
-                  setShown(PAGE_SIZE);
-                }}
-                ariaLabel={t`Access`}
-                testId="items-access"
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate text-muted-foreground">{drill.label}</span>
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="font-medium text-foreground" data-testid="hub-items-breadcrumb-list">
+              {current.counters[0]?.label}
+            </span>
+          </nav>
+        ) : (
+          <div
+            role="tablist"
+            className="sticky top-0 z-10 flex items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-border bg-background"
+            data-testid="hub-items-tabs"
+          >
+            {tabs.map(({ tab, counters, total }) => (
+              <TabButton
+                key={tab.group.id}
+                label={counters[0]?.label}
+                count={total}
+                isLoading={!!counters[0]?.isLoading}
+                selected={tab.group.id === group.id}
+                onClick={() => selectTab(tab.group.id)}
+                testId={`hub-tab-${tab.group.id}`}
               />
-            )}
-            <div role="radiogroup" className={cn(SEGMENTED_GROUP, 'ml-auto')}>
-              {(
-                [
-                  ['grid', LayoutGrid, t`Grid view`],
-                  ['list', List, t`List view`],
-                ] as const
-              ).map(([value, Icon, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={view === value}
-                  aria-label={label}
-                  onClick={() => selectView(value)}
-                  className={cn(SEGMENTED_BUTTON, view === value ? SEGMENTED_ACTIVE : SEGMENTED_IDLE)}
-                  data-testid={`hub-items-view-${value}`}
-                >
-                  <Icon className="size-3.5" />
-                </button>
-              ))}
-            </div>
+            ))}
           </div>
+        )}
 
-          {body}
-
-          {!isLoading && rows.length > 0 && (
-            <div className="flex items-center justify-center gap-3 py-4 text-xs text-muted-foreground">
-              <span className="tabular-nums" data-testid="hub-items-shown">
-                <Trans>
-                  Showing {page.length} of {rows.length}
-                </Trans>
-              </span>
-              {page.length < rows.length && (
-                <button
-                  type="button"
-                  onClick={() => setShown((n) => n + PAGE_SIZE)}
-                  className="rounded-md border border-border bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
-                  data-testid="hub-items-load-more"
-                >
-                  <Trans>Load more</Trans>
-                </button>
+        {current.total === 0 && !isLoading && !drilled ? (
+          <div
+            className="mt-4 flex flex-col items-center gap-3 rounded-xl border border-dashed border-border bg-card/60 px-6 py-12 text-center"
+            data-testid="hub-items-empty"
+          >
+            <p className="max-w-md text-sm text-muted-foreground">{current.tab.emptyText}</p>
+            {current.tab.createLabel && (
+              <button
+                type="button"
+                onClick={onCreate}
+                className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                data-testid="hub-items-create"
+              >
+                {current.tab.createLabel}
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2 py-3">
+              <QuickSearchInput value={query} onChange={search} className="w-64" testId="hub-items-search" />
+              <CounterAxes
+                counters={shownCounters}
+                selection={selection}
+                onSelect={(next) => selectCounter(counterKey(next.scope, next.status))}
+              />
+              {group.role && (
+                <SegmentedControl<Access>
+                  options={[
+                    ['all', t`All`],
+                    ['mine', t`Mine`],
+                    ['shared', t`Shared with me`],
+                  ]}
+                  value={access}
+                  onChange={(value) => {
+                    setAccess(value);
+                    setShown(PAGE_SIZE);
+                  }}
+                  ariaLabel={t`Access`}
+                  testId="items-access"
+                />
               )}
+              <div role="radiogroup" className={cn(SEGMENTED_GROUP, 'ml-auto')}>
+                {(
+                  [
+                    ['grid', LayoutGrid, t`Grid view`],
+                    ['list', List, t`List view`],
+                  ] as const
+                ).map(([value, Icon, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={view === value}
+                    aria-label={label}
+                    onClick={() => selectView(value)}
+                    className={cn(SEGMENTED_BUTTON, view === value ? SEGMENTED_ACTIVE : SEGMENTED_IDLE)}
+                    data-testid={`hub-items-view-${value}`}
+                  >
+                    <Icon className="size-3.5" />
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
-        </>
-      )}
-    </section>
+
+            {body}
+
+            {!isLoading && rows.length > 0 && (
+              <div className="flex items-center justify-center gap-3 py-4 text-xs text-muted-foreground">
+                <span className="tabular-nums" data-testid="hub-items-shown">
+                  <Trans>
+                    Showing {page.length} of {rows.length}
+                  </Trans>
+                </span>
+                {page.length < rows.length && (
+                  <button
+                    type="button"
+                    onClick={() => setShown((n) => n + PAGE_SIZE)}
+                    className="rounded-md border border-border bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
+                    data-testid="hub-items-load-more"
+                  >
+                    <Trans>Load more</Trans>
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </section>
+    </HomeItemsContext.Provider>
   );
 }

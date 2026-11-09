@@ -268,7 +268,7 @@ def test_configure_box_runs_every_step_in_order_and_reports_each():
     assert result.exit_code == 0
     # The `=` form carries a dash-leading secret intact -- the risk `--` covers for set-cookie-gate.
     assert calls == [("gate", "-9tNyP6uJ6GaI"), ("runtime", "sandbox"), ("node", "compute_node-1")]
-    assert report == {"cookie_gate": "ok", "runtime": "ok", "compute_node": "ok", "login_status": None}
+    assert report == {"cookie_gate": "ok", "runtime": "ok", "compute_node": "ok", "node_size": None, "login_status": None}
 
 
 def test_configure_box_stops_at_a_gate_it_could_not_arm():

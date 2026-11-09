@@ -31,11 +31,9 @@ import { useUiActionRequest } from '@src/navigation/ui-actions';
  * new URL on the next render, which is also why nothing here tracks an "active"
  * crumb of its own.
  *
- * Crumbs navigate to what they name — except the project, which opens the
+ * Crumbs navigate to what they name, the project included (its own page). The
  * projects list (the same `OpenProjectComponent` the footer's "Switch Project"
- * uses). That is what the project chip this replaced did, and "which project am
- * I in" is the more useful question from an address bar; the briefcase button in
- * the nav cluster opens the project itself.
+ * uses) opens only for a project crumb that has no page to go to.
  */
 export function AddressField({
   crumbs,
@@ -84,11 +82,13 @@ export function AddressField({
   const { visible, hidden } = selectVisibleCrumbs(crumbs, widths, available);
 
   const go = (crumb: Crumb) => {
-    if (crumb.kind === 'project') {
-      setProjectModalOpen(true);
+    // The project crumb opens the project's own page, like every other crumb; switching project is the
+    // project chevron's and the footer's job. A project crumb with no page of its own still opens the picker.
+    if (crumb.pointer) {
+      navigation.openDock(crumb.pointer);
       return;
     }
-    if (crumb.pointer) navigation.openDock(crumb.pointer);
+    if (crumb.kind === 'project') setProjectModalOpen(true);
   };
 
   const renderCrumb = (crumb: Crumb, isLast: boolean) => {

@@ -314,7 +314,18 @@ class ComputeNode(
             node = await cls._get_local_legacy()
         if node is None and create:
             node = await cls.create_local()
+        if node is not None:
+            await node._adopt_assigned_size()
         return node
+
+    async def _adopt_assigned_size(self) -> None:
+        """On a hub box, report the size the hub created it at (``configure-box`` stored it), not the default."""
+        from flow_sdk.instance_settings.runtime import get_assigned_node_size  # noqa: PLC0415
+
+        size = get_assigned_node_size()
+        if size and self.node_size != size:
+            self.node_size = ComputeNodeSize(size)
+            await self.update()
 
     @classmethod
     async def create_local(cls, *, owner: "Any | None" = None) -> "ComputeNode":
@@ -616,11 +627,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         script_path = self.compute_provider.path_join(temp_folder, "_machine_id.py")
         await self.write_files(script_path, machine_id_script)
         python_cmd = sys.executable if self.node_provider_type == ComputeProviderEnum.LOCAL_MACHINE.value else "python"
-        cmd = await self.run_command(f"{python_cmd} {script_path}", background=False)
-        await cmd.wait()
-        if cmd.exit_code != 0:
-            raise RuntimeError(f"Failed to get machine ID: {cmd.all_stderr}")
-        machine_id = cmd.all_stdout.strip()
+        # argv, quoted by the executor for this node's OS: the script path may hold spaces.
+        result = await self.get_command_executor().run([python_cmd, script_path])
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to get machine ID: {result.stderr}")
+        machine_id = result.stdout.strip()
         if len(machine_id) != 64:
             raise RuntimeError(f"Invalid machine ID format: {machine_id}")
         return machine_id

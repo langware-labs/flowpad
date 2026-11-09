@@ -57,6 +57,7 @@ class LayerKey(StrEnum):
     AGENTS = "agents"
     AUTO_OPEN = "auto_open"
     LANGUAGE = "language"
+    CREDENTIALS = "credentials"
 
 
 class PromptLayer(DataSpec):
@@ -149,9 +150,19 @@ async def compose_layers(process: "AgenticProcess", agents: dict | None = None) 
         (LayerKey.AGENTS, agents_block),
         (LayerKey.AUTO_OPEN, auto_open),
         (LayerKey.LANGUAGE, await _language_layer(process)),
+        (LayerKey.CREDENTIALS, await _credentials_layer(process)),
     )
     stripped = ((key, text.strip()) for key, text in candidates)
     return [PromptLayer(key=key, text=text) for key, text in stripped if text]
+
+
+async def _credentials_layer(process: "AgenticProcess") -> str:
+    """The project's credentials by name (``flow credentials list``) — the values are in the worker's env."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+        credentials_prompt_block,
+    )
+
+    return await credentials_prompt_block(process) or ""
 
 
 def render(layers: list[PromptLayer]) -> str:
