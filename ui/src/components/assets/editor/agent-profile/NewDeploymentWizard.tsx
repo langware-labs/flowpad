@@ -4,7 +4,7 @@ import { ExternalLink, Link2, Loader2, Server, Ticket, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { endpointTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
-import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
+import { useLlmEndpoints } from '@src/components/llm-endpoints/use-llm-endpoints';
 import { Button } from '@src/components/ui/button';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Input } from '@src/components/ui/input';
@@ -56,10 +56,12 @@ export function NewDeploymentWizard({
   const [oneName, setOneName] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const { status } = useLlmSources();
+  // The hub's own answer: a visitor budget may be carved from any endpoint the caller may ALLOCATE from
+  // (`agent._source_refusal`), which an editor can and an admin of nothing else cannot.
+  const { endpoints } = useLlmEndpoints();
   const sources = useMemo(
-    () => (status?.available ?? []).filter((e) => e.kind === 'hub' && e.can_administer === true),
-    [status],
+    () => endpoints.filter((e) => e.enabled !== false && e.isAllowedAction('allocate')),
+    [endpoints],
   );
   const chosenSource = source || (sources[0] ? endpointTypeId(sources[0].id) : '');
 

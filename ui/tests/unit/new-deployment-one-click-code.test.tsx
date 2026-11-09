@@ -6,10 +6,18 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
-  useLlmSources: () => ({
-    status: { available: [{ id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', kind: 'hub', name: 'Course', can_administer: true }] },
-    isLoading: false,
+// The wizard offers what the hub lets this caller ALLOCATE from (an editor can; see `agent._source_refusal`).
+vi.mock('@src/components/llm-endpoints/use-llm-endpoints', () => ({
+  useLlmEndpoints: () => ({
+    endpoints: [
+      {
+        id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        name: 'Course',
+        enabled: true,
+        isAllowedAction: (a: string) => a === 'allocate',
+      },
+      { id: 'bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee', name: 'Read only', enabled: true, isAllowedAction: () => false },
+    ],
   }),
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: {} }) }));
@@ -101,7 +109,9 @@ describe('NewDeploymentWizard — one-click invite code', () => {
   });
 
   it('a refused read shows the refusal, never the first-time setup', async () => {
-    vi.spyOn(dataManager, 'callAction').mockRejectedValue(new Error('only the owner or an admin can manage deployments'));
+    vi.spyOn(dataManager, 'callAction').mockRejectedValue(
+      new Error('only the owner or an admin can manage deployments'),
+    );
     render(wizard());
     expect(await screen.findByTestId('new-deployment-read-error')).toHaveTextContent('only the owner or an admin');
     expect(screen.queryByTestId('new-deployment-kind-code')).toBeNull();
