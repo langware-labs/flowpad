@@ -166,9 +166,8 @@ async def _tab_name(tab: AutoOpenTab) -> str | None:
 def auto_open_commands(tabs: list[AutoOpenTab]) -> list[str]:
     """The ``flow show`` that reopens each opened tab — what the worker is told
     (``auto_open_prompt_block``), kept on the session as ``context_data.auto_open``."""
-    # Quoted: the worker runs these verbatim, and a box workspace is "Flowpad workspace".
-    return [f"flow show file {shlex.quote(str(tab.path))}" if tab.path is not None else f"flow show view {shlex.quote(str(tab.address))}"
-            for tab in tabs]
+    return [shlex.join(["flow", "show", "file", str(tab.path)] if tab.path is not None
+                       else ["flow", "show", "view", tab.address]) for tab in tabs]
 
 
 def auto_open_prompt_block(context_data: dict | None) -> str:

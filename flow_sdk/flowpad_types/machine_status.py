@@ -256,4 +256,4 @@ def python_command(script_path: str, os_type: str) -> str:
     """
     if os_type == "Windows":
         return f'where py >nul 2>nul & if errorlevel 1 (python "{script_path}") else (py -3 "{script_path}")'
-    return f"python3 {shlex.quote(str(script_path))}"
+    return f"python3 {shlex.quote(script_path)}"
