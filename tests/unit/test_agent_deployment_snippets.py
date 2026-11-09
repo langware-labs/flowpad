@@ -197,8 +197,6 @@ async def test_5_a_machine_of_its_own(monkeypatch):
         return False
 
     async def plan(method, etype, eid=None, action=None, *, payload=None, **_):
-        if (method, etype, action) == ("GET", "deployment", "environment"):  # the readiness gate's env read
-            return {"rows": []}
         assert (method, etype, action) == ("POST", "project", "plan_deployment")
         return {"deployment": {"id": "0f8d0356-504f-466c-a0e9-ee2ac90e4a4b", "name": "researcher (e2b)",
                                "environment": payload["environment"], "parent_type_id": f"project-{eid}",

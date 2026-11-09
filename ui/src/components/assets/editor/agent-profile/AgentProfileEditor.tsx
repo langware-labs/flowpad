@@ -34,7 +34,6 @@ import { AgentAssistantSkillsField } from './AgentAssistantSkillsField';
 import { AgentModelSizeField } from './AgentModelSizeField';
 import { AgentVisibilitySection } from './AgentVisibilitySection';
 import { AgentAutoLaunchTab } from './AgentAutoLaunchTab';
-import { AgentEnvTab } from './AgentEnvTab';
 import { useAgentMcpSync } from './use-agent-mcp-sync';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import type { AgentDocumentPatch } from './agent-fields';
@@ -481,11 +480,6 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   )}
                 </TabsTrigger>
               )}
-              {!hub && (
-                <TabsTrigger value="env" data-testid="agent-tab-env">
-                  <Trans>Env</Trans>
-                </TabsTrigger>
-              )}
             </TabsList>
             <TabsContent
               value="instructions"
@@ -809,11 +803,6 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 ) : (
                   <AgentPlacesColumn agent={agent} onOpenInvite={() => setInviteOpen(true)} />
                 )}
-              </TabsContent>
-            )}
-            {!hub && (
-              <TabsContent value="env" className="mt-3">
-                <AgentEnvTab agent={agent} />
               </TabsContent>
             )}
           </Tabs>
