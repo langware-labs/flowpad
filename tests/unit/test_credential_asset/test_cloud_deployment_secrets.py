@@ -1,11 +1,10 @@
 """A cloud deployment keeps its values in the hub store; "use mine" copies this computer's values there;
-the deploy is refused until the store holds what the agent needs; deleting a credential reaches the hub.
+a missing value warns and the deploy proceeds; deleting a credential reaches the hub.
 The hub is an in-memory double (``tests/utils/fake_hub_store``). No network."""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
-
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -13,11 +12,11 @@ from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agent_cloud_deploy import funding_warnings
 from flow_sdk.builtin.credential_service import CredentialError, delete_credential, save_credential, use_mine
 from flow_sdk.builtin.deployment import Deployment
-from flow_sdk.builtin.readiness import NotReady, readiness
+from flow_sdk.builtin.readiness import readiness
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.secrets import SecretStore
 from tests.utils import fake_hub_store
-from tests.utils.deploy_run import deploy_ended, deploy_steps, plan_for
+from tests.utils.deploy_run import deploy_ended, plan_for
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -66,27 +65,19 @@ async def test_the_hub_store_takes_values_lists_names_and_never_gives_one_back(h
     assert await store.forget(["STRIPE_KEY", "NEVER"]) == (["STRIPE_KEY"], [])
 
 
-async def test_the_deploy_is_refused_until_use_mine_fills_the_store(home, project, hub, monkeypatch):
+async def test_a_missing_value_warns_the_deploy_proceeds_and_use_mine_fills_it_later(home, project, hub, monkeypatch):
     agent = await _agent(project)
     await _stripe_here(project)
     monkeypatch.setattr(Agent, "ensure_on_hub", _published)  # publishing is the git path's; not under test here
     monkeypatch.setattr("flow_sdk.builtin.project.Project.ensure_on_hub", AsyncMock(return_value=False))
 
-    with pytest.raises(NotReady) as refused:
-        await deploy_steps(agent, "user-1", "production", provider="e2b")
-    assert [(i.requirement.name, i.remedy) for i in refused.value.readiness.items if i.status == "missing"] == [
-        ("stripe", "use_mine")
-    ]
-    assert hub.deploys == [], "no machine is paid for"
+    ended = await deploy_ended(agent, "user-1", "production", provider="e2b")
+    assert "Secret stripe missing" in ended.model_dump_json(), "the readiness step says what is missing"
+    assert len(hub.deploys) == 1, "a missing secret never refuses the deploy: the machine starts"
+    deployment_id = hub.deploy_ids[0]
 
-    deployment = await plan_for(agent, "production", provider="e2b")
-
-    assert await use_mine(str(deployment.id)) == {"copied": ["STRIPE_KEY"], "not_here": [], "hub_funded": []}
-    assert hub.values[str(deployment.id)] == {"STRIPE_KEY": VALUE}
-
-    await deploy_ended(agent, "user-1", "production", provider="e2b", deployment_id=str(deployment.id))
-    assert hub.deploys == [{"environment": "production", "provider": "e2b", "require": ["STRIPE_KEY"]}]
-    assert hub.deploy_ids == [str(deployment.id)], "the deploy is for the placement use mine filled"
+    assert await use_mine(deployment_id) == {"copied": ["STRIPE_KEY"], "not_here": [], "hub_funded": []}
+    assert hub.values[deployment_id] == {"STRIPE_KEY": VALUE}
 
 
 async def test_a_protected_deployment_refuses_use_mine(home, project, hub):
