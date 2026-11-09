@@ -1,6 +1,7 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ChevronDown } from 'lucide-react';
-import { Project, RuntimeKind } from '@sdk';
+import { PageId, Project, RuntimeKind } from '@sdk';
+import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -172,7 +173,11 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
+                      onClick={() => {
+                        // On the hub the project's home is the hub page's own (members, roles, assets).
+                        const home = DockPointer.forProject(project.id);
+                        navigation.openDock(isHubOnly() ? home.withPage(PageId.HUB) : home);
+                      }}
                       data-testid="top-nav-project"
                       aria-label={homeLabel}
                       className={cn(SEGMENT, 'gap-1.5 pl-3 pr-2.5')}
