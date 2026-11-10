@@ -157,11 +157,12 @@ test('2. the stream inbox merges both sources, attributed', async ({ page }) => 
   await expect(rows.filter({ hasText: 'slack message' }).first()).toBeVisible();
   await expect(rows.filter({ hasText: /Subject \d+/ }).first()).toBeVisible();
   // Every row wears ITS source's chip.
-  expect(await rows.locator('[data-chip-type="source"]').count()).toBe(PAGE);
+  // (Chips draw once each row's channel resolves: wait for all of them rather than sampling once.)
+  await expect(rows.locator('[data-chip-type="source"]')).toHaveCount(PAGE);
   // The older page holds the rest: both sources, merged, are all 120.
   await page.getByTestId('stream-inbox-page-older').click();
   await expect(rows).toHaveCount(2 * PER_SOURCE - PAGE);
-  expect(await rows.locator('[data-chip-type="source"]').count()).toBe(2 * PER_SOURCE - PAGE);
+  await expect(rows.locator('[data-chip-type="source"]')).toHaveCount(2 * PER_SOURCE - PAGE);
 });
 
 test('3. a mark narrows to ONE source; × restores', async ({ page }) => {
