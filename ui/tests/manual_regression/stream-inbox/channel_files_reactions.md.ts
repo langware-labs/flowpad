@@ -181,6 +181,8 @@ CHANNELS.forEach((channel, i) => {
     await photoBubble.hover();
     await photoBubble.getByTestId('message-reply').click();
     await expect(page.getByTestId('composer-reply-banner')).toContainText(`photo ${nonce}`);
+    // Attach files is an item of the composer's + menu (composer-more-actions).
+    await page.getByTestId('composer-more-actions').click();
     await expect(page.getByTestId('attach-file-button')).toBeEnabled();
     const chooser = page.waitForEvent('filechooser');
     await page.getByTestId('attach-file-button').click();
