@@ -3,6 +3,7 @@ import { defineConfig, mergeConfig } from 'vitest/config';
 import { loadEnv } from 'vite';
 import viteConfig from '../../vite.config';
 import { HOOK_TIMEOUT_MS } from './testConstants';
+import { adjusted } from '../adjustableTimeout';
 
 // React tests include live-SDK suites (apiTestSetup, entity writes, and local
 // filesystem actions). Bind both the SDK define and jsdom origin to the
@@ -50,8 +51,8 @@ export default mergeConfig(
       exclude: ['**/old_flowpad_repo/**', '**/node_modules/**'],
       globals: true,
       css: false,
-      hookTimeout: 15000,
-      testTimeout: 15000,
+      hookTimeout: adjusted(15000),
+      testTimeout: adjusted(15000),
       pool: 'threads',
       poolOptions: {
         threads: {

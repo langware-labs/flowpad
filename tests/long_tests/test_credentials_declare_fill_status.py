@@ -28,6 +28,7 @@ from dotenv import dotenv_values
 
 from flow_sdk.builtin.credential_status import credentials_status
 from flow_sdk.builtin.project import Project
+from tests.adjustable_timeout import adjusted
 from tests.long_tests._deployments import run
 from tests.utils.demo_credential import ENDPOINT, KEY_PATTERN, MANIFEST_PATH
 
@@ -50,7 +51,7 @@ def _flow(project_dir: Path, *argv: str) -> subprocess.CompletedProcess:
     env = {**os.environ, "SQLITE_DATABASE_PATH": str(_driver_instances["sqlite"].config.database),
            "FLOWPAD_SKIP_DOTENV": "true"}
     return subprocess.run([sys.executable, "-m", "flow_sdk.cli.flow_cli", *argv], cwd=project_dir, env=env,
-                          stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+                          stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=adjusted(30))
 
 
 def _assert_filled(row: dict, key: str) -> None:

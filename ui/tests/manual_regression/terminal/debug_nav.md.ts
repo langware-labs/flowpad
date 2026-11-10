@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 test('debug new_terminal navigation', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(adjusted(60_000));
   
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');

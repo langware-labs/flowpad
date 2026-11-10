@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Playwright config for the **project home page** browser scenario
@@ -15,8 +16,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
-  timeout: 120_000,
-  expect: { timeout: 20_000 },
+  timeout: adjusted(120_000),
+  expect: { timeout: adjusted(20_000) },
   fullyParallel: false,
   retries: 0,
   workers: 1,

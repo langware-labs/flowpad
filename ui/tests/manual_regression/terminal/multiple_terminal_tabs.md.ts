@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, addTerminalTab } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Multiple Terminal Tabs', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,7 +8,7 @@ test.describe('Multiple Terminal Tabs', () => {
   });
 
   test('create multiple tabs and switch between them', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: navigate to shell
     await gotoShell(page);
@@ -36,7 +37,7 @@ test.describe('Multiple Terminal Tabs', () => {
         const fresh = after.filter((id) => id && !before.has(id));
         expect(fresh.length).toBeGreaterThan(0);
         found = fresh[0];
-      }).toPass({ timeout: 15_000 });
+      }).toPass({ timeout: adjusted(15_000) });
       return found;
     }
 
@@ -79,7 +80,7 @@ test.describe('Multiple Terminal Tabs', () => {
     // dead session can trigger downstream cleanup that prunes a sibling tab,
     // so we assert the closed tab specifically and that count strictly
     // decreased from the snapshot.
-    await expect(page.locator(`[data-testid="${secondNewTabId}"]`)).toHaveCount(0, { timeout: 15000 });
+    await expect(page.locator(`[data-testid="${secondNewTabId}"]`)).toHaveCount(0, { timeout: adjusted(15000) });
     const countAfterClose = await page.locator('[data-testid^="tab-"]').count();
     expect(countAfterClose).toBeLessThan(countBeforeClose);
   });

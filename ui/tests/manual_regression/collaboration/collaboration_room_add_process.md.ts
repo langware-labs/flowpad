@@ -9,6 +9,7 @@
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -20,7 +21,7 @@ async function firstId(rq: APIRequestContext, path: string): Promise<string> {
 }
 
 test('collaboration_room add_process end-to-end HTTP contract', async () => {
-  test.setTimeout(60_000);
+  test.setTimeout(adjusted(60_000));
   const rq = await apiContext();
 
   const projId = await firstId(rq, 'project');

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 // Since 2026-10-11 the home is always the tabless Vibe hero (docs/viewmodes.md):
 // the "current activity" strip and its 3-hour recency filter are gone from the app
@@ -15,15 +16,15 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 async function gotoHome(page: import('@playwright/test').Page) {
   await dismissSetupModal(page);
   await page.goto('/dock/home');
-  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 90_000 });
+  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(90_000) });
 }
 
 test.describe('Home — no current-activity strip', () => {
   // ── Test 1: The home is the Vibe hero, without the activity strip ─────────
   test('home is the Vibe hero and shows no current-activity strip', async ({ page }) => {
     await gotoHome(page);
-    await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe', { timeout: 15_000 });
-    await expect(page.getByPlaceholder(/would you like to work on/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe', { timeout: adjusted(15_000) });
+    await expect(page.getByPlaceholder(/would you like to work on/)).toBeVisible({ timeout: adjusted(10_000) });
     await expect(page.locator('[data-testid="recent-conversations-strip"]:visible')).toHaveCount(0);
   });
 
@@ -35,7 +36,7 @@ test.describe('Home — no current-activity strip', () => {
     });
 
     await gotoHome(page);
-    await expect(page.getByPlaceholder(/would you like to work on/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByPlaceholder(/would you like to work on/)).toBeVisible({ timeout: adjusted(10_000) });
     await page.waitForTimeout(2_000);
 
     const actionableErrors = errors.filter(

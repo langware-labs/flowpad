@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Playwright config for index-search E2E scenarios.
@@ -15,8 +16,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.md.ts',
-  timeout: 90_000,
-  expect: { timeout: 15_000 },
+  timeout: adjusted(90_000),
+  expect: { timeout: adjusted(15_000) },
   fullyParallel: false,
   retries: 0,
   workers: 1,

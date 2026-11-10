@@ -15,6 +15,7 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
 import { withViewMode } from '../_shared/view-mode';
+import { adjusted } from '../../adjustableTimeout';
 
 interface BackendTabRow {
   id: string;
@@ -111,12 +112,12 @@ test.describe('Tab Management — drag reorder persists to the backend', () => {
       // Two co-rendering project content tabs. Projectless Search intentionally
       // belongs to the Global strip and is not a valid same-strip fixture.
       await page.goto(projectDock('/dock/assets', projectId));
-      await expect(page.locator(`[data-terminal-target="${assetsPtr}"]`)).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator(`[data-terminal-target="${assetsPtr}"]`)).toBeVisible({ timeout: adjusted(15_000) });
       await page.goto(projectDock('/dock/explorer', projectId));
       const assets = page.locator(`[data-terminal-target="${assetsPtr}"]`);
       const files = page.locator(`[data-terminal-target="${filesPtr}"]`);
-      await expect(assets).toBeVisible({ timeout: 15_000 });
-      await expect(files).toBeVisible({ timeout: 15_000 });
+      await expect(assets).toBeVisible({ timeout: adjusted(15_000) });
+      await expect(files).toBeVisible({ timeout: adjusted(15_000) });
 
       // Order-agnostic: read the rendered order, then drag the RIGHT chip to the
       // front and assert it lands before the (former) left chip — DOM and backend.
@@ -147,7 +148,7 @@ test.describe('Tab Management — drag reorder persists to the backend', () => {
       await expect(async () => {
         const after = await domOrder(page);
         expect(after.indexOf(rightPtr)).toBeLessThan(after.indexOf(leftPtr));
-      }).toPass({ timeout: 5_000 });
+      }).toPass({ timeout: adjusted(5_000) });
 
       // …and the backend persisted the new order (dragged.tab_order < other).
       await expect(async () => {
@@ -155,14 +156,14 @@ test.describe('Tab Management — drag reorder persists to the backend', () => {
         expect(rows.find((t) => t.pointer === rightPtr)!.order).toBeLessThan(
           rows.find((t) => t.pointer === leftPtr)!.order,
         );
-      }).toPass({ timeout: 5_000 });
+      }).toPass({ timeout: adjusted(5_000) });
 
       // Persistence survives a reload (the strip rebuilds from Tab.list, same order).
       await page.goto(projectDock('/dock/explorer', projectId));
       await expect(async () => {
         const after = await domOrder(page);
         expect(after.indexOf(rightPtr)).toBeLessThan(after.indexOf(leftPtr));
-      }).toPass({ timeout: 10_000 });
+      }).toPass({ timeout: adjusted(10_000) });
     } finally {
       await api.dispose();
     }

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { adjusted } from '../adjustableTimeout';
 
 /**
  * Hub-realtime Playwright config.
@@ -15,8 +16,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
-  timeout: 10_000,             // overall per-test budget — realtime SLO is sub-second per leg
-  expect: { timeout: 2_000 },  // tight UI-readiness waits
+  timeout: adjusted(10_000),             // overall per-test budget — realtime SLO is sub-second per leg
+  expect: { timeout: adjusted(2_000) },  // tight UI-readiness waits
   fullyParallel: false,
   retries: 0,
   workers: 1,
@@ -24,8 +25,8 @@ export default defineConfig({
   use: {
     headless: true,
     trace: 'retain-on-failure',
-    actionTimeout: 5_000,
-    navigationTimeout: 5_000,
+    actionTimeout: adjusted(5_000),
+    navigationTimeout: adjusted(5_000),
   },
   projects: [
     {
