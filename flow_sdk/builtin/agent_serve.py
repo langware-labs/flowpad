@@ -1375,7 +1375,7 @@ class AgentServer:
                 logger.exception("agent server: reconcile failed")
 
     async def reconcile(self, *, chiefs: bool = True) -> None:
-        async with self._reconciling, deployment_process.process_table():
+        async with self._reconciling, deployment_process.process_table(fresh=True):
             if chiefs:
                 await self._sync_chiefs_of_staff()
             wanted, strays = await self._wanted()

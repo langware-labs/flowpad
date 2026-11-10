@@ -174,10 +174,12 @@ def _scan() -> dict[tuple[str, str], int]:
 
 
 @asynccontextmanager
-async def process_table():
+async def process_table(*, fresh: bool = False):
     """One read of the process list, off the loop, for every ``alive``/``pid_of`` inside the block —
-    a pass over many deployments. Nested blocks share the outer read."""
-    if _table.get() is not None:
+    a pass over many deployments. Nested blocks share the outer read; a ``fresh`` block (a reconcile
+    pass) reads its own: a task started inside a pass copies its context, the pass's read with it, and
+    that read predates every process the pass started — sharing it, the next pass starts them again."""
+    if _table.get() is not None and not fresh:
         yield
         return
     token = _table.set(await asyncio.to_thread(_scan))
