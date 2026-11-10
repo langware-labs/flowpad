@@ -16538,6 +16538,10 @@ msgstr "Last message"
 #~ msgid "Last message: {0}"
 #~ msgstr "Last message: {0}"
 
+#: src/components/chats-navigator/ChatHistoryRow.tsx
+msgid "Last message: {lastPrompt}"
+msgstr "Last message: {lastPrompt}"
+
 #: src/components/items/IssueView.tsx
 msgid "last notified {last}"
 msgstr "last notified {last}"

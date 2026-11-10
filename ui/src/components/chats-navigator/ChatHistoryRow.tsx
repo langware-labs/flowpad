@@ -1,5 +1,5 @@
 import { AgenticProcess, TypeId, WorkerStatus } from '@sdk';
-import { useMemo } from 'react';
+import { useMemo, type ComponentType } from 'react';
 import { cn, RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
 import { Check, List, Loader2, MessageSquare, Star, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
@@ -9,6 +9,7 @@ import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useIsBurning, useWorkerStatus } from '@src/store/pending-actions-store';
 import { compactWorkerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { ChatPromptsPopover } from './ChatPromptsPopover';
 import { MatchSnippet, type MatchPart } from './matchSnippet';
 
@@ -43,6 +44,34 @@ interface ChatHistoryRowProps {
   onDelete: () => void;
 }
 
+type RowMark = { icon: ComponentType<{ className?: string }>; cls: string; label: string };
+
+/** The status card behind a row's mark: built only while it is open, with what the row itself does not show —
+ *  the CLI's own words for the status and the last prompt. */
+function ChatStatusCard({
+  mark,
+  detail,
+  lastPrompt,
+}: {
+  mark: RowMark;
+  detail?: string | null;
+  lastPrompt?: string | null;
+}) {
+  const { t } = useLingui();
+  return (
+    <>
+      <div className="flex items-center gap-1.5 font-medium">
+        <mark.icon className={cn('h-3 w-3', mark.cls)} />
+        {mark.label}
+      </div>
+      {detail && <div className="whitespace-pre-wrap break-words">{detail}</div>}
+      {lastPrompt && (
+        <div className="line-clamp-3 break-words text-muted-foreground">{t`Last message: ${lastPrompt}`}</div>
+      )}
+    </>
+  );
+}
+
 export function ChatHistoryRow({
   entry,
   selected,
@@ -62,7 +91,7 @@ export function ChatHistoryRow({
   // watch/unwatch POST per row each time the navigator mounted — ~40 per
   // process <-> doc switch.
   const cached = entry.agentic_process_id
-    ? AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null
+    ? (AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null)
     : null;
   const typeId = useMemo(
     () => (entry.agentic_process_id ? new TypeId(AgenticProcess.type, entry.agentic_process_id) : null),
@@ -82,7 +111,12 @@ export function ChatHistoryRow({
   const cfg = compactWorkerStatusConfig(workerStatus);
   const mark =
     busy || cfg.animate
-      ? { key: 'busy', icon: Loader2, cls: 'animate-spin text-emerald-500', label: cfg.animate ? cfg.label : t`Working…` }
+      ? {
+          key: 'busy',
+          icon: Loader2,
+          cls: 'animate-spin text-emerald-500',
+          label: cfg.animate ? cfg.label : t`Working…`,
+        }
       : process?.goal_met
         ? { key: 'goal_met', icon: Check, cls: 'text-emerald-500', label: t`Goal completed` }
         : { key: workerStatus ?? WorkerStatus.UNKNOWN, icon: cfg.icon, cls: cfg.color, label: cfg.label };
@@ -118,20 +152,39 @@ export function ChatHistoryRow({
       title={meta || undefined}
     >
       <div className="flex items-center gap-1.5">
-        {/* Leftmost status gutter — spinner while working, green check for a met
-            /goal, else the worker status's mark; reserved so rows stay aligned. */}
-        <span
-          className="flex h-3 w-3 shrink-0 items-center justify-center"
-          title={mark?.label}
-          aria-label={mark?.label}
-          data-testid="chat-history-row-busy"
-          data-busy={busy ? 'true' : 'false'}
-          data-status={mark?.key}
-        >
-          {mark && <mark.icon className={cn('h-3 w-3', mark.cls)} />}
-        </span>
+        {/* Leftmost status gutter — spinner while working, green check for a met /goal, else the worker
+            status's mark; reserved so rows stay aligned. Hovering it opens the status card (the tab card's delay). */}
+        {/* Its own provider: the row also renders outside the app's root provider (lists, tests). */}
+        <TooltipProvider delayDuration={600}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="flex h-3 w-3 shrink-0 items-center justify-center"
+                aria-label={mark.label}
+                data-testid="chat-history-row-busy"
+                data-busy={busy ? 'true' : 'false'}
+                data-status={mark.key}
+              >
+                <mark.icon className={cn('h-3 w-3', mark.cls)} />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent
+              side="right"
+              align="start"
+              className="max-w-72 space-y-1 text-xs"
+              data-testid="chat-history-row-status-card"
+            >
+              <ChatStatusCard mark={mark} detail={process?.worker_status_detail} lastPrompt={entry.last_prompt} />
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <WorkerIcon workerType={entry.worker_type} />
-        <span className={cn('min-w-0 flex-1 font-medium text-foreground', detailed ? 'line-clamp-2 break-words' : 'truncate')}>
+        <span
+          className={cn(
+            'min-w-0 flex-1 font-medium text-foreground',
+            detailed ? 'line-clamp-2 break-words' : 'truncate',
+          )}
+        >
           {title}
         </span>
         {/* Default: favorite marker + time-ago; swapped for the actions on hover. */}
