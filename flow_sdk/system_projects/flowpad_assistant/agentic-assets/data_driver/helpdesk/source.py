@@ -200,6 +200,7 @@ class HelpdeskSource(MessageSource):
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.ingest.health import SourceHealth  # noqa: PLC0415
 
         walk = await HubProxy.walk("project")
         driver = DataDriver.loaded(cls.provider)
@@ -211,7 +212,12 @@ class HelpdeskSource(MessageSource):
             desk_id = str(project.get("id") or "").strip()
             if not desk.get("enabled") or not desk_id:
                 continue
-            if await DataSource.find_for_account(cls.provider, cls.identity_config_key, desk_id) is not None:
+            held = await DataSource.find_for_account(cls.provider, cls.identity_config_key, desk_id)
+            if held is not None:
+                # This walk just succeeded with a login that holds a role on the desk, so a source parked by an
+                # earlier 401 (the hub restarted or the login lapsed) is no longer a configuration error.
+                if held.error_code == "access_denied" and held.health == SourceHealth.CONFIG_ERROR:
+                    await held.poll_now()
                 continue
             name = str(desk.get("display_name") or project.get("name") or desk_id)
             await driver.create_source(driver.create_config(**{cls.identity_config_key: desk_id}), name=name).save()

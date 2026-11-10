@@ -12737,6 +12737,7 @@ msgstr "Failed to create folder"
 msgid "Failed to create hook"
 msgstr "Failed to create hook"
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 msgid "Failed to create project"
 msgstr "Failed to create project"

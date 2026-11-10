@@ -207,10 +207,16 @@ async def _check(
         command,
         timeout_seconds=spec.completion_check.timeout(CHECK_TIMEOUT),
         workdir=workdir or Path.cwd(),
-        extra_env=env or {},
+        extra_env={"PATH": _machine_path(), **(env or {})},
         platform=platform,
     )
     return said.model_copy(update={"exit_code": spec.verdict_of(said)})
+
+
+def _machine_path() -> str:
+    """PATH without this interpreter's folder: a check asks about the machine, not about this install."""
+    own = os.path.normcase(os.path.dirname(sys.executable))
+    return os.pathsep.join(p for p in os.environ.get("PATH", "").split(os.pathsep) if os.path.normcase(p) != own)
 
 
 async def _status_check(spec: ComputeOpSpec, env: Optional[dict] = None) -> CliResult:
@@ -1336,7 +1342,9 @@ async def _box_llm() -> Any:
         candidates = await list_llm_candidates(str(await resolve_default_worker_type()))
     except Exception:  # noqa: BLE001 — no source is an answer, not a crash
         return None
-    chosen = pick_llm_candidate([c for c in candidates if c.endpoint.kind != LLMEndpointKind.DEVICE])
+    chosen = pick_llm_candidate(
+        [c for c in candidates if c.endpoint.kind != LLMEndpointKind.DEVICE and c.endpoint.dialect is not None]
+    )
     return chosen.endpoint if chosen is not None else None
 
 

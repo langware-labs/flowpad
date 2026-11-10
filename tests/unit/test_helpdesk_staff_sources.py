@@ -8,7 +8,34 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.cloud_client.hub_proxy import HubProxy, HubWalk
+from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.stream_inbox.catchup import ensure_driver_sources
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.parametrize(
+    ("error_code", "revived"),
+    [("access_denied", True), ("bad_config", False)],
+    ids=["parked-by-a-401", "another-config-error"],
+)
+async def test_a_walk_that_succeeds_revives_only_a_source_parked_by_a_401(error_code, revived):
+    desk = mint_uuid()
+    rows = [{"id": desk, "name": desk, "helpdesk": {"enabled": True}}]
+    await DataDriver.get("helpdesk")
+    with patch.object(HubProxy, "walk", new=AsyncMock(return_value=HubWalk(rows=rows, complete=True))):
+        await ensure_driver_sources("test")
+        parked = await DataSource.find_for_account("helpdesk", "desk_project_id", desk)
+        parked.health = SourceHealth.CONFIG_ERROR.value
+        parked.error_code = error_code
+        await parked.save_runtime()
+
+        await ensure_driver_sources("test")
+
+    after = await DataSource.find_for_account("helpdesk", "desk_project_id", desk)
+    assert (after.health == SourceHealth.CONFIG_ERROR.value) is not revived
+    assert after.error_code == (None if revived else error_code)
+    assert after.is_due() is revived
 
 
 @pytest.mark.asyncio

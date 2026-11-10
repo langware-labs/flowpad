@@ -83,7 +83,7 @@ loadShellRoute
 ```
 
 The backend deduplicates by `pointer`, keeps global `tab_order`, and broadcasts
-`tabs_changed`; `all-tabs-store` refreshes with `Tab.listAll()`. The frontend
+`tabs_changed` to the other windows; the opening window's `TabManager` re-reads with `Tab.listAll()`. The frontend
 lifecycle then marks the dock `opened`, or `open_failed` if setup fails after a
 tab row exists. Failed tabs stay visible and closeable and render an in-content
 error placeholder.
