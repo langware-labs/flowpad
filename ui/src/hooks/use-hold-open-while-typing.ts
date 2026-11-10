@@ -1,4 +1,6 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, type MouseEvent } from 'react';
+
+const stopPropagation = (event: MouseEvent) => event.stopPropagation();
 
 /**
  * A hover card closes when the pointer leaves it. One that holds a text field
@@ -22,6 +24,14 @@ export function useHoldOpenWhileTyping() {
   }, []);
   return {
     holdsOpen,
-    contentProps: { ref: contentRef, onPointerDownOutside: dismiss, onEscapeKeyDown: dismiss },
+    contentProps: {
+      ref: contentRef,
+      onPointerDownOutside: dismiss,
+      onEscapeKeyDown: dismiss,
+      // The card is portaled, but its clicks still bubble to whatever holds its trigger. A click
+      // on the field is the card's own: the address bar must not read it as a click on its dead
+      // space and take the focus for its ask input.
+      onClick: stopPropagation,
+    },
   };
 }
