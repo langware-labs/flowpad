@@ -20,6 +20,7 @@ kills someone else's backend mid-test.
 
 from __future__ import annotations
 
+import socket
 from dataclasses import dataclass, field, replace
 
 from .model import KILL_TIER, Role, Tier
@@ -67,6 +68,10 @@ class ProcTable:
     #: role, per lease and per candidate port during allocation — the multiplier
     #: that made conflict detection quadratic on a machine with many instances.
     port_index: dict[int, list[int]] = field(default_factory=dict)
+    #: Ports with a listening socket the OS names no owner for. Windows can report a
+    #: backend's own listener under pid 0; such a port is in use, and only the instance
+    #: whose ``server.json`` records it may claim it (``adopt_server_json``).
+    unattributed_ports: set[int] = field(default_factory=set)
     #: ppid → child pids, also built once. Lineage shape is fixed for a
     #: snapshot, so re-deriving it on every adopt was pure waste.
     _children: dict[int, list[int]] = field(default_factory=dict)
@@ -110,7 +115,7 @@ class ProcTable:
         return bool(p and p.instance == name and p.tier >= KILL_TIER)
 
     def port_in_use(self, port: int) -> bool:
-        return bool(self.listeners(port))
+        return bool(self.listeners(port)) or port in self.unattributed_ports
 
     # ── promotion ────────────────────────────────────────────────────────────
     def adopt_recorded(self, name: str, pid: int | None, create_time: float | None) -> bool:
@@ -173,6 +178,13 @@ class ProcTable:
         if p.tier < Tier.RECORDED or p.instance != name:
             self.procs[pid] = replace(p, instance=name, tier=Tier.RECORDED)
             self.close_lineage([pid])
+        # The OS named no owner for the recorded port's listener: the backend the record
+        # names is its listener. Without this the backend holds no port, so it can be
+        # neither borrowed nor called down ("not conclusively down").
+        if port in self.unattributed_ports and not self.port_index.get(port) and _BACKEND_MARKER in p.cmd:
+            self.port_index[port] = [pid]
+            held = self.procs[pid]
+            self.procs[pid] = replace(held, listen_ports=held.listen_ports | {port})
         return True
 
     def close_lineage(self, roots) -> None:
@@ -262,6 +274,21 @@ def scan(*, want_ports: bool = True) -> ProcTable:
     return table
 
 
+def _is_listener(conn) -> bool:
+    """A listening socket, as the OS reports it.
+
+    Windows 11 build 26300 after KB5127936 returns some listener rows with state 0
+    (psutil: ``NONE``) instead of LISTEN, and others with owner pid 0 — both forms on
+    one machine, across calls. A bound local address with no remote end is a listener
+    whatever the state says; a stateful connection always has a remote end.
+    """
+    import psutil
+
+    if not conn.laddr:
+        return False
+    return conn.status == psutil.CONN_LISTEN or (conn.status == psutil.CONN_NONE and not conn.raddr)
+
+
 def _attach_listen_ports(table: ProcTable) -> None:
     """Attach listening ports to their processes.
 
@@ -279,7 +306,10 @@ def _attach_listen_ports(table: ProcTable) -> None:
     got_systemwide = False
     try:
         for conn in psutil.net_connections(kind="inet"):
-            if conn.status != psutil.CONN_LISTEN or not conn.laddr or not conn.pid:
+            if conn.type != socket.SOCK_STREAM or not _is_listener(conn):
+                continue
+            if not conn.pid:
+                table.unattributed_ports.add(conn.laddr.port)
                 continue
             by_pid.setdefault(conn.pid, set()).add(conn.laddr.port)
         got_systemwide = True
@@ -294,7 +324,7 @@ def _attach_listen_ports(table: ProcTable) -> None:
             except (*gone, OSError):
                 continue
             for conn in conns:
-                if conn.status == psutil.CONN_LISTEN and conn.laddr:
+                if conn.type == socket.SOCK_STREAM and _is_listener(conn):
                     by_pid.setdefault(pid, set()).add(conn.laddr.port)
         table.ports_degraded = not by_pid
 

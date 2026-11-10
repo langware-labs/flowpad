@@ -444,6 +444,48 @@ def test_a_record_on_a_port_other_than_the_settings_default_is_still_borrowed():
     assert _strict_record_generation(foreign, info, Table()) is None
 
 
+@pytest.mark.parametrize("status,pid", [("LISTEN", 0), ("NONE", 81), ("NONE", 0)])
+def test_a_backend_whose_listener_row_windows_garbles_is_still_borrowed(monkeypatch, status, pid):
+    """Windows 11 build 26300 after KB5127936 returns listener rows with owner pid 0, or with
+    state 0 (psutil NONE), on one machine across calls. The scan dropped both, so a healthy
+    backend held no port and every attach failed "not conclusively down" (a Windows 11 desktop,
+    2026-11-10). A pid-less listener on the recorded port is the record's own backend."""
+    import socket
+
+    import psutil
+
+    from flow_sdk.core.connections.service import _strict_record_generation
+    from flow_sdk.instances.liveness import ProcInfo, ProcTable, _attach_listen_ports
+    from flow_sdk.instances.model import Role, Tier
+
+    def backend(pid):
+        cmdline = ("python.exe", "-m", "flow_sdk.server.run")
+        return ProcInfo(pid=pid, ppid=1, create_time=5.0, name="python.exe", cmdline=cmdline,
+                        instance=None, tier=Tier.NONE, role=Role.BACKEND)
+
+    listener = SimpleNamespace(status=getattr(psutil, f"CONN_{status}"), type=socket.SOCK_STREAM,
+                               laddr=SimpleNamespace(port=9007), raddr=(), pid=pid)
+    udp = SimpleNamespace(status=psutil.CONN_NONE, type=socket.SOCK_DGRAM, laddr=SimpleNamespace(port=9008), raddr=(), pid=81)
+    monkeypatch.setattr(psutil, "net_connections", lambda kind="inet": [listener, udp])
+    settings = SimpleNamespace(instance_name="prod", port=9007)
+    info = {"server_pid": 81, "port": 9007, "server_create_time": 5.0, "generation": None}
+
+    table = ProcTable(procs={81: backend(81)})
+    _attach_listen_ports(table)
+    assert table.port_in_use(9007) and not table.ports_degraded
+    assert not table.port_in_use(9008)  # a UDP socket is never a listener
+
+    assert _strict_record_generation(settings, info, table) == ServiceGeneration("prod", 81, 5.0, 9007, "borrowed:81:5.0")
+
+    if pid:
+        return  # a listener with a real owner is attributed as before
+    # A pid-less listener is claimed only by a Flowpad backend the record names.
+    stranger = ProcTable(procs={81: ProcInfo(pid=81, ppid=1, create_time=5.0, name="node.exe", cmdline=("node.exe",),
+                                             instance=None, tier=Tier.NONE, role=None)})
+    _attach_listen_ports(stranger)
+    assert _strict_record_generation(settings, info, stranger) is None
+
+
 def _adoption_rig(monkeypatch, *, held_after: bool):
     """A hub provider whose owner already holds a valid grant: the delegated probe
     passes on the FIRST call, while this machine holds nothing yet."""
