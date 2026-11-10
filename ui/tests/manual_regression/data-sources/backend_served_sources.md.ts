@@ -246,13 +246,14 @@ test.describe('Data sources are served by the backend', () => {
     });
     await expect(card).toHaveAttribute('data-status', 'setup');
 
-    // Verify reports through a notification, like every verb on the screen — the card
-    // carries no second result channel (see DataSourceRow's `pull`).
+    // Verify answers on the card's own status line (DataSourceRow's quiet `useSourceVerify`):
+    // "Verifying…" while it runs, then the verdict's sentence under the status word — no toast.
     await card.locator('[data-testid^="source-verify-"]').click();
+    await expect(card.locator('[data-testid^="source-status-"]')).not.toHaveAttribute('data-verifying', /.*/);
     await expect(
-      page.locator('section[aria-label^="Notifications"] [data-sonner-toast]').filter({ hasText: /Google/i }),
+      card.locator('[data-testid^="source-verdict-"]'),
       'Verify did not name Google as what is missing',
-    ).toBeVisible();
+    ).toHaveText(/Google/i);
     await expect(card).toHaveAttribute('data-status', 'setup');
   });
 
