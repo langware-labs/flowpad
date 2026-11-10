@@ -116,6 +116,8 @@ interface MarkdownEditorProps {
    * revisions are enabled — the Published toggle lives here.
    */
   headerLeading?: React.ReactNode;
+  /** Shown beside Copy in view mode, read-only files included (e.g. the release-notes version select). */
+  viewActions?: React.ReactNode;
   /** Appended to the side drawer after Backlinks. */
   extraSideTabs?: ExtraSideTab[];
   /** Shows the "Change this…" wand on text selections; receives each queued request. */
@@ -195,6 +197,7 @@ export function MarkdownEditor({
   chatTarget,
   headerExtras,
   headerLeading,
+  viewActions,
   extraSideTabs,
   onRequestChange,
   changeMarks,
@@ -218,6 +221,7 @@ export function MarkdownEditor({
       chatTarget={chatTarget}
       headerExtras={headerExtras}
       headerLeading={headerLeading}
+      viewActions={viewActions}
       extraSideTabs={extraSideTabs}
       onRequestChange={onRequestChange}
       changeMarks={changeMarks}
@@ -279,6 +283,7 @@ function MarkdownEditorContent({
   chatTarget,
   headerExtras,
   headerLeading,
+  viewActions,
   extraSideTabs,
   onRequestChange,
   changeMarks,
@@ -300,6 +305,7 @@ function MarkdownEditorContent({
   chatTarget: string | null;
   headerExtras?: MarkdownEditorProps['headerExtras'];
   headerLeading?: MarkdownEditorProps['headerLeading'];
+  viewActions?: MarkdownEditorProps['viewActions'];
   extraSideTabs?: ExtraSideTab[];
   onRequestChange?: MarkdownEditorProps['onRequestChange'];
   changeMarks?: MarkdownEditorProps['changeMarks'];
@@ -810,7 +816,14 @@ function MarkdownEditorContent({
         onDownload={handleDownload}
         onDelete={handleDelete}
         leadingActions={leadingActions}
-        modeActions={viewMode === 'view' ? <CopyContentButton body={body} /> : null}
+        modeActions={
+          viewMode === 'view' ? (
+            <>
+              <CopyContentButton body={body} />
+              {viewActions}
+            </>
+          ) : null
+        }
         editorToolbarHostRef={setEditorToolbarTarget}
         nameExtras={!readOnly ? headerExtras?.({ fields, setField: setEditedField }) : undefined}
         showLearningMode={showLearningMode}

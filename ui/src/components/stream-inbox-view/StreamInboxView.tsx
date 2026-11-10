@@ -93,7 +93,7 @@ import {
   isViewer,
 } from '@src/components/conversation/conversation-category';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
-import { labelForType } from '@/components/graph-view/icons/iconRegistry';
+import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { CategoryChips, COMPACT } from '@src/components/conversation/CategoryChips';
 import { ConversationMarkChips } from '@src/components/conversation/ChannelMessageExtras';
 import { InvitesChannelChip, MembershipInvitations } from './MembershipInvitations';
