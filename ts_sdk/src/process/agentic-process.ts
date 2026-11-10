@@ -122,6 +122,8 @@ interface HistoryResponse {
     process_entry?: Record<string, unknown> | null;
   }>;
   count: number;
+  /** Rows in the whole transcript; `count` is how many came back. Absent from older backends. */
+  total?: number;
   session_id: string | null;
   use_worker_history: boolean;
 }
@@ -1669,6 +1671,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   private _historyLoaded: boolean = false;
   private _historyLoading: Promise<void> | null = null;
 
+  /** Newest transcript rows a chat loads at first, and per "load earlier". A long chat's transcript
+   *  runs to megabytes, and the pane showed nothing until all of it arrived. */
+  static readonly HISTORY_PAGE = 200;
+  private _historyLimit = AgenticProcess.HISTORY_PAGE;
+  private _historyTotal = 0;
+
   /** Artifact list state — see the `artifacts` getter / `loadArtifacts`. */
   private _artifacts: Artifact[] = [];
   private _artifactsLoaded: boolean = false;
@@ -2159,7 +2167,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
 
     this._historyLoading = (async () => {
       try {
-        const response = await this.get<HistoryResponse>('get-history');
+        // The user-message list needs every turn, so it reads the whole transcript.
+        const response = await this.get<HistoryResponse>(
+          'get-history',
+          onlyUserMessages ? undefined : { limit: this._historyLimit },
+        );
 
         if (!response || !response.history) {
           return;
@@ -2180,6 +2192,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
         const pendingEchoes = force ? this.flowDataStream.ownItems.filter((item) => item.isOptimisticEcho) : [];
         if (force) this.flowDataStream.clear();
 
+        this._historyTotal = response.total ?? response.count;
         // Update session info
         this.session_id = response.session_id;
         this.use_worker_history = response.use_worker_history;
@@ -2327,6 +2340,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    */
   get historyLoaded(): boolean {
     return this._historyLoaded;
+  }
+
+  /** The loaded history is the newest page of a longer transcript. */
+  get hasEarlierHistory(): boolean {
+    return this._historyLoaded && this._historyTotal > this._historyLimit;
+  }
+
+  /** Load one more page of older history (the stream is rebuilt from the transcript). */
+  loadEarlierHistory(): Promise<void> {
+    this._historyLimit += AgenticProcess.HISTORY_PAGE;
+    return this.loadHistory({ force: true });
   }
 
   /**

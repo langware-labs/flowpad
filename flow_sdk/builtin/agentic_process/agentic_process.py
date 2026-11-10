@@ -6760,12 +6760,16 @@ class AgenticProcess(Entity):
         )
 
     @action.get(action_name="get-history")
-    async def get_history_action(self) -> "ApiSuccessResponse | JSONResponse":
+    async def get_history_action(self, limit: int = 0) -> "ApiSuccessResponse | JSONResponse":
         """Return this process's transcript as a list of FlowData dicts.
 
         Driver-supplied. Stateless — works for processes that have exited
         (no live worker required). Empty result is a success with
         ``history=[]``, not a 404.
+
+        ``limit`` > 0 returns only the newest ``limit`` rows; ``total`` says how many there are.
+        A long chat's transcript runs to megabytes (9.2 MB on prod) and the pane rendered
+        nothing until all of it arrived.
         """
         if self.hub_route:
             return await self._relay_json("get-history", method="GET", refresh=False)
@@ -6795,8 +6799,17 @@ class AgenticProcess(Entity):
                     history_start=history_start_time(history),
                 ),
             )
+            total = len(history)
+            if limit > 0:
+                history = history[-limit:]
             rows = [fd.model_dump(mode="python", exclude=_DERIVED_TEXT) for fd in history]
-            data = {"session_id": self.session_id, "use_worker_history": True, "count": len(rows), "history": rows}
+            data = {
+                "session_id": self.session_id,
+                "use_worker_history": True,
+                "count": len(rows),
+                "total": total,
+                "history": rows,
+            }
             # The same envelope and renderer the graph route would apply (``_rendered_once``),
             # built here so the encode of these freshly-made dicts runs off the loop too.
             return JSONResponse(content=ApiSuccessResponse(data=data).model_dump())

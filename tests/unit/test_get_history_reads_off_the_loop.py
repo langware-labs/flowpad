@@ -42,3 +42,19 @@ async def test_history_carries_no_derived_text(monkeypatch):
     (item,) = json.loads((await process.get_history_action()).body)["data"]["history"]
     assert item["flow_value"] == "hello" and item["attributes"]["element-type"] == "chat"
     assert not {"to_xml", "content", "start_tag_xml", "end_tag_xml"} & item.keys()
+
+
+async def test_history_limit_returns_the_newest_rows_and_the_total(monkeypatch):
+    """A long chat rendered nothing until its whole transcript (up to 9.2 MB) arrived."""
+    from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+
+    process = AgenticProcess(id=mint_uuid(), session_id=str(mint_uuid()), worker_type="claude_code", workdir="/repo")
+    frames = [FlowData(flow_value=f"m{i}", attributes={"element-type": "chat", "i": str(i)}) for i in range(5)]
+    monkeypatch.setattr(type(process.driver), "load_history", lambda self, proc: frames)
+
+    page = json.loads((await process.get_history_action(limit=2)).body)["data"]
+    assert [row["flow_value"] for row in page["history"]] == ["m3", "m4"]
+    assert page["count"] == 2 and page["total"] == 5
+
+    everything = json.loads((await process.get_history_action()).body)["data"]
+    assert everything["count"] == everything["total"] == 5
