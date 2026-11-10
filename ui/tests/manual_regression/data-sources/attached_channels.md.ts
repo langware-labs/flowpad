@@ -130,7 +130,10 @@ async function open(page: Page, route: string) {
 
 /** The user's channel marks. The system's own task source ("Tasks") wears a mark on every user's line; it is
  *  not one of the channels these runbooks attach, so it is left out of the count. */
-const userMarksOf = (bar: Locator) => bar.locator('[data-testid="attached-channel"]:not([data-provider="task_manager"])');
+// A source's mark carries its state; the built-in marks (Flowpad, Diagnosis, Automations; 22785eb21, db913ec08)
+// share the testid but are not the user's channels.
+const userMarksOf = (bar: Locator) =>
+  bar.locator('[data-testid="attached-channel"][data-state]:not([data-provider="task_manager"])');
 
 /** What a glyph draws: the element's first child (an svg, or a brand mark's img/span) minus sizing. */
 const glyphOf = (el: Locator) =>
