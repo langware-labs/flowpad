@@ -235,7 +235,11 @@ function ScheduleWhenBlock({ draft, onChange, readOnly }: BlockProps) {
         )}
       </div>
       <p className="text-xs text-muted-foreground">
-        <Trans>Runs while Flowpad is open on this computer. A run missed while it was closed is skipped.</Trans>
+        {s.preset === 'once' ? (
+          <Trans>Runs while Flowpad is open on this computer. If it was closed at that time, it runs when Flowpad opens again.</Trans>
+        ) : (
+          <Trans>Runs while Flowpad is open on this computer. A run missed while it was closed is skipped.</Trans>
+        )}
       </p>
       <Advanced testId="when-schedule-advanced">
         <Field label={<Trans>Time zone</Trans>} hint={<Trans>Empty means this computer's zone ({localZone}).</Trans>}>

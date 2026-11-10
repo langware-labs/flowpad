@@ -151,7 +151,31 @@ _automations_here`): the setup window lists it under "Recommended automations" w
 (`POST project/<id>/setup-automation {typeid, on}`), and the "Setup required" button counts it. The
 Automations screen's switch writes the same machine-local value.
 
+## A callback into a session
+
+A session can set a one-time rule that calls back into ITSELF: `flow process schedule "<prompt>" --at
+<ISO time> | --in 2h` (`schedules` lists the waiting ones, `unschedule <id>` removes one). It is an
+ordinary `date` schedule made through `POST /graph/trigger` with one `prompt_process` action
+(`ActionType.PROMPT_PROCESS`: `target_type_id` is the session, `prompt` what it is asked). Row-only — a
+session id is one machine's, so no `trigger.json` can say it.
+
+- **Linked both ways.** `Trigger.link_process` cross-links the rule and the session with the generic
+  `cross_link_entities`; the session's toolbar shows the rule as a chip, and `pending_callbacks(process)`
+  reads the waiting ones back through that link. At most `MAX_PENDING_CALLBACKS` wait per session.
+- **The fire** (`PromptProcessActionHandler` → `AgenticProcess.deliver_when_idle`): the session's closed
+  tab comes back (unselected), the prompt goes on its prompt queue — injected at the next idle edge —
+  and a stopped terminal session is started, taking the queue head as its launch prompt. No wait loop.
+  The session reads one line: `This is trigger <id> callback: <prompt> (… check it is still relevant …)`.
+- **Gone with the session.** Deleting a session deletes its waiting callbacks (`drop_callbacks`); a
+  fired one stays, as every spent one-shot does.
+
 ## Rules that are easy to break
+
+- **A one-shot whose time passed still runs, once.** The scheduler drops a run more than 60s late and a
+  `date` schedule has no next one, so a rule whose time fell while the app was closed or the machine
+  asleep would never run. `Trigger._register_schedule_job` runs an overdue, never-fired one-shot when it
+  is armed (boot, re-index, turning it on), and the scheduler's missed-run listener re-arms it. `_FIRING`
+  keeps a re-arm during the fire from starting it twice.
 
 - **Run once now** runs even when the automation is off and spends nothing a real
   fire spends: no counter bump (a once-only rule stays unspent), no storm budget,

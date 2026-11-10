@@ -1249,6 +1249,19 @@ async def process_tab(process_id: str) -> "Tab | None":
     return next((t for t in rows if t.visible), None)
 
 
+async def reopen_process_tab(process: Any) -> bool:
+    """Bring a session's closed tab back, in its old slot and without selecting it. True when a
+    tab was re-shown; False when one is already open or the session never had a tab."""
+    rows = await _tabs_for_target(process.get_type(), str(process.id))
+    if not rows or any(t.visible for t in rows):
+        return False
+    row = max(rows, key=lambda t: t.last_active_at or 0)
+    await ensure_tab(row.pointer, target_type=row.target_type, target_id=row.target_id,
+                     project_id=row.project_id, name=row.name)
+    await broadcast_tabs_changed()
+    return True
+
+
 async def show_placement(process_id: str) -> dict[str, Any]:
     """Where a ``flow show`` from *process_id* is presented — decided ONCE, here,
     so every client (browser tabs, ``/win`` popouts, the desktop shell) agrees.

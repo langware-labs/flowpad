@@ -139,6 +139,19 @@ async def arm_after_index(record: Any) -> None:
     await arm_trigger(entity)
 
 
+async def rearm_missed_one_shot(trigger_id: str) -> None:
+    """The scheduler dropped this one-shot as too late: arm it again, which runs it once now
+    (``Trigger._register_schedule_job``)."""
+    from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
+
+    try:
+        trigger = await Trigger.get_by_id(trigger_id)
+        if trigger is not None:
+            await arm_trigger(trigger)
+    except Exception:
+        _log.exception("Could not re-arm missed one-shot %s", trigger_id)
+
+
 async def disarm_trigger(trigger_id: str) -> None:
     """Unsubscribe a trigger whose asset is gone.
 

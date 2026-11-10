@@ -119,6 +119,8 @@ export function useAutomationWords(): AutomationWords {
       switch (p.kind) {
         case 'run_agent':
           return name ? t`run ${name}` : t`run an agent`;
+        case 'continue_session':
+          return name ? t`continue the session ${name}` : t`continue a session`;
         case 'open_wizard':
           return name ? t`open ${name}` : t`open a setup wizard`;
         case 'run_script':

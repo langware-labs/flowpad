@@ -158,6 +158,10 @@ async def _describe_actions(trigger: Any, names: _Names) -> list[ThenPart]:
             who = await names.name(target)
             parts.append(ThenPart(kind="run_agent", text=f"Run {who or 'an agent'}",
                                   target=target, target_name=who, prompt=action.prompt))
+        elif atype == ActionType.PROMPT_PROCESS.value:
+            who = await names.name(target)
+            parts.append(ThenPart(kind="continue_session", text=f"Continue {who or 'a session'}",
+                                  target=target, target_name=who, prompt=action.prompt))
         elif atype == ActionType.CALLBACK.value:
             cb = action.callback_name or ""
             if cb in WIZARD_CALLBACKS:
