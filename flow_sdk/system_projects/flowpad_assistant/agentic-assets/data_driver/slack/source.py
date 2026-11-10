@@ -16,6 +16,15 @@ page of the channel (``pages_per_pass = 1``): a busy channel is sampled, not mir
 (the person's own, above) is exempt — Slack's changelog: "internal customer-built applications are not
 impacted" — so everything-mode reads ``EVERYTHING_PAGE`` a call, ``CHANNELS_PER_PASS`` conversations a pass.
 
+**Replies in a thread are not in the channel's history** — ``conversations.history`` gives a thread's root and
+its ``latest_reply``, never the replies. So a bot-mode pass that resumes lists the newest ``HISTORY_PAGE`` roots
+in its one history call (the new messages are the ones past the position) and reads ``conversations.replies`` for
+each root with a reply past the cursor's reply mark (``resume:<ts>|replies:<ts>``). A failed thread read costs the
+replies this pass, never the channel page: the mark stays, and the next pass asks again. A first read (backfill)
+and a cursor written before replies were read have no mark: what the threads hold then is marked read, not handed
+over. Polling does not read a reply under a root older than the newest ``HISTORY_PAGE`` roots, nor replies on a
+backward read (``before``) or in everything-mode, whose live events carry them.
+
 **Setup is a state, not a failure.** Slack will not let an app read a channel the bot was never
 invited to, and a private channel needs a human to do the inviting. ``verify`` asks the channel
 the cheapest question with the right answer (``conversations.history``, ``limit=1``) and names
@@ -145,6 +154,7 @@ def app_name() -> str:
 
 NOT_A_MEMBER = frozenset({"not_in_channel"})
 NO_SUCH_CHANNEL = frozenset({"channel_not_found"})
+NO_SUCH_THREAD = frozenset({"thread_not_found"})
 REFUSED_CREDENTIAL = frozenset({"invalid_auth", "not_authed", "token_revoked", "account_inactive", "missing_scope"})
 #: "Wait", not "you are misconfigured": the next pass is the retry.
 TRANSIENT = frozenset({"ratelimited", "rate_limited", "service_unavailable", "internal_error", "fatal_error"})
@@ -161,6 +171,8 @@ UNSERVED = {"tombstone": "deleted on Slack", "hidden_by_limit": "hidden by the w
 CHUNK = 65536
 
 _RESUME = "resume:"
+#: What a resume cursor carries once a thread reply was read: ``resume:<ts>|replies:<ts>``.
+_REPLIES = "|replies:"
 _PAGE = "page:"
 _ALL = "all:"
 
@@ -213,7 +225,8 @@ class SlackSource(MessageSource):
     # agent's own replies (``sent_by_us``) are not. See ``agent_serve.answer``.
     answers_its_account = True
     #: While someone waits on the channel (an agent serving it, a viewer), poll it this often. Slack's
-    #: ``conversations.history`` allows ~50 calls a minute; 5s is 12.
+    #: ``conversations.history`` allows ~50 calls a minute; 5s is 12 (a pass makes one, two when new messages
+    #: overflow a page), plus one ``conversations.replies`` per thread with a new reply.
     attention_poll_seconds = 5
     connection = "slack"
     #: Every kind goes up as a plain file; up to ten, and the text, in one message. No per-file caption.
@@ -242,8 +255,8 @@ class SlackSource(MessageSource):
 
     @classmethod
     def resume_after(cls, ts: str) -> str:
-        """The resume cursor that continues after message ``ts``."""
-        return _RESUME + ts
+        """The resume cursor that continues after message ``ts``, for messages and thread replies alike."""
+        return _RESUME + ts + _REPLIES + ts
 
     #: ``account_part`` of an everything row: not a channel row's twin, and never found by a channel lookup.
     EVERYTHING = "everything"
@@ -333,12 +346,25 @@ class SlackSource(MessageSource):
         if query.before is not None:
             return await self._older(channel, query.before, params)
         oldest, newest = _start(query, cursor)
+        replies_read = _replies_read(cursor)
+        resuming = isinstance(cursor, str) and cursor.startswith(_RESUME)
         if isinstance(cursor, str) and cursor.startswith(_PAGE):
             params["cursor"] = _page_state(cursor)["cursor"]
         if oldest:
             params["oldest"] = oldest
 
-        body = await self._call("conversations.history", **params)
+        roots: list[dict] = []
+        if resuming:
+            # One call for both reads: the newest roots carry their threads' ``latest_reply``, and the ones past the
+            # position are the new messages. Only a page of nothing but new messages, with more behind it, asks
+            # again from the position, for a page cursor that stops there.
+            listed = await self._call("conversations.history", channel=channel, limit=params["limit"])
+            roots = [m for m in listed.get("messages") or [] if m.get("ts")]
+            fresh = [m for m in roots if _ts_key(str(m["ts"])) > _ts_key(oldest or "")]
+            behind = (listed.get("response_metadata") or {}).get("next_cursor")
+            body = await self._call("conversations.history", **params) if fresh and len(fresh) == len(roots) and behind else {"messages": fresh}
+        else:
+            body = await self._call("conversations.history", **params)
         messages = [m for m in body.get("messages") or [] if m.get("ts")]
         seen = [str(m["ts"]) for m in messages] + [ts for ts in (newest, oldest) if ts]
         newest = max(seen, key=_ts_key) if seen else None
@@ -348,11 +374,53 @@ class SlackSource(MessageSource):
             if m.get("subtype") not in NOT_A_MESSAGE:
                 items.append(self._item(channel, m))
                 items.extend(self._reactions(channel, m))
+        if resuming and replies_read:
+            replies, replies_read = await self._new_replies(channel, roots, replies_read)
+            held = {item.origin.key for item in items}  # a reply also sent to the channel is in both
+            items.extend(reply for reply in replies if reply.origin.key not in held)
+        elif resuming or cursor is None:
+            # No reply mark: a first read, or a cursor written before replies were read. What the threads hold now
+            # is history, not news, so it is marked read, not handed over.
+            replies_read = max([newest or "", *(str(m.get("latest_reply") or "") for m in roots or messages)], key=_ts_key)
         return ChangePage(
             items=tuple(items),
-            next_cursor=_PAGE + json.dumps({"cursor": more, "oldest": oldest, "newest": newest}) if more else None,
-            resume_cursor=_RESUME + newest if newest else None,
+            next_cursor=_PAGE + json.dumps({"cursor": more, "oldest": oldest, "newest": newest, "replies": replies_read}) if more else None,
+            resume_cursor=_RESUME + newest + (_REPLIES + replies_read if replies_read else "") if newest else None,
         )
+
+    async def _new_replies(self, channel: str, roots: list[dict], read: str) -> tuple[list, str]:
+        """``(items, replies read up to)``: every reply newer than ``read`` in the threads of ``roots``. The mark is
+        the newest ``latest_reply`` those roots list, taken before the replies are read: a reply landing meanwhile
+        is past it, and read next pass. A thread deleted since it was listed is skipped. Any other failure keeps
+        the mark where it was: the channel page still lands, and the next pass reads these replies again."""
+        replied = [m for m in roots if _ts_key(str(m.get("latest_reply") or "")) > _ts_key(read)]
+        items: list = []
+        try:
+            for root in replied:
+                try:
+                    items.extend(await self._replies_of(channel, str(root["ts"]), read))
+                except NotFound:
+                    continue
+        except SourceError:
+            return [], read
+        return items, max((str(m["latest_reply"]) for m in replied), key=_ts_key, default=read)
+
+    async def _replies_of(self, channel: str, root: str, floor: str) -> list:
+        """The replies in thread ``root`` newer than ``floor``, without the root (Slack answers with it)."""
+        params: dict[str, Any] = {"channel": channel, "ts": root, "limit": HISTORY_PAGE}
+        if floor:
+            params.update(oldest=floor, inclusive="false")
+        items: list = []
+        while True:
+            body = await self._call("conversations.replies", **params)
+            for m in body.get("messages") or []:
+                ts = str(m.get("ts") or "")
+                if ts and ts != root and _ts_key(ts) > _ts_key(floor) and m.get("subtype") not in NOT_A_MESSAGE:
+                    items.append(self._item(channel, m))
+                    items.extend(self._reactions(channel, m))
+            params["cursor"] = str((body.get("response_metadata") or {}).get("next_cursor") or "")
+            if not params["cursor"]:
+                return items
 
     # ── everything the person is in ─────────────────────────────────────────
     async def _fetch_all(self, cursor: Optional[str], query: MessageQuery) -> ChangePage:
@@ -683,6 +751,8 @@ class SlackSource(MessageSource):
             raise NotFound(f"{origin!r} names no message", origin=origin)
         body = await self._call("conversations.history", channel=channel, latest=ts, inclusive="true", limit=1)
         answered = next((m for m in body.get("messages") or [] if str(m.get("ts")) == ts), None)
+        if answered is None:  # a reply in a thread is not in the channel's history
+            answered = next(iter((await self._call("conversations.replies", channel=channel, ts=ts, limit=1)).get("messages") or ()), None)
         if answered is None:
             raise NotFound(f"no message {ts} in {channel}", origin=origin)
         root = str(answered.get("thread_ts") or ts)
@@ -909,6 +979,8 @@ def _refusal(error: str, channel: str) -> Exception:
         return AccessDenied(f"The bot is not in {channel}. Invite it, then press Verify. ({error})")
     if error in NO_SUCH_CHANNEL:
         return NotFound(f"Slack has no channel {channel} this app can see ({error})")
+    if error in NO_SUCH_THREAD:
+        return NotFound(f"Slack has no such message in {channel} ({error})")
     if error in REFUSED_CREDENTIAL:
         return AccessDenied(f"Slack refused the credential: {error}")
     if error in TRANSIENT:
@@ -1032,11 +1104,20 @@ def _start(query: Optional[MessageQuery], cursor: Optional[str]) -> tuple[Option
     if not isinstance(cursor, str):
         raise TypeError(f"cursor must be a string, got {type(cursor).__name__}")
     if cursor.startswith(_RESUME) and len(cursor) > len(_RESUME):
-        return cursor[len(_RESUME):], None
+        return cursor[len(_RESUME):].split(_REPLIES, 1)[0], None
     if cursor.startswith(_PAGE):
         state = _page_state(cursor)
         return state.get("oldest"), state.get("newest")
     raise InvalidCursor("not a Slack cursor")
+
+
+def _replies_read(cursor: Optional[str]) -> str:
+    """How far ``cursor`` says thread replies were read; ``""`` when none has been."""
+    if cursor is None:
+        return ""
+    if cursor.startswith(_PAGE):
+        return str(_page_state(cursor).get("replies") or "")
+    return cursor.split(_REPLIES, 1)[1] if _REPLIES in cursor else ""
 
 
 def _page_state(cursor: str) -> dict:

@@ -58,7 +58,7 @@ class Double:
 
     def deliver(self, text: str, *, sender: str, thread: str | None = None, files=(), reactions: dict | None = None, channel: str = "") -> dict:
         """A message ``sender`` writes into the channel now (its ts is the wall clock, later than any
-        ts handed out so far): the next ``conversations.history`` returns it. ``files`` are paths or
+        ts handed out so far): the next pass reads it. ``files`` are paths or
         ``(name, bytes)`` pairs it carries; ``reactions`` is ``{slack name: [user, ...]}`` already on it.
         ``channel`` is another conversation of the person's (a DM ``D…``, a group ``G…``) — everything mode."""
         pairs = tuple((Path(f).name, Path(f).read_bytes()) if isinstance(f, (str, Path)) else tuple(f) for f in files)
@@ -110,7 +110,7 @@ def case(monkeypatch, tmp_path):
         yield {
             "config": double.config,
             "fields": double.fields,
-            "min_items": 3,
+            "min_items": 2,  # the root and "later": a first read holds no thread replies
             "send": {"to": CHANNEL, "text": "matrix send"},
             "double": double,
         }
