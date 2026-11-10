@@ -53,6 +53,11 @@ describe('vibe home project switch applies the destination language', () => {
     await apiTestSetup(getTestSignupInfo(), 'vibe-switch-project-locale');
     await applySupportedLocales(LOCALES);
     initialLocale = getLocale();
+    // Import both catalogs up front, awaited. A catalog's FIRST import is a cold
+    // module transform here (>1 s on a busy host), and the switch under test is
+    // fire-and-forget, so a cold import would time `waitFor` against the module
+    // loader instead of testing that the loader switches language at all.
+    for (const code of ['he', 'en-US', initialLocale]) await setLocale(code);
     hebrew = await new Project({ name: `vibe-he-${RUN}`, locale: 'he' }).save([]);
     english = await new Project({ name: `vibe-en-${RUN}`, locale: 'en-US' }).save([]);
   });
