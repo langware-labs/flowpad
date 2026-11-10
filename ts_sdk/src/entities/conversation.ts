@@ -283,8 +283,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.plan_sessions_indexed_at = entity.plan_sessions_indexed_at ?? null;
     this.owner = entity.owner ?? null;
     this.initiated_by = entity.initiated_by ?? null;
-    this.picked_up_by = entity.picked_up_by ?? null;
-    this.staffed = entity.staffed ?? null;
+    this.picked_up_by = entity.picked_up_by ?? [];
+    this.staffed = entity.staffed ?? false;
     this.is_unread = entity.is_unread;
     this.unread_count = entity.unread_count;
     this.archived = entity.archived;
