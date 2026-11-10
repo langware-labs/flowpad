@@ -110,7 +110,7 @@ async def test_a_project_without_a_folder_is_refused(bootstrapped_client, user):
     assert (await RemoteWorkerSession.get_one({"id": rws.id})).status == S.PENDING.value
 
 
-async def test_the_guest_is_remembered_before_the_session_goes_live(bootstrapped_client, user, monkeypatch):
+async def test_the_guest_is_remembered_before_the_session_goes_live(bootstrapped_client, user, monkeypatch, fake_worker):  # noqa: F811
     """Cross-OS stress 2026-10-06 (Windows host): Approve flipped the session live —
     and shipped "approved" to the guest — before writing the standing grant, so a
     guest that started its next session at once was asked again."""
