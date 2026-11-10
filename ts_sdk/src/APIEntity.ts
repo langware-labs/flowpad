@@ -1072,7 +1072,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       const canonical = dataManager.updateEntityFromJson<T>(response);
       // The cache may hold ANOTHER instance of this entity (a broadcast registered it while the
       // call was in flight). The caller's own object must not be left saying it was never shared.
-      if ((canonical as unknown) !== this) dataManager.deepAssign(this, response);
+      if (canonical !== (this as unknown as T)) dataManager.deepAssign(this, response);
       return canonical;
     }
     // Some specialized share actions return a receipt rather than an entity.
