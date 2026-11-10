@@ -10,6 +10,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import type { BusEventType } from '@sdk';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { Input } from '@src/components/ui/input';
 import { useBusMap, useNextRuns } from '@src/hooks/automations/useAutomations';
 import { errorMessage } from '@src/lib/error-message';
@@ -17,6 +18,7 @@ import { cn } from '@src/lib/utils';
 import { scheduleExpr, type AutomationDraft, type EveryUnit, type ScheduleDraft } from '../automation-draft';
 import { Pills } from '../Pills';
 import { useAutomationWords } from '../automation-words';
+import { DateTimeField, TimeZoneControl } from './TimeZonePicker';
 
 const AGENT_HOOK_EVENTS = [
   'UserPromptSubmit',
@@ -32,27 +34,65 @@ interface BlockProps {
   draft: AutomationDraft;
   onChange: (next: AutomationDraft) => void;
   readOnly?: boolean;
+  /** The saved rule in one line; given, the block starts folded to it. */
+  summary?: ReactNode;
+  defaultOpen?: boolean;
 }
 
+/** One block of the page. With a `summary` it folds to one line — title, the summary, an arrow —
+ *  and starts folded unless `defaultOpen`; without one it is always open. */
 export function Block({
   title,
   children,
   testId,
   aside,
+  summary,
+  defaultOpen = true,
 }: {
   title: ReactNode;
   children: ReactNode;
   testId: string;
   aside?: ReactNode;
+  summary?: ReactNode;
+  defaultOpen?: boolean;
 }) {
+  const { t } = useLingui();
+  const folds = summary !== undefined;
+  const [unfolded, setOpen] = useState(defaultOpen);
+  const open = unfolded || !folds;
   return (
-    <section className="rounded-lg border border-border" data-testid={testId}>
-      <header className="flex items-center gap-2 border-b border-border px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        <span className="flex-1">{title}</span>
-        {aside}
-      </header>
-      <div className="flex flex-col gap-3 p-4">{children}</div>
-    </section>
+    <Collapsible asChild open={open} onOpenChange={setOpen}>
+      <section className="rounded-lg border border-border" data-testid={testId} data-open={open}>
+        <header
+          className={cn(
+            'flex items-center gap-3 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground',
+            open && 'border-b border-border',
+          )}
+        >
+          <span className={cn(open && 'flex-1')}>{title}</span>
+          {open ? (
+            aside
+          ) : (
+            <span
+              className="min-w-0 flex-1 truncate text-sm font-normal normal-case tracking-normal text-foreground first-letter:uppercase"
+              data-testid={`${testId}-summary`}
+            >
+              {summary}
+            </span>
+          )}
+          {folds && (
+            <CollapsibleTrigger
+              aria-label={open ? t`Collapse` : t`Expand`}
+              data-testid={`${testId}-toggle`}
+              className="flex items-center text-muted-foreground hover:text-foreground"
+            >
+              {open ? <ChevronDown className="size-3.5" aria-hidden /> : <ChevronRight className="size-3.5" aria-hidden />}
+            </CollapsibleTrigger>
+          )}
+        </header>
+        <CollapsibleContent className="flex flex-col gap-3 p-4 data-[state=closed]:hidden">{children}</CollapsibleContent>
+      </section>
+    </Collapsible>
   );
 }
 
@@ -92,7 +132,7 @@ function ScheduleWhenBlock({ draft, onChange, readOnly }: BlockProps) {
   const set = (patch: Partial<ScheduleDraft>) => onChange({ ...draft, schedule: { ...s, ...patch } });
   const expr = scheduleExpr(s);
   const next = useNextRuns({ expr: expr.expr, sched_trigger_type: expr.sched_trigger_type, timezone: s.timezone });
-  const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const zone = <TimeZoneControl value={s.timezone} disabled={readOnly} onChange={(timezone) => set({ timezone })} />;
   const days = [0, 1, 2, 3, 4, 5, 6].map((d) => ({
     value: String(d),
     label: new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(new Date(2026, 9, 4 + d)),
@@ -187,15 +227,18 @@ function ScheduleWhenBlock({ draft, onChange, readOnly }: BlockProps) {
           </>
         )}
         {s.preset === 'once' && (
-          <Field label={<Trans>On</Trans>}>
-            <Input
-              type="datetime-local"
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-xs text-muted-foreground">
+              <Trans>On</Trans>
+            </span>
+            <DateTimeField
               value={s.onceAt}
               disabled={readOnly}
-              onChange={(e) => set({ onceAt: e.target.value })}
-              className="w-60"
+              onChange={(onceAt) => set({ onceAt })}
+              zone={s.timezone}
+              onZoneChange={(timezone) => set({ timezone })}
             />
-          </Field>
+          </div>
         )}
         {s.preset === 'cron' && (
           <Field
@@ -212,6 +255,7 @@ function ScheduleWhenBlock({ draft, onChange, readOnly }: BlockProps) {
             />
           </Field>
         )}
+        {s.preset !== 'once' && s.preset !== 'every' && <div className="pb-1">{zone}</div>}
       </div>
 
       <div className="text-xs" data-testid="when-next-runs">
@@ -241,21 +285,6 @@ function ScheduleWhenBlock({ draft, onChange, readOnly }: BlockProps) {
           <Trans>Runs while Flowpad is open on this computer. A run missed while it was closed is skipped.</Trans>
         )}
       </p>
-      <Advanced testId="when-schedule-advanced">
-        <Field label={<Trans>Time zone</Trans>} hint={<Trans>Empty means this computer's zone ({localZone}).</Trans>}>
-          <Input
-            value={s.timezone}
-            disabled={readOnly}
-            onChange={(e) => set({ timezone: e.target.value })}
-            placeholder={localZone}
-            className="w-64"
-            data-testid="when-schedule-timezone"
-          />
-        </Field>
-        <div className="text-xs text-muted-foreground">
-          <Trans>Saved as</Trans> <code className="font-mono">{expr.expr}</code> ({expr.sched_trigger_type})
-        </div>
-      </Advanced>
     </>
   );
 }
@@ -424,6 +453,8 @@ export function WhenBlock(props: BlockProps) {
     <Block
       testId="automation-when"
       title={<Trans>When</Trans>}
+      summary={props.summary}
+      defaultOpen={props.defaultOpen}
       aside={<span className="normal-case tracking-normal">{words.kind(props.draft.kind)}</span>}
     >
       {body}

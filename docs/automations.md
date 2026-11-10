@@ -17,9 +17,13 @@ The screen was the Events dock until 2026-10-05.
 | `/dock/automations/runs` (`?status=failed&trigger=&run=`) | Runs | Every fire: why it ran, what it did, what broke; "Run again with this event". |
 | `/dock/automations/bus` (`?tag=&target=`) | Event bus | Experts. Every event type, how often it happened, who listens, what they do; live stream; pattern sandbox; send a test event. |
 
-Simple first: presets, a picker, a prompt. Advanced is one click inside each
-block (cron, time zone, event pattern) and at the bottom of the page (run once
-ever, storm guard, the fields as JSON, an agent rule's code). The grammar is
+Simple first: a SAVED automation opens as three lines — When · Where · Then, each the backend's own
+sentence (`useAutomationWords`), each unfolding to its form (`Block` with a `summary`); a new one opens
+unfolded. Presets, a picker, a prompt. A schedule's time zone is not an "Advanced" field: a chip by
+the time shows only when the zone is not this computer's, and one searchable list sets it — under
+the calendar for "Once" (`blocks/TimeZonePicker.tsx`). The rest of Advanced is one click inside an
+event or file block (the pattern) and at the bottom of the page (run once ever, storm guard, the
+fields as JSON, an agent rule's code). The grammar is
 `ui/src/components/automations/automations-pointer.ts`; `events`, `triggers`,
 `cron` (→ the list) and `signals` (→ the bus) are retired ids
 (`ts_sdk/src/utils/ui/retired-views.ts`, `flow_sdk/core/dock_address.py`).
@@ -161,7 +165,8 @@ session id is one machine's, so no `trigger.json` can say it.
 
 - **Linked both ways.** `Trigger.link_process` cross-links the rule and the session with the generic
   `cross_link_entities`; the session's toolbar shows the rule as a chip, and `pending_callbacks(process)`
-  reads the waiting ones back through that link. At most `MAX_PENDING_CALLBACKS` wait per session.
+  reads the waiting ones back through that link. The screen says it as "run process <name> with prompt"
+  (`ThenPart` kind `run_process`): the name is the session's chip, "prompt" opens the text. At most `MAX_PENDING_CALLBACKS` wait per session.
 - **The fire** (`PromptProcessActionHandler` → `AgenticProcess.deliver_when_idle`): the session's closed
   tab comes back (unselected), the prompt goes on its prompt queue — injected at the next idle edge —
   and a stopped terminal session is started, taking the queue head as its launch prompt. No wait loop.

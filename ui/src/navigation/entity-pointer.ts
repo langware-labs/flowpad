@@ -54,6 +54,9 @@ export function buildDockPointer(
     case 'compute_node':
       // `/dock/compute_node/<id>` has no view (it lands on Start); a machine opens on its Machine page.
       return DockPointer.forMachine(resolved.id);
+    case 'trigger':
+      // An automation opens on its page in the Automations dock. `/dock/trigger/<id>` has no view.
+      return DockPointer.forAutomations({ trigger: resolved.id });
     case AgenticProcess.type:
       // A session opens in its own tab (the shell dock). `/dock/agentic_process/<id>` has no view.
       return DockPointer.forSession(resolved.id);

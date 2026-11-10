@@ -160,7 +160,7 @@ async def _describe_actions(trigger: Any, names: _Names) -> list[ThenPart]:
                                   target=target, target_name=who, prompt=action.prompt))
         elif atype == ActionType.PROMPT_PROCESS.value:
             who = await names.name(target)
-            parts.append(ThenPart(kind="continue_session", text=f"Continue {who or 'a session'}",
+            parts.append(ThenPart(kind="run_process", text=f"Run process {who or 'a session'} with prompt",
                                   target=target, target_name=who, prompt=action.prompt))
         elif atype == ActionType.CALLBACK.value:
             cb = action.callback_name or ""

@@ -124,7 +124,7 @@ class WhenPart(DataSpec):
 
 
 #: What a step does, in plain words.
-ThenKind = Literal["run_agent", "continue_session", "run_script", "open_wizard", "builtin_step", "notify", "workflow",
+ThenKind = Literal["run_agent", "run_process", "run_script", "open_wizard", "builtin_step", "notify", "workflow",
                    "nothing"]
 
 

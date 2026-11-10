@@ -14,6 +14,7 @@ import { cn } from '@src/lib/utils';
 import type { AutomationDraft, ThenChoice } from '../automation-draft';
 import { useAutomationWords } from '../automation-words';
 import { Pills } from '../Pills';
+import { StepText, ThenLine } from '../ThenSteps';
 import { Block } from './WhenBlock';
 
 const ALL_AGENTS = new QueryRequest({ type: Agent.type, scope: [], name: 'automations:agents' });
@@ -24,9 +25,11 @@ interface ThenBlockProps {
   readOnly?: boolean;
   /** The backend's reading of the saved steps — names for the kept ones. */
   savedThen?: ThenPart[];
+  /** A saved rule starts folded to its steps in one line. */
+  defaultOpen?: boolean;
 }
 
-export function ThenBlock({ draft, onChange, readOnly, savedThen }: ThenBlockProps) {
+export function ThenBlock({ draft, onChange, readOnly, savedThen, defaultOpen }: ThenBlockProps) {
   const { t } = useLingui();
   const words = useAutomationWords();
   const { data: agents = [] } = useEntitiesQuery<Agent>(ALL_AGENTS);
@@ -41,7 +44,12 @@ export function ThenBlock({ draft, onChange, readOnly, savedThen }: ThenBlockPro
   const kept = (savedThen ?? []).filter((p) => !['run_agent', 'run_script', 'notify', 'nothing'].includes(p.kind));
 
   return (
-    <Block testId="automation-then" title={<Trans>Then</Trans>}>
+    <Block
+      testId="automation-then"
+      title={<Trans>Then</Trans>}
+      summary={savedThen ? <ThenLine steps={savedThen} /> : undefined}
+      defaultOpen={defaultOpen}
+    >
       <Pills
         testId="then-choice"
         value={draft.then.choice}
@@ -123,7 +131,9 @@ export function ThenBlock({ draft, onChange, readOnly, savedThen }: ThenBlockPro
               )}
             >
               {p.problem && <AlertTriangle className="size-3.5 shrink-0" aria-hidden />}
-              <span className="min-w-0 flex-1">{words.then(p)}</span>
+              <span className="min-w-0 flex-1 first-letter:uppercase">
+                <StepText part={p} />
+              </span>
               {p.problem && <span className="text-xs">{p.problem}</span>}
             </div>
           ))}

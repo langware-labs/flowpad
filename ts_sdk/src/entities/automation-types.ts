@@ -21,7 +21,7 @@ export type ReasonCode =
   | 'decision_no'
   | 'decision_unavailable';
 export type SchedulePreset = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'every' | 'once' | 'cron';
-export type ThenKind = 'run_agent' | 'continue_session' | 'run_script' | 'open_wizard' | 'builtin_step' | 'notify' | 'workflow' | 'nothing';
+export type ThenKind = 'run_agent' | 'run_process' | 'run_script' | 'open_wizard' | 'builtin_step' | 'notify' | 'workflow' | 'nothing';
 
 export interface ScheduleWhen {
   preset: SchedulePreset;
