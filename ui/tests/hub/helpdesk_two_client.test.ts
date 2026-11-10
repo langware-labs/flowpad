@@ -32,6 +32,7 @@ import {
   HUB_INST_2 as STAFF_INSTANCE,
   getInstance,
   instanceAvailable,
+  jsonApi,
   type ResolvedInstance,
 } from './_instances';
 
@@ -174,11 +175,16 @@ describe('help desk — authorization', () => {
     const convId = started.conversation_id;
     expect(convId).toBeTruthy();
 
-    // It lands locally as a hub-mirrored helpdesk ticket.
+    // It lands locally as a hub-mirrored helpdesk ticket. Ask for help answers once the request is
+    // saved; the hub mirror (``remote``) follows on the first delivery, so wait for that, read from
+    // the backend rather than the realm's cache.
     const guestConv: any = await pollUntil(
-      () => guest.sdk.Conversation.getById(convId),
-      3_000,
-      'guest local helpdesk conversation',
+      async () => {
+        const row = (await jsonApi(guest.apiUrl, `/graph/conversation/${convId}`))?.data;
+        return row?.remote === true ? row : null;
+      },
+      10_000,
+      'guest local helpdesk conversation mirrored to the hub',
     );
     expect(guestConv.kind).toBe('helpdesk');
     expect(guestConv.remote).toBe(true);
