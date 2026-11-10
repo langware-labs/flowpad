@@ -560,9 +560,13 @@ class DataSource(SetupSkippable, Entity):
         """
         if self.exist_in_db:  # placement happens once, at create; a poll's save never asks again
             return await super()._resolve_scope_project()
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
         from flow_sdk.stream_inbox.projection import owning_agent  # noqa: PLC0415
 
+        driver = DataDriver.loaded(self.provider or "")
+        if driver is not None and getattr(driver.cls, "principal_channel", False):
+            return None  # one principal's channel on this machine (its Tasks): never a project file
         agent = await owning_agent(self)
         if agent is not None and getattr(agent, "project_id", None):
             # A shipped agent's project is the SDK's own read-only tree: its channels land in the user
@@ -575,6 +579,7 @@ class DataSource(SetupSkippable, Entity):
             return scoped
         if getattr(self, "project_id", None):
             return await Project.get_by_id(str(self.project_id))
+        # A script or block run from a project folder; the server's cwd never counts (context.current_project).
         if agent is None and get_current_request_info() is None:
             from flow_sdk import context  # noqa: PLC0415
 

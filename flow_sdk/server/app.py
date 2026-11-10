@@ -103,8 +103,11 @@ async def _on_server_startup():
     from flow_sdk.db.drivers.sqlite.connection import get_database_path
     from flow_sdk.instance_settings import get_instance_settings
 
+    from flow_sdk import context
+
     from .startup import server_launched_by
 
+    context.mark_server_process()
     settings = get_instance_settings()
     clear_backend_restart_request()
 
