@@ -62,7 +62,8 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
   const agentEditorUrl = new RegExp(`/dock/(assets|project/${project.id})/editor/agent/typeid/agent-${agent.id}`);
   // Opening an agent of another project switches the app into that project, which
   // re-mounts the editor; act only once the switch has landed, or an open dialog is lost.
-  await expect(page.getByRole('button', { name: 'Open project list' })).toContainText(project.name);
+  // The project in context is named by the top bar's project pill (the list button beside it shows a count).
+  await expect(page.getByTestId('top-nav-project')).toContainText(project.name);
 
   // ── deploy to this computer: a schedule runs on a deployment ──────────────
   // This computer is the Summary tab's switch, not a New deployment choice.
