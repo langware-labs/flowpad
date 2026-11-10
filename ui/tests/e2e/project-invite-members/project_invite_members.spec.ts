@@ -3,14 +3,13 @@
  *
  *   admin  — brand-new project; the first Invite shows the publish popup INSTEAD
  *            of the invite pane, and only publishing unlocks inviting.
- *   admin  → invites editor: one `share` call on the published project, which the
- *            backend runs as a plain membership grant (no publish step) that
- *            also opens a new conversation between them holding the invite message.
- *   editor — opens that conversation and installs from the message's
- *            Install project chip (no popup offers it), then dirties its checkout.
- *   editor → invites member: no publish popup and no publish gate, even though
+ *   admin  → invites editor (granted admin, the role that may invite in turn): one `share` call on the published project, which the
+ *            backend runs as a plain membership grant (no publish step); the hub
+ *            posts the invite message into the 1:1 conversation between them.
+ *   editor — installs the project from the invite card in that conversation, then dirties its checkout.
+ *   editor → invites member (as reader): no publish popup and no publish gate, even though
  *            that gate would refuse this dirty tree.
- *   member — installs from their own invite conversation: a brand-new clone of
+ *   member — installs from the invite in their own 1:1 conversation with the editor: a brand-new clone of
  *            what was PUBLISHED, none of the editor's uncommitted changes.
  *
  * Needs three instances, each with its own workspace (`~/.flow/instances/<name>/workspace`
@@ -131,13 +130,15 @@ async function pickRole(page: Page, role: string) {
 
 /**
  * Invite through the members popover; the pane must open (no publish popup).
- * Returns the invite conversation the hub opened between the inviter and the invitee.
+ * Returns the conversation holding the invite on the invitee's side: since b5658b756 every share
+ * is an invite message in the 1:1 conversation between the sharer and the person (the hub threads
+ * it), so the share result carries no conversation of its own.
  */
-async function invite(page: Page, projectId: string, email: string, role: string): Promise<string> {
+async function invite(page: Page, projectId: string, invitee: User, role: string): Promise<string> {
   await page.getByTestId('members-invite-button').click();
   await expect(page.getByTestId('members-invite-form')).toBeVisible();
   await expect(page.getByTestId('publish-project-dialog')).toBeHidden();
-  await page.getByTestId('members-invite-input').fill(email);
+  await page.getByTestId('members-invite-input').fill(invitee.email);
   await pickRole(page, role);
   await page.getByTestId('members-invite-add').click();
   const posted = page.waitForResponse(
@@ -145,73 +146,86 @@ async function invite(page: Page, projectId: string, email: string, role: string
   );
   await page.getByTestId('members-invite-submit').click();
   const response = await posted;
-  expect(response.ok(), `invite ${email} as ${role}`).toBe(true);
-  // The share answers with each person's outcome, including the invite
-  // conversation the client opened for the message.
+  expect(response.ok(), `invite ${invitee.email} as ${role}`).toBe(true);
   const body = (await response.json()) as {
-    data?: { share_result?: { invited?: { conversation_id?: string | null }[]; skipped?: unknown[] } };
+    data?: { share_result?: { invited?: { email?: string | null }[]; skipped?: unknown[]; failed?: unknown[] } };
   };
   const shareResult = body.data?.share_result;
-  expect(shareResult?.skipped ?? [], `invite ${email} was skipped`).toEqual([]);
-  const conversationId = shareResult?.invited?.[0]?.conversation_id ?? '';
-  expect(conversationId, `invite ${email} opened no conversation: ${JSON.stringify(body)}`).not.toBe('');
-  return conversationId;
+  expect(shareResult?.skipped ?? [], `invite ${invitee.email} was skipped`).toEqual([]);
+  expect(shareResult?.failed ?? [], `invite ${invitee.email} failed`).toEqual([]);
+  expect(
+    shareResult?.invited?.map((i) => i.email),
+    `invite ${invitee.email}: ${JSON.stringify(body)}`,
+  ).toEqual([invitee.email]);
+  return inviteConversation(invitee, projectId, role);
 }
 
-/** Open the invite conversation on `u`'s own instance, URL-first. */
-async function openInviteConversation(page: Page, u: User, conversationId: string) {
-  // The grant pushes the conversation row; the sync pulls its messages (the
-  // same step `syncAssignedConversationAt` takes in the hub tests).
+interface InviteMessage {
+  conversation_id: string;
+  invite?: { target_type?: string; target_id?: string; roles?: string[]; state?: string } | string | null;
+}
+
+/** The invitee's conversation that carries the invite to this project, once the sync brings it. */
+async function inviteConversation(u: User, projectId: string, role: string): Promise<string> {
+  let found = '';
   await expect
     .poll(
-      async () =>
-        (
-          await fetch(`${u.be}/api/v1/graph/conversation-message-sync`, {
+      async () => {
+        const list = await graph<{ conversations: { id: string; carries_invite?: boolean }[] }>(
+          u,
+          'conversation-list',
+          {
             method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ conversation_id: conversationId }),
-          }).catch(() => null)
-        )?.ok ?? false,
-      { timeout: adjusted(60_000), message: `${u.name} never received the invite conversation` },
+            body: '{}',
+          },
+        ).catch(() => null);
+        for (const c of list?.conversations ?? []) {
+          if (!c.carries_invite) continue;
+          await graph(u, 'conversation-message-sync', {
+            method: 'POST',
+            body: JSON.stringify({ conversation_id: c.id }),
+          }).catch(() => undefined);
+          const filter = encodeURIComponent(JSON.stringify({ match: { conversation_id: c.id } }));
+          const messages = await graph<InviteMessage[]>(u, `flow_message?filter=${filter}`).catch(() => []);
+          for (const m of messages) {
+            const inv = typeof m.invite === 'string' ? JSON.parse(m.invite) : m.invite;
+            if (inv?.target_type === 'project' && inv.target_id === projectId && (inv.roles ?? []).includes(role)) {
+              found = c.id;
+              return found;
+            }
+          }
+        }
+        return '';
+      },
+      { timeout: adjusted(60_000), message: `${u.name} never received the project invite in a 1:1 conversation` },
     )
-    .toBe(true);
-  await page.goto(`/dock/conversation/${conversationId}?viewMode=advanced`);
+    .not.toBe('');
+  return found;
 }
 
 /**
- * Install from the invite message's chip. Returns the clone path.
- *
- * The dashed chip opens the review popup, whose project branch offers Install
- * project; nothing pops up on its own. Once installed, the chip is the installed one.
+ * Install from the invite message: its card offers Install project (the review popup's project
+ * action), which clones what was published and lands on the project. Returns the clone path.
  */
 async function installShared(page: Page, u: User, projectId: string, conversationId: string): Promise<string> {
+  await page.goto(`/dock/conversation/${conversationId}?viewMode=advanced`);
+  const card = page.getByTestId('invite-card').filter({ hasText: RUN }).last();
+  // A project invite is a membership grant: the card reads accepted as it arrives, nothing to answer.
+  await expect(card).toHaveAttribute('data-invite-state', 'accepted', { timeout: adjusted(60_000) });
   await expect
     .poll(async () => (await graph<ProjectRow>(u, `project/${projectId}`).catch(() => null))?.remote ?? false, {
       timeout: adjusted(60_000),
       message: `${u.name} never received the project row`,
     })
     .toBe(true);
-  await openInviteConversation(page, u, conversationId);
-  // The invite's bundle staged the project, so it is the generic dashed attachment chip
-  // (a9d635f32), not the legacy pre-bundle ProjectMessageChip ('project-chip').
-  const chip = page.getByTestId(`entity-chip-project-${projectId}`);
-  await expect(chip).toContainText(RUN, { timeout: adjusted(60_000) });
-  await expect(page.getByTestId('project-chip')).toHaveCount(0);
-  await expect(page.getByTestId('incoming-project-dialog')).toHaveCount(0);
-  // The dashed chip opens the review popup; its project branch offers Install project.
-  await chip.click();
-  await page.getByTestId('asset-review-dialog').getByTestId('project-install-button').click();
+  // Not installed here yet: the card offers Install project in place of a bare Open.
+  await card.getByTestId('project-install-button').click();
   await expect
     .poll(async () => (await graph<ProjectRow>(u, `project/${projectId}`)).fs_storage_mount_path ?? '', {
       timeout: adjusted(120_000),
       message: `${u.name} never finished installing`,
     })
     .not.toBe('');
-  // Installing lands in the project; back in the conversation the chip is the installed one.
-  await openInviteConversation(page, u, conversationId);
-  await expect(page.getByTestId(`entity-chip-project-${projectId}`)).toHaveAttribute('data-state', 'installed', {
-    timeout: adjusted(30_000),
-  });
   return String((await graph<ProjectRow>(u, `project/${projectId}`)).fs_storage_mount_path);
 }
 
@@ -311,7 +325,9 @@ test.describe('project invite = membership, not publish', () => {
     expect(adminCalls).toEqual(['POST share']);
 
     // ── admin → editor: now a plain membership grant ──
-    const editorConversation = await invite(a.page, projectId, editor.email, 'editor');
+    // The second person must be able to invite the third: on a project only owner and admin grant
+    // roles (ROLE_GRANTS: an editor grants none), so they get admin; the third is a reader.
+    const editorConversation = await invite(a.page, projectId, editor, 'admin');
     expect(adminCalls).toEqual(['POST share', 'POST share']);
 
     // ── editor: install from the invite message, then make the checkout dirty ──
@@ -331,9 +347,9 @@ test.describe('project invite = membership, not publish', () => {
     // ── editor → member: no publish popup, no publish gate — the one share call invites ──
     const editorCalls = trackProjectCalls(e.page, projectId);
     await gotoProjectHome(e.page, projectId);
-    const memberConversation = await invite(e.page, projectId, member.email, 'member');
+    const memberConversation = await invite(e.page, projectId, member, 'reader');
     expect(editorCalls).toEqual(['POST share']);
-    // Every invite opens a conversation of its own (R8).
+    // Each invite is in the 1:1 conversation of its own sharer and invitee.
     expect(memberConversation).not.toBe(editorConversation);
 
     // ── member: a brand-new clone of what was published, installed from their own message ──
