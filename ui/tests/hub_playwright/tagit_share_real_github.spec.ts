@@ -108,7 +108,9 @@ test.describe('tagit share → a reviewer opens the rules doc on the hub', () =>
     const login = await (await request.post(`${HUB}/api/v1/login`, {
       data: { email: HUB_EMAIL, password: HUB_PASSWORD },
     })).json();
-    hubKey = login?.data?.api_key ?? login?.api_key ?? '';
+    // The hub answers a password login with `token` (an API-key login with `api_key`); the desktop
+    // reads either (flow_sdk/cli/auth/credentials.py), and so does this.
+    hubKey = login?.data?.api_key ?? login?.data?.token ?? login?.api_key ?? '';
     expect(hubKey, 'hub login returned no api key').toBeTruthy();
     const hubUser = login?.data?.user?.id ?? login?.user?.id;
     await request.post(`${HUB}/api/v1/graph/user/${hubUser}/env-var`, {
@@ -166,6 +168,14 @@ test.describe('tagit share → a reviewer opens the rules doc on the hub', () =>
     )).json();
     markdownId = (indexed?.data?.typeids ?? []).find((t: string) => t.startsWith('markdown-'))?.split('-').slice(1).join('-');
     expect(markdownId, 'the rules doc did not index').toBeTruthy();
+
+    // Creating and indexing the project may write into the tree (ids, an index cache). That is the
+    // publish gate's "Commit & continue", not what this suite is about: carry it, as a user would.
+    if (git(clone, 'status', '--porcelain').trim()) {
+      git(clone, 'add', '-A');
+      git(clone, 'commit', '-m', `flowpad ids ${RUN_ID}`);
+      git(clone, 'push');
+    }
 
     // ── the preflight must be green before the UI can link ──
     const pre = await (await request.get(
