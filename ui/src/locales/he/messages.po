@@ -1018,6 +1018,16 @@ msgid "{0} selected"
 msgstr "{0} נבחרו"
 
 #. placeholder {0}: card.sender_name || t`A member`
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "{0} sent you <0>{name}</0>"
+msgstr ""
+
+#. placeholder {0}: card.sender_name || t`A member`
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "{0} sent you a key"
+msgstr ""
+
+#. placeholder {0}: card.sender_name || t`A member`
 #. placeholder {1}: card.credential_title || card.credential_name || t`a credential`
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "{0} sent you values for {1}"
@@ -2465,6 +2475,8 @@ msgstr "מפתח שה-Hub מחזיק (לא ניתן לקרוא את השרשרת
 msgid "A machine"
 msgstr "מכונה"
 
+#: src/components/conversation/SealedTypedCard.tsx
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "A member"
@@ -2637,6 +2649,7 @@ msgstr "אינדקס שורה מוחלט במאגר הגלילה של הטרמי
 
 #: src/components/conversation/conversation-category.ts
 #: src/components/conversation/InviteCard.tsx
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/git/InvitationsStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Accept"
@@ -2772,10 +2785,9 @@ msgstr "פעיל"
 msgid "Active"
 msgstr "פעיל"
 
-#. placeholder {0}: formatTimeAgoShort(entry.last_active_time)
 #: src/components/chats-navigator/ChatHistoryRow.tsx
-msgid "Active {0}"
-msgstr ""
+#~ msgid "Active {0}"
+#~ msgstr ""
 
 #: src/pages/flow-page/display-annotation.ts
 #: src/pages/flow-page/display-annotation.ts
@@ -5729,6 +5741,7 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/MessageFormCard.tsx
+#: src/components/conversation/SecureSendDialog.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
@@ -9975,6 +9988,7 @@ msgstr "מוגדר בכרטיס הסוכן. טרם הוחל על העובד."
 #: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/PromptCallCard.tsx
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/SessionCard.tsx
@@ -10002,6 +10016,7 @@ msgid "declined"
 msgstr "נדחה"
 
 #: src/components/conversation/InviteCard.tsx
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Declined"
@@ -11819,7 +11834,6 @@ msgid "Enable All Project MCP Servers"
 msgstr "הפעילו את כל שרתי ה-MCP בפרויקט"
 
 #: src/components/conversation/ItReplyLine.tsx
-#: src/components/conversation/ItSendTable.tsx
 msgid "Enable and run"
 msgstr "הפעלה והרצה"
 
@@ -11916,6 +11930,10 @@ msgstr ""
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "End-to-end encrypted transfer"
+msgstr ""
+
+#: src/components/conversation/SecureSendDialog.tsx
+msgid "End-to-end encrypted: only the other members' devices can open it, the hub sees the name, never the key."
 msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
@@ -16241,6 +16259,10 @@ msgstr "המשיכו לערוך"
 msgid "Keep in project"
 msgstr "שמרו בפרויקט"
 
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "Keep mine"
+msgstr ""
+
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
 msgid "Keep text"
 msgstr "שמירת הטקסט"
@@ -16275,6 +16297,7 @@ msgid "Kept in the project"
 msgstr "נשמר בפרויקט"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
+#: src/components/conversation/SecureSendDialog.tsx
 msgid "Key"
 msgstr "מפתח"
 
@@ -16511,10 +16534,9 @@ msgstr "ההתחברות האחרונה:"
 msgid "Last message"
 msgstr "הודעה אחרונה"
 
-#. placeholder {0}: entry.last_prompt
 #: src/components/chats-navigator/ChatHistoryRow.tsx
-msgid "Last message: {0}"
-msgstr ""
+#~ msgid "Last message: {0}"
+#~ msgstr ""
 
 #: src/components/items/IssueView.tsx
 msgid "last notified {last}"
@@ -18608,6 +18630,7 @@ msgstr "שם"
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
 #: src/components/conversation/asset-review/ProjectPreview.tsx
+#: src/components/conversation/SecureSendDialog.tsx
 #: src/components/credentials/DetectedKeys.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -20594,6 +20617,10 @@ msgstr "בצוות הזה עדיין אין תקציבים."
 msgid "Nobody has talked to it yet — each person gets their own machine on their first message."
 msgstr "טרם שוחחו איתו — כל אדם מקבל מכונה משלו עם ההודעה הראשונה."
 
+#: src/components/conversation/SecureSendDialog.tsx
+msgid "Nobody here can receive it yet — they need to open Flowpad once, then send again."
+msgstr ""
+
 #: src/components/organization/tabs/MembersTab.tsx
 msgid "Nobody here."
 msgstr ""
@@ -21635,6 +21662,10 @@ msgstr "רק במכשיר הזה. היא אינה נשמרת בפרויקט וא
 msgid "Only people you share with can view this agent."
 msgstr "רק אנשים ששיתפתם איתם יכולים לצפות בסוכן הזה."
 
+#: src/components/conversation/SecureSendDialog.tsx
+msgid "Only the other members can open it — they save it as a credential."
+msgstr ""
+
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Only the steps below"
 msgstr "רק השלבים שלמטה"
@@ -21672,6 +21703,7 @@ msgstr "אופס! הדף לא נמצא"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/HelpRequestLine.tsx
 #: src/components/conversation/InviteCard.tsx
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -22157,7 +22189,6 @@ msgstr "פתחו תיקיית יומנים"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/conversation/ItReplyLine.tsx
-#: src/components/conversation/ItSendTable.tsx
 msgid "Open machine"
 msgstr "פתיחת מכונה"
 
@@ -22710,6 +22741,10 @@ msgstr "או העתיקו קישור הזמנה"
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "or open the link on your phone"
 msgstr "או פתחו את הקישור בטלפון שלכם"
+
+#: src/components/conversation/SecureSendDialog.tsx
+msgid "or pick a saved credential"
+msgstr ""
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "or script (relative to the flow folder)"
@@ -23336,6 +23371,10 @@ msgstr ""
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Personal"
 msgstr "אישי"
+
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "Personal (every project)"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Personal note, actionable item"
@@ -25664,6 +25703,7 @@ msgid "Repair with an agent"
 msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
 msgstr "החלפה"
@@ -27092,6 +27132,10 @@ msgstr "שמרו את מפתח ה-API הזה עכשיו. לא תוכלו לרא�
 msgid "Save this task into the project as a folder, where git tracks it"
 msgstr "שמירת המשימה בפרויקט כתיקייה שגיט עוקב אחריה"
 
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "Save to"
+msgstr ""
+
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Save version"
 msgstr "שמירת גרסה"
@@ -27130,6 +27174,10 @@ msgstr "נשמר ב-My project"
 
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
 msgid "Saved to project"
+msgstr ""
+
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "Saved to your credentials"
 msgstr ""
 
 #: src/components/credentials/VariableDetails.tsx
@@ -27664,6 +27712,7 @@ msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/SecureSendDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Secured transfer"
 msgstr ""
@@ -27955,6 +28004,10 @@ msgstr "שלחו הודעה"
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
 msgstr "שליחת קריאה מינימלית אחת דרך נקודת הקצה הזו"
+
+#: src/components/conversation/SecureSendDialog.tsx
+msgid "Send securely"
+msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Send the first message to start the conversation, then a live session can run"
@@ -31477,13 +31530,21 @@ msgstr "הטרמינל שבתוך האפליקציה הוא תמיד המעטפ�
 msgid "The index was not changed."
 msgstr "האינדקס לא השתנה."
 
-#: src/components/conversation/ConversationPanel.tsx
+#: src/components/conversation/ItOperationChip.tsx
 msgid "The IT operation: every send under this name lands in this conversation."
 msgstr "פעולת ה-IT: כל שליחה בשם הזה נכנסת לשיחה הזו."
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "The key box is empty."
 msgstr "תיבת המפתח ריקה."
+
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "The key could not be saved."
+msgstr ""
+
+#: src/components/conversation/SecureSendDialog.tsx
+msgid "The key could not be sent."
+msgstr ""
 
 #: src/components/project-home/ProjectLanguageCard.tsx
 msgid "The language this project is worked in, for everyone in it. To change only your own language, use the language picker in the footer."
@@ -31684,6 +31745,7 @@ msgstr "לישות שנבחרוה אין שם עדיין. בחר אחד — הו
 msgid "The selected project has no folder on this machine."
 msgstr "לפרויקט הנבחר אין תיקייה במחשב זה"
 
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
@@ -32317,6 +32379,11 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentChildView.tsx
 msgid "This item no longer exists."
 msgstr "הפריט הזה כבר אינו קיים."
+
+#. placeholder {0}: card.sender_name || t`the sender`
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "This key can't be opened here — ask {0} to send it again."
+msgstr ""
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "This key contains a space or line break. It was probably copied along with the text around it."
@@ -35526,6 +35593,10 @@ msgstr "אין נקודת קצה ל-LLM שבניהולכם להקצאה, ולכ�
 #: src/components/help/AskForHelpDialog.tsx
 msgid "You already asked {0}: \"{1}\"."
 msgstr "כבר פניתם אל {0}: \"{1}\"."
+
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "You already have {name} here. Replace it with this one?"
+msgstr ""
 
 #. placeholder {0}: conflict.attempted_name
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx

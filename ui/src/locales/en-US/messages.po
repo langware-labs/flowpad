@@ -1018,6 +1018,16 @@ msgid "{0} selected"
 msgstr "{0} selected"
 
 #. placeholder {0}: card.sender_name || t`A member`
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "{0} sent you <0>{name}</0>"
+msgstr "{0} sent you <0>{name}</0>"
+
+#. placeholder {0}: card.sender_name || t`A member`
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "{0} sent you a key"
+msgstr "{0} sent you a key"
+
+#. placeholder {0}: card.sender_name || t`A member`
 #. placeholder {1}: card.credential_title || card.credential_name || t`a credential`
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "{0} sent you values for {1}"
@@ -2465,6 +2475,8 @@ msgstr "a key the hub holds (the chain could not be read from here)"
 msgid "A machine"
 msgstr "A machine"
 
+#: src/components/conversation/SealedTypedCard.tsx
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "A member"
@@ -2637,6 +2649,7 @@ msgstr "Absolute row index in the terminal scroll buffer (0 = top of all output)
 
 #: src/components/conversation/conversation-category.ts
 #: src/components/conversation/InviteCard.tsx
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/git/InvitationsStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Accept"
@@ -2772,10 +2785,9 @@ msgstr "active"
 msgid "Active"
 msgstr "Active"
 
-#. placeholder {0}: formatTimeAgoShort(entry.last_active_time)
 #: src/components/chats-navigator/ChatHistoryRow.tsx
-msgid "Active {0}"
-msgstr "Active {0}"
+#~ msgid "Active {0}"
+#~ msgstr "Active {0}"
 
 #: src/pages/flow-page/display-annotation.ts
 #: src/pages/flow-page/display-annotation.ts
@@ -5729,6 +5741,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/MessageFormCard.tsx
+#: src/components/conversation/SecureSendDialog.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
@@ -9975,6 +9988,7 @@ msgstr "Declared on the agent's card. Not yet applied to the worker."
 #: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/PromptCallCard.tsx
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/SessionCard.tsx
@@ -10002,6 +10016,7 @@ msgid "declined"
 msgstr "declined"
 
 #: src/components/conversation/InviteCard.tsx
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Declined"
@@ -11819,7 +11834,6 @@ msgid "Enable All Project MCP Servers"
 msgstr "Enable All Project MCP Servers"
 
 #: src/components/conversation/ItReplyLine.tsx
-#: src/components/conversation/ItSendTable.tsx
 msgid "Enable and run"
 msgstr "Enable and run"
 
@@ -11917,6 +11931,10 @@ msgstr "End users open it at {0}."
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "End-to-end encrypted transfer"
 msgstr "End-to-end encrypted transfer"
+
+#: src/components/conversation/SecureSendDialog.tsx
+msgid "End-to-end encrypted: only the other members' devices can open it, the hub sees the name, never the key."
+msgstr "End-to-end encrypted: only the other members' devices can open it, the hub sees the name, never the key."
 
 #: src/components/conversation/SessionCard.tsx
 msgid "ended"
@@ -16241,6 +16259,10 @@ msgstr "Keep editing"
 msgid "Keep in project"
 msgstr "Keep in project"
 
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "Keep mine"
+msgstr "Keep mine"
+
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
 msgid "Keep text"
 msgstr "Keep text"
@@ -16275,6 +16297,7 @@ msgid "Kept in the project"
 msgstr "Kept in the project"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
+#: src/components/conversation/SecureSendDialog.tsx
 msgid "Key"
 msgstr "Key"
 
@@ -16511,10 +16534,9 @@ msgstr "Last Login:"
 msgid "Last message"
 msgstr "Last message"
 
-#. placeholder {0}: entry.last_prompt
 #: src/components/chats-navigator/ChatHistoryRow.tsx
-msgid "Last message: {0}"
-msgstr "Last message: {0}"
+#~ msgid "Last message: {0}"
+#~ msgstr "Last message: {0}"
 
 #: src/components/items/IssueView.tsx
 msgid "last notified {last}"
@@ -18608,6 +18630,7 @@ msgstr "name"
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
 #: src/components/conversation/asset-review/ProjectPreview.tsx
+#: src/components/conversation/SecureSendDialog.tsx
 #: src/components/credentials/DetectedKeys.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -20594,6 +20617,10 @@ msgstr "Nobody has a budget in this team yet."
 msgid "Nobody has talked to it yet — each person gets their own machine on their first message."
 msgstr "Nobody has talked to it yet — each person gets their own machine on their first message."
 
+#: src/components/conversation/SecureSendDialog.tsx
+msgid "Nobody here can receive it yet — they need to open Flowpad once, then send again."
+msgstr "Nobody here can receive it yet — they need to open Flowpad once, then send again."
+
 #: src/components/organization/tabs/MembersTab.tsx
 msgid "Nobody here."
 msgstr "Nobody here."
@@ -21635,6 +21662,10 @@ msgstr "Only on this device. It is never saved in the project or committed, and 
 msgid "Only people you share with can view this agent."
 msgstr "Only people you share with can view this agent."
 
+#: src/components/conversation/SecureSendDialog.tsx
+msgid "Only the other members can open it — they save it as a credential."
+msgstr "Only the other members can open it — they save it as a credential."
+
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Only the steps below"
 msgstr "Only the steps below"
@@ -21672,6 +21703,7 @@ msgstr "Oops! Page not found"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/HelpRequestLine.tsx
 #: src/components/conversation/InviteCard.tsx
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -22157,7 +22189,6 @@ msgstr "Open Logs Folder"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/conversation/ItReplyLine.tsx
-#: src/components/conversation/ItSendTable.tsx
 msgid "Open machine"
 msgstr "Open machine"
 
@@ -22710,6 +22741,10 @@ msgstr "Or copy an invite link"
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "or open the link on your phone"
 msgstr "or open the link on your phone"
+
+#: src/components/conversation/SecureSendDialog.tsx
+msgid "or pick a saved credential"
+msgstr "or pick a saved credential"
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "or script (relative to the flow folder)"
@@ -23336,6 +23371,10 @@ msgstr "Person"
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Personal"
 msgstr "Personal"
+
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "Personal (every project)"
+msgstr "Personal (every project)"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Personal note, actionable item"
@@ -25664,6 +25703,7 @@ msgid "Repair with an agent"
 msgstr "Repair with an agent"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
 msgstr "Replace"
@@ -27092,6 +27132,10 @@ msgstr "Save this API key now. You won't be able to see it again!"
 msgid "Save this task into the project as a folder, where git tracks it"
 msgstr "Save this task into the project as a folder, where git tracks it"
 
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "Save to"
+msgstr "Save to"
+
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Save version"
 msgstr "Save version"
@@ -27131,6 +27175,10 @@ msgstr "Saved to My project"
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
 msgid "Saved to project"
 msgstr "Saved to project"
+
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "Saved to your credentials"
+msgstr "Saved to your credentials"
 
 #: src/components/credentials/VariableDetails.tsx
 msgid "Saved with the form. One-of requires at least two variables in the same credential."
@@ -27664,6 +27712,7 @@ msgstr "secured transfer"
 
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/SecureSendDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Secured transfer"
 msgstr "Secured transfer"
@@ -27955,6 +28004,10 @@ msgstr "Send message"
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
 msgstr "Send one minimal call through this endpoint"
+
+#: src/components/conversation/SecureSendDialog.tsx
+msgid "Send securely"
+msgstr "Send securely"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Send the first message to start the conversation, then a live session can run"
@@ -31477,13 +31530,21 @@ msgstr "The in-app terminal is always the primary shell. This controls whether a
 msgid "The index was not changed."
 msgstr "The index was not changed."
 
-#: src/components/conversation/ConversationPanel.tsx
+#: src/components/conversation/ItOperationChip.tsx
 msgid "The IT operation: every send under this name lands in this conversation."
 msgstr "The IT operation: every send under this name lands in this conversation."
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "The key box is empty."
 msgstr "The key box is empty."
+
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "The key could not be saved."
+msgstr "The key could not be saved."
+
+#: src/components/conversation/SecureSendDialog.tsx
+msgid "The key could not be sent."
+msgstr "The key could not be sent."
 
 #: src/components/project-home/ProjectLanguageCard.tsx
 msgid "The language this project is worked in, for everyone in it. To change only your own language, use the language picker in the footer."
@@ -31684,6 +31745,7 @@ msgstr "The selected entity has no name yet. Choose one — it will be saved to 
 msgid "The selected project has no folder on this machine."
 msgstr "The selected project has no folder on this machine."
 
+#: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
@@ -32317,6 +32379,11 @@ msgstr "This issue is gone."
 #: src/components/assets/editor/agent-profile/AgentChildView.tsx
 msgid "This item no longer exists."
 msgstr "This item no longer exists."
+
+#. placeholder {0}: card.sender_name || t`the sender`
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "This key can't be opened here — ask {0} to send it again."
+msgstr "This key can't be opened here — ask {0} to send it again."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "This key contains a space or line break. It was probably copied along with the text around it."
@@ -35526,6 +35593,10 @@ msgstr "You administer no LLM endpoint to allocate from, so this agent spends yo
 #: src/components/help/AskForHelpDialog.tsx
 msgid "You already asked {0}: \"{1}\"."
 msgstr "You already asked {0}: \"{1}\"."
+
+#: src/components/conversation/SealedTypedCard.tsx
+msgid "You already have {name} here. Replace it with this one?"
+msgstr "You already have {name} here. Replace it with this one?"
 
 #. placeholder {0}: conflict.attempted_name
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
