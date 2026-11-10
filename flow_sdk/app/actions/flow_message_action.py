@@ -3400,8 +3400,8 @@ def _clamp_invitation_ts(invitations: list[Pointer], merged: list[Pointer]) -> l
 async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> bool:
     """Bring local message state for a single conversation up to the hub's.
 
-    Lists the conversation's child FlowMessages via the children-list route
-    ``/conversation/<id>/flow_message`` in ONE request — each child carries its
+    Lists the conversation's FlowMessages via ``/conversation/<id>/messages``
+    (the children-list route on a hub without it) in ONE request — each child carries its
     ``updated_date``, so we diff **new ∪ changed** (not new-only): every child
     is routed through ``_process_single_hub_message``, which applies the LWW
     invalidation rule (``Entity.is_stale``) and is a no-op for rows already
@@ -3423,17 +3423,22 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
     lock = keyed_loop_lock(_conv_fetch_locks, conv_id)
     async with lock:
         try:
-            # Children-list route, primary source: returns the conversation's
-            # FlowMessage children (with updated_date) the caller may see.
-            # the hub url builder requires an action segment before sub_path.
+            # ``messages`` is the conversation's own list: everyone who may read the
+            # conversation gets it, including help-desk staff who have not picked the
+            # ticket up. The children route answers only through a direct role edge, so
+            # it is empty for them; it is asked only when the hub REFUSES ``messages``
+            # (no access, or a hub without that route), and its answer is the one the
+            # handler below reads. An unreachable hub is not asked twice.
+            async def _list(action: str):
+                return await HubProxy.call("GET", BuiltinEntityType.CONVERSATION, conv_id, action=action, strict=True)
+
             try:
-                children = await HubProxy.call(
-                    "GET",
-                    BuiltinEntityType.CONVERSATION,
-                    conv_id,
-                    action="flow_message",
-                    strict=True,
-                )
+                try:
+                    children = await _list("messages")
+                except HubError as e:
+                    if e.status_code not in (403, 404):
+                        raise
+                    children = await _list("flow_message")
             except HubError as e:
                 # Any failure ⇒ we cannot prove anything — abort without touching
                 # messages. One answer is certain, though: the hub holds no row here
