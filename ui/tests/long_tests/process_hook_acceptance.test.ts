@@ -26,7 +26,8 @@ describe('process hook shared real-worker acceptance', () => {
     await apiTestSetup(undefined, `process-hook-${workerType}`);
     const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'process-hook-acceptance-'));
     const cliConfig: Record<string, unknown> = { permission_mode: 'bypassPermissions' };
-    if (workerType !== 'copilot') cliConfig.model = 'sm';
+    // Only Claude's CLI knows sizes natively; codex/copilot on a device login refuse an unmapped size.
+    if (workerType === 'claude_code') cliConfig.model = 'sm';
     if (workerType === 'claude_code') cliConfig.effort = 'low';
     const process = await new AgenticProcess({
       worker_type: workerType,
