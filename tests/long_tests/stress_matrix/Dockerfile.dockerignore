@@ -1,0 +1,11 @@
+# Build context for the stress-matrix harness image (BuildKit reads <Dockerfile>.dockerignore).
+# The image COPYs only pyproject.toml and flow_sdk/ (see Dockerfile); sending the whole repo
+# (~2.4 GB with ui/node_modules, .venv, build outputs) made the build outlast the test's setup budget.
+*
+!pyproject.toml
+!flow_sdk
+flow_sdk/rust/target
+flow_sdk/rust/**/target
+**/__pycache__
+**/node_modules
+**/*.pyc

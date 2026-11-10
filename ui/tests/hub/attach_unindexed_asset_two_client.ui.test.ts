@@ -52,6 +52,8 @@ async function showUserScope(page: Page): Promise<void> {
 
 /** Open the asset picker on `page`, find `name`, and pick it. */
 async function pick(page: Page, opener: string, name: string): Promise<void> {
+  // The composer's attach actions live in its "More actions" (+) menu.
+  await page.getByTestId('composer-more-actions').first().click();
   await page.getByTestId(opener).first().click();
   const filter = page.getByTestId('asset-manager-list-filter');
   await filter.waitFor({ state: 'visible', timeout: 10_000 });
@@ -133,7 +135,7 @@ describe('an asset nobody indexed yet, picked from the list', () => {
 
     const { page } = alicePage;
     await page.goto(`${alicePage.feUrl}/dock/conversation/${conversationId}`, { waitUntil: 'domcontentloaded' });
-    await page.getByTestId('attach-asset-button').first().waitFor({ state: 'visible', timeout: 25_000 });
+    await page.getByTestId('composer-more-actions').first().waitFor({ state: 'visible', timeout: 25_000 });
     await pick(page, 'attach-asset-button', skill.name);
     await reply(page, `with the skill ${token}`);
 
@@ -163,7 +165,7 @@ describe('an asset nobody indexed yet, picked from the list', () => {
 
     const { page } = alicePage;
     await page.goto(`${alicePage.feUrl}/dock/conversation/${conversationId}`, { waitUntil: 'domcontentloaded' });
-    await page.getByTestId('attach-asset-button').first().waitFor({ state: 'visible', timeout: 25_000 });
+    await page.getByTestId('composer-more-actions').first().waitFor({ state: 'visible', timeout: 25_000 });
     await pick(page, 'attach-asset-button', skill.name);
     await reply(page, `desk with the skill ${token}`);
 
