@@ -7,33 +7,49 @@ page of the channel. A stubbed client would let all three pass while broken.
 """
 from __future__ import annotations
 
+import itertools
 import json
 import sys
 import time
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 
 import pytest
 from pydantic import SecretStr
 
 from flow_sdk.blocks import StreamInbox, workflow
 from flow_sdk.blocks.merge import pages
+from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.consumer_position import ConsumerPosition
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.ingest.driver_registry import asset_module
+from flow_sdk.ingest.envelope_lift import envelope_of
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import local_http_server, position
+from flow_sdk.schema.types import EntityType
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.errors import Rejected
 from flow_sdk.sources.files import local_file
 from flow_sdk.sources.testing import Subject, checks_for
-from flow_sdk.sources.values.items import FileItem, FileKind, MessageData, MessageFileData, ReactionData, ReactionMode
+from flow_sdk.sources.values.items import (
+    FileItem,
+    FileKind,
+    MessageData,
+    MessageFileData,
+    MessageItem,
+    ReactionData,
+    ReactionMode,
+)
+from flow_sdk.stream_inbox.projection import channel_of, owner_of, resolve_thread, thread_key_for
 
 SlackSource = asset_module("slack").SlackSource
 slack_source = asset_module("slack")
@@ -386,16 +402,25 @@ async def test_a_page_becomes_items_oldest_first(serve):
 
 
 async def test_the_cursor_resumes_from_the_last_ts(serve):
-    slack = serve([{"ok": True, "messages": [_message("300.0", "next")]}])
+    slack = serve([{"ok": True, "messages": [_message("300.0", "next"), _message("200.000200", "read")]}])
     result = await DataDriver.loaded("slack").traverse(_source(), _view(SlackSource.resume_after("200.000200")))
-    assert "oldest=200.000200" in slack.requests[0] and "inclusive=false" in slack.requests[0]
-    assert result.cursor == SlackSource.resume_after("300.0")
+    assert len(slack.requests) == 1 and "oldest" not in slack.requests[0], "a resumed pass is one call: the newest page"
+    assert [i.body for i in result.items] == ["next"], "a message at the position came back"
+    assert result.cursor == "resume:300.0|replies:200.000200"
+
+
+async def test_new_messages_past_a_page_are_paged_from_the_position(serve):
+    full = {"ok": True, "messages": [_message(f"{n}.0", str(n)) for n in range(315, 300, -1)], "response_metadata": {"next_cursor": "more"}}
+    slack = serve([full, full])
+    result = await DataDriver.loaded("slack").traverse(_source(), _view(SlackSource.resume_after("200.000200")))
+    assert "oldest" not in slack.requests[0] and "oldest=200.000200" in slack.requests[1], "the page cursor does not stop at the position"
+    assert len(result.items) == 15
 
 
 async def test_ts_advances_numerically_not_lexically(serve):
     serve([{"ok": True, "messages": [_message("100.000000", "newer"), _message("90.000000", "older")]}])
     result = await DataDriver.loaded("slack").traverse(_source(), _view(SlackSource.resume_after("89.0")))
-    assert result.cursor == SlackSource.resume_after("100.000000")
+    assert result.cursor == "resume:100.000000|replies:89.0"
 
 
 async def test_the_first_run_is_bounded_by_the_window(serve):
@@ -460,8 +485,8 @@ async def test_joins_and_leaves_are_not_messages_but_the_cursor_passes_them(serv
 
 async def test_a_threaded_reply_joins_its_parents_conversation_without_a_guessed_reply_target(serve):
     root = _message("100.0", "parent", thread_ts="100.0", reply_count=1, latest_reply="150.0")
-    serve([{"ok": True, "messages": [root]}, {"ok": True, "messages": [root]}, {"ok": True, "messages": [root, _message("150.0", "reply", thread_ts="100.0")]}])
-    parent, reply = (await DataDriver.loaded("slack").traverse(_source(), _view(SlackSource.resume_after("90.0")))).items
+    serve([{"ok": True, "messages": [root]}, {"ok": True, "messages": [root, _message("150.0", "reply", thread_ts="100.0")]}])
+    parent, reply =(await DataDriver.loaded("slack").traverse(_source(), _view(SlackSource.resume_after("90.0")))).items
     assert parent.thread_key == reply.thread_key == "100.0"
     assert parent.reply_to_external_id is None and reply.reply_to_external_id is None
 
@@ -478,24 +503,41 @@ async def test_a_late_reply_on_an_older_thread_is_read_once_and_joins_its_root(f
     assert third.items == (), "a reply already read came back"
 
 
-async def test_replies_older_than_the_position_are_not_read_as_new(fake_slack):
-    """A row polled before replies were read has no reply mark: what predates its position must not reach an agent."""
+async def test_a_cursor_from_before_replies_were_read_hands_over_no_old_reply(fake_slack):
+    """A row polled before this reader has no reply mark: the reply already in a thread is marked read, a later one is news."""
     source = SlackSource(_binding(fake_slack.base))
     async with source:
-        page = await source.fetch(SlackSource.resume_after("200.000200"))
-    assert page.items == () and "conversations.replies" not in [method for method, _ in fake_slack.slack.calls]
+        upgraded = await source.fetch("resume:120.0")  # the in-thread reply at 150 is past the position, and old
+        late = fake_slack.slack.arrive("C1", "late", user="U2", thread_ts="100.000100")
+        after = await source.fetch(upgraded.resume_cursor)
+    assert [i.origin.key for i in upgraded.items] == ["200.000200"] and upgraded.resume_cursor == "resume:200.000200|replies:200.000200"
+    assert [i.origin.key for i in after.items] == [late["ts"]]
 
 
-async def test_a_rate_limit_on_the_thread_read_keeps_the_channel_page(serve):
-    serve([{"ok": True, "messages": [_message("300.0", "next")]}, {"ok": False, "error": "ratelimited"}])
+@pytest.mark.parametrize("error", ["ratelimited", "invalid_ts_oldest"], ids=["rate-limited", "refused"])
+async def test_a_failed_thread_read_keeps_the_channel_page_and_the_next_pass_reads_the_reply(serve, error):
+    root = _message("100.0", "parent", thread_ts="100.0", reply_count=1, latest_reply="250.0")
+    listing = {"ok": True, "messages": [_message("300.0", "next"), root]}
+    serve([listing, {"ok": False, "error": error}, listing, {"ok": True, "messages": [root, _message("250.0", "reply", thread_ts="100.0")]}])
+    first = await DataDriver.loaded("slack").traverse(_source(), _view(SlackSource.resume_after("200.000200")))
+    assert [i.body for i in first.items] == ["next"] and first.cursor == "resume:300.0|replies:200.000200"
+    second = await DataDriver.loaded("slack").traverse(_source(), _view(first.cursor))
+    assert [i.body for i in second.items] == ["reply"]
+
+
+async def test_a_thread_deleted_since_it_was_listed_is_skipped(serve):
+    kept = _message("110.0", "kept", thread_ts="110.0", reply_count=1, latest_reply="260.0")
+    gone = _message("100.0", "gone", thread_ts="100.0", reply_count=1, latest_reply="250.0")
+    serve([{"ok": True, "messages": [kept, gone]}, {"ok": True, "messages": [kept, _message("260.0", "reply", thread_ts="110.0")]},
+           {"ok": False, "error": "thread_not_found"}])
     result = await DataDriver.loaded("slack").traverse(_source(), _view(SlackSource.resume_after("200.000200")))
-    assert [i.body for i in result.items] == ["next"] and result.cursor == SlackSource.resume_after("300.0")
+    assert [i.body for i in result.items] == ["reply"] and result.cursor == "resume:200.000200|replies:260.0"
 
 
 async def test_a_reply_also_sent_to_the_channel_is_one_item(serve):
     root = _message("100.0", "parent", thread_ts="100.0", reply_count=1, latest_reply="150.0")
     broadcast = _message("150.0", "also", thread_ts="100.0", subtype="thread_broadcast")
-    serve([{"ok": True, "messages": [broadcast, root]}, {"ok": True, "messages": [broadcast, root]}, {"ok": True, "messages": [root, broadcast]}])
+    serve([{"ok": True, "messages": [broadcast, root]}, {"ok": True, "messages": [root, broadcast]}])
     result = await DataDriver.loaded("slack").traverse(_source(), _view(SlackSource.resume_after("90.0")))
     assert [i.external_id for i in result.items] == ["100.0", "150.0"]
 
@@ -507,22 +549,19 @@ async def test_a_message_inside_a_thread_can_be_replied_to(fake_slack):
     assert fake_slack.slack.posts[-1]["thread"] == "100.000100"
 
 
-@pytest.mark.parametrize("gains_a_thread", [False, True], ids=["unchanged", "gained-a-thread"])
-async def test_a_message_read_again_reaches_a_consumer_once(serve, gains_a_thread):
-    """Polling may read a message it already has (Slack shows a root again once it has replies): the same
-    row, so the serve loop's position is already past it. The new message after it is the proof that the
-    drain is live, and that nothing old was handed over first."""
+async def test_a_listed_root_reaches_a_consumer_once_and_its_reply_next(serve):
+    """A resumed pass lists the newest roots again, the one already read among them (and again once it has a
+    reply): it is not read again, so the serve loop is never handed it twice. The reply after it is the proof
+    that the drain is live, and that nothing old was handed over first."""
     now = time.time()  # inside the source's window: an older message is not ingested at all
     root_ts, reply_ts = f"{now - 60:.6f}", f"{now - 30:.6f}"
     root = _message(root_ts, "are you there?")
     threaded = {**root, "thread_ts": root_ts, "reply_count": 1, "latest_reply": reply_ts}
-    again = threaded if gains_a_thread else root
     reply = _message(reply_ts, "in the thread", thread_ts=root_ts)
-    # A resumed pass asks twice (the page, the newest roots). The double ignores `oldest`, so the page reads the root again.
     serve([
         {"ok": True, "messages": [root]},
-        {"ok": True, "messages": [again]}, {"ok": True, "messages": [root]},
-        {"ok": True, "messages": [again]}, {"ok": True, "messages": [threaded]}, {"ok": True, "messages": [threaded, reply]},
+        {"ok": True, "messages": [root]},
+        {"ok": True, "messages": [threaded]}, {"ok": True, "messages": [threaded, reply]},
     ])
     source = _source(channel=_saved_channel())
     await source.save()
@@ -537,8 +576,8 @@ async def test_a_message_read_again_reaches_a_consumer_once(serve, gains_a_threa
         assert [m.body for m in first] == ["are you there?"]
         await first.ack()
 
-        assert len((await source.sync()).outcomes) == 1, "the second pass did not read the message again"
-        assert len(await SourceItem.get_all({"data_source_id": source_id})) == 1, "the second read made a second row"
+        assert len((await source.sync()).outcomes) == 0, "the second pass read the listed root again"
+        assert len(await SourceItem.get_all({"data_source_id": source_id})) == 1, "the second pass made a second row"
 
         await source.sync()
         assert [m.body for m in await drain.__anext__()] == ["in the thread"]
@@ -1322,3 +1361,212 @@ def test_the_connect_wizard_is_declared_and_every_step_it_names_exists():
     credential = json.loads((folder / "credential" / "slack_channel" / "credential.json").read_text())
     assert credential["vars"]["SLACK_USER_TOKEN"]["way"] == "app" and "SLACK_SIGNING_SECRET" not in credential["vars"]
     assert credential["vars"]["SLACK_WEBHOOK_URL"]["secret"] is False and "app" in credential["ways"]
+
+
+# ── which agentic process answers: polled and pushed agree ──────────────────
+#
+# One user, one channel, the two ways the driver receives it: polling (a channel read as a bot, ``fetch``) and the
+# webhook (the person's own app; the hub hands each event to ``events_from_webhook``). Every case runs on both.
+# Real: the driver, ``envelope_of``, the projection's ``resolve_thread`` and ``TurnEngine.process_for``. In memory:
+# ``_FakeSlack`` called in process on a clock the test moves, the thread and process rows, and ``create_process``
+# (recorded, never run). CPU only: no hub, no socket, no database.
+
+PERSON = "U0USER001"
+AGENT = TypeId(type=EntityType.AGENT.value, id="370da5cb-3c78-4c6e-8c64-22e6642ce74e")
+#: The ``Slack bot`` row as routing reads it: its channel, its owner (the agent), its id.
+ROW = SimpleNamespace(id="a971983b-2cc5-42c3-a70d-b435cffe29b2", channel="slack", provider="slack", owner=AGENT)
+DEPLOYMENT_ID = "580bea72-a5c6-412a-a02e-73dd1e7fc915"
+
+
+class _InProcess:
+    """``_FakeSlack`` as the driver's ``_api``, with no socket; every ``ts`` comes from a clock only the test moves."""
+
+    def __init__(self):
+        self.slack, self.now, self.pushed = _FakeSlack(), 1_800_000_000.0, 0
+        self.slack.channels = {"C1": []}
+        self.slack.fresh_ts = self.tick
+
+    def tick(self, seconds: float = 1.0) -> str:
+        self.now += seconds
+        return f"{self.now:.6f}"
+
+    def post(self, text: str, *, thread_ts: str | None = None) -> dict:
+        return self.slack.arrive("C1", text, user=PERSON, thread_ts=thread_ts)
+
+    async def api(self, method: str, payload: dict, *, verb: str = "GET", token: str = "") -> dict:
+        if verb == "POST":
+            _, body, _ = self.slack(f"/{method}", {"_body": json.dumps(payload)})
+        else:
+            _, body, _ = self.slack(f"/{method}?{urlencode(payload)}", {})
+        return json.loads(body)
+
+    def events(self) -> list[dict]:
+        """Every message written since the last call, as Slack pushes it."""
+        written, self.pushed = self.slack.channels["C1"][self.pushed:], len(self.slack.channels["C1"])
+        return [{"team_id": "T1", "event": {**m, "channel": "C1", "channel_type": "channel"}} for m in written]
+
+
+class _Polling:
+    """A channel read as a bot: one ``fetch`` per poll, from the cursor the last poll left."""
+
+    def __init__(self, slack: _InProcess):
+        self.slack, self.cursor, self.seen = slack, None, set()
+        self.source = SlackSource(_binding(""))
+
+    async def arrivals(self) -> list:
+        """What the next poll lands that was not landed before (ingest keeps one row per message)."""
+        self.slack.tick(300.0)
+        page = await self.source.fetch(self.cursor)
+        self.cursor = page.resume_cursor or self.cursor
+        new = [i for i in page.items if isinstance(i, MessageItem) and i.origin.key not in self.seen]
+        self.seen.update(i.origin.key for i in new)
+        return new
+
+
+class _Webhook:
+    """The person's own app: each Slack event, as the hub hands it over."""
+
+    def __init__(self, slack: _InProcess):
+        self.slack, self.source = slack, SlackSource(_everything("", user_id=PERSON))
+
+    async def arrivals(self) -> list:
+        return [e.item for payload in self.slack.events() for e in self.source.events_from_webhook(payload) if isinstance(e.item, MessageItem)]
+
+
+class _Rows:
+    """The thread and process rows the real code reads and writes, and every ``create_process`` call."""
+
+    def __init__(self):
+        self.threads: dict[tuple, MessageThread] = {}
+        self.processes: list[SimpleNamespace] = []
+        self.created: list[dict] = []
+        self._ids = itertools.count(1)
+
+    async def find_existing(self, channel, thread_key, owner, data_source_id):
+        return self.threads.get((channel, thread_key, str(owner), data_source_id))
+
+    async def save(self, thread):
+        self.threads[(thread.channel, thread.thread_key, str(thread.owner), thread.data_source_id)] = thread
+
+    async def local_rows(self, query: dict) -> list:
+        match = query.get("match") or {}
+        return [p for p in reversed(self.processes) if all(getattr(p, k) == v for k, v in match.items())]  # newest first
+
+    async def create_process(self, prompt: str, **kwargs):
+        """Recorded, never run: a row with the fields ``find_process`` reads."""
+        self.created.append(kwargs)
+        process = SimpleNamespace(
+            id=f"ap-{next(self._ids)}", status="stopped", deployment_id=DEPLOYMENT_ID, shell_id=None, cli_config={},
+            target_typeid_str=kwargs["target_typeid_str"], workdir=kwargs["workdir"], visible=kwargs["visible"], pty_mode=kwargs["pty_mode"],
+            save=_nothing,
+        )
+        self.processes.append(process)
+        return process
+
+
+async def _nothing(*_args, **_kwargs):
+    return None
+
+
+@pytest.fixture
+def rows(monkeypatch) -> _Rows:
+    rows = _Rows()
+
+    @asynccontextmanager
+    async def transaction():
+        yield
+
+    monkeypatch.setattr(MessageThread, "find_existing", rows.find_existing)
+    monkeypatch.setattr(MessageThread, "find_unclaimed", _nothing)
+    monkeypatch.setattr(MessageThread, "save", lambda thread, *_args, **_kwargs: rows.save(thread))  # called on the thread
+    monkeypatch.setattr("flow_sdk.db.get_db_driver", lambda: SimpleNamespace(write_transaction=transaction))
+    monkeypatch.setattr(AgenticProcess, "local_rows", rows.local_rows)
+    return rows
+
+
+class _Flowpad:
+    """A message from the driver to the AP that answers it: placed in its thread the way the projection
+    places it, its session named the way ``answer_one`` names it, its AP picked by ``process_for``."""
+
+    def __init__(self, slack: _InProcess, receiver, rows: _Rows):
+        from flow_sdk.builtin.agent_serve import TurnEngine
+
+        agent = type("Agent", (), {"id": AGENT.id, "name": "qa-cycle-manager", "model": None, "get_by_id": staticmethod(_nothing)})()
+        deployment = SimpleNamespace(id=DEPLOYMENT_ID, overrides_for=lambda _agent: {}, create_process=rows.create_process)
+        self.slack, self.receiver, self.engine = slack, receiver, TurnEngine(agent, deployment, workdir="/agent")
+
+    async def place(self, item: MessageItem) -> str:
+        """The conversation ``item`` lands in (``project_source_item``'s thread step)."""
+        spec = envelope_of(item, data_source_id=ROW.id, provider="slack")
+        thread = await resolve_thread(
+            channel_of(ROW), thread_key_for(spec, spec.name or ""), await owner_of(ROW),
+            data_source_id=ROW.id, title=spec.body or "", conversation_id=str(spec.conversation_id or ""),
+        )
+        return thread.conversation_id
+
+    async def answer(self, item: MessageItem):
+        """The AP that answers ``item``."""
+        session = str(TypeId(type=EntityType.CONVERSATION.value, id=await self.place(item)))
+        return await self.engine.process_for(session, name="qa-cycle-manager · slack")
+
+    async def arrivals(self) -> list:
+        """What the person wrote that reached Flowpad since the last look."""
+        return [i for i in await self.receiver.arrivals() if i.data.sender is not None and i.data.sender.origin.key == PERSON]
+
+    async def top_level(self, text: str):
+        """The person writes ``text`` at the top of the channel: the message as it lands, and its AP."""
+        self.slack.post(text)
+        (message,) = await self.arrivals()
+        return message, await self.answer(message)
+
+    async def agent_posts_top_level(self, process, text: str) -> MessageItem:
+        """``process`` writes a new top-level message from its own conversation; its sent copy is placed."""
+        source = self.receiver.source
+        data, answered = source.message_for(thread_key="", to="C1", text=text, conversation_id=TypeId(process.target_typeid_str).id)
+        assert answered is None
+        sent = await source.send(data)
+        await self.place(sent)
+        return sent
+
+
+@pytest.fixture(params=[_Polling, _Webhook], ids=["polling", "webhook"])
+async def flowpad(request, rows):
+    slack = _InProcess()
+    receiver = request.param(slack)
+    receiver.source._api = slack.api
+    async with receiver.source:
+        app = _Flowpad(slack, receiver, rows)
+        assert await app.arrivals() == [], "an empty channel landed something"
+        yield app
+
+
+async def test_a_top_level_message_gets_a_fresh_ap(flowpad, rows):
+    message, ap = await flowpad.top_level("is the tester alive?")
+
+    (call,) = rows.created
+    assert call["target_typeid_str"] == ap.target_typeid_str and ap is rows.processes[0]
+    assert message.data.conversation.key == message.origin.key, "a top-level message roots its own thread"
+
+
+async def test_a_reply_in_the_thread_reuses_the_messages_ap(flowpad, rows):
+    message, ap = await flowpad.top_level("cpu and ram?")
+
+    flowpad.slack.post("spin up more testers", thread_ts=message.origin.key)
+    replies = await flowpad.arrivals()
+
+    assert [r.data.text for r in replies] == ["spin up more testers"], "the thread reply never reached Flowpad"
+    assert await flowpad.answer(replies[0]) is ap, "the reply got another AP"
+    assert len(rows.created) == 1, "a fresh AP was asked for the reply"
+
+
+@pytest.mark.xfail(strict=True, reason="Slack's message_for drops the sending conversation, so the agent's own message opens a new one")
+async def test_a_reply_to_the_agents_top_level_message_reuses_the_ap_that_wrote_it(flowpad, rows):
+    _, ap = await flowpad.top_level("give status")
+    status = await flowpad.agent_posts_top_level(ap, "QA flowpad: iteration i08 is running")
+
+    flowpad.slack.post("why is p12 red?", thread_ts=status.origin.key)
+    replies = await flowpad.arrivals()
+
+    assert [r.data.text for r in replies] == ["why is p12 red?"], "the thread reply never reached Flowpad"
+    assert await flowpad.answer(replies[0]) is ap, "the reply to the agent's message got another AP than the one that wrote it"
+    assert len(rows.created) == 1, "a fresh AP was asked for the reply to the agent's message"
