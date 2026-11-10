@@ -239,7 +239,8 @@ test.describe('the root adopts scope', () => {
     try {
       for (const project of seeded) {
         await page.goto(`/?scope-mode=project&scope-activeProjectId=${project.id}`);
-        await expect(page.getByTestId('footer')).toContainText(project.name);
+        // The project in context is named by the top bar's project pill (the footer no longer carries it).
+        await expect(page.getByTestId('top-nav-project')).toContainText(project.name);
       }
     } finally {
       await Promise.all(seeded.map((p) => request.delete(`${API}/api/v1/graph/project/${p.id}`).catch(() => undefined)));
