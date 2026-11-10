@@ -113,40 +113,31 @@ function ownedInstance(): OwnedInstance {
 }
 
 async function restartOwnedInstance(instance: OwnedInstance): Promise<void> {
-  // `launch` scans UPWARD for a free port, so a port the dying backend still
-  // holds moves the instance — and this suite pins `API` at import, turning one
-  // restart into `ECONNREFUSED` for every test after it. Preventing that needs a
-  // fast backend-only restart that PRESERVES the DB (kill-then-wait blows the
-  // 60s test budget; `reset --backend-only` wipes the DB this test is proving
-  // survives), so until one exists we detect the drift rather than avoid it.
-  execFileSync(path.join(REPO_ROOT, 'scripts', 'instance_ctl.sh'), ['launch', instance.name], {
+  // A backend-only restart that keeps the instance's port, env and DB: `flow instance
+  // restart-backend` kills the backend tree and relaunches it from the launcher registry
+  // (what pty_recovery_after_restart uses). A full `instance_ctl.sh launch` scanned UPWARD for
+  // a free port and restarted vite too, so the pinned `API` talked to nothing afterwards.
+  execFileSync('uv', ['run', 'flow', 'instance', 'restart-backend', instance.name, '--json'], {
     cwd: REPO_ROOT,
     stdio: 'pipe',
   });
-  // Re-run the same ownership preflight the suite opened with: it re-reads the
-  // env file and launcher.json and re-checks identity, PID liveness and port
-  // agreement. Only the comparison against the port we were PINNED to is new.
-  const relaunched = ownedInstance();
-  if (relaunched.backendPort !== instance.backendPort) {
-    throw new Error(
-      `'${instance.name}' came back on backend port ${relaunched.backendPort}, but this run is pinned to ${instance.backendPort}`,
-    );
-  }
-  // `launch` waits for the BACKEND only, but it restarts vite too. Reloading
-  // the moment it returns hit a dev server that was not listening yet, so
-  // `terminal-panels` never appeared and every later test talked to a backend
-  // the page had never reconnected to. Gate on the frontend answering — a
-  // readiness probe, not a budget: it returns the instant the server responds.
-  const base = `http://localhost:${process.env.VITE_PORT ?? '4097'}`;
+  // Ready = the same ownership preflight the suite opened with (identity, PID liveness and port
+  // agreement), on the port we were PINNED to — a readiness probe, not a budget.
   const deadline = Date.now() + 90_000;
   for (;;) {
     try {
-      const r = await fetch(base, { method: 'GET' });
+      const relaunched = ownedInstance();
+      if (relaunched.backendPort !== instance.backendPort) {
+        throw new Error(
+          `'${instance.name}' came back on backend port ${relaunched.backendPort}, but this run is pinned to ${instance.backendPort}`,
+        );
+      }
+      const r = await fetch(`http://localhost:${instance.backendPort}/api/v1/graph/bootstrap`);
       if (r.ok) return;
-    } catch {
-      /* not listening yet */
+    } catch (e) {
+      if (String(e).includes('pinned to')) throw e;
     }
-    if (Date.now() > deadline) throw new Error(`frontend ${base} did not come back after restarting '${instance.name}'`);
+    if (Date.now() > deadline) throw new Error(`backend of '${instance.name}' did not come back after restart-backend`);
     await new Promise((r) => setTimeout(r, 250));
   }
 }
