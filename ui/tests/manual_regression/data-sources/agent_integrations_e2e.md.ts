@@ -134,6 +134,8 @@ function editorFrame(page: Page) {
 test('4. the editor: config form + live items in the asset dock', async ({ page }) => {
   await openScreen(page);
   await page.getByTestId(`source-more-${sourceId}`).click();
+  // The definition's editor apps live under the menu's Advanced submenu.
+  await page.getByTestId(`source-advanced-${sourceId}`).click();
   await page.getByTestId('source-open-editor-editor').click();
   await expect(page).toHaveURL(/\/dock\/app\/micro_app-[0-9a-f-]+/);
   const frame = editorFrame(page);
