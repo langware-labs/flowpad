@@ -1,5 +1,5 @@
-import { Artifact, WorldViewProjection } from '@sdk';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { Artifact } from '@sdk';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
 import type { NavigationActions } from '@src/navigation';
 
 interface OpenArtifactOptions {
@@ -8,21 +8,9 @@ interface OpenArtifactOptions {
   currentProjectId?: string | null;
 }
 
-/** The kind of an artifact that stands for one shared file (backend `SHARED_FILE_KIND`). */
-const SHARED_FILE_KIND = 'content.file.text';
-
-/** Artifact identity opens in WorldView; the loader owns active context. A
- *  shared FILE (an .html page received by git) opens as that file instead. */
+/** Open an artifact where `buildDockPointer` says it opens: a shared file as that file, any other
+ *  in WorldView. */
 export function openArtifact(artifact: Artifact, { navigation }: OpenArtifactOptions): void {
-  const assetRef = (artifact as { asset_ref?: string }).asset_ref;
-  if (artifact.kind === SHARED_FILE_KIND && assetRef) {
-    navigation.openDock(DockPointer.forAssetEditor('file', assetRef));
-    return;
-  }
-  navigation.openDock(
-    DockPointer.forWorldView(WorldViewProjection.DEPLOYMENT, {
-      focus: artifact.typeId,
-      selected: artifact.typeId.toString(),
-    }),
-  );
+  const pointer = buildDockPointer(artifact as Artifact & { type: string; id: string }, undefined);
+  if (pointer) navigation.openDock(pointer);
 }

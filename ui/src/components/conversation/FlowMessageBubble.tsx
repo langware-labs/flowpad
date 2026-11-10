@@ -1165,7 +1165,9 @@ export function MessageEntityChip({
   const { run: openGitShare } = useOpenGitShare(attachment, projectId);
   const [openOutcome, setOpenOutcome] = useState<OpenShareOutcome | null>(null);
 
-  const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
+  // Installed here, the asset may answer to its own id (a webapp or a document is keyed on its path).
+  const hereTypeId = (attachment?.installed && attachment.localTypeId) || typeId;
+  const { data, notFound, isError } = useEntity<AnyEntity>(hereTypeId);
   // A project the message staged (its bundle carried it) is an ordinary
   // attachment chip below. A project reference with no staged attachment — an
   // invite sent before projects rode the bundle — keeps the project chip,
@@ -1324,7 +1326,7 @@ export function MessageEntityChip({
     <>
       <span className="inline-flex items-center gap-1">
         <ContextEntityChip
-          typeId={typeId}
+          typeId={hereTypeId}
           inside={{ type: 'conversation', id: conversationId }}
           onClick={
             artifactData

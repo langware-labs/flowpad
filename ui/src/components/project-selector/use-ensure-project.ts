@@ -1,4 +1,5 @@
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { forgetProjectAutoLaunchAnswer } from '@src/agents/agent-auto-launch';
 import { ContextEntitiesEnum, dataContext, gitOriginFromUrl, Project } from '@sdk';
 import { newProjectLocale, stampNewProjectLocale } from '@src/contexts/locale-context';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -122,6 +123,9 @@ export function useInstallSharedProjectAndOpen(landing?: ProjectLanding) {
   return useCallback(
     async (project: Project): Promise<Project> => {
       const installed = await project.setupFromGitOrigin();
+      // The agents it ships are rows only now: a landing that asked before the files existed
+      // was told "nothing to auto-launch", and must ask again.
+      forgetProjectAutoLaunchAnswer(installed.id);
       await land(installed);
       return installed;
     },

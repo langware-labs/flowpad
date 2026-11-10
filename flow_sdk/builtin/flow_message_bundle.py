@@ -2107,7 +2107,9 @@ def _read_entities_map(unpacked_root: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-async def apply_entities_overlay(unpacked_root: Path, owner_typeid: str | None) -> None:
+async def apply_entities_overlay(
+    unpacked_root: Path, owner_typeid: str | None, adopted: dict[str, str] | None = None
+) -> None:
     """Overlay every ``entities.json`` envelope onto its materialized row by id.
 
     The metadata axis of receive: after bodies land + the tree is indexed, the
@@ -2125,6 +2127,7 @@ async def apply_entities_overlay(unpacked_root: Path, owner_typeid: str | None) 
         entry_type, _, entry_id = key.partition("-")
         if not entry_type or not entry_id:
             continue
+        entry_id = (adopted or {}).get(key, entry_id)  # the id its install adopted on this machine
         cls = SchemaRegistry.get_entity_cls(entry_type)
         if cls is None:
             continue

@@ -1,6 +1,16 @@
 /** Where an entity opens: the dock pointer for a `{type, id}` (plus what a few types need from the
  *  row). Navigation owns this mapping; chips, breadcrumbs, viewers and dialogs all ask it. */
-import { AgenticProcess, DataSource, PageId, TypeId, ViewType, workerFromSessionType } from '@sdk';
+import {
+  AgenticProcess,
+  Artifact,
+  DataSource,
+  PageId,
+  SHARED_FILE_KIND,
+  TypeId,
+  ViewType,
+  WorldViewProjection,
+  workerFromSessionType,
+} from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -60,6 +70,16 @@ export function buildDockPointer(
     case AgenticProcess.type:
       // A session opens in its own tab (the shell dock). `/dock/agentic_process/<id>` has no view.
       return DockPointer.forSession(resolved.id);
+    case Artifact.type: {
+      // A shared FILE (an .html page) opens as that file; any other artifact in WorldView, where the
+      // loader owns the active context. `/dock/artifact/<id>` has no view.
+      const artifact = resolved as { kind?: string; asset_ref?: string | null };
+      if (artifact.kind === SHARED_FILE_KIND && artifact.asset_ref) {
+        return DockPointer.forAssetEditor('file', artifact.asset_ref);
+      }
+      const typeId = new TypeId(resolved.type, resolved.id);
+      return DockPointer.forWorldView(WorldViewProjection.DEPLOYMENT, { focus: typeId, selected: typeId.toString() });
+    }
     case 'flow_message': {
       // A message opens in its conversation, scrolled to it.
       const conversationId = (resolved as { conversation_id?: string | null }).conversation_id;

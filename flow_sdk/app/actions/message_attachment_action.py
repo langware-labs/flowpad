@@ -80,6 +80,30 @@ async def _load_ma(attachment_id: str) -> MessageAttachment | None:
     return await MessageAttachment.get_one({"id": attachment_id})
 
 
+async def _installed_entity(ma: MessageAttachment):
+    """The entity an installed attachment put on this machine: by its local id,
+    else by its installed path — the staged copy's own shape under
+    ``installed_root``. A path-keyed asset installed before installs recorded the
+    local id names only the sender's; found this way, the row learns it."""
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    cls = SchemaRegistry.get_entity_cls(ma.asset_type)
+    ent = await cls.get_one({"id": ma.local_asset_id}) if cls is not None else None
+    entry_dir = _entry_dir_for(ma)
+    if ent is not None or not ma.installed_root or entry_dir is None or not entry_dir.exists():
+        return ent
+    paths = [p.relative_to(entry_dir).as_posix() for p in sorted(entry_dir.rglob("*")) if p.is_file()]
+    asset_root, _ = _locate_staged_asset(entry_dir, paths, SchemaRegistry.get(ma.asset_type))
+    if asset_root is None:
+        return None
+    found = await Entity.get_by_asset_ref(Path(ma.installed_root) / asset_root, resolve_containing=False)
+    if found is None or found.get_type() != ma.asset_type:
+        return None
+    ma.installed_asset_id = str(found.id)
+    return found
+
+
 async def _maybe_mint_bookmark(ma: MessageAttachment, someone_typeid) -> None:
     """If the sender opted in (``ma.create_bookmark``), mint a FAVORITE bookmark
     on the receiver pointing at the just-installed entity. Best-effort: a mint
@@ -92,12 +116,12 @@ async def _maybe_mint_bookmark(ma: MessageAttachment, someone_typeid) -> None:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     cls = SchemaRegistry.get_entity_cls(ma.asset_type)
-    ent = await cls.get_one({"id": ma.asset_id}) if cls is not None else None
+    ent = await cls.get_one({"id": ma.local_asset_id}) if cls is not None else None
     try:
         await mint_share_favorite(
             owner=someone_typeid,
             entity_type=ma.asset_type,
-            entity_id=ma.asset_id,
+            entity_id=ma.local_asset_id,
             title=ma.name or (getattr(ent, "display_name", None) if ent else None) or ma.asset_id,
             asset_ref=str(getattr(ent, "asset_ref", "") or ""),
             icon=SchemaRegistry.get_icon(ma.asset_type),
@@ -149,17 +173,17 @@ async def _setup_after_install(
     info = SchemaRegistry.get(ma.asset_type)
     handler = info is not None and getattr(info, "receive_handler", False)
     if not auto_run or info is None or not (handler or getattr(info, "setup_skill", None)):
-        return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
+        return entity_target(ma.asset_type, ma.local_asset_id, name=ma.name)
 
     cls = SchemaRegistry.get_entity_cls(ma.asset_type)
-    ent = await cls.get_one({"id": ma.asset_id}) if cls is not None else None
+    ent = await cls.get_one({"id": ma.local_asset_id}) if cls is not None else None
     if ent is None:
-        return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
+        return entity_target(ma.asset_type, ma.local_asset_id, name=ma.name)
     try:
         return await ent.setup_on_receive(project_id=ma.project_id, workdir=installed_root)
     except Exception:
         logger.warning("[message_attachment] setup_on_receive failed for %s", ma.asset_id, exc_info=True)
-        return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
+        return entity_target(ma.asset_type, ma.local_asset_id, name=ma.name)
 
 
 async def _cross_link_installed_siblings(ma: MessageAttachment) -> None:
@@ -259,7 +283,7 @@ async def _apply_receive_row_overrides(ma: MessageAttachment, someone_typeid) ->
     if cls is None:
         return
     try:
-        ent = await cls.get_one({"id": ma.asset_id})
+        ent = await cls.get_one({"id": ma.local_asset_id})
         if ent is None:
             return
         dirty = False
@@ -507,14 +531,20 @@ def _staging_gone(suffix: str = "") -> ApiFailResponse:
 # ---------------------------------------------------------------------------
 
 
-async def _adopt_indexed_asset_id(ma: MessageAttachment, root: Path, placed: list[Path]) -> None:
-    """Point a zip-derived row at the entity its install indexed.
+async def _adopt_indexed_asset_id(ma: MessageAttachment, root: Path, placed: list[Path], owner=None) -> None:
+    """Name the entity this install indexed, so Open / uninstall / the chip resolve it.
 
-    A typed asset that arrived inside a ZIP carries no id of its own — the row's
-    ``asset_id`` is a placeholder, and the indexer mints the real one from the
-    installed folder. Look that entity up by its installed path (its natural key)
-    and adopt its id, so Open / uninstall / the chip resolve it."""
-    from flow_sdk.builtin.flow_message_bundle import _notify_received_assets  # noqa: PLC0415
+    An id written in the asset's own files arrives with them and nothing changes.
+    One that is not is minted here from the installed folder, so the id the message
+    carries names nothing on this machine. The entity is looked up by its installed
+    path (its natural key). A ZIP's ``asset_id`` is only a placeholder, so the row
+    adopts the real one; any other attachment keeps ``asset_id`` — it is what the
+    message names — and records the local one in ``installed_asset_id``."""
+    from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+        _entry_key,
+        _notify_received_assets,
+        _stamp_origins,
+    )
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
@@ -526,9 +556,15 @@ async def _adopt_indexed_asset_id(ma: MessageAttachment, root: Path, placed: lis
     if ent is None or str(ent.typeid.type) != ma.asset_type:
         logger.warning("[install] no indexed %s at %s for %s", ma.asset_type, root / asset_root, ma.id)
         return
-    ma.asset_id = str(ent.id)
-    await _notify_received_assets({(ma.asset_type, ma.asset_id)})
-
+    if str(ent.id) == ma.asset_id:
+        return
+    if is_zip_filename(ma.name or ""):
+        ma.asset_id = str(ent.id)
+    else:
+        ma.installed_asset_id = str(ent.id)
+    received = {(ma.asset_type, str(ent.id))}
+    await _stamp_origins(received, _origin_map(_entry_key(ma.asset_type, str(ent.id)), ma), owner)
+    await _notify_received_assets(received)
 
 async def handle_attachment_install(
     attachment_id: str,
@@ -779,8 +815,8 @@ async def _install(
                 project_id=project_id,
                 owner=someone_typeid,
             )
-            if not is_raw_file and is_zip_filename(ma.name or ""):
-                await _adopt_indexed_asset_id(ma, root, placed)
+            if not is_raw_file:
+                await _adopt_indexed_asset_id(ma, root, placed, someone_typeid)
     except FlowMessageExistsError as e:
         return ApiFailResponse(
             message="asset already exists — overwrite?",
@@ -797,7 +833,8 @@ async def _install(
     try:
         from flow_sdk.builtin.flow_message_bundle import apply_entities_overlay  # noqa: PLC0415
 
-        await apply_entities_overlay(unpacked_dir(ma.flow_message_id), someone_typeid)
+        # The envelope is keyed by the SENDER's id; an install that adopted a local one names it.
+        await apply_entities_overlay(unpacked_dir(ma.flow_message_id), someone_typeid, adopted={entry_key: ma.local_asset_id})
     except Exception:
         logger.warning("[install] entities.json overlay failed for %s", ma.id, exc_info=True)
 
@@ -900,6 +937,8 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
     # (the shared destroy tail below); there is no installed_root to sweep.
     row_only = getattr(SchemaRegistry.get(ma.asset_type), "receive_policy", None) == "auto"
 
+    ent = await _installed_entity(ma)  # before the files go: it may be found by its installed path
+
     # A ``both`` row opened by git copied no bytes (no installed_root) — nothing to sweep.
     if (
         ma.transfer_mode != TransferMode.GIT.value
@@ -916,8 +955,6 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
         remove_transferred_tree(entry_dir, Path(ma.installed_root))
 
     # Drop the asset entity (row + record folder) and tell the live UI.
-    cls = SchemaRegistry.get_entity_cls(ma.asset_type)
-    ent = await cls.get_one({"id": ma.asset_id}) if cls is not None else None
     if ent is not None:
         try:
             op = DataOpMessage(data=ent, op=OperationType.DELETE, to_entity=ent.typeid)
@@ -933,6 +970,7 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
     ma.scope = ""
     ma.project_id = ""
     ma.installed_root = ""
+    ma.installed_asset_id = ""
     await ma.save(someone_typeid, notify=True)
     return ApiSuccessResponse(data=ma)
 
@@ -968,6 +1006,11 @@ async def handle_staged_files(attachment_id: str) -> ApiResponse:
     entry_dir = _entry_dir_for(ma)
     if entry_dir is None or not entry_dir.exists():
         return _staging_gone()
+    if ma.installed:
+        known = ma.local_asset_id
+        await _installed_entity(ma)
+        if ma.local_asset_id != known:  # installed before installs recorded the local id: Open reads this
+            await ma.save(notify=True)
     files = [
         {"path": p.relative_to(entry_dir).as_posix(), "size": p.stat().st_size}
         for p in sorted(entry_dir.rglob("*"))

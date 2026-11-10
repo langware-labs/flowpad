@@ -1527,7 +1527,9 @@ class FsRecordsActionsMixin:
 
         from pathlib import Path as _Path  # noqa: PLC0415
 
-        _p = _Path(index_path).expanduser().resolve() if index_path else None
+        from flow_sdk.fs_store.path_utils import disk_spelling  # noqa: PLC0415
+
+        _p = disk_spelling(_Path(index_path).expanduser()) if index_path else None
 
         # Surface stale callers still using the legacy `?project_id=<id>` shim
         # — it now silently triggers a full-tree walk (scope_filter=None).

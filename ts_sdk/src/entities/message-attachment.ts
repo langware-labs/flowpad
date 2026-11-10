@@ -42,6 +42,8 @@ export interface IMessageAttachment extends IEntity {
   /** The shared asset's identity as sent (sender-pinned id). */
   asset_type?: string;
   asset_id?: string;
+  /** The id of the entity a copy install put on THIS machine, when it is not `asset_id`. */
+  installed_asset_id?: string;
   name?: string | null;
   description?: string | null;
   /** The kind a `*.value.json` file carries (its `spec_kind`), read once at stage time. */
@@ -102,6 +104,7 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
   conversation_id?: string | null;
   asset_type?: string;
   asset_id?: string;
+  installed_asset_id?: string;
   name?: string | null;
   description?: string | null;
   unpacked_path?: string;
@@ -119,6 +122,7 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
     this.conversation_id = entity.conversation_id ?? null;
     this.asset_type = entity.asset_type;
     this.asset_id = entity.asset_id;
+    this.installed_asset_id = entity.installed_asset_id || undefined;
     this.name = entity.name ?? null;
     this.description = entity.description ?? null;
     this.unpacked_path = entity.unpacked_path;
@@ -137,6 +141,12 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
   get targetTypeId(): TypeId | null {
     if (!this.asset_type || !this.asset_id) return null;
     return new TypeId(this.asset_type, this.asset_id);
+  }
+
+  /** The asset's entity on THIS machine. Open and the installed chip go here. */
+  get localTypeId(): TypeId | null {
+    const id = this.installed_asset_id || this.asset_id;
+    return this.asset_type && id ? new TypeId(this.asset_type, id) : null;
   }
 
   /** Canonical install-state accessor. The backend clears scope with `''`
