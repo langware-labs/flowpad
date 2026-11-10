@@ -90,6 +90,19 @@ async def test_a_remote_row_is_answered_by_the_hub(desktop, echo_hub):
     assert echo_hub.received[0].raw_path == f"/api/v1/graph/conversation/{conv.id}/close"
 
 
+async def test_returning_a_ticket_asks_the_hub_then_refreshes_the_row_it_keeps(desktop, echo_hub):
+    conv = await _conversation(remote=True)
+    r = await _http(desktop, "POST", f"conversation/{conv.id}/return", json={})
+    assert r.status_code == 200
+    # The handler's own hub calls carry no test tag: read them from the hub's whole log, by this row's id.
+    calls = [(x.method, x.raw_path) for x in echo_hub.all_received if str(conv.id) in x.raw_path]
+    assert calls[:2] == [
+        ("POST", f"/api/v1/graph/conversation/{conv.id}/return"),
+        ("GET", f"/api/v1/graph/conversation/{conv.id}"),
+    ]
+    assert await _reload(conv) is not None
+
+
 async def test_a_desktop_action_name_does_not_shadow_the_hubs(desktop, echo_hub):
     # Asked of the hub, ``members/accept`` is the hub's — not the desktop's ``members`` handler.
     r = await _http(desktop, "GET", "members/accept", params={"invitation-id": "I1"}, headers=REFLECT)

@@ -69,7 +69,7 @@ from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
 from flow_sdk.sources import http
 from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.config import ChoiceEntry, SourceConfig
+from flow_sdk.sources.config import ChoiceEntry, Sharing, SourceConfig, config_field
 from flow_sdk.sources.errors import (
     AccessDenied,
     InvalidCursor,
@@ -206,7 +206,7 @@ class SlackConfig(SourceConfig):
     #: Learned by the ``app`` setup step from ``auth.test``: the workspace the person's app acts in, and who
     #: they are there. Not secrets; the hub claim is keyed by the team.
     team_id: str = ""
-    user_id: str = ""
+    user_id: str = config_field("", sharing=Sharing.PRIVATE)
 
 
 class SlackSource(MessageSource):

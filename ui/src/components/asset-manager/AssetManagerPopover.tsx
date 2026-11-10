@@ -169,8 +169,12 @@ export interface AssetManagerPopoverProps {
    * the agent. Absent for a process not spawned from an Agent.
    */
   agent?: Agent | null;
-  /** Restrict the visible candidates. Default: everything the source returned. */
+  /** Restrict the visible candidates. Default: everything the source returned. Never for a type: the list
+   *  is cut at a limit before this runs, so pass `types` and let the server narrow it. */
   filter?: (descriptor: AssetDescriptor) => boolean;
+  /** Only these asset types, asked of the server (before its list is cut at the limit) when the popover
+   *  fetches its own list. A client-side `filter` alone can come back empty on a project with many assets. */
+  types?: readonly string[];
 
   // ── selection: status in, actions out ──────────────────────────────────
   /**
@@ -278,6 +282,7 @@ export function AssetManagerPopover({
   assets,
   agent = null,
   filter,
+  types,
   selectedTypeIds = NONE,
   onPick,
   onUnpick,
@@ -314,23 +319,26 @@ export function AssetManagerPopover({
   // A truncated list is narrowed on the server by what the person types (debounced), so an asset past
   // the cut can still be found -- the client-side filter alone only ever searched the first page.
   const serverQuery = useDebounced(listFilter.trim(), 250);
-  const ownAssets = useProcessAssets(null, { enabled: open && !assets, query: serverQuery });
+  const ownAssets = useProcessAssets(null, { enabled: open && !assets, query: serverQuery, types });
 
   const { descriptors: listDescriptors, isLoading: listIsLoading, error: listError, scanIssues, truncated } =
     assets ?? ownAssets;
 
   // Which scopes the list shows — one header toggle each. Per viewer, kept
   // across opens and reloads.
-  const [shownScopes, setShownScopes] = useState<Set<BoardScope>>(loadShownScopes);
+  // A pick of one asset type (`types`) shows every scope it got -- a credential saved on the user is as
+  // pickable as the project's -- and leaves the board's saved choice alone.
+  const pinnedScopes = !!types;
+  const [shownScopes, setShownScopes] = useState<Set<BoardScope>>(() => (pinnedScopes ? new Set(BOARD_SCOPES) : loadShownScopes()));
   const toggleScope = useCallback((scope: BoardScope) => {
     setShownScopes((prev) => {
       const next = new Set(prev);
       if (next.has(scope)) next.delete(scope);
       else next.add(scope);
-      saveShownScopes(next);
+      if (!pinnedScopes) saveShownScopes(next);
       return next;
     });
-  }, []);
+  }, [pinnedScopes]);
 
   // Project picker — load once when entering pick-project mode.
   const projectsQuery = useMemo(() => new QueryRequest({ type: Project.type }), []);

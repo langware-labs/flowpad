@@ -6,10 +6,49 @@
 import { Trans } from '@lingui/react/macro';
 import { TypeId, type ThenPart } from '@sdk';
 import { ExternalLink } from 'lucide-react';
+import { Fragment } from 'react';
+import { ContextEntityChip } from '@src/components/conversation/EntityChip';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useAutomationWords } from './automation-words';
+
+/** One step in words. A process it runs is a chip that opens the session, and "prompt" opens the
+ *  prompt it is given; every other step is its plain sentence. */
+export function StepText({ part }: { part: ThenPart }) {
+  const words = useAutomationWords();
+  if (part.kind !== 'run_process' || !part.target) return <>{words.then(part)}</>;
+  return (
+    <span data-testid="then-run-process">
+      <Trans>
+        run process <ContextEntityChip typeId={new TypeId(part.target)} size="inline" /> with{' '}
+        <Popover>
+          <PopoverTrigger className="underline underline-offset-2 hover:text-primary" data-testid="then-prompt-open">
+            prompt
+          </PopoverTrigger>
+          <PopoverContent align="start" className="max-w-md whitespace-pre-wrap text-sm" data-testid="then-prompt-text">
+            {part.prompt}
+          </PopoverContent>
+        </Popover>
+      </Trans>
+    </span>
+  );
+}
+
+/** Every step on one line — a folded "Then" block. */
+export function ThenLine({ steps }: { steps: ThenPart[] }) {
+  return (
+    <>
+      {steps.map((part, i) => (
+        <Fragment key={i}>
+          {i > 0 && ', '}
+          <StepText part={part} />
+        </Fragment>
+      ))}
+    </>
+  );
+}
 
 const EDITOR_FOR: Partial<Record<ThenPart['kind'], string>> = { run_agent: 'agent', open_wizard: 'wizard' };
 
@@ -35,7 +74,9 @@ export function ThenSteps({ steps }: { steps: ThenPart[] }) {
         return (
           <li key={i} className="flex flex-col gap-0.5" data-step-kind={p.kind}>
             <span className="flex flex-wrap items-center gap-2">
-              <span className="first-letter:uppercase">{words.then(p)}</span>
+              <span className="first-letter:uppercase">
+                <StepText part={p} />
+              </span>
               {open && (
                 <button
                   type="button"
@@ -49,7 +90,9 @@ export function ThenSteps({ steps }: { steps: ThenPart[] }) {
               )}
             </span>
             {p.detail && <span className="text-xs text-muted-foreground">{p.detail}</span>}
-            {p.prompt && <span className="text-xs text-muted-foreground">“{p.prompt}”</span>}
+            {p.prompt && p.kind !== 'run_process' && (
+              <span className="text-xs text-muted-foreground">“{p.prompt}”</span>
+            )}
             {p.problem && (
               <span className="w-fit rounded border border-amber-500/50 bg-amber-500/10 px-1.5 text-xs">
                 {p.problem}

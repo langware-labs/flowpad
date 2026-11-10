@@ -77,7 +77,7 @@ export class PtySyncSession {
 
   /**
    * Rebuild segments anchored to actual prompt boundaries.
-   * Each anchor is an Annotation with labels: ['prompt:'].
+   * Each anchor is an Annotation with subkind 'prompt'.
    * Scans the xterm buffer to find where each anchor's text appears.
    */
   buildSegmentsFromAnchors(anchors: PtyAnchor[]): void {

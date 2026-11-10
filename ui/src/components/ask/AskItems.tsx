@@ -5,6 +5,7 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Input } from '@src/components/ui/input';
+import { MarkdownView } from '@src/components/markdown-view';
 import { cn } from '@src/lib/utils';
 
 /**
@@ -94,7 +95,11 @@ export function AskItems({
                       </Badge>
                     ) : null}
                   </label>
-                  {item.detail ? <p className="text-sm text-muted-foreground">{bt(item.detail)}</p> : null}
+                  {item.detail ? (
+                    <div className="text-sm text-muted-foreground">
+                      <MarkdownView value={bt(item.detail)} compact dataImages />
+                    </div>
+                  ) : null}
                 </div>
               </div>
               {isApproval(item) ? null : (

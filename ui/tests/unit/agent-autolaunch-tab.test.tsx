@@ -6,8 +6,10 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
-  useLlmSources: () => ({ status: { available: [] }, isLoading: false }),
+// The endpoints this account sees; a test sets them. The tab offers only those it may ALLOCATE from.
+const llmEndpoints: { current: unknown[] } = { current: [] };
+vi.mock('@src/components/llm-endpoints/use-llm-endpoints', () => ({
+  useLlmEndpoints: () => ({ endpoints: llmEndpoints.current }),
 }));
 
 const { Agent, cloudManager, dataManager } = await import('@sdk');
@@ -98,6 +100,29 @@ const tab = (version: AgentVersionState) => (
 );
 
 describe('AgentAutoLaunchTab', () => {
+  afterEach(() => {
+    llmEndpoints.current = [];
+  });
+
+  it('offers the endpoints this account may allocate from, not the ones it only reads or administers', async () => {
+    llmEndpoints.current = [
+      {
+        id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        name: 'Begin School budget',
+        enabled: true,
+        isAllowedAction: (a: string) => a === 'allocate',
+      },
+      { id: 'bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee', name: 'Read only', enabled: true, isAllowedAction: () => false },
+      { id: 'cccccccc-bbbb-4ccc-8ddd-eeeeeeeeeeee', name: 'Switched off', enabled: false, isAllowedAction: () => true },
+    ];
+    render(tab(PUBLISHED));
+    fireEvent.click(await screen.findByTestId('agent-invite-edit-settings'));
+    const picker = screen.getByTestId('agent-autolaunch-source');
+    expect(picker).toHaveTextContent('Begin School budget');
+    expect(picker).not.toHaveTextContent('Read only');
+    expect(picker).not.toHaveTextContent('Switched off');
+  });
+
   it('asks to publish first, and reads nothing, for an unpublished agent', () => {
     render(tab(UNPUBLISHED));
     expect(screen.getByTestId('agent-autolaunch-unpublished')).toHaveTextContent('Publish the agent first');

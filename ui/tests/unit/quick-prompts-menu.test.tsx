@@ -30,7 +30,7 @@ import { QuickPromptsMenu } from '@src/components/notes/QuickPromptsMenu';
 const prompt = (content: string) =>
   new Annotation({
     id: crypto.randomUUID(),
-    labels: ['note:', 'quick-prompt:'],
+    subkind: 'quick_prompt',
     target_type: 'user',
     target_id: USER,
     content,

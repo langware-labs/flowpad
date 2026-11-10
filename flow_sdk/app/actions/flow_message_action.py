@@ -14,7 +14,7 @@ import os
 import re
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple, Optional
 from weakref import WeakValueDictionary
@@ -154,8 +154,8 @@ async def _learn_normalized_members(members: list[dict]) -> int:
             continue
         name = _participant_value(participant, "name")
         picture = _participant_value(participant, "picture")
-        # remote defaults False: a learned contact is a LOCAL mirror minted at a
-        # local uuid5 id, not a hub entity at the same id — marking it remote
+        # remote defaults False: a learned contact is a LOCAL mirror with its own
+        # local id, not a hub entity at the same id — marking it remote
         # would wrongly route ops through hub-reflection.
         contact = await User.upsert_contact(user_id=user_id, email=email, name=name, picture=picture)
         if contact is not None:
@@ -1255,12 +1255,25 @@ async def _remove_conversation(conv: Conversation, mode: str) -> ApiResponse:
         return ApiFailResponse(message=f"Failed: {e}")
 
 
+#: How long after sending it a sender may delete their own message. The hub holds the same rule
+#: (its ``OWN_MESSAGE_DELETE_WINDOW``, measured from its own ``created_date``) and is the authority;
+#: this and the menu's ``OWN_MESSAGE_DELETE_WINDOW_MS`` (``FlowMessageBubble.tsx``) answer first.
+OWN_MESSAGE_DELETE_WINDOW = timedelta(minutes=15)
+
+
+def _within_delete_window(fm: FlowMessage) -> bool:
+    sent = iso_to_utc(fm.occurred_at)
+    return sent is not None and datetime.now(timezone.utc) - sent < OWN_MESSAGE_DELETE_WINDOW
+
+
 async def handle_remove_message(flow_message_id: str) -> ApiResponse:
-    """Delete a single FlowMessage everywhere (rule: sender OR conversation owner).
+    """Delete a single FlowMessage everywhere (rule: its sender, for ``OWN_MESSAGE_DELETE_WINDOW``
+    after sending it, OR the conversation owner at any time).
 
     Local entrypoint behind the ``remove-message`` action. Flow:
-      * gate locally on the resolved cloud-user id == ``fm.sender_id`` OR
-        == ``conv.initiated_by`` (owner). Purely-local conversations have no
+      * gate locally: the sender is this machine's user (``User.self_ids``) and the
+        message is younger than the window, OR the cloud user is the owner
+        (``conv.initiated_by`` / role). Purely-local conversations have no
         cloud counterpart, so the local single user always passes.
       * for shared (``remote``) conversations, pre-check hub reachability then
         call ``Conversation.remove_message`` — the hub re-enforces the gate,
@@ -1287,11 +1300,11 @@ async def handle_remove_message(flow_message_id: str) -> ApiResponse:
     # A purely-local conversation (no cloud counterpart, owner-less) is
     # single-user, so the gate + hub round-trip only apply to shared convs.
     if conv and getattr(conv, "remote", False):
-        # Gate: deleter is the message sender OR the conversation owner. The
-        # cloud user id is the authority for both. Owner = the hub's
-        # ``initiated_by`` OR the caller holds role ``owner`` in the roster.
+        # Gate: deleter is the message sender (a hub message names the cloud user; one a
+        # channel projected as ours, the local user) OR the conversation owner. Owner = the
+        # hub's ``initiated_by`` OR the caller holds role ``owner`` in the roster.
         cloud_user_id = await _current_cloud_user_id()
-        is_sender = bool(cloud_user_id and fm.sender_id and cloud_user_id == fm.sender_id)
+        is_sender = bool(fm.sender_id) and fm.sender_id in await User.self_ids()
         is_owner = bool(
             cloud_user_id
             and (
@@ -1305,6 +1318,11 @@ async def handle_remove_message(flow_message_id: str) -> ApiResponse:
         if not (is_sender or is_owner):
             return ApiFailResponse(
                 message="Only the message sender or the conversation owner can delete this message.",
+                status_code=403,
+            )
+        if not is_owner and not _within_delete_window(fm):
+            return ApiFailResponse(
+                message="You can delete your own message for 15 minutes after sending it.",
                 status_code=403,
             )
 
@@ -1323,25 +1341,7 @@ async def handle_remove_message(flow_message_id: str) -> ApiResponse:
                 message=f"Hub {e.status_code}: {e.reason}",
             )
 
-    # Detach the child edge BEFORE destroying the row. Membership is the edge
-    # now, so pruning only the jsonl pointer would leave the message in the
-    # projection — the reproject reads edges. Order matters twice over: after
-    # ``destroy()`` the child no longer resolves, so ``detach_child`` would find
-    # nothing to remove and announce nothing.
-    if conv_id:
-        try:
-            conv_for_detach = await Conversation.get_one({"id": conv_id})
-            if conv_for_detach is not None:
-                await conv_for_detach.detach_child(fm.typeid, notify=True)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[remove-message] child detach failed fm=%s conv=%s: %s", fm_id, conv_id, e)
-
-    # Purge the local existence (DB row + relationships + on-disk record folder
-    # + staging data/MessageAttachment rows, via the FlowMessage lifecycle).
-    try:
-        await fm.destroy()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[remove-message] local destroy failed fm=%s: %s", fm_id, e)
+    await fm.erase_local()
 
     # Drop the conversation pointer + re-project (notify so the open view updates).
     if conv_id:
@@ -1642,6 +1642,30 @@ async def conversation_pickup() -> ApiResponse:
     except Exception as e:
         logger.error("[flow_message_action] pickup error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed to pick up conversation: {str(e)}")
+
+
+@action.post(action_name="return", types=["conversation"])
+async def conversation_return() -> ApiResponse:
+    """``POST conversation/<id>/return`` — the hub's action, answered here. Staff-side: hand a picked
+    ticket back to the desk queue. The hub takes the caller off the ticket; the local row STAYS (unlike
+    ``leave``, which drops it) and is refreshed from the hub, so the StreamInbox shows it as not picked up."""
+    try:
+        someone_typeid, conv_id = _hub_conversation_target()
+        if someone_typeid is None:
+            return ApiFailResponse(message="No authenticated user in request context")
+        if not conv_id:
+            return ApiFailResponse(message="return: target conversation required", status_code=400)
+
+        try:
+            await HubProxy.call("POST", BuiltinEntityType.CONVERSATION, conv_id, "return", payload={}, strict=True)
+        except HubError as e:
+            return e.fail_response("Could not return the ticket to the queue")
+
+        await _materialize_hub_conversation(conv_id, someone_typeid)
+        return ApiSuccessResponse(data={"conversation_id": conv_id})
+    except Exception as e:
+        logger.error("[flow_message_action] return error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to return the ticket: {str(e)}")
 
 
 @action.post(action_name="open_team_conversation", types=["conversation"])
@@ -3400,8 +3424,8 @@ def _clamp_invitation_ts(invitations: list[Pointer], merged: list[Pointer]) -> l
 async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> bool:
     """Bring local message state for a single conversation up to the hub's.
 
-    Lists the conversation's child FlowMessages via the children-list route
-    ``/conversation/<id>/flow_message`` in ONE request — each child carries its
+    Lists the conversation's FlowMessages via ``/conversation/<id>/messages``
+    (the children-list route on a hub without it) in ONE request — each child carries its
     ``updated_date``, so we diff **new ∪ changed** (not new-only): every child
     is routed through ``_process_single_hub_message``, which applies the LWW
     invalidation rule (``Entity.is_stale``) and is a no-op for rows already
@@ -3423,17 +3447,22 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
     lock = keyed_loop_lock(_conv_fetch_locks, conv_id)
     async with lock:
         try:
-            # Children-list route, primary source: returns the conversation's
-            # FlowMessage children (with updated_date) the caller may see.
-            # the hub url builder requires an action segment before sub_path.
+            # ``messages`` is the conversation's own list: everyone who may read the
+            # conversation gets it, including help-desk staff who have not picked the
+            # ticket up. The children route answers only through a direct role edge, so
+            # it is empty for them; it is asked only when the hub REFUSES ``messages``
+            # (no access, or a hub without that route), and its answer is the one the
+            # handler below reads. An unreachable hub is not asked twice.
+            async def _list(action: str):
+                return await HubProxy.call("GET", BuiltinEntityType.CONVERSATION, conv_id, action=action, strict=True)
+
             try:
-                children = await HubProxy.call(
-                    "GET",
-                    BuiltinEntityType.CONVERSATION,
-                    conv_id,
-                    action="flow_message",
-                    strict=True,
-                )
+                try:
+                    children = await _list("messages")
+                except HubError as e:
+                    if e.status_code not in (403, 404):
+                        raise
+                    children = await _list("flow_message")
             except HubError as e:
                 # Any failure ⇒ we cannot prove anything — abort without touching
                 # messages. One answer is certain, though: the hub holds no row here
@@ -3545,8 +3574,11 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
                     )
                     if not keep:
                         # remote=True and absent from the hub list ⇒ deleted
-                        # hub-side (or access revoked) — drop the stale copy.
+                        # hub-side (or access revoked) — drop the stale copy: the
+                        # pointer AND the child edge + row, since membership is
+                        # the edge and the pointer alone leaves the bubble showing.
                         dropped += 1
+                        await fm.erase_local(conv_id)
                     elif fm is not None and fm.kind == FlowMessageKind.INVITATION:
                         invitations.append(ptr)
                     else:

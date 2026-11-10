@@ -458,7 +458,7 @@ mtime (active = written within 5 minutes). Classifications, in priority order:
 | active assistant entry with no stop reason                     | `THINKING`     |
 | active assistant `stop_reason == "tool_use"`                   | `TOOL_CALL`    |
 | active `progress` entry                                        | `TOOL_RUNNING` |
-| active `user` entry older than 90s                             | `API_TIMEOUT`  |
+| active `user` entry older than 600s                            | `API_TIMEOUT`  |
 | active `user` entry otherwise                                  | `WORKING`      |
 | unrecognized tail                                              | `UNKNOWN`      |
 

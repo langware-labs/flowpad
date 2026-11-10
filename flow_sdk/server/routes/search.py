@@ -17,6 +17,7 @@ from flow_sdk.server.search_filters import (
     apply_scope_filter,
     apply_system_filter,
     apply_tag_filter,
+    wanted_tags,
     scope_record_project_ids,
 )
 
@@ -168,7 +169,7 @@ async def search_records(
     # the list (the count clause already counts them), keeping list/count in sync.
     scoped_pids = scope_record_project_ids(scope_filter) if scope_filter else ()
 
-    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+    tag_list = wanted_tags(tags)
 
     # Build calibration from query params
     cal_col_weights = None
@@ -273,6 +274,7 @@ async def search_records(
             record_type=record_type,
             status=status,
             calibration=calibration,
+            tags=tag_list,
         )
     except Exception:
         logger.warning("FTS search failed (index may not be ready), returning empty results", exc_info=True)
@@ -287,7 +289,6 @@ async def search_records(
     entities = apply_folder_filter(entities, parent_path, vault_root)
     entities = apply_containment_filter(entities, top_level, parent_type_id)
     entities = apply_system_filter(entities, include_system, scoped_pids)
-    entities = apply_tag_filter(entities, tag_list)
 
     total_count = len(entities)
     page = entities[offset : offset + limit]

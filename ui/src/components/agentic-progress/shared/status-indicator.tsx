@@ -188,13 +188,11 @@ export const workerStatusConfig: Record<WorkerStatus, StatusConfig> = {
   },
 };
 
-/** Calm states draw nothing in a compact status gutter (a list row). */
-const QUIET_WORKER_STATUSES = new Set<WorkerStatus>([WorkerStatus.IDLE, WorkerStatus.COMPLETE, WorkerStatus.INACTIVE, WorkerStatus.UNKNOWN]);
-
-/** Icon config for a compact status gutter, or undefined when the status is quiet / not a worker status.
- *  A stalled model call reads as an error there — the gutter has one error mark. */
-export function compactWorkerStatusConfig(v: unknown): StatusConfig | undefined {
-  if (!isWorkerStatus(v) || QUIET_WORKER_STATUSES.has(v)) return undefined;
+/** Icon config for a compact status gutter (a list row). Every row shows its worker status;
+ *  a missing or unrecognised status reads as Unknown. A stalled model call reads as an error there —
+ *  the gutter has one error mark. */
+export function compactWorkerStatusConfig(v: unknown): StatusConfig {
+  if (!isWorkerStatus(v)) return workerStatusConfig[WorkerStatus.UNKNOWN];
   if (v === WorkerStatus.API_TIMEOUT) return { ...workerStatusConfig[WorkerStatus.ERROR], label: workerStatusConfig[v].label };
   return workerStatusConfig[v];
 }

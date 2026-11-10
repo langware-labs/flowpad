@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.api_key import ApiKey
 
 from fastapi import HTTPException
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
 from flow_sdk.builtin.visitor import Visitor
@@ -119,6 +119,12 @@ class UserAlreadyExistsException(Exception):
         super().__init__(self.message)
 
 
+def flags_of_labels(labels) -> dict[str, bool]:
+    """The two flags a legacy user ``labels`` list carried."""
+    labels = labels or ()
+    return {"desktop": "--user-type--.desktop" in labels, "name_overridden": "--user--.name-overridden" in labels}
+
+
 class User(Entity):
     type: str = APIField(default=BuiltinEntityType.USER.value)
     name: str | None = APIField(None)
@@ -133,6 +139,10 @@ class User(Entity):
     user_id: str | None = APIField(None)
     last_login: datetime | None = APIField(None)
     onboarded: bool = APIField(default=False)
+    #: This machine's own person (the one desktop user), as opposed to a contact.
+    desktop: bool = APIField(default=False, sharing=Sharing.PRIVATE)
+    #: ``name`` was typed by the person, so bootstrap must not replace it from ``git config user.name``.
+    name_overridden: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     # Optional cloud organization the user belongs to (one org, hub-authoritative).
     # Set on cloud login from the hub login payload; the org itself is materialized
     # locally as a remote=True Organization at this id. Role lives on the edge here,
@@ -157,6 +167,16 @@ class User(Entity):
         if v is None or isinstance(v, str):
             return normalize_email(v)
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flags_from_labels(cls, data):
+        """A user row written before these two flags existed carried them as ``labels`` markers."""
+        if isinstance(data, dict) and "labels" in data:
+            data = dict(data)
+            for flag, held in flags_of_labels(data.pop("labels")).items():
+                data[flag] = bool(data.get(flag)) or held
+        return data
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -306,6 +326,27 @@ class User(Entity):
         return None
 
     @classmethod
+    async def _same_person_rows(cls, user_id: str | None, email: str | None) -> list["User"]:
+        """Every address-book row that is this person, the one to keep first.
+
+        A person is learned on two axes that may arrive separately (a roster
+        gives a hub id, a bundle sender gives an email), so one person can sit
+        in two rows until a sighting carries both. Order: the email row, then
+        every row holding the hub id, then the row whose local id IS the id.
+        """
+        found: dict[str, User] = {}
+        if email:
+            for row in await cls.get_all({"email": email}):
+                found.setdefault(row.id, row)
+        if user_id:
+            for row in await cls.get_all({"user_id": user_id}):
+                found.setdefault(row.id, row)
+            local = await cls.get_one({"id": user_id})
+            if local:
+                found.setdefault(local.id, local)
+        return list(found.values())
+
+    @classmethod
     async def upsert_contact(
         cls,
         *,
@@ -317,12 +358,12 @@ class User(Entity):
     ) -> "User | None":
         """The single writer into the address book.
 
-        Match by email or user_id (:meth:`get_by_identity`); backfill any
+        Find the person's rows by email and by user_id; backfill any
         missing-or-changed field (email, user_id, name, picture) and save only
-        when something changed (idempotent). No match → create a contact whose
-        local ``id`` is deterministically minted from the natural key so a
-        re-scan of the same participant never duplicates. Returns the contact,
-        or None when there is no usable identity at all.
+        when something changed (idempotent). When the person turns out to sit
+        in more than one row, the extra rows are folded into the first and
+        deleted. No match → create a contact. Returns the contact, or None when
+        there is no usable identity at all.
         """
         email = normalize_email(email)
         user_id = (user_id or "").strip() or None
@@ -331,12 +372,23 @@ class User(Entity):
         if not email and not user_id:
             return None
 
-        existing = await cls.get_by_identity(user_id=user_id, email=email)
-        if existing is not None:
+        rows = await cls._same_person_rows(user_id, email)
+        if rows:
+            existing = rows[0]
+            # A second row is the same person only when it holds the same hub id
+            # as the kept row. The desktop's own user row is never folded away.
+            hub_id = existing.user_id or user_id
+            duplicates = [
+                row for row in rows[1:] if hub_id and row.user_id == hub_id and not row.uname
+            ]
             changed = False
             # Backfill only what's missing/newly-known — never clobber an
             # existing value with an empty one; email/user_id are stable keys so
             # only set them when absent.
+            for row in duplicates:
+                email = email or normalize_email(row.email)
+                name = name or row.name
+                picture = picture or row.picture
             if email and not existing.email:
                 existing.email = email
                 changed = True
@@ -349,6 +401,8 @@ class User(Entity):
             if picture and existing.picture != picture:
                 existing.picture = picture
                 changed = True
+            for row in duplicates:
+                await row.delete()
             if changed:
                 return await existing.save()
             return existing
@@ -356,7 +410,7 @@ class User(Entity):
         from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
         contact = cls(
-            id=mint_uuid(key=f"contact:{user_id or email}"),
+            id=mint_uuid(),
             email=email,
             user_id=user_id,
             name=name,

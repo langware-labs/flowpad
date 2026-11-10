@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ContactsDialog } from '@src/components/contact-picker/ContactsDialog';
 
-vi.mock('@src/components/conversation/ContactPermissionsDialog', () => ({ ContactPermissionsDialog: () => null }));
+vi.mock('@src/components/conversation/ContactDialog', () => ({ ContactDialog: () => null }));
 vi.mock('@src/components/contact-picker/CreateContactsGroupDialog', () => ({
   CreateContactsGroupDialog: ({ open }: { open: boolean }) => (open ? <div data-testid="create-group-open" /> : null),
 }));

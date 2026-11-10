@@ -38,7 +38,7 @@ type BookmarkEntry =
   | { kind: 'annotation'; annotation: Annotation; timestamp: number };
 
 function AnnotationCard({ annotation }: { annotation: Annotation }) {
-  const isComment = annotation.labels?.includes('comment:');
+  const isComment = annotation.subkind === 'comment';
   return (
     <div
       className="bookmark-card flex flex-col gap-1 rounded border border-border bg-card p-2.5"
@@ -49,14 +49,6 @@ function AnnotationCard({ annotation }: { annotation: Annotation }) {
         <span className="text-xs font-medium text-foreground/80">
           {isComment ? <Trans>Comment</Trans> : <Trans>Prompt</Trans>}
         </span>
-        {annotation.labels?.map((l) => (
-          <span
-            key={l}
-            className={`rounded px-1 py-0.5 font-mono text-[9px] ${isComment ? 'bg-sky-400/10 text-sky-500' : 'bg-lime-400/10 text-lime-500'}`}
-          >
-            {l}
-          </span>
-        ))}
       </div>
       <p className="text-xs text-muted-foreground">{annotation.content}</p>
     </div>

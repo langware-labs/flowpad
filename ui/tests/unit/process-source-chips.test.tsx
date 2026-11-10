@@ -17,9 +17,15 @@ import { messageDirection, messageIconTag } from '@src/components/conversation/m
 const conv = new TypeId('conversation', '11111111-1111-4111-8111-111111111111');
 const msg = (n: number) => new TypeId('flow_message', `2222222${n}-2222-4222-8222-222222222222`);
 
-function proc(context: TypeId[]): AgenticProcess {
+const trig = (n: number) => new TypeId('trigger', `4444444${n}-4444-4444-8444-444444444444`);
+
+function proc(context: TypeId[], privateContext: TypeId[] = []): AgenticProcess {
   vi.spyOn(dataManager, 'subscribe').mockReturnValue(() => {});
-  return { typeId: new TypeId('agentic_process', '33333333-3333-4333-8333-333333333333'), sharedContextEntities: context } as unknown as AgenticProcess;
+  return {
+    typeId: new TypeId('agentic_process', '33333333-3333-4333-8333-333333333333'),
+    sharedContextEntities: context,
+    privateContextEntities: privateContext,
+  } as unknown as AgenticProcess;
 }
 
 afterEach(() => {
@@ -45,6 +51,14 @@ describe('ProcessSourceChips', () => {
     fireEvent.keyDown(trigger, { key: 'Enter' });
     const listed = screen.getAllByTestId(/^chip-flow_message-/).map((el) => el.dataset.testid);
     expect(listed).toEqual([3, 2, 1].map((n) => `chip-${String(msg(n))}`));
+  });
+
+  it('shows the callbacks a session set: one as its chip, several as one counted chip', () => {
+    render(<ProcessSourceChips process={proc([], [trig(1)])} />);
+    expect(screen.getByTestId(`chip-${String(trig(1))}`)).toBeTruthy();
+    cleanup();
+    render(<ProcessSourceChips process={proc([], [trig(1), trig(2)])} />);
+    expect(screen.getByTestId('process-source-triggers-count').textContent).toBe('2');
   });
 });
 

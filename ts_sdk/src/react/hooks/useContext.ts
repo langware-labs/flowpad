@@ -54,8 +54,6 @@ export function useContext() {
     currentUser: typeof dataContext.currentUser;
     visitorTypeId: typeof dataContext.visitorTypeId;
     someone: typeof dataContext.someone;
-    activeOntology: typeof dataContext.activeOntology;
-    activeLabels: typeof dataContext.activeLabels;
     manifests: typeof dataContext.manifests;
     plugins: typeof dataContext.plugins;
     project: typeof dataContext.project;
@@ -95,8 +93,6 @@ export function useContext() {
     currentUser: dataContext.currentUser,
     visitorTypeId: dataContext.visitorTypeId,
     someone: dataContext.someone,
-    activeOntology: dataContext.activeOntology,
-    activeLabels: dataContext.activeLabels,
     manifests: dataContext.manifests,
     plugins: dataContext.plugins,
     project: dataContext.project,
@@ -146,8 +142,6 @@ export function useContext() {
       currentUser: dataContext.currentUser,
       visitorTypeId: dataContext.visitorTypeId,
       someone: dataContext.someone,
-      activeOntology: dataContext.activeOntology,
-      activeLabels: dataContext.activeLabels,
       manifests: dataContext.manifests,
       plugins: dataContext.plugins,
       project: dataContext.project,
@@ -197,8 +191,6 @@ export function useContext() {
       typeIdChanged(prev.userTypeId, current.userTypeId) ||
       typeIdChanged(prev.visitorTypeId, current.visitorTypeId) ||
       prev.someone !== current.someone ||
-      prev.activeOntology !== current.activeOntology ||
-      prev.activeLabels !== current.activeLabels ||
       prev.manifests !== current.manifests ||
       prev.plugins !== current.plugins ||
       prev.project !== current.project ||

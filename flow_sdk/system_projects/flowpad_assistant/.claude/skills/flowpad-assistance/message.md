@@ -119,7 +119,8 @@ for c in json.load(sys.stdin)['data']:
 
 - "my latest conversation with Y" → among the matches, pick the **max `updated_date`**.
 - Multiple plausible matches with similar recency → list them and ask the user; do not guess.
-- A group conversation, or one about another subject, is not a match: everyone in it would read the message.
+- A reply to a message the user received, or a follow-up on it, goes in that message's own conversation (`--reply-to <msg-id>`), whatever its title. Only an explicit request from the user starts a new conversation for it.
+- For a message that answers nothing: a group conversation, or one about another subject, is not a match: everyone in it would read the message.
 - No match → never post into another conversation: `flow contacts find <name>`, then `flow conversation new <email|user_id> "<text>" --title "<subject>"` starts one; not in the address book → ask the user for the email.
 
 ## Step 2 — check cloud login (sends require it)

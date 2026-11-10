@@ -81,7 +81,6 @@ const TRACKED: Array<[label: string, mutate: (p: AgenticProcess) => void]> = [
 const NEGATIVE: Array<[label: string, mutate: (p: AgenticProcess) => void]> = [
   ['name',            (p) => { p.name = 'renamed'; }],
   ['tags',            (p) => { p.tags = ['a', 'b']; }],
-  ['labels',          (p) => { p.labels = ['x']; }],
   ['visible',         (p) => { p.visible = true; }],
   ['target_typeid_str', (p) => { p.target_typeid_str = 'markdown-deadbeef-dead-beef-dead-beefdeadbeef'; }],
   ['plan_path',       (p) => { p.plan_path = '/tmp/some-plan.md'; }],

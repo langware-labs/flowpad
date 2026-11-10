@@ -11,14 +11,14 @@ const DEFAULT_SEARCH_LIMIT = 20;
  *  its own UI on the same threshold instead of guessing at it. */
 export const MIN_SEARCH_QUERY_LENGTH = 2;
 
-const ANNOTATION_LABEL_DISPLAY: Record<string, string> = {
+const ANNOTATION_SUBKIND_DISPLAY: Record<string, string> = {
   prompt: 'user prompt',
+  quick_prompt: 'note',
 };
 
-export function getSearchResultBadgeLabel(result: { record_type: string; labels?: string[] }): string {
-  if (result.record_type === String(RecordType.ANNOTATION) && result.labels?.length) {
-    const key = result.labels[0].replace(/:$/, '');
-    return ANNOTATION_LABEL_DISPLAY[key] ?? key;
+export function getSearchResultBadgeLabel(result: { record_type: string; subkind?: string }): string {
+  if (result.record_type === String(RecordType.ANNOTATION) && result.subkind) {
+    return ANNOTATION_SUBKIND_DISPLAY[result.subkind] ?? result.subkind;
   }
   return result.record_type.replace('claude_', '');
 }
@@ -53,7 +53,7 @@ export interface SearchResult extends SearchRow {
   /** Epoch milliseconds; present on explicit recent-activity browse rows. */
   last_edited_at?: number | string | null;
   message_count?: number;
-  labels?: string[];
+  subkind?: string;
 }
 
 export interface UseRecordSearchResult {

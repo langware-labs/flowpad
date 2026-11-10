@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import type { User } from '@sdk';
-import { ContactPermissionsDialog } from '@src/components/conversation/ContactPermissionsDialog';
+import { ContactDialog } from '@src/components/conversation/ContactDialog';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -104,7 +104,7 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
       </Dialog>
 
       <CreateContactsGroupDialog open={creatingGroup} onOpenChange={setCreatingGroup} />
-      {detailFor && <ContactPermissionsDialog open onClose={() => setDetailFor(null)} user={detailFor} />}
+      {detailFor && <ContactDialog open onClose={() => setDetailFor(null)} user={detailFor} />}
     </>
   );
 }

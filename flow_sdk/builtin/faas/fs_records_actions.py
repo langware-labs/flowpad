@@ -483,6 +483,7 @@ class FsRecordsActionsMixin:
             apply_scope_filter,
             apply_system_filter,
             apply_tag_filter,
+            wanted_tags,
             resolve_project_scope,
             scope_record_project_ids,
         )
@@ -505,7 +506,7 @@ class FsRecordsActionsMixin:
         vault_root = qp.get("vault_root") or None
         include_system = qp.get("include_system", "").strip().lower() in ("true", "1")
         tags_raw = qp.get("tags") or ""
-        tag_list = [t.strip() for t in tags_raw.split(",") if t.strip()]
+        tag_list = wanted_tags(tags_raw)
 
         def _row(ent, *, snippet=None) -> dict:
             ent_status = getattr(ent, "status", None) or ""
@@ -522,7 +523,7 @@ class FsRecordsActionsMixin:
                 "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
                 "last_edited_at": getattr(ent, "last_edited_at", None),
                 "asset_ref": "",  # filled below; awaitable
-                "labels": getattr(ent, "labels", None) or [],
+                "subkind": getattr(ent, "subkind", None) or "",
             }
             for extra_field in ("session_id", "worker_session_id"):
                 val = getattr(ent, extra_field, None)
@@ -1526,7 +1527,9 @@ class FsRecordsActionsMixin:
 
         from pathlib import Path as _Path  # noqa: PLC0415
 
-        _p = _Path(index_path).expanduser().resolve() if index_path else None
+        from flow_sdk.fs_store.path_utils import disk_spelling  # noqa: PLC0415
+
+        _p = disk_spelling(_Path(index_path).expanduser()) if index_path else None
 
         # Surface stale callers still using the legacy `?project_id=<id>` shim
         # — it now silently triggers a full-tree walk (scope_filter=None).

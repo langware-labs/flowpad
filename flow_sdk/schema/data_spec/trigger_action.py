@@ -13,6 +13,9 @@ class ActionType(StrEnum):
     RUN_SCRIPT = "run_script"
     CALLBACK = "callback"
     RUN_AGENT = "run_agent"
+    #: Send ``prompt`` into the EXISTING session ``target_type_id`` names (started if stopped,
+    #: delivered when idle). Row-only: a session id is one machine's, so no ``trigger.json`` says it.
+    PROMPT_PROCESS = "prompt_process"
 
 
 class TriggerAction(DataSpec):
@@ -42,5 +45,5 @@ class TriggerAction(DataSpec):
     # lost its target entirely. An action that cannot say what it acts on cannot
     # be validated, cannot be searched for, and reads as "callback" in the UI.
     target_type_id: Optional[str] = None
-    # RUN_AGENT delivery: the prompt the agent runs with.
+    # RUN_AGENT / PROMPT_PROCESS delivery: the prompt the agent runs with.
     prompt: Optional[str] = None

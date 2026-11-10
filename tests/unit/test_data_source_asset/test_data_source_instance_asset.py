@@ -11,7 +11,7 @@ import uuid
 
 import pytest
 
-from flow_sdk.api.api_types.api_field import Persist
+from flow_sdk.api.api_types.api_field import Persist, Sharing
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import (
     RECEIVED_SETUP_DETAIL,
@@ -22,6 +22,7 @@ from flow_sdk.builtin.data_source import (
 )
 from flow_sdk.db.db_entity import DBEntity
 from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec
+from flow_sdk.sources.config import SourceConfig, config_field
 from flow_sdk.sources.families import RecordSource
 from tests.fixtures.identity import index_path
 
@@ -33,9 +34,22 @@ class _Mailbox(RecordSource):
     identity_config_key = "address"
 
 
+class _OwnAccountConfig(SourceConfig):
+    address: str = config_field("", sharing=Sharing.PRIVATE)
+    label: str = ""
+
+
+class _OwnAccountMailbox(_Mailbox):
+    """A mailbox whose address is whose it is — private to the machine — while its label is shared."""
+
+    provider = "asset-mailbox-private-test"
+    Config = _OwnAccountConfig
+
+
 @pytest.fixture
 def scope(folder_db, fresh_user_scope):
     DataDriver.register(DataDriver.for_class(_Mailbox, kind="datasource.test.asset"))
+    DataDriver.register(DataDriver.for_class(_OwnAccountMailbox, kind="datasource.test.asset"))
     return fresh_user_scope
 
 
@@ -64,6 +78,79 @@ async def test_the_file_holds_the_authored_fields_and_nothing_the_engine_writes(
     assert (document["name"], document["data_driver_name"]) == ("work mail", _Mailbox.provider)
     assert document["data_driver_config"] == {"address": "me@x.test"}
     assert not set(document) & set(RUNTIME_FIELDS)
+
+
+async def test_private_fields_stay_on_the_row_and_never_reach_the_file(scope):
+    """The file travels with the project, so it holds what is shared: not the config fields a driver
+    declares private, not a user owner. A re-read of the file — a teammate's edit pulled in — changes
+    the shared part and leaves this machine's own values alone."""
+    owner = await _local_owner()
+    source = DataSource(name="own", provider=_OwnAccountMailbox.provider, config={"address": "me@x.test", "label": "INBOX"})
+    await source.save()
+
+    document = _document(source)
+    assert document["data_driver_config"] == {"label": "INBOX"} and "owner" not in document
+
+    main = _folder(source) / "data_source.json"
+    main.write_text(main.read_text(encoding="utf-8").replace("INBOX", "Archive"), encoding="utf-8")
+    await index_path("data_source", _folder(source))
+
+    row = await DataSource.get_by_id(source.id)
+    assert row.config == {"address": "me@x.test", "label": "Archive"} and str(row.owner) == owner
+
+
+async def test_a_file_from_before_the_split_never_gives_its_authors_account_away(scope):
+    """An old file still names its author's address and user. Received, it parks without the address —
+    this machine signs in as its own account; saved by its author, the file loses both."""
+    received = await _indexed(scope, "theirs", provider=_OwnAccountMailbox.provider, owner=f"user-{uuid.uuid4()}")
+    assert (received.status, received.config) == (SourceStatus.SETUP.value, {})
+
+    mine = await _indexed(scope, "mine", provider=_OwnAccountMailbox.provider, owner=await _local_owner())
+    assert mine.config == {"address": "mine@x.test"}
+    mine.poll_interval_seconds = 60
+    await mine.save()
+    document = _document(mine)
+    assert "data_driver_config" not in document and "owner" not in document
+    assert (await DataSource.get_by_id(mine.id)).config == {"address": "mine@x.test"}
+
+
+async def test_the_upgrade_clears_the_private_config_a_received_source_adopted(scope, tmp_path):
+    """Before the split a received row took its author's address from the file. The one-time pass empties
+    it on a row another user owns, and leaves this machine's own source alone — on a real sqlite file."""
+    import sqlite3
+
+    from flow_sdk.migrations.migration_2026_11_received_source_private_config import migrate
+
+    def _source(owner: str) -> str:
+        return json.dumps({"provider": _OwnAccountMailbox.provider, "owner": owner, "config": {"address": "a@x.test", "label": "INBOX"}})
+
+    db = tmp_path / "flowpad.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE entities (id TEXT PRIMARY KEY, type TEXT, uname TEXT, data TEXT)")
+    conn.executemany("INSERT INTO entities VALUES (?, ?, ?, ?)", [
+        ("me", "user", "local", "{}"),
+        ("mine", "data_source", None, _source("user-me")),
+        ("theirs", "data_source", None, _source("user-author")),
+    ])
+    conn.commit()
+
+    assert migrate(dry_run=False, db=db).fields == [f"theirs: {_OwnAccountMailbox.provider}.address"]
+
+    held = {row_id: json.loads(data)["config"] for row_id, data in conn.execute("SELECT id, data FROM entities WHERE type = 'data_source'")}
+    assert held == {"mine": {"address": "a@x.test", "label": "INBOX"}, "theirs": {"label": "INBOX"}}
+    assert migrate(dry_run=False, db=db).fields == [], "a second run finds nothing"
+
+
+async def test_an_agent_owner_is_shared_and_written_to_the_file(scope):
+    """An agent is a project asset, so the source it owns says so in the file — a deploy box starts it from there."""
+    from flow_sdk.builtin.agent import Agent
+
+    agent = Agent(name=f"owner {uuid.uuid4().hex[:6]}", worker_type="claude", system_prompt="Be brief.")
+    await agent.save()
+    source = DataSource(name="agents", provider=_Mailbox.provider, config={"address": "a@x.test"}, owner=agent)
+    await source.save()
+
+    assert _document(source)["owner"] == f"agent-{agent.id}"
 
 
 async def test_runtime_fields_are_row_only_and_never_authored():

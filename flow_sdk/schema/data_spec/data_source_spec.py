@@ -36,9 +36,11 @@ class DataSourceSpec(AssetDocumentSpec):
     name: str = ""
     #: The ``DataDriver`` this source runs — its registry name.
     provider: str = Field(default="", alias="data_driver_name")
-    #: The driver's config for this instance. Value-free.
+    #: The driver's config for this instance. Value-free, and without the fields its ``Config`` declares
+    #: ``Sharing.PRIVATE`` (whose mailbox, a local path): those stay on the row of the machine they are about.
     config: dict[str, Any] = Field(default_factory=dict, alias="data_driver_config")
-    #: Whose source: the local user or an Agent (a TypeId string). Absent = the local user.
+    #: The Agent that owns the source (a TypeId string). A user owner is private to its machine and never
+    #: written; absent = the local user of whoever reads the file.
     owner: Optional[str] = None
     #: How signed provider webhooks reach this source; existing sources retain hub delivery.
     webhook_delivery: WebhookDelivery = WebhookDelivery.HUB

@@ -8,15 +8,6 @@ vi.mock('@sdk/react/hooks', async (importOriginal) => {
   return { ...actual, useAuth: vi.fn(), useEntitiesQuery: vi.fn() };
 });
 vi.mock('@src/hooks/entity-hooks/useEntity', () => ({ useEntity: vi.fn() }));
-vi.mock('@src/hooks/use-contact-permissions', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@src/hooks/use-contact-permissions')>();
-  return {
-    ...actual,
-    useContactPermissions: vi.fn(() => ({ permissions: [], refetch: vi.fn() })),
-    grantContactPermission: vi.fn(),
-    revokeContactPermission: vi.fn(),
-  };
-});
 vi.mock('@src/components/conversation/MessageComposer', () => ({
   MessageComposer: (props: { draft?: unknown; liveSessionId?: string }) => (
     <div data-testid={props.draft ? 'mock-draft-composer' : 'mock-composer'} data-session={props.liveSessionId ?? ''} />
@@ -97,15 +88,15 @@ describe('LiveSessionView header', () => {
     expect(screen.getByTestId('live-session-launch-toolbar')).toBeTruthy();
   });
 
-  it('host sees the standing-grant checkbox + reply-policy select, guest sees only the select', () => {
+  it('neither side is offered a way to auto-approve future sessions; both see the reply-policy select', () => {
     arrange(session(), [promptMsg(START, 'go')], HOST);
     render(
       <MemoryRouter>
         <LiveSessionView sessionId={SID} />
       </MemoryRouter>,
     );
-    expect(screen.getByTestId('live-session-standing-grant')).toBeTruthy();
-    expect(screen.getByTestId('live-session-standing-grant-scope')).toBeTruthy();
+    expect(screen.queryByTestId('live-session-standing-grant')).toBeNull();
+    expect(screen.queryByText(/auto-approve/i)).toBeNull();
     expect(screen.getByTestId('live-session-reply-policy')).toBeTruthy();
     expect(screen.queryByTestId('live-session-pause')).toBeNull();
     cleanup();

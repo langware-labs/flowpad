@@ -180,6 +180,8 @@ def scan_repo_tree(root: Path, infos: dict[str, TypeInfo], *, types: set[str] | 
             result.issues.append(AssetScanIssue(path=directory, message=str(error)))
             return
         for family in families:
+            if only is not None and container == root and family.name != only:
+                continue
             info = infos.get(family.name)
             if info is None and family.name in renamed and family.is_dir():
                 now = renamed[family.name]
@@ -217,5 +219,14 @@ def scan_repo_tree(root: Path, infos: dict[str, TypeInfo], *, types: set[str] | 
                 result.candidates.append(candidate)
                 if candidate.layout.kind is LayoutKind.FOLDER:
                     scan(candidate.path, candidate.path, ancestry)
-    scan(root, root, frozenset())
+    # A root that IS the assets folder, or one family folder in it, is read from its
+    # container: `<container>/agentic-assets/<family>/<entry>` is the only shape there is.
+    # What it finds still hangs under the root the caller named (``traversal_parent``).
+    only: str | None = None
+    given = root
+    if root.name == AGENTIC_ASSETS_DIR:
+        root = root.parent
+    elif root.parent.name == AGENTIC_ASSETS_DIR and (root.name in infos or root.name in renamed):
+        only, root = root.name, root.parent.parent
+    scan(root, given, frozenset())
     return result

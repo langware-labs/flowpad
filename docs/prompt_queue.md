@@ -126,6 +126,17 @@ _maybe_drain_queue(source):              [serialized by _QUEUE_LOCKS[id]]
   log injected | error
 ```
 
+### A prompt from outside the session (`deliver_when_idle`)
+
+`AgenticProcess.deliver_when_idle(prompt, source=…)` is the one call for "give this session a prompt
+whatever it is doing" (a trigger's callback uses it, source `trigger`): it re-shows the session's closed
+tab, enqueues, and — because the drain never cold-starts a terminal session — starts a stopped one, whose
+launch pops the head. The answer is admission.
+
+A prompt delivered to a LIVE terminal is pasted (bracketed) and submitted with a separate Enter once the
+terminal is quiet (`Shell.paste_then_submit`). Text and Enter in one write only submits a short single line: a
+long or multi-line prompt was typed into the composer and never sent.
+
 ### Reflection (how the UI stays live)
 
 ```
