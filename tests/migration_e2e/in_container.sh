@@ -6,6 +6,7 @@ set -euo pipefail
 
 PINNED_OLD_VERSION="${PINNED_OLD_VERSION:-0.2.25}"
 NEW_WHEEL_GLOB="/wheels/flowpad-*.whl"
+NEW_VERSION="${NEW_VERSION:?run.sh passes the version under test}"
 PORT="${LOCAL_SERVER_PORT:-9711}"
 
 banner() { echo; echo "============================================================"; echo "=== $*"; echo "============================================================"; }
@@ -23,9 +24,11 @@ wait_for_health() {
 }
 
 stop_server() {
-    # `flow start service` detaches a monitor + server pair; kill both.
-    pkill -f "flow_sdk.server.run" 2>/dev/null || true
+    # `flow start service` detaches a monitor + server pair; kill both. The monitor first: it
+    # restarts a killed server. 0.2.25's monitor is `flow_sdk.server.launch`; newer ones `.monitor`.
+    pkill -f "flow_sdk.server.launch" 2>/dev/null || true
     pkill -f "flow_sdk.server.monitor" 2>/dev/null || true
+    pkill -f "flow_sdk.server.run" 2>/dev/null || true
     sleep 2
     for _ in $(seq 1 10); do
         if ! curl -fsS "http://localhost:${PORT}/health/status" >/dev/null 2>&1; then
@@ -46,7 +49,9 @@ start_server_bg() {
 # -----------------------------------------------------------------------------
 banner "STAGE A — install pinned old version (${PINNED_OLD_VERSION})"
 # -----------------------------------------------------------------------------
-pip install --quiet "flowpad==${PINNED_OLD_VERSION}"
+# The OLD wheel pins none of its dependencies, so today's resolver hands it releases it never ran
+# with (pydantic-ai 2, MCP 2): hold them where that release was built (the repo's own bounds).
+pip install --quiet "flowpad==${PINNED_OLD_VERSION}" "pydantic-ai-slim[mcp]<2" "fastmcp<4" "mcp<2"
 installed_ver=$(pip show flowpad 2>/dev/null | awk '/^Version:/ {print $2}')
 test "$installed_ver" = "$PINNED_OLD_VERSION" \
     || fail "expected flowpad==${PINNED_OLD_VERSION}, got '${installed_ver}'"
@@ -94,8 +99,8 @@ NEW_WHEEL=$(ls $NEW_WHEEL_GLOB 2>/dev/null | head -n1)
 test -n "$NEW_WHEEL" || fail "no wheel at ${NEW_WHEEL_GLOB} — did run.sh mount /wheels?"
 pip install --quiet --upgrade --force-reinstall "$NEW_WHEEL"
 new_ver=$(pip show flowpad 2>/dev/null | awk '/^Version:/ {print $2}')
-test "$new_ver" = "0.2.26" \
-    || fail "expected flowpad==0.2.26 after upgrade, got '${new_ver}'"
+test "$new_ver" = "$NEW_VERSION" \
+    || fail "expected flowpad==${NEW_VERSION} after upgrade, got '${new_ver}'"
 echo "  ✓ upgraded to $(basename "$NEW_WHEEL") (Version: ${new_ver})"
 
 # -----------------------------------------------------------------------------
