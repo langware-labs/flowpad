@@ -23,8 +23,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-
 import { adjusted } from '../../adjustableTimeout';
+
 const BE = `http://localhost:${process.env.HP_BE_PORT || '6001'}`;
 const GRAPH = `${BE}/api/v1/graph`;
 // A session shown in Vibe is its Vibe HOST tab: `/dock/vibe/agentic_process-<id>`.

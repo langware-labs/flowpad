@@ -1,6 +1,6 @@
+import { adjusted } from '../../adjustableTimeout';
 import { test, expect, type Page } from '@playwright/test';
 import { dismissSetupModal, gotoShell, openTabViaMenu } from './helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Shell Tab Title & Switch Regression

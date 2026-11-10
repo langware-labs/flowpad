@@ -41,8 +41,6 @@ import { adjusted, adjustedBudget, ADJUSTABLE_PERF_FACTOR } from '../../adjustab
 
 test.skip(process.env.FLOWPAD_PERF_GATE !== '1', 'speed budgets run on a production build only (FLOWPAD_PERF_GATE=1)');
 
-if (ADJUSTABLE_PERF_FACTOR !== 1) console.log(`[perf] budgets x${ADJUSTABLE_PERF_FACTOR} (ADJUSTABLE_PERF_FACTOR)`);
-
 const BUDGET = { warmMs: 150, projectMs: 300, coldTerminalMs: 1000 };
 
 /**
@@ -162,6 +160,7 @@ const modeFlipMs = adjustedBudget(process.env.CI ? CI_MODE_FLIP_MS : MODE_FLIP_M
 const warmMs = adjustedBudget(process.env.CI ? CI_WARM_MS : BUDGET.warmMs);
 const projectMs = adjustedBudget(process.env.CI ? CI_PROJECT_MS : BUDGET.projectMs);
 const coldTerminalMs = adjustedBudget(process.env.CI ? CI_COLD_TERMINAL_MS : BUDGET.coldTerminalMs);
+if (ADJUSTABLE_PERF_FACTOR !== 1) console.log(`[perf] budgets x${ADJUSTABLE_PERF_FACTOR} (ADJUSTABLE_PERF_FACTOR)`);
 const ROUNDS = 20;
 /**
  * The request shapes a LOADER would use: tab materialization, an entity's identity,
