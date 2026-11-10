@@ -7,7 +7,7 @@ import { conversationFacets, isDeskTicket } from './conversation-category';
 /**
  * A help desk ticket's header chip, beside its title: the desk (staff — the source the ticket
  * arrived through, named after its desk) or "Support" (requester). The ticket's STATE is not here:
- * the status button in the conversation says it, and the inbox row wears it as a chip.
+ * the status button in the conversation says it, and the StreamInbox row wears it as a chip.
  * Renders nothing for any other conversation.
  */
 export function TicketHeaderChips({ conv }: { conv: Conversation | null }) {

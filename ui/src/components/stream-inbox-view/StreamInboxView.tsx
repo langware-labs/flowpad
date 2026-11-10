@@ -1439,7 +1439,7 @@ export function StreamInboxView({
 
   // List mode
   // The list's main verbs get a row of their own; the channel buttons sit at its far end. Where that
-  // row is not drawn (an agent's inbox, an embedded list, a selection in progress) they fall back to the filter row.
+  // row is not drawn (an agent's StreamInbox, an embedded list, a selection in progress) they fall back to the filter row.
   const hasTopRow = !agentId && !embedded && selectedCount === 0;
   const channelButtons = (
     <>

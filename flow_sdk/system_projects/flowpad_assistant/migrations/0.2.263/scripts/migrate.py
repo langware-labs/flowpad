@@ -1,4 +1,4 @@
-"""0.2.262: ``labels`` leaves every row and every stored tag becomes a valid one; a received data source
+"""0.2.263: ``labels`` leaves every row and every stored tag becomes a valid one; a received data source
 gives back its author's private config."""
 
 from flow_sdk.migrations.migration_2026_11_received_source_private_config import migrate as clear_received_private

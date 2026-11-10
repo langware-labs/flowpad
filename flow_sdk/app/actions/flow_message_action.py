@@ -1648,7 +1648,7 @@ async def conversation_pickup() -> ApiResponse:
 async def conversation_return() -> ApiResponse:
     """``POST conversation/<id>/return`` — the hub's action, answered here. Staff-side: hand a picked
     ticket back to the desk queue. The hub takes the caller off the ticket; the local row STAYS (unlike
-    ``leave``, which drops it) and is refreshed from the hub, so the inbox shows it as not picked up."""
+    ``leave``, which drops it) and is refreshed from the hub, so the StreamInbox shows it as not picked up."""
     try:
         someone_typeid, conv_id = _hub_conversation_target()
         if someone_typeid is None:

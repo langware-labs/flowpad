@@ -29,7 +29,7 @@ export function useHelpRequests(refresh: unknown): HelpRequestRow[] {
 /** One line per request: what was asked, of whom, and where it stands. */
 export function HelpRequestList({ rows, onOpen }: { rows: HelpRequestRow[]; onOpen: (row: HelpRequestRow) => void }) {
   const { t } = useLingui();
-  // The same tones a ticket wears in the inbox: waiting amber, live green, settled grey.
+  // The same tones a ticket wears in the StreamInbox: waiting amber, live green, settled grey.
   const statusOf = (row: HelpRequestRow) => {
     if (!row.delivered) return { label: t`Not sent yet`, icon: Clock, tone: AMBER_CHIP };
     if (row.status === 'resolved') return { label: t`Resolved`, icon: CircleCheck, tone: MUTED_CHIP };

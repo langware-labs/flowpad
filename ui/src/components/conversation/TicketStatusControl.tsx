@@ -15,7 +15,7 @@ import { ticketActionClassName } from './ticket-affordances';
 
 /**
  * A help desk ticket's status, as the button desk staff change it from: it wears the same label and
- * colour as the ticket's chip in the inbox list, and opens the three states a ticket can be moved to.
+ * colour as the ticket's chip in the StreamInbox list, and opens the three states a ticket can be moved to.
  */
 export function TicketStatusControl({
   ticket,

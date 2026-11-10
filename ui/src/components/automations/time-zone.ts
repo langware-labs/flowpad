@@ -16,7 +16,8 @@ export function zoneOffset(zone: string): string {
       const part = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'shortOffset' })
         .formatToParts(new Date())
         .find((p) => p.type === 'timeZoneName')?.value;
-      offset = (part ?? '').replace('GMT', 'UTC').replace('-', '−') || 'UTC';
+      // `GMT` alone or `GMT+0` (ICU builds differ) are both just UTC.
+      offset = (part ?? '').replace('GMT', 'UTC').replace('-', '−').replace(/^UTC[+−]0$/, 'UTC') || 'UTC';
     } catch {
       offset = '';
     }
