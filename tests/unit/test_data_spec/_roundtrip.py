@@ -18,6 +18,7 @@ from typing import Any, Literal, get_args, get_origin
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.assets.layout import Folder
+from flow_sdk.db.db_entity import EntityExpansion
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 from flow_sdk.fs_store.serializer.disk import DiskSerializer
 from flow_sdk.fs_store.serializer.fields import asset_class as _asset_class
@@ -48,6 +49,8 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
         return DockPointerSpec(viewType="project", pointer="p/editor/html/vfs/project-p/a.html")
     if ann is RequirementSpec:  # a closed `kind`: the sampler names one
         return RequirementSpec(kind="variable", name=f"{name.upper()}_V", why=f"{name}-why")
+    if ann is EntityExpansion:  # the per-viewer access expansion (PRIVATE): roles, not a shape
+        return EntityExpansion(roles=[f"{name}-role"], is_private=True)
     if isinstance(ann, type) and issubclass(ann, DataSpec):  # a field whose VALUE is a shape
         # `OVERRIDES` is keyed by class everywhere else (``populate``'s own top-level
         # loop); a shape reached only THROUGH another field's annotation — never
