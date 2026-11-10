@@ -9,7 +9,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Awaitable, Dict, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -356,6 +356,27 @@ async def handle_binary_message(connection_id: str, websocket: WebSocket, data: 
         logger.warning(f"Failed to decode binary message from {connection_id}: {e}")
 
 
+def _terminal_lane(message_data: dict) -> str | None:
+    """The terminal a ``terminal-command`` message is for, or None for every other message."""
+    if message_data.get("message_type") != "rest_api_msg" or message_data.get("action") != "terminal-command":
+        return None
+    body = message_data.get("body")
+    if not isinstance(body, dict):
+        return None
+    shell = body.get("shell_id") or body.get("session_id")
+    return str(shell) if shell else None
+
+
+async def _after(previous: asyncio.Task | None, message: Awaitable) -> None:
+    """Run ``message`` once the terminal's previous message has finished, however it finished."""
+    if previous is not None:
+        await asyncio.gather(previous, return_exceptions=True)
+    try:
+        await message
+    except Exception:
+        logger.exception("terminal-command failed")
+
+
 async def handle_json_message(connection_id: str, websocket: WebSocket, message_data: dict) -> bool:
     """
     Handle incoming JSON message.
@@ -596,6 +617,8 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
     # count of slow messages folded in.
     slow_logged_at = 0.0
     slow_since_log = 0
+    # One lane per terminal: its terminal-commands run in order, off this loop.
+    terminal_lanes: dict[str, asyncio.Task] = {}
     try:
         while True:
             # Receive message (text or binary)
@@ -636,6 +659,16 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
                     await send_personal_message(json.dumps(error_response), websocket)
                 except Exception:
                     break
+                continue
+
+            lane = _terminal_lane(message_data)
+            if lane:
+                # A terminal start takes seconds (spawn + stream replay seq); awaited here it held
+                # every later message on this connection — restoring 12 terminals left a resize
+                # waiting 3.4s. Ordered per terminal, so a shell's input still follows its start.
+                terminal_lanes[lane] = asyncio.create_task(
+                    _after(terminal_lanes.get(lane), handle_json_message(connection_id, websocket, message_data))
+                )
                 continue
 
             # Handle message
