@@ -5,6 +5,7 @@ import { CredentialsSubview, ViewType } from '../utils/ui/view-types';
  */
 export type WarningIconName =
   | 'AlertTriangle'
+  | 'ArrowUpCircle'
   | 'AlertCircle'
   | 'AlertOctagon'
   | 'Info'
@@ -70,6 +71,7 @@ export const WARNING_IDS = {
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
   EMPTY_PROJECTS: 'empty-projects',
   SETUP_INCOMPLETE: 'setup-incomplete',
+  HARNESS_UPDATE: 'harness-update',
 } as const;
 
 /**
@@ -254,6 +256,31 @@ export function createHarnessLoginWarning(reason: string): UserWarning {
     // The funding layer's own sentence for why — it is the only author of that fact.
     description: `${reason} Click to sign in or add a key.`,
     targetView: ViewType.CAPABILITIES,
+  };
+}
+
+/**
+ * A harness CLI is behind its newest release (`available`), or a session proved it too old
+ * for the model it asked for (`required`). The description is the command that updates it.
+ */
+export function createHarnessUpdateWarning(h: {
+  worker_type: string;
+  label: string;
+  version: string;
+  latest_version?: string;
+  update?: string;
+  update_command?: string;
+}): UserWarning {
+  const required = h.update === 'required';
+  const to = h.latest_version ? ` → ${h.latest_version}` : '';
+  return {
+    id: `${WARNING_IDS.HARNESS_UPDATE}-${h.worker_type}`,
+    icon: 'ArrowUpCircle',
+    color: required ? 'red' : 'yellow',
+    message: required ? `${h.label} is too old for this model` : `${h.label} ${h.version}${to} available`,
+    description: h.update_command ? `Update it: ${h.update_command}` : `Update ${h.label} to the newest version.`,
+    targetView: ViewType.CAPABILITIES,
+    diagnosable: false,
   };
 }
 

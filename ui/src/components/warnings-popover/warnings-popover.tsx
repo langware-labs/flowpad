@@ -34,6 +34,7 @@ import {
   Wifi,
   WifiOff,
   X,
+  ArrowUpCircle,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { create } from 'zustand';
@@ -51,6 +52,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Settings,
   Key,
   FolderX,
+  ArrowUpCircle,
 };
 
 // Map color names to Tailwind classes

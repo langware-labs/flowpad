@@ -154,6 +154,9 @@ class CapabilitySpec(BaseModel):
     # terminal spawns there (``compute/providers/desktop/provider.py`` tries
     # pwsh, then powershell, and only reaches cmd.exe when neither exists).
     install_commands: dict[str, str] = Field(default_factory=dict)
+    #: The npm package that publishes this CLI's releases. The background
+    #: update check reads its newest version from the npm registry; None → no check.
+    latest_version_npm: str | None = None
 
     @property
     def install_command(self) -> str | None:

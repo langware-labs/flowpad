@@ -39,7 +39,7 @@ src = lambda code: LLMSource(endpoint_typeid=f"llm_endpoint-{code}", reason="r",
 
 
 def test_contract_tables():
-    assert len(CODE_TABLE) == 11 and CODE_TABLE["budget_not_ready"] == (
+    assert len(CODE_TABLE) == 12 and CODE_TABLE["budget_not_ready"] == (
         "transient_error",
         "wait",
     )  # the contract's table

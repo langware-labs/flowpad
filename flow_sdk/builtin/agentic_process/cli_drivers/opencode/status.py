@@ -11,12 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.transcript_tail_status import tail_status
+from flow_sdk.core.capabilities.models import CapabilityKind
 from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 
 def opencode_tail_status(path: str | Path) -> WorkerStatus:
     """OpenCode's classifier over the shared JSONL tail scanner."""
-    return tail_status(path, _classify)
+    return tail_status(path, _classify, capability_kind=CapabilityKind.OPENCODE_CLI.value)
 
 
 def _classify(raw: dict[str, Any]) -> tuple[WorkerStatus | None, bool]:

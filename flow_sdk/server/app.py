@@ -237,7 +237,19 @@ async def _on_server_startup():
 
             publish_status_changed()
 
+        async def _check_cli_updates():
+            # Off the startup path: a slow or offline registry holds nothing.
+            from flow_sdk.core.capabilities.latest_version import refresh_latest_versions
+            from flow_sdk.core.status import publish_status_changed
+
+            try:
+                if await refresh_latest_versions():
+                    publish_status_changed()
+            except Exception as exc:  # noqa: BLE001
+                print(f"  CLI update check: failed ({exc})")
+
         _asyncio_disc.create_task(_discover_after_recovery(), name="capability-discovery")
+        _asyncio_disc.create_task(_check_cli_updates(), name="cli-update-check")
         # Mint MCP-server capabilities (<service>.mcp.<worker_type>) from the
         # indexed records so they exist after boot.
         _asyncio_disc.create_task(reconcile_mcp_capabilities(), name="mcp-capability-reconcile")
