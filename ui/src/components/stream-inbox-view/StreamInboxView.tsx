@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { markdownToPlain } from '@src/components/conversation/message-markdown';
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { CSSProperties, Dispatch, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from 'react';
 import {
   Archive,
   BookUser,
@@ -52,7 +52,12 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer, STREAM_INBOX_CHANNEL_PARAM } from '@src/navigation/DockPointer';
+import {
+  DockPointer,
+  STREAM_INBOX_CHANNEL_PARAM,
+  type StreamInboxColumns,
+  type StreamInboxDateWindow,
+} from '@src/navigation/DockPointer';
 import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
@@ -150,22 +155,37 @@ function readStoredChannels(key: string | null): string[] {
 // ── Column filters ──────────────────────────────────────────────────────────
 // One filter per row column, typed into the header line above that column:
 // From narrows on the sender names, Subject on the subject + preview text,
-// Date on the conversation's last activity. Local, like the channel filter.
-type DateWindow = 'any' | 'today' | '7d' | '30d';
+// Date on the conversation's last activity. URL-owned (`?from=&subject=&date=`), like the search.
+const NO_COLUMN_FILTER: StreamInboxColumns = { from: '', subject: '', date: 'any' };
 
-export interface ColumnFilter {
-  from: string;
-  subject: string;
-  date: DateWindow;
+function sameColumns(a: StreamInboxColumns, b: StreamInboxColumns): boolean {
+  return a.from === b.from && a.subject === b.subject && a.date === b.date;
 }
 
-const NO_COLUMN_FILTER: ColumnFilter = { from: '', subject: '', date: 'any' };
+/** A box whose value the dock URL owns: it types into a local draft and commits after a pause, so
+ *  history doesn't take one entry per keystroke. Back/forward re-seeds the draft. */
+function useUrlDraft<T>(
+  urlValue: T,
+  commit: (value: T) => void,
+  same: (a: T, b: T) => boolean = Object.is,
+): [T, Dispatch<SetStateAction<T>>] {
+  const [draft, setDraft] = useState(urlValue);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setDraft((cur) => (same(cur, urlValue) ? cur : urlValue)), [urlValue]);
+  const settled = useDebounced(draft);
+  useEffect(() => {
+    if (!same(settled, urlValue)) commit(settled);
+    // Commit only when the typed text settles; a dock change alone must not re-commit stale text.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settled]);
+  return [draft, setDraft];
+}
 
-function isColumnFilterActive(f: ColumnFilter): boolean {
+function isColumnFilterActive(f: StreamInboxColumns): boolean {
   return f.from.trim() !== '' || f.subject.trim() !== '' || f.date !== 'any';
 }
 
-function windowStart(date: DateWindow): number | null {
+function windowStart(date: StreamInboxDateWindow): number | null {
   if (date === 'any') return null;
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -175,7 +195,7 @@ function windowStart(date: DateWindow): number | null {
 }
 
 export function matchesColumnFilter(
-  f: ColumnFilter,
+  f: StreamInboxColumns,
   row: { senders: string; subjectLine: string; updated?: string | Date | null },
 ): boolean {
   const from = f.from.trim().toLowerCase();
@@ -227,7 +247,7 @@ interface ConversationListRowProps {
   /** Set while the list is narrowed to some channels: does this message's source pass? */
   channelMatch?: (message: FlowMessage, conversation: Conversation) => boolean;
   /** Set while a header column filter is engaged. */
-  columnFilter?: ColumnFilter;
+  columnFilter?: StreamInboxColumns;
   /** The list resolves attribution once and hands each row its answer. */
   attributionFor: (
     origin: FlowMessage['origin'],
@@ -775,7 +795,17 @@ export function StreamInboxView({
         : undefined,
     [channelFilter, ownerChannels],
   );
-  const [columnFilter, setColumnFilter] = useState<ColumnFilter>(NO_COLUMN_FILTER);
+  // The list filters on the URL's value; the boxes hold the draft.
+  const urlColumns = currentDock?.streamInboxColumns ?? NO_COLUMN_FILTER;
+  const columnFilter = useMemo<StreamInboxColumns>(
+    () => ({ from: urlColumns.from, subject: urlColumns.subject, date: urlColumns.date }),
+    [urlColumns.from, urlColumns.subject, urlColumns.date],
+  );
+  const [columnInput, setColumnInput] = useUrlDraft(
+    columnFilter,
+    (next) => currentDock && navigation.openDock(currentDock.withStreamInboxColumns(next)),
+    sameColumns,
+  );
   const [fromWidth, setFromWidth] = useState(readFromWidth);
   const listRef = useRef<HTMLDivElement | null>(null);
   const commitFromWidth = useCallback((width: number) => {
@@ -820,16 +850,22 @@ export function StreamInboxView({
       (currentDock.streamInboxView !== 'all' ||
         currentDock.streamInboxSearch ||
         currentDock.pageBefore ||
-        currentDock.streamInboxChannels !== null)
+        currentDock.streamInboxChannels !== null ||
+        columnFilterActive)
     )
-      navigation.openDock(currentDock.withStreamInboxFilters({ view: 'all', search: '' }).withStreamInboxChannels([]));
-    setColumnFilter(NO_COLUMN_FILTER);
+      navigation.openDock(
+        currentDock
+          .withStreamInboxFilters({ view: 'all', search: '' })
+          .withStreamInboxChannels([])
+          .withStreamInboxColumns(NO_COLUMN_FILTER),
+      );
+    setColumnInput(NO_COLUMN_FILTER);
     setSelectedIds(new Set());
   });
   const setColumn = useCallback(
-    <K extends keyof ColumnFilter>(key: K, value: ColumnFilter[K]) =>
-      setColumnFilter((cur) => ({ ...cur, [key]: value })),
-    [],
+    <K extends keyof StreamInboxColumns>(key: K, value: StreamInboxColumns[K]) =>
+      setColumnInput((cur) => ({ ...cur, [key]: value })),
+    [setColumnInput],
   );
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();
@@ -852,18 +888,12 @@ export function StreamInboxView({
   // `text: ""`), so the backend searches BOTH residences and hands back
   // conversation ids. The URL commit debounces typing; the previous result is held
   // while the next request is in flight so the list doesn't blank.
-  // URL-owned (`?q=`): the box types into local state and commits to the dock URL after a pause,
-  // so history doesn't take one entry per keystroke. Back/forward re-seeds the box.
+  // URL-owned (`?q=`).
   const searchQuery = currentDock?.streamInboxSearch ?? '';
-  const [searchInput, setSearchInput] = useState(searchQuery);
-  useEffect(() => setSearchInput(searchQuery), [searchQuery]);
-  const settledSearch = useDebounced(searchInput);
-  useEffect(() => {
-    if (settledSearch !== searchQuery && currentDock)
-      navigation.openDock(currentDock.withStreamInboxFilters({ search: settledSearch }));
-    // Commit only when the typed text settles; a dock change alone must not re-commit stale text.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settledSearch]);
+  const [searchInput, setSearchInput] = useUrlDraft(
+    searchQuery,
+    (next) => currentDock && navigation.openDock(currentDock.withStreamInboxFilters({ search: next })),
+  );
   const needle = searchQuery.trim();
   const searchActive = needle !== '';
   const [matchIds, setMatchIds] = useState<Set<string>>(new Set());
@@ -1633,7 +1663,7 @@ export function StreamInboxView({
             </span>
             <input
               type="text"
-              value={columnFilter.from}
+              value={columnInput.from}
               onChange={(e) => setColumn('from', e.target.value)}
               placeholder={t`From`}
               aria-label={t`Filter by sender`}
@@ -1656,7 +1686,7 @@ export function StreamInboxView({
             </span>
             <input
               type="text"
-              value={columnFilter.subject}
+              value={columnInput.subject}
               onChange={(e) => setColumn('subject', e.target.value)}
               placeholder={t`Subject`}
               aria-label={t`Filter by subject`}
@@ -1664,8 +1694,8 @@ export function StreamInboxView({
               data-testid="stream-inbox-filter-subject"
             />
             <select
-              value={columnFilter.date}
-              onChange={(e) => setColumn('date', e.target.value as DateWindow)}
+              value={columnInput.date}
+              onChange={(e) => setColumn('date', e.target.value as StreamInboxDateWindow)}
               aria-label={t`Filter by date`}
               className={columnInputClass}
               data-testid="stream-inbox-filter-date"
@@ -1678,7 +1708,7 @@ export function StreamInboxView({
             {columnFilterActive && (
               <button
                 type="button"
-                onClick={() => setColumnFilter(NO_COLUMN_FILTER)}
+                onClick={() => setColumnInput(NO_COLUMN_FILTER)}
                 className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
                 title={t`Clear filters`}
                 aria-label={t`Clear filters`}
