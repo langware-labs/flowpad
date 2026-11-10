@@ -890,7 +890,7 @@ export function MessageComposer({
         selectedTypeIds={[]}
         onPick={chooseCredentialForSecureShare}
         onUnpick={() => undefined}
-        filter={(descriptor) => new TypeId(descriptor.typeid).type === 'credential'}
+        types={['credential']}
         searchPlaceholder={t`Choose a credential to share securely…`}
       />
       {secretShareSource && (
