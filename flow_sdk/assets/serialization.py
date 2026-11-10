@@ -144,8 +144,15 @@ def _field_adapter(cls: type, name: str) -> TypeAdapter:
     return TypeAdapter(cls.model_fields[name].rebuild_annotation())
 
 
+def _held(obj: Any, name: str, default: Any = None) -> Any:
+    """What the FILE holds for one field: the entity's value, or what the entity says the file gets
+    (its ``file_value``) when part of the field is private to this machine."""
+    file_value = getattr(obj, "file_value", None)
+    return file_value(name) if callable(file_value) and hasattr(obj, name) else getattr(obj, name, default)
+
+
 def _field_value(obj: Any, name: str) -> Any:
-    value = getattr(obj, name)
+    value = _held(obj, name)
     # Hydrated rows can already hold their serialized scalar (e.g. an enum's
     # string value). Only structured/custom values need annotation serialization.
     return value if value is None or isinstance(value, (str, int, float, bool)) else _field_adapter(type(obj), name).dump_python(value)
@@ -495,7 +502,7 @@ def _patch_entity_main(obj: Any, info: Any, main: Path) -> None:
     from pydantic_core import to_jsonable_python  # noqa: PLC0415
 
     def _back_to_default(key: str) -> bool:
-        held = getattr(obj, field_of[key], _NOT_ON_OBJ)
+        held = _held(obj, field_of[key], _NOT_ON_OBJ)
         if held is None:
             # Unset because the file's value did not validate (``validate_best_effort``), not because the
             # entity cleared it: the bad value is kept for a person to fix, never silently removed.

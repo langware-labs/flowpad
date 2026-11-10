@@ -35,7 +35,7 @@ from functools import partial
 from typing import Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional, Sequence
 
 from flow_sdk.sources.base import positive_int
-from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.config import Sharing, SourceConfig, config_field
 from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejected, SourceUnavailable, Unsupported
 from flow_sdk.sources.families import MessageSource
@@ -102,7 +102,7 @@ class GmailConfig(SourceConfig):
     """What a gmail source is configured with. The hosts are ``host[:port]``; empty is Google's own
     server over SSL, a loopback host is a local double reached without TLS."""
 
-    address: str = ""
+    address: str = config_field("", sharing=Sharing.PRIVATE)
     imap_host: str = ""
     smtp_host: str = ""
 

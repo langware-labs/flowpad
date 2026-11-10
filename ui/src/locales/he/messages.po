@@ -1920,6 +1920,10 @@ msgstr "{used} מתוך {limit} {windowText}"
 msgid "{value}"
 msgstr "{value}"
 
+#: src/components/automations/blocks/TimeZonePicker.tsx
+msgid "{value} — not this computer's time zone ({here})"
+msgstr ""
+
 #: src/components/token-plan/FundingChain.tsx
 msgid "{who} allowance"
 msgstr ""
@@ -4123,6 +4127,10 @@ msgstr "עונה: {0}"
 msgid "answered by {who}"
 msgstr ""
 
+#: src/components/conversation/TicketStatusControl.tsx
+msgid "Answered, off the queue"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Answers fast and hands longer work to its staff as tasks. Their progress arrives on the agent's Tasks channel; only the agent talks to people."
 msgstr "עונה מהר ומעביר עבודה ארוכה לצוות כמשימות. ההתקדמות מגיעה לערוץ המשימות של הסוכן; רק הסוכן מדבר עם אנשים."
@@ -5160,6 +5168,10 @@ msgstr "חזרו למשימות"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Back to the conversation message that started this session"
 msgstr "חזרה להודעה בשיחה שפתחה את הסשן הזה"
+
+#: src/components/conversation/TicketStatusControl.tsx
+msgid "Back to the desk queue"
+msgstr ""
 
 #: src/components/conversation/AutomationMessageActions.tsx
 msgid "Back to the session"
@@ -6638,6 +6650,7 @@ msgstr "נקו את אינדקס {0}"
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/hooks/FilterMaskIndicator.tsx
 #: src/notifications/feed/NotificationFeed.tsx
+#: src/notifications/NotificationOutlet.tsx
 msgid "Clear all"
 msgstr "ניקוי הכל"
 
@@ -7011,6 +7024,7 @@ msgid "Close to the Right"
 msgstr "סגרו לימין"
 
 #: src/components/conversation/conversation-category.ts
+#: src/components/conversation/TicketStatusControl.tsx
 #: src/components/help/MyHelpRequests.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
@@ -7165,6 +7179,7 @@ msgstr "שיתוף פעולה"
 msgid "Collaboration Room"
 msgstr "חדר שיתוף פעולה"
 
+#: src/components/automations/blocks/WhenBlock.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/data-sources/DataSourceRow.tsx
@@ -11075,6 +11090,7 @@ msgstr "מנוע קלט/פלט לדיסק"
 #: src/components/warnings-popover/warnings-popover.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
+#: src/notifications/NotificationOutlet.tsx
 msgid "Dismiss"
 msgstr "סגרו"
 
@@ -11809,8 +11825,8 @@ msgid "Empty means no limit. Windows are UTC days, weeks (Monday) and months."
 msgstr "שדה ריק פירושו ללא הגבלה. חלונות הזמן הם ימי UTC, שבועות (מיום שני) וחודשים."
 
 #: src/components/automations/blocks/WhenBlock.tsx
-msgid "Empty means this computer's zone ({localZone})."
-msgstr "ריק פירושו אזור הזמן של המחשב הזה ({localZone})."
+#~ msgid "Empty means this computer's zone ({localZone})."
+#~ msgstr "ריק פירושו אזור הזמן של המחשב הזה ({localZone})."
 
 #: src/components/data-sources/ReplayDialog.tsx
 msgid "Empty replays everything. With a date, only records from then on are dropped — undated records are kept, and the sync window is widened if it does not reach that far back."
@@ -12516,6 +12532,7 @@ msgstr "יציאה ממסך מלא"
 msgid "Exit local"
 msgstr "יציאה מהמצב המקומי"
 
+#: src/components/automations/blocks/WhenBlock.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/conversation/AttachmentChip.tsx
@@ -20463,6 +20480,10 @@ msgstr "אין ממצאים מבוססים ליישום עבור הנכס הזה
 msgid "No substantiated findings to apply for this skill."
 msgstr "אין ממצאים מבוססים ליישום עבור המיומנות הזו."
 
+#: src/components/automations/blocks/TimeZonePicker.tsx
+msgid "No such time zone."
+msgstr ""
+
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "No Task Selected"
 msgstr "לא נבחרה משימה"
@@ -20886,6 +20907,7 @@ msgid "Not opened yet"
 msgstr "עוד לא נפתח"
 
 #: src/components/conversation/conversation-category.ts
+#: src/components/conversation/TicketStatusControl.tsx
 msgid "Not picked up"
 msgstr "טרם נקלטה"
 
@@ -21540,8 +21562,12 @@ msgid "Once per project, the first time it is opened. Enabling this turns off au
 msgstr "פעם אחת לכל פרויקט, בפתיחה הראשונה שלו. הפעלת האפשרות מכבה את ההפעלה האוטומטית של שאר הסוכנים בפרויקט."
 
 #: src/components/automations/automation-words.ts
-msgid "Once, at {when}"
-msgstr "פעם אחת, ב-{when}"
+#~ msgid "Once, at {when}"
+#~ msgstr "פעם אחת, ב-{when}"
+
+#: src/components/automations/automation-words.ts
+msgid "Once, on {date} at {time}"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "One click — a new code for one user."
@@ -23518,6 +23544,7 @@ msgid "Picked up by {by}"
 msgstr "נקלטה על ידי {by}"
 
 #: src/components/conversation/conversation-category.ts
+#: src/components/conversation/TicketStatusControl.tsx
 msgid "Picked up by you"
 msgstr "נקלטה על ידכם"
 
@@ -26563,6 +26590,10 @@ msgstr "הרצת פקודה"
 msgid "Run a new analysis of this session — adds another entry, previous analyses are kept"
 msgstr "הריצו ניתוח חדש של סשן זה — מוסיף ערך נוסף, הניתוחים הקודמים נשמרים"
 
+#: src/components/automations/automation-words.ts
+msgid "run a process with a prompt"
+msgstr ""
+
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "Run a rebuild for this folder there; the JSON appears at <0>index.md.json</0> in this folder."
 msgstr "הפעילו שחזור לתיקייה זו; ה-JSON מופיע ב-<0>index.md.json</0> בתיקייה זו."
@@ -26690,6 +26721,15 @@ msgstr "הריצו פעם אחת עכשיו"
 #: src/components/automations/AutomationPage.tsx
 msgid "Run only once, ever"
 msgstr "הרצה חד-פעמית בלבד"
+
+#: src/components/automations/automation-words.ts
+msgid "run process {name} with prompt"
+msgstr ""
+
+#. placeholder {0}: part.prompt
+#: src/components/automations/ThenSteps.tsx
+msgid "run process <0/> with <1><2>prompt</2><3>{0}</3></1>"
+msgstr ""
 
 #: src/components/code-editor/EditorPane.tsx
 msgid "Run script"
@@ -26929,6 +26969,10 @@ msgstr "פועל רק כשהמחשב הזה ער"
 msgid "Runs while Flowpad is open on this computer. A run missed while it was closed is skipped."
 msgstr "רץ כל עוד Flowpad פתוח במחשב הזה. הרצה שהוחמצה בזמן שהאפליקציה הייתה סגורה תדולג."
 
+#: src/components/automations/blocks/WhenBlock.tsx
+msgid "Runs while Flowpad is open on this computer. If it was closed at that time, it runs when Flowpad opens again."
+msgstr ""
+
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "runtime"
 msgstr "זמן ריצה"
@@ -27128,8 +27172,8 @@ msgid "Saved after the endpoint is created. Never shown again."
 msgstr "נשמר לאחר יצירת נקודת הקצה. לא יוצג שוב."
 
 #: src/components/automations/blocks/WhenBlock.tsx
-msgid "Saved as"
-msgstr "נשמר בשם"
+#~ msgid "Saved as"
+#~ msgstr "נשמר בשם"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Saved Contexts"
@@ -27160,6 +27204,7 @@ msgstr ""
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/TicketStatusControl.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/DetectedKeys.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -32113,6 +32158,10 @@ msgstr "המחשב הזה"
 msgid "This computer · {0}"
 msgstr "המחשב הזה · {0}"
 
+#: src/components/automations/blocks/TimeZonePicker.tsx
+msgid "This computer · {here}"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/use-place-display.ts
 msgid "This computer · every machine"
 msgstr "המחשב הזה · כל המכונות"
@@ -32851,6 +32900,14 @@ msgstr "פסק זמן לשרשור (דקות)"
 msgid "Threads"
 msgstr "שרשורים"
 
+#: src/components/conversation/TicketStatusControl.tsx
+msgid "Ticket status"
+msgstr ""
+
+#: src/components/conversation/TicketStatusControl.tsx
+msgid "Ticket status — click to change"
+msgstr ""
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -32897,9 +32954,17 @@ msgstr "טווח זמן: 60 דקות"
 msgid "Time spent"
 msgstr "זמן בעבודה"
 
-#: src/components/automations/blocks/WhenBlock.tsx
+#: src/components/automations/blocks/TimeZonePicker.tsx
 msgid "Time zone"
 msgstr "אזור זמן"
+
+#: src/components/automations/blocks/TimeZonePicker.tsx
+msgid "Time zone — type a city"
+msgstr ""
+
+#: src/components/automations/blocks/TimeZonePicker.tsx
+msgid "Time zone: this computer's"
+msgstr ""
 
 #: src/components/lens-viewer/CliLogViewer.tsx
 msgid "time:"
@@ -35530,6 +35595,10 @@ msgstr "אישרתם רק את הסשן הזה — {guestName} יצטרך/תצט
 #. placeholder {0}: team.my_roles?.join(', ')
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "you are {0}"
+msgstr ""
+
+#: src/components/conversation/TicketStatusControl.tsx
+msgid "You are answering it"
 msgstr ""
 
 #: src/components/organization/tabs/OrgView.tsx
