@@ -98,7 +98,7 @@ test('slack: channel ids only — no account key in the form; a non-channel-id f
   await add.getByRole('button', { name: 'Cancel' }).click();
 
   // Editing an existing source is where its channel is typed: a non-channel-id must be refused
-  // by the driver's Config (the pattern lives there, not in the form hints) and nothing stored.
+  // (the channel's pattern) and nothing stored.
   const api = await apiContext();
   const name = `e2etest-slack-gate-${Date.now()}`;
   const created = await api.post('/api/v1/graph/data_source', { data: { name, provider: 'slack', config: {} } });
@@ -120,7 +120,8 @@ test('slack: channel ids only — no account key in the form; a non-channel-id f
     }
     await dialog.locator(`#ds-${channelKey}`).fill('definitely-not-a-channel-id');
     await dialog.getByRole('button', { name: /^(Save|Save changes)$/ }).click();
-    await expect(dialog.getByTestId('ds-save-error'), 'the driver must refuse a non-channel-id').toBeVisible();
+    // Problems are shown once Save is pressed: the channel's pattern refuses it and the dialog stays.
+    await expect(dialog, 'the channel pattern must refuse a non-channel-id').toContainText('not valid');
     await expect(dialog).toBeVisible();
     const row = ((await (await api.get(`/api/v1/graph/data_source/${sourceId}`)).json()).data ?? {}) as {
       config?: Record<string, unknown>;
