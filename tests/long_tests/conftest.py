@@ -607,6 +607,12 @@ async def _sign_in_to_the_local_hub(worker: str) -> None:
     if not hub or urlparse(hub).hostname not in {"localhost", "127.0.0.1", "::1"}:
         pytest.skip(f"{worker}: has no vendor login to ride and no LOCAL hub (FLOWPAD_HUB_URL) funds it")
     default_service_config.flowpad_hub_url = hub
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
+
+    if resolve_hub_api_key():
+        # Already signed in here (an earlier worker of this test): one account per box, or the
+        # endpoint list cached for the first account would be spent with the second one's login.
+        return
     account = {"email": f"fund-{uuid.uuid4().hex[:12]}@local.test", "password": f"pw-{uuid.uuid4().hex[:16]}"}
     try:
         async with httpx.AsyncClient(base_url=f"{hub}/api/v1", timeout=30.0) as anon:
