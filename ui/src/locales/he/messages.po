@@ -15347,6 +15347,10 @@ msgstr "ב-Slack, צרו ערוץ פרטי בשם"
 msgid "In Telegram, message @BotFather and send /newbot."
 msgstr "ב-Telegram, שלחו הודעה ל-@BotFather ואז שלחו /newbot."
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "In that channel, type /invite @Flowpad and send it, so the agent can read and answer there."
+msgstr "בערוץ הזה הקלידו ‎/invite @Flowpad‎ ושלחו, כדי שהסוכן יוכל לקרוא ולענות שם."
+
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
 msgid "in the project under recordings/"
 msgstr ""

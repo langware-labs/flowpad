@@ -387,6 +387,7 @@ function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: ()
       const answer = await Onboarding.channelSetup(d.node_typeid, {
         source: made!.data_source_id!,
         config: { channel: { id: slackLinkId, name: slackName.replace(/^#/, '').trim() } },
+        credential: { name: 'slack_channel', values: {}, choice: 'signin' },
         access: { open_to_all: true },
         exclusive: true,
         verify: true,
@@ -925,6 +926,11 @@ function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: ()
                     value={slackName}
                     onChange={(e) => setSlackName(e.target.value)}
                   />
+                </li>
+                <li>
+                  <Trans>
+                    In that channel, type /invite @Flowpad and send it, so the agent can read and answer there.
+                  </Trans>
                 </li>
                 <li>
                   <Trans>Right-click the channel → Copy → Copy link, and paste it here:</Trans>

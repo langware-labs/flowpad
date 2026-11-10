@@ -39,7 +39,8 @@ export interface ChannelSetupBody {
   source: string;
   config?: Record<string, unknown>;
   access?: { open_to_all?: boolean; allowed_senders?: string[] };
-  credential?: { name: string; values: Record<string, string> };
+  /** `choice` names the credential's way when that way holds no value: a sign-in (`signin`). */
+  credential?: { name: string; values: Record<string, string>; choice?: string };
   steps?: { step: string; values?: Record<string, string> }[];
   /** Turn off this sandbox's other sources of the same driver (a polled bot is read by one agent only). */
   exclusive?: boolean;
