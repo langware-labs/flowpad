@@ -69,7 +69,9 @@ def test_a_slow_import_phase_keeps_reporting_growth(tmp_path):
     lines = _boot_lines(_run_reporting_import(tmp_path, "slowpkg"))
 
     assert len(lines) >= 4, [m.group(0) for m in lines]
-    counts = [int(m["modules"]) for m in lines]
+    # The closing ``phase=done`` line is written for the phase change, whatever the count: when the
+    # last periodic look came after the last import it repeats that count. Growth is the import lines'.
+    counts = [int(m["modules"]) for m in lines if m["phase"] != "done"]
     assert counts == sorted(counts) and len(set(counts)) == len(counts), "every line is a strictly larger count"
     assert lines[0]["t"] == "0.0"
     assert lines[-1]["phase"] == "done"
