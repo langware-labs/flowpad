@@ -62,6 +62,14 @@ function thinkingBlocks(container: HTMLElement): string[][] {
   );
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.thinking_step_groups.rules: FAILING? read this tag's rules before
+//       editing groupTurnEvents.ts - a tool row must seal the thinking before it, and
+//       splitLiveGroup must merge every dense group since the last message
+// flowpad:endcapsule tag
 describe('FLOWPAD-2350 — one Thinking block per step', () => {
   afterEach(() => {
     cleanup();
