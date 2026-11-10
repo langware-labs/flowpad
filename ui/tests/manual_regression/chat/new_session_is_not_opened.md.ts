@@ -4,11 +4,10 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoLanding, submitFromLanding } from './helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('home submit opens a shell session', () => {
   test('test 1: submitting from home opens a new shell session', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoLanding(page);
 

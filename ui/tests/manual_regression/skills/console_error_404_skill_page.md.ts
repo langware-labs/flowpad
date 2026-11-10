@@ -5,7 +5,6 @@
  * Skills are folded into the unified Assets browser at /dock/assets/list/skill.
  */
 import { test, expect } from '@playwright/test';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Skills view — no 404', () => {
   test.beforeEach(async ({ page }) => {
@@ -15,7 +14,7 @@ test.describe('Skills view — no 404', () => {
   });
 
   test('test 1: Skills view loads without 404 console errors', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -23,7 +22,7 @@ test.describe('Skills view — no 404', () => {
     });
 
     await page.goto('/dock/assets/list/skill');
-    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
     await expect(page.locator('#root')).not.toBeEmpty();
     expect(page.url()).toContain('/dock/assets/list/skill');
     await page.waitForTimeout(3_000);

@@ -30,7 +30,6 @@
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { adjusted } from '../../adjustableTimeout';
 
 const BE = `http://localhost:${process.env.AL_BE_PORT || '6001'}`;
 const GRAPH = `${BE}/api/v1/graph`;
@@ -125,7 +124,7 @@ test('an auto-launched agent answers as itself, not as vibe', async ({ page }) =
   await composer.press('Enter');
 
   const reply = pane.locator('[data-testid="execution-message"][data-role="assistant"]').first();
-  await expect(reply).not.toBeEmpty({ timeout: adjusted(120_000) });
+  await expect(reply).not.toBeEmpty({ timeout: 120_000 });
   // The whole turn, not its first streamed chunk: the backend row says when it is done.
   await expect
     .poll(
@@ -133,7 +132,7 @@ test('an auto-launched agent answers as itself, not as vibe', async ({ page }) =
         const r = (await (await fetch(`${GRAPH}/agentic_process/${processId}`)).json()).data;
         return !r.busy && r.worker_status === 'complete';
       },
-      { timeout: adjusted(120_000) },
+      { timeout: 120_000 },
     )
     .toBe(true);
 

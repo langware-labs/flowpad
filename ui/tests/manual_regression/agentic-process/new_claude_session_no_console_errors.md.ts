@@ -8,7 +8,6 @@
  */
 import { test, expect } from '@playwright/test';
 import { AP_OPENER } from './_ap_helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
@@ -17,7 +16,7 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 }
 
 test('creating a Claude session produces no console errors', async ({ page }) => {
-  test.setTimeout(adjusted(60_000));
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('console', msg => {
     if (msg.type() === 'error') errors.push(msg.text());
@@ -27,15 +26,15 @@ test('creating a Claude session produces no console errors', async ({ page }) =>
   await dismissSetupModal(page);
   await page.goto('/dock/shell/new_terminal');
   const skip = page.getByRole('button', { name: 'Skip' });
-  if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
-  await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: adjusted(60_000) });
-  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(10_000) });
+  if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
+  await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 60_000 });
+  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
   await page.waitForTimeout(2_000);
 
   // Start the vendor under test via the always-present "+" tab-opener menu.
   await page.locator('[data-testid="opener-plus-button"]').click();
   await page.locator(`[data-testid="opener-menu-row-${AP_OPENER}"]`).click();
-  await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: adjusted(20_000) });
+  await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 20_000 });
   await page.waitForTimeout(3_000);
 
   const criticalErrors = errors.filter(e =>

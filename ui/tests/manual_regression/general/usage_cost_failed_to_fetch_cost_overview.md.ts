@@ -6,7 +6,6 @@
  * error appears.
  */
 import { test, expect } from '@playwright/test';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Home usage/cost overview — no fetch error', () => {
   test.beforeEach(async ({ page }) => {
@@ -16,7 +15,7 @@ test.describe('Home usage/cost overview — no fetch error', () => {
   });
 
   test('test 1: Home page loads usage and cost overview without errors', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -25,7 +24,7 @@ test.describe('Home usage/cost overview — no fetch error', () => {
 
     await page.goto('/dock/home');
     // /dock/home renders the HomeLanding dock view with the "Hey <name>" greeting.
-    await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: adjusted(25_000) });
+    await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: 25_000 });
     // Wait for the cost/usage overview fetch to resolve.
     await page.waitForTimeout(3_000);
 

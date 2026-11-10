@@ -2,7 +2,6 @@ import path from 'path';
 import { defineConfig, mergeConfig } from 'vitest/config';
 import { loadEnv } from 'vite';
 import viteConfig from '../../vite.config';
-import { adjusted } from '../adjustableTimeout';
 
 // FLOW_INSTANCE selects the matching Vite mode, so the compile-time SDK URL and
 // jsdom origin agree with the same `.env.<name>.local` that `_backend.ts`
@@ -58,8 +57,8 @@ export default mergeConfig(
       css: false,
       // Full-app boot drives a real bootstrap round-trip against a live backend.
       // 30s matches the hub project's budget for real network legs.
-      testTimeout: adjusted(30000), // do not increase timeout without approval
-      hookTimeout: adjusted(30000), // do not increase timeout without approval
+      testTimeout: 30000, // do not increase timeout without approval
+      hookTimeout: 30000, // do not increase timeout without approval
       // Process isolation per FILE (forks, not threads). Each full-app boot
       // leaves app-owned timers and browser globals that must die with its
       // child process. The npm headless command owns serialization with

@@ -12,14 +12,13 @@
  */
 import { test, expect } from '@playwright/test';
 import { apiBase, dismissSetupModal, fetchProcess, gotoNewShell, startClaude } from './_ap_helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 // Cold-nav redirect now works: routePlainShellPointer resolves the owning
 // process by shell_id via the backend (AgenticProcess.getByShellId →
 // terminals/get_by_shell_id) when the in-memory cache is cold, so the redirect
 // fires on a fresh page.goto. (Fix per Debug #17.)
 test('navigating to shell URL with linked agentic process redirects to agentic_process URL', async ({ page }) => {
-  test.setTimeout(adjusted(60_000));
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   page.on('pageerror', err => errors.push(err.message));
@@ -48,14 +47,14 @@ test('navigating to shell URL with linked agentic process redirects to agentic_p
   await page.goto(`/dock/shell/shell-${shellId}`);
 
   // Step 5: loader must redirect back to the agentic_process URL
-  await page.waitForURL(/\/dock\/shell\/agentic_process-/, { timeout: adjusted(30_000) });
+  await page.waitForURL(/\/dock\/shell\/agentic_process-/, { timeout: 30_000 });
   expect(page.url()).toContain(processId);
 
   // Step 6: terminal is live
-  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 20_000 });
   await page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')
     .first()
-    .waitFor({ state: 'attached', timeout: adjusted(10_000) });
+    .waitFor({ state: 'attached', timeout: 10_000 });
 
   const criticalErrors = errors.filter(e =>
     !e.includes('favicon') && !e.includes('ResizeObserver') && !e.includes('net::ERR_'),

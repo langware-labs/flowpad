@@ -14,7 +14,6 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { pollUntil } from '../../hub/_matrix';
 import { auth, hubLogin } from '../_shared/hub';
-import { adjusted } from '../../adjustableTimeout';
 
 const HUB = process.env.QA_HUB_URL || '';
 const STAFF_API = process.env.QA_STAFF_API_URL || '';
@@ -33,7 +32,7 @@ const until = <T>(fn: () => Promise<T | null>, label: string): Promise<T> => pol
 test('binding criterion: a guest ticket answered from the staff stream inbox through the desk source', async () => {
   test.skip(!STAFF_API, 'set QA_STAFF_API_URL to the staff instance backend (e.g. http://localhost:6002) to run.');
   if (!HUB) throw new Error('QA_HUB_URL is not set — no localhost fallback.');
-  test.setTimeout(adjusted(60_000));
+  test.setTimeout(60_000);
   // Each identity owns its own cookie jar (the hub accepts JWT cookies too).
   const staffRq = await pwRequest.newContext();
   const guestRq = await pwRequest.newContext();

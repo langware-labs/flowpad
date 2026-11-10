@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, sendCommand, waitForOutput } from './helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Terminal Command History', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,7 +7,7 @@ test.describe('Terminal Command History', () => {
   });
 
   test('navigate command history with up/down arrows', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     // Step 1: navigate to shell
     await gotoShell(page);
@@ -41,7 +40,7 @@ test.describe('Terminal Command History', () => {
         .first()
         .textContent();
       expect(content).toContain('echo three');
-    }).toPass({ timeout: adjusted(5_000) });
+    }).toPass({ timeout: 5_000 });
 
     // Step 4: press Up again for "echo two"
     await page.keyboard.press('ArrowUp');
@@ -53,7 +52,7 @@ test.describe('Terminal Command History', () => {
         .first()
         .textContent();
       expect(content).toContain('echo two');
-    }).toPass({ timeout: adjusted(5_000) });
+    }).toPass({ timeout: 5_000 });
 
     // Step 5: press Down to go back to "echo three"
     await page.keyboard.press('ArrowDown');

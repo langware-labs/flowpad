@@ -12,7 +12,6 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
-import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 const titleSel = '[data-testid="conversation-title"]';
@@ -24,12 +23,12 @@ async function openConversation(page: Page, convId: string) {
   });
   await page.goto(`/dock/conversation/${convId}`);
   const skip = page.getByRole('button', { name: /Skip( for now)?/ });
-  if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
-  await page.locator(titleSel).waitFor({ state: 'visible', timeout: adjusted(30_000) });
+  if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
+  await page.locator(titleSel).waitFor({ state: 'visible', timeout: 30_000 });
 }
 
 test('test 1-3: rename in one client live-updates the other client', async ({ browser }) => {
-  test.setTimeout(adjusted(60_000));
+  test.setTimeout(60_000);
 
   // Seed a conversation via the entity API.
   const rq = await apiContext();
@@ -61,14 +60,14 @@ test('test 1-3: rename in one client live-updates the other client', async ({ br
     const newTitle = `renamed-via-ui-2tabs-${Date.now()}`;
     await tab1.locator(titleSel).evaluate((el: HTMLElement) => el.click());
     const input = tab1.locator(inputSel);
-    await expect(input).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(input).toBeVisible({ timeout: 10_000 });
     await input.fill(newTitle);
     await input.press('Enter');
     // Tab 1's input reverts to the span showing the new title.
-    await expect(tab1.locator(titleSel)).toContainText(newTitle, { timeout: adjusted(10_000) });
+    await expect(tab1.locator(titleSel)).toContainText(newTitle, { timeout: 10_000 });
 
     // Step 3: tab 2 (untouched) reflects the new title via the data_op broadcast.
-    await expect(tab2.locator(titleSel)).toContainText(newTitle, { timeout: adjusted(15_000) });
+    await expect(tab2.locator(titleSel)).toContainText(newTitle, { timeout: 15_000 });
   } finally {
     await ctx1.close();
     await ctx2.close();

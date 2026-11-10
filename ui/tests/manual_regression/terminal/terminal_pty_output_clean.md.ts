@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, sendCommand, waitForOutput } from './helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Terminal PTY Output Clean', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,7 +7,7 @@ test.describe('Terminal PTY Output Clean', () => {
   });
 
   test('no duplicated lines or escape sequence artifacts in terminal output', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     // Step 1: navigate to a fresh terminal
     await gotoShell(page);

@@ -1,5 +1,4 @@
 import { defineConfig, devices } from '@playwright/test';
-import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Inbound routing E2E: a WhatsApp number on the waha stack (`waha_stack.py`) → the hub webhook chain,
@@ -9,8 +8,8 @@ import { adjusted } from '../../adjustableTimeout';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
-  timeout: adjusted(300_000),
-  expect: { timeout: adjusted(20_000) },
+  timeout: 300_000,
+  expect: { timeout: 20_000 },
   fullyParallel: false,
   retries: 0,
   workers: 1,

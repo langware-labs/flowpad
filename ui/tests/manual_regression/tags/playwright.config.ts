@@ -1,11 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
-import { adjusted } from '../../adjustableTimeout';
 
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
-  timeout: adjusted(30_000), // Playwright's defaults, runner-adjustable
-  expect: { timeout: adjusted(5_000) },
   fullyParallel: false,
   retries: 0,
   workers: 1,

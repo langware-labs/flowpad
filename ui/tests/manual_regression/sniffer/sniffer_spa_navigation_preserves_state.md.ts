@@ -1,7 +1,6 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
 import { apiBase } from '../_shared/api';
-import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -20,7 +19,7 @@ async function snifferHook(request: APIRequestContext) {
 // flips the per-instance gate.
 test.describe('Sniffer — default-off survives SPA navigation', () => {
   test('1: default-off sniffer state is unchanged after SPA navigation', async ({ page, request }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -35,11 +34,11 @@ test.describe('Sniffer — default-off survives SPA navigation', () => {
 
     // home → shell → home, waiting for the app shell to render at each stop.
     await page.goto('/dock/home');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
     await page.goto('/dock/shell');
-    await page.locator('[data-testid="agent-layout"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+    await page.locator('[data-testid="agent-layout"]').waitFor({ state: 'visible', timeout: 30_000 });
     await page.goto('/dock/home');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
 
     // The per-instance gate is still off after all the routing.
     expect(await snifferHook(request), 'SPA navigation never enables the sniffer gate').toBeNull();

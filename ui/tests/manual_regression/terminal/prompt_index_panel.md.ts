@@ -37,7 +37,6 @@ import { RIBBON_TABS,
 } from './helpers';
 import { apiBase } from '../_shared/api';
 import { withViewMode } from '../_shared/view-mode';
-import { adjusted } from '../../adjustableTimeout';
 
 const API_URL = apiBase();
 
@@ -59,9 +58,9 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   // Fast path: reuse the URL from the first successful navigation in this run.
   if (cachedAgenticUrl) {
     await page.goto(withViewMode(cachedAgenticUrl, 'advanced'));
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(15_000) });
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 15_000 });
     await ensureAdvancedView(page);
-    const visible = await ribbon.isVisible({ timeout: adjusted(10_000) }).catch(() => false);
+    const visible = await ribbon.isVisible({ timeout: 10_000 }).catch(() => false);
     if (visible) return;
     // Cached process is gone — fall through to full navigation.
 }
@@ -69,15 +68,15 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   await page.goto(withViewMode('/dock/shell/new_terminal', 'advanced'));
 
   const skip = page.getByRole('button', { name: 'Skip' });
-  if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
+  if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
 
   try {
-    await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: adjusted(60_000) });
+    await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
 
     if (!page.url().includes('agentic_process-')) {
-      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
       await startClaudeSession(page);
-      await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: adjusted(60_000) });
+      await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
   }
 
     // The ribbon + side-window panels only exist in Advanced view; the backend
@@ -85,7 +84,7 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
     await ensureAdvancedView(page);
 
     // Wait for the ribbon to be visible (can take >8s on a fresh process).
-    await expect(ribbon).toBeVisible({ timeout: adjusted(60_000) });
+    await expect(ribbon).toBeVisible({ timeout: 60_000 });
 } catch (e) {
     // Host out of PTY devices → no live process/ribbon. Sanctioned live-env skip.
     await skipIfPtyExhausted(page);
@@ -111,31 +110,31 @@ test.describe('Prompt Index Panel', () => {
   // test 1: Prompt icon appears in agentic process terminal ribbon
   // ---------------------------------------------------------------------------
   test('prompt index icon appears in agentic process terminal ribbon', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
     // (text=/running|idle/i is unreliable: may match a visibility:hidden tooltip element)
     const panel = activePanel(page);
     const ribbonLoc = panel.locator(RIBBON_TABS);
-    await expect(ribbonLoc).toBeVisible({ timeout: adjusted(15_000) });
+    await expect(ribbonLoc).toBeVisible({ timeout: 15_000 });
 
     // Context(0), Git(1), Prompts(2), Analysis(3), SkillsAgents(4), Files(5), Dir(6), Queue(7)
-    await expect(ribbonLoc.locator('button').nth(2)).toBeVisible({ timeout: adjusted(15_000) });
+    await expect(ribbonLoc.locator('button').nth(2)).toBeVisible({ timeout: 15_000 });
 
     // Validate all 9 buttons are present (8 ribbon side-tabs — Context, Git,
     // Prompts, Analysis, SkillsAgents, Files, Dir, Queue — plus the Prompt Library button).
-    await expect(ribbonLoc.locator('button')).toHaveCount(9, { timeout: adjusted(5_000) });
+    await expect(ribbonLoc.locator('button')).toHaveCount(9, { timeout: 5_000 });
 
     // Files button should also be visible (index 5)
-    await expect(ribbonLoc.locator('button').nth(5)).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(ribbonLoc.locator('button').nth(5)).toBeVisible({ timeout: 5_000 });
 });
 
   // ---------------------------------------------------------------------------
   // test 2: Prompt panel opens as a tab in the side window
   // ---------------------------------------------------------------------------
   test('prompt panel opens as a tab in the side window', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
@@ -144,24 +143,24 @@ test.describe('Prompt Index Panel', () => {
 
     // Side window should appear
     const sideWindow = getSideWindow(page);
-    await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).toBeVisible({ timeout: 5_000 });
 
     // Tab strip shows "Prompts" tab with × close button
     const tabStrip = sideWindow.locator('.border-b').first();
-    await expect(tabStrip.getByText('Prompts')).toBeVisible({ timeout: adjusted(5_000) });
-    await expect(activePanel(page).locator('button[aria-label="Close Prompts"]')).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(tabStrip.getByText('Prompts')).toBeVisible({ timeout: 5_000 });
+    await expect(activePanel(page).locator('button[aria-label="Close Prompts"]')).toBeVisible({ timeout: 5_000 });
 
     // Inner panel header shows "Prompts (" with NO close button
     const panelHeader = sideWindow.locator('.flex-1').getByText(/Prompts \(/);
-    await expect(panelHeader).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(panelHeader).toBeVisible({ timeout: 5_000 });
 
     // Either "No prompts yet" or a list of prompt items
     const emptyMsg = page.getByText('No prompts yet');
-    const hasEmpty = await emptyMsg.isVisible({ timeout: adjusted(3_000) }).catch(() => false);
+    const hasEmpty = await emptyMsg.isVisible({ timeout: 3_000 }).catch(() => false);
     if (!hasEmpty) {
       // Panel has prompts — verify at least one item is rendered
       const promptItem = sideWindow.locator('.cursor-pointer').first();
-      await expect(promptItem).toBeVisible({ timeout: adjusted(5_000) });
+      await expect(promptItem).toBeVisible({ timeout: 5_000 });
   }
 });
 
@@ -169,7 +168,7 @@ test.describe('Prompt Index Panel', () => {
   // test 3: Prompt tab closes via × in the tab strip
   // ---------------------------------------------------------------------------
   test('prompt tab closes via the × close button in the tab strip', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
@@ -178,20 +177,20 @@ test.describe('Prompt Index Panel', () => {
     await ensureSideTabOpen(page, 2, 'Prompts');
 
     const sideWindow = getSideWindow(page);
-    await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).toBeVisible({ timeout: 5_000 });
 
     // Close via tab strip ×
     await activePanel(page).locator('button[aria-label="Close Prompts"]').click();
 
     // Side window should disappear (no tabs remain)
-    await expect(sideWindow).not.toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).not.toBeVisible({ timeout: 5_000 });
 });
 
   // ---------------------------------------------------------------------------
   // test 4: Clicking ribbon button when Prompts is already active does NOT close the panel
   // ---------------------------------------------------------------------------
   test('clicking ribbon button toggles the Prompts tab — second click closes it', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
@@ -202,26 +201,26 @@ test.describe('Prompt Index Panel', () => {
     // First click — opens
     await promptsBtn.click();
     const sideWindow = getSideWindow(page);
-    await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).toBeVisible({ timeout: 5_000 });
 
     // Second click — closes (toggle: active tab is closed when its button is clicked again)
     await promptsBtn.click();
-    await expect(sideWindow).not.toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).not.toBeVisible({ timeout: 5_000 });
 
     // Third click — re-opens
     await promptsBtn.click();
-    await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).toBeVisible({ timeout: 5_000 });
 
     // Close via tab strip × to clean up
     await activePanel(page).locator('button[aria-label="Close Prompts"]').click();
-    await expect(sideWindow).not.toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).not.toBeVisible({ timeout: 5_000 });
 });
 
   // ---------------------------------------------------------------------------
   // test 10: Prompt icon is absent for plain shell terminals (no process)
   // ---------------------------------------------------------------------------
   test('prompt icon is absent in plain shell terminal (no agentic process)', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     const bootstrap = await page.request.get(`${API_URL}/api/v1/graph/bootstrap`);
     expect(bootstrap.status()).toBe(200);
@@ -237,13 +236,13 @@ test.describe('Prompt Index Panel', () => {
 
     try {
       await page.goto(`/dock/shell/shell-${shellId}?viewMode=advanced`);
-      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(10_000) });
+      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
       await page.waitForTimeout(2_000);
 
       // On plain shell: ribbon ([data-testid="terminal-ribbon-tabs"]) must not be visible.
       const panel = activePanel(page);
       const ribbonLoc = panel.locator(RIBBON_TABS);
-      await expect(ribbonLoc).not.toBeVisible({ timeout: adjusted(3_000) });
+      await expect(ribbonLoc).not.toBeVisible({ timeout: 3_000 });
       await expect(page).toHaveURL(new RegExp(`/dock/shell/shell-${shellId}`));
   } finally {
       await page.goto('/');
@@ -255,7 +254,7 @@ test.describe('Prompt Index Panel', () => {
   // test 12: Multiple panels are tabs in the same side window (not side-by-side)
   // ---------------------------------------------------------------------------
   test('Files and Prompts panels coexist as tabs in the same side window', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
@@ -265,14 +264,14 @@ test.describe('Prompt Index Panel', () => {
     // Open Files (index 5)
     await ribbonLoc.locator('button').nth(5).click();
     const sideWindow = getSideWindow(page);
-    await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).toBeVisible({ timeout: 5_000 });
     // Use tab strip + exact match to avoid strict-mode violation (other elements contain 'Files')
     const tabStrip = sideWindow.locator('.border-b').first();
-    await expect(tabStrip.getByText('Files', { exact: true })).toBeVisible({ timeout: adjusted(3_000) });
+    await expect(tabStrip.getByText('Files', { exact: true })).toBeVisible({ timeout: 3_000 });
 
     // Open Prompts (index 2) — should add to the same side window
     await ribbonLoc.locator('button').nth(2).click();
-    await expect(tabStrip.getByText('Prompts', { exact: true })).toBeVisible({ timeout: adjusted(3_000) });
+    await expect(tabStrip.getByText('Prompts', { exact: true })).toBeVisible({ timeout: 3_000 });
 
     // Both tabs should be in the same tab strip
     await expect(tabStrip.getByText('Files', { exact: true })).toBeVisible();
@@ -289,8 +288,8 @@ test.describe('Prompt Index Panel', () => {
     // and the second close closes over the stale pre-nav list (last-writer-wins
     // leaves one tab open). Wait for the first tab to drop before the second click.
     await activePanel(page).locator('button[aria-label="Close Files"]').click();
-    await expect(tabStrip.getByText('Files', { exact: true })).not.toBeVisible({ timeout: adjusted(3_000) });
+    await expect(tabStrip.getByText('Files', { exact: true })).not.toBeVisible({ timeout: 3_000 });
     await activePanel(page).locator('button[aria-label="Close Prompts"]').click();
-    await expect(sideWindow).not.toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).not.toBeVisible({ timeout: 5_000 });
 });
 });

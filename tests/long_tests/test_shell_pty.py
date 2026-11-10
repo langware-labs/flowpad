@@ -35,7 +35,6 @@ import uuid
 import httpx
 import pytest
 import websockets
-from tests.adjustable_timeout import adjusted
 
 # ---------------------------------------------------------------------------
 # Live server fixture
@@ -60,7 +59,6 @@ def _server_env(port: int, db_path: str) -> dict:
 
 
 async def _wait_for_server(base_url: str, timeout: float = 30.0) -> None:
-    timeout = adjusted(timeout)
     deadline = time.monotonic() + timeout
     async with httpx.AsyncClient() as client:
         while time.monotonic() < deadline:

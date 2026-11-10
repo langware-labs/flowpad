@@ -24,7 +24,6 @@
  */
 import { readFileSync } from 'node:fs';
 import { expect, type Page, test } from '@playwright/test';
-import { adjusted } from '../../adjustableTimeout';
 
 const BE = `http://localhost:${process.env.INB_BE_PORT || '6007'}/api/v1/graph`;
 const CTL = process.env.INB_CONTROL || 'http://127.0.0.1:7391';
@@ -121,7 +120,7 @@ test.describe.serial('inbound routing: waha → UI-configured chain → agent �
     await dialog.getByTestId(`inbound-dest-this-${src('A')}`).click();
     await shot(page, '0-connect-form');
     await dialog.getByTestId('inbound-connect-submit').click();
-    await expect(dialog.getByTestId('inbound-connected-step')).toBeVisible({ timeout: adjusted(60_000) });
+    await expect(dialog.getByTestId('inbound-connected-step')).toBeVisible({ timeout: 60_000 });
     const url = (await dialog.getByTestId('inbound-connected-url').innerText()).trim();
     await shot(page, '0-connected');
     // "Paste these into your server's webhook settings" — the server side of the step.
@@ -145,7 +144,7 @@ test.describe.serial('inbound routing: waha → UI-configured chain → agent �
     await write(X, say('scenario one'));
     expect(await replyIn(`${X}@c.us`, say('scenario one'))).toContain('AGENT-A');
     // The live counter moves while the page is open (read from the hub's recent deliveries, never stored).
-    await expect(counter).not.toHaveText(before, { timeout: adjusted(30_000) });
+    await expect(counter).not.toHaveText(before, { timeout: 30_000 });
     await expect(card(page).getByTestId('inbound-rule-row-fallback')).toBeVisible();
     await shot(page, '1-fallback');
   });

@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test';
-import { adjusted } from '../../adjustableTimeout';
 
 function realConsoleErrors(errors: string[]): string[] {
   return errors.filter(
@@ -13,7 +12,7 @@ function realConsoleErrors(errors: string[]): string[] {
 
 test.describe('Code editor loads without console errors (FLOWPAD-1669)', () => {
   test('code editor dock loads without unexpected console errors', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -28,8 +27,8 @@ test.describe('Code editor loads without console errors (FLOWPAD-1669)', () => {
     });
 
     await page.goto('/dock/editor');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
-    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: adjusted(15_000) });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: 15_000 });
     await page.waitForTimeout(3_000);
 
     const real = realConsoleErrors(errors);

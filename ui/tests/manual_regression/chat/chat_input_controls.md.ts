@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, sendCommand } from '../terminal/helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Chat Input Controls', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,7 +7,7 @@ test.describe('Chat Input Controls', () => {
   });
 
   test('Shell terminal input accepts text and executes on Enter', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     // Capture console errors from the start
     const errors: string[] = [];
@@ -31,7 +30,7 @@ test.describe('Chat Input Controls', () => {
   });
 
   test('Empty Enter press does not crash terminal', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoShell(page);
 
@@ -44,7 +43,7 @@ test.describe('Chat Input Controls', () => {
   });
 
   test('Tab opener menu exposes Claude and Terminal rows', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoShell(page);
 
@@ -52,9 +51,9 @@ test.describe('Chat Input Controls', () => {
     // Inline opener buttons (opener-inline-claude, opener-plus-button)
     // only render once the user has pinned that opener.
     const plus = page.getByTestId('opener-plus-button');
-    await expect(plus).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(plus).toBeVisible({ timeout: 5_000 });
     await plus.click();
-    await expect(page.getByTestId('opener-menu-row-claude')).toBeVisible({ timeout: adjusted(5_000) });
-    await expect(page.getByTestId('opener-menu-row-terminal')).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(page.getByTestId('opener-menu-row-claude')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId('opener-menu-row-terminal')).toBeVisible({ timeout: 5_000 });
   });
 });

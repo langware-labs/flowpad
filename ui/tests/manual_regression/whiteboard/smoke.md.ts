@@ -2,7 +2,6 @@ import { expect, test, type APIRequestContext } from '@playwright/test';
 
 // API base for this instance (frontend is baseURL on VITE_PORT; backend on :6002).
 import { apiBase } from '../_shared/api';
-import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -31,7 +30,7 @@ test.describe('Whiteboard — Smoke (S1–S3)', () => {
   });
 
   test('S3: excalidraw bundle lazy-loads + editor mounts', async ({ page, request }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -51,7 +50,7 @@ test.describe('Whiteboard — Smoke (S1–S3)', () => {
     );
     // AssetDocPointer grammar requires an explicit typeid/ method segment.
     await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-    await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+    await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
     await page.waitForTimeout(1_500);
 
     // Excalidraw container healthy height (CSS-missing regression inflates to 33,554,432).

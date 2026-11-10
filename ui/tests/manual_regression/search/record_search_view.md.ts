@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test';
 import { apiBase } from '../_shared/api';
-import { adjusted } from '../../adjustableTimeout';
 
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
@@ -13,31 +12,31 @@ test.describe('Record Search View (/dock/search)', () => {
   test('Search view is accessible at /dock/search without a query', async ({ page }) => {
     await dismissSetupModal(page);
     await page.goto('/dock/search');
-    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     const searchView = page.locator('[data-testid="search-view"]');
-    await expect(searchView).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(searchView).toBeVisible({ timeout: 10_000 });
   });
 
   // ── Test 2: URL param ?q=hello pre-populates the search input value ────────
   test('URL param ?q=hello pre-populates the search input value', async ({ page }) => {
     await dismissSetupModal(page);
     await page.goto('/dock/search?q=hello');
-    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     const input = page.locator('[data-testid="search-input"]').first();
-    await expect(input).toBeVisible({ timeout: adjusted(10_000) });
-    await expect(input).toHaveValue('hello', { timeout: adjusted(5_000) });
+    await expect(input).toBeVisible({ timeout: 10_000 });
+    await expect(input).toHaveValue('hello', { timeout: 5_000 });
   });
 
   // ── Test 3: Results area is always visible in the search view ──────────────
   test('Results area is always visible in the search view', async ({ page }) => {
     await dismissSetupModal(page);
     await page.goto('/dock/search?q=test');
-    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     const results = page.locator('[data-testid="search-results"]');
-    await expect(results).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(results).toBeVisible({ timeout: 10_000 });
   });
 
   // ── Test 4: Backend search API returns a valid JSON response ───────────────

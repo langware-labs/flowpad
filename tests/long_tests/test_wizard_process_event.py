@@ -21,7 +21,6 @@ import pytest
 import websockets
 
 from tests.test_settings import test_service_config
-from tests.adjustable_timeout import adjusted
 
 pytestmark = pytest.mark.skipif(
     not test_service_config.deep_testing,
@@ -43,7 +42,6 @@ def _server_env(port: int, db_path: str, flow_home: str, instance_name: str) -> 
 
 
 async def _wait_for_server(base_url: str, timeout: float = 30.0) -> None:
-    timeout = adjusted(timeout)
     deadline = time.monotonic() + timeout
     async with httpx.AsyncClient() as client:
         while time.monotonic() < deadline:

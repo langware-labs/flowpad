@@ -31,7 +31,6 @@ import {
   resolveLaunchedInstance,
   type LaunchedInstance,
 } from './_instances';
-import { adjusted } from '../adjustableTimeout';
 
 let skipReason: string | null = null;
 let alice: LaunchedInstance;
@@ -105,7 +104,7 @@ beforeAll(async () => {
   bobRoot = path.join(ws, `hubrepo-install-${skillName}`);
   mkdirSync(root, { recursive: true });
   mkdirSync(bobRoot, { recursive: true });
-}, adjusted(30_000));
+}, 30_000);
 
 beforeEach((context: any) => {
   if (skipReason) {
@@ -142,7 +141,7 @@ describe('sharing through the project hub repo', () => {
     gitViaHub(aliceToken, ['clone', '-q', repo.clone_url, clone]);
     expect(gitViaHub(aliceToken, ['ls-files'], clone).split('\n')).toContain(`.claude/skills/${skillName}/SKILL.md`);
     rmSync(clone, { recursive: true, force: true });
-  }, adjusted(120_000));
+  }, 120_000);
 
   it('bob, a reader without GitHub, reads the document on the hub and installs it', async () => {
     const link = await (await hub(aliceToken, `/graph/project/${projectId}/members/link`, {
@@ -161,13 +160,13 @@ describe('sharing through the project hub repo', () => {
     expect(result.installed.origin.kind).toBe('hub_repo');
     const installed = path.join(bobRoot, '.claude', 'skills', skillName, 'SKILL.md');
     expect(readFileSync(installed, 'utf8')).toContain(`id: ${skillId}`);
-  }, adjusted(180_000));
+  }, 180_000);
 
   it("alice's edit on the hub is pulled back into her folder by her next publish", async () => {
     await hubWrite(aliceToken, `${(await hubDoc(aliceToken)).trimEnd()}\n\nEdited on the hub.\n`);
     await publish();
     await pollUntil(() => (readFileSync(localSkill(), 'utf8').includes('Edited on the hub.') ? true : null), 60_000, 'hub edit pulled back');
-  }, adjusted(90_000));
+  }, 90_000);
 
   it('edits on both sides refuse with asset_conflict and overwrite nothing', async () => {
     await hubWrite(aliceToken, `${(await hubDoc(aliceToken)).trimEnd()}\nHub side.\n`);
@@ -178,5 +177,5 @@ describe('sharing through the project hub repo', () => {
     expect(onHub).toContain('Hub side.');
     expect(onHub).not.toContain('Desk side.');
     expect(readFileSync(localSkill(), 'utf8')).toContain('Desk side.');
-  }, adjusted(90_000));
+  }, 90_000);
 });

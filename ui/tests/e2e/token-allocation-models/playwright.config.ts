@@ -1,5 +1,4 @@
 import { defineConfig, devices } from '@playwright/test';
-import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Playwright config for the **token allocation model picker** scenario.
@@ -17,8 +16,8 @@ import { adjusted } from '../../adjustableTimeout';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
-  timeout: adjusted(90_000),
-  expect: { timeout: adjusted(20_000) },
+  timeout: 90_000,
+  expect: { timeout: 20_000 },
   fullyParallel: false,
   retries: 0,
   workers: 1,

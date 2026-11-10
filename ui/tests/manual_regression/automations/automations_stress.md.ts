@@ -17,7 +17,6 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { apiContext } from '../_shared/api';
 import { dismissSetupModal } from '../triggers/helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 const SHOTS = process.env.AUTOMATIONS_SHOTS || path.resolve('test-results/automations-shots');
 const RUN = Math.random().toString(36).slice(2, 7);
@@ -129,7 +128,7 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.goto('/dock/automations');
     const skip = page.getByRole('button', { name: 'Skip' });
-    if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
+    if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
     await page.getByTestId('automations-list').waitFor();
     for (const a of created) await expect(page.getByTestId(`automation-row-${a.id}`)).toHaveCount(1);
     await shot(page, '01-list');
@@ -211,7 +210,7 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
 
     // ── Every fire is a run with the right status ────────────────────────────────────
     await expect
-      .poll(async () => (await runsFor(rq, ok[0].id, '&include_tests=false')).length, { timeout: adjusted(20_000) })
+      .poll(async () => (await runsFor(rq, ok[0].id, '&include_tests=false')).length, { timeout: 20_000 })
       .toBeGreaterThanOrEqual(Math.floor(260 / tags.length));
     for (const f of failing) {
       await expect.poll(async () => (await runsFor(rq, f.id)).filter((r) => r.status === 'failed').length).toBeGreaterThan(0);

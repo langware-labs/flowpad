@@ -1,4 +1,3 @@
-import { adjusted } from '../adjustableTimeout';
 /**
  * Two-browser conversation setup via the hub invitation (granted at invite time).
  *
@@ -68,7 +67,7 @@ test('setup: alice creates → bob is a member at once → realtime round-trip <
     //    Refresh, no Accept: the hub already made him a member at invite time.
     await bob.page
       .locator(`[data-testid="stream-inbox-conversation-row"][data-conversation-id="${convId}"]`)
-      .waitFor({ state: 'visible', timeout: adjusted(2_000) });
+      .waitFor({ state: 'visible', timeout: 2_000 });
     console.log(`[setup] bob sees the conversation on his strip  (+${Date.now() - tCreated} ms)`);
 
     // 3. Both are in the conversation: bob opens it from his strip, alice is
@@ -97,7 +96,7 @@ test('setup: alice creates → bob is a member at once → realtime round-trip <
     console.log(`[setup] realtime round-trip alice → bob: ${rtt} ms`);
 
     expect(convId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(rtt).toBeLessThan(adjusted(500)); // realtime SLO (committed 500 ms; a slower runner widens it with ADJUSTABLE_TIMEOUT)
+    expect(rtt).toBeLessThan(500); // realtime SLO
   } finally {
     await browser.close();
   }

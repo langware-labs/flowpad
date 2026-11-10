@@ -24,7 +24,6 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { adjusted } from '../../adjustableTimeout';
 
 const BE = `http://localhost:${process.env.HP_BE_PORT || '6001'}`;
 const GRAPH = `${BE}/api/v1/graph`;
@@ -189,7 +188,7 @@ test.describe('project home page', () => {
     const agentRow = popover.locator(`[data-testid^="asset-manager-select-agent-${homeAgent.id}-"]`).first();
     // The picker's list is a live backend scan of the project, and the first
     // one for a project created seconds ago can take well past 20s.
-    await expect(agentRow).toBeVisible({ timeout: adjusted(60_000) });
+    await expect(agentRow).toBeVisible({ timeout: 60_000 });
     await agentRow.click();
     await expect(picker).toContainText(homeAgent.title);
 
@@ -231,7 +230,7 @@ test.describe('project home page', () => {
     const popover = page.getByTestId('asset-manager-popover');
     await expect(popover).toBeVisible();
     const appRow = popover.locator(`[data-testid^="asset-manager-select-${appTypeId}-"]`).first();
-    await expect(appRow).toBeVisible({ timeout: adjusted(60_000) });
+    await expect(appRow).toBeVisible({ timeout: 60_000 });
     await appRow.click();
     await expect(picker).toContainText(appName);
     await expect.poll(declaredHomePage).toBe(appTypeId);
@@ -240,7 +239,7 @@ test.describe('project home page', () => {
     await clickHome(page);
     await expect(page).toHaveURL(new RegExp(`/dock/app/${appTypeId}\\?.*scope-activeProjectId=${home.id}`));
     const frame = page.frameLocator('[data-testid="vibe-app-frame"]');
-    await expect(frame.getByTestId('app-first-title')).toHaveText(appName, { timeout: adjusted(30_000) });
+    await expect(frame.getByTestId('app-first-title')).toHaveText(appName, { timeout: 30_000 });
     const src = await page.getByTestId('vibe-app-frame').first().getAttribute('src');
     expect(src ?? '').not.toContain('scope-');
 
@@ -362,7 +361,7 @@ test.describe('project home page', () => {
     await card.getByTestId('home-page-picker').click();
     const popover = page.getByTestId('asset-manager-popover');
     await expect(popover.locator(`[data-testid^="asset-manager-select-agent-${homeAgent.id}-"]`).first()).toBeVisible({
-      timeout: adjusted(60_000),
+      timeout: 60_000,
     });
     await expect(popover.locator(`[data-testid^="asset-manager-select-agent-${foreignAgent.id}-"]`)).toHaveCount(0);
 
