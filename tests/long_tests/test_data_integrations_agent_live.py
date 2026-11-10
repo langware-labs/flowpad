@@ -97,7 +97,7 @@ async def test_persona_connects_samples_and_defines(run_workdir):
             assert src, "the agent never created the source"
 
             async def items():
-                rows = await _data(client, "GET", f"/api/v1/graph/source_item?filter={json.dumps({'data_source_id': src['id']})}&limit=5")
+                rows = await _data(client, "GET", f"/api/v1/graph/source_item?filter={json.dumps({'match': {'data_source_id': src['id']}, 'limit': 5})}")
                 return rows or None
 
             assert await _until(items, budget_s=120), "no items streamed within the budget"
