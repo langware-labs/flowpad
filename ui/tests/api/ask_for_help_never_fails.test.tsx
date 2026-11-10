@@ -26,6 +26,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTes
 import { HelpdeskAsk } from '@src/components/helpdesk/HelpdeskAsk';
 import { HelpdeskLoadDialog } from '@src/components/helpdesk/HelpdeskLoadDialog';
 import { notify } from '@src/notifications';
+import { registerNavigate } from '@src/notifications/commands';
 import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
 import { apiTestSetup, getTestSignupInfo, trackCreatedRows } from '../utils/test-utils';
 
@@ -131,6 +132,9 @@ function fillAndAssign(title: string) {
   const by = (id: string) => dialog.querySelector(`[data-testid="${id}"]`) as HTMLElement;
   // One screen: what is wrong, who gets it.
   fireEvent.change(by('vibe-assign-notes'), { target: { value: title } });
+  // Without a diagnosis: with one the request is sent only when the diagnosis agent is done (send:
+  // 'when_diagnosed', minutes), and delivery — not the diagnosis — is what these tests break.
+  fireEvent.click(by('ask-for-help-run-diagnosis'));
   fireEvent.change(by('vibe-assign-person'), { target: { value: HELPER_EMAIL } });
   fireEvent.blur(by('vibe-assign-person'));
   fireEvent.click(by('vibe-assign-submit'));
@@ -212,7 +216,10 @@ describe.skipIf(!HELPER_EMAIL)('Ask for help never fails', () => {
 
   it('the dialog cannot be closed while the request is saved, and says so once it is', async () => {
     const title = `closed early ${Date.now()}`;
-    const told = vi.spyOn(notify, 'success');
+    // The person is told by being taken to the request's conversation (the 'Sent to …' toast became that).
+    const told = vi.fn();
+    registerNavigate(told);
+    onTestFinished(() => registerNavigate(() => {}));
     const real = dataManager.callAction.bind(dataManager);
     let release!: () => void;
     const held = new Promise<void>((r) => (release = r));
