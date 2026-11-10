@@ -185,11 +185,15 @@ test('2. a mark filters; × shows everything again', async ({ page }) => {
     .toBe(true);
   const all = await rows.count();
   const mark = userMarksOf(bar);
-  const others = bar.locator('[data-testid="attached-channel"][aria-pressed="false"]');
-
-  await mark.click();
+  // Every mark is lit (shown) by default and a press dims one (filters its channel out; 657023b9c):
+  // narrowing to the Slack source is dimming every other mark on the line.
   await expect(mark).toHaveAttribute('aria-pressed', 'true');
-  await expect(mark).toHaveClass(/ring-1/);
+  const others = bar.locator('[data-testid="attached-channel"]:not([data-provider="slack"])');
+  for (const other of await others.all()) {
+    await other.click();
+    await expect(other).toHaveAttribute('aria-pressed', 'false');
+  }
+  await expect(mark).toHaveAttribute('aria-pressed', 'true');
   for (const other of await others.all()) await expect(other.locator(':scope > :first-child')).toHaveCSS('filter', /grayscale/);
   await expect(bar.getByTestId('attached-channels-clear')).toBeVisible();
   await expect(bar.getByTestId('attached-channels-add')).toHaveCount(0);
@@ -202,7 +206,9 @@ test('2. a mark filters; × shows everything again', async ({ page }) => {
 
   await bar.getByTestId('attached-channels-clear').click();
   await expect(rows).toHaveCount(all);
-  await expect(mark).toHaveAttribute('aria-pressed', 'false');
+  // × lights every mark again.
+  await expect(mark).toHaveAttribute('aria-pressed', 'true');
+  for (const other of await others.all()) await expect(other).toHaveAttribute('aria-pressed', 'true');
   await expect(bar.getByTestId('attached-channels-add')).toBeVisible();
   await expect(bar.getByTestId('attached-channels-details')).toBeVisible();
 });
