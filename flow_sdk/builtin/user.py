@@ -326,6 +326,27 @@ class User(Entity):
         return None
 
     @classmethod
+    async def _same_person_rows(cls, user_id: str | None, email: str | None) -> list["User"]:
+        """Every address-book row that is this person, the one to keep first.
+
+        A person is learned on two axes that may arrive separately (a roster
+        gives a hub id, a bundle sender gives an email), so one person can sit
+        in two rows until a sighting carries both. Order: the email row, then
+        every row holding the hub id, then the row whose local id IS the id.
+        """
+        found: dict[str, User] = {}
+        if email:
+            for row in await cls.get_all({"email": email}):
+                found.setdefault(row.id, row)
+        if user_id:
+            for row in await cls.get_all({"user_id": user_id}):
+                found.setdefault(row.id, row)
+            local = await cls.get_one({"id": user_id})
+            if local:
+                found.setdefault(local.id, local)
+        return list(found.values())
+
+    @classmethod
     async def upsert_contact(
         cls,
         *,
@@ -337,12 +358,12 @@ class User(Entity):
     ) -> "User | None":
         """The single writer into the address book.
 
-        Match by email or user_id (:meth:`get_by_identity`); backfill any
+        Find the person's rows by email and by user_id; backfill any
         missing-or-changed field (email, user_id, name, picture) and save only
-        when something changed (idempotent). No match → create a contact whose
-        local ``id`` is deterministically minted from the natural key so a
-        re-scan of the same participant never duplicates. Returns the contact,
-        or None when there is no usable identity at all.
+        when something changed (idempotent). When the person turns out to sit
+        in more than one row, the extra rows are folded into the first and
+        deleted. No match → create a contact. Returns the contact, or None when
+        there is no usable identity at all.
         """
         email = normalize_email(email)
         user_id = (user_id or "").strip() or None
@@ -351,12 +372,23 @@ class User(Entity):
         if not email and not user_id:
             return None
 
-        existing = await cls.get_by_identity(user_id=user_id, email=email)
-        if existing is not None:
+        rows = await cls._same_person_rows(user_id, email)
+        if rows:
+            existing = rows[0]
+            # A second row is the same person only when it holds the same hub id
+            # as the kept row. The desktop's own user row is never folded away.
+            hub_id = existing.user_id or user_id
+            duplicates = [
+                row for row in rows[1:] if hub_id and row.user_id == hub_id and not row.uname
+            ]
             changed = False
             # Backfill only what's missing/newly-known — never clobber an
             # existing value with an empty one; email/user_id are stable keys so
             # only set them when absent.
+            for row in duplicates:
+                email = email or normalize_email(row.email)
+                name = name or row.name
+                picture = picture or row.picture
             if email and not existing.email:
                 existing.email = email
                 changed = True
@@ -369,6 +401,8 @@ class User(Entity):
             if picture and existing.picture != picture:
                 existing.picture = picture
                 changed = True
+            for row in duplicates:
+                await row.delete()
             if changed:
                 return await existing.save()
             return existing
@@ -376,7 +410,7 @@ class User(Entity):
         from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
         contact = cls(
-            id=mint_uuid(key=f"contact:{user_id or email}"),
+            id=mint_uuid(),
             email=email,
             user_id=user_id,
             name=name,

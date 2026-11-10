@@ -154,8 +154,8 @@ async def _learn_normalized_members(members: list[dict]) -> int:
             continue
         name = _participant_value(participant, "name")
         picture = _participant_value(participant, "picture")
-        # remote defaults False: a learned contact is a LOCAL mirror minted at a
-        # local uuid5 id, not a hub entity at the same id — marking it remote
+        # remote defaults False: a learned contact is a LOCAL mirror with its own
+        # local id, not a hub entity at the same id — marking it remote
         # would wrongly route ops through hub-reflection.
         contact = await User.upsert_contact(user_id=user_id, email=email, name=name, picture=picture)
         if contact is not None:
