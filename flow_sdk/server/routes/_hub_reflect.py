@@ -394,7 +394,9 @@ async def route_to_hub(request: Request, target: Entity | None = None) -> Respon
     return out
 
 
-async def route_ws_to_hub(method: str, path: str, query: str, body: Any, hub_reflect: bool) -> tuple[int, Any] | None:
+async def route_ws_to_hub(
+    method: str, path: str, query: str, body: Any, hub_reflect: bool, quiet: bool = False
+) -> tuple[int, Any] | None:
     """``route_to_hub`` for a WS ``rest_api_msg``: ``(status, parsed body)`` or ``None`` = local."""
     import json  # noqa: PLC0415
 
@@ -416,7 +418,7 @@ async def route_ws_to_hub(method: str, path: str, query: str, body: Any, hub_ref
             return None
     headers = [(b"content-type", b"application/json")] if content else []
     try:
-        answer = await HubProxy.forward_buffered(method, path, query, headers=headers, content=content)
+        answer = await HubProxy.forward_buffered(method, path, query, headers=headers, content=content, quiet=quiet)
     except HubError as e:
         if e.status_code == 0 and method.upper() in ("GET", "HEAD") and gp.type is not None:
             return None

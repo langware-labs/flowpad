@@ -79,6 +79,7 @@ DROP_OUTBOUND: frozenset[bytes] = HOP_BY_HOP | {
     b"host",
     b"authorization",
     b"hub-reflect",
+    b"flowpad-quiet",
     b"cookie",
     b"x-cookie-gate",
 }
@@ -575,6 +576,8 @@ class HubProxy:
             headers=headers,
             timeout=FORWARD_TIMEOUT,
             stream=True,
+            # The caller handles a refusal itself, so it is not reported as a failed hub request.
+            quiet=request.headers.get("flowpad-quiet") == "true",
         )
 
     @classmethod
@@ -621,6 +624,7 @@ class HubProxy:
         *,
         headers: list[tuple[bytes, bytes]] | None = None,
         content: bytes | None = None,
+        quiet: bool = False,
     ) -> HubAnswer:
         """``forward`` for a caller that needs the whole answer in hand. Raises ``HubError``
         only when nothing came back (offline / signed out / no hub)."""
@@ -630,6 +634,7 @@ class HubProxy:
             content=content or None,
             headers=cls.outbound_headers(headers or []),
             timeout=FORWARD_TIMEOUT,
+            quiet=quiet,
         )
         # ``resp.content`` is the decoded body; the encoding headers no longer describe it.
         hdrs = [
