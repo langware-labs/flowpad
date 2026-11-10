@@ -4,6 +4,7 @@ import { detailFromRecentCall, errorDetailFrom } from './error-detail';
 import { useAlertStore } from './alerts-store';
 import { useBadgeStore } from './store';
 import { renderToast } from './NotificationOutlet';
+import { useToastStackStore } from './toast-stack-store';
 import { settleAsk } from './pending-asks';
 import { useCenterStore } from './center-store';
 
@@ -127,8 +128,13 @@ function dispatch(input: NotificationInput): string {
     id,
     duration: ms === null ? Infinity : ms,
     // However the toast goes — its ×, a swipe, a timer — a question in it is answered "no answer".
-    onDismiss: () => settleAsk(id),
+    onDismiss: () => {
+      useToastStackStore.getState().remove(id);
+      settleAsk(id);
+    },
+    onAutoClose: () => useToastStackStore.getState().remove(id),
   });
+  useToastStackStore.getState().add(id);
   return id;
 }
 
