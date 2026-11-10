@@ -33,6 +33,41 @@ _TERM_GRACE = 3.0
 _KILL_GRACE = 2.0
 
 
+def _wait_procs(procs: list, timeout: float) -> tuple[list, list]:
+    """``psutil.wait_procs``, but a wait primitive that refuses a process never aborts the kill.
+
+    psutil waits on a process that is not our child through ``pidfd_open``, which some kernels
+    and sandboxes refuse with ``EINVAL`` for one process of a worker tree (a worker's own sandboxed
+    child, say). That raised out of ``terminate_tree`` after the signals were already sent, so the
+    caller never learned what it killed. Fall back to polling whether each process is still there.
+    """
+    import time
+
+    import psutil
+
+    try:
+        return psutil.wait_procs(procs, timeout=timeout)
+    except OSError as exc:
+        logger.debug("[procs] wait_procs refused (%s); polling instead", exc)
+    deadline = time.monotonic() + timeout
+    alive = list(procs)
+    while alive and time.monotonic() < deadline:
+        alive = [p for p in alive if _still_running(p)]
+        if alive:
+            time.sleep(0.05)
+    alive = [p for p in alive if _still_running(p)]
+    return [p for p in procs if p not in alive], alive
+
+
+def _still_running(p) -> bool:
+    import psutil
+
+    try:
+        return p.is_running() and p.status() != psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return False
+
+
 @dataclass
 class KillResult:
     instance: str
@@ -157,13 +192,13 @@ def terminate_tree(roots: list, *, allow_protected: bool = False) -> tuple[list[
             p.terminate()
         except gone:
             pass
-    _, alive = psutil.wait_procs(procs, timeout=_TERM_GRACE)
+    _, alive = _wait_procs(procs, _TERM_GRACE)
     for p in alive:
         try:
             p.kill()
         except gone:
             pass
-    _, survivors = psutil.wait_procs(alive, timeout=_KILL_GRACE)
+    _, survivors = _wait_procs(alive, _KILL_GRACE)
     return sorted(targets), sorted(p.pid for p in survivors), refused_pids
 
 
