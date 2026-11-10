@@ -5,11 +5,12 @@ import path from 'node:path';
 import { apiBase } from '../_shared/api';
 
 /**
- * Agent Deploy checklist → "Set up" Git must not report success for a
- * repository that was never created.
+ * Deploy checklist → "Add git" must not report success for a repository that
+ * was never created.
  *
- * Drives the real surface end to end: the agent editor's Deploy tab, the
- * checklist's repo-row button, the git-context-folder wizard it launches, and
+ * Drives the real surface end to end: the agent's Deploy (its project's
+ * Deployments page), the New deployment checklist's "Git is required · Add git",
+ * the git setup wizard and the git-dependency agent it launches, and
  * the backend's own verdicts. Nothing is mocked — the assertions read ground
  * truth from the backend (the wizard worker's transcript and
  * `git_share_preflight`), not the popup, because the popup is what lies.
@@ -29,6 +30,8 @@ import { apiBase } from '../_shared/api';
 
 const API = apiBase();
 const LIVE = process.env.QA_DEPLOY_LIVE_GIT === '1';
+/** The ONE throwaway repository a live run creates (the runner deletes it afterwards). */
+const REPO_NAME = process.env.QA_DEPLOY_REPO_NAME || `flowpad-qa-deploy-git-${Date.now()}`;
 let AGENT_ID = process.env.QA_DEPLOY_AGENT_ID || '';
 let seededProject: { id: string; root: string } | null = null;
 
@@ -82,32 +85,42 @@ test('Set up Git only reports success once the repository exists', async ({ page
     'live-claude: the wizard agent must actively run the setup to completion and create/link a hosted (GitHub) ' +
       'origin — a multi-minute real Claude run with an external side effect. Opt in with QA_DEPLOY_LIVE_GIT=1.',
   );
+  // The documented multi-minute live run (a real Claude wizard agent creating a hosted repository).
+  test.setTimeout(12 * 60_000);
   if (!AGENT_ID) AGENT_ID = await seedAgent(request);
   const before = await preflightCode(request);
   expect(NEEDS_SETUP, `precondition: the agent folder still needs git setup (got ${before})`).toContain(before);
 
+  // A deployment places a project (aeb735d41): the agent's Deploy opens its project's Deployments page,
+  // whose New deployment checklist puts "Git is required · Add git" in front of a project with no git.
   await page.goto(`/dock/assets/editor/agent/typeid/agent-${AGENT_ID}`);
-  await page.getByRole('tab', { name: 'Deploy' }).click();
+  await page.getByTestId('agent-tab-summary').click();
+  await page.getByTestId('agent-summary-new-deployment').click();
+  await page.getByTestId('project-new-deployment').click();
+  const dialog = page.getByTestId('new-deployment-dialog');
+  await dialog.locator('[data-testid^="new-deployment-size-"]').first().click();
+  await dialog.getByTestId('new-deployment-next').click();
+  await dialog.getByTestId('new-deployment-tab-values-button').click();
 
-  const setUp = page.getByTestId('agent-deploy-action-repo');
+  const setUp = dialog.getByTestId('git-required-add');
   await expect(setUp).toBeVisible();
+  await setUp.click();
 
+  // The git setup wizard: a NEW GitHub repository, set up by the git-dependency wizard agent.
+  const wizard = page.getByTestId('git-setup-wizard');
+  await expect(wizard).toBeVisible();
+  await wizard.getByTestId('git-setup-mode-new').click();
+  await wizard.getByTestId('git-setup-name').fill(REPO_NAME);
   const created = page.waitForResponse(
     (r) => r.url().includes('/createProcess') && r.request().method() === 'POST',
   );
-  await setUp.click();
+  await wizard.getByTestId('git-setup-next').click();
   const processId: string = (await (await created).json()).data.id;
   createdProcesses.add(processId);
 
-  // The wizard popup is where the setup agent runs; it closing is the caller's
-  // promise resolving — with whatever verdict the popup decided on.
-  const wizard = page.getByRole('dialog', { name: 'Set up Git for deploying' });
-  await expect(wizard).toBeVisible();
-  const recheck = page.waitForResponse((r) => r.url().includes('/git_share_preflight'));
-  await expect(wizard).toBeHidden();
-  await recheck;
-
-  const claimedSuccess = await page.getByText('Git is set up').isVisible();
+  // The agent's run ends either way: done (the wizard says so) or back on its first step.
+  await expect(wizard.getByTestId('git-setup-running')).toBeHidden({ timeout: 10 * 60_000 });
+  const claimedSuccess = await wizard.getByTestId('git-setup-done').isVisible();
 
   // Ground truth 1: the setup agent actually ran and said something.
   expect(
