@@ -296,3 +296,30 @@ async def test_a_session_that_failed_says_so(box, monkeypatch):
     monkeypatch.setattr("flow_sdk.core.compute.process_step.launch_step_process", _launch(box, receipt, []))
     answer = await it_session.run_it_session(call_id="c9", text="x", answer_shape=SHAPE, workdir=box.settings.instance_dir)
     assert answer.ok is False and answer.value is None
+
+
+def _result(tmp_path, data: dict):
+    path = tmp_path / "result.json"
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def test_a_hebrew_answer_is_measured_in_bytes_not_escapes(tmp_path):
+    """A class-status answer in Hebrew: 1500 letters are 3 KB of UTF-8 but 9 KB as escaped JSON. It is answered."""
+    value = {"summary": "התלמיד בנה משחק " * 100}
+    shape = {"type": "object", "required": ["summary"]}
+    answer = it_session.read_answer(_result(tmp_path, {"status": "done", "summary": "ok", "data": {"value": value}}), shape, "x")
+    assert answer.ok and answer.value == value
+
+
+def test_an_answer_over_the_it_cap_is_still_refused(tmp_path):
+    value = {"summary": "א" * 40_000}
+    answer = it_session.read_answer(_result(tmp_path, {"status": "done", "summary": "ok", "data": {"value": value}}), {"type": "object"}, "x")
+    assert not answer.ok and answer.value is None
+
+
+def test_a_refused_answer_says_why(tmp_path):
+    """The machine's own summary alone hid the reason (seen: 21 of 25 'failed' with a plausible sentence)."""
+    answer = it_session.read_answer(_result(tmp_path, {"status": "done", "summary": "Student built a game"}), {"type": "object"}, "x")
+    assert not answer.ok
+    assert "without returning 'value'" in answer.answer and "Student built a game" in answer.answer
