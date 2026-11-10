@@ -152,16 +152,28 @@ def test_a_channel_pinned_to_another_place_is_answered_only_there(doubles):
     (an e2b row, never run here): while the channel names it, the local process leaves it alone;
     pinned to the local deployment, the local process answers it."""
     owner = agent("pinned")
-    elsewhere = run(owner.deploy("e2b"))
+    # A placement on another machine, as the hub records one: a row only (a cloud deploy is the
+    # project's, ``Project.deploy``, and runs real deployment steps this test has no use for).
+    elsewhere = Deployment(
+        name=f"{owner.name} (e2b)",
+        main_agent_id=str(owner.typeid),
+        target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
+        origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
+        **({"parent_type_id": f"project-{owner.project_id}"} if owner.project_id else {}),
+    )
+    run(elsewhere.save())
     source = _owned(doubles, owner, "whatsapp", answer_place=elsewhere.id)
     here = run(owner.run_locally(snippet=WRAPPER))
     assert here.id != elsewhere.id
+    # The project's one local deployment also served the earlier tests' agents: only turns from now count.
+    earlier = {ap.id for ap in _turns(here)}
+    new_turns = lambda: [ap for ap in _turns(here) if ap.id not in earlier]  # noqa: E731
     try:
         ready(here, 1)  # its chat only — the WhatsApp channel names the other place
         doubles.deliver("whatsapp", "not for here", None)
         time.sleep(2)  # an answer from here would land by now — it must not
         assert doubles.sent("whatsapp") == [], "a channel pinned elsewhere is not answered here"
-        assert not _turns(here), "the local deployment never takes it"
+        assert not new_turns(), "the local deployment never takes it"
 
         fresh = run(DataSource.get_by_id(source.id))
         fresh.answer_place = str(here.id)
@@ -169,7 +181,7 @@ def test_a_channel_pinned_to_another_place_is_answered_only_there(doubles):
         ready(here, 2)  # a new place restarts the loop over the channel
         doubles.deliver("whatsapp", "who answers?", None)
         until("the reply here", lambda: [r for r in doubles.sent("whatsapp") if "who answers?" in r["text"]], within=45)
-        assert _turns(here), "the turn ran in the local deployment, now that the channel names it"
+        assert new_turns(), "the turn ran in the local deployment, now that the channel names it"
     finally:
         end(here)
 
