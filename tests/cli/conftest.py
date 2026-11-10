@@ -257,7 +257,7 @@ def spawn_owned():
 
     procs: list[subprocess.Popen] = []
 
-    def spawn(instance: str, port: int | None = None, env_instance: bool = True):
+    def spawn(instance: str, port: int | None = None, env_instance: bool = True, argv: tuple[str, ...] = ()):
         src = ["import sys, time"]
         if port is not None:
             src += [
@@ -277,7 +277,8 @@ def spawn_owned():
         if env_instance:
             env["FLOW_INSTANCE"] = instance
         p = subprocess.Popen(
-            [sys.executable, "-c", "\n".join(src)],
+            # ``argv`` lands in the child's cmdline: how a stand-in reads as a backend.
+            [sys.executable, "-c", "\n".join(src), *argv],
             env=env,
             stdout=subprocess.PIPE,
             text=True,
