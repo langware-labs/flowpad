@@ -971,8 +971,8 @@ async def handle_add_message(
     remote_worker_session_id = (body.get("remote_worker_session_id") or "").strip() or None
     sendable_kind = FlowMessageKind.sendable((body.get("kind") or "").strip() or None)
     message_kind = sendable_kind.value if sendable_kind else None
-    # Every prompt is a session turn, and a conversation holds ONE open session.
-    # A prompt WITHOUT a session id joins the conversation's open session; only
+    # Every prompt is a session turn, and a conversation holds ONE open session per
+    # guest. A prompt WITHOUT a session id joins the sender's open session; only
     # when there is none does it open a new one: the sender mints the id here
     # (uuid4; the host validates-on-adopt) and the opening proposal (reply
     # policy) rides the start marker on the carrier attachment. A prompt WITH a
@@ -991,7 +991,8 @@ async def handle_add_message(
     if reply_policy is None:
         return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
     if is_prompt_send and not remote_worker_session_id:
-        open_session = await RemoteWorkerSession.open_for_conversation(conversation_id)
+        me = (await User.current_sender_participant(None)).get("user_id") or None
+        open_session = await RemoteWorkerSession.open_for_conversation(conversation_id, me)
         if open_session is not None:
             remote_worker_session_id = open_session.id
     if is_prompt_send and not remote_worker_session_id:
@@ -1385,7 +1386,8 @@ async def _start_live_session_locked(conversation_id: str, body: dict, someone_t
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
         return ApiFailResponse(message=f"Conversation not found: {conversation_id}", status_code=404)
-    open_session = await RemoteWorkerSession.open_for_conversation(conv.id)
+    me = (await User.current_sender_participant(None)).get("user_id") or None
+    open_session = await RemoteWorkerSession.open_for_conversation(conv.id, me)
     if open_session is not None:
         return ApiSuccessResponse(data=open_session.model_dump(mode="json"))
 

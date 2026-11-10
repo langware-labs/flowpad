@@ -394,20 +394,24 @@ class RemoteWorkerSession(Entity):
         return await cls.get_one({"id": session_id})
 
     @classmethod
-    async def open_for_conversation(cls, conversation_id: str | None) -> Optional["RemoteWorkerSession"]:
-        """The conversation's open live session — its newest one not ENDED/DECLINED
-        and not past its length cap (a prompt after the cap opens a new session).
+    async def open_for_conversation(
+        cls, conversation_id: str | None, guest_user_id: str | None
+    ) -> Optional["RemoteWorkerSession"]:
+        """``guest_user_id``'s open live session in the conversation — its newest one
+        not ENDED/DECLINED and not past its length cap (a prompt after the cap opens a
+        new session).
 
-        A conversation holds ONE open live session: every prompt sent in it joins
-        that session (queued while PENDING, re-run after an ERROR) until either
-        side ends it; only then does the next prompt open another. A prompt
+        A conversation holds ONE open live session PER GUEST: every prompt that guest
+        sends joins it (queued while PENDING, re-run after an ERROR) until either side
+        ends it; only then does their next prompt open another. Another member's prompt
+        never joins it — the host's approval of one person covers no one else. A prompt
         request (``prompt_limit`` set) is never joined — it runs the prompt that
         opened it and ends — so it is not "the open session". A lookup on the
         natural key, never a derived id.
         """
-        if not conversation_id:
+        if not conversation_id or not guest_user_id:
             return None
-        rows = await cls.get_all({"conversation_id": conversation_id})
+        rows = await cls.get_all({"conversation_id": conversation_id, "guest_user_id": guest_user_id})
         open_rows = [r for r in rows if r.is_open and not r.is_prompt_request]
         if not open_rows:
             return None

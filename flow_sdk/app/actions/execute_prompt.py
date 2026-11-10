@@ -671,8 +671,10 @@ async def resolve_or_mint_session(
       guest minted it with uuid4). An invalid/foreign id is ignored.
     - Without a usable id, the prompt is looked up as a STARTING message
       (``starting_message_id == fm.id``) so a re-delivered op finds the row it
-      already created, then joins the conversation's OPEN session (one per
-      conversation); only then is a fresh uuid4 minted. Never a deterministic
+      already created, then joins the SENDER's open session in the conversation
+      (one per guest); only then is a fresh uuid4 minted.
+    - A session id that names another person's session is not adopted: the
+      sender gets a session of their own, which waits for its own Approve. Never a deterministic
       id — idempotency is the natural-key lookup.
     - A missing row materializes at PENDING with the guest's opening proposal
       (``session_start`` marker → ``reply_policy``); a DRAFT row that landed
@@ -687,11 +689,17 @@ async def resolve_or_mint_session(
         logger.warning("[session] ignoring foreign session id %r on fm=%s", sid, fm.id)
         sid = None
     session = await RemoteWorkerSession.resolve_state(sid) if sid else None
+    sender = getattr(fm, "sender_id", None)
+    if session is not None and session.guest_user_id and sender and sender not in (
+        session.guest_user_id, session.host_user_id
+    ):
+        logger.warning("[session] fm=%s from %s names %s's session %s — not joined", fm.id, sender, session.guest_user_id, session.id)
+        session, sid = None, None
     if session is None and not sid:
         # A re-delivered opening prompt finds its own row; any other unstamped
         # prompt joins the conversation's open session — one per conversation.
         session = await RemoteWorkerSession.get_one({"starting_message_id": fm.id})
-        session = session or await RemoteWorkerSession.open_for_conversation(conv.id)
+        session = session or await RemoteWorkerSession.open_for_conversation(conv.id, sender)
         sid = session.id if session else mint_uuid()
     start = session_start_settings(fm)
     changed = session is None
@@ -1020,7 +1028,8 @@ async def _fail_turn(session: "RemoteWorkerSession", err: Exception, someone_typ
 
 async def _queued_turns(session: "RemoteWorkerSession") -> list["FlowMessage"]:
     """This session's unconsumed prompts, oldest first — the guest's and the
-    host's own (the host may type into its session too; it runs here)."""
+    host's own (the host may type into its session too; it runs here). A prompt
+    from anyone else is never this session's turn, whatever id it carries."""
     from flow_sdk.app.actions.notification_action import _is_prompt_attachment  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
@@ -1030,12 +1039,15 @@ async def _queued_turns(session: "RemoteWorkerSession") -> list["FlowMessage"]:
             "remote_worker_session_id": session.id,
         }
     )
+    local_id, _someone = await _local_actor()
+    allowed = {session.guest_user_id, session.host_user_id, local_id, None}
     queued = [
         fm
         for fm in fms
         if not getattr(fm, "prompt_auto_handled", False)
         and not fm.is_draft
         and any(_is_prompt_attachment(a) for a in (fm.attachment or []))
+        and (not session.guest_user_id or fm.sender_id in allowed)
     ]
     queued.sort(key=lambda m: str(getattr(m, "created_date", "") or ""))
     return queued

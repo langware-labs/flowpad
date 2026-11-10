@@ -13,12 +13,14 @@ id: 63f697dd-b987-4ff5-94e2-cd42496559b5
 collaborator's machine, and it is a session.
 
 1. **Every prompt request is a session turn, and a conversation holds ONE open
-   session** (amended 2026-10-05). A prompt sent from the conversation composer
-   joins the conversation's open session (`RemoteWorkerSession.open_for_conversation`:
-   newest not ENDED/DECLINED) — queued while it is PENDING, run in order once
-   approved, run again after an ERROR. Only when there is none does it start a
-   new session whose `starting_message_id` is that message. So one conversation
-   shows one card until either side ends the session. The host's worker stays one
+   session per guest** (amended 2026-10-05; per guest 2026-11-10). A prompt sent
+   from the conversation composer joins the sender's open session
+   (`RemoteWorkerSession.open_for_conversation(conversation, guest)`: newest not
+   ENDED/DECLINED) — queued while it is PENDING, run in order once approved, run
+   again after an ERROR. Only when there is none does it start a new session whose
+   `starting_message_id` is that message. Another member's prompt never joins it,
+   even stamped with its id: it opens that member's own session, which waits for
+   its own Approve, and a session's turns are only its guest's and its host's. The host's worker stays one
    headless `AgenticProcess` per (conversation, host).
 2. **A session is ONE line in the conversation** (amended 2026-10-05):
    `Live session · <other side>` and its status — awaiting / Approve·Decline
