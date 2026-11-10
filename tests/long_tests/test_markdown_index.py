@@ -150,6 +150,15 @@ async def docs_root(tmp_path_factory):
     if project is not None:
         await project.delete()
 
+@pytest.fixture(autouse=True)
+def _one_sandbox(monkeypatch):
+    """The skill's own python (run by the worker) must write the index cache into THIS test's sandbox:
+    without FLOWPAD_TEST_SANDBOX every test-mode process gets its own (``flowpad-test-<pid>``)."""
+    from flow_sdk.instance_settings.test_settings import ENV_FLOWPAD_TEST_SANDBOX, TestInstanceSettings
+
+    monkeypatch.setenv(ENV_FLOWPAD_TEST_SANDBOX, str(TestInstanceSettings._resolve_sandbox()))
+
+
 @pytest.mark.asyncio
 # Budget: see BUDGETS at the top of this file.
 @pytest.mark.timeout(300)
