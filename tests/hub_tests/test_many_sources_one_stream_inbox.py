@@ -157,6 +157,8 @@ async def mailbox(hub_base_url, hub_login_payload):
         allocated.append(agent_id)
         outsider_box = await driver.create_mailbox(outsider_id)
         allocated.append(outsider_id)
+        # A new mailbox sends only to its owner (the hub's Sending list): the outsider may write to the agent.
+        await driver.configure_mailbox(outsider_id, {"allowed_recipients": [str(agent_box.get("address") or "")]})
         yield {
             "agent_id": agent_id, "agent_address": str(agent_box.get("address") or ""),
             "outsider_id": outsider_id, "outsider_address": str(outsider_box.get("address") or ""),
