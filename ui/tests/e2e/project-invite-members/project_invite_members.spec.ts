@@ -115,6 +115,20 @@ async function gotoProjectHome(page: Page, projectId: string) {
   await expect(page.getByTestId('members-invite-button')).toBeVisible();
 }
 
+/** The role picker is a menu of role checkboxes (RolesPicker): leave exactly `role` checked. */
+async function pickRole(page: Page, role: string) {
+  const picker = page.getByTestId('members-invite-role');
+  await picker.click();
+  const item = (r: string) => page.getByTestId(`members-invite-role-${r}`);
+  await expect(item(role)).toBeVisible();
+  if ((await item(role).getAttribute('data-state')) !== 'checked') await item(role).click();
+  for (const other of ((await picker.getAttribute('data-roles')) ?? '').split(',').filter((r) => r && r !== role)) {
+    if ((await item(other).getAttribute('data-state')) === 'checked') await item(other).click();
+  }
+  await page.keyboard.press('Escape');
+  await expect(picker).toHaveAttribute('data-value', role);
+}
+
 /**
  * Invite through the members popover; the pane must open (no publish popup).
  * Returns the invite conversation the hub opened between the inviter and the invitee.
@@ -124,7 +138,7 @@ async function invite(page: Page, projectId: string, email: string, role: string
   await expect(page.getByTestId('members-invite-form')).toBeVisible();
   await expect(page.getByTestId('publish-project-dialog')).toBeHidden();
   await page.getByTestId('members-invite-input').fill(email);
-  await page.getByTestId('members-invite-role').selectOption(role);
+  await pickRole(page, role);
   await page.getByTestId('members-invite-add').click();
   const posted = page.waitForResponse(
     (r) => r.url().includes(`/graph/project/${projectId}/share`) && r.request().method() === 'POST',
