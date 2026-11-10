@@ -16,7 +16,11 @@ import pytest
 
 import flow_sdk.models.entities  # noqa: F401 — full registry
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.app.actions.message_attachment_action import handle_attachment_install, handle_attachment_uninstall
+from flow_sdk.app.actions.message_attachment_action import (
+    handle_attachment_install,
+    handle_attachment_uninstall,
+    handle_staged_files,
+)
 from flow_sdk.assets.project_manifest import make_entry, manifest_path, publish
 from flow_sdk.assets.scanning import scan_repo_tree
 from flow_sdk.builtin.bookmark import Bookmark
@@ -79,6 +83,27 @@ async def test_a_copy_installed_webapp_opens_by_the_id_it_has_here(tmp_path):
     assert installed is not None and ma.local_asset_id == str(installed.id), "Open / bookmark / setup open it by this"
 
     # Uninstall finds the app by its id here and takes the whole of it.
+    assert isinstance(await handle_attachment_uninstall(ma.id), ApiSuccessResponse)
+    assert not app.exists()
+    assert await Entity.get_by_asset_ref(app, resolve_containing=False) is None
+
+
+@pytest.mark.asyncio
+async def test_a_share_installed_before_the_local_id_was_recorded_heals_and_uninstalls(tmp_path):
+    ma = await _staged_shared_webapp(tmp_path, mint_uuid())
+    app = tmp_path / "proj" / "agentic-assets" / "webapp" / "shop"
+    (tmp_path / "proj").mkdir()
+    project = Project(name=unique_project_name("old"), fs_storage_mount_path=str(tmp_path / "proj"))
+    await project.save(notify=False)
+    assert isinstance(await handle_attachment_install(ma.id, "project", project.id), ApiSuccessResponse)
+    ma = await MessageAttachment.get_one({"id": ma.id})
+    ma.installed_asset_id = ""  # the row as an install before the fix left it: only the sender's id
+    await ma.save(notify=False)
+
+    assert isinstance(await handle_staged_files(ma.id), ApiSuccessResponse)  # the review dialog opens
+    installed = await Entity.get_by_asset_ref(app)
+    assert (await MessageAttachment.get_one({"id": ma.id})).local_asset_id == str(installed.id)
+
     assert isinstance(await handle_attachment_uninstall(ma.id), ApiSuccessResponse)
     assert not app.exists()
     assert await Entity.get_by_asset_ref(app, resolve_containing=False) is None
