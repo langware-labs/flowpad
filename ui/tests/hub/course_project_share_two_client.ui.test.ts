@@ -3,16 +3,15 @@
  *
  *   Alice mounts a git-backed course project   → git_share_preflight is `available`
  *   Alice shares it to Bob's email             → the hub grants Bob the project row and
- *                                                opens a new Alice↔Bob conversation
- *                                                holding the invite message
- *   Bob opens that conversation                → the message's dashed project chip opens
- *                                                the review popup, offering Install project
+ *                                                posts the invite message into the
+ *                                                Alice↔Bob 1:1 conversation (b5658b756)
+ *   Bob opens that conversation                → the invite card offers Install project
  *   Bob clicks Install project (`setup-from-git`) → the checkout lands in his workspace,
  *                                                READ-ONLY indexed (his clone stays clean)
  *   …and lands in the project                  → the dock loader redirects into the
  *                                                auto_launch agent's Vibe session, with
  *                                                its intro row and its queued prompt
- *   Bob reopens the conversation               → the chip is the installed project's chip
+ *   Bob reopens the conversation               → the card offers Open project
  *
  * The origin is a LOCAL bare repo over `file://` — never GitHub. That is the
  * point of the share gate this pins: a `file://` origin needs no GitHub token,
@@ -39,6 +38,7 @@ import {
   instanceAvailable,
   jsonApi,
   postApi,
+  queryConversationMessages,
   type ResolvedInstance,
 } from './_instances';
 import {
@@ -134,151 +134,170 @@ afterAll(async () => {
 });
 
 describe('course project share → install → auto-launch (two instances)', () => {
-  it('Alice shares a file:// course project; Bob installs it from her message and it opens into its agent', async () => {
-    // ── Alice: a git-backed project carrying the course ──────────────────
-    const fixture = makeGitWorktree('flowpad-course-share-');
-    fixtureRoot = fixture.root;
-    worktree = realpathSync(fixture.worktree);
-    course = seedCourseProject(worktree, token);
-    commitAndPush(worktree, 'course: lesson 01 + guide agent');
+  it(
+    'Alice shares a file:// course project; Bob installs it from her message and it opens into its agent',
+    async () => {
+      // ── Alice: a git-backed project carrying the course ──────────────────
+      const fixture = makeGitWorktree('flowpad-course-share-');
+      fixtureRoot = fixture.root;
+      worktree = realpathSync(fixture.worktree);
+      course = seedCourseProject(worktree, token);
+      commitAndPush(worktree, 'course: lesson 01 + guide agent');
 
-    const created = await postApi(alice.apiUrl, '/graph/project', {
-      type: 'project',
-      name: testEntityName('course'),
-      fs_storage_mount_path: worktree,
-    });
-    projectId = created?.data?.id;
-    expect(projectId, JSON.stringify(created).slice(0, 300)).toBeTruthy();
+      const created = await postApi(alice.apiUrl, '/graph/project', {
+        type: 'project',
+        name: testEntityName('course'),
+        fs_storage_mount_path: worktree,
+      });
+      projectId = created?.data?.id;
+      expect(projectId, JSON.stringify(created).slice(0, 300)).toBeTruthy();
 
-    // Index the mount so the sender holds the same rows the receiver will.
-    const indexed = await postApi(alice.apiUrl, '/graph/compute_node/@local/fs-records/invalidate', {
-      paths: [path.join(worktree, course.agentJsonRelPath), path.join(worktree, course.lessonRelPath)],
-    });
-    expect(indexed.status, JSON.stringify(indexed).slice(0, 300)).toBe('SUCCESS');
-    const aliceAgent = await pollUntil(
-      async () => (await jsonApi(alice.apiUrl, `/graph/agent/${course.agentId}`))?.data ?? null,
-      20_000,
-      'course agent indexed on alice (agent.json id adopted)',
-    );
-    expect(aliceAgent.auto_launch).toBe(true);
+      // Index the mount so the sender holds the same rows the receiver will.
+      const indexed = await postApi(alice.apiUrl, '/graph/compute_node/@local/fs-records/invalidate', {
+        paths: [path.join(worktree, course.agentJsonRelPath), path.join(worktree, course.lessonRelPath)],
+      });
+      expect(indexed.status, JSON.stringify(indexed).slice(0, 300)).toBe('SUCCESS');
+      const aliceAgent = await pollUntil(
+        async () => (await jsonApi(alice.apiUrl, `/graph/agent/${course.agentId}`))?.data ?? null,
+        20_000,
+        'course agent indexed on alice (agent.json id adopted)',
+      );
+      expect(aliceAgent.auto_launch).toBe(true);
 
-    // Indexing may stamp identity into the checkout; the preflight demands a
-    // clean, pushed tree, so carry whatever it wrote before asking.
-    if (porcelain(worktree)) commitAndPush(worktree, 'course: index capsules');
+      // Indexing may stamp identity into the checkout; the preflight demands a
+      // clean, pushed tree, so carry whatever it wrote before asking.
+      if (porcelain(worktree)) commitAndPush(worktree, 'course: index capsules');
 
-    // ── the share gate ───────────────────────────────────────────────────
-    const pre = await jsonApi(alice.apiUrl, `/graph/project/${projectId}/git_share_preflight`);
-    expect(pre.data, JSON.stringify(pre.data).slice(0, 300)).toMatchObject({ available: true, code: null });
-    expect(pre.data.git_origin.provider).toBe('file');
+      // ── the share gate ───────────────────────────────────────────────────
+      const pre = await jsonApi(alice.apiUrl, `/graph/project/${projectId}/git_share_preflight`);
+      expect(pre.data, JSON.stringify(pre.data).slice(0, 300)).toMatchObject({ available: true, code: null });
+      expect(pre.data.git_origin.provider).toBe('file');
 
-    // A `file://` origin needs no GitHub token — the gate must let this through.
-    const shared = await postApi(alice.apiUrl, `/graph/project/${projectId}/share`, { recipients: [bob.email] });
-    expect(shared?.data?.code, 'the share gate must not demand GitHub for a file:// origin').not.toBe(
-      'github_not_connected',
-    );
-    expect(shared.status, JSON.stringify(shared).slice(0, 300)).toBe('SUCCESS');
+      // A `file://` origin needs no GitHub token — the gate must let this through.
+      const shared = await postApi(alice.apiUrl, `/graph/project/${projectId}/share`, { recipients: [bob.email] });
+      expect(shared?.data?.code, 'the share gate must not demand GitHub for a file:// origin').not.toBe(
+        'github_not_connected',
+      );
+      expect(shared.status, JSON.stringify(shared).slice(0, 300)).toBe('SUCCESS');
 
-    // A project share is an invite: Bob is invited, and Alice's client opened a
-    // new conversation between him and Alice for the invite message.
-    const outcome = shared.data?.share_result;
-    expect(outcome?.failed ?? [], JSON.stringify(outcome).slice(0, 400)).toEqual([]);
-    expect(outcome?.invited ?? [], JSON.stringify(outcome).slice(0, 400)).toHaveLength(1);
-    const inviteConversationId = outcome.invited[0].conversation_id as string;
-    expect(inviteConversationId, JSON.stringify(outcome).slice(0, 400)).toBeTruthy();
+      // A project share is an invite: Bob is invited, and the hub posts the invite
+      // message into the 1:1 conversation between him and Alice.
+      const outcome = shared.data?.share_result;
+      expect(outcome?.failed ?? [], JSON.stringify(outcome).slice(0, 400)).toEqual([]);
+      expect(outcome?.invited ?? [], JSON.stringify(outcome).slice(0, 400)).toHaveLength(1);
+      const inviteConversationId = await pollUntil(
+        async () => {
+          const list = await postApi(bob.apiUrl, '/graph/conversation-list');
+          for (const c of (list?.data?.conversations ?? []) as { id: string; carries_invite?: boolean }[]) {
+            if (!c.carries_invite) continue;
+            await postApi(bob.apiUrl, '/graph/conversation-message-sync', { conversation_id: c.id });
+            for (const m of await queryConversationMessages(bob, c.id)) {
+              const invite = typeof m.invite === 'string' ? JSON.parse(m.invite) : m.invite;
+              if (invite?.target_type === 'project' && invite.target_id === projectId) return c.id as string;
+            }
+          }
+          return null;
+        },
+        25_000,
+        'the project invite in a conversation on bob',
+      );
 
-    // ── Bob: the grant arrives, then he installs ─────────────────────────
-    const bobRow = await pollUntil(
-      async () => {
-        const r = await jsonApi(bob.apiUrl, `/graph/project/${projectId}`).catch(() => null);
-        return r?.status === 'SUCCESS' && r?.data?.id ? r.data : null;
-      },
-      25_000,
-      'shared project row on bob',
-    );
-    expect(bobRow.id).toBe(projectId);
+      // ── Bob: the grant arrives, then he installs ─────────────────────────
+      const bobRow = await pollUntil(
+        async () => {
+          const r = await jsonApi(bob.apiUrl, `/graph/project/${projectId}`).catch(() => null);
+          return r?.status === 'SUCCESS' && r?.data?.id ? r.data : null;
+        },
+        25_000,
+        'shared project row on bob',
+      );
+      expect(bobRow.id).toBe(projectId);
 
-    // Bob does what a student does: opens Alice's message and clicks Install
-    // project on its chip. The chip is the only offer — no popup raises one.
-    browser = await launchBrowser();
-    const bobPage = await openInstancePage(browser, INST_2);
-    await bobPage.page.evaluate(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
-    resetConsoleErrors(bobPage);
-    await shot(bobPage.page, '01-bob-before-install');
+      // Bob does what a student does: opens Alice's message and clicks Install
+      // project on its invite card. The card is the only offer — no popup raises one.
+      browser = await launchBrowser();
+      const bobPage = await openInstancePage(browser, INST_2);
+      await bobPage.page.evaluate(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+      resetConsoleErrors(bobPage);
+      await shot(bobPage.page, '01-bob-before-install');
 
-    await openAssignedConversationInUI(bobPage, inviteConversationId);
-    // The invite's bundle staged the project, so it is the generic dashed attachment chip
-    // (a9d635f32), not the legacy ProjectMessageChip; it opens the review popup, whose
-    // project branch offers the install.
-    const chip = bobPage.page.getByTestId(`entity-chip-project-${projectId}`);
-    await chip.waitFor({ state: 'visible', timeout: adjusted(30_000) });
-    expect(await bobPage.page.getByTestId('project-chip').count(), 'no legacy project chip').toBe(0);
-    await chip.click();
-    const installButton = bobPage.page.getByTestId('asset-review-dialog').getByTestId('project-install-button');
-    await installButton.waitFor({ state: 'visible', timeout: adjusted(30_000) });
-    expect(await bobPage.page.getByTestId('incoming-project-dialog').count(), 'no install popup').toBe(0);
-    await shot(bobPage.page, '02-bob-install-offer');
+      await openAssignedConversationInUI(bobPage, inviteConversationId);
+      // A project invite is a membership grant: the card reads accepted and offers the install.
+      const card = bobPage.page
+        .locator('[data-testid="invite-card"][data-invite-state="accepted"]')
+        .filter({ hasText: created.data.name });
+      const installButton = card.getByTestId('project-install-button');
+      await installButton.waitFor({ state: 'visible', timeout: adjusted(30_000) });
+      expect(await bobPage.page.getByTestId('incoming-project-dialog').count(), 'no install popup').toBe(0);
+      await shot(bobPage.page, '02-bob-install-offer');
 
-    await installButton.click();
+      await installButton.click();
 
-    // Installing lands him in the project — and opening the project IS entering
-    // the session, as a load-time redirect.
-    // The session opens as a Vibe host tab (docs/tab-management.md): /dock/vibe/agentic_process-<id>.
-    await bobPage.page.waitForURL(/\/dock\/vibe\/agentic_process-[0-9a-f-]+/, { timeout: adjusted(60_000) });
-    await shot(bobPage.page, '03-bob-course-open');
+      // Installing lands him in the project — and opening the project IS entering
+      // the session, as a load-time redirect.
+      // The session opens as a Vibe host tab (docs/tab-management.md): /dock/vibe/agentic_process-<id>.
+      await bobPage.page.waitForURL(/\/dock\/vibe\/agentic_process-[0-9a-f-]+/, { timeout: adjusted(60_000) });
+      await shot(bobPage.page, '03-bob-course-open');
 
-    const installed = await jsonApi(bob.apiUrl, `/graph/project/${projectId}`);
-    bobMount = installed.data?.fs_storage_mount_path as string;
-    // The student's project keeps the name it was shared under — not the repo
-    // folder's leaf, which is an implementation detail of where it was cloned.
-    expect(installed.data?.name).toBe(created.data.name);
-    expect(bobMount, JSON.stringify(installed.data).slice(0, 400)).toBeTruthy();
-    expect(path.resolve(bobMount).startsWith(`${WORKSPACE}${path.sep}`), `installed at ${bobMount}`).toBe(true);
+      const installed = await jsonApi(bob.apiUrl, `/graph/project/${projectId}`);
+      bobMount = installed.data?.fs_storage_mount_path as string;
+      // The student's project keeps the name it was shared under — not the repo
+      // folder's leaf, which is an implementation detail of where it was cloned.
+      expect(installed.data?.name).toBe(created.data.name);
+      expect(bobMount, JSON.stringify(installed.data).slice(0, 400)).toBeTruthy();
+      expect(path.resolve(bobMount).startsWith(`${WORKSPACE}${path.sep}`), `installed at ${bobMount}`).toBe(true);
 
-    // The course actually arrived on the student's disk.
-    expect(existsSync(path.join(bobMount, course.lessonRelPath)), 'lesson-01.html').toBe(true);
-    expect(existsSync(path.join(bobMount, course.agentJsonRelPath)), 'agent.json').toBe(true);
+      // The course actually arrived on the student's disk.
+      expect(existsSync(path.join(bobMount, course.lessonRelPath)), 'lesson-01.html').toBe(true);
+      expect(existsSync(path.join(bobMount, course.agentJsonRelPath)), 'agent.json').toBe(true);
 
-    // The agent is a ROW on Bob, at the sender's id, rooted in his checkout —
-    // that is what auto-launch resolves when the project is opened.
-    const bobAgent = await pollUntil(
-      async () => (await jsonApi(bob.apiUrl, `/graph/agent/${course.agentId}`))?.data ?? null,
-      20_000,
-      'course agent indexed on bob',
-    );
-    expect(bobAgent.auto_launch).toBe(true);
-    expect(realpathSync(bobAgent.asset_ref).startsWith(realpathSync(bobMount))).toBe(true);
+      // The agent is a ROW on Bob, at the sender's id, rooted in his checkout —
+      // that is what auto-launch resolves when the project is opened.
+      const bobAgent = await pollUntil(
+        async () => (await jsonApi(bob.apiUrl, `/graph/agent/${course.agentId}`))?.data ?? null,
+        20_000,
+        'course agent indexed on bob',
+      );
+      expect(bobAgent.auto_launch).toBe(true);
+      expect(realpathSync(bobAgent.asset_ref).startsWith(realpathSync(bobMount))).toBe(true);
 
-    // The install must not dirty the clone: the student's next `git pull` for
-    // the following lecture fails the moment indexing writes into it.
-    expect(porcelain(bobMount), 'install left Bob a dirty checkout').toBe('');
+      // The install must not dirty the clone: the student's next `git pull` for
+      // the following lecture fails the moment indexing writes into it.
+      expect(porcelain(bobMount), 'install left Bob a dirty checkout').toBe('');
 
-    // ── the session Bob landed in ────────────────────────────────────────
-    const page2 = bobPage;
-    const intro = page2.page.getByTestId('agent-intro-message');
-    await intro.first().waitFor({ state: 'visible', timeout: adjusted(30_000) });
-    expect(await intro.first().innerText()).toContain(course.agentName);
+      // ── the session Bob landed in ────────────────────────────────────────
+      const page2 = bobPage;
+      const intro = page2.page.getByTestId('agent-intro-message');
+      await intro.first().waitFor({ state: 'visible', timeout: adjusted(30_000) });
+      expect(await intro.first().innerText()).toContain(course.agentName);
 
-    // The prompt rode the queue: still queued, or already the first user turn.
-    const queued = page2.page.getByTestId('entity-execution-queue-entry').filter({ hasText: `COURSE READY ${token}` });
-    const userTurn = page2.page
-      .locator('[data-testid="execution-message"][data-role="user"]')
-      .filter({ hasText: `COURSE READY ${token}` });
-    await queued.or(userTurn).first().waitFor({ state: 'visible', timeout: adjusted(30_000) });
-    await shot(page2.page, '04-bob-agent-started');
+      // The prompt rode the queue: still queued, or already the first user turn.
+      const queued = page2.page
+        .getByTestId('entity-execution-queue-entry')
+        .filter({ hasText: `COURSE READY ${token}` });
+      const userTurn = page2.page
+        .locator('[data-testid="execution-message"][data-role="user"]')
+        .filter({ hasText: `COURSE READY ${token}` });
+      await queued
+        .or(userTurn)
+        .first()
+        .waitFor({ state: 'visible', timeout: adjusted(30_000) });
+      await shot(page2.page, '04-bob-agent-started');
 
-    expect(realConsoleErrors(page2.consoleErrors)).toEqual([]);
+      expect(realConsoleErrors(page2.consoleErrors)).toEqual([]);
 
-    // ── once only ────────────────────────────────────────────────────────
-    const again = await postApi(bob.apiUrl, '/agents/auto-launch', { project_id: projectId });
-    expect(again?.data?.error, 'auto-launch reported an error').toBeUndefined();
-    expect(again?.data?.agent_id, 'a second open must not launch again').toBeNull();
+      // ── once only ────────────────────────────────────────────────────────
+      const again = await postApi(bob.apiUrl, '/agents/auto-launch', { project_id: projectId });
+      expect(again?.data?.error, 'auto-launch reported an error').toBeUndefined();
+      expect(again?.data?.agent_id, 'a second open must not launch again').toBeNull();
 
-    // ── back in the message, the chip is the installed project's chip ────
-    await openConversation(bobPage, inviteConversationId);
-    // The same generic attachment chip he installed from (a9d635f32), now in its installed state.
-    await bobPage.page
-      .locator(`[data-testid="entity-chip-project-${projectId}"][data-state="installed"]`)
-      .waitFor({ state: 'visible', timeout: adjusted(20_000) });
-    await shot(bobPage.page, '05-bob-chip-open-project');
-  }, adjusted(120_000)); // do not increase timeout without approval
+      // ── back in the message, the card offers Open project ─────────────────
+      await openConversation(bobPage, inviteConversationId);
+      await card
+        .locator('[data-testid="project-install-action"][data-state="open"]')
+        .waitFor({ state: 'visible', timeout: adjusted(20_000) });
+      await shot(bobPage.page, '05-bob-chip-open-project');
+    },
+    adjusted(120_000),
+  ); // do not increase timeout without approval
 });
