@@ -1224,6 +1224,11 @@ msgstr "{count, plural, one {لديكم خطأ واحد للمعالجة} two {�
 msgid "{count} {0} attached"
 msgstr "{count} {0} مرفقة"
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "{count} channels need attention"
+msgstr "{count} قنوات تحتاج إلى انتباه"
+
 #: src/components/assets/ContextFolderGitBadge.tsx
 msgid "{count} pending change(s) — click to view diff"
 msgstr "{count} تغيير معلّق — لعرض الفرق"
@@ -18753,14 +18758,18 @@ msgid "Needs a look"
 msgstr "يتطلب مراجعة"
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
-msgid "needs attention"
-msgstr "يحتاج إلى متابعة"
+#~ msgid "needs attention"
+#~ msgstr "يحتاج إلى متابعة"
 
 #: src/components/data-sources/health-style.ts
 #: src/components/items/item-state.ts
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Needs attention"
 msgstr "يحتاج إلى انتباه"
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Needs attention · {count}"
+msgstr "يحتاج إلى انتباه · {count}"
 
 #: src/components/asset-counters/agent-counters.tsx
 msgid "Needs git"

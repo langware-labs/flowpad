@@ -1371,6 +1371,33 @@ export function StreamInboxView({
   };
 
   // List mode
+  // The list's main verbs get a row of their own; the channel buttons sit at its far end. Where that
+  // row is not drawn (an agent's inbox, an embedded list, a selection in progress) they fall back to the filter row.
+  const hasTopRow = !agentId && !embedded && selectedCount === 0;
+  const channelButtons = (
+    <>
+      {!agentId && !embedded && (
+        <InvitesChannelChip
+          active={inInvitesView}
+          pending={membershipPendingCount}
+          onClick={() => setView(inInvitesView ? 'all' : 'invites')}
+        />
+      )}
+      {channelsOwner && !embedded && (
+        <AttachedChannelsBar
+          owner={channelsOwner}
+          rows={ownerChannels}
+          offers={channelOffers}
+          builtInOffered={builtInOffered}
+          specFor={specFor}
+          selected={channelFilter}
+          onSelectedChange={setChannelFilter}
+          className="shrink-0"
+        />
+      )}
+    </>
+  );
+
   return (
     <div className="relative flex h-full flex-col">
       {!cloudUser && (
@@ -1379,7 +1406,7 @@ export function StreamInboxView({
         />
       )}
       {/* The list's main verbs get a row of their own, full-size, so they can't be missed. */}
-      {!agentId && !embedded && selectedCount === 0 && (
+      {hasTopRow && (
         <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2" data-testid="stream-inbox-primary-actions">
           <Button
             onClick={() => setShowNewConversation(true)}
@@ -1398,6 +1425,7 @@ export function StreamInboxView({
               </Button>
             </>
           )}
+          <div className="ms-auto flex min-w-0 items-center gap-2">{channelButtons}</div>
         </div>
       )}
       <div className="flex shrink-0 items-center border-b px-3 py-1.5">
@@ -1659,25 +1687,7 @@ export function StreamInboxView({
                 <X className="h-3 w-3" />
               </button>
             )}
-            {!agentId && !embedded && (
-              <InvitesChannelChip
-                active={inInvitesView}
-                pending={membershipPendingCount}
-                onClick={() => setView(inInvitesView ? 'all' : 'invites')}
-              />
-            )}
-            {channelsOwner && !embedded && (
-              <AttachedChannelsBar
-                owner={channelsOwner}
-                rows={ownerChannels}
-                offers={channelOffers}
-                builtInOffered={builtInOffered}
-                specFor={specFor}
-                selected={channelFilter}
-                onSelectedChange={setChannelFilter}
-                className="shrink-0"
-              />
-            )}
+            {!hasTopRow && channelButtons}
           </div>
         )}
 
