@@ -16,7 +16,7 @@ import { ChevronLeft, Loader2, Ticket } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { endpointIdFromTypeId, endpointTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
-import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
+import { useLlmEndpoints } from '@src/components/llm-endpoints/use-llm-endpoints';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -155,17 +155,18 @@ export function AgentAutoLaunchTab({
   // IT Enabled per machine as this screen last set it, over what the hub reported.
   const [itOn, setItOn] = useState<Record<string, boolean>>({});
 
-  const { status } = useLlmSources();
-  // Allocating from an endpoint takes administering it — the hub checks the same right.
+  // The hub's own answer: a visitor budget may be carved from any endpoint the caller may ALLOCATE from
+  // (`agent._source_refusal`) -- the same list the New deployment wizard offers.
+  const { endpoints } = useLlmEndpoints();
   const sources = useMemo(
-    () => (status?.available ?? []).filter((e) => e.kind === 'hub' && e.can_administer === true),
-    [status],
+    () => endpoints.filter((e) => e.enabled !== false && e.isAllowedAction('allocate')),
+    [endpoints],
   );
-  // The saved source's name when this account cannot administer it (the sources list only names those).
+  // The saved source's name when this account cannot see it in its endpoints list.
   const [savedSourceName, setSavedSourceName] = useState<string | null>(null);
   const savedSource = state?.settings?.llm_source ?? '';
   useEffect(() => {
-    const listed = (status?.available ?? []).some((e) => endpointTypeId(e.id) === savedSource);
+    const listed = endpoints.some((e) => endpointTypeId(e.id) === savedSource);
     if (!savedSource || listed) return;
     let live = true;
     LLMEndpoint.getById<LLMEndpoint>(endpointIdFromTypeId(savedSource))
@@ -174,7 +175,7 @@ export function AgentAutoLaunchTab({
     return () => {
       live = false;
     };
-  }, [savedSource, status]);
+  }, [savedSource, endpoints]);
 
   const agentRef = useRef(agent);
   agentRef.current = agent;
@@ -228,9 +229,9 @@ export function AgentAutoLaunchTab({
   const link = openPcLink(agent);
   const lines = inviteLines(state);
   const agentLabel = agent.displayName || agent.name;
-  // The source by its name: every source this account can see, not only the ones it administers.
+  // The source by its name: every endpoint this account can see, not only the ones it may allocate from.
   const sourceName =
-    (status?.available ?? []).find((e) => endpointTypeId(e.id) === saved.source)?.name || savedSourceName || t`not set`;
+    endpoints.find((e) => endpointTypeId(e.id) === saved.source)?.name || savedSourceName || t`not set`;
   const activeCodes = lines.filter((l) => l.code).length;
   const nameOf = (code: PublicInviteCode) => names[code.id] ?? code.name ?? '';
   const saveName = async (code: PublicInviteCode) => {
@@ -586,7 +587,7 @@ export function AgentAutoLaunchTab({
                       {e.name}
                     </option>
                   ))}
-                  {/* The saved source, even when this account cannot administer it any more. */}
+                  {/* The saved source, even when this account cannot allocate from it any more. */}
                   {draft.source && !sources.some((e) => endpointTypeId(e.id) === draft.source) && (
                     <option value={draft.source}>{draft.source}</option>
                   )}
