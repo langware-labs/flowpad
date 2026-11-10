@@ -309,9 +309,17 @@ def _acquire_provider_lock(provider: str) -> FileLock:
     return lock
 
 
-async def connect(provider: str, presenter: AuthorizationPresenter, *, reauthorize: bool = False) -> ConnectionResult:
+async def connect(
+    provider: str,
+    presenter: AuthorizationPresenter,
+    *,
+    reauthorize: bool = False,
+    scopes: "tuple[str, ...] | list[str]" = (),
+) -> ConnectionResult:
     """Connect ``provider``. ``reauthorize`` runs the provider's consent even over a held grant
-    (the Connections row's Reconnect) — how a grant missing a scope is replaced."""
+    (the Connections row's Reconnect) — how a grant missing a scope is replaced. ``scopes`` are
+    asked for on top of the provider's own set (within what it may add); when the held grant
+    lacks one, the consent runs to add it."""
     from flow_sdk.core.connections.service import FlowServiceError, flow_service
     from flow_sdk.core.connections.specs import _list_connection_specs_with_client
 
@@ -338,6 +346,10 @@ async def connect(provider: str, presenter: AuthorizationPresenter, *, reauthori
                 # stayed disconnected and `require()` failed right after. Only a
                 # row the catalogue already calls connected may skip `/auth`, which
                 # is where a valid hub grant is adopted without a browser.
+                wanted_scopes = [s for s in dict.fromkeys(scopes) if s]
+                held = set(spec.granted_scopes or spec.scopes)
+                if wanted_scopes and not held.issuperset(wanted_scopes):
+                    reauthorize = True
                 if initial.ok is True and spec.connected and not reauthorize:
                     return ConnectionResult(spec=spec, test=initial)
                 if initial.ok is None:
@@ -348,10 +360,12 @@ async def connect(provider: str, presenter: AuthorizationPresenter, *, reauthori
                         initial.detail,
                     )
 
-                # A query parameter, the way the Connections screen's Reconnect sends it.
-                auth_path = f"/api/v1/graph/oauth/{quote(spec.provider, safe='')}/auth" + (
-                    "?reauthorize=true" if reauthorize else ""
+                # Query parameters, the way the Connections screen's Reconnect sends them.
+                query = "&".join(
+                    [*(["reauthorize=true"] if reauthorize else []),
+                     *([f"scopes={quote(' '.join(wanted_scopes), safe='')}"] if wanted_scopes else [])]
                 )
+                auth_path = f"/api/v1/graph/oauth/{quote(spec.provider, safe='')}/auth" + (f"?{query}" if query else "")
                 auth_response = await client.request("POST", auth_path, json={})
                 if not auth_response.success and auth_response.error_code == "cloud_login_required":
                     await _ensure_cloud_login(spec.provider, client, presenter)

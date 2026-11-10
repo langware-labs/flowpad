@@ -682,3 +682,50 @@ async def test_testing_the_account_row_reads_the_hub_login(monkeypatch):
     result = await test_connection("flowpad_account")
 
     assert (result.ok, result.code) == (False, "cloud_login_required")
+
+
+async def test_connect_with_scopes_asks_only_when_the_grant_lacks_them(monkeypatch):
+    """`Connection.connect(scopes=[...])` is the public way to add an optional scope (full Drive):
+    a grant lacking it runs the consent with the scope on `/auth`; a grant that covers it does not."""
+    import flow_sdk.core.connections.orchestrator as orchestrator
+    import flow_sdk.core.connections.service as service_module
+    import flow_sdk.core.connections.specs as specs_module
+
+    readonly, full = "https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive"
+    held = ConnectionSpec(provider="google", display_name="Google", credential_ref="google_credentials",
+                          connected=True, scopes=(readonly,), granted_scopes=(readonly,))
+
+    async def catalogue(_client):
+        return [held]
+
+    monkeypatch.setattr(specs_module, "_list_connection_specs_with_client", catalogue)
+    monkeypatch.setattr(orchestrator, "_acquire_provider_lock", lambda _p: SimpleNamespace(is_locked=False))
+    calls: list[str] = []
+
+    class Client:
+        async def request(self, method, path, json=None):
+            calls.append(path)
+            if path.endswith("/secrets/is-enabled"):
+                return SimpleNamespace(success=True, data={"enabled": True}, error_code=None, message=None)
+            if path.endswith("/oauth/google/test"):
+                return SimpleNamespace(success=True, data={"ok": True, "identity": "me"}, error_code=None, message=None)
+            if "/oauth/google/auth" in path:
+                data = {"provider": "google", "oauth_request_id": "r1", "status": "success"}
+                return SimpleNamespace(success=True, data=data, error_code=None, message=None)
+            raise AssertionError(path)
+
+    class Lease:
+        async def __aenter__(self):
+            return SimpleNamespace(client=Client())
+
+        async def __aexit__(self, *_a):
+            return False
+
+    monkeypatch.setattr(service_module, "flow_service", Lease)
+
+    await orchestrator.connect("google", SimpleNamespace(), scopes=[readonly])
+    assert not [c for c in calls if "/auth" in c]  # already granted: no consent
+
+    await orchestrator.connect("google", SimpleNamespace(), scopes=[full])
+    auth = [c for c in calls if "/auth" in c]
+    assert auth == ["/api/v1/graph/oauth/google/auth?reauthorize=true&scopes=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive"]
