@@ -2,7 +2,7 @@ import '@src/styles/highlightjs.css';
 import { useAsyncSdkInit } from '@src/hooks/use-async-sdk-init';
 import { trackEvent } from '@src/utils/analytics';
 import { loadGoogleTagManager } from '@src/utils/google-tag-manager';
-import { trackSignUpWhenConsented, watchConsentForHeldSignUp } from '@src/utils/pending-signup';
+import { settleHeldSignUp, trackSignUpWhenConsented } from '@src/utils/pending-signup';
 import { config, dataContext, navigator } from '@sdk';
 import { useLocation } from 'react-router';
 import { useAuth, useGlobalEvents } from '@sdk/react/hooks';
@@ -107,7 +107,7 @@ const GlobalEvents = () => {
 const AppContent = ({ children }: { children: React.ReactNode }) => {
   useAsyncSdkInit();
   const { user, someone } = useAuth();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const analyticsTrackingRef = useRef(false);
 
   // Wire all WS-driven notifications (hub errors, bootstrap notice, skill/task badges).
@@ -146,10 +146,11 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     });
   }, [someone, user]);
 
-  useEffect(() => watchConsentForHeldSignUp(), []);
+  // On each route: a sign-up that landed on a page without GTM can reach one in-app.
+  useEffect(() => settleHeldSignUp(), [pathname, search]);
 
   // On the route, not at page start: the login callback lands on `/`, which redirects to the hub home.
-  useEffect(() => loadGoogleTagManager(pathname), [pathname]);
+  useEffect(() => loadGoogleTagManager(pathname, search), [pathname, search]);
 
   return (
     <QueryClientProvider client={queryClient}>

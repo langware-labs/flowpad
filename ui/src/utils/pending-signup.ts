@@ -13,13 +13,6 @@ const SENT_KEY = '_signup_sent';
 const CONSENT_COOKIE = 'CookieScriptConsent';
 /** The CookieScript category that grants Google's `analytics_storage`. */
 const ANALYTICS_CATEGORY = 'performance';
-/** Fires on load, accept and reject. On accept, CookieScript has already updated Google consent. */
-const CONSENT_EVENT = 'CookieScriptCurrentState';
-/**
- * CookieScript reloads the page about 20 ms after a choice, which can cancel a hit sent in that moment.
- * Waiting past that leaves the send to the reloaded page; with no reload, it still happens here.
- */
-const AFTER_CHOICE_WAIT_MS = 1000;
 
 type Consent = 'granted' | 'denied' | 'undecided';
 
@@ -46,15 +39,20 @@ function readConsent(): Consent {
   }
 }
 
-function settleHeldSignUp(): void {
+/**
+ * Send or drop a held sign-up once the visitor's choice is known. App runs this on every route,
+ * and never on CookieScript's own choice event: CookieScript reloads right after a choice, which
+ * can lose a hit sent then, so the choice is settled on the page that reload brings.
+ */
+export function settleHeldSignUp(): void {
   const heldAt = Number(localStorage.getItem(PENDING_KEY));
   if (!heldAt) return;
 
   const consent = readConsent();
   const expired = Date.now() - heldAt > MAX_AGE_MS;
   if (consent === 'undecided' && !expired) return;
-  // Without GTM on this page the event would go nowhere. CookieScript announces again where it loads.
-  if (consent === 'granted' && !expired && !measured(window.location.pathname)) return;
+  // Without GTM on this page the event would go nowhere, so it waits for a page that has it.
+  if (consent === 'granted' && !expired && !measured(window.location.pathname, window.location.search)) return;
 
   if (consent === 'granted' && !expired && !sessionStorage.getItem(SENT_KEY)) {
     sessionStorage.setItem(SENT_KEY, '1');
@@ -67,19 +65,4 @@ function settleHeldSignUp(): void {
 export function trackSignUpWhenConsented(): void {
   localStorage.setItem(PENDING_KEY, String(Date.now()));
   settleHeldSignUp();
-}
-
-/** Settle a sign-up held on an earlier page load, and any held later. Returns the cleanup. */
-export function watchConsentForHeldSignUp(): () => void {
-  settleHeldSignUp();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const settleAfterWait = (): void => {
-    clearTimeout(timer);
-    timer = setTimeout(settleHeldSignUp, AFTER_CHOICE_WAIT_MS);
-  };
-  document.addEventListener(CONSENT_EVENT, settleAfterWait);
-  return () => {
-    document.removeEventListener(CONSENT_EVENT, settleAfterWait);
-    clearTimeout(timer);
-  };
 }

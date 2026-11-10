@@ -1,4 +1,4 @@
-import { ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@sdk';
+import { config, ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@sdk';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
 import { isDeepLinkAction } from '@src/navigation/inbound-link';
@@ -51,11 +51,13 @@ export async function loadHomePage(args: LoaderArgs) {
 
   // Hub page has no desktop home. When the served backend serves only the hub
   // (no `desk`), the index route lands on the hub home instead of HomeLanding.
-  // The query comes along: the login callback lands on `/?signup` or `/?login`,
-  // and App reads that param for analytics after this redirect.
+  // Only the login callback's marker comes along, for App to read after this
+  // redirect. GA4 receives this page's URL, and the rest of a root query can carry
+  // the visitor's details: Auth0's verification link lands here with its own.
   if (isHubOnly()) {
+    const marker = [config.SIGNUP_QUERY_PARAM, config.LOGIN_QUERY_PARAM].find((name) => url.searchParams.has(name));
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect(`/dock/hub/home${url.search}`);
+    throw redirect(`/dock/hub/home${marker ? `?${marker}` : ''}`);
   }
 
   const dock = DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`);

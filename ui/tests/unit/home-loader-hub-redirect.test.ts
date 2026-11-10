@@ -25,9 +25,27 @@ const redirectedTo = async (search: string): Promise<string | null> => {
 
 // The hub's login callback lands on `/?signup` or `/?login`, and App.tsx reads that param
 // for analytics after this redirect: dropping it reports the sign-up as a plain visit.
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.analytics_url_secrets.rules: FAILING? forward only the login marker
+//       from the root query - GA4 receives the hub home URL. Read this tag's rules before
+//       editing
+// flowpad:endcapsule tag
 describe('hub root redirect', () => {
-  it.each(['?signup', '?login', '?utm_source=x&signup'])('keeps the request query %s', async (search) => {
+  it.each(['?signup', '?login'])('keeps the login callback marker %s', async (search) => {
     await expect(redirectedTo(search)).resolves.toBe(`/dock/hub/home${search}`);
+  });
+
+  // GA4 receives the hub home's URL, and Auth0's verification link can carry the visitor's address.
+  it.each([
+    ['?success=true&message=Your%20email%20was%20verified&email=a%40b.test&signup', '?signup'],
+    ['?utm_source=x&login', '?login'],
+    ['?success=true&message=Your%20email%20was%20verified&email=a%40b.test', ''],
+    ['?action=open&setup_git=1', ''],
+  ])('drops everything else from %s', async (search, kept) => {
+    await expect(redirectedTo(search)).resolves.toBe(`/dock/hub/home${kept}`);
   });
 
   it('adds nothing when the request has no query', async () => {
