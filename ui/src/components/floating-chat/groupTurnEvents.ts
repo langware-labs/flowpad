@@ -12,7 +12,10 @@ import { transcriptEntry } from './transcriptEntry';
  *
  * A contiguous run of REASONING frames collapses the same way into its own
  * collapsible `thinking` row (`ThinkingSummary`), independent of the
- * dense group's "show tool calls" gate.
+ * dense group's "show tool calls" gate. A thinking row is ONE step's
+ * thinking: the tool call the step ends in seals it, so a long turn of
+ * think → act → think → act renders a row per step, not one row that grows
+ * for the whole turn (FLOWPAD-2350).
  *
  * Why this lives client-side: the worker drivers (Claude / Codex
  * `event_to_flowdata.py`) emit each event individually with no notion of
@@ -36,7 +39,7 @@ export type TurnGroup =
   /** STATUS `exit-error`: its own visible row (the launch-failure card), never a hidden dense chip. */
   | { kind: 'launch-failure'; flowData: FlowData; index: number }
   | { kind: 'dense'; events: FlowData[]; index: number }
-  /** Every REASONING frame between two messages, collected into its own collapsible row (`ThinkingSummary`), separate from `dense` and its "show tool calls" gate. */
+  /** One step's run of REASONING frames — up to the next message or tool/status row — as its own collapsible row (`ThinkingSummary`), separate from `dense` and its "show tool calls" gate. */
   | { kind: 'thinking'; events: FlowData[]; index: number };
 
 const MESSAGE_TYPES = new Set<string>([
@@ -64,23 +67,32 @@ const NON_ACTIVITY_SUBTYPES = new Set<string>(['token_usage', 'meta', 'summary']
 
 const NO_LIVE_EVENTS: FlowData[] = [];
 
+type DenseGroup = Extract<TurnGroup, { kind: 'dense' }>;
+const isDense = (g: TurnGroup): g is DenseGroup => g.kind === 'dense';
+
 /**
- * Split the trailing "in-flight" dense group off a grouped turn stream: while
- * `active`, its still-running tool/status/error events are the last dense
- * group, split out so a chat surface can show it separately (e.g. a footer chip).
+ * Split the "in-flight" tool/status/error events off a grouped turn stream:
+ * while `active`, every dense group after the last message — one per step,
+ * alternating with that step's `thinking` group — is pulled out and merged, so
+ * a chat surface can show the turn's events separately (e.g. a footer chip
+ * whose count climbs for the whole turn).
  *
- * A live `thinking` group is NOT split off this way — it stays inline,
- * growing in place; see `ThinkingSummary`.
+ * The `thinking` groups are NOT split off — they stay inline, one per step;
+ * see `ThinkingSummary`.
  */
 export function splitLiveGroup(
   groups: TurnGroup[],
   active: boolean,
 ): { inlineGroups: TurnGroup[]; liveEvents: FlowData[] } {
-  const last = active ? groups[groups.length - 1] : undefined;
-  if (last?.kind === 'dense') {
-    return { inlineGroups: groups.slice(0, -1), liveEvents: last.events };
-  }
-  return { inlineGroups: groups, liveEvents: NO_LIVE_EVENTS };
+  if (!active) return { inlineGroups: groups, liveEvents: NO_LIVE_EVENTS };
+  let start = groups.length;
+  while (start > 0 && (groups[start - 1].kind === 'dense' || groups[start - 1].kind === 'thinking')) start--;
+  const live = groups.slice(start).filter(isDense);
+  if (live.length === 0) return { inlineGroups: groups, liveEvents: NO_LIVE_EVENTS };
+  return {
+    inlineGroups: [...groups.slice(0, start), ...groups.slice(start).filter((g) => !isDense(g))],
+    liveEvents: live.length === 1 ? live[0].events : live.flatMap((g) => g.events),
+  };
 }
 
 export function groupTurnEvents(items: readonly FlowData[]): TurnGroup[] {
@@ -178,9 +190,9 @@ export function createTurnGrouper(): TurnGrouper {
     tail = [];
   };
 
-  /** Seal the reasoning run collected since the last message, if any. Kept
-   *  distinct from `flushTail` so a caller could flush one without the
-   *  other, though every current call site flushes both together. */
+  /** Seal the reasoning run collected since the last message or tool row, if
+   *  any. Kept distinct from `flushTail`: a tool row seals only the thinking
+   *  before it, and a new thought seals only the tool run before it. */
   const flushThinkingTail = () => {
     if (thinkingTail.length === 0) return;
     committed.push({ kind: 'thinking', events: thinkingTail, index: committed.length });
@@ -209,6 +221,9 @@ export function createTurnGrouper(): TurnGrouper {
     } else if (t === FlowElementTypes.REASONING) {
       // Collected separately from DENSE_TYPES so a thinking summary never
       // merges into the generic tool/status chip — see the `thinking` TurnGroup.
+      // Thinking after the agent acted is the next step's: seal the tool run
+      // first, so the rows keep the order thought → action → thought.
+      flushTail();
       thinkingTail.push(item);
     } else if (DENSE_TYPES.has(t)) {
       if (NON_ACTIVITY_SUBTYPES.has(item.attributes['subtype'])) return;
@@ -243,6 +258,10 @@ export function createTurnGrouper(): TurnGrouper {
       }
       const entryId = transcriptEntryIdOf(item);
       if (entryId) emittedByEntryId.set(entryId, item);
+      // Acting ends the step's thinking. Without this seal, a turn that thinks
+      // and runs tools without writing text grew ONE thinking row all the
+      // way to its next message (FLOWPAD-2350).
+      flushThinkingTail();
       tail.push(item);
     }
     // Anything else (END, RESULT, CHECKPOINT, …) is intentionally dropped from
@@ -270,8 +289,8 @@ export function createTurnGrouper(): TurnGrouper {
       }
       for (let i = start; i < items.length; i++) consume(items[i]);
       prevItems = items;
-      // Mirrors commit order: a still-open thinking run renders before the
-      // still-open tool/status run, both after the last committed group.
+      // At most one run is still open — a thought seals the tool run and a
+      // tool row seals the thinking — and it renders after the committed groups.
       const trailing: TurnGroup[] = [];
       if (thinkingTail.length > 0) {
         trailing.push({ kind: 'thinking', events: [...thinkingTail], index: committed.length + trailing.length });

@@ -1,0 +1,541 @@
+[
+ {
+  "flow_value": "I'm updating the module docstring of test_store_parity to cover the new case. Then I'll run the tests, but faker isn't available in the scratchpad, so I'll install it into a temporary target directory with uv and point PYTHONPATH at it.\n\n",
+  "attributes": {
+   "element-type": "reasoning",
+   "data-type": "string",
+   "subtype": "assistant_message",
+   "observation-kind": "replay",
+   "transcript-entry-id": "2ae55412-70c6-4ec9-828c-e16499676db7",
+   "role": "assistant"
+  },
+  "index": 0,
+  "part": 0,
+  "created_time": "2026-11-10T10:16:40.821Z",
+  "focus": null,
+  "process_entry": {
+   "transcript_entry": {
+    "kind": "assistant_message",
+    "id": "2ae55412-70c6-4ec9-828c-e16499676db7",
+    "session_id": "33928b3b-e61d-4c8b-b896-16e11f6cf233",
+    "timestamp": "2026-11-10T10:16:40.821Z",
+    "worker": "claude",
+    "parent_id": "ba0339b6-2103-44c7-a2c8-188743489080",
+    "is_sidechain": false,
+    "entry_id": "msg_011Cgu5G2Cr9iuvX628GrynB",
+    "model": "claude-opus-5-5",
+    "attribution_skill": null,
+    "virtual": false,
+    "derived_from": null,
+    "text": "Updating the parity file's description, then running it. `faker` isn't in Flowpad's Python, so I'm installing it into a temp folder only for this run.",
+    "thinking": "I'm updating the module docstring of test_store_parity to cover the new case. Then I'll run the tests, but faker isn't available in the scratchpad, so I'll install it into a temporary target directory with uv and point PYTHONPATH at it.\n\n",
+    "phase": null
+   },
+   "observation_kind": "replay",
+   "received_at": "2026-11-10T10:27:54.736027+00:00"
+  },
+  "data_type": "string",
+  "final": false,
+  "group_id": null,
+  "channel": null,
+  "element_type": "reasoning",
+  "to_xml": "<flow-reasoning i=\"0\" t=\"2026-11-10T10:16:40.821Z\" data-type=\"string\" subtype=\"assistant_message\" observation-kind=\"replay\" transcript-entry-id=\"2ae55412-70c6-4ec9-828c-e16499676db7\" role=\"assistant\">I'm updating the module docstring of test_store_parity to cover the new case. Then I'll run the tests, but faker isn't available in the scratchpad, so I'll install it into a temporary target directory with uv and point PYTHONPATH at it.\n\n</flow-reasoning>\n",
+  "start_tag_xml": "<flow-reasoning i=\"0\" t=\"2026-11-10T10:16:40.821Z\" data-type=\"string\" subtype=\"assistant_message\" observation-kind=\"replay\" transcript-entry-id=\"2ae55412-70c6-4ec9-828c-e16499676db7\" role=\"assistant\">",
+  "content": "I'm updating the module docstring of test_store_parity to cover the new case. Then I'll run the tests, but faker isn't available in the scratchpad, so I'll install it into a temporary target directory with uv and point PYTHONPATH at it.\n\n",
+  "end_tag_xml": "</flow-reasoning>\n"
+ },
+ {
+  "flow_value": "Updating the parity file's description, then running it. `faker` isn't in Flowpad's Python, so I'm installing it into a temp folder only for this run.",
+  "attributes": {
+   "element-type": "chat",
+   "data-type": "string",
+   "subtype": "assistant_message",
+   "observation-kind": "replay",
+   "transcript-entry-id": "2ae55412-70c6-4ec9-828c-e16499676db7",
+   "role": "assistant"
+  },
+  "index": 1,
+  "part": 0,
+  "created_time": "2026-11-10T10:16:40.821Z",
+  "focus": null,
+  "process_entry": {
+   "transcript_entry": {
+    "kind": "assistant_message",
+    "id": "2ae55412-70c6-4ec9-828c-e16499676db7",
+    "session_id": "33928b3b-e61d-4c8b-b896-16e11f6cf233",
+    "timestamp": "2026-11-10T10:16:40.821Z",
+    "worker": "claude",
+    "parent_id": "ba0339b6-2103-44c7-a2c8-188743489080",
+    "is_sidechain": false,
+    "entry_id": "msg_011Cgu5G2Cr9iuvX628GrynB",
+    "model": "claude-opus-5-5",
+    "attribution_skill": null,
+    "virtual": false,
+    "derived_from": null,
+    "text": "Updating the parity file's description, then running it. `faker` isn't in Flowpad's Python, so I'm installing it into a temp folder only for this run.",
+    "thinking": "I'm updating the module docstring of test_store_parity to cover the new case. Then I'll run the tests, but faker isn't available in the scratchpad, so I'll install it into a temporary target directory with uv and point PYTHONPATH at it.\n\n",
+    "phase": null
+   },
+   "observation_kind": "replay",
+   "received_at": "2026-11-10T10:27:54.736027+00:00"
+  },
+  "data_type": "string",
+  "final": false,
+  "group_id": null,
+  "channel": null,
+  "element_type": "chat",
+  "to_xml": "<flow-chat i=\"1\" t=\"2026-11-10T10:16:40.821Z\" data-type=\"string\" subtype=\"assistant_message\" observation-kind=\"replay\" transcript-entry-id=\"2ae55412-70c6-4ec9-828c-e16499676db7\" role=\"assistant\">Updating the parity file's description, then running it. `faker` isn't in Flowpad's Python, so I'm installing it into a temp folder only for this run.</flow-chat>\n",
+  "start_tag_xml": "<flow-chat i=\"1\" t=\"2026-11-10T10:16:40.821Z\" data-type=\"string\" subtype=\"assistant_message\" observation-kind=\"replay\" transcript-entry-id=\"2ae55412-70c6-4ec9-828c-e16499676db7\" role=\"assistant\">",
+  "content": "Updating the parity file's description, then running it. `faker` isn't in Flowpad's Python, so I'm installing it into a temp folder only for this run.",
+  "end_tag_xml": "</flow-chat>\n"
+ },
+ {
+  "flow_value": {
+   "tool_name": "Edit",
+   "tool_use_id": "toolu_011AkRz4oHYanqnViyWQagP6",
+   "tool_call_id": "toolu_011AkRz4oHYanqnViyWQagP6",
+   "input": {
+    "file_path": "~\\Flowpad workspace\\qa-deployment-14102026\\qa_sdk\\tests\\features\\store_parity...",
+    "edits": [
+     {
+      "old": "\"Equal\" is exact: the same types",
+      "new": "``SdkSuitesOnBothStores`` runs the SDK's suites on mock data (``tests.unit.te...",
+      "replace_all": false
+     }
+    ]
+   },
+   "args": {
+    "file_path": "~\\Flowpad workspace\\qa-deployment-14102026\\qa_sdk\\tests\\features\\store_parity...",
+    "edits": [
+     {
+      "old": "\"Equal\" is exact: the same types",
+      "new": "``SdkSuitesOnBothStores`` runs the SDK's suites on mock data (``tests.unit.te...",
+      "replace_all": false
+     }
+    ]
+   },
+   "change_summary": null
+  },
+  "attributes": {
+   "element-type": "tool-call",
+   "data-type": "object",
+   "tool-name": "Edit",
+   "tool-use-id": "toolu_011AkRz4oHYanqnViyWQagP6",
+   "subtype": "file_edit",
+   "observation-kind": "replay",
+   "transcript-entry-id": "c99a0501-5991-4054-a73b-13f06d467604"
+  },
+  "index": 2,
+  "part": 0,
+  "created_time": "2026-11-10T10:16:42.225Z",
+  "focus": null,
+  "process_entry": {
+   "transcript_entry": {
+    "kind": "file_edit",
+    "id": "c99a0501-5991-4054-a73b-13f06d467604",
+    "session_id": "33928b3b-e61d-4c8b-b896-16e11f6cf233",
+    "timestamp": "2026-11-10T10:16:42.225Z",
+    "worker": "claude",
+    "parent_id": "cbd501d5-25bc-4840-b2e7-d3df09004477",
+    "is_sidechain": false,
+    "entry_id": "msg_011Cgu5G2Cr9iuvX628GrynB",
+    "model": null,
+    "attribution_skill": null,
+    "virtual": false,
+    "derived_from": null,
+    "path": "~\\Flowpad workspace\\qa-deployment-14102026\\qa_sdk\\tests\\features\\store_parity...",
+    "hunks": [
+     {
+      "old": "\"Equal\" is exact: the same types",
+      "new": "``SdkSuitesOnBothStores`` runs the SDK's suites on mock data (``tests.unit.te...",
+      "replace_all": false
+     }
+    ],
+    "change_summary": null,
+    "tool_name": "Edit",
+    "tool_use_id": "toolu_011AkRz4oHYanqnViyWQagP6",
+    "is_error": false
+   },
+   "observation_kind": "replay",
+   "received_at": "2026-11-10T10:27:54.737044+00:00"
+  },
+  "data_type": "object",
+  "final": false,
+  "group_id": null,
+  "channel": null,
+  "element_type": "tool-call",
+  "to_xml": "<flow-tool-call i=\"2\" t=\"2026-11-10T10:16:42.225Z\" data-type=\"object\" tool-na...",
+  "start_tag_xml": "<flow-tool-call i=\"2\" t=\"2026-11-10T10:16:42.225Z\" data-type=\"object\" tool-na...",
+  "content": "{\"tool_name\": \"Edit\", \"tool_use_id\": \"toolu_011AkRz4oHYanqnViyWQagP6\", \"tool_...",
+  "end_tag_xml": "</flow-tool-call>\n"
+ },
+ {
+  "flow_value": {
+   "tool_name": "Bash",
+   "tool_use_id": "toolu_01CV6wPeyTj9PPPRTKAp58Fx",
+   "tool_call_id": "toolu_01CV6wPeyTj9PPPRTKAp58Fx",
+   "args": {
+    "command": "cd \"~/Flowpad workspace/qa-deployment-14102026\" && P=\"~/AppData/Roaming/uv/to..."
+   },
+   "command": "cd \"~/Flowpad workspace/qa-deployment-14102026\" && P=\"~/AppData/Roaming/uv/to...",
+   "stdout": "test_the_sdk_suites_end_the_same_on_both_stores (qa_sdk.tests.features.store_...",
+   "exit_code": null
+  },
+  "attributes": {
+   "element-type": "tool-call",
+   "data-type": "object",
+   "tool-name": "Bash",
+   "tool-use-id": "toolu_01CV6wPeyTj9PPPRTKAp58Fx",
+   "subtype": "shell_command",
+   "observation-kind": "replay",
+   "transcript-entry-id": "0ac06ce6-2a7d-4969-a21f-1ba4271a3803"
+  },
+  "index": 3,
+  "part": 0,
+  "created_time": "2026-11-10T10:16:45.052Z",
+  "focus": null,
+  "process_entry": {
+   "transcript_entry": {
+    "kind": "shell_command",
+    "id": "0ac06ce6-2a7d-4969-a21f-1ba4271a3803",
+    "session_id": "33928b3b-e61d-4c8b-b896-16e11f6cf233",
+    "timestamp": "2026-11-10T10:16:45.052Z",
+    "worker": "claude",
+    "parent_id": "2fc24e6a-9ec1-48f7-9d9f-b13d6ad046fc",
+    "is_sidechain": false,
+    "entry_id": "msg_011Cgu5G2Cr9iuvX628GrynB",
+    "model": null,
+    "attribution_skill": null,
+    "virtual": false,
+    "derived_from": null,
+    "tool_name": "Bash",
+    "tool_use_id": "toolu_01CV6wPeyTj9PPPRTKAp58Fx",
+    "tool_input": {},
+    "command": "cd \"~/Flowpad workspace/qa-deployment-14102026\" && P=\"~/AppData/Roaming/uv/to...",
+    "cwd": null,
+    "exit_code": null,
+    "stdout_preview": "test_the_sdk_suites_end_the_same_on_both_stores (qa_sdk.tests.features.store_...",
+    "stderr_preview": null,
+    "duration_ms": null,
+    "timeout": 600000
+   },
+   "observation_kind": "replay",
+   "received_at": "2026-11-10T10:27:54.737044+00:00"
+  },
+  "data_type": "object",
+  "final": false,
+  "group_id": null,
+  "channel": null,
+  "element_type": "tool-call",
+  "to_xml": "<flow-tool-call i=\"3\" t=\"2026-11-10T10:16:45.052Z\" data-type=\"object\" tool-na...",
+  "start_tag_xml": "<flow-tool-call i=\"3\" t=\"2026-11-10T10:16:45.052Z\" data-type=\"object\" tool-na...",
+  "content": "{\"tool_name\": \"Bash\", \"tool_use_id\": \"toolu_01CV6wPeyTj9PPPRTKAp58Fx\", \"tool_...",
+  "end_tag_xml": "</flow-tool-call>\n"
+ },
+ {
+  "flow_value": "On SQLite, all 22 tests passed, but on Flow, setUpClass errors out for two seeded classes, so 17 tests never ran, and two full-cycle tests also error. That gives 23 differing outcomes out of 24 IDs, which doesn't quite add up, since one of them must match on both. I'm wondering whether that one is a skip.\n\nI'm counting the tests again: 7 runtime, 12 failure-path, and 2 full-cycle, plus the two setUpClass entries, which comes to 23 rather than 24. So one of the failure-path tests must produce the same result on both backends, and I want to find which one before reporting the differences.\n\n\nThe new case passes on SQLite, but on FlowQAStore both seeded classes fail at open() and the full-cycle tests raise NotImplementedError, leaving 23 of 24 entries differing. I'm checking which entry matched next.\n\n",
+  "attributes": {
+   "element-type": "reasoning",
+   "data-type": "string",
+   "subtype": "assistant_message",
+   "observation-kind": "replay",
+   "transcript-entry-id": "34c0302a-9e72-4f2b-814b-e13253c04da2",
+   "role": "assistant"
+  },
+  "index": 4,
+  "part": 0,
+  "created_time": "2026-11-10T10:18:11.665Z",
+  "focus": null,
+  "process_entry": {
+   "transcript_entry": {
+    "kind": "assistant_message",
+    "id": "34c0302a-9e72-4f2b-814b-e13253c04da2",
+    "session_id": "33928b3b-e61d-4c8b-b896-16e11f6cf233",
+    "timestamp": "2026-11-10T10:18:11.665Z",
+    "worker": "claude",
+    "parent_id": "ecb64c6c-d9b9-4073-8604-b50643aeb217",
+    "is_sidechain": false,
+    "entry_id": "msg_011Cgu5NFcuzzG6z19EJVGZr",
+    "model": "claude-opus-5-5",
+    "attribution_skill": null,
+    "virtual": false,
+    "derived_from": null,
+    "text": "",
+    "thinking": "On SQLite, all 22 tests passed, but on Flow, setUpClass errors out for two seeded classes, so 17 tests never ran, and two full-cycle tests also error. That gives 23 differing outcomes out of 24 IDs, which doesn't quite add up, since one of them must match on both. I'm wondering whether that one is a skip.\n\nI'm counting the tests again: 7 runtime, 12 failure-path, and 2 full-cycle, plus the two setUpClass entries, which comes to 23 rather than 24. So one of the failure-path tests must produce the same result on both backends, and I want to find which one before reporting the differences.\n\n\nThe new case passes on SQLite, but on FlowQAStore both seeded classes fail at open() and the full-cycle tests raise NotImplementedError, leaving 23 of 24 entries differing. I'm checking which entry matched next.\n\n",
+    "phase": null
+   },
+   "observation_kind": "replay",
+   "received_at": "2026-11-10T10:27:54.737044+00:00"
+  },
+  "data_type": "string",
+  "final": false,
+  "group_id": null,
+  "channel": null,
+  "element_type": "reasoning",
+  "to_xml": "<flow-reasoning i=\"4\" t=\"2026-11-10T10:18:11.665Z\" data-type=\"string\" subtype=\"assistant_message\" observation-kind=\"replay\" transcript-entry-id=\"34c0302a-9e72-4f2b-814b-e13253c04da2\" role=\"assistant\">On SQLite, all 22 tests passed, but on Flow, setUpClass errors out for two seeded classes, so 17 tests never ran, and two full-cycle tests also error. That gives 23 differing outcomes out of 24 IDs, which doesn't quite add up, since one of them must match on both. I'm wondering whether that one is a skip.\n\nI'm counting the tests again: 7 runtime, 12 failure-path, and 2 full-cycle, plus the two setUpClass entries, which comes to 23 rather than 24. So one of the failure-path tests must produce the same result on both backends, and I want to find which one before reporting the differences.\n\n\nThe new case passes on SQLite, but on FlowQAStore both seeded classes fail at open() and the full-cycle tests raise NotImplementedError, leaving 23 of 24 entries differing. I'm checking which entry matched next.\n\n</flow-reasoning>\n",
+  "start_tag_xml": "<flow-reasoning i=\"4\" t=\"2026-11-10T10:18:11.665Z\" data-type=\"string\" subtype=\"assistant_message\" observation-kind=\"replay\" transcript-entry-id=\"34c0302a-9e72-4f2b-814b-e13253c04da2\" role=\"assistant\">",
+  "content": "On SQLite, all 22 tests passed, but on Flow, setUpClass errors out for two seeded classes, so 17 tests never ran, and two full-cycle tests also error. That gives 23 differing outcomes out of 24 IDs, which doesn't quite add up, since one of them must match on both. I'm wondering whether that one is a skip.\n\nI'm counting the tests again: 7 runtime, 12 failure-path, and 2 full-cycle, plus the two setUpClass entries, which comes to 23 rather than 24. So one of the failure-path tests must produce the same result on both backends, and I want to find which one before reporting the differences.\n\n\nThe new case passes on SQLite, but on FlowQAStore both seeded classes fail at open() and the full-cycle tests raise NotImplementedError, leaving 23 of 24 entries differing. I'm checking which entry matched next.\n\n",
+  "end_tag_xml": "</flow-reasoning>\n"
+ },
+ {
+  "flow_value": {
+   "tool_name": "Bash",
+   "tool_use_id": "toolu_01EE8ZdyHPZ1hZxLs8VEdQRz",
+   "tool_call_id": "toolu_01EE8ZdyHPZ1hZxLs8VEdQRz",
+   "args": {
+    "command": "cd \"~/Flowpad workspace/qa-deployment-14102026\" && grep -nE '^\\s+(async )?def..."
+   },
+   "command": "cd \"~/Flowpad workspace/qa-deployment-14102026\" && grep -nE '^\\s+(async )?def...",
+   "stdout": "379:    async def test_09_an_older_attempt_after_a_newer_one(self):\n390:    a...",
+   "exit_code": null
+  },
+  "attributes": {
+   "element-type": "tool-call",
+   "data-type": "object",
+   "tool-name": "Bash",
+   "tool-use-id": "toolu_01EE8ZdyHPZ1hZxLs8VEdQRz",
+   "subtype": "shell_command",
+   "observation-kind": "replay",
+   "transcript-entry-id": "666cf51c-3b8b-40a8-bffb-d5b0d13fc186"
+  },
+  "index": 5,
+  "part": 0,
+  "created_time": "2026-11-10T10:18:11.990Z",
+  "focus": null,
+  "process_entry": {
+   "transcript_entry": {
+    "kind": "shell_command",
+    "id": "666cf51c-3b8b-40a8-bffb-d5b0d13fc186",
+    "session_id": "33928b3b-e61d-4c8b-b896-16e11f6cf233",
+    "timestamp": "2026-11-10T10:18:11.990Z",
+    "worker": "claude",
+    "parent_id": "ecf5e435-e54a-4262-9983-10917921b750",
+    "is_sidechain": false,
+    "entry_id": "msg_011Cgu5NFcuzzG6z19EJVGZr",
+    "model": null,
+    "attribution_skill": null,
+    "virtual": false,
+    "derived_from": null,
+    "tool_name": "Bash",
+    "tool_use_id": "toolu_01EE8ZdyHPZ1hZxLs8VEdQRz",
+    "tool_input": {},
+    "command": "cd \"~/Flowpad workspace/qa-deployment-14102026\" && grep -nE '^\\s+(async )?def...",
+    "cwd": null,
+    "exit_code": null,
+    "stdout_preview": "379:    async def test_09_an_older_attempt_after_a_newer_one(self):\n390:    a...",
+    "stderr_preview": null,
+    "duration_ms": null,
+    "timeout": null
+   },
+   "observation_kind": "replay",
+   "received_at": "2026-11-10T10:27:54.737044+00:00"
+  },
+  "data_type": "object",
+  "final": false,
+  "group_id": null,
+  "channel": null,
+  "element_type": "tool-call",
+  "to_xml": "<flow-tool-call i=\"5\" t=\"2026-11-10T10:18:11.990Z\" data-type=\"object\" tool-na...",
+  "start_tag_xml": "<flow-tool-call i=\"5\" t=\"2026-11-10T10:18:11.990Z\" data-type=\"object\" tool-na...",
+  "content": "{\"tool_name\": \"Bash\", \"tool_use_id\": \"toolu_01EE8ZdyHPZ1hZxLs8VEdQRz\", \"tool_...",
+  "end_tag_xml": "</flow-tool-call>\n"
+ },
+ {
+  "flow_value": "I'm counting the test totals: 22 in all, with 22 passing on SQLite. Adding the two setUpClass entries gives 24 ids, but the listed differences only account for 23, so something doesn't reconcile. I'm checking whether the TestFullCycle and test_qa_sdk counts explain the gap.\n\nI'm tallying the test_qa_sdk cases: 04b, 04c through 10 plus FullCycle come to 14, so one test is missing from my list. That missing one must have matched on both backends, which is odd given the rest. I'm going to look for the 15th test, probably in a class that never opens a store.\n\n",
+  "attributes": {
+   "element-type": "reasoning",
+   "data-type": "string",
+   "subtype": "assistant_message",
+   "observation-kind": "replay",
+   "transcript-entry-id": "3d1217f9-ea7f-48c0-bc09-c9a14c47b92a",
+   "role": "assistant"
+  },
+  "index": 6,
+  "part": 0,
+  "created_time": "2026-11-10T10:18:17.254Z",
+  "focus": null,
+  "process_entry": {
+   "transcript_entry": {
+    "kind": "assistant_message",
+    "id": "3d1217f9-ea7f-48c0-bc09-c9a14c47b92a",
+    "session_id": "33928b3b-e61d-4c8b-b896-16e11f6cf233",
+    "timestamp": "2026-11-10T10:18:17.254Z",
+    "worker": "claude",
+    "parent_id": "9aaeac70-3c3e-4678-8c98-a0036d1cd564",
+    "is_sidechain": false,
+    "entry_id": "msg_011Cgu5Nz8n2sgbnVDYjZwy9",
+    "model": "claude-opus-5-5",
+    "attribution_skill": null,
+    "virtual": false,
+    "derived_from": null,
+    "text": "",
+    "thinking": "I'm counting the test totals: 22 in all, with 22 passing on SQLite. Adding the two setUpClass entries gives 24 ids, but the listed differences only account for 23, so something doesn't reconcile. I'm checking whether the TestFullCycle and test_qa_sdk counts explain the gap.\n\nI'm tallying the test_qa_sdk cases: 04b, 04c through 10 plus FullCycle come to 14, so one test is missing from my list. That missing one must have matched on both backends, which is odd given the rest. I'm going to look for the 15th test, probably in a class that never opens a store.\n\n",
+    "phase": null
+   },
+   "observation_kind": "replay",
+   "received_at": "2026-11-10T10:27:54.737044+00:00"
+  },
+  "data_type": "string",
+  "final": false,
+  "group_id": null,
+  "channel": null,
+  "element_type": "reasoning",
+  "to_xml": "<flow-reasoning i=\"6\" t=\"2026-11-10T10:18:17.254Z\" data-type=\"string\" subtype=\"assistant_message\" observation-kind=\"replay\" transcript-entry-id=\"3d1217f9-ea7f-48c0-bc09-c9a14c47b92a\" role=\"assistant\">I'm counting the test totals: 22 in all, with 22 passing on SQLite. Adding the two setUpClass entries gives 24 ids, but the listed differences only account for 23, so something doesn't reconcile. I'm checking whether the TestFullCycle and test_qa_sdk counts explain the gap.\n\nI'm tallying the test_qa_sdk cases: 04b, 04c through 10 plus FullCycle come to 14, so one test is missing from my list. That missing one must have matched on both backends, which is odd given the rest. I'm going to look for the 15th test, probably in a class that never opens a store.\n\n</flow-reasoning>\n",
+  "start_tag_xml": "<flow-reasoning i=\"6\" t=\"2026-11-10T10:18:17.254Z\" data-type=\"string\" subtype=\"assistant_message\" observation-kind=\"replay\" transcript-entry-id=\"3d1217f9-ea7f-48c0-bc09-c9a14c47b92a\" role=\"assistant\">",
+  "content": "I'm counting the test totals: 22 in all, with 22 passing on SQLite. Adding the two setUpClass entries gives 24 ids, but the listed differences only account for 23, so something doesn't reconcile. I'm checking whether the TestFullCycle and test_qa_sdk counts explain the gap.\n\nI'm tallying the test_qa_sdk cases: 04b, 04c through 10 plus FullCycle come to 14, so one test is missing from my list. That missing one must have matched on both backends, which is odd given the rest. I'm going to look for the 15th test, probably in a class that never opens a store.\n\n",
+  "end_tag_xml": "</flow-reasoning>\n"
+ },
+ {
+  "flow_value": {
+   "tool_name": "Bash",
+   "tool_use_id": "toolu_01SERWu4G3TsM9fi4mzic5Ye",
+   "tool_call_id": "toolu_01SERWu4G3TsM9fi4mzic5Ye",
+   "args": {
+    "command": "cd \"~/Flowpad workspace/qa-deployment-14102026\" && grep -nE '^class |^\\s+(asy..."
+   },
+   "command": "cd \"~/Flowpad workspace/qa-deployment-14102026\" && grep -nE '^class |^\\s+(asy...",
+   "stdout": "28:class TestTheMockRepository(unittest.TestCase):\n31:    def test_it_has_the...",
+   "exit_code": null
+  },
+  "attributes": {
+   "element-type": "tool-call",
+   "data-type": "object",
+   "tool-name": "Bash",
+   "tool-use-id": "toolu_01SERWu4G3TsM9fi4mzic5Ye",
+   "subtype": "shell_command",
+   "observation-kind": "replay",
+   "transcript-entry-id": "83ca1555-359e-45c8-8681-064cfafcf67d"
+  },
+  "index": 7,
+  "part": 0,
+  "created_time": "2026-11-10T10:18:17.365Z",
+  "focus": null,
+  "process_entry": {
+   "transcript_entry": {
+    "kind": "shell_command",
+    "id": "83ca1555-359e-45c8-8681-064cfafcf67d",
+    "session_id": "33928b3b-e61d-4c8b-b896-16e11f6cf233",
+    "timestamp": "2026-11-10T10:18:17.365Z",
+    "worker": "claude",
+    "parent_id": "3d1217f9-ea7f-48c0-bc09-c9a14c47b92a",
+    "is_sidechain": false,
+    "entry_id": "msg_011Cgu5Nz8n2sgbnVDYjZwy9",
+    "model": null,
+    "attribution_skill": null,
+    "virtual": false,
+    "derived_from": null,
+    "tool_name": "Bash",
+    "tool_use_id": "toolu_01SERWu4G3TsM9fi4mzic5Ye",
+    "tool_input": {},
+    "command": "cd \"~/Flowpad workspace/qa-deployment-14102026\" && grep -nE '^class |^\\s+(asy...",
+    "cwd": null,
+    "exit_code": null,
+    "stdout_preview": "28:class TestTheMockRepository(unittest.TestCase):\n31:    def test_it_has_the...",
+    "stderr_preview": null,
+    "duration_ms": null,
+    "timeout": null
+   },
+   "observation_kind": "replay",
+   "received_at": "2026-11-10T10:27:54.737044+00:00"
+  },
+  "data_type": "object",
+  "final": false,
+  "group_id": null,
+  "channel": null,
+  "element_type": "tool-call",
+  "to_xml": "<flow-tool-call i=\"7\" t=\"2026-11-10T10:18:17.365Z\" data-type=\"object\" tool-na...",
+  "start_tag_xml": "<flow-tool-call i=\"7\" t=\"2026-11-10T10:18:17.365Z\" data-type=\"object\" tool-na...",
+  "content": "{\"tool_name\": \"Bash\", \"tool_use_id\": \"toolu_01SERWu4G3TsM9fi4mzic5Ye\", \"tool_...",
+  "end_tag_xml": "</flow-tool-call>\n"
+ },
+ {
+  "flow_value": "The mock repository test for the planned shape only exercises the Faker mock, not the store, so it passes on both backends, which is the expected behaviour. For the final report I'll keep it brief, note that nothing was committed, that the parity file now takes about 75 seconds mostly because of the SQLite suite run, and that the Faker temp install lives outside the project, so the tests need Faker available.\n\n",
+  "attributes": {
+   "element-type": "reasoning",
+   "data-type": "string",
+   "subtype": "assistant_message",
+   "observation-kind": "replay",
+   "transcript-entry-id": "d830894a-62ae-4865-b3fd-ce283e8341d6",
+   "role": "assistant"
+  },
+  "index": 8,
+  "part": 0,
+  "created_time": "2026-11-10T10:18:25.507Z",
+  "focus": null,
+  "process_entry": {
+   "transcript_entry": {
+    "kind": "assistant_message",
+    "id": "d830894a-62ae-4865-b3fd-ce283e8341d6",
+    "session_id": "33928b3b-e61d-4c8b-b896-16e11f6cf233",
+    "timestamp": "2026-11-10T10:18:25.507Z",
+    "worker": "claude",
+    "parent_id": "00372355-54c5-45d1-bc45-0fd11f512a76",
+    "is_sidechain": false,
+    "entry_id": "msg_011Cgu5PNb8xxwi3aXq9Xa1Y",
+    "model": "claude-opus-5-5",
+    "attribution_skill": null,
+    "virtual": false,
+    "derived_from": null,
+    "text": "The SDK's own suites now run on both stores through the new parity case.\n\n**The store switch, `tests/unit/qa_fixtures.py`:**\n- `use_store(\"sqlite\" | \"flow\")` picks the store for every throwaway store the fixtures open, and returns the previous choice. `QA_TEST_STORE=flow` sets it for a whole run; the default is SQLite.\n- `store_url(folder)` gives `sqlite:///<folder>/qa.db` or `flow:///<folder>`.\n- `SeededCase` copies the seeded SQLite files into each test as before. A store that isn't plain files is seeded again for each test.\n\n**For that, `FlowQAStore`** gained an `instance` folder: a throwaway Flowpad instance holding that store's rows. `open_store` accepts `flow:///<folder>` for it; `flow://` alone still means this machine's instance. The 718-call replay now uses a throwaway folder too.\n\n**The new case, `SdkSuitesOnBothStores`,** in `qa_sdk/tests/features/store_parity/test_store_parity.py`:\n- It runs `tests.unit.test_qa_sdk` and `tests.unit.test_qa_runtime` once on each store.\n- It records how every test ended: pass, skip, fail or error (including a failed `setUpClass`), or \"did not run\".\n- It fails listing every test that ended differently, with the reason on the Flowpad side.\n\n**Result of the run (75 s):**\n- On SQLite, all 22 tests pass.\n- On `FlowQAStore`, 23 of 24 entries differ. Both seeded classes fail in `setUpClass` at `open()`, so their 19 tests never run, and the two full-cycle tests error.\n- The one match is `TestTheMockRepository`, which never opens a store.\n- The 718-call replay still fails at call 1, `open()`. The other two checks pass.\n\nThese suites need `faker`, which isn't in Flowpad's Python. For this run I installed it into a temp folder only (`%TEMP%\\q-faker-lib`, put on `PYTHONPATH`).\n\nNothing is committed; it's all on `flowpad-dataspec-migration`.",
+    "thinking": "The mock repository test for the planned shape only exercises the Faker mock, not the store, so it passes on both backends, which is the expected behaviour. For the final report I'll keep it brief, note that nothing was committed, that the parity file now takes about 75 seconds mostly because of the SQLite suite run, and that the Faker temp install lives outside the project, so the tests need Faker available.\n\n",
+    "phase": null
+   },
+   "observation_kind": "replay",
+   "received_at": "2026-11-10T10:27:54.737044+00:00"
+  },
+  "data_type": "string",
+  "final": false,
+  "group_id": null,
+  "channel": null,
+  "element_type": "reasoning",
+  "to_xml": "<flow-reasoning i=\"8\" t=\"2026-11-10T10:18:25.507Z\" data-type=\"string\" subtype=\"assistant_message\" observation-kind=\"replay\" transcript-entry-id=\"d830894a-62ae-4865-b3fd-ce283e8341d6\" role=\"assistant\">The mock repository test for the planned shape only exercises the Faker mock, not the store, so it passes on both backends, which is the expected behaviour. For the final report I'll keep it brief, note that nothing was committed, that the parity file now takes about 75 seconds mostly because of the SQLite suite run, and that the Faker temp install lives outside the project, so the tests need Faker available.\n\n</flow-reasoning>\n",
+  "start_tag_xml": "<flow-reasoning i=\"8\" t=\"2026-11-10T10:18:25.507Z\" data-type=\"string\" subtype=\"assistant_message\" observation-kind=\"replay\" transcript-entry-id=\"d830894a-62ae-4865-b3fd-ce283e8341d6\" role=\"assistant\">",
+  "content": "The mock repository test for the planned shape only exercises the Faker mock, not the store, so it passes on both backends, which is the expected behaviour. For the final report I'll keep it brief, note that nothing was committed, that the parity file now takes about 75 seconds mostly because of the SQLite suite run, and that the Faker temp install lives outside the project, so the tests need Faker available.\n\n",
+  "end_tag_xml": "</flow-reasoning>\n"
+ },
+ {
+  "flow_value": "The SDK's own suites now run on both stores through the new parity case.\n\n**The store switch, `tests/unit/qa_fixtures.py`:**\n- `use_store(\"sqlite\" | \"flow\")` picks the store for every throwaway store the fixtures open, and returns the previous choice. `QA_TEST_STORE=flow` sets it for a whole run; the default is SQLite.\n- `store_url(folder)` gives `sqlite:///<folder>/qa.db` or `flow:///<folder>`.\n- `SeededCase` copies the seeded SQLite files into each test as before. A store that isn't plain files is seeded again for each test.\n\n**For that, `FlowQAStore`** gained an `instance` folder: a throwaway Flowpad instance holding that store's rows. `open_store` accepts `flow:///<folder>` for it; `flow://` alone still means this machine's instance. The 718-call replay now uses a throwaway folder too.\n\n**The new case, `SdkSuitesOnBothStores`,** in `qa_sdk/tests/features/store_parity/test_store_parity.py`:\n- It runs `tests.unit.test_qa_sdk` and `tests.unit.test_qa_runtime` once on each store.\n- It records how every test ended: pass, skip, fail or error (including a failed `setUpClass`), or \"did not run\".\n- It fails listing every test that ended differently, with the reason on the Flowpad side.\n\n**Result of the run (75 s):**\n- On SQLite, all 22 tests pass.\n- On `FlowQAStore`, 23 of 24 entries differ. Both seeded classes fail in `setUpClass` at `open()`, so their 19 tests never run, and the two full-cycle tests error.\n- The one match is `TestTheMockRepository`, which never opens a store.\n- The 718-call replay still fails at call 1, `open()`. The other two checks pass.\n\nThese suites need `faker`, which isn't in Flowpad's Python. For this run I installed it into a temp folder only (`%TEMP%\\q-faker-lib`, put on `PYTHONPATH`).\n\nNothing is committed; it's all on `flowpad-dataspec-migration`.",
+  "attributes": {
+   "element-type": "chat",
+   "data-type": "string",
+   "subtype": "assistant_message",
+   "observation-kind": "replay",
+   "transcript-entry-id": "d830894a-62ae-4865-b3fd-ce283e8341d6",
+   "role": "assistant"
+  },
+  "index": 9,
+  "part": 0,
+  "created_time": "2026-11-10T10:18:25.507Z",
+  "focus": null,
+  "process_entry": {
+   "transcript_entry": {
+    "kind": "assistant_message",
+    "id": "d830894a-62ae-4865-b3fd-ce283e8341d6",
+    "session_id": "33928b3b-e61d-4c8b-b896-16e11f6cf233",
+    "timestamp": "2026-11-10T10:18:25.507Z",
+    "worker": "claude",
+    "parent_id": "00372355-54c5-45d1-bc45-0fd11f512a76",
+    "is_sidechain": false,
+    "entry_id": "msg_011Cgu5PNb8xxwi3aXq9Xa1Y",
+    "model": "claude-opus-5-5",
+    "attribution_skill": null,
+    "virtual": false,
+    "derived_from": null,
+    "text": "The SDK's own suites now run on both stores through the new parity case.\n\n**The store switch, `tests/unit/qa_fixtures.py`:**\n- `use_store(\"sqlite\" | \"flow\")` picks the store for every throwaway store the fixtures open, and returns the previous choice. `QA_TEST_STORE=flow` sets it for a whole run; the default is SQLite.\n- `store_url(folder)` gives `sqlite:///<folder>/qa.db` or `flow:///<folder>`.\n- `SeededCase` copies the seeded SQLite files into each test as before. A store that isn't plain files is seeded again for each test.\n\n**For that, `FlowQAStore`** gained an `instance` folder: a throwaway Flowpad instance holding that store's rows. `open_store` accepts `flow:///<folder>` for it; `flow://` alone still means this machine's instance. The 718-call replay now uses a throwaway folder too.\n\n**The new case, `SdkSuitesOnBothStores`,** in `qa_sdk/tests/features/store_parity/test_store_parity.py`:\n- It runs `tests.unit.test_qa_sdk` and `tests.unit.test_qa_runtime` once on each store.\n- It records how every test ended: pass, skip, fail or error (including a failed `setUpClass`), or \"did not run\".\n- It fails listing every test that ended differently, with the reason on the Flowpad side.\n\n**Result of the run (75 s):**\n- On SQLite, all 22 tests pass.\n- On `FlowQAStore`, 23 of 24 entries differ. Both seeded classes fail in `setUpClass` at `open()`, so their 19 tests never run, and the two full-cycle tests error.\n- The one match is `TestTheMockRepository`, which never opens a store.\n- The 718-call replay still fails at call 1, `open()`. The other two checks pass.\n\nThese suites need `faker`, which isn't in Flowpad's Python. For this run I installed it into a temp folder only (`%TEMP%\\q-faker-lib`, put on `PYTHONPATH`).\n\nNothing is committed; it's all on `flowpad-dataspec-migration`.",
+    "thinking": "The mock repository test for the planned shape only exercises the Faker mock, not the store, so it passes on both backends, which is the expected behaviour. For the final report I'll keep it brief, note that nothing was committed, that the parity file now takes about 75 seconds mostly because of the SQLite suite run, and that the Faker temp install lives outside the project, so the tests need Faker available.\n\n",
+    "phase": null
+   },
+   "observation_kind": "replay",
+   "received_at": "2026-11-10T10:27:54.737044+00:00"
+  },
+  "data_type": "string",
+  "final": false,
+  "group_id": null,
+  "channel": null,
+  "element_type": "chat",
+  "to_xml": "<flow-chat i=\"9\" t=\"2026-11-10T10:18:25.507Z\" data-type=\"string\" subtype=\"assistant_message\" observation-kind=\"replay\" transcript-entry-id=\"d830894a-62ae-4865-b3fd-ce283e8341d6\" role=\"assistant\">The SDK's own suites now run on both stores through the new parity case.\n\n**The store switch, `tests/unit/qa_fixtures.py`:**\n- `use_store(\"sqlite\" | \"flow\")` picks the store for every throwaway store the fixtures open, and returns the previous choice. `QA_TEST_STORE=flow` sets it for a whole run; the default is SQLite.\n- `store_url(folder)` gives `sqlite:///&lt;folder&gt;/qa.db` or `flow:///&lt;folder&gt;`.\n- `SeededCase` copies the seeded SQLite files into each test as before. A store that isn't plain files is seeded again for each test.\n\n**For that, `FlowQAStore`** gained an `instance` folder: a throwaway Flowpad instance holding that store's rows. `open_store` accepts `flow:///&lt;folder&gt;` for it; `flow://` alone still means this machine's instance. The 718-call replay now uses a throwaway folder too.\n\n**The new case, `SdkSuitesOnBothStores`,** in `qa_sdk/tests/features/store_parity/test_store_parity.py`:\n- It runs `tests.unit.test_qa_sdk` and `tests.unit.test_qa_runtime` once on each store.\n- It records how every test ended: pass, skip, fail or error (including a failed `setUpClass`), or \"did not run\".\n- It fails listing every test that ended differently, with the reason on the Flowpad side.\n\n**Result of the run (75 s):**\n- On SQLite, all 22 tests pass.\n- On `FlowQAStore`, 23 of 24 entries differ. Both seeded classes fail in `setUpClass` at `open()`, so their 19 tests never run, and the two full-cycle tests error.\n- The one match is `TestTheMockRepository`, which never opens a store.\n- The 718-call replay still fails at call 1, `open()`. The other two checks pass.\n\nThese suites need `faker`, which isn't in Flowpad's Python. For this run I installed it into a temp folder only (`%TEMP%\\q-faker-lib`, put on `PYTHONPATH`).\n\nNothing is committed; it's all on `flowpad-dataspec-migration`.</flow-chat>\n",
+  "start_tag_xml": "<flow-chat i=\"9\" t=\"2026-11-10T10:18:25.507Z\" data-type=\"string\" subtype=\"assistant_message\" observation-kind=\"replay\" transcript-entry-id=\"d830894a-62ae-4865-b3fd-ce283e8341d6\" role=\"assistant\">",
+  "content": "The SDK's own suites now run on both stores through the new parity case.\n\n**The store switch, `tests/unit/qa_fixtures.py`:**\n- `use_store(\"sqlite\" | \"flow\")` picks the store for every throwaway store the fixtures open, and returns the previous choice. `QA_TEST_STORE=flow` sets it for a whole run; the default is SQLite.\n- `store_url(folder)` gives `sqlite:///&lt;folder&gt;/qa.db` or `flow:///&lt;folder&gt;`.\n- `SeededCase` copies the seeded SQLite files into each test as before. A store that isn't plain files is seeded again for each test.\n\n**For that, `FlowQAStore`** gained an `instance` folder: a throwaway Flowpad instance holding that store's rows. `open_store` accepts `flow:///&lt;folder&gt;` for it; `flow://` alone still means this machine's instance. The 718-call replay now uses a throwaway folder too.\n\n**The new case, `SdkSuitesOnBothStores`,** in `qa_sdk/tests/features/store_parity/test_store_parity.py`:\n- It runs `tests.unit.test_qa_sdk` and `tests.unit.test_qa_runtime` once on each store.\n- It records how every test ended: pass, skip, fail or error (including a failed `setUpClass`), or \"did not run\".\n- It fails listing every test that ended differently, with the reason on the Flowpad side.\n\n**Result of the run (75 s):**\n- On SQLite, all 22 tests pass.\n- On `FlowQAStore`, 23 of 24 entries differ. Both seeded classes fail in `setUpClass` at `open()`, so their 19 tests never run, and the two full-cycle tests error.\n- The one match is `TestTheMockRepository`, which never opens a store.\n- The 718-call replay still fails at call 1, `open()`. The other two checks pass.\n\nThese suites need `faker`, which isn't in Flowpad's Python. For this run I installed it into a temp folder only (`%TEMP%\\q-faker-lib`, put on `PYTHONPATH`).\n\nNothing is committed; it's all on `flowpad-dataspec-migration`.",
+  "end_tag_xml": "</flow-chat>\n"
+ }
+]
