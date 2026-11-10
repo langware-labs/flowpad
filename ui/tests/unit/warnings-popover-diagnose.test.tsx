@@ -50,6 +50,7 @@ vi.mock('@sdk', async (orig) => ({ ...(await orig<object>()), helpRequestDiagnos
 const { notify } = await import('@src/notifications/notify');
 const { useAlertStore, useDiagnosisLinks } = await import('@src/notifications/alerts-store');
 const { WarningsPopover } = await import('@src/components/warnings-popover/warnings-popover');
+const { __resetCleanupStoreForTest } = await import('@sdk/stores/project-cleanup-store');
 
 /** The popover row (alert or derived warning) that displays `text`. */
 function rowFor(text: string): HTMLElement {
@@ -75,6 +76,7 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
     useAlertStore.setState({ alerts: [] });
     dataContext.bootstrapInfo = null;
     dataContext.setWarnings([]);
+    __resetCleanupStoreForTest();
   });
 
   it('shows a diagnose button on a warning alert as well as an error alert', async () => {
@@ -164,5 +166,23 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
     await user.click(within(row).getByTestId('warnings-popover-warning-diagnose-fix'));
 
     expect(diagnoseAndFix).toHaveBeenCalledWith(expect.stringContaining('No harness found'), 'warning', expect.any(String));
+  });
+
+  it('an informational warning offers its review screen, not Diagnose & fix', async () => {
+    const user = userEvent.setup();
+    const { ingestCleanupSummary } = await import('@sdk/stores/project-cleanup-store');
+    ingestCleanupSummary({ empty_count: 56, threshold: 10 } as never);
+
+    render(<WarningsPopover />);
+    const trigger = await screen.findByTestId('warnings-popover-trigger');
+    await user.click(trigger);
+    const row = rowFor('56 empty projects');
+    // Informational, so listed but not counted: the badge is every other row.
+    const rows = screen.getAllByTestId('warnings-popover-warning').length;
+    expect(trigger.textContent).toBe(String(rows - 1));
+    expect(within(row).queryByTestId('warnings-popover-warning-diagnose-fix')).toBeNull();
+    await user.click(within(row).getByTestId('warnings-popover-warning-review'));
+
+    expect(String(openDock.mock.calls[0][0])).toContain('projects/cleanup');
   });
 });

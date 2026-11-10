@@ -46,6 +46,11 @@ export interface UserWarning {
   onClick?: () => void;
   /** Optional button drawn inside the warning, for the one thing a person can do about it. */
   action?: { label: string; onClick: () => void };
+  /**
+   * False for an informational warning where nothing is broken (its click is the fix): the entry
+   * offers Review, which does the same as clicking it, instead of Diagnose & fix, and is not counted.
+   */
+  diagnosable?: false;
 }
 
 /**
@@ -231,6 +236,7 @@ export function createEmptyProjectsWarning(count: number): UserWarning {
     description: 'Old workspace folders with no sessions or files. Click to review and clean up.',
     targetView: ViewType.LENS,
     targetPointer: 'projects/cleanup',
+    diagnosable: false,
   };
 }
 
