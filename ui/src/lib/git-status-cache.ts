@@ -1,6 +1,5 @@
 import { GitWorkdir } from '@sdk';
 import type { GitStatus } from '@sdk';
-import { closeGitConflict } from '@src/lib/git-outcome';
 
 /**
  * Shared single-flight + short-TTL cache for the ``git-ops status`` action.
@@ -56,7 +55,6 @@ export function getGitStatus(
   const promise: Promise<GitStatus | null> = new GitWorkdir(workdir, computeNodeId).getStatus().catch(() => null);
   cache.set(key, promise);
   void promise.then((status) => {
-    if (status && !status.error && !status.conflict) closeGitConflict(workdir);
     // Evict only the entry this request created: an invalidation or a forced
     // refetch while it was in flight has already replaced or dropped it.
     setTimeout(() => {

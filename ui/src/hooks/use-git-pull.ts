@@ -15,7 +15,7 @@ export interface UseGitPullResult {
 
 /**
  * One-click "non-tech" pull — the inbound twin of ``useGitPush``: the same
- * ``notifyGitOutcome`` toast, the same Resolve on a conflict, the same
+ * ``notifyGitOutcome`` toast (a conflict shows only as the footer chip), the same
  * ``onAfter`` refresh hook.
  */
 export function useGitPull(
