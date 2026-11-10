@@ -72,6 +72,21 @@ def loopback_answers(port: int, path: str = "/", *, timeout: float, healthy=lamb
 _LOCAL_BINDS = {*LOOPBACKS, "0.0.0.0", "::"}
 
 
+def is_listener(conn) -> bool:
+    """A listening socket, as the OS reports it.
+
+    Windows 11 build 26300 after KB5127936 returns some listener rows with state 0
+    (psutil: ``NONE``) instead of LISTEN, and others with owner pid 0 — both forms on
+    one machine, across calls. A bound local address with no remote end is a listener
+    whatever the state says; a stateful connection always has a remote end.
+    """
+    import psutil
+
+    if not conn.laddr or getattr(conn, "type", socket.SOCK_STREAM) != socket.SOCK_STREAM:
+        return False
+    return conn.status == psutil.CONN_LISTEN or (conn.status == psutil.CONN_NONE and not conn.raddr)
+
+
 def _listed(port: int) -> Optional[bool]:
     """Whether the system's socket table lists a listener on ``port`` at a loopback or every address;
     None where this user cannot read the whole table (macOS)."""
@@ -84,7 +99,7 @@ def _listed(port: int) -> Optional[bool]:
         # table is unreadable this once, and the connect below answers instead.
         return None
     return any(
-        one.status == psutil.CONN_LISTEN and one.laddr and one.laddr.port == port and one.laddr.ip in _LOCAL_BINDS
+        is_listener(one) and one.laddr.port == port and one.laddr.ip in _LOCAL_BINDS
         for one in table
     )
 

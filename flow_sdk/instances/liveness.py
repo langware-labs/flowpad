@@ -23,6 +23,8 @@ from __future__ import annotations
 import socket
 from dataclasses import dataclass, field, replace
 
+from flow_sdk.core.dev_server import is_listener
+
 from .model import KILL_TIER, Role, Tier
 
 #: argv fragments that identify a backend / frontend process.
@@ -274,21 +276,6 @@ def scan(*, want_ports: bool = True) -> ProcTable:
     return table
 
 
-def _is_listener(conn) -> bool:
-    """A listening socket, as the OS reports it.
-
-    Windows 11 build 26300 after KB5127936 returns some listener rows with state 0
-    (psutil: ``NONE``) instead of LISTEN, and others with owner pid 0 — both forms on
-    one machine, across calls. A bound local address with no remote end is a listener
-    whatever the state says; a stateful connection always has a remote end.
-    """
-    import psutil
-
-    if not conn.laddr:
-        return False
-    return conn.status == psutil.CONN_LISTEN or (conn.status == psutil.CONN_NONE and not conn.raddr)
-
-
 def _attach_listen_ports(table: ProcTable) -> None:
     """Attach listening ports to their processes.
 
@@ -306,7 +293,7 @@ def _attach_listen_ports(table: ProcTable) -> None:
     got_systemwide = False
     try:
         for conn in psutil.net_connections(kind="inet"):
-            if conn.type != socket.SOCK_STREAM or not _is_listener(conn):
+            if conn.type != socket.SOCK_STREAM or not is_listener(conn):
                 continue
             if not conn.pid:
                 table.unattributed_ports.add(conn.laddr.port)
@@ -324,7 +311,7 @@ def _attach_listen_ports(table: ProcTable) -> None:
             except (*gone, OSError):
                 continue
             for conn in conns:
-                if conn.type == socket.SOCK_STREAM and _is_listener(conn):
+                if conn.type == socket.SOCK_STREAM and is_listener(conn):
                     by_pid.setdefault(pid, set()).add(conn.laddr.port)
         table.ports_degraded = not by_pid
 
