@@ -65,3 +65,73 @@ async def test_invalid_connection_id_does_not_raise_and_is_logged(caplog):
         )
     dropped = [r for r in caplog.records if "probe-notauuid" in r.getMessage()]
     assert dropped, "PTY output for an invalid connection id was dropped with no log line"
+
+
+# ── One sender per connection ────────────────────────────────────────────────
+# Each chunk used to send straight to the socket. Once a client stopped reading,
+# concurrent drains on one socket raised a bare AssertionError per chunk: a blank
+# WARNING and a lost chunk each time (~32k lines per 40s on a stalled reader).
+
+
+async def test_outbox_sends_one_chunk_at_a_time_in_order(monkeypatch):
+    import asyncio
+
+    from flow_sdk.builtin.faas import pty_actions
+
+    in_flight, peak, sent = 0, 0, []
+
+    async def send(msg_id, conn, node, shell, data, seq, ts):
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0)  # a slow socket
+        sent.append(seq)
+        in_flight -= 1
+        return True
+
+    for seq in range(20):
+        pty_actions._PtyOutbox.put("conn-a", send, ("m", "conn-a", "n", SHELL_ID, b"x", seq, 0.0), 1)
+    while "conn-a" in pty_actions._PtyOutbox._by_connection:
+        await asyncio.sleep(0)
+    assert peak == 1
+    assert sent == list(range(20))
+
+
+async def test_outbox_parks_a_connection_once_on_a_failed_send_or_overflow(monkeypatch):
+    import asyncio
+
+    from flow_sdk.builtin.faas import pty_actions
+    from flow_sdk.compute.providers.desktop import pty_session_manager
+
+    parked: list[str] = []
+
+    async def park(connection_id, reason="unknown"):
+        parked.append(reason)
+
+    monkeypatch.setattr(pty_session_manager.pty_registry, "on_ws_disconnect", park)
+
+    calls = 0
+
+    async def failing(*chunk):
+        nonlocal calls
+        calls += 1
+        return False
+
+    for seq in range(50):
+        pty_actions._PtyOutbox.put("conn-b", failing, ("m", "conn-b", "n", SHELL_ID, b"x", seq, 0.0), 1)
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert calls == 1, "a failed send stops the queue instead of failing per chunk"
+    assert parked == ["send failed"]
+
+    monkeypatch.setattr(pty_actions, "_OUTBOX_MAX_BYTES", 10)
+    never = asyncio.Event()
+
+    async def stalled(*chunk):
+        await never.wait()
+
+    for seq in range(12):
+        pty_actions._PtyOutbox.put("conn-c", stalled, ("m", "conn-c", "n", SHELL_ID, b"x", seq, 0.0), 1)
+    await asyncio.sleep(0)
+    assert parked[-1].endswith("bytes queued")
+    pty_actions._PtyOutbox._by_connection.pop("conn-c", None)
