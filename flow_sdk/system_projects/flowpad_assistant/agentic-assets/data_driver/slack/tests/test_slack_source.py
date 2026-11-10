@@ -18,6 +18,9 @@ from urllib.parse import parse_qs
 import pytest
 from pydantic import SecretStr
 
+from flow_sdk.blocks import StreamInbox, workflow
+from flow_sdk.blocks.merge import pages
+from flow_sdk.builtin.consumer_position import ConsumerPosition
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
@@ -30,7 +33,7 @@ from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.errors import Rejected
 from flow_sdk.sources.files import local_file
 from flow_sdk.sources.testing import Subject, checks_for
-from flow_sdk.sources.values.items import FileItem, FileKind, MessageFileData, ReactionData, ReactionMode
+from flow_sdk.sources.values.items import FileItem, FileKind, MessageData, MessageFileData, ReactionData, ReactionMode
 
 SlackSource = asset_module("slack").SlackSource
 slack_source = asset_module("slack")
@@ -218,7 +221,9 @@ class _FakeSlack:
             self.channels[channel].append(_message(ts, body["text"], **({"thread_ts": thread} if thread else {})))
             self.posts.append({"to": channel, "text": body["text"], "thread": thread, "external_id": ts})
             return self._ok(ts=ts, channel=channel)
-        rows = sorted(self.channels[channel], key=lambda m: float(m["ts"]), reverse=True)
+        if method == "conversations.replies":
+            return self._thread(channel, params)
+        rows = sorted((self._listed(channel, m) for m in self.channels[channel] if not self._is_reply(m)), key=lambda m: float(m["ts"]), reverse=True)
         if "latest" in params:
             inclusive = params.get("inclusive") not in ("false", "0")
             rows = [m for m in rows if float(m["ts"]) < float(params["latest"]) or (inclusive and float(m["ts"]) == float(params["latest"]))]
@@ -227,6 +232,22 @@ class _FakeSlack:
         start, limit = int(params.get("cursor") or 0), int(params.get("limit") or 100)
         more = start + limit < len(rows)
         return self._ok(messages=rows[start:start + limit], response_metadata={"next_cursor": str(start + limit) if more else ""})
+
+    @staticmethod
+    def _is_reply(message: dict) -> bool:
+        """A thread reply: ``conversations.history`` leaves it out unless it was also sent to the channel."""
+        return message.get("thread_ts") not in (None, message["ts"]) and message.get("subtype") != "thread_broadcast"
+
+    def _listed(self, channel: str, root: dict) -> dict:
+        """``root`` as history lists it: a thread's count and newest reply on it, the replies themselves not."""
+        replies = [m["ts"] for m in self.channels[channel] if m.get("thread_ts") == root["ts"] and m["ts"] != root["ts"]]
+        return {**root, "thread_ts": root["ts"], "reply_count": len(replies), "latest_reply": max(replies, key=float)} if replies else root
+
+    def _thread(self, channel: str, params: dict):
+        """``conversations.replies``: the root whatever ``oldest`` says, then its replies after it, oldest first."""
+        root, floor = params["ts"], float(params.get("oldest") or 0)
+        rows = sorted((m for m in self.channels[channel] if m["ts"] == root or m.get("thread_ts") == root), key=lambda m: float(m["ts"]))
+        return self._ok(messages=[m for m in rows if m["ts"] == root or float(m["ts"]) > floor], response_metadata={"next_cursor": ""})
 
     def _complete(self, body: dict):
         channel, thread = body.get("channel_id"), body.get("thread_ts") or None
@@ -294,7 +315,7 @@ async def test_conformance(check, fake_slack):
     file_id = fake_slack.slack._store_file("notes.txt", b"handed out")
     await check.run(Subject(
         source=lambda: SlackSource(binding),
-        seeded=tuple(probe.origin(ts, "C1") for ts in ("100.000100", "150.000150", "200.000200")),
+        seeded=tuple(probe.origin(ts, "C1") for ts in ("100.000100", "200.000200")),  # 150 is a reply: not in a first read
         conversation=probe.origin("100.000100", "C1"),
         recipient=UserProfile(origin=probe.origin("U1"), name="Ada"),
         inbound_file=FileItem(origin=probe.origin(file_id, "C1"), data=MessageFileData(name="notes.txt")),
@@ -402,7 +423,7 @@ async def test_a_backward_read_over_the_double_lists_only_older_and_leaves_the_f
         forward = await source.fetch()
         older = await source.fetch(None, page_size=5, narrow={"before": datetime.fromtimestamp(200.0002, tz=timezone.utc)})
         again = await source.fetch()
-    assert [i.origin.key for i in older.items] == ["150.000150", "100.000100"]
+    assert [i.origin.key for i in older.items] == ["100.000100"], "a thread's reply is not in the channel's history"
     assert [i.origin.key for i in again.items] == [i.origin.key for i in forward.items]
     assert again.resume_cursor == forward.resume_cursor
 
@@ -438,10 +459,90 @@ async def test_joins_and_leaves_are_not_messages_but_the_cursor_passes_them(serv
 
 
 async def test_a_threaded_reply_joins_its_parents_conversation_without_a_guessed_reply_target(serve):
-    serve([{"ok": True, "messages": [_message("150.0", "reply", thread_ts="100.0"), _message("100.0", "parent")]}])
-    parent, reply = (await DataDriver.loaded("slack").traverse(_source(), _view())).items
+    root = _message("100.0", "parent", thread_ts="100.0", reply_count=1, latest_reply="150.0")
+    serve([{"ok": True, "messages": [root]}, {"ok": True, "messages": [root]}, {"ok": True, "messages": [root, _message("150.0", "reply", thread_ts="100.0")]}])
+    parent, reply = (await DataDriver.loaded("slack").traverse(_source(), _view(SlackSource.resume_after("90.0")))).items
     assert parent.thread_key == reply.thread_key == "100.0"
     assert parent.reply_to_external_id is None and reply.reply_to_external_id is None
+
+
+async def test_a_late_reply_on_an_older_thread_is_read_once_and_joins_its_root(fake_slack):
+    source = SlackSource(_binding(fake_slack.base))
+    async with source:
+        first = await source.fetch()
+        late = fake_slack.slack.arrive("C1", "late", user="U2", thread_ts="100.000100")
+        second = await source.fetch(first.resume_cursor)
+        third = await source.fetch(second.resume_cursor)
+    assert {i.origin.key for i in first.items} == {"100.000100", "200.000200"}, "a first read is backfill: no replies"
+    assert [(i.origin.key, i.data.conversation.key) for i in second.items] == [(late["ts"], "100.000100")]
+    assert third.items == (), "a reply already read came back"
+
+
+async def test_replies_older_than_the_position_are_not_read_as_new(fake_slack):
+    """A row polled before replies were read has no reply mark: what predates its position must not reach an agent."""
+    source = SlackSource(_binding(fake_slack.base))
+    async with source:
+        page = await source.fetch(SlackSource.resume_after("200.000200"))
+    assert page.items == () and "conversations.replies" not in [method for method, _ in fake_slack.slack.calls]
+
+
+async def test_a_rate_limit_on_the_thread_read_keeps_the_channel_page(serve):
+    serve([{"ok": True, "messages": [_message("300.0", "next")]}, {"ok": False, "error": "ratelimited"}])
+    result = await DataDriver.loaded("slack").traverse(_source(), _view(SlackSource.resume_after("200.000200")))
+    assert [i.body for i in result.items] == ["next"] and result.cursor == SlackSource.resume_after("300.0")
+
+
+async def test_a_reply_also_sent_to_the_channel_is_one_item(serve):
+    root = _message("100.0", "parent", thread_ts="100.0", reply_count=1, latest_reply="150.0")
+    broadcast = _message("150.0", "also", thread_ts="100.0", subtype="thread_broadcast")
+    serve([{"ok": True, "messages": [broadcast, root]}, {"ok": True, "messages": [broadcast, root]}, {"ok": True, "messages": [root, broadcast]}])
+    result = await DataDriver.loaded("slack").traverse(_source(), _view(SlackSource.resume_after("90.0")))
+    assert [i.external_id for i in result.items] == ["100.0", "150.0"]
+
+
+async def test_a_message_inside_a_thread_can_be_replied_to(fake_slack):
+    source = SlackSource(_binding(fake_slack.base))
+    async with source:
+        await source.reply(source._message_origin("150.000150", "C1"), MessageData(text="answer"))
+    assert fake_slack.slack.posts[-1]["thread"] == "100.000100"
+
+
+@pytest.mark.parametrize("gains_a_thread", [False, True], ids=["unchanged", "gained-a-thread"])
+async def test_a_message_read_again_reaches_a_consumer_once(serve, gains_a_thread):
+    """Polling may read a message it already has (Slack shows a root again once it has replies): the same
+    row, so the serve loop's position is already past it. The new message after it is the proof that the
+    drain is live, and that nothing old was handed over first."""
+    now = time.time()  # inside the source's window: an older message is not ingested at all
+    root_ts, reply_ts = f"{now - 60:.6f}", f"{now - 30:.6f}"
+    root = _message(root_ts, "are you there?")
+    threaded = {**root, "thread_ts": root_ts, "reply_count": 1, "latest_reply": reply_ts}
+    again = threaded if gains_a_thread else root
+    reply = _message(reply_ts, "in the thread", thread_ts=root_ts)
+    # A resumed pass asks twice (the page, the newest roots). The double ignores `oldest`, so the page reads the root again.
+    serve([
+        {"ok": True, "messages": [root]},
+        {"ok": True, "messages": [again]}, {"ok": True, "messages": [root]},
+        {"ok": True, "messages": [again]}, {"ok": True, "messages": [threaded]}, {"ok": True, "messages": [threaded, reply]},
+    ])
+    source = _source(channel=_saved_channel())
+    await source.save()
+    source_id, name = str(source.id), f"agent-serve:{uuid.uuid4()}"
+
+    async with workflow(name):
+        await ConsumerPosition.ensure_for(name, source_id, baseline=None)
+        drain = pages(StreamInbox.of(source), poll_every=0.01, poll=False)  # the call the serve loop makes
+
+        await source.sync()
+        first = await drain.__anext__()
+        assert [m.body for m in first] == ["are you there?"]
+        await first.ack()
+
+        assert len((await source.sync()).outcomes) == 1, "the second pass did not read the message again"
+        assert len(await SourceItem.get_all({"data_source_id": source_id})) == 1, "the second read made a second row"
+
+        await source.sync()
+        assert [m.body for m in await drain.__anext__()] == ["in the thread"]
+        await drain.aclose()
 
 
 async def test_the_permalink_is_a_formula_not_a_fetch(serve):
@@ -929,7 +1030,7 @@ async def test_everything_reads_every_conversation_from_the_window_then_only_wha
     async with source:
         first = await source.fetch(None, narrow={"since": datetime.fromtimestamp(110, tz=timezone.utc)})
         texts = sorted(i.data.text for i in first.items if isinstance(i, slack_source.MessageItem))
-        assert texts == ["a dm", "a group dm", "in thread", "later"], "every conversation, floored at the window (root at 100 is older)"
+        assert texts == ["a dm", "a group dm", "later"], "every conversation, floored at the window (root at 100 is older; a reply comes live)"
         dm = next(i for i in first.items if i.data.text == "a dm")
         assert dm.origin.namespace == "T1/D1" and dm.data.sender.name == "@dana", "named through users.info"
         unknown = next(i for i in first.items if i.data.text == "a group dm")
