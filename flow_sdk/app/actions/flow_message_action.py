@@ -1644,6 +1644,30 @@ async def conversation_pickup() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to pick up conversation: {str(e)}")
 
 
+@action.post(action_name="return", types=["conversation"])
+async def conversation_return() -> ApiResponse:
+    """``POST conversation/<id>/return`` — the hub's action, answered here. Staff-side: hand a picked
+    ticket back to the desk queue. The hub takes the caller off the ticket; the local row STAYS (unlike
+    ``leave``, which drops it) and is refreshed from the hub, so the inbox shows it as not picked up."""
+    try:
+        someone_typeid, conv_id = _hub_conversation_target()
+        if someone_typeid is None:
+            return ApiFailResponse(message="No authenticated user in request context")
+        if not conv_id:
+            return ApiFailResponse(message="return: target conversation required", status_code=400)
+
+        try:
+            await HubProxy.call("POST", BuiltinEntityType.CONVERSATION, conv_id, "return", payload={}, strict=True)
+        except HubError as e:
+            return e.fail_response("Could not return the ticket to the queue")
+
+        await _materialize_hub_conversation(conv_id, someone_typeid)
+        return ApiSuccessResponse(data={"conversation_id": conv_id})
+    except Exception as e:
+        logger.error("[flow_message_action] return error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to return the ticket: {str(e)}")
+
+
 @action.post(action_name="open_team_conversation", types=["conversation"])
 async def conversation_open_team_conversation() -> ApiResponse:
     """``POST conversation/<ticket id>/open_team_conversation {title, text}`` — the hub's action, answered

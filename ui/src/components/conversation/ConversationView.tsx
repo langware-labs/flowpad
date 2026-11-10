@@ -13,6 +13,7 @@ import {
   FlowMessage,
   MessageThread,
   pickupConversation,
+  releaseTicket,
   settleTicket,
   QueryFilter,
   QueryRequest,
@@ -37,7 +38,15 @@ import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk
 import type { FlowEvent } from '@sdk/tags/EventBus';
 import type { ITask, TaskableMessage } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
-import { replyPickedUp, ticketAffordances } from './ticket-affordances';
+import { conversationFacets, type TicketState } from './conversation-category';
+import { TicketStatusControl } from './TicketStatusControl';
+import {
+  replyPickedUp,
+  ticketActionClassName,
+  ticketAffordances,
+  ticketStatusSteps,
+  type TicketVerb,
+} from './ticket-affordances';
 import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
@@ -122,11 +131,6 @@ interface ConversationViewProps {
   /** Restrict this view and every mutation to one Agent's formal stream inbox. */
   agentId?: string | null;
 }
-
-/** Geometry shared by the ticket-header actions. Only the colour differs
- *  between them, so a padding or type-scale tweak belongs in one place. */
-const ticketActionClassName =
-  'flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50';
 
 export function ConversationView({
   conversationId,
@@ -1050,6 +1054,38 @@ export function ConversationView({
     }
   }, [conversationId, isClosed, handleRefresh]);
 
+  // The status button: the hub calls that reach the chosen state, one after the other, then one refresh.
+  const ticket = canSettle && conversation
+    ? conversationFacets({
+        conv: conversation,
+        members: participants,
+        viewer: { email: myEmail ?? '', cloudUserId, localUserId: null },
+        staffView: true,
+      }).ticket
+    : undefined;
+  const handleStatus = useCallback(
+    async (target: TicketState) => {
+      const run: Record<TicketVerb, () => Promise<unknown>> = {
+        close: () => settleTicket(conversationId, 'close'),
+        reopen: () => settleTicket(conversationId, 'reopen'),
+        pickup: () => pickupConversation(conversationId),
+        return: () => releaseTicket(conversationId),
+      };
+      const steps = ticketStatusSteps(target, { closed: isClosed, mine: isParticipant });
+      if (steps.length === 0) return;
+      setSettling(true);
+      try {
+        for (const verb of steps) await run[verb]();
+        await handleRefresh();
+      } catch (err) {
+        console.error('[conversation] status change failed', conversationId, target, err);
+      } finally {
+        setSettling(false);
+      }
+    },
+    [conversationId, isClosed, isParticipant, handleRefresh],
+  );
+
   const handlePickup = useCallback(async () => {
     setPickingUp(true);
     try {
@@ -1074,30 +1110,42 @@ export function ConversationView({
           onDone={() => void handleRefresh()}
         />
       )}
-      <div className="flex items-center justify-end gap-1">
-        {canPickup && (
+      <div className="flex items-center justify-end gap-2">
+        {ticket && (
+          <TicketStatusControl
+            ticket={ticket}
+            mine={isParticipant}
+            busy={settling}
+            onChoose={(target) => void handleStatus(target)}
+          />
+        )}
+        {canPickup && !isClosed && (
           <button
             type="button"
             onClick={() => void handlePickup()}
             disabled={pickingUp}
             title={t`Join this support ticket. Replying picks it up too.`}
             data-testid="pickup-conversation-button"
-            className={`${ticketActionClassName} border-violet-500/40 bg-violet-500/15 text-violet-600 hover:bg-violet-500/25 dark:text-violet-400`}
+            className={`${ticketActionClassName} border-transparent bg-primary text-primary-foreground shadow-sm hover:bg-primary/90`}
           >
-            <LifeBuoy className="h-3 w-3" />
+            <LifeBuoy className="h-4 w-4" />
             {pickingUp ? <Trans>Picking up…</Trans> : <Trans>Pick up</Trans>}
           </button>
         )}
-        {canSettle && (
+        {canSettle && (isClosed || !canPickup) && (
           <button
             type="button"
             onClick={() => void handleSettle()}
             disabled={settling}
             title={isClosed ? t`Reopen this ticket` : t`Mark this ticket answered and take it off the desk's queue`}
             data-testid="settle-conversation-button"
-            className={`${ticketActionClassName} border-border text-muted-foreground hover:bg-muted hover:text-foreground`}
+            className={`${ticketActionClassName} ${
+              isClosed
+                ? 'border-violet-500/40 bg-violet-500/15 text-violet-600 hover:bg-violet-500/25 dark:text-violet-400'
+                : 'border-transparent bg-emerald-600 text-white shadow-sm hover:bg-emerald-500'
+            }`}
           >
-            {isClosed ? <RotateCcw className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
+            {isClosed ? <RotateCcw className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
             {settling ? <Trans>Saving…</Trans> : isClosed ? <Trans>Reopen</Trans> : <Trans>Close ticket</Trans>}
           </button>
         )}
@@ -1106,9 +1154,9 @@ export function ConversationView({
           onClick={() => void handleRefresh()}
           title={channel ? t`Refresh (checks the channel for new messages)` : t`Refresh (pulls from hub)`}
           data-testid="refresh-conversation-button"
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${hubSyncing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`h-4 w-4 ${hubSyncing ? 'animate-spin' : ''}`} />
         </button>
       </div>
       {threadId && (

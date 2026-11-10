@@ -193,6 +193,10 @@ export interface IConversation extends IEntity {
   /** The hub's owner of the conversation (a cloud user id), copied as is. Null on a conversation
    *  that never left this machine (``remote`` false: its owner is this machine's user). */
   initiated_by?: string | null;
+  /** Help desk ticket: the staff in it, computed by the hub (masked empty for the requester). */
+  picked_up_by?: string[] | null;
+  /** Help desk ticket: the hub's word that someone picked it up — all a requester gets. */
+  staffed?: boolean | null;
   /** Unread for the local viewer, stamped by the backend (`stream_inbox.recompute_unread`).
    *  Render it; never recompute it. Absent on a hub runtime, which has no such projection. */
   is_unread?: boolean;
@@ -244,6 +248,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   plan_sessions_indexed_at?: string | Date | null;
   owner?: string | null;
   initiated_by?: string | null;
+  picked_up_by?: string[] | null;
+  staffed?: boolean | null;
   is_unread?: boolean;
   unread_count?: number;
   archived?: boolean;
@@ -277,6 +283,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.plan_sessions_indexed_at = entity.plan_sessions_indexed_at ?? null;
     this.owner = entity.owner ?? null;
     this.initiated_by = entity.initiated_by ?? null;
+    this.picked_up_by = entity.picked_up_by ?? null;
+    this.staffed = entity.staffed ?? null;
     this.is_unread = entity.is_unread;
     this.unread_count = entity.unread_count;
     this.archived = entity.archived;
@@ -590,6 +598,15 @@ export async function pickupConversation(conversationId: string): Promise<{ conv
   // The hub's own action: an unpicked ticket has no row on this machine yet, and the desktop
   // has no `pickup` of its own (0c7e9d852) — answered locally it is a 404.
   action.hubReflect = true;
+  action.bodyParameters = {};
+  await dataManager.callAction(action);
+  return { conversation_id: conversationId };
+}
+
+/** Staff-side: hand a picked ticket back to the desk queue — the hub's ``conversation/<id>/return``.
+ *  The desktop answers it and keeps the ticket's row, refreshed from the hub. */
+export async function releaseTicket(conversationId: string): Promise<{ conversation_id: string }> {
+  const action = new ActionInfo('return', Conversation.type, conversationId, 'POST');
   action.bodyParameters = {};
   await dataManager.callAction(action);
   return { conversation_id: conversationId };

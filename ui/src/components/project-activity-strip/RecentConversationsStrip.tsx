@@ -25,7 +25,11 @@ import { NewConversationDialog } from '@src/components/new-conversation-dialog/N
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { ConversationParticipants } from '@src/components/conversation/ConversationParticipants';
 import { participantIsUser, participantName } from '@src/components/conversation/participant-display';
-import { conversationFacets, compareConversationsByRecency } from '@src/components/conversation/conversation-category';
+import {
+  conversationFacets,
+  compareConversationsByRecency,
+  isDeskTicket,
+} from '@src/components/conversation/conversation-category';
 import {
   type ChannelAttribution,
   SourceChip,
@@ -505,6 +509,7 @@ function ConversationRow({
       cloudUserId: cloudUser?.id ?? null,
       localUserId: currentUser?.id ?? null,
     },
+    staffView: isDeskTicket(conv) || undefined,
   });
   const isInvitationRow = facets.isInvitation;
 

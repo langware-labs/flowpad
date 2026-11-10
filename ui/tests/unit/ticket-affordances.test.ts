@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { replyPickedUp, ticketAffordances } from '../../src/components/conversation/ticket-affordances';
+import {
+  replyPickedUp,
+  ticketAffordances,
+  ticketStatusSteps,
+} from '../../src/components/conversation/ticket-affordances';
 
 const base = { helpdesk: true, cloudUserId: 'u1', isOwner: false, isParticipant: false };
 
@@ -29,5 +33,28 @@ describe('replyPickedUp', () => {
     expect(replyPickedUp(true, 'u2', 'u1')).toBe(false);
     expect(replyPickedUp(false, 'u1', 'u1')).toBe(false);
     expect(replyPickedUp(true, null, null)).toBe(false);
+  });
+});
+
+describe('ticketStatusSteps', () => {
+  const open = { closed: false, mine: true };
+  it('closes an open ticket, and leaves a closed one alone', () => {
+    expect(ticketStatusSteps('closed', open)).toEqual(['close']);
+    expect(ticketStatusSteps('closed', { closed: true, mine: true })).toEqual([]);
+  });
+
+  it('hands my ticket back to the queue; one I am not in has nothing to hand back', () => {
+    expect(ticketStatusSteps('waiting', open)).toEqual(['return']);
+    expect(ticketStatusSteps('waiting', { closed: false, mine: false })).toEqual([]);
+  });
+
+  it('picks up a ticket I am not in, and does nothing when it is already mine', () => {
+    expect(ticketStatusSteps('picked', { closed: false, mine: false })).toEqual(['pickup']);
+    expect(ticketStatusSteps('picked', open)).toEqual([]);
+  });
+
+  it('reopens a closed ticket on its way to either open state', () => {
+    expect(ticketStatusSteps('picked', { closed: true, mine: false })).toEqual(['reopen', 'pickup']);
+    expect(ticketStatusSteps('waiting', { closed: true, mine: true })).toEqual(['reopen', 'return']);
   });
 });

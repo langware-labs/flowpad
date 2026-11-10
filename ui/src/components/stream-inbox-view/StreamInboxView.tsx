@@ -89,6 +89,7 @@ import {
   conversationFacets,
   actionsFor,
   compareConversationsByRecency,
+  isDeskTicket,
   isViewer,
 } from '@src/components/conversation/conversation-category';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
@@ -343,7 +344,11 @@ export const ConversationListRow = memo(function ConversationListRow({
     invitation,
     viewer: { email: myEmail, cloudUserId, localUserId },
     // A row the help desk SOURCE delivered is a staff row: label its state from the desk's side.
-    staffView: latestMessage?.origin?.kind === 'helpdesk' || firstMessage?.origin?.kind === 'helpdesk' || undefined,
+    staffView:
+      isDeskTicket(conv) ||
+      latestMessage?.origin?.kind === 'helpdesk' ||
+      firstMessage?.origin?.kind === 'helpdesk' ||
+      undefined,
   });
   // Once staff pick a ticket up, later messages reach them through the hub mirror, not the desk source:
   // the message the desk source delivered still names which desk the row belongs to.
