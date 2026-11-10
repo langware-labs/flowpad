@@ -797,7 +797,7 @@ class HubWsBridge:
                             )
 
                     # Route a contact's prompt through the session gate (the
-                    # session's state — and a standing grant — decide). Cheap
+                    # session's state decides; only the host's Approve starts it). Cheap
                     # pre-check on the raw payload so a plain text message never
                     # spawns the task (and its DB fetch). Detached so a slow/failed run never blocks persist
                     # or the auto-ack below; failure-isolated inside the hook.
@@ -829,7 +829,7 @@ class HubWsBridge:
                             asyncio.create_task(process_inbound_prompt(fm_id, conversation_id))
                     elif _is_session_request(payload.get("attachment")):
                         # A session opened before any prompt: the host's own
-                        # identity on the row, and a standing grant's approval.
+                        # identity on the row; it waits for the host's Approve.
                         from flow_sdk.app.actions.execute_prompt import process_session_request
 
                         asyncio.create_task(process_session_request(fm_id, conversation_id))

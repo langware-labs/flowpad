@@ -57,7 +57,7 @@ export function useApproveLiveSession(): ApproveLiveSession {
       if (!pending) return;
       setPending(null);
       pending.session
-        .approve(undefined, where.projectId, { scratch: where.scratch })
+        .approve(where.projectId, { scratch: where.scratch })
         .then(pending.resolve, pending.reject);
     },
     [pending],

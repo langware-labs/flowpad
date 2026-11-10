@@ -16,17 +16,10 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Button } from '@src/components/ui/button';
-import { Checkbox } from '@src/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { MessageComposer } from '@src/components/conversation/MessageComposer';
 import { SessionEventLine } from '@src/components/conversation/SessionEventLine';
 import { LiveSessionActivity, OpenSessionChatButton } from '@src/components/conversation/LiveSessionActivity';
-import {
-  sessionGrantScope,
-  setSessionGrantScope,
-  useContactPermissions,
-  type ContactKey,
-} from '@src/hooks/use-contact-permissions';
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
@@ -86,58 +79,6 @@ function statusLine(status: string | undefined, hostName: string): ReactNode {
     default:
       return <Trans>status: {status ?? 'unknown'}</Trans>;
   }
-}
-
-/** Host-only standing grant: future sessions from this guest start approved,
- *  in this project or everywhere. Backed by ONE ContactPermission row. */
-function StandingGrantCheckbox({
-  contact,
-  projectId,
-  guestName,
-}: {
-  contact: ContactKey;
-  projectId: string | null;
-  guestName: string;
-}) {
-  const { t } = useLingui();
-  const { permissions, refetch } = useContactPermissions(contact);
-  const scope = sessionGrantScope(permissions, projectId);
-  const [pendingScope, setPendingScope] = useState<'project' | 'everywhere'>(projectId ? 'project' : 'everywhere');
-  const effectiveScope: 'project' | 'everywhere' = scope === 'global' ? 'everywhere' : (scope ?? pendingScope);
-  const apply = useCallback(
-    async (on: boolean, which: 'project' | 'everywhere') => {
-      await setSessionGrantScope(contact, projectId, scope, on ? (which === 'project' ? 'project' : 'global') : null);
-      await refetch?.();
-    },
-    [contact, projectId, scope, refetch],
-  );
-  return (
-    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-      <label className="flex cursor-pointer items-center gap-1.5">
-        <Checkbox
-          checked={scope !== null}
-          onCheckedChange={(v) => void apply(!!v, effectiveScope)}
-          className="h-3.5 w-3.5"
-          data-testid="live-session-standing-grant"
-        />
-        <Trans>Always allow sessions from {guestName}</Trans>
-      </label>
-      <select
-        value={effectiveScope}
-        onChange={(e) => {
-          const next = e.target.value as 'project' | 'everywhere';
-          setPendingScope(next);
-          if (scope !== null) void apply(true, next);
-        }}
-        aria-label={t`Standing grant scope`}
-        data-testid="live-session-standing-grant-scope"
-        className="rounded border border-border bg-background px-1 py-0.5 text-[11px]"
-      >
-        {projectId && <option value="project">{t`in this project`}</option>}
-        <option value="everywhere">{t`everywhere`}</option>
-      </select>
-    </div>
-  );
 }
 
 /**
@@ -263,7 +204,6 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   );
   const hostName = session.host_name ?? 'the host';
   const guestName = session.guest_name ?? session.guest_user_id ?? 'the guest';
-  const guestContact: ContactKey = { userId: session.guest_user_id ?? null, email: null };
 
   // Local vs remote, from where this machine sits: the guest's prompts are local
   // to the guest and run remotely, on the host's Claude Code; the host sees both flipped.
@@ -369,15 +309,6 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
             {sessionOnLatestMessage}
             {disconnectButton(false)}
           </div>
-          {!terminal && (
-            <div className="flex w-full items-center gap-4">
-              <StandingGrantCheckbox
-                contact={guestContact}
-                projectId={session.project_id ?? null}
-                guestName={guestName}
-              />
-            </div>
-          )}
         </div>
       ) : (
         <div className="sticky top-0 z-10 flex flex-shrink-0 items-center gap-2 border-b bg-background px-4 py-2 text-xs text-muted-foreground">

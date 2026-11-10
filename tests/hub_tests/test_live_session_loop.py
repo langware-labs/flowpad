@@ -191,7 +191,7 @@ async def test_live_session_transport_loop(
     assert carrier in att_data, f"carrier attachment stripped by hub: {att_data}"
     assert session_start_settings(inbound).reply_policy == "review"  # the guest's opening proposal survived
 
-    # ── 2b. HOST gate: no standing grant → the session parks at PENDING with
+    # ── 2b. HOST gate: the session parks at PENDING with
     #        the proposal adopted; approve flips it and announces ─────────────
     from flow_sdk.app.actions.execute_prompt import process_inbound_prompt
 

@@ -31,7 +31,6 @@ ALLOWLIST: dict[str, int] = {
     "asset_cleanup/scan.py": 2,
     "builtin/agentic_process/agentic_process.py": 1,
     "builtin/bookmark.py": 1,
-    "builtin/contact_permission.py": 1,
     "builtin/faas/compute_node.py": 2,
     "builtin/faas/pty_actions.py": 3,
     "builtin/faas/scan_actions.py": 1,

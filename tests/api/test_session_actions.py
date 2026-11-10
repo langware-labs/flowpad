@@ -1,4 +1,4 @@
-"""RemoteWorkerSession HTTP lifecycle: approve (+remember), decline, pause,
+"""RemoteWorkerSession HTTP lifecycle: approve (this session only), decline, pause,
 resume, disconnect, settings — FSM-validated, announced with SESSION_EVENT
 lines carrying the snapshot; approve re-drives queued turns in order."""
 from __future__ import annotations
@@ -9,7 +9,6 @@ import uuid
 import pytest
 
 from flow_sdk.app.actions import execute_prompt as ep
-from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction
 from flow_sdk.builtin.flow_message import FlowMessageKind
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSessionStatus as S
@@ -65,33 +64,15 @@ async def test_decline_is_terminal(bootstrapped_client, user):
         assert resp.json().get("status") != "SUCCESS", verb
 
 
-@pytest.mark.parametrize("remember,expected_project", [("project", PROJ), ("everywhere", None)])
-async def test_approve_with_remember_writes_the_standing_grant(bootstrapped_client, user, remember, expected_project):
-    client = bootstrapped_client
-    conv_id = await make_conversation(client)
-    rws = await make_session(conv_id, S.PENDING.value, guest_user_id=f"guest-{remember}", project_id=PROJ)
-    resp = await client.post(f"/api/v1/graph/remote_worker_session/{rws.id}/approve", json={"remember": remember})
-    assert resp.json().get("status") == "SUCCESS", resp.text
-    rows = await ContactPermission.get_all({"contact_user_id": f"guest-{remember}"})
-    try:
-        assert len(rows) == 1
-        assert rows[0].project_id == expected_project
-        assert rows[0].allowed_actions == [PermissionAction.AUTO_APPROVE_SESSION.value]
-        # approving again with the same scope does not duplicate the row
-        rws2 = await make_session(conv_id, S.PENDING.value, guest_user_id=f"guest-{remember}", project_id=PROJ)
-        await client.post(f"/api/v1/graph/remote_worker_session/{rws2.id}/approve", json={"remember": remember})
-        assert len(await ContactPermission.get_all({"contact_user_id": f"guest-{remember}"})) == 1
-    finally:
-        for r in await ContactPermission.get_all({"contact_user_id": f"guest-{remember}"}):
-            await r.delete()
-
-
-async def test_approve_rejects_a_bad_remember_scope(bootstrapped_client, user):
+async def test_approve_never_remembers_the_guest(bootstrapped_client, user):
+    """Approve covers this session only: a request to remember the guest is refused and
+    the session stays PENDING, so nothing can approve the guest's next session."""
     client = bootstrapped_client
     conv_id = await make_conversation(client)
     rws = await make_session(conv_id, S.PENDING.value)
-    resp = await client.post(f"/api/v1/graph/remote_worker_session/{rws.id}/approve", json={"remember": "forever"})
-    assert resp.json().get("status") != "SUCCESS"
+    for remember in ("project", "everywhere"):
+        resp = await client.post(f"/api/v1/graph/remote_worker_session/{rws.id}/approve", json={"remember": remember})
+        assert resp.status_code == 400, resp.text
     assert (await RemoteWorkerSession.get_one({"id": rws.id})).status == S.PENDING.value
 
 

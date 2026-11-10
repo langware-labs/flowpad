@@ -3,8 +3,8 @@ OpenRouter endpoint (``z-ai/glm-5.3-flash``), no hub metering, no vendor account
 
 ``bob`` (raw HTTP, the GUEST) opens a session in a shared conversation and sends
 one prompt. ``alice`` (this process, the HOST) receives it over her real hub
-WebSocket bridge, which routes it through ``process_inbound_prompt``; a standing
-grant pre-approves the session, and the host runs the turn on whichever CLI this
+WebSocket bridge, which routes it through ``process_inbound_prompt``; the host
+approves the session, and runs the turn on whichever CLI this
 row names — claude / codex / copilot / opencode.
 
 **Both sides are on the same direct endpoint.** The ``OPENROUTER_API_KEY`` is
@@ -48,11 +48,10 @@ import httpx
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction
 from flow_sdk.builtin.flow_message import AttachmentType, FlowMessage
 from flow_sdk.flowpad_types.enums import WorkerType
 from tests.hub_tests._assignment import assert_auto_assigned
-from tests.hub_tests._guest import completions, guest_login
+from tests.hub_tests._guest import completions, guest_login, host_approves
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -135,7 +134,7 @@ async def test_session_turn_runs_direct_on_glm(
     # ── put the host box on the pure-direct OpenRouter endpoint ────────────────
     endpoint = await _direct_openrouter_endpoint()
 
-    # ── host: a project-mapped, shared conversation + standing grant ───────────
+    # ── host: a project-mapped, shared conversation ───────────
     host_root = tmp_path / "host-project"
     host_root.mkdir()
     project = Project(name=f"llm-matrix-{binary}", fs_storage_mount_path=str(host_root))
@@ -154,10 +153,6 @@ async def test_session_turn_runs_direct_on_glm(
     r = await hub.post(f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/join", headers=bob.headers, json={})
     assert r.status_code < 300, r.text
 
-    grant = ContactPermission(
-        contact_user_id=bob.user_id, project_id=None, allowed_actions=[PermissionAction.AUTO_APPROVE_SESSION.value]
-    )
-    await grant.save(notify=False)
 
     # ── pre-seed the host worker so the session turn REUSES this exact one ──────
     # ``_reuse_or_spawn_headless`` picks the most-recent non-failed AP for the
@@ -207,6 +202,7 @@ async def test_session_turn_runs_direct_on_glm(
             },
         )
         assert r.status_code < 300, r.text
+        await host_approves(session_id, within=30.0)
 
         # (2) REAL turn: wait for the completion to land in the session.
         deadline = time.monotonic() + 300.0
@@ -255,11 +251,10 @@ async def test_session_turn_runs_direct_on_glm(
         )
         assert len(procs) == 1, f"{binary}: expected ONE host process, got {len(procs)}"
         assert session is not None and session.host_process_id == procs[0].id
-        assert session.approved_via == "standing_grant"
+        assert session.approved_via == "manual"
 
         print(f"\n  {binary:9s} → glm-5.3-flash direct: {answer[:60]!r}")
     finally:
         await hub.aclose()
         await asyncio.shield(safe_exit(ap))
         await hub_ws_manager.stop()
-        await grant.delete()
