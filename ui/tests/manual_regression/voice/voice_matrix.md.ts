@@ -22,7 +22,6 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { apiContext } from '../_shared/api';
-import { adjusted } from '../../adjustableTimeout';
 
 const CLIP = process.env.VOICE_CLIP_WAV || '';
 /** The microphone's recording: the question after a pause long enough for the voice's greeting. */
@@ -189,7 +188,7 @@ test('2. browser mic + speakers — a live call the agent answers, heard back, w
   const before = await rowIds(page);
   await page.locator('[data-testid="voice-call-button"][data-calls="webrtc"]').click();
   await page.getByTestId('voice-call-start').click();
-  await expect(page.getByTestId('voice-call-state')).toHaveAttribute('data-state', 'live', { timeout: adjusted(30_000) });
+  await expect(page.getByTestId('voice-call-state')).toHaveAttribute('data-state', 'live', { timeout: 30_000 });
   await page.keyboard.press('Escape');
 
   await openNewConversation(page, before);
@@ -242,13 +241,13 @@ test('2. browser mic + speakers — a live call the agent answers, heard back, w
   await page.goto(conversationUrl);
   const unpack = page.getByTestId('thread-stack-open');
   if (await unpack.count()) await unpack.first().click();
-  await expect(page.locator('body')).toContainText('Call ended', { timeout: adjusted(30_000) });
+  await expect(page.locator('body')).toContainText('Call ended', { timeout: 30_000 });
 });
 
 test('3. phone (Twilio) — the agent calls a person, who asks it on the line; watched live', async ({ page }) => {
   test.skip(!PHONE_TO || !PHONE_NUMBER || !PHONE_PROJECT, 'VOICE_PHONE_TO / VOICE_PHONE_NUMBER / VOICE_OPENAI_PROJECT not set');
   // A person answers, listens, asks and hangs up: the budget is a human conversation, set here once.
-  test.setTimeout(adjusted(300_000));
+  test.setTimeout(300_000);
   await openStreamInbox(page);
   const before = await rowIds(page);
   await page.locator('[data-testid="voice-call-button"][data-calls="dial"]').click();

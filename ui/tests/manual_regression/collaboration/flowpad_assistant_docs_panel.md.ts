@@ -9,7 +9,6 @@
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
-import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -30,17 +29,17 @@ test.describe('Flowpad Assistant project space', () => {
   });
 
   test('test 1: Open the Flowpad Assistant project space (asset browser)', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await page.goto('/dock/project/@flowpad_assistant');
-    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
     await expect(page.locator('body')).not.toContainText('No editor for type: project');
     // Project identity is URL-owned. The browser projects that scope through
     // the pressed Current project control; ProjectChip belongs to content
     // headers and is not mounted on ProjectHome.
-    await expect(page.getByTestId('assets-page-header')).toBeVisible({ timeout: adjusted(15_000) });
+    await expect(page.getByTestId('assets-page-header')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('button', { name: /^Current project/ }).first()).toHaveAttribute('aria-pressed', 'true');
 
     const offending = errors.filter((e) => !/ResizeObserver|favicon/.test(e) && !/user-/.test(e) && !/agent_hook/.test(e) && !/\b404\b/.test(e));
@@ -48,7 +47,7 @@ test.describe('Flowpad Assistant project space', () => {
   });
 
   test('test 2: The shipped Welcome doc is seeded and searchable', async () => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     const rq = await apiContext();
     const projectId = await assistantProjectId(rq);
     // The Phase 11 per-file reset mirrors production startup: both must seed
@@ -67,22 +66,22 @@ test.describe('Flowpad Assistant project space', () => {
           project_id: projectId,
         }),
       ]));
-    }).toPass({ timeout: adjusted(15_000) });
+    }).toPass({ timeout: 15_000 });
     await rq.dispose();
   });
 
   test('test 3: The assistant project view mounts without an error boundary', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await page.goto('/dock/project/@flowpad_assistant');
-    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
     // No React error boundary.
     await expect(page.getByText(/Something went wrong/i)).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /^Error$/ })).toHaveCount(0);
     // Asset browser is up (project view header renders).
-    await expect(page.getByTestId('assets-page-header')).toBeVisible({ timeout: adjusted(15_000) });
+    await expect(page.getByTestId('assets-page-header')).toBeVisible({ timeout: 15_000 });
 
     const offending = errors.filter((e) => !/ResizeObserver|favicon/.test(e) && !/user-/.test(e) && !/agent_hook/.test(e) && !/\b404\b/.test(e));
     expect(offending, `Console errors: ${offending.join(', ')}`).toHaveLength(0);

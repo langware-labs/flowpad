@@ -20,7 +20,6 @@
  */
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { auth, hubLogin } from '../_shared/hub';
-import { adjusted } from '../../adjustableTimeout';
 
 // Hub origin — REQUIRED. This test intentionally targets a specific two-instance
 // hub rig, so there is no localhost fallback: set QA_HUB_URL explicitly.
@@ -44,7 +43,7 @@ test('binding criterion: real alice↔bob conversation through the local hub', a
       'QA_HUB_URL is not set — this two-instance test requires an explicit hub origin (the instance_ctl local hub); there is no localhost fallback.',
     );
   }
-  test.setTimeout(adjusted(60_000));
+  test.setTimeout(60_000);
   // Each identity owns its own cookie jar. The hub accepts JWT cookies as well
   // as bearer headers, so logging both users into one context can make the last
   // login override an otherwise-correct Authorization header.
@@ -114,14 +113,14 @@ test('binding criterion: real alice↔bob conversation through the local hub', a
   await expect(async () => {
     const list = (await (await bobRq.get(`${HUB}/api/v1/graph/conversation`, auth(bob.token))).json()).data ?? [];
     expect(list.some((c: { id: string }) => c.id === conv), 'bob sees the conversation').toBe(true);
-  }).toPass({ timeout: adjusted(15_000) });
+  }).toPass({ timeout: 15_000 });
 
   await expect(async () => {
     const msgs = (await (await bobRq.get(`${HUB}/api/v1/graph/conversation/${conv}/flow_message`, auth(bob.token))).json()).data ?? [];
     const hi = msgs.find((m: { text: string }) => m.text === 'hi');
     expect(hi, 'bob reads alice\'s "hi"').toBeTruthy();
     expect(hi.sender_id).toBe(alice.id);
-  }).toPass({ timeout: adjusted(15_000) });
+  }).toPass({ timeout: 15_000 });
 
   // bob replies "whats app".
   const reply = await bobRq.post(`${HUB}/api/v1/graph/conversation/${conv}/add_message`, { ...auth(bob.token), data: { text: 'whats app' } });
@@ -140,7 +139,7 @@ test('binding criterion: real alice↔bob conversation through the local hub', a
     const wa = msgs.find((m: { text: string }) => m.text === 'whats app');
     expect(hi.sender_id).toBe(alice.id);
     expect(wa.sender_id).toBe(bob.id);
-  }).toPass({ timeout: adjusted(15_000) });
+  }).toPass({ timeout: 15_000 });
 
   await aliceRq.dispose();
   await bobRq.dispose();

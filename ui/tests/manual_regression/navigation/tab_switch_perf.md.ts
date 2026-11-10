@@ -37,7 +37,6 @@ import {
   toplogOn,
   type World,
 } from './_world';
-import { adjusted, adjustedBudget, ADJUSTABLE_PERF_FACTOR } from '../../adjustableTimeout';
 
 test.skip(process.env.FLOWPAD_PERF_GATE !== '1', 'speed budgets run on a production build only (FLOWPAD_PERF_GATE=1)');
 
@@ -48,8 +47,6 @@ test.skip(process.env.FLOWPAD_PERF_GATE !== '1', 'speed budgets run on a product
 // 120-150 ms task: the long-chat leave measured p90 2387 ms with it and 611 ms without, the
 // warm terminal switch 365 vs 291 (same host, same build, back to back). Budgets unchanged.
 test.use({ trace: 'off' });
-
-if (ADJUSTABLE_PERF_FACTOR !== 1) console.log(`[perf] budgets x${ADJUSTABLE_PERF_FACTOR} (ADJUSTABLE_PERF_FACTOR)`);
 
 const BUDGET = { warmMs: 150, projectMs: 300, coldTerminalMs: 1000 };
 
@@ -163,13 +160,11 @@ const CI_MODE_FLIP_MS = 2100;
 const CI_LONG_CHAT_MS = 900;
 
 /** CI runs on slower hardware than the SLAs were calibrated on; see CI_WARM_MS. */
-/** Every budget also scales by the runner's ADJUSTABLE_PERF_FACTOR (default 1 = the values above). A pass
- *  under a factor above 1 is not a default-budget pass: say so when reporting. */
-const longChatMs = adjustedBudget(process.env.CI ? CI_LONG_CHAT_MS : LONG_CHAT_MS);
-const modeFlipMs = adjustedBudget(process.env.CI ? CI_MODE_FLIP_MS : MODE_FLIP_MS);
-const warmMs = adjustedBudget(process.env.CI ? CI_WARM_MS : BUDGET.warmMs);
-const projectMs = adjustedBudget(process.env.CI ? CI_PROJECT_MS : BUDGET.projectMs);
-const coldTerminalMs = adjustedBudget(process.env.CI ? CI_COLD_TERMINAL_MS : BUDGET.coldTerminalMs);
+const longChatMs = process.env.CI ? CI_LONG_CHAT_MS : LONG_CHAT_MS;
+const modeFlipMs = process.env.CI ? CI_MODE_FLIP_MS : MODE_FLIP_MS;
+const warmMs = process.env.CI ? CI_WARM_MS : BUDGET.warmMs;
+const projectMs = process.env.CI ? CI_PROJECT_MS : BUDGET.projectMs;
+const coldTerminalMs = process.env.CI ? CI_COLD_TERMINAL_MS : BUDGET.coldTerminalMs;
 const ROUNDS = 20;
 /**
  * The request shapes a LOADER would use: tab materialization, an entity's identity,
@@ -214,7 +209,7 @@ async function networkQuiet(page: Page, quietMs = 250): Promise<void> {
           const last = reqs.length ? reqs[reqs.length - 1].t : 0;
           return performance.now() - last >= q;
         }, quietMs),
-      { timeout: adjusted(10_000), intervals: [50] },
+      { timeout: 10_000, intervals: [50] },
     )
     .toBe(true);
 }
@@ -325,7 +320,7 @@ async function clickChip(page: Page, chip: string, trail: string[], metric: 'rea
   await page
     .locator(chip)
     .first()
-    .click({ timeout: adjusted(10_000) })
+    .click({ timeout: 10_000 })
     .catch(async (e: unknown) => {
       throw new Error(
         `${String(e)}\nblocking layers: ${JSON.stringify(await blockingLayers(page), null, 1)}` +
@@ -361,7 +356,7 @@ test('warm tab switches: content visible within budget', async ({ page }) => {
     `/shell/agentic_process-${a.processId}`,
   );
   await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, {
-    timeout: adjusted(15_000),
+    timeout: 15_000,
   });
   await navigateTo(
     page,
@@ -425,11 +420,11 @@ test('project switch between visited projects: content visible within budget', a
     navigateTo(page, `shell/agentic_process-${b.processId}?viewMode=advanced`, `/shell/agentic_process-${b.processId}`);
   await toA();
   await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, {
-    timeout: adjusted(15_000),
+    timeout: 15_000,
   });
   await toB();
   await expect(page.locator(`[data-session-id="agentic_process-${b.processId}"]`)).toContainText(MOCK_MARKER, {
-    timeout: adjusted(15_000),
+    timeout: 15_000,
   });
 
   const measured: number[] = [];
@@ -472,7 +467,7 @@ test('leaving and returning to a long chat: the main thread stays free', async (
             .locator(`[data-session-id="agentic_process-${chat.processId}"] [data-testid="execution-message"]`)
             .count(),
         {
-          timeout: adjusted(30_000),
+          timeout: 30_000,
           message: 'the long chat never rendered its recent window',
         },
       )
@@ -554,7 +549,7 @@ test(
               page
                 .locator(`[data-session-id="agentic_process-${chat.processId}"] [data-testid="execution-message"]`)
                 .count(),
-            { timeout: adjusted(30_000), message: 'a long chat never rendered its history' },
+            { timeout: 30_000, message: 'a long chat never rendered its history' },
           )
           .toBeGreaterThan(300);
       }
@@ -579,7 +574,7 @@ test(
       // it is not what a flip costs.
       await navigateTo(page, `${terminal}?viewMode=advanced`, `/shell/agentic_process-${a.processId}`);
       await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, {
-        timeout: adjusted(15_000),
+        timeout: 15_000,
       });
       await navigateTo(page, `${chat}?viewMode=standard`, `/shell/agentic_process-${chats[0].processId}`);
       await networkQuiet(page);
@@ -651,7 +646,7 @@ async function coldOpenOfLargeRecording(browser: Browser, a: World): Promise<voi
   });
   expect(flood.ok, 'could not send input to the mock worker').toBe(true);
   await expect
-    .poll(() => ptyText(a.processShellId).then((t) => t.length), { timeout: adjusted(60_000) })
+    .poll(() => ptyText(a.processShellId).then((t) => t.length), { timeout: 60_000 })
     .toBeGreaterThan(10_000_000);
 
   // The first open ever replays the whole recording (no client has yet), and
@@ -673,7 +668,7 @@ async function coldOpenOfLargeRecording(browser: Browser, a: World): Promise<voi
         const r = await fetch(`${BACKEND}/api/v1/shell/${a.processShellId}/pty-stream?since=checkpoint`);
         return r.ok && 'checkpoint' in ((await r.json()) as { data: object }).data;
       },
-      { timeout: adjusted(15_000), message: 'the first open stored no checkpoint' },
+      { timeout: 15_000, message: 'the first open stored no checkpoint' },
     )
     .toBe(true);
   // Steering goes to the active tab: with the first page still open, the reopen's steer can land

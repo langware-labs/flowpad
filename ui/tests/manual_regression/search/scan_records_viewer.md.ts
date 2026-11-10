@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test';
 import { apiBase } from '../_shared/api';
-import { adjusted } from '../../adjustableTimeout';
 
 const API_URL = apiBase();
 const CN_FS_BASE = `${API_URL}/api/v1/graph/compute_node/@local/fs-records`;
@@ -24,13 +23,13 @@ test.describe('FsRecordsScannerViewer (/dock/lens/fs-records/scan)', () => {
   test('FsRecordsScannerViewer is reachable via /dock/lens/fs-records/scan', async ({ page }) => {
     await dismissSetupModal(page);
     await page.goto(LENS_PATH);
-    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
-    await expect(page.getByRole('heading', { name: 'Records Scanner' })).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(page.getByRole('heading', { name: 'Records Scanner' })).toBeVisible({ timeout: 10_000 });
     // Primary index action (POST /fs-records/index) is the "Fast" button
     // ("Indexing…" while in flight); "Full" (force=true) sits next to it.
-    await expect(page.getByRole('button', { name: /Fast|Indexing/ })).toBeVisible({ timeout: adjusted(10_000) });
-    await expect(headerRescanButton(page)).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(page.getByRole('button', { name: /Fast|Indexing/ })).toBeVisible({ timeout: 10_000 });
+    await expect(headerRescanButton(page)).toBeVisible({ timeout: 10_000 });
   });
 
   // ── Test 2: Backend aggregate scan API returns expected shape ───────────────

@@ -14,7 +14,6 @@
  * and the home-landing "Start conversation" button by text.
  */
 import { type Browser, type BrowserContext, type Page, expect } from '@playwright/test';
-import { adjusted } from '../adjustableTimeout';
 
 export interface InstanceConfig {
   /** Display label used in console output, e.g. "alice". */
@@ -134,7 +133,7 @@ export async function startConversationViaUi(
 
   // After create, FE navigates to /dock/conversation/<id>. We wait on the URL
   // rather than the bubble so we surface a navigation failure fast.
-  await alicePage.waitForURL(/\/dock\/conversation\/[0-9a-f-]+/, { timeout: adjusted(8_000) });
+  await alicePage.waitForURL(/\/dock\/conversation\/[0-9a-f-]+/, { timeout: 8_000 });
   const match = alicePage.url().match(/\/dock\/conversation\/([0-9a-f-]+)/);
   if (!match) throw new Error(`Failed to extract conversation id from ${alicePage.url()}`);
   return match[1];
@@ -147,7 +146,7 @@ export async function sendReplyViaUi(page: Page, text: string): Promise<{ sentAt
   // Scope to the composer's send button — the other ``title="Send"`` is the
   // entity-execution panel's button (data-testid="entity-execution-send").
   const sendBtn = page.locator('button[title="Send"]:not([data-testid])');
-  await expect(sendBtn).toBeEnabled({ timeout: adjusted(1_000) });
+  await expect(sendBtn).toBeEnabled({ timeout: 1_000 });
   const sentAt = Date.now();
   await sendBtn.click();
   return { sentAt };

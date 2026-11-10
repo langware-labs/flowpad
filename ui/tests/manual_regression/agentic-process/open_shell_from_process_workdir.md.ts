@@ -14,7 +14,6 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, fetchProcess, sessionAction, activePanel } from './_ap_helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 async function fetchShellWorkdir(page: import('@playwright/test').Page, shellId: string): Promise<string | null> {
   return page.evaluate(async ({ base, id }) => {
@@ -26,7 +25,7 @@ async function fetchShellWorkdir(page: import('@playwright/test').Page, shellId:
 
 test.describe('open shell from process workdir', () => {
   test('test 1: Open Terminal opens a new plain shell in the process workdir', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -42,14 +41,14 @@ test.describe('open shell from process workdir', () => {
     await openTerminal.click();
 
     // A NEW plain shell tab opens (URL is shell-<uuid>, not agentic_process-).
-    await page.waitForURL(/\/dock\/shell\/shell-[\w-]+/, { timeout: adjusted(15_000) });
+    await page.waitForURL(/\/dock\/shell\/shell-[\w-]+/, { timeout: 15_000 });
     const shellId = page.url().match(/shell-([\w-]+)/)![1];
 
     // The new shell's workdir equals the process workdir (source of truth: the
     // Shell entity, populated from openNewShell({ cwd: workdir })).
     await expect(async () => {
       expect(await fetchShellWorkdir(page, shellId)).toBe(workdir);
-    }).toPass({ timeout: adjusted(10_000) });
+    }).toPass({ timeout: 10_000 });
 
     // The new shell renders an interactive xterm whose prompt carries the
     // workdir basename.
@@ -65,7 +64,7 @@ test.describe('open shell from process workdir', () => {
     await expect(async () => {
       const txt = await shell.locator('.xterm-rows').first().textContent();
       expect(txt).toContain(base);
-    }).toPass({ timeout: adjusted(15_000) });
+    }).toPass({ timeout: 15_000 });
 
     // The original Claude tab is still present alongside the new plain shell —
     // every tab (Shell or AgenticProcess) carries a `tab-shell-` testid, so two
@@ -74,7 +73,7 @@ test.describe('open shell from process workdir', () => {
   });
 
   test('test 2: Open Terminal available without a Claude session (default cwd shell)', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -88,7 +87,7 @@ test.describe('open shell from process workdir', () => {
     await openTerminal.click();
 
     // Switches to a fresh plain shell (different URL).
-    await page.waitForURL(/\/dock\/shell\/shell-[\w-]+/, { timeout: adjusted(15_000) });
+    await page.waitForURL(/\/dock\/shell\/shell-[\w-]+/, { timeout: 15_000 });
     expect(page.url()).not.toBe(urlBefore);
     const shellId = page.url().match(/shell-([\w-]+)/)![1];
 
@@ -96,6 +95,6 @@ test.describe('open shell from process workdir', () => {
     await expect(async () => {
       const wd = await fetchShellWorkdir(page, shellId);
       expect(wd && wd.startsWith('/')).toBeTruthy();
-    }).toPass({ timeout: adjusted(10_000) });
+    }).toPass({ timeout: 10_000 });
   });
 });

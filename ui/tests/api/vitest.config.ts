@@ -2,7 +2,6 @@ import path from 'path';
 import { defineConfig, mergeConfig } from 'vitest/config';
 import { loadEnv } from 'vite';
 import viteConfig from '../../vite.config';
-import { adjusted } from '../adjustableTimeout';
 
 // Instance-aligned target: when FLOW_INSTANCE is set (e.g. a dedicated
 // instance_ctl instance like `idxfix`), use it as the vite mode so loadEnv
@@ -20,8 +19,8 @@ export default mergeConfig(
     test: {
       // Every backend a test spawns inherits this: the tests' requests carry no cookie-gate token.
       env: { FLOWPAD_COOKIE_GATE: 'off' },
-      testTimeout: adjusted(15000), // Increased timeout for compute node tests
-      hookTimeout: adjusted(15000), // Increased hook timeout for API setup with websockets
+      testTimeout: 15000, // Increased timeout for compute node tests
+      hookTimeout: 15000, // Increased hook timeout for API setup with websockets
       setupFiles: [path.resolve(__dirname, '../_lingui-mock.ts'), path.resolve(__dirname, './apiSetup.ts')],
       exclude: [],
       // Files create and dispose SDK realms with worker-global module resets.

@@ -24,7 +24,6 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { adjusted } from '../../adjustableTimeout';
 
 interface User {
   name: string;
@@ -158,7 +157,7 @@ async function openInviteConversation(page: Page, u: User, conversationId: strin
             body: JSON.stringify({ conversation_id: conversationId }),
           }).catch(() => null)
         )?.ok ?? false,
-      { timeout: adjusted(60_000), message: `${u.name} never received the invite conversation` },
+      { timeout: 60_000, message: `${u.name} never received the invite conversation` },
     )
     .toBe(true);
   await page.goto(`/dock/conversation/${conversationId}?viewMode=advanced`);
@@ -173,7 +172,7 @@ async function openInviteConversation(page: Page, u: User, conversationId: strin
 async function installShared(page: Page, u: User, projectId: string, conversationId: string): Promise<string> {
   await expect
     .poll(async () => (await graph<ProjectRow>(u, `project/${projectId}`).catch(() => null))?.remote ?? false, {
-      timeout: adjusted(60_000),
+      timeout: 60_000,
       message: `${u.name} never received the project row`,
     })
     .toBe(true);
@@ -181,7 +180,7 @@ async function installShared(page: Page, u: User, projectId: string, conversatio
   // The invite's bundle staged the project, so it is the generic dashed attachment chip
   // (a9d635f32), not the legacy pre-bundle ProjectMessageChip ('project-chip').
   const chip = page.getByTestId(`entity-chip-project-${projectId}`);
-  await expect(chip).toContainText(RUN, { timeout: adjusted(60_000) });
+  await expect(chip).toContainText(RUN, { timeout: 60_000 });
   await expect(page.getByTestId('project-chip')).toHaveCount(0);
   await expect(page.getByTestId('incoming-project-dialog')).toHaveCount(0);
   // The dashed chip opens the review popup; its project branch offers Install project.
@@ -189,14 +188,14 @@ async function installShared(page: Page, u: User, projectId: string, conversatio
   await page.getByTestId('asset-review-dialog').getByTestId('project-install-button').click();
   await expect
     .poll(async () => (await graph<ProjectRow>(u, `project/${projectId}`)).fs_storage_mount_path ?? '', {
-      timeout: adjusted(120_000),
+      timeout: 120_000,
       message: `${u.name} never finished installing`,
     })
     .not.toBe('');
   // Installing lands in the project; back in the conversation the chip is the installed one.
   await openInviteConversation(page, u, conversationId);
   await expect(page.getByTestId(`entity-chip-project-${projectId}`)).toHaveAttribute('data-state', 'installed', {
-    timeout: adjusted(30_000),
+    timeout: 30_000,
   });
   return String((await graph<ProjectRow>(u, `project/${projectId}`)).fs_storage_mount_path);
 }
@@ -289,7 +288,7 @@ test.describe('project invite = membership, not publish', () => {
     await expect(a.page.getByTestId('members-invite-form')).toBeHidden();
 
     await publishDialog.getByTestId('project-publish').click();
-    await expect(publishDialog).toBeHidden({ timeout: adjusted(60_000) }); // closes itself once published
+    await expect(publishDialog).toBeHidden({ timeout: 60_000 }); // closes itself once published
     expect((await graph<ProjectRow>(admin, `project/${projectId}`)).remote).toBe(true);
     publishedSha = git(adminDir, 'rev-parse', 'HEAD');
     expect(git(adminDir, 'rev-parse', 'origin/main')).toBe(publishedSha);

@@ -1,5 +1,4 @@
 import { defineConfig, devices } from '@playwright/test';
-import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Playwright config for the **page SDK bridge** side tests: can a page shown in
@@ -17,8 +16,8 @@ import { adjusted } from '../../adjustableTimeout';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
-  timeout: adjusted(60_000),
-  expect: { timeout: adjusted(15_000) },
+  timeout: 60_000,
+  expect: { timeout: 15_000 },
   fullyParallel: false,
   retries: 0,
   workers: 1,

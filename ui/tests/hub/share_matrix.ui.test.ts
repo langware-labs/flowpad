@@ -53,7 +53,6 @@ import {
   waitForMessageText,
   type InstancePage,
 } from './_browser';
-import { adjusted } from '../adjustableTimeout';
 
 let skipReason: string | null = null;
 let dev1: ResolvedInstance;
@@ -99,14 +98,14 @@ beforeAll(async () => {
     },
   );
   const warmShare = p1.page.getByTestId('entity-actions-share');
-  await warmShare.waitFor({ timeout: adjusted(60_000) }).catch(() => undefined);
+  await warmShare.waitFor({ timeout: 60_000 }).catch(() => undefined);
   // Open + close the share dialog once too: its chunk, the contact picker,
   // and the conversations-for-contacts query all cold-load on first open.
   if (await warmShare.isVisible().catch(() => false)) {
     await warmShare.click().catch(() => undefined);
     await p1.page
       .getByTestId('share-to-conversation-dialog')
-      .waitFor({ timeout: adjusted(30_000) })
+      .waitFor({ timeout: 30_000 })
       .catch(() => undefined);
     await p1.page.keyboard.press('Escape');
     await p1.page.waitForTimeout(500);
@@ -124,7 +123,7 @@ beforeAll(async () => {
   );
   await p2.page
     .locator('[data-testid="dynamic-workflow-editor"]')
-    .waitFor({ timeout: adjusted(60_000) })
+    .waitFor({ timeout: 60_000 })
     .catch(() => undefined);
   const warmWb2 = await dev2.sdk.Chart.create(ownedTestEntityName('chart'), 'excalidraw');
   const warmWbRef = (warmWb2 as { asset_ref?: string }).asset_ref;
@@ -142,9 +141,9 @@ beforeAll(async () => {
   });
   await p2.page
     .locator('[data-testid="chart-excalidraw"]')
-    .waitFor({ timeout: adjusted(60_000) })
+    .waitFor({ timeout: 60_000 })
     .catch(() => undefined);
-}, adjusted(120_000));
+}, 120_000);
 
 afterAll(async () => {
   await browser?.close();
@@ -245,7 +244,7 @@ beforeEach((context: any) => {
  *  the sender's backend — host-independent, so it works whether or not the
  *  share dialog's success screen survived the host re-render. */
 async function conversationIdByTitle(inst: ResolvedInstance, title: string): Promise<string> {
-  const deadline = Date.now() + adjusted(20_000);
+  const deadline = Date.now() + 20_000;
   for (;;) {
     const rows = (await inst.sdk.Conversation.query(
       new inst.sdk.QueryRequest({
@@ -289,7 +288,7 @@ async function downloadAndOpenAssetClean(
   // Download. The chip flips from disabled ("not found locally") to enabled the
   // instant the receive path's CREATE data_op lands (no reload) — that's the
   // _notify_received_assets fix; without it the chip stays disabled forever.
-  const deadline = Date.now() + adjusted(22_000);
+  const deadline = Date.now() + 22_000;
   for (;;) {
     if (
       await inst.page
@@ -336,7 +335,7 @@ async function downloadAndOpenAssetClean(
     .catch(() => null);
   const projectId = convRow?.data?.project_id as string;
   let staged: any = null;
-  const stagedDeadline = Date.now() + adjusted(10_000);
+  const stagedDeadline = Date.now() + 10_000;
   while (!staged && Date.now() < stagedDeadline) {
     const rows = await fetch(`${inst.apiUrl}/api/v1/graph/message_attachment`)
       .then((r) => r.json())
@@ -360,7 +359,7 @@ async function downloadAndOpenAssetClean(
   // Assert the editor CONTAINER attaches (it mounts when the asset resolves) +
   // a clean console — NOT a late toolbar button or strict dock-tab visibility,
   // which lag the actual open by tens of seconds in the dock split view.
-  await inst.page.locator(editorReadySelector).first().waitFor({ state: 'attached', timeout: adjusted(15_000) });
+  await inst.page.locator(editorReadySelector).first().waitFor({ state: 'attached', timeout: 15_000 });
   // Give late async errors a beat to surface before asserting.
   await inst.page.waitForTimeout(1_000);
   expect(realConsoleErrors(inst.consoleErrors)).toEqual([]);
@@ -388,7 +387,7 @@ describe('A. asset-page share: workflow', () => {
         waitUntil: 'domcontentloaded',
       },
     );
-    await p1.page.getByTestId('entity-actions-share').click({ timeout: adjusted(20_000) });
+    await p1.page.getByTestId('entity-actions-share').click({ timeout: 20_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       note: `here is a workflow ${ts}`,
@@ -457,8 +456,8 @@ describe('B. asset-page share: chart', () => {
     // Wait for the editor to finish mounting (board.json read settles) before
     // the share click — clicking mid-mount is what intermittently dropped the
     // share dispatch.
-    await p1.page.getByTestId('chart-excalidraw').waitFor({ timeout: adjusted(25_000) });
-    await p1.page.getByTestId('entity-actions-share').click({ timeout: adjusted(25_000) });
+    await p1.page.getByTestId('chart-excalidraw').waitFor({ timeout: 25_000 });
+    await p1.page.getByTestId('entity-actions-share').click({ timeout: 25_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       note: `here is a chart ${ts}`,
@@ -515,8 +514,8 @@ describe('C. forward a message', () => {
     await openConversation(p1, srcConvId);
     await waitForMessageText(p1, `forward me ${ts}`);
     // Forward lives in the bubble's ⋮ menu.
-    await p1.page.getByTestId('message-actions-menu').first().click({ timeout: adjusted(15_000) });
-    await p1.page.getByTestId('message-forward').click({ timeout: adjusted(15_000) });
+    await p1.page.getByTestId('message-actions-menu').first().click({ timeout: 15_000 });
+    await p1.page.getByTestId('message-forward').click({ timeout: 15_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       title: fwdDstTitle,
@@ -529,8 +528,8 @@ describe('C. forward a message', () => {
     await openConversation(p1, fwdConvId);
     await waitForMessageText(p1, `forward me ${ts}`);
     // The forwarded note heads the clone's ⋮ menu.
-    await p1.page.getByTestId('message-actions-menu').first().click({ timeout: adjusted(15_000) });
-    await p1.page.getByTestId('message-forwarded-marker').waitFor({ timeout: adjusted(15_000) });
+    await p1.page.getByTestId('message-actions-menu').first().click({ timeout: 15_000 });
+    await p1.page.getByTestId('message-forwarded-marker').waitFor({ timeout: 15_000 });
   });
 
   it('C4 receive — dev-2 opens the assignment and sees the forwarded text', async () => {

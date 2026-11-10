@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoLanding, submitFromLanding } from './helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Landing to New Chat', () => {
   test.describe.configure({ retries: 1 });
@@ -10,7 +9,7 @@ test.describe('Landing to New Chat', () => {
   });
 
   test('start new session from landing page navigates to shell terminal', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     // Step 1: navigate to landing page and validate it
     await gotoLanding(page);
@@ -24,10 +23,10 @@ test.describe('Landing to New Chat', () => {
     await submitFromLanding(page, 'Hello, can you help me?');
 
     // Step 3: validate URL changed to the session's Vibe tab
-    await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-/, { timeout: adjusted(15_000) });
+    await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-/, { timeout: 15_000 });
 
     // Step 4: validate terminal tab bar is visible
     const terminalArea = page.locator('.xterm, .xterm-screen, [class*="terminal"]').first();
-    await expect(terminalArea).toBeVisible({ timeout: adjusted(15_000) });
+    await expect(terminalArea).toBeVisible({ timeout: 15_000 });
   });
 });

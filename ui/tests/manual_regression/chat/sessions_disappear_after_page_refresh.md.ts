@@ -6,11 +6,10 @@ import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
 import { gotoShell } from '../terminal/helpers';
 import { withViewMode } from '../_shared/view-mode';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('sessions persist across navigation', () => {
   test('test 1: terminal tab survives navigating home and back to shell', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoShell(page);
 
@@ -23,6 +22,6 @@ test.describe('sessions persist across navigation', () => {
     await page.goto(withViewMode('/dock/shell', 'advanced'));
 
     // At least one terminal tab is still present (sessions did not disappear).
-    await expect(page.locator('[data-testid^="tab-shell|"]').first()).toBeVisible({ timeout: adjusted(30_000) });
+    await expect(page.locator('[data-testid^="tab-shell|"]').first()).toBeVisible({ timeout: 30_000 });
   });
 });

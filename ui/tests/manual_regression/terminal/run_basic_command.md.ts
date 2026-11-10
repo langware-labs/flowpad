@@ -1,6 +1,5 @@
 import { test } from '@playwright/test';
 import { dismissSetupModal, gotoShell, sendCommand, waitForOutput } from './helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Run Basic Command', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,7 +7,7 @@ test.describe('Run Basic Command', () => {
   });
 
   test('type a command and validate output', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     // Step 1: navigate to shell
     await gotoShell(page);

@@ -1,4 +1,3 @@
-import { adjusted } from '../../adjustableTimeout';
 import { type Page, type Locator, test, expect } from '@playwright/test';
 import { apiOrigin } from '../_shared/api';
 import { selectViewMode, withViewMode } from '../_shared/view-mode';
@@ -226,7 +225,7 @@ export async function waitForOutput(page: Page, text: string, timeout = 15_000) 
   await page
     .locator('[data-testid="terminal-panel"][data-active="true"]')
     .first()
-    .waitFor({ state: 'visible', timeout: adjusted(10_000) });
+    .waitFor({ state: 'visible', timeout: 10_000 });
   await expect(async () => {
     const content = await page
       .locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')

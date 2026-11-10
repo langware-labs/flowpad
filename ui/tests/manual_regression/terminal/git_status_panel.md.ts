@@ -44,7 +44,6 @@ import { RIBBON_TABS,
   startClaudeSession,
 } from './helpers';
 import { apiOrigin } from '../_shared/api';
-import { adjusted } from '../../adjustableTimeout';
 
 const API_URL = apiOrigin();
 // repo root of this checkout (ui/tests/manual_regression/terminal → 4 levels up).
@@ -110,9 +109,9 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   // Fast path: reuse the URL from the first successful navigation in this run.
   if (cachedAgenticUrl) {
     await page.goto(cachedAgenticUrl);
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(15_000) });
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 15_000 });
     await ensureAdvancedView(page);
-    const visible = await ribbon.isVisible({ timeout: adjusted(10_000) }).catch(() => false);
+    const visible = await ribbon.isVisible({ timeout: 10_000 }).catch(() => false);
     if (visible) return;
     // Cached process is gone — fall through to full navigation.
 }
@@ -120,15 +119,15 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   await page.goto('/dock/shell/new_terminal');
 
   const skip = page.getByRole('button', { name: 'Skip' });
-  if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
+  if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
 
   try {
-    await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: adjusted(60_000) });
+    await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
 
     if (!page.url().includes('agentic_process-')) {
-      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(60_000) });
+      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 60_000 });
       await startClaudeSession(page);
-      await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: adjusted(60_000) });
+      await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
   }
 
     // The ribbon + side-window panels only exist in Advanced view; the backend
@@ -136,7 +135,7 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
     await ensureAdvancedView(page);
 
     // Wait for the ribbon to be visible (can take >8s on a fresh process).
-    await expect(ribbon).toBeVisible({ timeout: adjusted(60_000) });
+    await expect(ribbon).toBeVisible({ timeout: 60_000 });
 } catch (e) {
     // Host out of PTY devices → no live process/ribbon. Sanctioned live-env skip.
     await skipIfPtyExhausted(page);
@@ -177,7 +176,7 @@ async function openGitTab(page: import('@playwright/test').Page) {
   url.searchParams.delete('activeSideWindow');
   url.searchParams.set('viewMode', 'advanced'); // Git is an advanced-only side tab
   await page.goto(url.toString());
-  await tabStrip.getByText('Git', { exact: true }).waitFor({ state: 'visible', timeout: adjusted(10_000) });
+  await tabStrip.getByText('Git', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
 }
 
 test.describe('Git Status Panel', () => {
@@ -189,29 +188,29 @@ test.describe('Git Status Panel', () => {
   // test 1: the ribbon no longer carries Git (17a3e3420); the Git tab is reached by URL
   // ---------------------------------------------------------------------------
   test('the ribbon carries Prompts, Files, Dir and Queue and no Git button; Git opens from the dock URL', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
     // (text=/running|idle/i is unreliable: may match a visibility:hidden tooltip element)
     const panel = activePanel(page);
     const ribbonLoc = panel.locator(RIBBON_TABS);
-    await expect(ribbonLoc).toBeVisible({ timeout: adjusted(15_000) });
+    await expect(ribbonLoc).toBeVisible({ timeout: 15_000 });
 
     // Prompts(0), Files(1), Dir(2), Queue(3): Git and the Prompt Library left the ribbon, and
     // Context/Analysis/Skills moved to the session menu (sideTabsAt('ribbon')).
-    await expect(ribbonLoc.locator('button')).toHaveCount(4, { timeout: adjusted(5_000) });
+    await expect(ribbonLoc.locator('button')).toHaveCount(4, { timeout: 5_000 });
     await expect(ribbonLoc.locator('button:has(svg.lucide-git-branch)')).toHaveCount(0);
 
     await openGitTab(page);
-    await expect(activePanel(page).locator('button[aria-label="Close Git"]')).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(activePanel(page).locator('button[aria-label="Close Git"]')).toBeVisible({ timeout: 5_000 });
 });
 
   // ---------------------------------------------------------------------------
   // test 2: Git panel opens as a tab in the side window
   // ---------------------------------------------------------------------------
   test('git panel opens as a tab in the side window', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
@@ -219,18 +218,18 @@ test.describe('Git Status Panel', () => {
 
     // Side window should appear (w-80 flex-col border-s)
     const sideWindow = getSideWindow(page);
-    await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).toBeVisible({ timeout: 5_000 });
 
     // Tab strip should show a "Git" tab
     const tabStrip = sideWindow.locator('.border-b').first();
-    await expect(tabStrip.getByText('Git')).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(tabStrip.getByText('Git')).toBeVisible({ timeout: 5_000 });
 
     // Tab has a × close button
-    await expect(activePanel(page).locator('button[aria-label="Close Git"]')).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(activePanel(page).locator('button[aria-label="Close Git"]')).toBeVisible({ timeout: 5_000 });
 
     // Git panel inner header should be visible
     const panelHeader = sideWindow.locator('.flex-1 .border-b');
-    await expect(panelHeader).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(panelHeader).toBeVisible({ timeout: 5_000 });
 
     // Inner header should have exactly 1 button (Refresh — no X in panel header)
     const headerButtons = panelHeader.locator('button');
@@ -241,14 +240,14 @@ test.describe('Git Status Panel', () => {
   // test 3: Git panel header shows branch name and ahead/behind indicators
   // ---------------------------------------------------------------------------
   test('git panel header shows branch name', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
     await openGitTab(page);
 
     const sideWindow = getSideWindow(page);
-    await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).toBeVisible({ timeout: 5_000 });
 
     // Wait for data to load (loading skeleton disappears)
     await page.waitForTimeout(3_000);
@@ -271,7 +270,7 @@ test.describe('Git Status Panel', () => {
   // test 4: Git panel shows changed files with status badges and line counts
   // ---------------------------------------------------------------------------
   test('git panel shows file list with status badges and line counts', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     const repo = createChangedGitRepo();
     const projectId = await createProjectForWorkdir(repo);
     let processId = '';
@@ -282,7 +281,7 @@ test.describe('Git Status Panel', () => {
       await openGitTab(page);
 
       const sideWindow = getSideWindow(page);
-      await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
+      await expect(sideWindow).toBeVisible({ timeout: 5_000 });
       await page.waitForTimeout(5_000);
 
       const body = sideWindow.locator('.flex-1 .overflow-y-auto');
@@ -303,27 +302,27 @@ test.describe('Git Status Panel', () => {
   // test 5: Git tab closes via × in the tab strip
   // ---------------------------------------------------------------------------
   test('git tab closes via the × close button in the tab strip', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
     await openGitTab(page);
 
     const sideWindow = getSideWindow(page);
-    await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).toBeVisible({ timeout: 5_000 });
 
     // Click the × in the Git tab (aria-label set in SideWindow.tsx)
     await activePanel(page).locator('button[aria-label="Close Git"]').click();
 
     // Side window should disappear (no tabs left)
-    await expect(sideWindow).not.toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).not.toBeVisible({ timeout: 5_000 });
 });
 
   // ---------------------------------------------------------------------------
   // test 6: Multiple tabs coexist in the same side window
   // ---------------------------------------------------------------------------
   test('git and prompts tabs coexist and can be switched between', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
@@ -333,14 +332,14 @@ test.describe('Git Status Panel', () => {
     // Open Git (by URL)
     await openGitTab(page);
     const sideWindow = getSideWindow(page);
-    await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).toBeVisible({ timeout: 5_000 });
     // Use tab strip + exact match to avoid strict-mode violation (other elements contain 'Git')
     const tabStripA = sideWindow.locator('.border-b').first();
-    await expect(tabStripA.getByText('Git', { exact: true })).toBeVisible({ timeout: adjusted(3_000) });
+    await expect(tabStripA.getByText('Git', { exact: true })).toBeVisible({ timeout: 3_000 });
 
     // Open Prompts (ribbon index 0) — adds a second tab
     await ensureSideTabOpen(page, 0, 'Prompts');
-    await expect(tabStripA.getByText('Prompts', { exact: true })).toBeVisible({ timeout: adjusted(3_000) });
+    await expect(tabStripA.getByText('Prompts', { exact: true })).toBeVisible({ timeout: 3_000 });
 
     // Both tabs should be visible in the tab strip (reuse tabStripA)
     await expect(tabStripA.getByText('Git', { exact: true })).toBeVisible();
@@ -350,23 +349,23 @@ test.describe('Git Status Panel', () => {
     await tabStripA.getByText('Git', { exact: true }).click();
     const panelHeader = sideWindow.locator('.flex-1 .border-b');
     // Git panel header has a Refresh button (not a Prompts header)
-    await expect(panelHeader.locator('button')).toHaveCount(1, { timeout: adjusted(3_000) });
+    await expect(panelHeader.locator('button')).toHaveCount(1, { timeout: 3_000 });
 
     // Close Prompts tab — Git should remain
     await activePanel(page).locator('button[aria-label="Close Prompts"]').click();
-    await expect(tabStripA.getByText('Prompts', { exact: true })).not.toBeVisible({ timeout: adjusted(3_000) });
+    await expect(tabStripA.getByText('Prompts', { exact: true })).not.toBeVisible({ timeout: 3_000 });
     await expect(tabStripA.getByText('Git', { exact: true })).toBeVisible();
 
     // Close Git tab — side window should disappear
     await activePanel(page).locator('button[aria-label="Close Git"]').click();
-    await expect(sideWindow).not.toBeVisible({ timeout: adjusted(5_000) });
+    await expect(sideWindow).not.toBeVisible({ timeout: 5_000 });
 });
 
   // ---------------------------------------------------------------------------
   // test 8: Git button is absent for plain shell terminals (no agentic process)
   // ---------------------------------------------------------------------------
   test('git button is absent in plain shell terminal (no agentic process)', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     const bootstrap = await fetch(`${API_URL}/api/v1/graph/bootstrap`).then((response) => response.json());
     const projectId = bootstrap?.data?.default_project?.id as string | undefined;
     expect(projectId, 'Phase 11 plain-shell preflight requires a default project').toBeTruthy();
@@ -380,13 +379,13 @@ test.describe('Git Status Panel', () => {
 
     try {
       await page.goto(`/dock/shell/shell-${shellId}?viewMode=advanced`);
-      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(10_000) });
+      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
       await page.waitForTimeout(2_000);
 
       // On plain shell: ribbon ([data-testid="terminal-ribbon-tabs"]) is NOT present.
       const panel = activePanel(page);
       const ribbonLoc = panel.locator(RIBBON_TABS);
-      await expect(ribbonLoc).not.toBeVisible({ timeout: adjusted(3_000) });
+      await expect(ribbonLoc).not.toBeVisible({ timeout: 3_000 });
       await expect(page).toHaveURL(new RegExp(`/dock/shell/shell-${shellId}`));
   } finally {
       await page.goto('/');
@@ -398,7 +397,7 @@ test.describe('Git Status Panel', () => {
   // test 10: git-status API endpoint returns correct structure
   // ---------------------------------------------------------------------------
   test('git-status API returns correct shape for git and non-git dirs', async () => {
-    test.setTimeout(adjusted(30_000));
+    test.setTimeout(30_000);
 
     const nodeId = await getComputeNodeId();
     expect(

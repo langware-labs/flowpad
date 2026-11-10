@@ -22,7 +22,6 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { RIBBON_TABS, dismissSetupModal, startClaudeSession } from './helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 let cachedAgenticUrl: string | null = null;
 
@@ -32,22 +31,22 @@ async function gotoAgenticProcess(page: Page) {
 
   if (cachedAgenticUrl) {
     await page.goto(cachedAgenticUrl);
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(15_000) });
-    if (await ribbon.isVisible({ timeout: adjusted(10_000) }).catch(() => false)) return;
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 15_000 });
+    if (await ribbon.isVisible({ timeout: 10_000 }).catch(() => false)) return;
 }
 
   await page.goto('/dock/shell/new_terminal');
   const skip = page.getByRole('button', { name: 'Skip' });
-  if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
-  await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: adjusted(60_000) });
+  if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
+  await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
 
   if (!page.url().includes('agentic_process-')) {
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await startClaudeSession(page);
-    await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: adjusted(60_000) });
+    await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
 }
   // Ribbon visible = process toolbar/InteractiveTerminal mounted (banner level).
-  await expect(ribbon).toBeVisible({ timeout: adjusted(60_000) });
+  await expect(ribbon).toBeVisible({ timeout: 60_000 });
   cachedAgenticUrl = page.url();
 }
 
@@ -60,13 +59,13 @@ async function gotoAgenticProcess(page: Page) {
 async function ensurePtyContent(page: Page) {
   const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
   const start = activePanel.getByRole('button', { name: /Start Claude/ });
-  if (await start.isVisible({ timeout: adjusted(3_000) }).catch(() => false)) {
+  if (await start.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await start.click().catch(() => {});
 }
   await expect(async () => {
     const txt = (await activePanel.locator('.xterm-rows').first().textContent()) ?? '';
     expect(txt.trim().length).toBeGreaterThan(0);
-}).toPass({ timeout: adjusted(60_000) });
+}).toPass({ timeout: 60_000 });
 }
 
 function colDropdown(page: Page) {
@@ -75,10 +74,10 @@ function colDropdown(page: Page) {
 
 async function openColDropdown(page: Page) {
   await colDropdown(page).click();
-  await expect(page.getByText('Time gutter', { exact: false }).first()).toBeVisible({ timeout: adjusted(5_000) });
+  await expect(page.getByText('Time gutter', { exact: false }).first()).toBeVisible({ timeout: 5_000 });
   // The per-field toggles (Time, Index, Abs line, …) live in a submenu.
   await page.getByRole('menuitem', { name: 'Time Gutter Fields' }).click();
-  await expect(page.getByRole('menuitemcheckbox', { name: /^Time$/ })).toBeVisible({ timeout: adjusted(5_000) });
+  await expect(page.getByRole('menuitemcheckbox', { name: /^Time$/ })).toBeVisible({ timeout: 5_000 });
 }
 
 async function toggleCheckbox(page: Page, name: RegExp | string) {
@@ -119,7 +118,7 @@ test.describe('Time gutter & prompt annotations', () => {
 
   test('test 1: Time gutter field columns are aligned with fixed widths', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await gotoAgenticProcess(page);
     await ensurePtyContent(page);
 
@@ -136,7 +135,7 @@ test.describe('Time gutter & prompt annotations', () => {
 
     // Time gutter column is visible.
     const gutter = page.locator('[data-testid="time-gutter"]').first();
-    await expect(gutter).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(gutter).toBeVisible({ timeout: 10_000 });
     const widthTwoFields = (await gutter.boundingBox())!.width;
 
     // Enable a third field (Abs line) → gutter width increases.
@@ -145,7 +144,7 @@ test.describe('Time gutter & prompt annotations', () => {
     if ((await absField.getAttribute('aria-checked')) !== 'true') await absField.click();
     await page.keyboard.press('Escape');
     await expect
-      .poll(async () => (await gutter.boundingBox())!.width, { timeout: adjusted(10_000) })
+      .poll(async () => (await gutter.boundingBox())!.width, { timeout: 10_000 })
       .toBeGreaterThan(widthTwoFields);
 });
 
@@ -173,27 +172,27 @@ test.describe('Time gutter & prompt annotations', () => {
 
   test('test 6: Column header bar — hide and restore trace column', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await gotoAgenticProcess(page);
 
     // Column header bar (18px strip) is visible; trace gutter visible.
     const traceGutter = page.locator('[data-testid="trace-gutter"]').first();
-    await expect(traceGutter).toBeVisible({ timeout: adjusted(15_000) });
+    await expect(traceGutter).toBeVisible({ timeout: 15_000 });
 
     // Click the EyeOff (Hide Trace) button in the Trace header cell.
     await page.locator('button[aria-label^="Hide Trace"]').first().click();
-    await expect(traceGutter).toBeHidden({ timeout: adjusted(10_000) });
+    await expect(traceGutter).toBeHidden({ timeout: 10_000 });
     // The Trace header now shows the Activity icon (Show Trace).
-    await expect(page.locator('button[aria-label="Show Trace"]').first()).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(page.locator('button[aria-label="Show Trace"]').first()).toBeVisible({ timeout: 5_000 });
 
     // Click to restore.
     await page.locator('button[aria-label="Show Trace"]').first().click();
-    await expect(traceGutter).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(traceGutter).toBeVisible({ timeout: 10_000 });
 });
 
   test('test 7: Column header bar — hide and restore annotations column', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP + ' (also needs a real worker session_id for the annotation gutter.)');
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await gotoAgenticProcess(page);
 
     // Annotation gutter requires a worker session_id (set when the banner
@@ -204,85 +203,85 @@ test.describe('Time gutter & prompt annotations', () => {
     await page.keyboard.press('Escape');
 
     const annGutter = page.locator('[data-testid="annotation-gutter"]').first();
-    await expect(annGutter).toBeVisible({ timeout: adjusted(20_000) });
+    await expect(annGutter).toBeVisible({ timeout: 20_000 });
 
     await page.locator('button[aria-label^="Hide Annotations"]').first().click();
-    await expect(annGutter).toBeHidden({ timeout: adjusted(10_000) });
-    await expect(page.locator('button[aria-label="Show Annotations"]').first()).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(annGutter).toBeHidden({ timeout: 10_000 });
+    await expect(page.locator('button[aria-label="Show Annotations"]').first()).toBeVisible({ timeout: 5_000 });
 
     await page.locator('button[aria-label="Show Annotations"]').first().click();
-    await expect(annGutter).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(annGutter).toBeVisible({ timeout: 10_000 });
 });
 
   test('test 8: Column visibility persists across page refresh', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await gotoAgenticProcess(page);
 
     const traceGutter = page.locator('[data-testid="trace-gutter"]').first();
-    await expect(traceGutter).toBeVisible({ timeout: adjusted(15_000) });
+    await expect(traceGutter).toBeVisible({ timeout: 15_000 });
 
     // Hide the trace column.
     await page.locator('button[aria-label^="Hide Trace"]').first().click();
-    await expect(traceGutter).toBeHidden({ timeout: adjusted(10_000) });
+    await expect(traceGutter).toBeHidden({ timeout: 10_000 });
 
     // Reload — colVisibility persisted in localStorage.
     await page.reload();
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
-    await expect(page.locator('[data-testid="trace-gutter"]').first()).toBeHidden({ timeout: adjusted(15_000) });
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await expect(page.locator('[data-testid="trace-gutter"]').first()).toBeHidden({ timeout: 15_000 });
 
     // Restore via the Activity (Show Trace) icon.
     await page.locator('button[aria-label="Show Trace"]').first().click();
-    await expect(page.locator('[data-testid="trace-gutter"]').first()).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(page.locator('[data-testid="trace-gutter"]').first()).toBeVisible({ timeout: 10_000 });
 
     // Reload again — now visible persists.
     await page.reload();
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
-    await expect(page.locator('[data-testid="trace-gutter"]').first()).toBeVisible({ timeout: adjusted(15_000) });
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await expect(page.locator('[data-testid="trace-gutter"]').first()).toBeVisible({ timeout: 15_000 });
 });
 
   test('test 9: debug menu — Trace and Annotations column toggles (entry-point parity)', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await gotoAgenticProcess(page);
 
     const traceGutter = page.locator('[data-testid="trace-gutter"]').first();
     const annGutter = page.locator('[data-testid="annotation-gutter"]').first();
-    await expect(traceGutter).toBeVisible({ timeout: adjusted(15_000) });
+    await expect(traceGutter).toBeVisible({ timeout: 15_000 });
 
     // Uncheck "Trace events" → trace gutter disappears.
     await openColDropdown(page);
     await toggleCheckbox(page, /Trace events/);
     await page.keyboard.press('Escape');
-    await expect(traceGutter).toBeHidden({ timeout: adjusted(10_000) });
+    await expect(traceGutter).toBeHidden({ timeout: 10_000 });
 
     // Re-check "Trace events" → reappears.
     await openColDropdown(page);
     await toggleCheckbox(page, /Trace events/);
     await page.keyboard.press('Escape');
-    await expect(traceGutter).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(traceGutter).toBeVisible({ timeout: 10_000 });
 
     // Ensure annotations on, then toggle off/on via dropdown.
     await openColDropdown(page);
     const annItem = page.getByRole('menuitemcheckbox', { name: /^Annotations/ });
     if ((await annItem.getAttribute('aria-checked')) !== 'true') await annItem.click();
     await page.keyboard.press('Escape');
-    await expect(annGutter).toBeVisible({ timeout: adjusted(20_000) });
+    await expect(annGutter).toBeVisible({ timeout: 20_000 });
 
     await openColDropdown(page);
     await toggleCheckbox(page, /^Annotations/);
     await page.keyboard.press('Escape');
-    await expect(annGutter).toBeHidden({ timeout: adjusted(10_000) });
+    await expect(annGutter).toBeHidden({ timeout: 10_000 });
 
     await openColDropdown(page);
     await toggleCheckbox(page, /^Annotations/);
     await page.keyboard.press('Escape');
-    await expect(annGutter).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(annGutter).toBeVisible({ timeout: 10_000 });
 });
 
   test('test 10: Time-gutter row/anchor time-range fields render extra columns', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await gotoAgenticProcess(page);
 
     // This test's intent (widening the gutter when debugTime/refTime fields are
@@ -296,27 +295,27 @@ test.describe('Time gutter & prompt annotations', () => {
     await page.keyboard.press('Escape');
 
     const gutter = page.locator('[data-testid="time-gutter"]').first();
-    await expect(gutter).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(gutter).toBeVisible({ timeout: 10_000 });
     const baseWidth = (await gutter.boundingBox())!.width;
 
     // Enable "Row time range" (debugTime) → gutter widens.
     await openColDropdown(page);
     await toggleCheckbox(page, /Row time range/);
     await page.keyboard.press('Escape');
-    await expect.poll(async () => (await gutter.boundingBox())!.width, { timeout: adjusted(10_000) }).toBeGreaterThan(baseWidth);
+    await expect.poll(async () => (await gutter.boundingBox())!.width, { timeout: 10_000 }).toBeGreaterThan(baseWidth);
     const afterDebug = (await gutter.boundingBox())!.width;
 
     // Enable "Anchor time range" (refTime) → gutter widens again.
     await openColDropdown(page);
     await toggleCheckbox(page, /Anchor time range/);
     await page.keyboard.press('Escape');
-    await expect.poll(async () => (await gutter.boundingBox())!.width, { timeout: adjusted(10_000) }).toBeGreaterThan(afterDebug);
+    await expect.poll(async () => (await gutter.boundingBox())!.width, { timeout: 10_000 }).toBeGreaterThan(afterDebug);
 
     // Disable both → returns to base width.
     await openColDropdown(page);
     await toggleCheckbox(page, /Row time range/);
     await toggleCheckbox(page, /Anchor time range/);
     await page.keyboard.press('Escape');
-    await expect.poll(async () => (await gutter.boundingBox())!.width, { timeout: adjusted(10_000) }).toBe(baseWidth);
+    await expect.poll(async () => (await gutter.boundingBox())!.width, { timeout: 10_000 }).toBe(baseWidth);
 });
 });

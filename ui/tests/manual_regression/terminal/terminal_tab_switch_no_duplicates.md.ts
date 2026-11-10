@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, sendCommand, waitForOutput, addTerminalTab } from './helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Terminal Tab Switch – No Content Duplication', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,7 +7,7 @@ test.describe('Terminal Tab Switch – No Content Duplication', () => {
   });
 
   test('switching tabs does not duplicate terminal content', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     // Step 1: Open a fresh terminal
     await gotoShell(page);

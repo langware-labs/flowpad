@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, sendCommand, waitForOutput } from '../terminal/helpers';
 import { withViewMode } from '../_shared/view-mode';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Send Multiple Messages', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,7 +8,7 @@ test.describe('Send Multiple Messages', () => {
   });
 
   test('Multiple shell commands can be typed without crashing the terminal', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -40,15 +39,15 @@ test.describe('Send Multiple Messages', () => {
   });
 
   test('Terminal tab remains active after multiple commands', async ({ page }) => {
-    test.setTimeout(adjusted(30_000));
+    test.setTimeout(30_000);
 
     // Navigate directly to the shell without creating a new session (avoids stacking)
     await page.goto(withViewMode('/dock/shell', 'advanced'));
 
     // Terminal panels should be visible
-    await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible({ timeout: 10_000 });
 
     // Active terminal tab is still visible in the tab bar
-    await expect(page.locator('[data-testid^="tab-"]').first()).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(page.locator('[data-testid^="tab-"]').first()).toBeVisible({ timeout: 5_000 });
   });
 });

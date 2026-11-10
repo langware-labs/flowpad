@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test';
 import { dismissSetupModal, gotoShell } from './helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 test.use({ headless: false });
 
@@ -11,7 +10,7 @@ test.describe('Ctrl+C in shell tab does not copy to clipboard', () => {
   });
 
   test('Ctrl+C sends interrupt signal, not clipboard copy (FLOWPAD-1615)', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     // Navigate to shell first
     await gotoShell(page);
@@ -21,7 +20,7 @@ test.describe('Ctrl+C in shell tab does not copy to clipboard', () => {
 
     // Focus the active terminal panel (.last() handles stacked sessions from previous test runs)
     const terminalPanel = page.locator('[data-testid="terminal-panel"][data-active="true"]').last();
-    await terminalPanel.waitFor({ state: 'attached', timeout: adjusted(10_000) });
+    await terminalPanel.waitFor({ state: 'attached', timeout: 10_000 });
     await terminalPanel.click({ force: true });
 
     // Type some text in the terminal

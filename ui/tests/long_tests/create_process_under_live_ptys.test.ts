@@ -22,13 +22,11 @@ import { describe, expect, it } from 'vitest';
 import { stressDescribe } from './_stress_gate';
 import { launchInstance, killInstance, prepareCleanRealm } from './_backend_lifecycle';
 import type { OwnedSdkMainRealm } from '../_sdk_realm';
-import { adjusted } from '../adjustableTimeout';
 
 type SdkRealm = typeof import('@sdk');
 
 const LIVE_PTYS = Number(process.env.LIVE_PTYS) || 20;
-// The committed budget is 500ms; a slower runner widens it with ADJUSTABLE_TIMEOUT, never by editing this.
-const BUDGET_MS = adjusted(500);
+const BUDGET_MS = 500;
 
 stressDescribe('createProcess(claude) under 20 live PTYs', () => {
   it('21st createProcess returns in < 500ms with 20 live claude PTYs', async () => {

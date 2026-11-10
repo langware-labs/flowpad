@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test';
-import { adjusted } from '../../adjustableTimeout';
 
 function realConsoleErrors(errors: string[]): string[] {
   return errors.filter(
@@ -14,7 +13,7 @@ function realConsoleErrors(errors: string[]): string[] {
 
 test.describe('File explorer is accessible and shows directory contents (FLOWPAD-1603)', () => {
   test('explorer shows at least one directory/file item', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -29,17 +28,17 @@ test.describe('File explorer is accessible and shows directory contents (FLOWPAD
     });
 
     await page.goto('/dock/explorer');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
 
     // The file explorer surface is visible.
-    await expect(page.locator('[data-testid="file-manager-download-button"]')).toBeAttached({ timeout: adjusted(15_000) });
+    await expect(page.locator('[data-testid="file-manager-download-button"]')).toBeAttached({ timeout: 15_000 });
 
     // Navigate to the VFS root, which lists directory contents.
     await page.locator('[data-testid="file-manager-home-button"]').click();
     await page.waitForTimeout(2_500);
 
     const rows = page.locator('table tbody tr');
-    await expect(rows.first()).toBeVisible({ timeout: adjusted(15_000) });
+    await expect(rows.first()).toBeVisible({ timeout: 15_000 });
     const rowCount = await rows.count();
     expect(rowCount, 'No directory/file items shown in explorer').toBeGreaterThan(0);
 

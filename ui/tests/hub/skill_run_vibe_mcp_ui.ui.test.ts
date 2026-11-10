@@ -42,7 +42,6 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import { launchBrowser, openInstancePage, type InstancePage } from './_browser';
-import { adjusted } from '../adjustableTimeout';
 
 const post = (apiUrl: string, p: string, body?: unknown) =>
   fetch(`${apiUrl}/api/v1${p}`, {
@@ -105,7 +104,7 @@ beforeAll(async () => {
   alice = await getInstance(RUNNER_INSTANCE);
   browser = await launchBrowser();
   alicePage = await openInstancePage(browser, RUNNER_INSTANCE);
-}, adjusted(60_000));
+}, 60_000);
 
 afterAll(async () => {
   await browser?.close().catch(() => undefined);
@@ -176,7 +175,7 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     }
 
     // 3. The run icon appears on the staged skill chip → click it.
-    await runIcon.waitFor({ state: 'visible', timeout: adjusted(30_000) });
+    await runIcon.waitFor({ state: 'visible', timeout: 30_000 });
     step('run icon visible');
     await runIcon.click({ force: true });
     step('clicked run icon');
@@ -189,8 +188,8 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     // — docs/tab-management.md.
     const VIBE_URL = /\/dock\/vibe\/agentic_process-|\/dock\/project\/[0-9a-f-]+\/process\/agentic_process-/;
     const pickerRow = page.locator('[data-testid^="project-selector-row-"]').first();
-    const shell = page.waitForURL(VIBE_URL, { timeout: adjusted(40_000) }).then(() => 'shell' as const).catch(() => null);
-    const picker = pickerRow.waitFor({ state: 'visible', timeout: adjusted(40_000) }).then(() => 'picker' as const).catch(() => null);
+    const shell = page.waitForURL(VIBE_URL, { timeout: 40_000 }).then(() => 'shell' as const).catch(() => null);
+    const picker = pickerRow.waitFor({ state: 'visible', timeout: 40_000 }).then(() => 'picker' as const).catch(() => null);
     if ((await Promise.race([shell, picker])) === 'picker') {
       step('projectless → project picker shown; pick first');
       await pickerRow.click();
@@ -212,7 +211,7 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     //    live agent is unavailable; the 120s test budget bounds this wait.
     const preview = page.locator('[data-testid="mcp-app-preview"]');
     const appeared = await preview
-      .waitFor({ state: 'visible', timeout: adjusted(90_000) })
+      .waitFor({ state: 'visible', timeout: 90_000 })
       .then(() => true)
       .catch(async () => {
         const text = (await page.locator('body').textContent().catch(() => '')) ?? '';
@@ -229,7 +228,7 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
       .frameLocator('[data-testid="mcp-app-preview"] iframe')
       .frameLocator('iframe#root');
     const root = app.locator('[data-testid="mcp-ui-root"]');
-    await root.waitFor({ state: 'visible', timeout: adjusted(20_000) });
+    await root.waitFor({ state: 'visible', timeout: 20_000 });
     // Alice answers: fill every text-like field the agent's form rendered (the
     // exact field testids are LLM-authored, so fill generically), then submit.
     const fields = root.locator('input:not([type="file"]):not([type="checkbox"]):not([type="radio"]), textarea');
@@ -242,14 +241,14 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     await app
       .locator('[data-testid="mcp-ui-submission-status"]')
       .filter({ hasText: /submitted/i })
-      .waitFor({ state: 'visible', timeout: adjusted(15_000) });
+      .waitFor({ state: 'visible', timeout: 15_000 });
     step('mcp-ui submitted → delivered to agent');
 
     // 5. The report rides the same `flow show` rail the mcp-ui form used. A full
     //    live web-search report exceeds the 120s budget, so this is a soft check
     //    that the display stays alive post-submit (the flow-show→report path
     //    itself is proven by mcp_ui_vibe_form.md.ts); not a hard gate.
-    await preview.waitFor({ state: 'visible', timeout: adjusted(5_000) }).catch(() => undefined);
+    await preview.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
     step('display alive post-submit (report is best-effort within budget)');
-  }, adjusted(120_000));
+  }, 120_000);
 });

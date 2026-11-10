@@ -23,7 +23,6 @@ import * as path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createSdkRealm } from '../_sdk_realm';
-import { adjusted } from '../adjustableTimeout';
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const INSTANCE = process.env.TEST_INSTANCE || 'credfill';
@@ -100,7 +99,7 @@ beforeAll(async () => {
   } finally {
     await logHandle.close();
   }
-  const up = await waitHealthy(PORT, adjusted(60_000));
+  const up = await waitHealthy(PORT, 60_000);
   if (!up) throw new Error(`backend '${INSTANCE}' did not come up on :${PORT} — see ${logPath}`);
 
   const realm = await createSdkRealm(`http://localhost:${PORT}`);
@@ -108,7 +107,7 @@ beforeAll(async () => {
   disposeSdkRealm = realm.dispose;
   const info = await sdk.dataManager.bootstrap('localhost', true);
   await sdk.dataManager.loadTypes(info.types || []);
-}, adjusted(90_000));
+}, 90_000);
 
 afterAll(async () => {
   disposeSdkRealm?.();

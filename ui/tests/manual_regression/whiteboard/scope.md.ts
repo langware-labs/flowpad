@@ -4,7 +4,6 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { apiBase } from '../_shared/api';
-import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 // Whiteboard is a REPO asset, so user scope uses the same registry-owned
@@ -36,9 +35,9 @@ async function pickProject(request: APIRequestContext): Promise<{ id: string; mo
 
 async function materialize(page: Page, id: string, assetRef: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
-    timeout: adjusted(15_000),
+    timeout: 15_000,
   });
   // First save materializes the folder + board.json on disk.
   await page.evaluate(() => {
@@ -60,7 +59,7 @@ async function materialize(page: Page, id: string, assetRef: string) {
 
 test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
   test('Sc1: project-scoped board creation materializes under the project mount', async ({ page, request }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -90,7 +89,7 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
   });
 
   test('Sc2: user + project scopes coexist with distinct paths', async ({ page, request }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');

@@ -28,7 +28,6 @@ import {
   toplogOn,
   type World,
 } from './_world';
-import { adjusted } from '../../adjustableTimeout';
 
 let world: World;
 
@@ -80,7 +79,7 @@ test('a terminal survives every trip away and back', async ({ page }) => {
   // and this spec is about the terminal.
   await navigateTo(page, `${processAddress}?viewMode=advanced`, processPath);
   await expect(panel(page, world.processId).locator('.xterm')).toBeVisible();
-  await expect(panel(page, world.processId)).toContainText(MOCK_MARKER, { timeout: adjusted(15_000) });
+  await expect(panel(page, world.processId)).toContainText(MOCK_MARKER, { timeout: 15_000 });
   await pinTerminalNode(page, world.processId);
   let firstVisitRequests = reruns.length;
 
@@ -116,7 +115,7 @@ test('a terminal survives every trip away and back', async ({ page }) => {
       expect(await nothingToDisplaySightings(page), `"nothing to display" during ${place.name}`).toEqual([]);
       if (place.modeSwitch) {
         await expect(panel(page, world.processId).locator('.xterm').first()).toBeVisible();
-        await expect(panel(page, world.processId)).toContainText(MOCK_MARKER, { timeout: adjusted(15_000) });
+        await expect(panel(page, world.processId)).toContainText(MOCK_MARKER, { timeout: 15_000 });
         // The relaunched PTY re-attaches (and re-streams) on its own schedule: let
         // it settle, then later trips compare against the terminal it left behind.
         await expect
@@ -126,7 +125,7 @@ test('a terminal survives every trip away and back', async ({ page }) => {
               await page.waitForTimeout(750);
               return reruns.length === n;
             },
-            { timeout: adjusted(15_000) },
+            { timeout: 15_000 },
           )
           .toBe(true);
         await pinTerminalNode(page, world.processId);

@@ -33,11 +33,7 @@ from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
 # heartbeat ticks every 5ms, so a healthy loop keeps every gap near 5ms; a
 # blocking spawn produces one large gap. Generous enough to absorb scheduler
 # jitter, far below the on-loop spawn cost.
-from tests.adjustable_timeout import ADJUSTABLE_TIMEOUT
-
-# A slow, loaded host stretches scheduler jitter: the runner's ADJUSTABLE_TIMEOUT (seconds) adds 10ms of slack per second.
-# Default 0 keeps the committed 50ms.
-MAX_LOOP_GAP_S = 0.05 + 0.01 * ADJUSTABLE_TIMEOUT
+MAX_LOOP_GAP_S = 0.05
 
 
 @pytest.mark.asyncio

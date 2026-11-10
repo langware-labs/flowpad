@@ -1,6 +1,6 @@
+import { adjusted } from '../../adjustableTimeout';
 import { test, expect, type Page } from '@playwright/test';
 import { dismissSetupModal, gotoShell, openTabViaMenu, waitForOutput } from './helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Shell Tab Title & Switch Regression
@@ -82,7 +82,7 @@ test.describe('Shell Tab Title and Switching', () => {
   });
 
   test('rename tabs, refresh, and switch between them', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     // Use timestamps so these tabs are findable even if other tabs exist.
     // Do NOT close all existing tabs — with many accumulated sessions that
@@ -114,7 +114,7 @@ test.describe('Shell Tab Title and Switching', () => {
         const fresh = current.filter((id) => id && !before.has(id));
         expect(fresh.length).toBeGreaterThan(0);
         newTestId = fresh[0];
-      }).toPass({ timeout: adjusted(10_000) });
+      }).toPass({ timeout: 10_000 });
 
       const tab = page.locator(`[data-testid="${newTestId}"]`);
       // Rename only once the new shell is up, as a person would: when its terminal finishes booting it
@@ -130,7 +130,7 @@ test.describe('Shell Tab Title and Switching', () => {
       await page.getByRole('menuitem', { name: 'Rename' }).click();
 
       const renameInput = tab.locator('input[type="text"]');
-      await expect(renameInput).toBeVisible({ timeout: adjusted(5_000) });
+      await expect(renameInput).toBeVisible({ timeout: 5_000 });
       // The product auto-focuses + selects-all the input on mount (TabbedTerminal
       // handleTabDoubleClick → useEffect input.focus()+setSelectionRange), so no
       // click is needed. fill() is also re-render-robust: it waits for stability
@@ -156,7 +156,7 @@ test.describe('Shell Tab Title and Switching', () => {
 
     // Step 7: Refresh
     await page.reload();
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(15_000) });
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 15_000 });
     await page.waitForTimeout(2_000);
 
     // Step 8: Both renamed tabs must survive refresh (updateDisplay persists to backend)

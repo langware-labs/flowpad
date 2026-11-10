@@ -8,7 +8,6 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, addTerminalTab, goHome, gotoShellView, sendCommand, waitForOutput, activePanel } from './helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Shell terminals looks empty', () => {
   test.beforeEach(async ({ page }) => {
@@ -16,7 +15,7 @@ test.describe('Shell terminals looks empty', () => {
   });
 
   test('test 1: terminals show content after Home -> Shell round-trip', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     // Step 1: navigate to app (shell), opening the default terminal.
     await gotoShell(page);
@@ -51,8 +50,8 @@ test.describe('Shell terminals looks empty', () => {
     // the previously-typed output after a no-reload nav round-trip.
     await page.locator(`[data-testid="tab-shell|${markerSid}"]`).click();
     const restored = page.locator(`[data-testid="terminal-panel"][data-session-id="${markerSid}"]`);
-    await expect(restored).toBeVisible({ timeout: adjusted(15_000) });
-    await expect(restored.locator('.xterm-rows').first()).toBeAttached({ timeout: adjusted(15_000) });
+    await expect(restored).toBeVisible({ timeout: 15_000 });
+    await expect(restored.locator('.xterm-rows').first()).toBeAttached({ timeout: 15_000 });
 
     // The restored terminal's content is non-empty (PTY replay restored it)...
     await expect
@@ -61,7 +60,7 @@ test.describe('Shell terminals looks empty', () => {
           const txt = (await restored.locator('.xterm-rows').first().textContent()) ?? '';
           return txt.trim().length;
         },
-        { timeout: adjusted(15_000) },
+        { timeout: 15_000 },
       )
       .toBeGreaterThan(0);
 

@@ -20,7 +20,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { hubAvailable } from './_hub';
 import { pollUntil } from './_matrix';
-import { adjusted } from '../adjustableTimeout';
 import {
   HUB_INST_1 as INST_1,
   HUB_INST_2 as INST_2,
@@ -51,7 +50,7 @@ beforeAll(async () => {
   bob = await getInstance(INST_2);
   browser = await launchBrowser();
   alicePage = await openInstancePage(browser, INST_1);
-}, adjusted(60_000));
+}, 60_000);
 
 afterAll(async () => {
   await browser?.close().catch(() => undefined);
@@ -79,14 +78,14 @@ describe('task editor Owner pill — assigning hands the task over for real', ()
     });
 
     const pill = page.getByTestId('task-owner-button');
-    await pill.waitFor({ state: 'visible', timeout: adjusted(25_000) });
+    await pill.waitFor({ state: 'visible', timeout: 25_000 });
     await pill.click();
     await page.getByTestId('task-owner-individual').click();
 
     // ContactPicker takes a free-form email; the popover's open animation eats
     // the first keystrokes, so click → settle → type → verify (driveShareDialog).
     const contact = page.getByPlaceholder('Search a contact or type an email');
-    await contact.waitFor({ state: 'visible', timeout: adjusted(10_000) });
+    await contact.waitFor({ state: 'visible', timeout: 10_000 });
     await contact.click();
     await page.waitForTimeout(500);
     await contact.pressSequentially(bob.email, { delay: 15 });
@@ -95,8 +94,8 @@ describe('task editor Owner pill — assigning hands the task over for real', ()
 
     await page.getByTestId('task-owner-message').fill(`please own this — ${token}`);
     await page.getByTestId('task-owner-assign').click();
-    await page.getByTestId('task-owner-assign').waitFor({ state: 'detached', timeout: adjusted(25_000) });
-  }, adjusted(60_000));
+    await page.getByTestId('task-owner-assign').waitFor({ state: 'detached', timeout: 25_000 });
+  }, 60_000);
 
   it('the task is on bob — the old Owner-pill path never delivered it', async () => {
     const landed = await pollUntil(
@@ -107,13 +106,13 @@ describe('task editor Owner pill — assigning hands the task over for real', ()
         ).catch(() => [])) ?? []) as any[];
         return rows.find((t) => t.id === taskId) ?? null;
       },
-      adjusted(25_000),
+      25_000,
       'the task delivered to bob by the Owner pill',
     );
     expect(landed.assignee).toBe(bob.email);
     expect(landed.title).toBe(TITLE);
     expect(landed.parent_id ?? '', 'one shared row, no member-task clone').toBe('');
-  }, adjusted(30_000));
+  }, 30_000);
 
   it("alice's task stays a plain task", async () => {
     const mine = await fetch(`${alice.apiUrl}/api/v1/graph/task/${taskId}`).then((r) => r.json());
@@ -125,5 +124,5 @@ describe('task editor Owner pill — assigning hands the task over for real', ()
       true,
     ).catch(() => [])) ?? []) as any[];
     expect(kids, 'no child task').toHaveLength(0);
-  }, adjusted(30_000));
+  }, 30_000);
 });

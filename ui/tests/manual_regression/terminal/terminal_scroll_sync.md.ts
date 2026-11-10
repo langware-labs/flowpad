@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, sendCommand, waitForOutput } from './helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Terminal Scroll Sync', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,7 +7,7 @@ test.describe('Terminal Scroll Sync', () => {
   });
 
   test('viewportY tracks correctly as terminal scrolls', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoShell(page);
 
@@ -40,7 +39,7 @@ test.describe('Terminal Scroll Sync', () => {
   });
 
   test('resize does not break scroll position or output', async ({ page }) => {
-    test.setTimeout(adjusted(60_000));
+    test.setTimeout(60_000);
 
     await gotoShell(page);
 

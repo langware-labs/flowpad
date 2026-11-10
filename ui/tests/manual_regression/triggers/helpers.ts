@@ -1,6 +1,5 @@
 import { type Page } from '@playwright/test';
 import { apiOrigin } from '../_shared/api';
-import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Dismiss the DesktopSetupModal if it appears.
@@ -19,11 +18,11 @@ export async function gotoAutomation(page: Page, triggerId?: string) {
   await page.goto(triggerId ? `/dock/automations?trigger=${triggerId}&tab=runs` : '/dock/automations');
 
   const skip = page.getByRole('button', { name: 'Skip' });
-  if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
+  if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
 
   await page
     .getByTestId(triggerId ? 'automation-page' : 'automations-list')
-    .waitFor({ state: 'visible', timeout: adjusted(30_000) });
+    .waitFor({ state: 'visible', timeout: 30_000 });
 }
 
 /**
