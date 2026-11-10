@@ -2018,7 +2018,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return watchedQuery?.results as U[] | undefined;
   }
 
-  public async watchQuery<U extends T>(request: QueryRequest): Promise<() => void> {
+  /** `seed`: rows the caller already fetched for this exact request; with no watch yet, the
+   *  watch starts from them instead of fetching the same rows a second time. */
+  public async watchQuery<U extends T>(request: QueryRequest, seed?: U[]): Promise<() => void> {
     if (!request.callback) {
       throw new Error('QueryRequest must have a callback for watchQuery');
     }
@@ -2045,8 +2047,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     let queryResult: U[];
 
     if (!watchedQuery) {
-      // No cache exists - fetch from API
-      queryResult = await this._query<U>(request);
+      // No cache exists - start from the caller's rows, or fetch from API
+      queryResult = seed ?? (await this._query<U>(request));
     } else if (watchedQuery.pendingPromise) {
       // In-flight request - await it
       queryResult = (await watchedQuery.pendingPromise) as U[];
