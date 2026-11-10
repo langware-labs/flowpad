@@ -75,6 +75,11 @@ export const Onboarding = {
     return call('deploy', 'project', projectId, 'POST', { provider: 'e2b', main_agent_id: `agent-${agentId}` });
   },
 
+  /** Remove a deployment and shut its sandbox down (the wizard was left before the agent went live). */
+  removeDeployment(deploymentId: string): Promise<unknown> {
+    return call('', 'deployment', deploymentId, 'DELETE');
+  },
+
   /** Set up the agent's channel source on its sandbox (config, who may write, a credential, then verify). */
   channelSetup(nodeTypeid: string, body: ChannelSetupBody): Promise<ChannelSetupResult> {
     return call('channel_setup', 'compute_node', new TypeId(nodeTypeid).id, 'POST', body);

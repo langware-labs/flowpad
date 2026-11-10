@@ -724,6 +724,11 @@ msgstr "\"{0}\" מאונדקסת ללא נתיב מקור תקף, ולא נית�
 msgid "{0} is issuing your LLM calls. Close this window (⌘W) — you're done here."
 msgstr "{0} מנפיק את קריאות ה-LLM שלכם. אפשר לסגור את החלון (⌘W) — סיימתם כאן."
 
+#. placeholder {0}: CHANNEL_TITLE[channel]
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "{0} is linked. Your agent goes live as soon as its machine is ready."
+msgstr "{0} מקושר. הסוכן שלכם יעלה לאוויר ברגע שהמכונה שלו תהיה מוכנה."
+
 #. placeholder {0}: harness.label
 #: src/components/workers/harness-availability.ts
 msgid "{0} is not installed on this machine."
@@ -14190,9 +14195,14 @@ msgstr "מביאים את הפרויקט לעבודה"
 msgid "Getting the values from {0}'s Flowpad… they arrive by themselves."
 msgstr ""
 
+#. placeholder {0}: CHANNEL_TITLE[channel]
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Getting your Slack link…"
-msgstr "מקבלים את קישור ה-Slack שלכם…"
+msgid "Getting your {0} link…"
+msgstr "מקבלים את קישור ה-{0} שלכם…"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+#~ msgid "Getting your Slack link…"
+#~ msgstr "מקבלים את קישור ה-Slack שלכם…"
 
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "ghost"
@@ -22597,6 +22607,11 @@ msgstr "נפתחה השוואת הנכסים"
 msgid "Opened existing project"
 msgstr "פתחו פרויקט קיים"
 
+#. placeholder {0}: CHANNEL_TITLE[channel]
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Opening {0}…"
+msgstr "פותחים את {0}…"
+
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Opening {name}…"
 msgstr "פותחים את {name}…"
@@ -29616,8 +29631,8 @@ msgid "Slack"
 msgstr "Slack"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Slack is linked. Your agent goes live as soon as its machine is ready."
-msgstr "Slack מקושר. הסוכן שלכם יעלה לאוויר ברגע שהמכונה שלו תהיה מוכנה."
+#~ msgid "Slack is linked. Your agent goes live as soon as its machine is ready."
+#~ msgstr "Slack מקושר. הסוכן שלכם יעלה לאוויר ברגע שהמכונה שלו תהיה מוכנה."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Slower. To wipe rows first, use Clear Index then Full."

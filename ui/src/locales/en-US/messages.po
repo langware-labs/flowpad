@@ -724,6 +724,11 @@ msgstr "{0} is indexed without a valid source path and cannot be opened."
 msgid "{0} is issuing your LLM calls. Close this window (⌘W) — you're done here."
 msgstr "{0} is issuing your LLM calls. Close this window (⌘W) — you're done here."
 
+#. placeholder {0}: CHANNEL_TITLE[channel]
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "{0} is linked. Your agent goes live as soon as its machine is ready."
+msgstr "{0} is linked. Your agent goes live as soon as its machine is ready."
+
 #. placeholder {0}: harness.label
 #: src/components/workers/harness-availability.ts
 msgid "{0} is not installed on this machine."
@@ -14195,9 +14200,14 @@ msgstr "Getting the project to work on"
 msgid "Getting the values from {0}'s Flowpad… they arrive by themselves."
 msgstr "Getting the values from {0}'s Flowpad… they arrive by themselves."
 
+#. placeholder {0}: CHANNEL_TITLE[channel]
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Getting your Slack link…"
-msgstr "Getting your Slack link…"
+msgid "Getting your {0} link…"
+msgstr "Getting your {0} link…"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+#~ msgid "Getting your Slack link…"
+#~ msgstr "Getting your Slack link…"
 
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "ghost"
@@ -22602,6 +22612,11 @@ msgstr "Opened Asset compare."
 msgid "Opened existing project"
 msgstr "Opened existing project"
 
+#. placeholder {0}: CHANNEL_TITLE[channel]
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Opening {0}…"
+msgstr "Opening {0}…"
+
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Opening {name}…"
 msgstr "Opening {name}…"
@@ -29621,8 +29636,8 @@ msgid "Slack"
 msgstr "Slack"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Slack is linked. Your agent goes live as soon as its machine is ready."
-msgstr "Slack is linked. Your agent goes live as soon as its machine is ready."
+#~ msgid "Slack is linked. Your agent goes live as soon as its machine is ready."
+#~ msgstr "Slack is linked. Your agent goes live as soon as its machine is ready."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Slower. To wipe rows first, use Clear Index then Full."
