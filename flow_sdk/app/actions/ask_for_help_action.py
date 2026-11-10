@@ -323,7 +323,7 @@ async def _write_request(
         await asyncio.to_thread(_hold, conv.id, context)
     chips = [*ask.context, *([str(task.typeid)] if task else [])]
     text = ask.text.strip()
-    asked_title = ask.title.strip()
+    asked_title = _task_base_title(ask)
     if task and asked_title and task.title != asked_title and text.startswith(asked_title):
         # The task took the next free title ("… (2)"): the message names the task it carries.
         text = task.title + text[len(asked_title) :]
@@ -752,6 +752,12 @@ async def _task_of(conv_id: str) -> Optional[Task]:
     return rows[0] if rows else None
 
 
+def _task_base_title(ask: AskForHelpRequest) -> str:
+    """The title a request's task is asked under: its title, else its text's first line (the dialog sends no
+    title). The request message names the task only by comparing against this same base."""
+    return (ask.title or (ask.text.splitlines() or [""])[0]).strip()[:80]
+
+
 async def _write_task(ask: AskForHelpRequest, conv_id: str, someone) -> Task:
     """The task a person is asked to do, in the project the asker was in — under the title asked,
     or the next free one ("… (2)") when a task already has it."""
@@ -760,7 +766,7 @@ async def _write_task(ask: AskForHelpRequest, conv_id: str, someone) -> Task:
 
     project = await Project.get_by_id(ask.project_id) if ask.project_id else None
     mount = getattr(project, "fs_storage_mount_path", None) if project else None
-    base = (ask.title or ask.text.splitlines()[0]).strip()[:80] or "Help request"
+    base = _task_base_title(ask) or "Help request"
     recipient = ask.people[0]
     for n in range(1, 21):
         task = Task(
