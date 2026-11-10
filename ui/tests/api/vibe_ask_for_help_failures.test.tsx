@@ -98,9 +98,11 @@ describe('Ask someone for help — stress-run failures', () => {
     );
     // The request's files ride its opening message — the one carrying the task — and it names the task.
     const opening = messages.find((m) => m.attachment?.some((a) => a.data === `task-${taskId}`));
-    expect(opening?.attachment?.filter((a) => a.attachment_type === 'file').map((a) => a.data)).toEqual([
-      'data/shot.png',
-    ]);
+    const files = opening?.attachment?.filter((a) => a.attachment_type === 'file').map((a) => a.data) ?? [];
+    // Beside the picked file, a help request message carries its own value files (help_request.value.json,
+    // and the screen/session context when shared) — see flow_sdk/schema/data_spec/help_request_spec.py.
+    expect(files.filter((f) => !f.endsWith('.value.json'))).toEqual(['data/shot.png']);
+    expect(files).toContain('data/help_request.value.json');
     expect(opening?.text).toContain(task.title);
   });
 });
