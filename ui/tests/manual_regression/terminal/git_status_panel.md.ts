@@ -1,8 +1,8 @@
 /**
  * Regression tests: Git Status Side Panel (Unified Side Window)
  *
- * Feature: A git branch icon in the TerminalBottomRibbon (agentic process terminals only)
- * opens a Git tab in the unified side window showing the current branch, ahead/behind counts,
+ * Feature: a Git tab in the unified side window (agentic process terminals only) showing the
+ * current branch, ahead/behind counts,
  * and a list of changed/added/deleted/untracked files with per-file insertion/deletion counts.
  *
  * Key files:
@@ -18,7 +18,9 @@
  *   - Git tab × close button: button[aria-label="Close Git"]
  *   - Git panel header has exactly 1 button (Refresh); NO X in the panel header
  *   - File rows: .overflow-y-auto .flex.items-center.gap-2.rounded (hover:bg-muted/50)
- *   - Ribbon button order: 0=Context, 1=Git, 2=Prompts, 3=Files, 4=Dir
+ *   - Ribbon button order: 0=Prompts, 1=Files, 2=Dir, 3=Queue. Since 17a3e3420 the ribbon has no
+ *     Git button (SIDE_TABS.git has no placement); the Git tab is opened through the dock URL's
+ *     side-window list (?sideWindows=…,git), the one path that still reaches it.
  *   - The ribbon only renders when an AgenticProcess is linked to the shell (process prop truthy)
  *   - Panel polls the git-status action every 5 seconds while open
  *
@@ -164,15 +166,29 @@ async function getComputeNodeId(): Promise<string | null> {
 }
 }
 
+/** Open the Git side tab through the dock URL's side-window list (the ribbon no longer carries it). */
+async function openGitTab(page: import('@playwright/test').Page) {
+  const tabStrip = getSideWindow(page).locator('.border-b').first();
+  if (await tabStrip.getByText('Git', { exact: true }).isVisible({ timeout: 1_000 }).catch(() => false)) return;
+  const url = new URL(page.url());
+  const open = (url.searchParams.get('sideWindows') ?? '').split(',').filter(Boolean);
+  if (!open.includes('git')) open.push('git');
+  url.searchParams.set('sideWindows', open.join(','));
+  url.searchParams.delete('activeSideWindow');
+  url.searchParams.set('viewMode', 'advanced'); // Git is an advanced-only side tab
+  await page.goto(url.toString());
+  await tabStrip.getByText('Git', { exact: true }).waitFor({ state: 'visible', timeout: adjusted(10_000) });
+}
+
 test.describe('Git Status Panel', () => {
   test.beforeEach(async ({ page }) => {
     await dismissSetupModal(page);
 });
 
   // ---------------------------------------------------------------------------
-  // test 1: Git button appears in agentic process terminal ribbon
+  // test 1: the ribbon no longer carries Git (17a3e3420); the Git tab is reached by URL
   // ---------------------------------------------------------------------------
-  test('git status button appears in agentic process terminal ribbon', async ({ page }) => {
+  test('the ribbon carries Prompts, Files, Dir and Queue and no Git button; Git opens from the dock URL', async ({ page }) => {
     test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcess(page);
@@ -182,25 +198,24 @@ test.describe('Git Status Panel', () => {
     const ribbonLoc = panel.locator(RIBBON_TABS);
     await expect(ribbonLoc).toBeVisible({ timeout: adjusted(15_000) });
 
-    // Right section: Context(0), Git(1), Prompts(2), Files(3), Dir(4), Queue(5)
-    // + Prompt Library, … — the ribbon keeps gaining buttons (Queue+Library
-    // 55a71046; more since). Assert the Git button (the subject of this test) is
-    // present and the ribbon carries at least the documented core set — robust to
-    // additions, still catches a regression that DROPS buttons.
-    await expect(ribbonLoc.locator('button').nth(1)).toBeVisible({ timeout: adjusted(5_000) });
-    const ribbonButtons = await ribbonLoc.locator('button').count();
-    expect(ribbonButtons).toBeGreaterThanOrEqual(7);
+    // Prompts(0), Files(1), Dir(2), Queue(3): Git and the Prompt Library left the ribbon, and
+    // Context/Analysis/Skills moved to the session menu (sideTabsAt('ribbon')).
+    await expect(ribbonLoc.locator('button')).toHaveCount(4, { timeout: adjusted(5_000) });
+    await expect(ribbonLoc.locator('button:has(svg.lucide-git-branch)')).toHaveCount(0);
+
+    await openGitTab(page);
+    await expect(activePanel(page).locator('button[aria-label="Close Git"]')).toBeVisible({ timeout: adjusted(5_000) });
 });
 
   // ---------------------------------------------------------------------------
   // test 2: Git panel opens as a tab in the side window
   // ---------------------------------------------------------------------------
-  test('git panel opens as a tab in the side window when git button is clicked', async ({ page }) => {
+  test('git panel opens as a tab in the side window', async ({ page }) => {
     test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcess(page);
 
-    await ensureSideTabOpen(page, 1, 'Git');
+    await openGitTab(page);
 
     // Side window should appear (w-80 flex-col border-s)
     const sideWindow = getSideWindow(page);
@@ -230,7 +245,7 @@ test.describe('Git Status Panel', () => {
 
     await gotoAgenticProcess(page);
 
-    await ensureSideTabOpen(page, 1, 'Git');
+    await openGitTab(page);
 
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
@@ -264,7 +279,7 @@ test.describe('Git Status Panel', () => {
     try {
       processId = await gotoProjectAgenticProcess(page, projectId);
       expect(processId).toBeTruthy();
-      await ensureSideTabOpen(page, 1, 'Git');
+      await openGitTab(page);
 
       const sideWindow = getSideWindow(page);
       await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
@@ -292,7 +307,7 @@ test.describe('Git Status Panel', () => {
 
     await gotoAgenticProcess(page);
 
-    await ensureSideTabOpen(page, 1, 'Git');
+    await openGitTab(page);
 
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
@@ -315,16 +330,16 @@ test.describe('Git Status Panel', () => {
     const panel = activePanel(page);
     const ribbonLoc = panel.locator(RIBBON_TABS);
 
-    // Open Git (index 1)
-    await ensureSideTabOpen(page, 1, 'Git');
+    // Open Git (by URL)
+    await openGitTab(page);
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
     // Use tab strip + exact match to avoid strict-mode violation (other elements contain 'Git')
     const tabStripA = sideWindow.locator('.border-b').first();
     await expect(tabStripA.getByText('Git', { exact: true })).toBeVisible({ timeout: adjusted(3_000) });
 
-    // Open Prompts (index 2) — adds a second tab
-    await ensureSideTabOpen(page, 2, 'Prompts');
+    // Open Prompts (ribbon index 0) — adds a second tab
+    await ensureSideTabOpen(page, 0, 'Prompts');
     await expect(tabStripA.getByText('Prompts', { exact: true })).toBeVisible({ timeout: adjusted(3_000) });
 
     // Both tabs should be visible in the tab strip (reuse tabStripA)
