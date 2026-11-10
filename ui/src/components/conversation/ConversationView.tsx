@@ -738,6 +738,8 @@ export function ConversationView({
           onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
           isConversationOwner={isConversationOwner}
           onDeleteMessage={handleDeleteMessage}
+          deleteForEveryone={conversation?.remote === true}
+          selfIds={selfIds}
           isHelpdesk={isHelpdeskConversation}
           viewerCloudUserId={cloudUserId}
           attachmentProjectId={attachmentProjectId}
@@ -900,13 +902,21 @@ export function ConversationView({
   const { byMessage: attachmentsByMessage } = useConversationMessageAttachments(conversationId);
 
   // The conversation owner (initiated_by == the local cloud user) may delete ANY
-  // message; everyone may delete their own. The per-bubble sender check is done
+  // message; a sender, their own while it is fresh. The per-bubble sender check is done
   // inside FlowMessageBubble — this only supplies the owner half of the gate.
   const { cloudUser } = useAuth();
   const cloudUserId = cloudUser?.id ?? null;
   const taskPeople = useMemo(
     () => ({ members: participants ?? [], me: myEmail, cloudUserId }),
     [participants, myEmail, cloudUserId],
+  );
+  // Every id this account sends under: the cloud user, and the backend's local user (which `localUser`
+  // is not while signed in) — a message a channel projected as ours names the latter.
+  const localUserId = localUser?.id;
+  const bootstrapUserId = dataContext.bootstrapInfo?.user?.id;
+  const selfIds = useMemo(
+    () => [cloudUserId, localUserId, bootstrapUserId],
+    [cloudUserId, localUserId, bootstrapUserId],
   );
   // Owner = the hub's initiated_by OR the local user holds role "owner" in the roster.
   const isConversationOwner =
@@ -1060,7 +1070,7 @@ export function ConversationView({
         <ConversationActions
           conversation={conversation}
           messages={conversationMessages}
-          selfIds={[cloudUserId, localUser?.id, dataContext.bootstrapInfo?.user?.id]}
+          selfIds={selfIds}
           onDone={() => void handleRefresh()}
         />
       )}

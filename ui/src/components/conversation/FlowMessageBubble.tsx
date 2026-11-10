@@ -93,6 +93,11 @@ import type { AnswersEntry, MessageForm } from './message-form';
 import type { ProcessCall, ReturnedValue } from '@sdk';
 import { messageDirection } from './message-direction';
 
+/** How long a sender may delete their own message on a hub conversation — the backend's
+ *  `OWN_MESSAGE_DELETE_WINDOW`; the hub enforces it. */
+const OWN_MESSAGE_DELETE_WINDOW_MS = 15 * 60 * 1000;
+const NO_IDS: ReadonlyArray<string> = [];
+
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
  *  they all ride in one bundle. Badge shows the asset count; the tooltip lists
@@ -207,12 +212,15 @@ interface FlowMessageBubbleProps {
   /** Click on the bubble fires this so the parent can mark this message selected. */
   onSelect?: () => void;
   /** True when the local user owns the parent conversation (initiated_by). The
-   *  conversation owner may delete ANY message; everyone may delete their own.
-   *  Together with `isCurrentUser` this gates the delete affordance. */
+   *  conversation owner may delete ANY message, at any time. */
   isConversationOwner?: boolean;
-  /** Delete this message everywhere. The bubble only wires it through when the
-   *  local user is allowed (sender of this message OR conversation owner). */
+  /** Delete this message everywhere. The bubble only wires it through when the local user is
+   *  allowed: the conversation owner, or the message's sender for `OWN_MESSAGE_DELETE_WINDOW_MS`. */
   onDeleteMessage?: (messageId: string) => void;
+  /** The conversation lives on the hub, so a delete removes the message for everyone in it. */
+  deleteForEveryone?: boolean;
+  /** Every id this account sends under (cloud user, local user) — the backend's `User.self_ids`. */
+  selfIds?: ReadonlyArray<string | null | undefined>;
   participants?: ConversationParticipant[];
   /** True once the parent has resolved the canonical hub roster (success
    *  OR explicit failure). The bubble only escalates to the UNRESOLVED
@@ -288,6 +296,8 @@ export function FlowMessageBubble({
   onSelect,
   isConversationOwner = false,
   onDeleteMessage,
+  deleteForEveryone = false,
+  selfIds = NO_IDS,
   participants,
   rosterReady = false,
   isHelpdesk = false,
@@ -477,6 +487,12 @@ export function FlowMessageBubble({
     cloudUserId: viewerCloudUserId,
     localUserId: localUser?.id ?? null,
   });
+  // The conversation owner deletes any message; its sender, their own — on a hub conversation only
+  // while it is fresh. `selfIds`, not `isCurrentUser`: a message a channel projected as ours names
+  // the backend's local user, which `localUser` is not while signed in.
+  const sentByMe = isCurrentUser || (!!fm.sender_id && selfIds.includes(fm.sender_id));
+  const fresh = Date.now() - new Date(fm.occurredAt ?? 0).getTime() < OWN_MESSAGE_DELETE_WINDOW_MS;
+  const canDelete = isConversationOwner || (sentByMe && (!deleteForEveryone || fresh));
   const hasCreator = !!(creator?.name?.trim() || creator?.email?.trim());
   const creatorLabel = !creatorIsLocalArtifact && hasCreator ? personName(creator) : null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
@@ -871,9 +887,8 @@ export function FlowMessageBubble({
               }
             : undefined
         }
-        onDeleteMessage={
-          onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
-        }
+        onDeleteMessage={onDeleteMessage && canDelete ? () => onDeleteMessage(messageId) : undefined}
+        deleteLocalCopyOnly={!!fm.origin && !deleteForEveryone}
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
         onLaunchWorker={onLaunchWorker && !fm.is_draft ? (worker) => onLaunchWorker(messageId, worker) : undefined}
         messageSession={

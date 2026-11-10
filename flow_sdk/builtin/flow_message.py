@@ -1011,6 +1011,29 @@ class FlowMessage(Entity):
         except Exception:  # noqa: BLE001 — cleanup must never block deletion
             logger.warning("[flow_message] staging purge failed fm=%s", self.id, exc_info=True)
 
+    async def erase_local(self, conversation_id: Optional[str] = None) -> None:
+        """Remove this machine's copy of a message that is gone: its child edge, then the row.
+
+        The edge goes FIRST. Membership is the edge, so pruning only the conversation's jsonl
+        pointer would leave the message in the projection; and after ``destroy()`` the child no
+        longer resolves, so ``detach_child`` would find nothing to remove and announce nothing.
+        ``destroy`` erases the DB row, its relationships and the on-disk record folder. Neither
+        step may block the other, so each failure is logged and passed over."""
+        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+
+        conv_id = conversation_id or self.conversation_id
+        if conv_id:
+            try:
+                conv = await Conversation.get_one({"id": conv_id})
+                if conv is not None:
+                    await conv.detach_child(self.typeid, notify=True)
+            except Exception:  # noqa: BLE001
+                logger.exception("[flow_message] child detach failed fm=%s conv=%s", self.id, conv_id)
+        try:
+            await self.destroy()
+        except Exception:  # noqa: BLE001
+            logger.exception("[flow_message] local destroy failed fm=%s", self.id)
+
     async def delete(self):
         await super().delete()
         await self._purge_local_data()

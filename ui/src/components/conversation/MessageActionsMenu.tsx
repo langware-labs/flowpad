@@ -41,6 +41,8 @@ interface MessageActionsMenuProps {
   onAutomate?: () => void;
   onEditName?: () => void;
   onDelete?: () => void;
+  /** The delete only drops Flowpad's copy: the message stays on the channel it was sent on. */
+  deleteLocalCopyOnly?: boolean;
   /** Start a worker on this message — the header's launch bar, message-pinned prompt. */
   onLaunchWorker?: (worker: WorkerType) => void;
 }
@@ -142,6 +144,7 @@ function MessageMenuItems({
   onAutomate,
   onEditName,
   onDelete,
+  deleteLocalCopyOnly,
   onOpenPicker,
   onOpenNote,
   onLaunchWorker,
@@ -231,8 +234,7 @@ function MessageMenuItems({
       {onDelete && (
         <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive" data-testid="message-delete">
           <Trash2 className="h-3.5 w-3.5" />
-          {/* A channel's message lives on the channel: only Flowpad's copy can go. */}
-          {origin ? <Trans>Remove from Flowpad</Trans> : <Trans>Delete message</Trans>}
+          {deleteLocalCopyOnly ? <Trans>Remove from Flowpad</Trans> : <Trans>Delete message</Trans>}
         </DropdownMenuItem>
       )}
     </>
