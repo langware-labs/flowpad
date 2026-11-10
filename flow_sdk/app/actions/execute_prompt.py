@@ -690,14 +690,13 @@ async def resolve_or_mint_session(
         sid = None
     session = await RemoteWorkerSession.resolve_state(sid) if sid else None
     sender = getattr(fm, "sender_id", None)
-    if session is not None and session.guest_user_id and sender and sender not in (
-        session.guest_user_id, session.host_user_id
-    ):
+    if session is not None and not session.admits(sender):
+        # Someone else's session: the sender gets one of their own, waiting for its own Approve.
         logger.warning("[session] fm=%s from %s names %s's session %s — not joined", fm.id, sender, session.guest_user_id, session.id)
         session, sid = None, None
     if session is None and not sid:
         # A re-delivered opening prompt finds its own row; any other unstamped
-        # prompt joins the conversation's open session — one per conversation.
+        # prompt joins the sender's open session — one per guest.
         session = await RemoteWorkerSession.get_one({"starting_message_id": fm.id})
         session = session or await RemoteWorkerSession.open_for_conversation(conv.id, sender)
         sid = session.id if session else mint_uuid()
@@ -1039,15 +1038,13 @@ async def _queued_turns(session: "RemoteWorkerSession") -> list["FlowMessage"]:
             "remote_worker_session_id": session.id,
         }
     )
-    local_id, _someone = await _local_actor()
-    allowed = {session.guest_user_id, session.host_user_id, local_id, None}
     queued = [
         fm
         for fm in fms
         if not getattr(fm, "prompt_auto_handled", False)
         and not fm.is_draft
         and any(_is_prompt_attachment(a) for a in (fm.attachment or []))
-        and (not session.guest_user_id or fm.sender_id in allowed)
+        and session.admits(fm.sender_id)
     ]
     queued.sort(key=lambda m: str(getattr(m, "created_date", "") or ""))
     return queued

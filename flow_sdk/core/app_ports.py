@@ -24,7 +24,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Iterable, Literal, Optional
 
-from flow_sdk.core.dev_server import LOOPBACKS, dev_command, is_listener, port_open
+from flow_sdk.core.dev_server import LOOPBACKS, dev_command, port_open
+from flow_sdk.core.sockets import is_listener
 
 logger = logging.getLogger(__name__)
 

@@ -20,10 +20,9 @@ kills someone else's backend mid-test.
 
 from __future__ import annotations
 
-import socket
 from dataclasses import dataclass, field, replace
 
-from flow_sdk.core.dev_server import is_listener
+from flow_sdk.core.sockets import is_listener
 
 from .model import KILL_TIER, Role, Tier
 
@@ -70,10 +69,6 @@ class ProcTable:
     #: role, per lease and per candidate port during allocation — the multiplier
     #: that made conflict detection quadratic on a machine with many instances.
     port_index: dict[int, list[int]] = field(default_factory=dict)
-    #: Ports with a listening socket the OS names no owner for. Windows can report a
-    #: backend's own listener under pid 0; such a port is in use, and only the instance
-    #: whose ``server.json`` records it may claim it (``adopt_server_json``).
-    unattributed_ports: set[int] = field(default_factory=set)
     #: ppid → child pids, also built once. Lineage shape is fixed for a
     #: snapshot, so re-deriving it on every adopt was pure waste.
     _children: dict[int, list[int]] = field(default_factory=dict)
@@ -117,7 +112,7 @@ class ProcTable:
         return bool(p and p.instance == name and p.tier >= KILL_TIER)
 
     def port_in_use(self, port: int) -> bool:
-        return bool(self.listeners(port)) or port in self.unattributed_ports
+        return bool(self.listeners(port))
 
     # ── promotion ────────────────────────────────────────────────────────────
     def adopt_recorded(self, name: str, pid: int | None, create_time: float | None) -> bool:
@@ -180,13 +175,6 @@ class ProcTable:
         if p.tier < Tier.RECORDED or p.instance != name:
             self.procs[pid] = replace(p, instance=name, tier=Tier.RECORDED)
             self.close_lineage([pid])
-        # The OS named no owner for the recorded port's listener: the backend the record
-        # names is its listener. Without this the backend holds no port, so it can be
-        # neither borrowed nor called down ("not conclusively down").
-        if port in self.unattributed_ports and not self.port_index.get(port) and _BACKEND_MARKER in p.cmd:
-            self.port_index[port] = [pid]
-            held = self.procs[pid]
-            self.procs[pid] = replace(held, listen_ports=held.listen_ports | {port})
         return True
 
     def close_lineage(self, roots) -> None:
@@ -293,13 +281,16 @@ def _attach_listen_ports(table: ProcTable) -> None:
     got_systemwide = False
     try:
         for conn in psutil.net_connections(kind="inet"):
-            if conn.type != socket.SOCK_STREAM or not is_listener(conn):
+            if not is_listener(conn):
                 continue
             if not conn.pid:
-                table.unattributed_ports.add(conn.laddr.port)
-                continue
+                # Windows 26300 can name no owner for a listener: this table cannot attribute
+                # it, so ask each process instead — it knows its own sockets.
+                by_pid.clear()
+                break
             by_pid.setdefault(conn.pid, set()).add(conn.laddr.port)
-        got_systemwide = True
+        else:
+            got_systemwide = True
     except (psutil.AccessDenied, OSError):
         pass
 
@@ -311,7 +302,7 @@ def _attach_listen_ports(table: ProcTable) -> None:
             except (*gone, OSError):
                 continue
             for conn in conns:
-                if conn.type == socket.SOCK_STREAM and is_listener(conn):
+                if is_listener(conn):
                     by_pid.setdefault(pid, set()).add(conn.laddr.port)
         table.ports_degraded = not by_pid
 

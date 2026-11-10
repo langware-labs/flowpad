@@ -118,6 +118,12 @@ class ConnectionSpec(DataSpec):
     #: The environment variables an API-key credential is made of. Names only.
     env_vars: tuple[str, ...] = ()
 
+    @property
+    def held_scopes(self) -> tuple[str, ...]:
+        """What the held grant covers: what the provider granted, else (a grant recorded before
+        grants were kept) what the connect asked for."""
+        return self.granted_scopes or self.scopes
+
     @classmethod
     def from_wire(cls, value: dict) -> "ConnectionSpec":
         """Build one from a catalogue payload, field by field.

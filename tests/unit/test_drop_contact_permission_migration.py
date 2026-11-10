@@ -11,6 +11,8 @@ def test_contact_permission_rows_and_folders_go_and_a_rerun_is_a_no_op(tmp_path)
     conn = sqlite3.connect(db)
     conn.execute("CREATE TABLE entities (id VARCHAR(36) NOT NULL PRIMARY KEY, type VARCHAR(50) NOT NULL, data TEXT)")
     conn.executemany("INSERT INTO entities VALUES (?, ?, '{}')", [("g1", "contact_permission"), ("t1", "task")])
+    conn.execute("CREATE TABLE relationships (from_id TEXT, to_id TEXT)")
+    conn.executemany("INSERT INTO relationships VALUES (?, ?)", [("u1", "g1"), ("u1", "t1")])
     conn.commit()
     conn.close()
     records = tmp_path / "records"
@@ -23,6 +25,7 @@ def test_contact_permission_rows_and_folders_go_and_a_rerun_is_a_no_op(tmp_path)
 
     conn = sqlite3.connect(db)
     assert [r[0] for r in conn.execute("SELECT id FROM entities")] == ["t1"]
+    assert list(conn.execute("SELECT from_id, to_id FROM relationships")) == [("u1", "t1")]
     conn.close()
     assert not (records / "contact_permission").exists() and (records / "task" / "t1").is_dir()
     again = mig.migrate(dry_run=False, db=db, records_root=records)

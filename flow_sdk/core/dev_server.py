@@ -15,6 +15,8 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
+from flow_sdk.core.sockets import is_listener
+
 
 def log_dir() -> Path:
     """Where a started server's output goes (``<slug>-<port>.log``): this instance's logs."""
@@ -70,21 +72,6 @@ def loopback_answers(port: int, path: str = "/", *, timeout: float, healthy=lamb
 
 #: A listener on any of these takes connections to a loopback.
 _LOCAL_BINDS = {*LOOPBACKS, "0.0.0.0", "::"}
-
-
-def is_listener(conn) -> bool:
-    """A listening socket, as the OS reports it.
-
-    Windows 11 build 26300 after KB5127936 returns some listener rows with state 0
-    (psutil: ``NONE``) instead of LISTEN, and others with owner pid 0 — both forms on
-    one machine, across calls. A bound local address with no remote end is a listener
-    whatever the state says; a stateful connection always has a remote end.
-    """
-    import psutil
-
-    if not conn.laddr or getattr(conn, "type", socket.SOCK_STREAM) != socket.SOCK_STREAM:
-        return False
-    return conn.status == psutil.CONN_LISTEN or (conn.status == psutil.CONN_NONE and not conn.raddr)
 
 
 def _listed(port: int) -> Optional[bool]:

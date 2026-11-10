@@ -393,6 +393,11 @@ class RemoteWorkerSession(Entity):
             return None
         return await cls.get_one({"id": session_id})
 
+    def admits(self, sender_id: str | None) -> bool:
+        """Whether a prompt from ``sender_id`` is this session's turn: its guest's or its
+        host's. The host's approval of one person covers no one else."""
+        return not self.guest_user_id or (bool(sender_id) and sender_id in (self.guest_user_id, self.host_user_id))
+
     @classmethod
     async def open_for_conversation(
         cls, conversation_id: str | None, guest_user_id: str | None

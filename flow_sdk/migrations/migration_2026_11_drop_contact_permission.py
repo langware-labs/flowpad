@@ -3,7 +3,8 @@
 ``ContactPermission`` let a contact's live sessions start approved, with no click from the host. It
 was removed (nothing from another machine is ever approved automatically), but its rows and shadow
 folders stayed behind: nothing reads them, and nothing should be able to again. This pass deletes the
-``contact_permission`` rows and their ``<records_root>/contact_permission/`` folders.
+``contact_permission`` rows, their relationships and their ``<records_root>/contact_permission/``
+folders.
 
 Idempotent — a clean instance reports zero and writes nothing.
 
@@ -51,6 +52,10 @@ def migrate(dry_run: bool = True, db: Path | None = None, records_root: Path | N
         report = plan(conn, records_root or get_default_records_root())
         if not dry_run:
             if report.rows:
+                if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='relationships'").fetchone():
+                    conn.executemany(
+                        "DELETE FROM relationships WHERE from_id = ? OR to_id = ?", [(i, i) for i in report.rows]
+                    )
                 conn.execute("DELETE FROM entities WHERE type = ?", (TYPE,))
                 conn.commit()
             if report.folder is not None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Protocol
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from filelock import FileLock, Timeout
 
@@ -347,9 +347,7 @@ async def connect(
                 # row the catalogue already calls connected may skip `/auth`, which
                 # is where a valid hub grant is adopted without a browser.
                 wanted_scopes = [s for s in dict.fromkeys(scopes) if s]
-                held = set(spec.granted_scopes or spec.scopes)
-                if wanted_scopes and not held.issuperset(wanted_scopes):
-                    reauthorize = True
+                reauthorize = reauthorize or not set(spec.held_scopes).issuperset(wanted_scopes)
                 if initial.ok is True and spec.connected and not reauthorize:
                     return ConnectionResult(spec=spec, test=initial)
                 if initial.ok is None:
@@ -361,10 +359,10 @@ async def connect(
                     )
 
                 # Query parameters, the way the Connections screen's Reconnect sends them.
-                query = "&".join(
-                    [*(["reauthorize=true"] if reauthorize else []),
-                     *([f"scopes={quote(' '.join(wanted_scopes), safe='')}"] if wanted_scopes else [])]
-                )
+                params = {"reauthorize": "true"} if reauthorize else {}
+                if wanted_scopes:
+                    params["scopes"] = " ".join(wanted_scopes)
+                query = urlencode(params, quote_via=quote, safe="")
                 auth_path = f"/api/v1/graph/oauth/{quote(spec.provider, safe='')}/auth" + (f"?{query}" if query else "")
                 auth_response = await client.request("POST", auth_path, json={})
                 if not auth_response.success and auth_response.error_code == "cloud_login_required":

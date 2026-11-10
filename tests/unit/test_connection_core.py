@@ -449,7 +449,7 @@ def test_a_backend_whose_listener_row_windows_garbles_is_still_borrowed(monkeypa
     """Windows 11 build 26300 after KB5127936 returns listener rows with owner pid 0, or with
     state 0 (psutil NONE), on one machine across calls. The scan dropped both, so a healthy
     backend held no port and every attach failed "not conclusively down" (a Windows 11 desktop,
-    2026-11-10). A pid-less listener on the recorded port is the record's own backend."""
+    2026-11-10). A state-0 row still listens; an ownerless row makes the scan ask each process."""
     import socket
 
     import psutil
@@ -458,32 +458,33 @@ def test_a_backend_whose_listener_row_windows_garbles_is_still_borrowed(monkeypa
     from flow_sdk.instances.liveness import ProcInfo, ProcTable, _attach_listen_ports
     from flow_sdk.instances.model import Role, Tier
 
-    def backend(pid):
-        cmdline = ("python.exe", "-m", "flow_sdk.server.run")
-        return ProcInfo(pid=pid, ppid=1, create_time=5.0, name="python.exe", cmdline=cmdline,
-                        instance=None, tier=Tier.NONE, role=Role.BACKEND)
+    def proc(pid, cmdline):
+        return ProcInfo(pid=pid, ppid=1, create_time=5.0, name=cmdline[0], cmdline=cmdline,
+                        instance=None, tier=Tier.NONE, role=Role.BACKEND if len(cmdline) > 1 else None)
 
-    listener = SimpleNamespace(status=getattr(psutil, f"CONN_{status}"), type=socket.SOCK_STREAM,
-                               laddr=SimpleNamespace(port=9007), raddr=(), pid=pid)
+    def row(owner):
+        return SimpleNamespace(status=getattr(psutil, f"CONN_{status}"), type=socket.SOCK_STREAM,
+                               laddr=SimpleNamespace(port=9007), raddr=(), pid=owner)
+
     udp = SimpleNamespace(status=psutil.CONN_NONE, type=socket.SOCK_DGRAM, laddr=SimpleNamespace(port=9008), raddr=(), pid=81)
-    monkeypatch.setattr(psutil, "net_connections", lambda kind="inet": [listener, udp])
+    monkeypatch.setattr(psutil, "net_connections", lambda kind="inet": [row(pid), udp])
+    owns = {81}
+    monkeypatch.setattr(psutil, "Process", lambda p: SimpleNamespace(
+        net_connections=lambda kind="inet": [row(p), udp] if p in owns else []))
     settings = SimpleNamespace(instance_name="prod", port=9007)
     info = {"server_pid": 81, "port": 9007, "server_create_time": 5.0, "generation": None}
 
-    table = ProcTable(procs={81: backend(81)})
+    table = ProcTable(procs={81: proc(81, ("python.exe", "-m", "flow_sdk.server.run"))})
     _attach_listen_ports(table)
-    assert table.port_in_use(9007) and not table.ports_degraded
-    assert not table.port_in_use(9008)  # a UDP socket is never a listener
-
+    assert table.port_in_use(9007) and not table.port_in_use(9008) and not table.ports_degraded
     assert _strict_record_generation(settings, info, table) == ServiceGeneration("prod", 81, 5.0, 9007, "borrowed:81:5.0")
 
-    if pid:
-        return  # a listener with a real owner is attributed as before
-    # A pid-less listener is claimed only by a Flowpad backend the record names.
-    stranger = ProcTable(procs={81: ProcInfo(pid=81, ppid=1, create_time=5.0, name="node.exe", cmdline=("node.exe",),
-                                             instance=None, tier=Tier.NONE, role=None)})
-    _attach_listen_ports(stranger)
-    assert _strict_record_generation(settings, info, stranger) is None
+    if not pid:
+        # An ownerless row is attributed only to a process that holds the socket itself.
+        owns.clear()
+        stranger = ProcTable(procs={81: proc(81, ("node.exe",))})
+        _attach_listen_ports(stranger)
+        assert _strict_record_generation(settings, info, stranger) is None
 
 
 def _adoption_rig(monkeypatch, *, held_after: bool):

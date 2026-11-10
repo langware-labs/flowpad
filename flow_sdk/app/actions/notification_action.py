@@ -1386,18 +1386,16 @@ async def _start_live_session_locked(conversation_id: str, body: dict, someone_t
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
         return ApiFailResponse(message=f"Conversation not found: {conversation_id}", status_code=404)
-    me = (await User.current_sender_participant(None)).get("user_id") or None
-    open_session = await RemoteWorkerSession.open_for_conversation(conv.id, me)
+    sender = await User.current_sender_participant(None)
+    sender_id = sender.get("user_id") or None
+    sender_name = sender.get("name") or ""
+    open_session = await RemoteWorkerSession.open_for_conversation(conv.id, sender_id)
     if open_session is not None:
         return ApiSuccessResponse(data=open_session.model_dump(mode="json"))
 
     reply_policy = _reply_policy_of(body)
     if reply_policy is None:
         return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
-
-    sender = await User.current_sender_participant(None)
-    sender_id = sender.get("user_id") or None
-    sender_name = sender.get("name") or ""
     host_id, host_name, _ = _peer_of(conv, sender_id)
     if not host_id:
         return ApiFailResponse(
