@@ -12,17 +12,21 @@
  *    Inject panel's direct-delivery mode), so its `summary` edge still routes.
  *
  * The `demo-relay-chain` row is created here if this instance has never seen
- * it (folder assets live in the shared user home, DB rows are per-instance).
+ * it (folder assets live in the shared user home, DB rows are per-instance). The product
+ * seeds only mini-analyzer, so a home without the relay demo gets it from `fixtures/`
+ * (DEMO_RELAY_DIR overrides where it lives).
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { fileURLToPath } from 'node:url';
 
 import { apiBase } from '../_shared/api';
 
 const API = apiBase();
 
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 const RELAY_FLOW = 'demo-relay-chain';
 const MINI_FLOW = 'mini-analyzer';
 
@@ -39,13 +43,20 @@ async function flowByName(request: APIRequestContext, name: string): Promise<Flo
 
 /** The relay demo's folder (shared user home) — the flow's semantic truth. */
 function relayFolder(): string {
-  return path.join(os.homedir(), 'agentic-assets', 'graph_workflow', RELAY_FLOW);
+  return process.env.DEMO_RELAY_DIR || path.join(os.homedir(), 'agentic-assets', 'graph_workflow', RELAY_FLOW);
+}
+
+/** The relay demo as shipped beside this spec, placed where the flow's folder lives when it is missing. */
+function placeRelayDemo(folder: string) {
+  if (fs.existsSync(path.join(folder, 'graph.json'))) return;
+  fs.cpSync(path.join(HERE, 'fixtures', RELAY_FLOW), folder, { recursive: true });
 }
 
 async function ensureRelayFlow(request: APIRequestContext): Promise<FlowRow> {
   const existing = await flowByName(request, RELAY_FLOW);
   if (existing) return existing;
   const folder = relayFolder();
+  placeRelayDemo(folder);
   expect(fs.existsSync(path.join(folder, 'graph.json')), `${folder}/graph.json must exist`).toBe(true);
   const created = await request.post(`${API}/api/v1/graph/graph_workflow`, {
     data: { name: RELAY_FLOW, asset_ref: folder, enabled: true },
