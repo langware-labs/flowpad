@@ -177,8 +177,9 @@ CHANNELS.forEach((channel, i) => {
     if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/${channel}-reactions.png`, fullPage: true });
 
     // We answer the photo with a file.
-    await photoBubble.getByTestId('message-actions-menu').click();
-    await page.getByTestId('message-reply').click();
+    // Reply is the bubble's own hover action (not in its ⋮ menu).
+    await photoBubble.hover();
+    await photoBubble.getByTestId('message-reply').click();
     await expect(page.getByTestId('composer-reply-banner')).toContainText(`photo ${nonce}`);
     await expect(page.getByTestId('attach-file-button')).toBeEnabled();
     const chooser = page.waitForEvent('filechooser');

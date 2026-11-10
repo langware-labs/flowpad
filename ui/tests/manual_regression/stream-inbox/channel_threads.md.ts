@@ -257,8 +257,9 @@ for (const [i, channel] of WANTED.entries()) {
 
     // Reply on the root (⋮ → Reply): the provider sees a reply to the root.
     const rootBubble = page.locator('[data-testid^="message-bubble-"]').filter({ hasText: `root ${nonce}` }).first();
-    await rootBubble.getByTestId('message-actions-menu').click();
-    await page.getByTestId('message-reply').click();
+    // Reply is the bubble's own hover action (not in its ⋮ menu).
+    await rootBubble.hover();
+    await rootBubble.getByTestId('message-reply').click();
     await expect(page.getByTestId('composer-reply-banner')).toContainText(`root ${nonce}`);
     await composer.fill(`answer ${nonce}`);
     await sendButton(page).click();
