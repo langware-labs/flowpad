@@ -72,7 +72,7 @@ test('email first: the wizard ends with an agent that answers my mail', async ({
   console.log(`[first-agent-email] live after ${((Date.now() - started) / 1000).toFixed(1)}s`);
 
   // A new mailbox sends only to its owner (its Sending list, 29194d4c8): open the sender's to the agent.
-  await api(request, 'post', `agent/${sender.agent.id}/configure_mailbox`, {
+  await api(request, 'post', `agent/${sender.agent.id}/mailbox/configure`, {
     allowed_recipients: [agent.mailbox.address],
   });
   await api(request, 'post', `agent/${sender.agent.id}/mailbox/send`, {
