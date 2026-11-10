@@ -362,6 +362,14 @@ def migrate_presence_shaped_members(data: Any) -> Any:
     return data
 
 
+def _require_tag(name: str) -> str:
+    """``name`` as a valid tag, or a ValueError a caller can show."""
+    tag = to_tag(name)
+    if tag is None:
+        raise ValueError(f"{name!r} has nothing a tag can hold (letters, numbers, '_', '-', '.')")
+    return tag
+
+
 class Entity(DBEntity):
     env_vars: SerializeAsAny[EntityEnvVars[EnvVar] | None] = Field(default=None)
     # Auth projection for the requesting caller — computed per request, never
@@ -3568,15 +3576,11 @@ class Entity(DBEntity):
         return self
 
     async def add_tag(self: EntityType, name: str) -> EntityType:
-        tag = to_tag(name)
-        if tag is None:
-            raise ValueError(f"{name!r} has nothing a tag can hold (letters, numbers, '_', '-', '.')")
+        tag = _require_tag(name)
         return self if tag in self.tags else await self.set_tags([*self.tags, tag])
 
     async def remove_tag(self: EntityType, name: str) -> EntityType:
-        tag = to_tag(name)
-        if tag is None:
-            raise ValueError(f"{name!r} has nothing a tag can hold (letters, numbers, '_', '-', '.')")
+        tag = _require_tag(name)
         return await self.set_tags([t for t in self.tags if t != tag]) if tag in self.tags else self
 
     # ── context_entities surface ─────────────────────────────────────────

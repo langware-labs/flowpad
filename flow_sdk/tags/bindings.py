@@ -122,7 +122,10 @@ async def tag_names() -> list[str]:
 
     from flow_sdk.db import session as _session  # noqa: PLC0415
 
-    in_use = "SELECT j.value FROM entities, json_each(entities.data, '$.tags') AS j"
+    in_use = (
+        "SELECT j.value FROM entities, json_each(entities.data, '$.tags') AS j"
+        " WHERE json_array_length(entities.data, '$.tags') > 0"
+    )
     blessed = (
         "SELECT json_extract(data, '$.name') FROM entities WHERE type = 'tag'"
         " AND NOT COALESCE(json_extract(data, '$.deprecated'), 0)"

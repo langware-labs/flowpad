@@ -531,7 +531,7 @@ def wanted_tags(raw: str | None) -> list[str]:
     """The ``tags`` query parameter (a comma list a person typed) as valid tag names."""
     from flow_sdk.tags.grammar import to_tags  # noqa: PLC0415
 
-    return to_tags((raw or "").split(","))
+    return to_tags(raw or "")
 
 
 def apply_tag_filter(entities: list, tag_list: list[str]) -> list:
