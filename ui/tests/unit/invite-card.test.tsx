@@ -9,6 +9,12 @@ const h = vi.hoisted(() => ({ openDock: vi.fn(), answer: vi.fn() }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: h.openDock } }),
 }));
+// The project action reads the project list and installs through the backend; here only where it shows.
+vi.mock('@src/components/conversation/asset-review/ProjectInstallAction', () => ({
+  ProjectInstallAction: ({ typeId }: { typeId: { id: string } }) => (
+    <div data-testid="project-install-action" data-project={String(typeId.id)} />
+  ),
+}));
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   answerInvitation: h.answer,
@@ -71,6 +77,30 @@ describe('InviteCard', () => {
     const open = screen.getByTestId('invite-open');
     expect(open.disabled).toBe(true);
     expect(open.title).toBe('Ishay Sela stopped sharing this compute node');
+  });
+});
+
+describe('a project shared with me', () => {
+  const PROJECT = '2d620430-3759-4492-9dd2-0cde9413c833';
+  const project = (state: InvitationState) => view(state, { targetType: 'project', targetId: PROJECT });
+
+  it('accepted, in the thread: the card offers the project install action, not a bare Open', () => {
+    render(<InviteCard invite={project('accepted')} layout="card" />);
+    expect(screen.getByTestId('project-install-action').dataset.project).toBe(PROJECT);
+    expect(screen.queryByTestId('invite-open')).toBeNull();
+  });
+
+  it("the sharer's own card and the inbox line keep Open", () => {
+    render(<InviteCard invite={project('accepted')} layout="card" mine />);
+    render(<InviteCard invite={project('accepted')} layout="line" />);
+    expect(screen.queryByTestId('project-install-action')).toBeNull();
+    expect(screen.getAllByTestId('invite-open')).toHaveLength(2);
+  });
+
+  it('pending: still Accept and Decline', () => {
+    render(<InviteCard invite={project('pending')} layout="card" />);
+    expect(screen.getByTestId('invite-accept')).toBeTruthy();
+    expect(screen.queryByTestId('project-install-action')).toBeNull();
   });
 });
 
