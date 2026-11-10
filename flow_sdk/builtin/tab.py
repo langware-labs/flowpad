@@ -856,20 +856,20 @@ async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> 
     between that read and this write. Saving the snapshot row would write its
     stale ``visible=True`` back and resurrect the closed tab — so the order is
     applied to the LIVE row, and a row hidden or gone meanwhile is skipped."""
-    wrote = False
+    moved: dict[str, int] = {}
     for idx, tid in enumerate(new_order):
         tab = by_id.get(tid)
         if tab is None or getattr(tab, "tab_order", 0) == idx:
             continue
-        # Field-scoped stamp: the earlier live-read-then-save() still lost a
-        # `close_many` that committed between the read and the save (the whole
-        # row went back, visible=True included). The driver stamp hydrates the
-        # authoritative row INSIDE the writer transaction, no-ops on a hidden
-        # row, and json_sets only tab_order. Callers broadcast tabs_changed.
         tab.tab_order = idx
-        _, stamped = await Tab._db.stamp_tab_order(tid, idx)
-        wrote = wrote or stamped
-    return wrote
+        moved[tid] = idx
+    # Field-scoped stamp: the earlier live-read-then-save() still lost a
+    # `close_many` that committed between the read and the save (the whole
+    # row went back, visible=True included). The driver reads the
+    # authoritative rows INSIDE the writer transaction, skips hidden ones,
+    # and json_sets only tab_order — all moved rows in one statement.
+    # Callers broadcast tabs_changed.
+    return bool(await Tab._db.stamp_tab_orders(moved))
 
 
 # The two live-session target types: their rows are ALWAYS DB-backed, so absence
@@ -1848,17 +1848,29 @@ async def _build_list(project: str | None) -> list[dict]:
 # (was: creating synthetic tab ID = uuid5(__tabs_changed_signal__), which was horrible design)
 
 
-async def broadcast_tabs_changed() -> None:
+async def broadcast_tabs_changed(skip_connection_id: str = "") -> None:
     """Global ``tabs-changed`` ping so every client refetches the list — covers
     backend-originated changes (death/orphan-cleanup, rename, second window). Sends
-    a proper broadcast message to all connected clients."""
+    a proper broadcast message to all connected clients, except ``skip_connection_id``
+    when given (``_connection_to_skip``)."""
     try:
         from flow_sdk.api.messages import BroadcastMessage  # noqa: PLC0415
         from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415
 
-        await broadcast(BroadcastMessage(broadcast_type="tabs_changed").model_dump_json())
+        await broadcast(BroadcastMessage(broadcast_type="tabs_changed").model_dump_json(), skip_connection_id)
     except Exception as e:
         logger.debug(f"broadcast_tabs_changed failed: {e}")
+
+
+def _connection_to_skip(ping_caller: bool) -> str:
+    """The window a tab write's ping leaves out: the caller, when it said it re-reads the
+    list itself (``ping_caller=False``) and named its connection. Empty pings everyone."""
+    if ping_caller:
+        return ""
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    return request_info.initiator_connection_id if request_info else ""
 
 
 async def _list_response(project: str | None, **extra: object):
@@ -1879,6 +1891,7 @@ async def _http_new_tab(
     worktree: bool = False,
     after_tab_id: str | None = None,
     parent_tab_id: str | None = None,
+    ping_caller: bool = True,
 ):
     """POST /graph/tab/new_tab — loader-driven get-or-create. A fresh tab lands
     right after ``after_tab_id`` (the opener); a reopen keeps its slot unless an opener is given. Returns the
@@ -1895,7 +1908,7 @@ async def _http_new_tab(
         after_tab_id=after_tab_id,
         parent_tab_id=parent_tab_id,
     )
-    await broadcast_tabs_changed()
+    await broadcast_tabs_changed(_connection_to_skip(ping_caller))
     return await _list_response(tab.project_id, created=created)
 
 
@@ -2141,7 +2154,7 @@ _action_registry.register(
 )
 
 
-async def _http_set_name(self: Tab):
+async def _http_set_name(self: Tab, ping_caller: bool = True):
     """POST /graph/tab/<id>/set_name {name} — set ONLY the Tab label, no entity
     reflect and no ``auto_rename`` change.
 
@@ -2158,7 +2171,7 @@ async def _http_set_name(self: Tab):
     before = self.name
     await self.set_label(name)
     if self.name != before:
-        await broadcast_tabs_changed()
+        await broadcast_tabs_changed(_connection_to_skip(ping_caller))
     return await _list_response(self.project_id)
 
 

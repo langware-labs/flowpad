@@ -80,7 +80,7 @@ describe('TabManager content-entity name sync', () => {
   it("renames the doc's own tab, even when the Assets tab comes first", async () => {
     const { setNameById, emit } = setup([assetsRow, editorRow]);
     emit('index');
-    await vi.waitFor(() => expect(setNameById).toHaveBeenCalledWith(editorRow.id, 'index'));
+    await vi.waitFor(() => expect(setNameById).toHaveBeenCalledWith(editorRow.id, 'index', { pingCaller: false }));
     expect(setNameById).toHaveBeenCalledTimes(1);
   });
 });

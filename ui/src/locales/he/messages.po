@@ -12765,6 +12765,7 @@ msgstr "יצירת תיקייה נכשלה"
 msgid "Failed to create hook"
 msgstr "נכשלה יצירת חוק"
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 msgid "Failed to create project"
 msgstr "כשל בייצור הפרויקט"

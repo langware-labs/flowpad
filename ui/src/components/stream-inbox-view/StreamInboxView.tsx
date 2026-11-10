@@ -125,18 +125,24 @@ type RowDeleteAction =
 
 // ── Time formatter (Gmail-style) ────────────────────────────────────────────
 // today → "12:34 PM"  ·  this year → "Apr 28"  ·  older → locale date
+// Every row formats its time on every render of the list, and the list re-renders on each
+// conversation/message change: ``toLocale*String(undefined, opts)`` builds a fresh
+// Intl.DateTimeFormat per call (311 ms of one create in a profile). One formatter per shape.
+const TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const DAY_FMT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const DATE_FMT = new Intl.DateTimeFormat(undefined);
 function formatGmailTime(iso?: string | Date | null): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   const now = new Date();
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+    return TIME_FMT.format(d);
   }
   if (d.getFullYear() === now.getFullYear()) {
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return DAY_FMT.format(d);
   }
-  return d.toLocaleDateString();
+  return DATE_FMT.format(d);
 }
 
 // ── Conversation list row (Gmail thread row) ────────────────────────────────
@@ -215,6 +221,10 @@ interface ConversationListRowProps {
   /** The newest session an automation started on a message of this conversation. */
   automationMark?: AgenticProcess;
   conv: Conversation;
+  /** What the row shows of `conv` and `automationMark`, as one string (`rowRevision`). The store
+   *  updates an entity IN PLACE, so its identity never says it changed — this does, and lets an
+   *  unchanged row skip the list's re-renders (`memo`). */
+  revision: string;
   isFocused: boolean;
   /** Conversation-level archive. Stamps ``Conversation.archived_at = now()``
    *  server-side; row auto-revives when a FlowMessage newer than the stamp
@@ -260,6 +270,28 @@ interface ConversationListRowProps {
   /** A host that shows the conversation itself (a source's page): where a row opens. Still URL-first — the host
    *  navigates. Omitted: the conversation view, scoped to `agentId`. */
   onOpenConversation?: (conversationId: string) => void;
+}
+
+/** `ConversationListRow`'s `revision`: everything stored on the row's conversation, plus its
+ *  automation mark's state. A field the row reads through a hook (its messages, the viewer)
+ *  re-renders it on its own. */
+export function rowRevision(conv: Conversation, automationMark?: AgenticProcess): string {
+  return `${entityRevision(conv)}|${automationMark?.id ?? ''}:${automationMark?.status ?? ''}`;
+}
+
+/** Every own field of an entity (stored, projected and private alike), as JSON. One that cannot
+ *  be written out reads as changed every time — a re-render, never a stale row. */
+function entityRevision(entity: object): string {
+  const fields: Record<string, unknown> = {};
+  for (const key of Object.keys(entity)) {
+    const value = (entity as Record<string, unknown>)[key];
+    if (typeof value !== 'function') fields[key] = value;
+  }
+  try {
+    return JSON.stringify(fields);
+  } catch {
+    return `unserializable:${Math.random()}`;
+  }
 }
 
 /**
@@ -1788,6 +1820,7 @@ export function StreamInboxView({
               key={conv.id ?? ''}
               conv={conv}
               isFocused={false}
+              revision={rowRevision(conv, conv.id ? automationMarks.get(conv.id) : undefined)}
               onArchive={rowArchive}
               onUnarchive={rowUnarchive}
               onToggleRead={rowToggleRead}
