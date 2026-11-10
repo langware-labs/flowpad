@@ -4,6 +4,7 @@ The hub is an in-memory double (``tests/utils/fake_hub_store``). No network."""
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -11,8 +12,11 @@ import pytest
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agent_cloud_deploy import funding_warnings
 from flow_sdk.builtin.credential_service import CredentialError, delete_credential, save_credential, use_mine
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.builtin.readiness import readiness
+from flow_sdk.ingest.driver_registry import asset_module
+from flow_sdk.ingest.testing import make_data_source
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.secrets import SecretStore
 from tests.utils import fake_hub_store
@@ -274,3 +278,34 @@ async def test_a_deploy_naming_no_provider_leaves_the_choice_to_the_hub(home, pr
     await deploy_ended(agent, "user-1", "production")
     await deploy_ended(agent, "user-1", "production", provider="gcp_vm")
     assert [d["provider"] for d in hub.deploys] == [None, "gcp_vm"]
+
+
+def _slack_credential() -> dict:
+    """The Slack driver's own credential: a bot token, a user token or a sign-in, any one of them."""
+    folder = Path(asset_module("slack").__file__).parent / "agentic-assets" / "credential" / "slack_channel"
+    return {**json.loads((folder / "credential.json").read_text(encoding="utf-8")), "setup": "x"}
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.one_of_api_key.rules: FAILING? read this tag's rules before touching
+#       readiness() api-key branch or _needed_names
+# flowpad:endcapsule tag
+async def test_a_slack_source_on_its_bot_token_deploys_without_a_user_token(home, project, hub, monkeypatch):
+    """FLOWPAD-2339: the driver names SLACK_USER_TOKEN for each permission, but any way of the credential grants them."""
+    await DataDriver.find("slack")
+    agent = Agent(name="cloud-slack-bot", project_id=str(project.id))
+    await agent.save()
+    await make_data_source("slack", name="Slack bot", owner=f"agent-{agent.id}").save()
+    await save_credential(scope="project", project_id=str(project.id), manifest=_slack_credential(), values={"SLACK_BOT_TOKEN": VALUE})
+    monkeypatch.setattr(Agent, "ensure_on_hub", _published)  # publishing is the git path's; not under test here
+    monkeypatch.setattr("flow_sdk.builtin.project.Project.ensure_on_hub", AsyncMock(return_value=False))
+    deployment = await plan_for(agent, "production", provider="e2b")
+
+    copied = await use_mine(str(deployment.id))
+
+    assert copied["copied"] == ["SLACK_BOT_TOKEN"], f"the token the source runs on is what gets copied: {copied}"
+    await deploy_ended(agent, "user-1", "production", provider="e2b", deployment_id=str(deployment.id))
+    assert len(hub.deploys) == 1
