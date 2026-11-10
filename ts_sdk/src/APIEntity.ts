@@ -1071,7 +1071,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       String(response.id) === this.id &&
       String(response.type) === this.typeId.type
     ) {
-      return dataManager.updateEntityFromJson<T>(response);
+      const adopted = dataManager.updateEntityFromJson<T>(response);
+      if ((adopted as unknown) !== this) {
+        // The caller holds a different instance than the cache (a WS push or a refetch replaced
+        // the cached one while the share was in flight): it must read the shared state too, or
+        // `conv.share(...)` leaves `conv.remote` false on the very object it was called on.
+        const { state: _state, ...fields } = response as Record<string, unknown>;
+        dataManager.deepAssign(this, typeof (this as any).onEntityUpdate === 'function' ? fields : response);
+      }
+      return adopted;
     }
     // Some specialized share actions return a receipt rather than an entity.
     // They update their local cache server-side and broadcast that canonical
