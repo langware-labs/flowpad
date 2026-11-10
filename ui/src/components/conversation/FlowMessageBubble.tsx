@@ -66,12 +66,19 @@ import { AutomationMessageActions } from './AutomationMessageActions';
 import { DiagnosisMessageActions } from './DiagnosisMessageActions';
 import { HelpRequestLine } from './HelpRequestLine';
 import { ItReplyLine } from './ItReplyLine';
+import { ItSendTable } from './ItSendTable';
+import type { ItSend } from './it-sends';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
 import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
-import { participantLabelByUserId, personName, unresolvedSenderLabel, warnUnresolvedSender } from './participant-display';
+import {
+  participantLabelByUserId,
+  personName,
+  unresolvedSenderLabel,
+  warnUnresolvedSender,
+} from './participant-display';
 import { useAttachments, type AttachmentTypeChipView } from './useAttachments';
 import { AttachmentDownloadWarning } from './AttachmentDownloadWarning';
 import { dockPointerForLocalFile } from './attachment-url';
@@ -273,6 +280,8 @@ interface FlowMessageBubbleProps {
   /** The answers this message carries; `latest`: the newest for its form. */
   formAnswers?: { entry: AnswersEntry; form: MessageForm | null; latest: boolean } | null;
   promptCall?: { call: ProcessCall; answer: ReturnedValue | null; running: boolean } | null;
+  /** An IT request's send: each machine's answer to it, drawn as a table under the request. */
+  itSend?: ItSend | null;
   /** The conversation's other participant — the machine a prompt call I send runs on. */
   callPeerName?: string | null;
   /** Same sender as the bubble above, moments later — drawn without avatar and name. */
@@ -309,6 +318,7 @@ export function FlowMessageBubble({
   taskPeople,
   onLaunchWorker,
   promptCall = null,
+  itSend = null,
   messageForm = null,
   formAnswers = null,
   callPeerName = null,
@@ -821,6 +831,7 @@ export function FlowMessageBubble({
       {fm.it_reply && (
         <ItReplyLine reply={fm.it_reply} agentId={fm.sender_id ?? ''} conversationId={fm.conversation_id ?? ''} />
       )}
+      {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
       {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {fm.kind === FlowMessageKind.AUTOMATION_RESULT && (
@@ -1129,7 +1140,12 @@ function ProjectMessageChip({
 function LocalAttachmentChip({
   localPath,
   ...chip
-}: { url: string; filename: string; state?: AttachmentChipState; localPath: string | null }) {
+}: {
+  url: string;
+  filename: string;
+  state?: AttachmentChipState;
+  localPath: string | null;
+}) {
   const { navigation } = useDockNavigation();
   return (
     <AttachmentChip

@@ -156,7 +156,9 @@ async def test_run_answers_its_value_and_leaves_nothing(box, monkeypatch):
 async def test_value_off_its_shape_is_null_and_says_why(box, monkeypatch):
     receipt = {"status": "done", "summary": "Answered.", "data": {it_session.VALUE_KEY: {"tasks": "nope"}}}
     monkeypatch.setattr("flow_sdk.core.compute.process_step.launch_step_process", _launch(box, receipt, []))
-    answer = await it_session.run_it_session(call_id="c2", text="x", answer_shape=SHAPE, workdir=box.settings.instance_dir)
+    answer = await it_session.run_it_session(
+        call_id="c2", text="x", answer_shape=SHAPE, workdir=box.settings.instance_dir
+    )
     assert answer.value is None and answer.ok is False  # the hub records it as failed, never done
     assert "does not match its shape" in answer.answer
 
@@ -204,7 +206,9 @@ def test_routes_refuse_anyone_but_the_hub(client):
     client.cookies.set("flowpad_gate", SECRET)
     assert client.get("/api/v1/it-session/status").status_code == 403
     client.cookies.clear()
-    assert client.post("/api/v1/it-session/setting", json={"on": True}, headers={"x-cookie-gate": "x"}).status_code == 403
+    assert (
+        client.post("/api/v1/it-session/setting", json={"on": True}, headers={"x-cookie-gate": "x"}).status_code == 403
+    )
     assert client.post("/api/v1/it-session/run", json={"call_id": "c", "text": "t"}).status_code == 403
 
 
@@ -264,6 +268,31 @@ def test_it_reply_rides_the_hub_metadata():
     owner = FlowMessage.model_validate(owner_payload)
     derive_it_reply(owner, owner_payload)
     assert owner.it_reply is None
+    assert owner.it_request is None
+
+
+def test_the_owners_request_keeps_its_send_ids_not_its_body():
+    """A request that names its send keeps agent, operation and send ids -- what the conversation groups the
+    machines' replies by -- and never the request body the hub keeps for a rerun."""
+    from flow_sdk.builtin.flow_message import FlowMessage, derive_it_reply
+
+    it = {
+        "attachments": ["SKILL.md"],
+        "request": {"text": "Check progress", "attachments": [{"name": "SKILL.md", "content_b64": "eA=="}]},
+        "agent_id": "a-1",
+        "op_id": "class-status",
+        "send_id": "s-1",
+    }
+    payload = {"id": "fm-0", "text": "Check progress", "metadata": {"it": it}}
+    fm = FlowMessage.model_validate(payload)
+    derive_it_reply(fm, payload)
+    assert fm.it_request == {"agent_id": "a-1", "op_id": "class-status", "send_id": "s-1"}
+    assert fm.it_reply is None
+
+    reply = {"id": "fm-1", "text": "ok", "metadata": {"it": {"node_typeid": "compute_node-1", "send_id": "s-1"}}}
+    answer = FlowMessage.model_validate(reply)
+    derive_it_reply(answer, reply)
+    assert answer.it_reply["send_id"] == "s-1" and answer.it_request is None
 
 
 async def test_runs_in_the_project_the_hub_names_not_the_first_project(tmp_path):
@@ -289,12 +318,13 @@ def test_run_route_refuses_a_project_that_is_not_an_object(client):
     assert r.status_code == 400
 
 
-
 async def test_a_session_that_failed_says_so(box, monkeypatch):
     """Seen on prod: the LLM budget refused (429) and the box answered as if done. A failed run answers ok=False."""
     receipt = {"status": "error", "summary": "The agent ended error. API Error: Request rejected (429)"}
     monkeypatch.setattr("flow_sdk.core.compute.process_step.launch_step_process", _launch(box, receipt, []))
-    answer = await it_session.run_it_session(call_id="c9", text="x", answer_shape=SHAPE, workdir=box.settings.instance_dir)
+    answer = await it_session.run_it_session(
+        call_id="c9", text="x", answer_shape=SHAPE, workdir=box.settings.instance_dir
+    )
     assert answer.ok is False and answer.value is None
 
 
@@ -308,18 +338,24 @@ def test_a_hebrew_answer_is_measured_in_bytes_not_escapes(tmp_path):
     """A class-status answer in Hebrew: 1500 letters are 3 KB of UTF-8 but 9 KB as escaped JSON. It is answered."""
     value = {"summary": "התלמיד בנה משחק " * 100}
     shape = {"type": "object", "required": ["summary"]}
-    answer = it_session.read_answer(_result(tmp_path, {"status": "done", "summary": "ok", "data": {"value": value}}), shape, "x")
+    answer = it_session.read_answer(
+        _result(tmp_path, {"status": "done", "summary": "ok", "data": {"value": value}}), shape, "x"
+    )
     assert answer.ok and answer.value == value
 
 
 def test_an_answer_over_the_it_cap_is_still_refused(tmp_path):
     value = {"summary": "א" * 40_000}
-    answer = it_session.read_answer(_result(tmp_path, {"status": "done", "summary": "ok", "data": {"value": value}}), {"type": "object"}, "x")
+    answer = it_session.read_answer(
+        _result(tmp_path, {"status": "done", "summary": "ok", "data": {"value": value}}), {"type": "object"}, "x"
+    )
     assert not answer.ok and answer.value is None
 
 
 def test_a_refused_answer_says_why(tmp_path):
     """The machine's own summary alone hid the reason (seen: 21 of 25 'failed' with a plausible sentence)."""
-    answer = it_session.read_answer(_result(tmp_path, {"status": "done", "summary": "Student built a game"}), {"type": "object"}, "x")
+    answer = it_session.read_answer(
+        _result(tmp_path, {"status": "done", "summary": "Student built a game"}), {"type": "object"}, "x"
+    )
     assert not answer.ok
     assert "without returning 'value'" in answer.answer and "Student built a game" in answer.answer

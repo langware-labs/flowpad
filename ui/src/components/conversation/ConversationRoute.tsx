@@ -17,17 +17,14 @@ import { useAllProjects } from '@src/hooks/use-all-projects';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { ConversationPanel, EditableConversationTitle } from './ConversationPanel';
+import { ItOperationChip } from './ItOperationChip';
 import { ConversationHeaderSession } from './ConversationHeaderSession';
 import { MembersAvatarStack } from './MembersAvatarStack';
 import { ConversationMembersLine } from './ConversationMembersLine';
 import { ConversationAutomationChip } from './ConversationAutomationChip';
 import { ChannelParticipants } from './ChannelParticipants';
 import { ConversationMarkChips } from './ChannelMessageExtras';
-import {
-  applyProjectToConversation,
-  applyProjectToTask,
-  persistRemoteToLocalMapping,
-} from './apply-project-choice';
+import { applyProjectToConversation, applyProjectToTask, persistRemoteToLocalMapping } from './apply-project-choice';
 import { useConversation } from './useConversation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 
@@ -37,13 +34,7 @@ function conversationHasPrivateProject(conversation: Conversation | null | undef
   return (conversation.privateContextEntities ?? []).some((typeId) => typeId.type === Project.type);
 }
 
-function ConversationSetProjectButton({
-  conversation,
-  task,
-}: {
-  conversation: Conversation;
-  task?: Task | null;
-}) {
+function ConversationSetProjectButton({ conversation, task }: { conversation: Conversation; task?: Task | null }) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -107,7 +98,9 @@ function ConversationSetProjectButton({
         className="inline-flex h-7 items-center gap-1.5 rounded border border-dashed border-border px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
       >
         {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderOpen className="h-3.5 w-3.5" />}
-        <span><Trans>Set project</Trans></span>
+        <span>
+          <Trans>Set project</Trans>
+        </span>
       </button>
       <ProjectSelectorModal
         open={open}
@@ -158,8 +151,7 @@ export function ConversationRoute() {
 
   // Which thread the feed is filtered to. OPTIONS, not the pointer — so the
   // filter is linkable and reload-safe without minting a second tab.
-  const threadId =
-    currentDock?.viewType === ViewType.CONVERSATION ? (currentDock.threadId ?? null) : null;
+  const threadId = currentDock?.viewType === ViewType.CONVERSATION ? (currentDock.threadId ?? null) : null;
   const agentId = currentDock?.viewType === ViewType.CONVERSATION ? currentDock.agentScopeId : null;
 
   const scopeKey = agentId && conversationId ? `${agentId}:${conversationId}` : null;
@@ -217,7 +209,8 @@ export function ConversationRoute() {
     [navigation, conversationId, agentId],
   );
 
-  const goBack = () => navigation.openDock(agentId ? DockPointer.forAgentStreamInbox(agentId) : DockPointer.forStreamInbox());
+  const goBack = () =>
+    navigation.openDock(agentId ? DockPointer.forAgentStreamInbox(agentId) : DockPointer.forStreamInbox());
 
   if (!conversationId) {
     return (
@@ -268,6 +261,7 @@ export function ConversationRoute() {
           fallback={t`Conversation`}
           className="min-w-0 flex-1 truncate text-sm font-semibold"
         />
+        <ItOperationChip conv={conversation ?? null} />
         <ConversationMarkChips marks={conversation?.marks} />
       </div>
       <div className="flex justify-center">
@@ -279,9 +273,7 @@ export function ConversationRoute() {
       <div className="flex min-w-0 items-center justify-end gap-2">
         {/* Open-the-session / launch-a-worker — the conversation always shows
             exactly one of the two (never neither). Logged-out skips it. */}
-        {!hub && cloudUser && conversation && (
-          <ConversationHeaderSession conversation={conversation} task={task} />
-        )}
+        {!hub && cloudUser && conversation && <ConversationHeaderSession conversation={conversation} task={task} />}
         {conversation?.id && <ConversationAutomationChip conversationId={String(conversation.id)} />}
         {/* Roster fetch is pointless under the logged-out overlay — skip it. */}
         {/* A channel's people are on the channel — no roster to fetch, nobody to invite. */}
@@ -300,7 +292,9 @@ export function ConversationRoute() {
   if (!cloudUser) {
     return (
       <div className="relative flex h-full flex-col">
-        <LoginRequiredOverlay description={t`Sign in to your Flowpad Cloud account to view and reply to this conversation.`} />
+        <LoginRequiredOverlay
+          description={t`Sign in to your Flowpad Cloud account to view and reply to this conversation.`}
+        />
         {header}
       </div>
     );

@@ -30,6 +30,7 @@ import {
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { genericEntityShareSource, type ShareSource } from '@src/hooks/share-sources';
 import { displayLabelForDescriptor } from '@src/components/asset-manager/asset-row-helpers';
+import { SecureSendDialog } from './SecureSendDialog';
 import { MAX_FILE_SIZE_LABEL } from './constants';
 import { AssetRefChips, useAssetRefSelection } from './AttachMenu';
 import { mergePickedFiles } from './FileAttachmentPicker';
@@ -87,6 +88,9 @@ interface MessageComposerProps {
   onAfterDiscard?: () => void;
   /** A channel send can carry files (`ChannelSpec.accepts_attachments`): the paperclip is live. */
   channelAcceptsFiles?: boolean;
+  /** Replaces the hub send for a conversation whose messages go somewhere else (an IT operation's conversation
+   *  asks its machines again). Gets the text and files; the composer still clears and reports as after a send. */
+  onSend?: ((text: string, files: File[]) => Promise<void>) | null;
   /** The message the next send answers (it quotes it and joins its thread); `inThread` when the
    *  channel's replies only thread. */
   replyTo?: { id: string; sender: string; text: string; inThread?: boolean } | null;
@@ -194,6 +198,7 @@ export function MessageComposer({
   draft,
   onAfterDiscard,
   channelAcceptsFiles = false,
+  onSend = null,
   replyTo = null,
   onClearReply,
   threadTarget = null,
@@ -211,6 +216,7 @@ export function MessageComposer({
   const [text, setText] = useState(draft?.text ?? readDraft(draftScope));
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [credentialPickerOpen, setCredentialPickerOpen] = useState(false);
+  const [secureSendOpen, setSecureSendOpen] = useState(false);
   const [secretShareSource, setSecretShareSource] = useState<ShareSource | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
@@ -383,7 +389,14 @@ export function MessageComposer({
       if (!effectiveConversationId) {
         throw new Error('sendReply requires a conversationId');
       }
-      if (channel) {
+      if (onSend && !isDraftMode && !liveSessionId) {
+        const gate = await ensureCloudLogin();
+        if (!gate.ok) {
+          setError(gate.error);
+          return;
+        }
+        await onSend(trimmed, files);
+      } else if (channel) {
         // A channel reply never touches the hub, so it must not drag the user
         // through a Flowpad-Cloud login to send an email. Branch on the CALL
         // only — an early return here would have to restate the cleanup below,
@@ -592,7 +605,7 @@ export function MessageComposer({
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={isDisabled}
-              onSelect={() => setCredentialPickerOpen(true)}
+              onSelect={() => (effectiveConversationId ? setSecureSendOpen(true) : setCredentialPickerOpen(true))}
               data-testid="composer-secured-transfer"
             >
               <Lock className="mr-2 h-3.5 w-3.5" />
@@ -893,6 +906,16 @@ export function MessageComposer({
         types={['credential']}
         searchPlaceholder={t`Choose a credential to share securely…`}
       />
+      {secureSendOpen && effectiveConversationId && (
+        <SecureSendDialog
+          conversationId={effectiveConversationId}
+          onClose={() => setSecureSendOpen(false)}
+          onPickSaved={() => {
+            setSecureSendOpen(false);
+            setCredentialPickerOpen(true);
+          }}
+        />
+      )}
       {secretShareSource && (
         <ShareToConversationDialog
           open

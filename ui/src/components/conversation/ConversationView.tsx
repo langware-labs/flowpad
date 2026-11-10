@@ -74,6 +74,8 @@ import {
   type ConversationItem,
 } from './conversation-items';
 import { indexCalls, runningProcessCalls } from './process-call';
+import { indexItSends, itOperationOf } from './it-sends';
+import { itMessageRequestOf } from '@src/components/assets/editor/agent-profile/it-message';
 import { indexForms } from './message-form';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -585,6 +587,28 @@ export function ConversationView({
   // A prompt call's answer is a message of its own on the wire, but it reads as the call's status:
   // it renders on the call's card, never as a bubble.
   const calls = useMemo(() => indexCalls(messagesById.values()), [messagesById]);
+  // An IT request draws each machine's answer to its send as a row of a table under it, never as a bubble.
+  const itSends = useMemo(() => indexItSends(messagesById.values()), [messagesById]);
+  const itOperation = useMemo(
+    () => itOperationOf(messagesById.values(), itSends.sendByMessage),
+    [messagesById, itSends],
+  );
+  const itAgentId = itOperation?.agentId ?? null;
+  // The operation's conversation sends the operation again, to every machine of its agent.
+  const sendItAgain = useMemo(() => {
+    if (!itAgentId) return null;
+    const agent = new Agent({ id: itAgentId });
+    return async (text: string, files: File[]) => {
+      await agent.itMessage({ ...(await itMessageRequestOf(text, files)), conversation_id: conversationId });
+    };
+  }, [itAgentId, conversationId]);
+  const composerPlaceholder = (() => {
+    if (itOperation) {
+      if (itOperation.machines === 1) return t`Send to 1 machine`;
+      return itOperation.machines > 1 ? t`Send to ${itOperation.machines} machines` : t`Send to the machines`;
+    }
+    return channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined;
+  })();
   // Calls running on this machine, asked once per conversation — and only while a call is still
   // unanswered — so a card mounting mid-run says "working…".
   const [runningCalls, setRunningCalls] = useState<ReadonlySet<string>>(() => new Set());
@@ -618,7 +642,11 @@ export function ConversationView({
   const groupedItems = useMemo(() => {
     const getFm = (id: string) => messagesById.get(id) ?? null;
     const feed = orderedItems.filter(
-      (it) => !(it.kind === ConversationItemKind.POINTER && calls.answerMessageIds.has(it.messageId)),
+      (it) =>
+        !(
+          it.kind === ConversationItemKind.POINTER &&
+          (calls.answerMessageIds.has(it.messageId) || itSends.replyMessageIds.has(it.messageId))
+        ),
     );
     if (threadId) {
       const inThread = feed.filter((it) => itemThreadId(it, getFm) === threadId);
@@ -629,7 +657,7 @@ export function ConversationView({
       ...groupThreadItems(threaded, getFm, threadCounts),
       ...anchorSessionItems(plain, getFm, sessionAnchors),
     ].sort((a, b) => a.sortAt - b.sortAt);
-  }, [orderedItems, messagesById, threadId, threadCounts, flatThreadIds, sessionAnchors, calls]);
+  }, [orderedItems, messagesById, threadId, threadCounts, flatThreadIds, sessionAnchors, calls, itSends]);
 
   // A message right under one from the same sender, moments later, drops its avatar and name.
   const continuations = useMemo(() => {
@@ -761,6 +789,7 @@ export function ConversationView({
           taskPeople={taskPeople}
           onLaunchWorker={launchWorkerOnMessage}
           promptCall={promptCallFor(id)}
+          itSend={itSends.sendByMessage.get(id) ?? null}
           messageForm={messageFormFor(id)}
           formAnswers={formAnswersFor(id)}
           callPeerName={otherParticipant?.name ?? otherParticipant?.email ?? null}
@@ -1055,14 +1084,15 @@ export function ConversationView({
   }, [conversationId, isClosed, handleRefresh]);
 
   // The status button: the hub calls that reach the chosen state, one after the other, then one refresh.
-  const ticket = canSettle && conversation
-    ? conversationFacets({
-        conv: conversation,
-        members: participants,
-        viewer: { email: myEmail ?? '', cloudUserId, localUserId: null },
-        staffView: true,
-      }).ticket
-    : undefined;
+  const ticket =
+    canSettle && conversation
+      ? conversationFacets({
+          conv: conversation,
+          members: participants,
+          viewer: { email: myEmail ?? '', cloudUserId, localUserId: null },
+          staffView: true,
+        }).ticket
+      : undefined;
   const handleStatus = useCallback(
     async (target: TicketState) => {
       const run: Record<TicketVerb, () => Promise<unknown>> = {
@@ -1294,6 +1324,7 @@ export function ConversationView({
         conversationId={conversationId}
         version={conversation?.updated_date ? String(conversation.updated_date) : null}
         members={memberRoster}
+        projectId={attachmentProjectId}
       />
       {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
       {(messagesLoaded || !!messagesError) && (
@@ -1306,7 +1337,8 @@ export function ConversationView({
             setNotSent(null);
             setSendingText(text);
           }}
-          placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
+          placeholder={composerPlaceholder}
+          onSend={sendItAgain}
           agentId={agentId ?? undefined}
           sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
           onStartLiveSession={() => void startLiveSession()}
