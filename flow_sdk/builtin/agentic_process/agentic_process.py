@@ -141,8 +141,23 @@ _SELF_RESTART_GRACE_S = 0.5
 #: frontend matches it to wait for the work instead of reporting a failure.
 BACKGROUND_TASKS_RUNNING = "background tasks are running"
 
-#: How far back to look for a pending question's answer (it lands right after).
-_PENDING_INPUT_TAIL_BYTES = 256 * 1024
+#: Chunk size for scanning a transcript forward for a pending question's answer.
+_PENDING_INPUT_CHUNK_BYTES = 256 * 1024
+
+def _transcript_has_after(path, needle: bytes, offset: int) -> bool:
+    """``needle`` occurs in the file at or after byte ``offset`` (read forward in chunks)."""
+    try:
+        with path.open("rb") as fh:
+            fh.seek(max(0, offset))
+            carry = b""
+            while chunk := fh.read(_PENDING_INPUT_CHUNK_BYTES):
+                if needle in carry + chunk:
+                    return True
+                carry = chunk[-len(needle) :]
+    except OSError:
+        pass
+    return False
+
 
 # Text a FlowData derives from its value, dropped from ``get-history``: the client rebuilds a
 # frame from flow_value/attributes/index/created_time/process_entry and never reads these, yet
@@ -6007,6 +6022,11 @@ class AgenticProcess(Entity):
         if tool_name not in USER_INPUT_TOOLS or not tool_use_id:
             return
         pending = {"tool_use_id": tool_use_id, "tool_name": tool_name, "input": raw.get("tool_input") or {}}
+        path = self.transcript_path
+        try:
+            pending["offset"] = path.stat().st_size if path is not None else 0  # the answer lands after this
+        except OSError:
+            pending["offset"] = 0
         self.context_data = {**(self.context_data or {}), PENDING_USER_INPUT_KEY: pending}
         await self.save()
 
@@ -6024,16 +6044,9 @@ class AgenticProcess(Entity):
             return None
         path = self.transcript_path
         if path is not None:
-            try:
-                with path.open("rb") as fh:
-                    fh.seek(0, 2)
-                    fh.seek(max(0, fh.tell() - _PENDING_INPUT_TAIL_BYTES))
-                    tail = fh.read().decode("utf-8", errors="replace")
-            except OSError:
-                tail = ""
-            if f'"tool_use_id":"{pending["tool_use_id"]}"' in tail:
+            if _transcript_has_after(path, f'"tool_use_id":"{pending["tool_use_id"]}"'.encode(), pending.get("offset", 0)):
                 return None
-        return pending
+        return {k: v for k, v in pending.items() if k != "offset"}
 
     async def on_hook(self, data: AgentHookData):
         """Emit and dispatch one canonical, process-targeted hook event.
