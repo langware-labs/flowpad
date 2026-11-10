@@ -15,8 +15,6 @@ const INSTANCE = process.env.FLOW_INSTANCE || '';
 const stamp = Date.now().toString(36);
 const USER_SOURCE = `Team slack ${stamp}`;
 const AGENT_SOURCE = `Agent slack ${stamp}`;
-/** A channel id the double does not host — the agent's row is its own, never the user's adopted. */
-const AGENT_CHANNEL = 'C0AGENT0001';
 
 let api: APIRequestContext;
 let doubles: ChildProcessWithoutNullStreams | undefined;
@@ -272,23 +270,16 @@ test('4. an agent\'s bar is its own', async ({ page }) => {
   await agentBar.getByTestId('attached-channels-add').click();
   const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('step-crumb-0').filter({ hasText: /^Add a channel$/ }) });
   await expect(dialog).toBeVisible();
-  // Slack is a group (Flow — no setup / your own Slack app): the tile asks which, then the member opens its form.
-  await dialog.getByTestId('provider-group-Slack').click();
-  await dialog.getByTestId('group-member-slack').click();
+  // Slack is set up by its guided wizard (96f7d89a6): the add form asks for a name only, then gives way to the
+  // wizard. Where Flow-Slack is offered too the tile is a group that asks which first.
+  await dialog.getByTestId('provider-group-Slack').or(dialog.getByTestId('provider-slack')).first().click();
+  const member = dialog.getByTestId('group-member-slack');
+  if (await member.isVisible().catch(() => false)) await member.click();
   await dialog.locator('#ds-name').fill(AGENT_SOURCE);
-  // `channel` is a picker that lists on open; asked of a workspace it cannot read, it hands the
-  // field back to typing — where the id is pasted.
-  const picker = dialog.getByTestId('ds-choice-channel');
-  if (await picker.isVisible().catch(() => false)) {
-    await picker.click();
-    await expect(dialog.getByTestId('ds-choice-detail-channel')).toBeVisible();
-  }
-  await dialog.locator('#ds-channel').fill(AGENT_CHANNEL);
-  await dialog.getByRole('button', { name: 'Add source' }).click();
-  // The source has a setup step (Slack owes a Verify): the dialog stays on the Setup panel until "Finish later" / "Done".
-  const finish = dialog.getByRole('button', { name: /^(Done|Finish later)$/ });
-  await expect.poll(async () => !(await dialog.isVisible()) || (await finish.isVisible()), { timeout: 15_000 }).toBe(true);
-  if (await finish.isVisible()) await finish.click();
+  await dialog.getByRole('button', { name: 'Add and set up' }).click();
+  // Closing the wizard closes both and leaves the source unverified — which is what parks it.
+  await expect(dialog.getByTestId('setup-wizard-panel')).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 
   // The stream inbox header line: the agent's own mark, parked on its Verify.
