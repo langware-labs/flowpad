@@ -5,6 +5,7 @@ import { credentialsService, dataContext, type EntityMember, type SealedCard, ty
 import { Button } from '@src/components/ui/button';
 import { useTestVerdict } from '@src/components/credentials/credential-test-verdict';
 import { errorMessage } from '@src/lib/error-message';
+import { SealedTypedCard } from './SealedTypedCard';
 
 /**
  * Secured transfer in a conversation (flow_sdk/secrets/sealed_transfer.py): the receiver's card — "Eran sent you
@@ -16,8 +17,11 @@ export function SealedValuesPanel({
   conversationId,
   version,
   members = [],
+  projectId,
 }: {
   conversationId: string;
+  /** The conversation's project — where a typed key is saved unless the receiver picks another place. */
+  projectId?: string | null;
   version?: string | null;
   /** The conversation's roster — a receiver's name by hub user id. */
   members?: readonly EntityMember[];
@@ -64,7 +68,16 @@ export function SealedValuesPanel({
   if (!cards.length && !sent.length) return null;
   return (
     <div className="mx-4 my-2 flex flex-col gap-2" data-testid="sealed-values-panel">
-      {cards.map((card) => (
+      {cards.map((card) => card.typed ? (
+        <SealedTypedCard
+          key={card.message_id}
+          card={card}
+          conversationId={conversationId}
+          projectId={projectId}
+          onDone={load}
+          onDecline={() => void act(card, 'decline')}
+        />
+      ) : (
         <div
           key={card.message_id}
           className="max-w-xl rounded-lg border border-primary/50 bg-muted/30 p-3 text-sm"
