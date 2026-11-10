@@ -95,7 +95,13 @@ for (const kind of ['python', 'skill', 'url', 'temp'] as const) {
         await expect(page.getByRole('button', { name: 'Open in browser', exact: true })).toBeVisible();
       } else if (kind === 'skill') {
         await expect(page).toHaveURL(/typeid\/skill-/);
-        await expect(page.getByText('Skill link content', { exact: true }).first()).toBeVisible();
+        // The skill opens on its SKILL.md: rendered (a heading) or in the source editor ("# Skill link content").
+        await expect(
+          page
+            .getByText('Skill link content', { exact: true })
+            .or(page.locator('.monaco-editor:visible .view-lines', { hasText: 'Skill link content' }))
+            .first(),
+        ).toBeVisible();
       } else {
         await expect(page.locator('.monaco-editor:visible .view-lines').first()).toContainText(
           kind === 'python' ? 'python-link-content' : 'Temporary file link content',
