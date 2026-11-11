@@ -10,6 +10,7 @@ import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { errorDetail, errorMessage, errorStatus } from '@src/lib/error-message';
 
+import { clientFacts } from './client-facts';
 import { useAnonymousAgent } from './launch-target';
 
 interface Opened {
@@ -26,9 +27,11 @@ interface Opened {
  */
 export function openVisitorSandbox(agentId: string, code?: string, anonymous = Boolean(code)): Promise<Opened> {
   const path = `/api/v1/graph/${Agent.type}/${encodeURIComponent(agentId)}/visitor-sandbox`;
+  // `client`: what this phone says about itself, for the hub's log only (`client-facts.ts`).
+  const client = clientFacts();
   return anonymous
-    ? apiClient.post<Opened>(path, code ? { code } : {}, { adapter: 'fetch', withCredentials: false })
-    : apiClient.post<Opened>(path, {});
+    ? apiClient.post<Opened>(path, code ? { code, client } : { client }, { adapter: 'fetch', withCredentials: false })
+    : apiClient.post<Opened>(path, { client });
 }
 
 /** The hub asks for a code: the agent is in invite-code mode. */

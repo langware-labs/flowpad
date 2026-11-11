@@ -164,7 +164,7 @@ def exchange(
     if value:
         response.headers.append("set-cookie", set_cookie_header(value))
     if conn is not None:
-        gate_trace.record_admit(conn, audience=audience, caller=grant.caller, value=value)
+        gate_trace.record_admit(conn, audience=audience, caller=grant.caller, value=value, ticket=ticket)
     return response
 
 

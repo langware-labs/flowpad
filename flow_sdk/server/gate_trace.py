@@ -65,8 +65,15 @@ def cookie_names(conn: HTTPConnection) -> str:
     return ",".join(names)[:200] if names else "none"
 
 
-def record_admit(conn: HTTPConnection, *, audience: str, caller: Optional[str], value: Optional[str]) -> None:
-    """Log and remember one successful ticket trade."""
+def ticket_id(ticket: Optional[str]) -> str:
+    """The id the hub logs for the ticket it handed out (``visitor-open: … ticket=``): sha256 of the ticket, 8 hex."""
+    return hashlib.sha256(ticket.encode()).hexdigest()[:8] if ticket else "-"
+
+
+def record_admit(
+    conn: HTTPConnection, *, audience: str, caller: Optional[str], value: Optional[str], ticket: Optional[str] = None
+) -> None:
+    """Log and remember one successful ticket trade. ``ticket=`` joins this line to the hub's answer that issued it."""
     key = client_key(conn)
     gid = grant_id(value)
     _admits[key] = (time.monotonic(), gid)
@@ -77,9 +84,10 @@ def record_admit(conn: HTTPConnection, *, audience: str, caller: Optional[str], 
 
     fetch = " / ".join(conn.headers.get(f"sec-fetch-{h}") or "-" for h in ("dest", "site", "mode"))
     logger.info(
-        "cookie-gate: admitted door=%s visitor=%s grant=%s client=%s host=%s referer=%s fetch=%s browser=%s",
+        "cookie-gate: admitted door=%s visitor=%s ticket=%s grant=%s client=%s host=%s referer=%s fetch=%s browser=%s",
         audience,
         caller or "-",
+        ticket_id(ticket),
         gid if value else "none(unarmed)",
         key,
         (conn.url.hostname or "?")[:120],
