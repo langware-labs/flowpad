@@ -6,6 +6,7 @@ set -euo pipefail
 
 PINNED_OLD_VERSION="${PINNED_OLD_VERSION:-0.2.25}"
 NEW_WHEEL_GLOB="/wheels/flowpad-*.whl"
+NEW_VERSION="${NEW_VERSION:?run.sh passes the version under test}"
 PORT="${LOCAL_SERVER_PORT:-9711}"
 
 banner() { echo; echo "============================================================"; echo "=== $*"; echo "============================================================"; }
@@ -98,8 +99,8 @@ NEW_WHEEL=$(ls $NEW_WHEEL_GLOB 2>/dev/null | head -n1)
 test -n "$NEW_WHEEL" || fail "no wheel at ${NEW_WHEEL_GLOB} — did run.sh mount /wheels?"
 pip install --quiet --upgrade --force-reinstall "$NEW_WHEEL"
 new_ver=$(pip show flowpad 2>/dev/null | awk '/^Version:/ {print $2}')
-test "$new_ver" = "0.2.26" \
-    || fail "expected flowpad==0.2.26 after upgrade, got '${new_ver}'"
+test "$new_ver" = "$NEW_VERSION" \
+    || fail "expected flowpad==${NEW_VERSION} after upgrade, got '${new_ver}'"
 echo "  ✓ upgraded to $(basename "$NEW_WHEEL") (Version: ${new_ver})"
 
 # -----------------------------------------------------------------------------

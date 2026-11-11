@@ -18,21 +18,29 @@ ok()   { echo "  ✓ $*"; }
 # F1: migration status JSON
 # -----------------------------------------------------------------------------
 echo "=== F1: status JSON ==="
-status="${FLOW_HOME}/global/migrations/migration_0.2.26.json"
-test -f "$status" || fail "status file missing: $status"
-ok "status file exists"
+NEW_VERSION="${NEW_VERSION:?run.sh passes the version under test}"
+status="${FLOW_HOME}/global/migrations/migration_${NEW_VERSION}.json"
+# A version records a migration run only when it ships a recipe
+# (flowpad_assistant/migrations/<version>/); run.sh says whether this one does.
+if [ "${NEW_HAS_RECIPE:-1}" != "1" ]; then
+    test ! -e "$status" || fail "no recipe ships for ${NEW_VERSION}, yet a migration run was recorded: $status"
+    ok "no recipe for ${NEW_VERSION}: no migration run recorded"
+else
+    test -f "$status" || fail "status file missing: $status"
+    ok "status file exists"
 
-jq -e '.status == "completed"' "$status" >/dev/null \
-    || fail ".status != completed: $(jq -r .status "$status")"
-ok ".status == completed"
+    jq -e '.status == "completed"' "$status" >/dev/null \
+        || fail ".status != completed: $(jq -r .status "$status")"
+    ok ".status == completed"
 
-jq -e '.version == "0.2.26"' "$status" >/dev/null \
-    || fail ".version != 0.2.26: $(jq -r .version "$status")"
-ok ".version == 0.2.26"
+    jq -e --arg v "$NEW_VERSION" '.version == $v' "$status" >/dev/null \
+        || fail ".version != ${NEW_VERSION}: $(jq -r .version "$status")"
+    ok ".version == ${NEW_VERSION}"
 
-jq -e '.duration_seconds != null' "$status" >/dev/null \
-    || fail ".duration_seconds is null"
-ok ".duration_seconds set ($(jq -r .duration_seconds "$status")s)"
+    jq -e '.duration_seconds != null' "$status" >/dev/null \
+        || fail ".duration_seconds is null"
+    ok ".duration_seconds set ($(jq -r .duration_seconds "$status")s)"
+fi
 
 # -----------------------------------------------------------------------------
 # F2: filesystem layout — per-instance populated, legacy intact
