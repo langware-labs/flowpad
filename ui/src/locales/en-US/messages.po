@@ -1639,6 +1639,11 @@ msgstr "{numSlides} slides"
 msgid "{off} are IT Disabled"
 msgstr "{off} are IT Disabled"
 
+#. placeholder {0}: rows.length
+#: src/components/preferences-view/TraceLoggingSection.tsx
+msgid "{onCount} of {0} on"
+msgstr "{onCount} of {0} on"
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{openDisplayCount, plural, one {grouped open error in the last 24 hours} other {grouped open errors in the last 24 hours}}"
 msgstr "{openDisplayCount, plural, one {grouped open error in the last 24 hours} other {grouped open errors in the last 24 hours}}"
@@ -1970,6 +1975,10 @@ msgstr "/run reclaimable "
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "#"
 msgstr "#"
+
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "← {projectName} home"
+msgstr "← {projectName} home"
 
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "← All sources"
@@ -2542,6 +2551,10 @@ msgstr "A real email address the hub creates for one of your agents. Nothing to 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "A restart of the worker is required."
 msgstr "A restart of the worker is required."
+
+#: src/components/preferences-view/TraceLoggingSection.tsx
+msgid "A restart turns every tag off except the ones on by default. Turn this on to keep your set while chasing a restart bug."
+msgstr "A restart turns every tag off except the ones on by default. Turn this on to keep your set while chasing a restart bug."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/OpenPcLanding.tsx
@@ -3327,7 +3340,6 @@ msgstr "Admins"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
-#: src/i18n/pref-labels.ts
 msgid "Advanced"
 msgstr "Advanced"
 
@@ -3477,6 +3489,10 @@ msgstr "agents"
 #: src/i18n/type-labels.ts
 msgid "Agents"
 msgstr "Agents"
+
+#: src/i18n/pref-labels.ts
+msgid "AI & chat"
+msgstr "AI & chat"
 
 #: src/components/ask/AskAssist.tsx
 msgid "AI Assist"
@@ -4346,6 +4362,10 @@ msgstr "App title"
 msgid "App version"
 msgstr "App version"
 
+#: src/i18n/pref-labels.ts
+msgid "Appearance"
+msgstr "Appearance"
+
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "Appended to the current worker's prompt queue, tagged with this message."
@@ -4935,8 +4955,12 @@ msgid "auto"
 msgstr "auto"
 
 #: src/i18n/pref-labels.ts
-msgid "Auto Index"
-msgstr "Auto Index"
+msgid "Auto index"
+msgstr "Auto index"
+
+#: src/i18n/pref-labels.ts
+#~ msgid "Auto Index"
+#~ msgstr "Auto Index"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Auto prompt"
@@ -5245,6 +5269,10 @@ msgstr "Before a tool runs, when a turn ends. Written as code."
 msgid "Before you can deploy"
 msgstr "Before you can deploy"
 
+#: src/i18n/pref-labels.ts
+msgid "Behavior"
+msgstr "Behavior"
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Behaviour — who this agent is, its system prompt"
 msgstr "Behaviour — who this agent is, its system prompt"
@@ -5353,6 +5381,11 @@ msgstr "Boundary"
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Branch"
 msgstr "Branch"
+
+#. placeholder {0}: branches.length
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "Branches · {0}"
+msgstr "Branches · {0}"
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Brand this project's home ({HOME_CUSTOMIZATION_DIR}). Applies on every home surface when this is the active project."
@@ -5499,6 +5532,7 @@ msgstr "Build"
 msgid "Build a landing page"
 msgstr "Build a landing page"
 
+#: src/components/assets/NewAssetMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Build AI"
 msgstr "Build AI"
@@ -6850,6 +6884,7 @@ msgid "Clipboard unavailable"
 msgstr "Clipboard unavailable"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
+#: src/pages/hub-project/HubProjectGitView.tsx
 msgid "Clone"
 msgstr "Clone"
 
@@ -6896,6 +6931,7 @@ msgstr "Cloning…"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
@@ -7023,6 +7059,7 @@ msgid "Close to the Right"
 msgstr "Close to the Right"
 
 #: src/components/conversation/conversation-category.ts
+#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/TicketStatusControl.tsx
 #: src/components/help/MyHelpRequests.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -7064,8 +7101,8 @@ msgstr "Cloud hub"
 
 #: src/notifications/ingest.ts
 #: src/notifications/ingest.ts
-msgid "Cloud is not available"
-msgstr "Cloud is not available"
+#~ msgid "Cloud is not available"
+#~ msgstr "Cloud is not available"
 
 #: src/i18n/pref-labels.ts
 msgid "Cloud link prompt when sharing"
@@ -7518,6 +7555,7 @@ msgstr "confirm which charge is in question, explain the refund path, and draft 
 msgid "Confirm: {0}"
 msgstr "Confirm: {0}"
 
+#: src/components/assets/NewAssetMenu.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -7878,6 +7916,7 @@ msgstr "Converted to an Excalidraw board"
 #: src/components/warnings-popover/warnings-popover.tsx
 #: src/components/webapp-viewer.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
+#: src/pages/hub-project/HubProjectGitView.tsx
 msgid "Copied"
 msgstr "Copied"
 
@@ -7950,6 +7989,7 @@ msgstr "Copilot tab"
 #: src/components/ui/media-lightbox.tsx
 #: src/pages/entry/entry-shell.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/hub-project/HubProjectGitView.tsx
 msgid "Copy"
 msgstr "Copy"
 
@@ -8711,6 +8751,10 @@ msgstr "Could not reach the backend. Try again in a moment."
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr "Could not reach this cloud machine. It may be paused."
 
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "Could not read {what}: {message}"
+msgstr "Could not read {what}: {message}"
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Could not read the diagnosis"
 msgstr "Could not read the diagnosis"
@@ -9220,6 +9264,10 @@ msgstr "Could not update schedule"
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Could not update the deployment"
 msgstr "Could not update the deployment"
+
+#: src/components/conversation/IssueReplyLine.tsx
+msgid "Could not update the issue."
+msgstr "Could not update the issue."
 
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "Could not update the machines"
@@ -9955,7 +10003,6 @@ msgstr "DB Stats"
 #: src/components/account/settings-section.tsx
 #: src/components/terminal/interactive-terminal/DebugMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
-#: src/i18n/pref-labels.ts
 msgid "Debug"
 msgstr "Debug"
 
@@ -10058,6 +10105,7 @@ msgid "DeepAgents Session"
 msgstr "DeepAgents Session"
 
 #: src/components/git/BranchPicker.tsx
+#: src/pages/hub-project/HubProjectGitView.tsx
 msgid "default"
 msgstr "default"
 
@@ -10798,6 +10846,10 @@ msgstr "Dev mode"
 msgid "Dev mode ON — click to disable"
 msgstr "Dev mode ON — click to disable"
 
+#: src/i18n/pref-labels.ts
+msgid "Developer"
+msgstr "Developer"
+
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Developer mode is on — double-click to turn it off"
 msgstr "Developer mode is on — double-click to turn it off"
@@ -11133,6 +11185,7 @@ msgstr "Dismiss failed"
 msgid "Dismiss notification"
 msgstr "Dismiss notification"
 
+#: src/i18n/pref-labels.ts
 #: src/pages/flow-page/workspace-child-strip.tsx
 msgid "Display"
 msgstr "Display"
@@ -11994,6 +12047,7 @@ msgid "Endpoints appear here once the hub allocates one to you, or somebody shar
 msgstr "Endpoints appear here once the hub allocates one to you, or somebody shares theirs."
 
 #: src/components/version-popover/version-popover.tsx
+#: src/i18n/pref-labels.ts
 msgid "Engine"
 msgstr "Engine"
 
@@ -12134,6 +12188,7 @@ msgstr "error"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/use-user-api-keys.ts
 #: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-sources/LlmKeysSection.tsx
 #: src/components/machine-overview/node-secrets.tsx
@@ -12594,6 +12649,10 @@ msgstr "Expected format: /dock/apps/<uname>/<routerPath>?<options>"
 #: src/components/show-view/ShowView.tsx
 msgid "Expected format: /dock/show/<entity-vfs>?page=<page>&component=<component>"
 msgstr "Expected format: /dock/show/<entity-vfs>?page=<page>&component=<component>"
+
+#: src/i18n/pref-labels.ts
+msgid "Experimental"
+msgstr "Experimental"
 
 #: src/i18n/pref-labels.ts
 msgid "Experimental flags"
@@ -13933,12 +13992,15 @@ msgstr "Format"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Forward"
 msgstr "Forward"
+
+#: src/components/workers/ContextWorkerToolbar.tsx
+msgid "Forward to worker"
+msgstr "Forward to worker"
 
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Forwarded from another conversation"
@@ -14246,6 +14308,7 @@ msgstr "git"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
+#: src/components/project-home/ProjectGitButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Git"
 msgstr "Git"
@@ -14931,6 +14994,10 @@ msgstr "Hook has been removed successfully"
 msgid "Hook Name *"
 msgstr "Hook Name *"
 
+#: src/i18n/pref-labels.ts
+msgid "Hook sniffer"
+msgstr "Hook sniffer"
+
 #: src/notifications/commands.ts
 msgid "Hook sniffer disabled"
 msgstr "Hook sniffer disabled"
@@ -15187,8 +15254,8 @@ msgid "I want…  (e.g. email, slack, calendar)"
 msgstr "I want…  (e.g. email, slack, calendar)"
 
 #: src/i18n/pref-labels.ts
-msgid "I18n"
-msgstr "I18n"
+#~ msgid "I18n"
+#~ msgstr "I18n"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/ui/icon-picker.tsx
@@ -15357,6 +15424,10 @@ msgstr "In Index"
 msgid "in progress"
 msgstr "in progress"
 
+#: src/components/conversation/IssueReplyLine.tsx
+msgid "In progress"
+msgstr "In progress"
+
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "In Progress"
 msgstr "In Progress"
@@ -15515,6 +15586,7 @@ msgstr "indexed with the project"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 #: src/components/search-index/activity-labels.ts
 #: src/components/search-index/activity-labels.ts
+#: src/i18n/pref-labels.ts
 msgid "Indexing"
 msgstr "Indexing"
 
@@ -16282,6 +16354,10 @@ msgstr "keep"
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
 msgid "Keep"
 msgstr "Keep"
+
+#: src/components/preferences-view/TraceLoggingSection.tsx
+msgid "Keep after restart"
+msgstr "Keep after restart"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Keep browsing"
@@ -17139,8 +17215,8 @@ msgid "live stream connection"
 msgstr "live stream connection"
 
 #: src/i18n/pref-labels.ts
-msgid "LLM"
-msgstr "LLM"
+#~ msgid "LLM"
+#~ msgstr "LLM"
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "LLM APIs"
@@ -17567,6 +17643,7 @@ msgstr "Loading..."
 #: src/pages/hub-browse/HubEntityView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
+#: src/pages/hub-project/HubProjectGitView.tsx
 #: src/pages/hub-project/HubProjectPage.tsx
 msgid "Loading…"
 msgstr "Loading…"
@@ -17644,6 +17721,10 @@ msgstr "Logged in"
 #: src/components/account/hub-status-visuals.ts
 msgid "Logged out"
 msgstr "Logged out"
+
+#: src/components/preferences-view/TraceLoggingSection.tsx
+msgid "Logging <0>{lastOn}</0> now. It stays on until you turn it off or Flowpad restarts."
+msgstr "Logging <0>{lastOn}</0> now. It stays on until you turn it off or Flowpad restarts."
 
 #: src/pages/hub-home/LoginAccessDialog.tsx
 msgid "Logging in opens the full FlowPad on this sandbox. Only the owner can change who may."
@@ -17891,6 +17972,10 @@ msgstr "Mark all read"
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Mark Done"
 msgstr "Mark Done"
+
+#: src/components/conversation/IssueReplyLine.tsx
+msgid "Mark in progress"
+msgstr "Mark in progress"
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Mark this task as Done?"
@@ -18501,6 +18586,7 @@ msgstr "model slug"
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/i18n/pref-labels.ts
 msgid "Models"
 msgstr "Models"
 
@@ -18540,6 +18626,10 @@ msgstr "Models Used"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Modified"
 msgstr "Modified"
+
+#: src/components/conversation/conversation-category.ts
+msgid "Monitoring"
+msgstr "Monitoring"
 
 #: src/components/cost-dashboard/constants.ts
 msgid "Month"
@@ -18959,6 +19049,11 @@ msgstr "New {label} chat"
 msgid "New analysis"
 msgstr "New analysis"
 
+#: src/components/assets/NewAssetMenu.tsx
+#: src/components/assets/NewAssetMenu.tsx
+msgid "New asset"
+msgstr "New asset"
+
 #: src/components/automations/AutomationsList.tsx
 msgid "New automation"
 msgstr "New automation"
@@ -19374,6 +19469,10 @@ msgstr "No backlinks yet."
 msgid "No bookmarks yet"
 msgstr "No bookmarks yet"
 
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "No branches yet — the first push creates {defaultBranch}."
+msgstr "No branches yet — the first push creates {defaultBranch}."
+
 #: src/components/token-plan/TokenPlanChip.tsx
 msgid "no budget"
 msgstr "no budget"
@@ -19497,6 +19596,10 @@ msgstr "No comments yet."
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 msgid "No comments yet. Select text and press the wand to ask for a change."
 msgstr "No comments yet. Select text and press the wand to ask for a change."
+
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "No commits yet."
+msgstr "No commits yet."
 
 #: src/components/assets/ContextFolderBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -20411,6 +20514,10 @@ msgstr "No sessions, but something is in the folder or it changed recently."
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "No sessions, no files, untouched for over a week. Safe to remove."
 msgstr "No sessions, no files, untouched for over a week. Safe to remove."
+
+#: src/components/preferences-view/PreferencesView.tsx
+msgid "No setting matches “{query}”."
+msgstr "No setting matches “{query}”."
 
 #: src/components/settings-view/ClaudeSettingsPanel.tsx
 msgid "No settings loaded."
@@ -21526,6 +21633,10 @@ msgstr "On <0>{where}</0>, open a terminal."
 msgid "On a schedule"
 msgstr "On a schedule"
 
+#: src/components/preferences-view/TraceLoggingSection.tsx
+msgid "on by default"
+msgstr "on by default"
+
 #: src/components/automations/automation-words.ts
 msgid "On day {day} of each month at {time}"
 msgstr "On day {day} of each month at {time}"
@@ -21568,7 +21679,6 @@ msgid "On: if another program holds {0}, starting fails instead of moving."
 msgstr "On: if another program holds {0}, starting fails instead of moving."
 
 #: src/components/account/settings-section.tsx
-#: src/i18n/pref-labels.ts
 msgid "Onboarding"
 msgstr "Onboarding"
 
@@ -21762,6 +21872,7 @@ msgstr "Oops! Page not found"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/HelpRequestLine.tsx
 #: src/components/conversation/InviteCard.tsx
+#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
@@ -22117,12 +22228,15 @@ msgstr "Open in a new browser tab"
 msgid "Open in a new tab"
 msgstr "Open in a new tab"
 
+#: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-card/EntityCard.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
+#: src/lib/open-in-browser.tsx
+#: src/lib/open-in-browser.tsx
 #: src/pages/flow-page/app-display-viewer.tsx
 #: src/tabs/doc-tab-card.tsx
 msgid "Open in browser"
@@ -23865,6 +23979,10 @@ msgid "Pre Tool Use"
 msgstr "Pre Tool Use"
 
 #: src/components/preferences-view/PreferencesView.tsx
+msgid "Preference groups"
+msgstr "Preference groups"
+
+#: src/components/preferences-view/PreferencesView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/types/ViewType.ts
 msgid "Preferences"
@@ -25076,6 +25194,10 @@ msgstr "Recent activity"
 msgid "Recent activity could not be loaded"
 msgstr "Recent activity could not be loaded"
 
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "Recent commits on {branch}"
+msgstr "Recent commits on {branch}"
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Recent conversations"
 msgstr "Recent conversations"
@@ -25767,6 +25889,7 @@ msgid "Rename worker"
 msgstr "Rename worker"
 
 #: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Reopen"
 msgstr "Reopen"
@@ -25849,7 +25972,6 @@ msgid "Replies:"
 msgstr "Replies:"
 
 #: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
 msgid "Reply"
 msgstr "Reply"
 
@@ -25862,7 +25984,6 @@ msgstr "Reply awaiting your review"
 msgid "Reply in {0}"
 msgstr "Reply in {0}"
 
-#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Reply in thread"
 msgstr "Reply in thread"
@@ -26147,6 +26268,7 @@ msgid "Resolve"
 msgstr "Resolve"
 
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/help/MyHelpRequests.tsx
 #: src/components/items/item-state.ts
 msgid "Resolved"
@@ -27690,6 +27812,7 @@ msgstr "Search sessions…"
 
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
+#: src/components/preferences-view/PreferencesView.tsx
 msgid "Search settings"
 msgstr "Search settings"
 
@@ -27833,6 +27956,7 @@ msgid "See what went wrong"
 msgstr "See what went wrong"
 
 #: src/components/automations/BusView.tsx
+#: src/components/conversation/IssueReplyLine.tsx
 msgid "Seen"
 msgstr "Seen"
 
@@ -28930,8 +29054,13 @@ msgid "Shared with you as a reader — you can open it, not change it."
 msgstr "Shared with you as a reader — you can open it, not change it."
 
 #: src/components/organization/tabs/GeneralTab.tsx
+#: src/i18n/pref-labels.ts
 msgid "Sharing"
 msgstr "Sharing"
+
+#: src/i18n/pref-labels.ts
+msgid "Sharing & privacy"
+msgstr "Sharing & privacy"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Sharing failed."
@@ -29576,6 +29705,10 @@ msgstr "Signing out…"
 msgid "Signs every delivery. Stored write-only."
 msgstr "Signs every delivery. Stored write-only."
 
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "Signs in with your Flowpad account — no password, no token in the URL."
+msgstr "Signs in with your Flowpad account — no password, no token in the URL."
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Simple actions — click to show all git operations"
 msgstr "Simple actions — click to show all git operations"
@@ -29800,6 +29933,10 @@ msgstr "Slower. To wipe rows first, use Clear Index then Full."
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Small"
 msgstr "Small"
+
+#: src/i18n/pref-labels.ts
+msgid "Smart navigation"
+msgstr "Smart navigation"
 
 #: src/i18n/pref-labels.ts
 msgid "Smart navigation log"
@@ -30916,6 +31053,7 @@ msgstr "Tag Tree"
 msgid "Tag view not found"
 msgstr "Tag view not found"
 
+#: src/components/preferences-view/TraceLoggingSection.tsx
 #: src/i18n/type-labels.ts
 msgid "Tags"
 msgstr "Tags"
@@ -32547,6 +32685,10 @@ msgstr "This live-session URL is malformed or unavailable."
 msgid "this machine"
 msgstr "this machine"
 
+#: src/i18n/pref-labels.ts
+msgid "This machine"
+msgstr "This machine"
+
 #: src/pages/hub-home/ConnectMachineDialog.tsx
 msgid "This machine is not connected to the hub, so it cannot be opened from here."
 msgstr "This machine is not connected to the hub, so it cannot be opened from here."
@@ -32709,6 +32851,10 @@ msgstr "This project has no folder on disk and can't be opened."
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "This project has no folder on this computer."
 msgstr "This project has no folder on this computer."
+
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "This project has no hosted repository yet."
+msgstr "This project has no hosted repository yet."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This project has no secret manager yet — Share secrets continues to set one up."
@@ -33395,6 +33541,11 @@ msgstr "Trace"
 msgid "Trace events"
 msgstr "Trace events"
 
+#: src/components/preferences-view/TraceLoggingSection.tsx
+#: src/i18n/pref-labels.ts
+msgid "Trace logging"
+msgstr "Trace logging"
+
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 msgid "Trace view"
 msgstr "Trace view"
@@ -33645,8 +33796,8 @@ msgid "Type your first message…"
 msgstr "Type your first message…"
 
 #: src/i18n/pref-labels.ts
-msgid "Ui"
-msgstr "Ui"
+#~ msgid "Ui"
+#~ msgstr "Ui"
 
 #: src/components/version-popover/hub-release-label.tsx
 msgid "UI"
@@ -34844,6 +34995,10 @@ msgstr "wants to run on your machine"
 msgid "wants to run prompts on your machine"
 msgstr "wants to run prompts on your machine"
 
+#: src/components/conversation/IssueReplyLine.tsx
+msgid "Warning"
+msgstr "Warning"
+
 #: src/components/hooks/event-utils.tsx
 msgid "Warning: {warning}"
 msgstr "Warning: {warning}"
@@ -34879,8 +35034,8 @@ msgstr "We couldn't find what you were looking for on the cloud."
 
 #: src/notifications/ingest.ts
 #: src/notifications/ingest.ts
-msgid "We couldn't reach the cloud service. Check your connection or try again in a moment."
-msgstr "We couldn't reach the cloud service. Check your connection or try again in a moment."
+#~ msgid "We couldn't reach the cloud service. Check your connection or try again in a moment."
+#~ msgstr "We couldn't reach the cloud service. Check your connection or try again in a moment."
 
 #: src/routes/loaders/load-shell.ts
 msgid "We skipped {count} sessions that couldn't be restored."
@@ -35294,6 +35449,11 @@ msgstr "Who can open it: <0>{0}</0>"
 msgid "Who can read"
 msgstr "Who can read"
 
+#. placeholder {0}: members.length
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "Who has access · {0}"
+msgstr "Who has access · {0}"
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Who may log in to this sandbox"
 msgstr "Who may log in to this sandbox"
@@ -35585,6 +35745,7 @@ msgstr "Would it run, and what would it do? Nothing runs."
 msgid "Would not"
 msgstr "Would not"
 
+#: src/components/assets/NewAssetMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Write & plan"
 msgstr "Write & plan"
@@ -35613,6 +35774,10 @@ msgstr "Write-only: it cannot be shown again."
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Writes a row for this asset into the project's manifest (agentic-assets/project_manifest/project_manifest.json) and lists it on the project's Discover page."
 msgstr "Writes a row for this asset into the project's manifest (agentic-assets/project_manifest/project_manifest.json) and lists it on the project's Discover page."
+
+#: src/components/preferences-view/TraceLoggingSection.tsx
+msgid "Writes debug lines for the tags turned on below into this instance's log. Off: nothing is written, whatever the tags say."
+msgstr "Writes debug lines for the tags turned on below into this instance's log. Off: nothing is written, whatever the tags say."
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Writing"

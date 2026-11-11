@@ -1639,6 +1639,11 @@ msgstr "{numSlides} شرائح"
 msgid "{off} are IT Disabled"
 msgstr "{off} معطّلة من IT"
 
+#. placeholder {0}: rows.length
+#: src/components/preferences-view/TraceLoggingSection.tsx
+msgid "{onCount} of {0} on"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{openDisplayCount, plural, one {grouped open error in the last 24 hours} other {grouped open errors in the last 24 hours}}"
 msgstr "{openDisplayCount, plural, one {خطأ مفتوح مجمَّع خلال آخر 24 ساعة} two {خطآن مفتوحان مجمَّعان خلال آخر 24 ساعة} few {أخطاء مفتوحة مجمَّعة خلال آخر 24 ساعة} other {خطأ مفتوح مجمَّع خلال آخر 24 ساعة}}"
@@ -1970,6 +1975,10 @@ msgstr "‏/run قابل للاسترجاع "
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "#"
 msgstr "#"
+
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "← {projectName} home"
+msgstr ""
 
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "← All sources"
@@ -2542,6 +2551,10 @@ msgstr "عنوان بريد حقيقي ينشئه الـ hub لأحد وكلائ
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "A restart of the worker is required."
 msgstr "يلزم إعادة تشغيل العامل."
+
+#: src/components/preferences-view/TraceLoggingSection.tsx
+msgid "A restart turns every tag off except the ones on by default. Turn this on to keep your set while chasing a restart bug."
+msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/OpenPcLanding.tsx
@@ -3327,7 +3340,6 @@ msgstr ""
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
-#: src/i18n/pref-labels.ts
 msgid "Advanced"
 msgstr "متقدم"
 
@@ -3477,6 +3489,10 @@ msgstr "وكلاء"
 #: src/i18n/type-labels.ts
 msgid "Agents"
 msgstr "الوكلاء"
+
+#: src/i18n/pref-labels.ts
+msgid "AI & chat"
+msgstr ""
 
 #: src/components/ask/AskAssist.tsx
 msgid "AI Assist"
@@ -4346,6 +4362,10 @@ msgstr ""
 msgid "App version"
 msgstr "إصدار التطبيق"
 
+#: src/i18n/pref-labels.ts
+msgid "Appearance"
+msgstr ""
+
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "تمت إضافته إلى قائمة انتظار أوامر العامل الحالي، ووُسم بهذه الرسالة."
@@ -4935,8 +4955,12 @@ msgid "auto"
 msgstr "تلقائي"
 
 #: src/i18n/pref-labels.ts
-msgid "Auto Index"
-msgstr "الفهرسة التلقائية"
+msgid "Auto index"
+msgstr ""
+
+#: src/i18n/pref-labels.ts
+#~ msgid "Auto Index"
+#~ msgstr "الفهرسة التلقائية"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Auto prompt"
@@ -5245,6 +5269,10 @@ msgstr "قبل تشغيل أداة، أو عند انتهاء دورة. يُكت
 msgid "Before you can deploy"
 msgstr "قبل أن تتمكنوا من النشر"
 
+#: src/i18n/pref-labels.ts
+msgid "Behavior"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Behaviour — who this agent is, its system prompt"
 msgstr "السلوك — هوية الوكيل وموجّه النظام"
@@ -5353,6 +5381,11 @@ msgstr "حد فاصل"
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Branch"
 msgstr "الفرع"
+
+#. placeholder {0}: branches.length
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "Branches · {0}"
+msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Brand this project's home ({HOME_CUSTOMIZATION_DIR}). Applies on every home surface when this is the active project."
@@ -5499,6 +5532,7 @@ msgstr "البناء"
 msgid "Build a landing page"
 msgstr "إنشاء صفحة هبوط"
 
+#: src/components/assets/NewAssetMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Build AI"
 msgstr "بناء الذكاء الاصطناعي"
@@ -6850,6 +6884,7 @@ msgid "Clipboard unavailable"
 msgstr "الحافظة غير متاحة"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
+#: src/pages/hub-project/HubProjectGitView.tsx
 msgid "Clone"
 msgstr "استنساخ"
 
@@ -6896,6 +6931,7 @@ msgstr "جارِ الاستنساخ…"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
@@ -7023,6 +7059,7 @@ msgid "Close to the Right"
 msgstr "إغلاق ما على اليمين"
 
 #: src/components/conversation/conversation-category.ts
+#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/TicketStatusControl.tsx
 #: src/components/help/MyHelpRequests.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -7064,8 +7101,8 @@ msgstr "المركز السحابي"
 
 #: src/notifications/ingest.ts
 #: src/notifications/ingest.ts
-msgid "Cloud is not available"
-msgstr "السحابة غير متاحة"
+#~ msgid "Cloud is not available"
+#~ msgstr "السحابة غير متاحة"
 
 #: src/i18n/pref-labels.ts
 msgid "Cloud link prompt when sharing"
@@ -7518,6 +7555,7 @@ msgstr "تحقّق من الرسوم محل النزاع، واشرح مسار �
 msgid "Confirm: {0}"
 msgstr "تأكيد: {0}"
 
+#: src/components/assets/NewAssetMenu.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -7878,6 +7916,7 @@ msgstr "تم التحويل إلى لوحة Excalidraw"
 #: src/components/warnings-popover/warnings-popover.tsx
 #: src/components/webapp-viewer.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
+#: src/pages/hub-project/HubProjectGitView.tsx
 msgid "Copied"
 msgstr "تم النسخ"
 
@@ -7950,6 +7989,7 @@ msgstr "علامة تبويب Copilot"
 #: src/components/ui/media-lightbox.tsx
 #: src/pages/entry/entry-shell.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/hub-project/HubProjectGitView.tsx
 msgid "Copy"
 msgstr "نسخ"
 
@@ -8711,6 +8751,10 @@ msgstr "تعذّر الوصول إلى الخادم. يُرجى المحاولة
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr "تعذّر الوصول إلى هذا الجهاز السحابي. قد يكون متوقفاً مؤقتاً."
 
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "Could not read {what}: {message}"
+msgstr ""
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Could not read the diagnosis"
 msgstr "تعذّرت قراءة التشخيص"
@@ -9220,6 +9264,10 @@ msgstr "تعذّر تحديث الجدول الزمني"
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Could not update the deployment"
 msgstr "تعذّر تحديث النشر"
+
+#: src/components/conversation/IssueReplyLine.tsx
+msgid "Could not update the issue."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "Could not update the machines"
@@ -9955,7 +10003,6 @@ msgstr "إحصائيات قاعدة البيانات"
 #: src/components/account/settings-section.tsx
 #: src/components/terminal/interactive-terminal/DebugMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
-#: src/i18n/pref-labels.ts
 msgid "Debug"
 msgstr "تصحيح"
 
@@ -10058,6 +10105,7 @@ msgid "DeepAgents Session"
 msgstr "جلسة DeepAgents"
 
 #: src/components/git/BranchPicker.tsx
+#: src/pages/hub-project/HubProjectGitView.tsx
 msgid "default"
 msgstr "افتراضي"
 
@@ -10798,6 +10846,10 @@ msgstr "وضع المطور"
 msgid "Dev mode ON — click to disable"
 msgstr "وضع التطوير مفعّل — يمكن تعطيله بالنقر"
 
+#: src/i18n/pref-labels.ts
+msgid "Developer"
+msgstr ""
+
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Developer mode is on — double-click to turn it off"
 msgstr "وضع المطوّر مفعَّل — النقر المزدوج لإيقافه"
@@ -11133,6 +11185,7 @@ msgstr "تجاهل الخطأ"
 msgid "Dismiss notification"
 msgstr "تجاهل الإشعار"
 
+#: src/i18n/pref-labels.ts
 #: src/pages/flow-page/workspace-child-strip.tsx
 msgid "Display"
 msgstr "العرض"
@@ -11994,6 +12047,7 @@ msgid "Endpoints appear here once the hub allocates one to you, or somebody shar
 msgstr "ستظهر نقاط النهاية هنا بعد أن يخصّص المركز نقطة نهاية لكم، أو عندما يشارك أحدهم نقطته."
 
 #: src/components/version-popover/version-popover.tsx
+#: src/i18n/pref-labels.ts
 msgid "Engine"
 msgstr "المحرّك"
 
@@ -12134,6 +12188,7 @@ msgstr "خطأ"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/use-user-api-keys.ts
 #: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-sources/LlmKeysSection.tsx
 #: src/components/machine-overview/node-secrets.tsx
@@ -12594,6 +12649,10 @@ msgstr "الصيغة المتوقعة: /dock/apps/<uname>/<routerPath>?<options>
 #: src/components/show-view/ShowView.tsx
 msgid "Expected format: /dock/show/<entity-vfs>?page=<page>&component=<component>"
 msgstr "الصيغة المتوقعة: /dock/show/<entity-vfs>?page=<page>&component=<component>"
+
+#: src/i18n/pref-labels.ts
+msgid "Experimental"
+msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Experimental flags"
@@ -13933,12 +13992,15 @@ msgstr "التنسيق"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Forward"
 msgstr "إرسال"
+
+#: src/components/workers/ContextWorkerToolbar.tsx
+msgid "Forward to worker"
+msgstr ""
 
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Forwarded from another conversation"
@@ -14246,6 +14308,7 @@ msgstr "git"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
+#: src/components/project-home/ProjectGitButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Git"
 msgstr "Git"
@@ -14931,6 +14994,10 @@ msgstr "تمت إزالة الخطاف بنجاح"
 msgid "Hook Name *"
 msgstr "اسم الخطاف *"
 
+#: src/i18n/pref-labels.ts
+msgid "Hook sniffer"
+msgstr ""
+
 #: src/notifications/commands.ts
 msgid "Hook sniffer disabled"
 msgstr "تم تعطيل مراقب الخطافات"
@@ -15187,8 +15254,8 @@ msgid "I want…  (e.g. email, slack, calendar)"
 msgstr "أريد… (مثل: بريد إلكتروني، slack، تقويم)"
 
 #: src/i18n/pref-labels.ts
-msgid "I18n"
-msgstr "اللغة والتوطين"
+#~ msgid "I18n"
+#~ msgstr "اللغة والتوطين"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/ui/icon-picker.tsx
@@ -15357,6 +15424,10 @@ msgstr "في الفهرس"
 msgid "in progress"
 msgstr "قيد الإنجاز"
 
+#: src/components/conversation/IssueReplyLine.tsx
+msgid "In progress"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "In Progress"
 msgstr "قيد التنفيذ"
@@ -15515,6 +15586,7 @@ msgstr "مفهرس مع المشروع"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 #: src/components/search-index/activity-labels.ts
 #: src/components/search-index/activity-labels.ts
+#: src/i18n/pref-labels.ts
 msgid "Indexing"
 msgstr "جارٍ الفهرسة"
 
@@ -16282,6 +16354,10 @@ msgstr "إبقاء"
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
 msgid "Keep"
 msgstr "إبقاء"
+
+#: src/components/preferences-view/TraceLoggingSection.tsx
+msgid "Keep after restart"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Keep browsing"
@@ -17139,8 +17215,8 @@ msgid "live stream connection"
 msgstr "اتصال البث المباشر"
 
 #: src/i18n/pref-labels.ts
-msgid "LLM"
-msgstr ""
+#~ msgid "LLM"
+#~ msgstr ""
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "LLM APIs"
@@ -17567,6 +17643,7 @@ msgstr "جاري التحميل..."
 #: src/pages/hub-browse/HubEntityView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
+#: src/pages/hub-project/HubProjectGitView.tsx
 #: src/pages/hub-project/HubProjectPage.tsx
 msgid "Loading…"
 msgstr "جارٍ التحميل…"
@@ -17644,6 +17721,10 @@ msgstr "تم تسجيل الدخول"
 #: src/components/account/hub-status-visuals.ts
 msgid "Logged out"
 msgstr "تم تسجيل الخروج"
+
+#: src/components/preferences-view/TraceLoggingSection.tsx
+msgid "Logging <0>{lastOn}</0> now. It stays on until you turn it off or Flowpad restarts."
+msgstr ""
 
 #: src/pages/hub-home/LoginAccessDialog.tsx
 msgid "Logging in opens the full FlowPad on this sandbox. Only the owner can change who may."
@@ -17891,6 +17972,10 @@ msgstr "تحديد الكل كمقروء"
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Mark Done"
 msgstr "وضع علامة كمكتمل"
+
+#: src/components/conversation/IssueReplyLine.tsx
+msgid "Mark in progress"
+msgstr ""
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Mark this task as Done?"
@@ -18501,6 +18586,7 @@ msgstr "معرّف النموذج المختصر"
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/i18n/pref-labels.ts
 msgid "Models"
 msgstr "النماذج"
 
@@ -18540,6 +18626,10 @@ msgstr "النماذج المستخدمة"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Modified"
 msgstr "تاريخ التعديل"
+
+#: src/components/conversation/conversation-category.ts
+msgid "Monitoring"
+msgstr ""
 
 #: src/components/cost-dashboard/constants.ts
 msgid "Month"
@@ -18959,6 +19049,11 @@ msgstr "محادثة {label} جديدة"
 msgid "New analysis"
 msgstr "تحليل جديد"
 
+#: src/components/assets/NewAssetMenu.tsx
+#: src/components/assets/NewAssetMenu.tsx
+msgid "New asset"
+msgstr ""
+
 #: src/components/automations/AutomationsList.tsx
 msgid "New automation"
 msgstr "أتمتة جديدة"
@@ -19374,6 +19469,10 @@ msgstr "لا توجد روابط خلفية بعد."
 msgid "No bookmarks yet"
 msgstr "لا توجد علامات مرجعية بعد"
 
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "No branches yet — the first push creates {defaultBranch}."
+msgstr ""
+
 #: src/components/token-plan/TokenPlanChip.tsx
 msgid "no budget"
 msgstr "بلا ميزانية"
@@ -19496,6 +19595,10 @@ msgstr "لا توجد تعليقات حتى الآن."
 
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 msgid "No comments yet. Select text and press the wand to ask for a change."
+msgstr ""
+
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "No commits yet."
 msgstr ""
 
 #: src/components/assets/ContextFolderBrowser.tsx
@@ -20411,6 +20514,10 @@ msgstr "لا توجد جلسات، لكن يوجد شيء في المجلد أو
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "No sessions, no files, untouched for over a week. Safe to remove."
 msgstr "لا جلسات ولا ملفات، ولم يُستخدم منذ أكثر من أسبوع. يمكن إزالته بأمان."
+
+#: src/components/preferences-view/PreferencesView.tsx
+msgid "No setting matches “{query}”."
+msgstr ""
 
 #: src/components/settings-view/ClaudeSettingsPanel.tsx
 msgid "No settings loaded."
@@ -21526,6 +21633,10 @@ msgstr "على <0>{where}</0>، يُرجى فتح الطرفية."
 msgid "On a schedule"
 msgstr "وفق جدول زمني"
 
+#: src/components/preferences-view/TraceLoggingSection.tsx
+msgid "on by default"
+msgstr ""
+
 #: src/components/automations/automation-words.ts
 msgid "On day {day} of each month at {time}"
 msgstr "في اليوم {day} من كل شهر الساعة {time}"
@@ -21568,7 +21679,6 @@ msgid "On: if another program holds {0}, starting fails instead of moving."
 msgstr ""
 
 #: src/components/account/settings-section.tsx
-#: src/i18n/pref-labels.ts
 msgid "Onboarding"
 msgstr "الإعداد الأولي"
 
@@ -21762,6 +21872,7 @@ msgstr "عذرًا! الصفحة غير موجودة"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/HelpRequestLine.tsx
 #: src/components/conversation/InviteCard.tsx
+#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
@@ -22117,12 +22228,15 @@ msgstr "فتح في علامة تبويب جديدة"
 msgid "Open in a new tab"
 msgstr "فتح في علامة تبويب جديدة"
 
+#: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-card/EntityCard.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
+#: src/lib/open-in-browser.tsx
+#: src/lib/open-in-browser.tsx
 #: src/pages/flow-page/app-display-viewer.tsx
 #: src/tabs/doc-tab-card.tsx
 msgid "Open in browser"
@@ -23865,6 +23979,10 @@ msgid "Pre Tool Use"
 msgstr "قبل استخدام الأداة"
 
 #: src/components/preferences-view/PreferencesView.tsx
+msgid "Preference groups"
+msgstr ""
+
+#: src/components/preferences-view/PreferencesView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/types/ViewType.ts
 msgid "Preferences"
@@ -25076,6 +25194,10 @@ msgstr "النشاط الأخير"
 msgid "Recent activity could not be loaded"
 msgstr "تعذّر تحميل النشاط الأخير"
 
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "Recent commits on {branch}"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Recent conversations"
 msgstr "المحادثات الأخيرة"
@@ -25767,6 +25889,7 @@ msgid "Rename worker"
 msgstr "إعادة تسمية العامل"
 
 #: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Reopen"
 msgstr "إعادة فتح"
@@ -25849,7 +25972,6 @@ msgid "Replies:"
 msgstr "الردود:"
 
 #: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
 msgid "Reply"
 msgstr "رد"
 
@@ -25862,7 +25984,6 @@ msgstr "رد بانتظار مراجعتكم"
 msgid "Reply in {0}"
 msgstr "الرد في {0}"
 
-#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Reply in thread"
 msgstr "الرد في السلسلة"
@@ -26147,6 +26268,7 @@ msgid "Resolve"
 msgstr "حل التعارضات"
 
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/help/MyHelpRequests.tsx
 #: src/components/items/item-state.ts
 msgid "Resolved"
@@ -27690,6 +27812,7 @@ msgstr "البحث عن الجلسات…"
 
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
+#: src/components/preferences-view/PreferencesView.tsx
 msgid "Search settings"
 msgstr "إعدادات البحث"
 
@@ -27833,6 +27956,7 @@ msgid "See what went wrong"
 msgstr "عرض تفاصيل الخطأ"
 
 #: src/components/automations/BusView.tsx
+#: src/components/conversation/IssueReplyLine.tsx
 msgid "Seen"
 msgstr "شوهد"
 
@@ -28930,7 +29054,12 @@ msgid "Shared with you as a reader — you can open it, not change it."
 msgstr ""
 
 #: src/components/organization/tabs/GeneralTab.tsx
+#: src/i18n/pref-labels.ts
 msgid "Sharing"
+msgstr ""
+
+#: src/i18n/pref-labels.ts
+msgid "Sharing & privacy"
 msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -29576,6 +29705,10 @@ msgstr "جارٍ تسجيل الخروج…"
 msgid "Signs every delivery. Stored write-only."
 msgstr "يوقّع كل رسالة. يُحفظ للكتابة فقط."
 
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "Signs in with your Flowpad account — no password, no token in the URL."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Simple actions — click to show all git operations"
 msgstr "إجراءات بسيطة — انقروا لعرض جميع عمليات Git"
@@ -29800,6 +29933,10 @@ msgstr "أبطأ. لحذف الصفوف أولاً، يمكن استخدام م�
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Small"
 msgstr "صغير"
+
+#: src/i18n/pref-labels.ts
+msgid "Smart navigation"
+msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Smart navigation log"
@@ -30916,6 +31053,7 @@ msgstr "شجرة الوسوم"
 msgid "Tag view not found"
 msgstr "عرض الوسم غير موجود"
 
+#: src/components/preferences-view/TraceLoggingSection.tsx
 #: src/i18n/type-labels.ts
 msgid "Tags"
 msgstr "وسوم"
@@ -32547,6 +32685,10 @@ msgstr "رابط الجلسة المباشرة هذا غير صحيح أو غي�
 msgid "this machine"
 msgstr "هذا الجهاز"
 
+#: src/i18n/pref-labels.ts
+msgid "This machine"
+msgstr ""
+
 #: src/pages/hub-home/ConnectMachineDialog.tsx
 msgid "This machine is not connected to the hub, so it cannot be opened from here."
 msgstr "هذا الجهاز غير متصل بالمركز، لذلك لا يمكن فتحه من هنا."
@@ -32709,6 +32851,10 @@ msgstr "لا يوجد لهذا المشروع مجلد على القرص، لذ�
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "This project has no folder on this computer."
 msgstr "لا يوجد لهذا المشروع مجلد على هذا الكمبيوتر."
+
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "This project has no hosted repository yet."
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This project has no secret manager yet — Share secrets continues to set one up."
@@ -33395,6 +33541,11 @@ msgstr "التتبع"
 msgid "Trace events"
 msgstr "أحداث التتبع"
 
+#: src/components/preferences-view/TraceLoggingSection.tsx
+#: src/i18n/pref-labels.ts
+msgid "Trace logging"
+msgstr ""
+
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 msgid "Trace view"
 msgstr "عرض التتبع"
@@ -33645,8 +33796,8 @@ msgid "Type your first message…"
 msgstr "رسالتكم الأولى…"
 
 #: src/i18n/pref-labels.ts
-msgid "Ui"
-msgstr "الواجهة"
+#~ msgid "Ui"
+#~ msgstr "الواجهة"
 
 #: src/components/version-popover/hub-release-label.tsx
 msgid "UI"
@@ -34844,6 +34995,10 @@ msgstr "يطلب التشغيل على جهازك"
 msgid "wants to run prompts on your machine"
 msgstr "يريد تشغيل موجّهات على جهازكم"
 
+#: src/components/conversation/IssueReplyLine.tsx
+msgid "Warning"
+msgstr ""
+
 #: src/components/hooks/event-utils.tsx
 msgid "Warning: {warning}"
 msgstr "تحذير: {warning}"
@@ -34879,8 +35034,8 @@ msgstr "تعذر العثور على المحتوى المطلوب في السح
 
 #: src/notifications/ingest.ts
 #: src/notifications/ingest.ts
-msgid "We couldn't reach the cloud service. Check your connection or try again in a moment."
-msgstr "تعذر الوصول إلى الخدمة السحابية. يرجى التحقق من الاتصال أو المحاولة مرة أخرى بعد قليل"
+#~ msgid "We couldn't reach the cloud service. Check your connection or try again in a moment."
+#~ msgstr "تعذر الوصول إلى الخدمة السحابية. يرجى التحقق من الاتصال أو المحاولة مرة أخرى بعد قليل"
 
 #: src/routes/loaders/load-shell.ts
 msgid "We skipped {count} sessions that couldn't be restored."
@@ -35294,6 +35449,11 @@ msgstr ""
 msgid "Who can read"
 msgstr ""
 
+#. placeholder {0}: members.length
+#: src/pages/hub-project/HubProjectGitView.tsx
+msgid "Who has access · {0}"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Who may log in to this sandbox"
 msgstr "الجهات المخوّلة بتسجيل الدخول إلى هذه البيئة المعزولة"
@@ -35585,6 +35745,7 @@ msgstr "هل ستعمل، وماذا ستفعل؟ لن يُشغَّل شيء ف�
 msgid "Would not"
 msgstr "لن يلتقط"
 
+#: src/components/assets/NewAssetMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Write & plan"
 msgstr "الكتابة والتخطيط"
@@ -35613,6 +35774,10 @@ msgstr ""
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Writes a row for this asset into the project's manifest (agentic-assets/project_manifest/project_manifest.json) and lists it on the project's Discover page."
 msgstr "يضيف سجلاً لهذا الأصل إلى بيان المشروع (agentic-assets/project_manifest/project_manifest.json) ويعرضه في صفحة «اكتشاف» الخاصة بالمشروع."
+
+#: src/components/preferences-view/TraceLoggingSection.tsx
+msgid "Writes debug lines for the tags turned on below into this instance's log. Off: nothing is written, whatever the tags say."
+msgstr ""
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Writing"
