@@ -35,6 +35,12 @@ export interface ConversationDestination {
   note?: string | null;
   /** The title to offer instead of the participant-derived one. */
   title: string;
+  /** The title field's label (e.g. "Operation"), when it is not a plain title. */
+  titleLabel?: string;
+  /** Names the field can take, picked from a list under it (e.g. the agent's IT operations). */
+  titleSuggestions?: { name: string; meta: string }[];
+  /** A line under the field about the title as it stands (e.g. "Continues the operation …"). */
+  titleHint?: (title: string) => string | null;
   /** The Create button's text. */
   sendLabel?: string;
   send: (draft: { title: string; text: string; files: File[] }) => Promise<string | null>;
@@ -212,7 +218,7 @@ export function NewConversationDialog({ open, onClose, destination = null }: New
               dialog reopens. */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              <Trans>Title</Trans>
+              {destination?.titleLabel ?? <Trans>Title</Trans>}
             </label>
             <AutofillInput
               autofill={autofillTitle}
@@ -220,6 +226,33 @@ export function NewConversationDialog({ open, onClose, destination = null }: New
               onChange={setTitle}
               data-testid="conversation-title-input"
             />
+            {destination?.titleSuggestions && destination.titleSuggestions.length > 0 && (
+              <div
+                className="rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+                data-testid="conversation-title-suggestions"
+              >
+                {destination.titleSuggestions.map((s) => (
+                  <button
+                    key={s.name}
+                    type="button"
+                    className={cn(
+                      'flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-xs hover:bg-accent',
+                      (title.trim() || autofillTitle).toLowerCase() === s.name.toLowerCase() &&
+                        'bg-accent text-accent-foreground',
+                    )}
+                    onClick={() => setTitle(s.name)}
+                  >
+                    <span className="font-medium text-foreground">{s.name}</span>
+                    <span className="text-muted-foreground">{s.meta}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {destination?.titleHint && (
+              <p className="text-xs text-muted-foreground" data-testid="conversation-title-hint">
+                {destination.titleHint(title.trim() || autofillTitle)}
+              </p>
+            )}
           </div>
 
           {/* Project — required for project-local conversations, optional for

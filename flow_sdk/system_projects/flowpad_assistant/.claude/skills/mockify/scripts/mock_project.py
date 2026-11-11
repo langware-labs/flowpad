@@ -89,7 +89,7 @@ def ensure(repo: Path) -> None:
     if not applied.get("ok"):
         fail(f"flow schema apply failed: {applied.get('error') or applied}")
     indexed = flow("record", "index", str(root / "agentic-assets" / "dataset"), "--types", "dataset")   # both datasets
-    if not indexed.get("ok"):
+    if not indexed.get("ok") or not indexed.get("total_indexed"):
         fail(f"indexing the datasets failed: {indexed.get('error') or indexed}")
     out(root=str(root), project_id=project_id, ns=installed["ns"], repo=str(repo),
         mocks=str(root / "agentic-assets" / "dataset" / "mocks"),

@@ -63,6 +63,45 @@ export function isValidTag(value: unknown): value is string {
   return tryTag(value) !== null;
 }
 
+/**
+ * `value` folded into a valid tag, or `null` when nothing usable is left.
+ * The LENIENT door, for a tag a person typed or a file carries
+ * (`Meeting Notes` -> `meeting-notes`, `project/alpha` -> `project.alpha`):
+ * lower, `/` is a level, a space is a `-`, any other character is dropped.
+ * Never throws. Python twin: `to_tag`.
+ */
+export function toTag(value: unknown): TagStr | null {
+  if (typeof value !== 'string') return null;
+  const folded = value
+    .trim()
+    .toLowerCase()
+    .replace(/\//g, '.')
+    .replace(/[ \t\r\n]+/g, '-')
+    .replace(/[^a-z0-9_.-]/g, '')
+    .split('.')
+    .filter(Boolean)
+    .join('.');
+  return tryTag(folded);
+}
+
+/**
+ * Every usable tag in `values`, converted, in order, once each. `values` is a
+ * list, or the one-line string a file header may hold (`"a, b"`, `"[a, b]"`).
+ */
+export function toTags(values: unknown): TagStr[] {
+  let items: unknown = values;
+  if (typeof items === 'string') {
+    items = items.trim().replace(/^\[/, '').replace(/\]$/, '').split(',');
+  }
+  if (!Array.isArray(items)) return [];
+  const out: TagStr[] = [];
+  for (const item of items) {
+    const tag = toTag(item);
+    if (tag && !out.includes(tag)) out.push(tag);
+  }
+  return out;
+}
+
 export function tagSegments(tag: string): string[] {
   return tag.split('.');
 }

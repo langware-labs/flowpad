@@ -177,13 +177,11 @@ describe('course project share → install → auto-launch (two instances)', () 
     );
     expect(shared.status, JSON.stringify(shared).slice(0, 300)).toBe('SUCCESS');
 
-    // A project share is an invite: Bob is invited, and Alice's client opened a
-    // new conversation between him and Alice for the invite message.
+    // A project share is an invite: Bob is invited. The hub posts it into the 1:1
+    // conversation between Alice and Bob, so the share itself names no conversation.
     const outcome = shared.data?.share_result;
     expect(outcome?.failed ?? [], JSON.stringify(outcome).slice(0, 400)).toEqual([]);
     expect(outcome?.invited ?? [], JSON.stringify(outcome).slice(0, 400)).toHaveLength(1);
-    const inviteConversationId = outcome.invited[0].conversation_id as string;
-    expect(inviteConversationId, JSON.stringify(outcome).slice(0, 400)).toBeTruthy();
 
     // ── Bob: the grant arrives, then he installs ─────────────────────────
     const bobRow = await pollUntil(
@@ -196,25 +194,31 @@ describe('course project share → install → auto-launch (two instances)', () 
     );
     expect(bobRow.id).toBe(projectId);
 
-    // Bob does what a student does: opens Alice's message and clicks Install
-    // project on its chip. The chip is the only offer — no popup raises one.
+    // Bob does what a student does: opens Alice's invite and sets the project up.
     browser = await launchBrowser();
     const bobPage = await openInstancePage(browser, INST_2);
     await bobPage.page.evaluate(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
     resetConsoleErrors(bobPage);
     await shot(bobPage.page, '01-bob-before-install');
 
+    // The share is an invite card in the 1:1 conversation with Alice; its Open is the offer.
+    const inviteConversationId = await pollUntil(
+      async () => {
+        await postApi(bob.apiUrl, '/graph/conversation-list');
+        const rows = (await jsonApi(bob.apiUrl, '/graph/conversation'))?.data ?? [];
+        return (rows.find((c: any) => c.carries_invite)?.id as string | undefined) || null;
+      },
+      25_000,
+      'the 1:1 conversation carrying the invite on bob',
+    );
     await openAssignedConversationInUI(bobPage, inviteConversationId);
-    // The invite's bundle staged the project, so it is the generic dashed attachment chip
-    // (a9d635f32), not the legacy ProjectMessageChip; it opens the review popup, whose
-    // project branch offers the install.
-    const chip = bobPage.page.getByTestId(`entity-chip-project-${projectId}`);
-    await chip.waitFor({ state: 'visible', timeout: 30_000 });
+    const card = bobPage.page.getByTestId('invite-card').filter({ hasText: created.data.name });
+    await card.waitFor({ state: 'visible', timeout: 30_000 });
     expect(await bobPage.page.getByTestId('project-chip').count(), 'no legacy project chip').toBe(0);
-    await chip.click();
-    const installButton = bobPage.page.getByTestId('asset-review-dialog').getByTestId('project-install-button');
+    await card.getByTestId('invite-open').click();
+    // Open lands on the project, which offers to set it up here.
+    const installButton = bobPage.page.getByTestId('incoming-project-dialog').getByTestId('incoming-project-install');
     await installButton.waitFor({ state: 'visible', timeout: 30_000 });
-    expect(await bobPage.page.getByTestId('incoming-project-dialog').count(), 'no install popup').toBe(0);
     await shot(bobPage.page, '02-bob-install-offer');
 
     await installButton.click();
@@ -272,11 +276,12 @@ describe('course project share → install → auto-launch (two instances)', () 
     expect(again?.data?.error, 'auto-launch reported an error').toBeUndefined();
     expect(again?.data?.agent_id, 'a second open must not launch again').toBeNull();
 
-    // ── back in the message, the chip is the installed project's chip ────
+    // ── back in the conversation, the invite card still opens the project ──
     await openConversation(bobPage, inviteConversationId);
-    // The same generic attachment chip he installed from (a9d635f32), now in its installed state.
     await bobPage.page
-      .locator(`[data-testid="entity-chip-project-${projectId}"][data-state="installed"]`)
+      .getByTestId('invite-card')
+      .filter({ hasText: created.data.name })
+      .getByTestId('invite-open')
       .waitFor({ state: 'visible', timeout: 20_000 });
     await shot(bobPage.page, '05-bob-chip-open-project');
   }, 120_000); // do not increase timeout without approval

@@ -2843,6 +2843,45 @@ class AgenticProcess(Entity):
         self._schedule_queue_drain("enqueue")
         return entry
 
+    async def deliver_when_idle(self, prompt: str, *, source: str) -> "PromptResult":
+        """Hand *prompt* to this session whatever it is doing: bring its tab back, queue the prompt
+        (the queue injects it at the next idle edge), and start the session when it is stopped.
+
+        The answer is ADMISSION — the turn runs later. A stopped terminal session is started here
+        because the queue's drain never cold-starts one; its relaunch takes the queue head as its
+        launch prompt. A paused queue keeps the prompt, visibly, until a person resumes it."""
+        from flow_sdk.builtin.tab import reopen_process_tab  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
+        executor = str(self.typeid)
+        if await reopen_process_tab(self) and not self.visible:
+            self.visible = True
+            await self.save()
+        if not self.pty_mode or self.hub_route or await self.is_running():
+            await self._enqueue(prompt, source=source)
+        else:
+            # A stopped terminal session has ONE starter: queued without arming the drain, so the
+            # launch below is what takes the head. A drain racing it would start the session too,
+            # and the loser's prompt is dropped by the reattach.
+            self.queue.enqueue(prompt, source=source)
+            await self.notify_updated()
+            started = await self.start_pty() if self.queue.enabled else None
+            if isinstance(started, ApiFailResponse):
+                return PromptResult.not_yet(started.message or "The session could not be started.",
+                                            ran=False, executor=executor)
+        return PromptResult.satisfied("Queued for the session.", executor=executor, value_present=False)
+
+    @action.get(action_name="scheduled-prompts")
+    async def _scheduled_prompts_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        """GET /graph/agentic_process/<id>/scheduled-prompts — the callbacks this session has waiting."""
+        from flow_sdk.builtin.trigger import pending_callbacks  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=[
+            {"id": t.id, "name": t.name, "at": t.expr,
+             "prompt": next((a.prompt for a in t.actions if a.prompt), "")}
+            for t in await pending_callbacks(self)
+        ])
+
     @action.post(action_name="drain-queue")
     async def _drain_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:
         """Kick a drain without adding a prompt (unlike ``set-queue-enabled``, touches
@@ -3705,7 +3744,10 @@ class AgenticProcess(Entity):
             if typed:
                 self._schedule_gated_pty_delivery(instruction)
             else:
-                await self.send(instruction)
+                shell = await self.shell()
+                if not shell:
+                    raise ValueError("No shell linked — call start_pty() first")
+                await shell.paste_then_submit(instruction)
             return ApiSuccessResponse(data={"status": "sent"})
         res = await self.start_pty(instruction=None if typed else instruction)
         if typed and not isinstance(res, ApiFailResponse):
@@ -3861,10 +3903,7 @@ class AgenticProcess(Entity):
         typed = await self.input(escape)
         if isinstance(typed, ApiFailResponse):
             return typed
-        await shell.wait_for_input_ready()
-        await self.send(f"\x1b[200~{command}\x1b[201~".encode())
-        await shell.wait_for_input_ready()
-        await self.send(b"\r")
+        await shell.paste_then_submit(command)
         return ApiSuccessResponse(data={"status": "ran"})
 
     @action.post(action_name="run-shell-command")
@@ -6878,6 +6917,23 @@ class AgenticProcess(Entity):
         """
         return get_driver(self.worker_type)
 
+    async def _drop_callbacks(self) -> None:
+        """A deleted session takes the callbacks it has waiting with it (never blocks the delete)."""
+        try:
+            from flow_sdk.builtin.trigger import drop_callbacks  # noqa: PLC0415
+
+            await drop_callbacks(self)
+        except Exception:
+            logger.exception("delete: could not drop the callbacks of process %s", self.id)
+
+    @classmethod
+    async def delete_by_id(cls, eid: str):
+        """The HTTP delete route comes here and bypasses the instance ``delete()``."""
+        row = await cls.get_by_id(eid)
+        if row is not None and any(t.type == BuiltinEntityType.TRIGGER.value for t in row.private_context_entities_):
+            await row._drop_callbacks()
+        return await super().delete_by_id(eid)
+
     async def delete(self, *, delete_chats: bool = True):  # noqa: D401
         """Tombstone the on-disk session transcript, then delete the entity.
 
@@ -6905,6 +6961,7 @@ class AgenticProcess(Entity):
         the row, and keep writing the transcript this delete removes.
         """
         end_process_activity(self.id, message="deleted")
+        await self._drop_callbacks()
         if self.hub_route:
             # The hub removes the process on the machine and its own route; a
             # failure there keeps this handle so the delete can be retried —
@@ -7628,7 +7685,7 @@ class AgenticProcess(Entity):
     # ── Timeout handling ──────────────────────────────────────────────────────
 
     async def _on_timeout(self) -> None:
-        """Called when API_TIMEOUT is detected (no LLM response for 30s after user prompt).
+        """Called when API_TIMEOUT is detected (no transcript line for API_TIMEOUT_SECONDS after the last prompt).
 
         Invisible processes: kills the worker (SIGTERM → SIGKILL) so they don't
         linger consuming resources. The JSONL will eventually go stale → INACTIVE.

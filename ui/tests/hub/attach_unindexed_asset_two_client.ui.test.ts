@@ -52,8 +52,8 @@ async function showUserScope(page: Page): Promise<void> {
 
 /** Open the asset picker on `page`, find `name`, and pick it. */
 async function pick(page: Page, opener: string, name: string): Promise<void> {
-  // The composer's attach actions live in its "More actions" (+) menu.
-  await page.getByTestId('composer-more-actions').first().click();
+  // In a conversation's composer, "Attach an asset" is an item of the + menu.
+  if (opener === 'attach-asset-button') await page.getByTestId('composer-more-actions').first().click();
   await page.getByTestId(opener).first().click();
   const filter = page.getByTestId('asset-manager-list-filter');
   await filter.waitFor({ state: 'visible', timeout: 10_000 });

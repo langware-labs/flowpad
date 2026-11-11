@@ -37,7 +37,6 @@ vi.mock('@src/components/login-required-dialog', () => ({ ActionType: { MEMBERS:
 vi.mock('@src/components/conversation/useLocalUser', () => ({
   useLocalUser: () => ({ localUser: { id: 'me-id', email: 'me@example.com' } }),
 }));
-vi.mock('@src/components/conversation/ContactPermissionsDialog', () => ({ ContactPermissionsDialog: () => null }));
 
 // The address book (contact store). Bob Stone is known only by hub id — the
 // hub doesn't disclose other people's emails to a non-admin.

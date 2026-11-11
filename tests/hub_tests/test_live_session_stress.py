@@ -3,8 +3,8 @@
 bob (raw HTTP, the GUEST) fires twenty prompts back-to-back into one shared
 conversation, alternating between two guest-minted session ids. alice (this
 process, the HOST) receives them over her real hub WebSocket bridge, which
-routes each through ``process_inbound_prompt``; a standing grant pre-approves
-both sessions; the worker seam is a fast fake so the test measures the
+routes each through ``process_inbound_prompt``; both sessions wait at PENDING
+until the host approves each; the worker seam is a fast fake so the test measures the
 transport + gate + per-session serialization, not an LLM.
 
 Asserts: exactly one completion per prompt, ten per session, replies in each
@@ -28,11 +28,10 @@ import httpx
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction
 from flow_sdk.builtin.flow_message import AttachmentType, FlowMessage
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
 from tests.hub_tests._assignment import assert_auto_assigned
-from tests.hub_tests._guest import completions, guest_login
+from tests.hub_tests._guest import completions, guest_login, host_approves
 
 pytestmark = pytest.mark.timeout(60)  # do not increase timeout without approval
 
@@ -72,7 +71,7 @@ async def test_twenty_prompts_two_sessions_one_host(
     monkeypatch.setattr(AgenticProcess, "prompt", fake_prompt)
     monkeypatch.setattr(ep, "_capture_assistant_reply", fake_capture)
 
-    # ── host side: a project-mapped, shared conversation + standing grant ──
+    # ── host side: a project-mapped, shared conversation ──
     host_root = tmp_path / "host-project"
     host_root.mkdir()
     local_project = Project(name="live-session-stress-host", fs_storage_mount_path=str(host_root))
@@ -100,10 +99,6 @@ async def test_twenty_prompts_two_sessions_one_host(
             r = await h.post(f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/join", headers=hdrs, json={})
             assert r.status_code < 300, r.text
 
-    grant = ContactPermission(
-        contact_user_id=bob.user_id, project_id=None, allowed_actions=[PermissionAction.AUTO_APPROVE_SESSION.value]
-    )
-    await grant.save(notify=False)
 
     # The server installs the bridge's inbound handler at startup; in-process
     # the test does the same, else the WS frames are received and dropped.
@@ -134,6 +129,8 @@ async def test_twenty_prompts_two_sessions_one_host(
                 )
                 assert r.status_code < 300, r.text
         sent_in = time.monotonic() - t0
+        for sid in session_ids:
+            await host_approves(sid, within=15.0)
 
         # ── host side: wait for every completion (bounded poll, no sleeps) ─
         deadline = time.monotonic() + 40.0
@@ -156,7 +153,7 @@ async def test_twenty_prompts_two_sessions_one_host(
             got = [m.text.split('"')[1] for m in mine]  # Prompt response: "<line>"
             assert got == expected[sid], f"session {sid[:8]} order: {got}"
             session = await RemoteWorkerSession.get_one({"id": sid})
-            assert session is not None and session.approved_via == "standing_grant"
+            assert session is not None and session.approved_via == "manual"
             assert session.starting_message_id
         assert len(prompts_seen) == PROMPTS_PER_SESSION * 2
         procs = await AgenticProcess.get_all({"target_typeid_str": f"conversation-{conv.id}"})
@@ -164,4 +161,3 @@ async def test_twenty_prompts_two_sessions_one_host(
         assert "database is locked" not in caplog.text
     finally:
         await hub_ws_manager.stop()
-        await grant.delete()

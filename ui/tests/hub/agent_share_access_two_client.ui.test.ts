@@ -131,7 +131,7 @@ describe('agent visibility panel Share button grants a hub role', () => {
     await page.goto(`${feUrl}/dock/assets/editor/agent/typeid/agent-${agentId}?viewMode=advanced`, {
       waitUntil: 'domcontentloaded',
     });
-    // Sharing lives on the editor's Settings tab (the former "More" disclosure).
+    // Sharing lives on the Settings tab and mounts on its first open.
     await page.getByTestId('agent-tab-settings').click();
     const share = page.getByTestId('agent-share-with-people');
     await share.waitFor({ state: 'visible', timeout: 20_000 });

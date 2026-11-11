@@ -672,3 +672,56 @@ async def test_a_conversation_the_hub_does_not_hold_is_never_asked_about(monkeyp
 
     monkeypatch.setattr(st, "_hub_messages", no_hub)
     assert await st.state(conv.id) == {"incoming": [], "sent": []}
+
+
+# ── a typed key (Name + Key in the send form, no credential behind it) ──────
+
+
+async def send_typed(world, monkeypatch, value=SECRET):
+    _, inst = world
+    with inst["alice"].acting(monkeypatch):
+        return await st.seal_values(CONV, "demo_api_key", value, ["bob"])
+
+
+async def test_a_typed_key_is_saved_as_a_new_credential_in_the_chosen_project(world, monkeypatch):
+    hub, inst = world
+    for who in ("alice", "bob"):
+        await publish(inst[who], monkeypatch)
+    sent = await send_typed(world, monkeypatch)
+    assert sent["sealed_for"] == ["bob"] and sent["variables"] == ["DEMO_API_KEY"]
+    with inst["bob"].acting(monkeypatch):
+        card = (await st.incoming(CONV))[0]
+        assert card["typed"] and card["state"] == "pending" and card["credential_name"] == "DEMO_API_KEY"
+        done = await st.fill(CONV, card["message_id"], place=str(inst["bob"].project.id))
+    assert done["filled"] == ["DEMO_API_KEY"]
+    assert env_of(inst["bob"])["DEMO_API_KEY"] == SECRET
+    assert not any(SECRET in body for body in hub.wire)
+
+
+async def test_a_typed_key_asks_before_replacing_a_value_already_there(world, monkeypatch):
+    _, inst = world
+    for who in ("alice", "bob"):
+        await publish(inst[who], monkeypatch)
+    place = str(inst["bob"].project.id)
+    await send_typed(world, monkeypatch, value="first")
+    with inst["bob"].acting(monkeypatch):
+        await st.fill(CONV, (await st.incoming(CONV))[0]["message_id"], place=place)
+    await send_typed(world, monkeypatch, value="second")
+    with inst["bob"].acting(monkeypatch):
+        card = next(c for c in await st.incoming(CONV) if c["state"] == "pending")
+        with pytest.raises(SealedError) as e:
+            await st.fill(CONV, card["message_id"], place=place)
+        assert e.value.code == "exists" and env_of(inst["bob"])["DEMO_API_KEY"] == "first"
+        await st.fill(CONV, card["message_id"], place=place, replace=True)
+    assert env_of(inst["bob"])["DEMO_API_KEY"] == "second"
+
+
+async def test_a_typed_key_is_never_promised_to_a_member_without_a_key(world, monkeypatch):
+    hub, inst = world
+    await publish(inst["alice"], monkeypatch)
+    sent = await send_typed(world, monkeypatch)
+    assert sent["sealed_for"] == [] and sent["no_key"] == ["bob"]
+    assert hub.messages[CONV] == []  # nothing posted, nothing kept to answer later
+    with pytest.raises(SealedError) as e, inst["alice"].acting(monkeypatch):
+        await st.seal_values(CONV, "not a name!", "x", ["bob"])
+    assert e.value.code == "bad_name"

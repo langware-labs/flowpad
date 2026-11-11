@@ -1,6 +1,6 @@
 import type { IBuffer, IBufferCell, IBufferLine, IBufferRange, ILink, ILinkProvider, Terminal } from '@xterm/xterm';
 import { COMMAND_LINK } from '@src/lib/link-kind';
-import { BOX_GLYPHS, commandLinkMatches, ENDS_WHOLE, HAS_RTL, linkMatches, type LinkMatch } from '@src/lib/link-matches';
+import { BOX_GLYPHS, commandLinkMatches, ENDS_WHOLE, fileLinkMatches, HAS_RTL, linkMatches, type LinkMatch } from '@src/lib/link-matches';
 import { isPrimaryClick, type LinkHandlers } from '@src/components/links/link-events';
 
 type ActivateLink = LinkHandlers['activate'];
@@ -206,6 +206,11 @@ function continuesBelow(buffer: IBuffer, row: number, cols: number): Continuatio
   }
   const tail = columnTail(line, above, cols);
   if (!tail || head.cells <= tail.limit - tail.end - 1) return undefined;
+  // A wrapper cuts a word only when it is longer than a row. Two words that fit on one row were
+  // apart, so the break took a space: put it back when the two read as one path across it.
+  const fitsOneRow = tail.text.length + head.cells <= tail.limit - below.start;
+  const spacedPath = fitsOneRow && fileLinkMatches(`${tail.text} ${head.text}`)[0]?.text.includes(' ');
+  if (spacedPath) return { kind: 'hard', end: tail.end, space: true };
   const cutMidway = new RegExp(`[${JOINER}]$`).test(tail.text);
   if (!(cutMidway || /[\p{L}\p{N}]$/u.test(tail.text)) || resumesProse(tail.text, head.text)) return undefined;
   if (PLAIN_WORD.test(head.text) && !cutMidway) return undefined;

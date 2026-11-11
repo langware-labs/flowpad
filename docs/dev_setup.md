@@ -104,4 +104,5 @@ the JWT by hand; the OAuth path above is the sanctioned one.
 - **Shared dependency cache.** Every Vite in `ui/` shares `ui/node_modules/.vite`. A `--force` restart (or a second
   server optimizing at once) rewrites it under the others, which then load a blank page
   (`The file does not exist at …/.vite/deps/chunk-….js … optimize deps directory`). Avoid `--force` while other
-  servers run; if one goes blank, restart that one server once.
+  servers run; if one goes blank, restart that one server once. `VITE_CACHE_DIR=<dir>` gives a server its own
+  optimized-deps cache (Vite `cacheDir`), so no other server's `--force` can touch it.

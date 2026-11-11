@@ -197,7 +197,8 @@ async def credentials_action() -> ApiResponse:
 #   GET  /credentials/sealed/{receivers|incoming|sent}?conversation_id=
 #   GET  /credentials/sealed/device                       → this device's key id (expert view)
 #   POST /credentials/sealed/seal     {typeid, conversation_id, recipients?}  (Flowpad's own UI only)
-#   POST /credentials/sealed/fill     {conversation_id, message_id, project_id?}  (Flowpad's own UI only)
+#   POST /credentials/sealed/send     {conversation_id, name, value, recipients?}  — a typed key (Flowpad's own UI only)
+#   POST /credentials/sealed/fill     {conversation_id, message_id, project_id?, place?, replace?}  (Flowpad's own UI only)
 #   POST /credentials/sealed/decline  {conversation_id, message_id}
 #   POST /credentials/sealed/get      {conversation_id, transfer_id}  — "Get the secret" (Flowpad's own UI only)
 #   POST /credentials/sealed/publish  {rotate?}           → publish / rotate / withdraw this device's key
@@ -205,7 +206,7 @@ async def credentials_action() -> ApiResponse:
 
 _SEALED_GET = {"state": "state", "receivers": "receivers", "incoming": "incoming", "sent": "sent_status"}
 #: Sharing or filling in values is a person's click — never a worker, the CLI or a served app.
-_FROM_THE_UI_ONLY = {"seal", "fill", "get"}
+_FROM_THE_UI_ONLY = {"seal", "send", "fill", "get"}
 
 
 async def _sealed(method: str, verb: str, request) -> ApiResponse:
@@ -232,7 +233,10 @@ async def _sealed(method: str, verb: str, request) -> ApiResponse:
         conv, msg = body.get("conversation_id") or "", body.get("message_id") or ""
         post = {
             "seal": lambda: st.seal_credential(body.get("typeid") or "", conv, [str(r) for r in body.get("recipients") or []]),
-            "fill": lambda: st.fill(conv, msg, project_id=body.get("project_id")),
+            "send": lambda: st.seal_values(conv, str(body.get("name") or ""), str(body.get("value") or ""),
+                                           [str(r) for r in body.get("recipients") or []]),
+            "fill": lambda: st.fill(conv, msg, project_id=body.get("project_id"), place=str(body.get("place") or ""),
+                                    replace=bool(body.get("replace"))),
             "decline": lambda: st.decline(conv, msg),
             "get": lambda: st.get_secret(conv, body.get("transfer_id") or ""),
             "track": lambda: st.track_vault_share(body.get("typeid") or "", conv),

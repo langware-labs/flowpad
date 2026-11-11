@@ -70,6 +70,13 @@ The "no emoji decoration" rule still holds; this one earned mark is the only exc
   never as a code block in the text. The text just says what it does.
 - Questions with bounded answers are not wording either: they go in a form (`--form`, below).
 
+## A reply stays in its conversation
+
+When the message answers one the user received, or follows up on it, send it in that same
+conversation as a reply (`flow conversation send <conversation> "<text>" --reply-to <message id>`),
+even when the subject has moved away from the conversation's title. Start a new conversation only
+when the user explicitly asks for one.
+
 ## Questions → a form (Flowpad messages)
 
 When you ask the receiver anything with a bounded answer — pick, number, date, yes/no, a value you can

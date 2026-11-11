@@ -3,6 +3,17 @@ import type { ItAttachment, ItMessageRequest } from '@sdk/entities/agent';
 /** A picked file named `*.shape.json` is the answer shape (a JSON Schema each machine's value must match). */
 export const ANSWER_SHAPE_SUFFIX = '.shape.json';
 
+/** The operation id a name stands for, as the hub derives it ("Class status" -> `class-status`); '' when none. */
+export function opIdOf(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+    .replace(/-+$/g, '');
+}
+
 export interface ItDraftFile {
   name: string;
   bytes: Uint8Array;
@@ -35,4 +46,12 @@ export function itMessageRequest(text: string, files: ItDraftFile[]): ItMessageR
     attachments.push({ name: file.name, content_b64: toBase64(file.bytes) });
   }
   return { text, attachments, answer_shape: answerShape, targets: 'all' };
+}
+
+/** `itMessageRequest` for files picked in the browser. */
+export async function itMessageRequestOf(text: string, files: File[]): Promise<ItMessageRequest> {
+  const drafts = await Promise.all(
+    files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })),
+  );
+  return itMessageRequest(text, drafts);
 }

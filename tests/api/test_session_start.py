@@ -18,7 +18,6 @@ import pytest
 
 from flow_sdk.app.actions import execute_prompt as ep
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import (
     LIVE_SESSION_EVENT_MARKER_KEY,
@@ -129,23 +128,6 @@ async def test_the_host_turns_a_request_into_its_pending_session(bootstrapped_cl
     assert session.host_user_id  # the host's own identity — `isHost` in the UI
 
 
-async def test_a_standing_grant_approves_the_request_at_once(bootstrapped_client, user):
-    conv_id = await make_conversation(bootstrapped_client)
-    grant = ContactPermission(
-        contact_user_id="guest-remote", project_id=None, allowed_actions=[PermissionAction.AUTO_APPROVE_SESSION.value]
-    )
-    await grant.save()
-    try:
-        sid = str(uuid.uuid4())
-        fm = _inbound_request(conv_id, sid)
-        await fm.save(notify=False)
-        await ep.process_session_request(fm.id, conv_id)
-        session = await RemoteWorkerSession.get_one({"id": sid})
-        assert session.status == S.IDLE.value and session.approved_via == "standing_grant"
-    finally:
-        await grant.delete()
-
-
 async def test_no_project_runs_in_the_instance_temp_folder_always_the_same(
     bootstrapped_client,
     user,
@@ -172,16 +154,6 @@ async def test_no_project_runs_in_the_instance_temp_folder_always_the_same(
     assert ap.workdir == str(folder)
 
 
-async def test_no_project_cannot_be_remembered_for_this_project(bootstrapped_client, user):
-    conv_id = await make_conversation(bootstrapped_client)
-    rws = await make_session(conv_id, S.PENDING.value, guest_user_id="guest-scratch")
-    resp = await bootstrapped_client.post(
-        f"/api/v1/graph/remote_worker_session/{rws.id}/approve", json={"scratch": True, "remember": "project"}
-    )
-    assert resp.status_code == 400, resp.text
-    assert (await RemoteWorkerSession.get_one({"id": rws.id})).status == S.PENDING.value
-
-
 async def test_a_session_in_another_folder_gets_its_own_process(bootstrapped_client, user):
     target = f"conversation-{uuid.uuid4()}"
     a1 = await ep._reuse_or_spawn_headless(target, "/tmp/project-a")
@@ -191,32 +163,21 @@ async def test_a_session_in_another_folder_gets_its_own_process(bootstrapped_cli
     assert b.id != a1.id and b.workdir == "/tmp/scratch-b"
 
 
-async def test_approve_remembers_the_guest_who_then_starts_without_asking(bootstrapped_client, user):
-    """ "Approve" (not "Approve once") with "Run (Skip project)": an everywhere grant,
-    and the guest's next request in this project-less chat runs at once, in the
-    same temp folder — no host click."""
-    first_conv = await make_conversation(bootstrapped_client)
-    rws = await make_session(first_conv, S.PENDING.value, guest_user_id="guest-remembered")
-    resp = await bootstrapped_client.post(
-        f"/api/v1/graph/remote_worker_session/{rws.id}/approve", json={"scratch": True, "remember": "everywhere"}
-    )
+async def test_an_approved_guest_still_waits_for_approval_next_time(bootstrapped_client, user):
+    """Approving one session approves nothing else: the same guest's next request,
+    in the same project-less chat, waits at PENDING for the host's click."""
+    conv_id = await make_conversation(bootstrapped_client)
+    rws = await make_session(conv_id, S.PENDING.value, guest_user_id="guest-remote")
+    resp = await bootstrapped_client.post(f"/api/v1/graph/remote_worker_session/{rws.id}/approve", json={"scratch": True})
     assert resp.json().get("status") == "SUCCESS", resp.text
-    grants = await ContactPermission.get_all({"contact_user_id": "guest-remembered"})
-    try:
-        assert len(grants) == 1 and grants[0].project_id is None
 
-        conv = await Conversation.get_one({"id": first_conv})
-        conv.project_id = None  # a person-to-person chat: no project anywhere
-        await conv.save()
-        sid = str(uuid.uuid4())
-        fm = _inbound_request(first_conv, sid)
-        fm.sender_id = "guest-remembered"
-        await fm.save(notify=False)
-        await ep.process_session_request(fm.id, first_conv)
+    conv = await Conversation.get_one({"id": conv_id})
+    conv.project_id = None
+    await conv.save()
+    sid = str(uuid.uuid4())
+    fm = _inbound_request(conv_id, sid)
+    await fm.save(notify=False)
+    await ep.process_session_request(fm.id, conv_id)
 
-        later = await RemoteWorkerSession.get_one({"id": sid})
-        assert later.status == S.IDLE.value and later.approved_via == "standing_grant"
-        assert later.workdir == str(scratch_workdir())
-    finally:
-        for g in await ContactPermission.get_all({"contact_user_id": "guest-remembered"}):
-            await g.delete()
+    later = await RemoteWorkerSession.get_one({"id": sid})
+    assert later.status == S.PENDING.value and not later.approved_at

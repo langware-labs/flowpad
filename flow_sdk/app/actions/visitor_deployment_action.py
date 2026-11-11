@@ -80,3 +80,9 @@ async def it_message(self: Entity):
 async def it_sessions(self: Entity):
     """Turn IT Sessions on or off on this agent's public machines — hub-only."""
     raise HTTPException(status_code=409, detail=_IT_OFFLINE_DETAIL)
+
+
+@action.get(action_name="it_operations", types=["agent"])
+async def it_operations(self: Entity):
+    """The owner's IT operations of this agent (one conversation each) — hub-only."""
+    raise HTTPException(status_code=409, detail=_IT_OFFLINE_DETAIL)

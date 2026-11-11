@@ -29,7 +29,7 @@ router = APIRouter()
 _MODES = ("line", "block", "full")
 
 #: The halves of the join a caller can ask for. Omitting `parts` means all.
-_PARTS = ("header", "docs", "code", "mentions")
+_PARTS = ("header", "docs", "entities", "code", "mentions")
 
 
 def _doc_body(doc: dict[str, Any]) -> str:
@@ -86,7 +86,7 @@ async def tag_context(request: Request):
     """The join. Body: ``{name, mode?: line|block|full, root?: path, parts?: [...]}``.
 
     ``parts`` narrows the join to the halves the caller actually reads
-    (``header`` / ``docs`` / ``code`` / ``mentions``); omitted means all of
+    (``header`` / ``docs`` / ``entities`` / ``code`` / ``mentions``); omitted means all of
     them, which is what ``flow tag get`` wants. The `breadcrumb` fence asks for
     ``["code"]`` alone — without the filter it would also pay for the blessed
     header plus one ancestor lookup each, a backlink query, and a full read and
@@ -94,7 +94,7 @@ async def tag_context(request: Request):
     the very page being rendered.
     """
     from flow_sdk.llm_index.sizes import FULL_MAX_BYTES, resolve_doc_summaries  # noqa: PLC0415
-    from flow_sdk.tags.bindings import all_doc_bindings, scan_code_capsules  # noqa: PLC0415
+    from flow_sdk.tags.bindings import all_doc_bindings, all_entity_bindings, scan_code_capsules  # noqa: PLC0415
     from flow_sdk.tags.grammar import normalize_tag  # noqa: PLC0415
 
     try:
@@ -139,6 +139,16 @@ async def tag_context(request: Request):
             budget = max(0, budget - len(trimmed))
         docs_out.append(item)
 
+    # Everything else that carries the tag (a task, an agent, a skill, ...). Docs are
+    # listed above with their summaries, so they are left out here.
+    entities_out: list[dict[str, Any]] = []
+    if "entities" in parts:
+        entities_out = [
+            {"type": e["type"], "id": e["id"], "title": e["title"], "tags": e["tags"]}
+            for e in (await all_entity_bindings(name))["entities"]
+            if e["type"] != "markdown"
+        ]
+
     code_out: list[dict[str, Any]] = []
     if root_arg and "code" in parts:
         root = Path(root_arg).expanduser()
@@ -150,10 +160,19 @@ async def tag_context(request: Request):
             "tag": header,
             "mode": mode,
             "docs": docs_out,
+            "entities": entities_out,
             "code": code_out,
             "mentions": await _mentions(header) if "mentions" in parts else [],
         }
     )
+
+
+@router.get("/api/v1/tags/names")
+async def tag_names_route():
+    """Every tag name worth suggesting where a person types one: blessed and in use."""
+    from flow_sdk.tags.bindings import tag_names  # noqa: PLC0415
+
+    return ApiSuccessResponse(data={"names": await tag_names()})
 
 
 @router.post("/api/v1/tags/relay")

@@ -20,7 +20,7 @@ import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
 
-import { isAttachable } from './DiagnosisRequestCreateDialog';
+import { ATTACHABLE_TYPES } from './DiagnosisRequestCreateDialog';
 import { AskPermissionField, BudgetField, InstructionsField, LimitsFields } from './DiagnosisRequestFields';
 import { ErrorLine } from './ErrorLine';
 import {
@@ -113,7 +113,7 @@ function Attachments({ id }: { id: string }) {
           onFilesPicked={sendFiles}
           disabled={busy}
           hideAssetList
-          assetFilter={isAttachable}
+          assetTypes={ATTACHABLE_TYPES}
         />
         <span className="text-xs text-muted-foreground">
           {busy ? <Trans>Sending…</Trans> : <Trans>Attach more files or assets</Trans>}

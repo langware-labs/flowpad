@@ -22,6 +22,12 @@ export const AGENT_AUTO_LAUNCH_ENDPOINT = '/api/v1/agents/auto-launch';
 /** Projects whose auto-launch answer this session was "nothing to enter". */
 const settledProjects = new Set<string>();
 
+/** The project's sources just changed under it (a shared project was set up here): an earlier
+ *  "nothing to enter" is obsolete, so its next landing asks again. */
+export function forgetProjectAutoLaunchAnswer(projectId: string): void {
+  settledProjects.delete(projectId);
+}
+
 export function resetAgentAutoLaunchForTests(): void {
   settledProjects.clear();
 }

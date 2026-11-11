@@ -59,23 +59,32 @@ function trimTrail(value: string, trail: RegExp): string {
 const QUOTED = ['"', "'", '`'].map((q) => String.raw`(?<![\p{L}\p{N}_])${q}([^${q}\r\n]+)${q}(?![\p{L}\p{N}_])`);
 /** Box-drawing and block glyphs: a table's or a panel's borders, never part of a name. */
 export const BOX_GLYPHS = String.raw`\u2500-\u259f`;
+/** Where an absolute path starts, and the file name (with an optional position) it ends in. */
+const ROOT = String.raw`(?:/|~/|[A-Za-z]:[/\\])`;
+const FILE_END = String.raw`\.[A-Za-z]\w*(?::\d+){0,2}`;
 // Prose brackets an absolute path whose folder has a space: `(/Users/me/Flowpad workspace/a.md)`.
 // It must end in a file name, so a bracketed aside (`(/tmp is shared)`) stays prose.
-const ABSOLUTE_FILE = String.raw`(?:/|~/|[A-Za-z]:[/\\])[^()\r\n]*\.[A-Za-z]\w*(?::\d+){0,2}`;
+const ABSOLUTE_FILE = String.raw`${ROOT}[^()\r\n]*${FILE_END}`;
 const BRACKETED_PATH = String.raw`\((${ABSOLUTE_FILE})\)`;
 /** A whole code span that is one absolute file path, spaces in its folders allowed: `` `~/Flowpad workspace/a.md` ``. */
-export const SPACED_ABSOLUTE_FILE = new RegExp(
-  String.raw`^(?:/|~/|[A-Za-z]:[/\\])[^()\r\n]*[/\\][^\s/\\()]+\.[A-Za-z]\w*(?::\d+){0,2}$`,
-);
-const TOKENS = new RegExp(`${[...QUOTED, BRACKETED_PATH].join('|')}|[^\\s"'\`<>${BOX_GLYPHS}]+`, 'gu');
+export const SPACED_ABSOLUTE_FILE = new RegExp(String.raw`^${ROOT}[^()\r\n]*[/\\][^\s/\\()]+${FILE_END}$`);
+// A bare absolute path whose folder has a space: `/Users/me/Flowpad workspace/docs/a.md`. The word
+// before each space is a folder still open (no file extension, no clause punctuation), the word
+// after it goes on with a separator, and the first word that ends in a file name ends the path.
+const NAME = String.raw`[^\s"'<>()${BOX_GLYPHS}` + '`]';
+const OPEN_FOLDER = String.raw`(?<!\.[A-Za-z]\w*)(?<![,;:!?])`;
+const GOES_ON = String.raw`(?!${ROOT}|\.{1,2}/|https?:)${NAME}*?[/\\]${NAME}*?`;
+const SPACED_PATH = String.raw`(${ROOT}${NAME}*(?:${OPEN_FOLDER} ${GOES_ON})+?(?<=[/\\]${NAME}+${FILE_END}))(?=[.,;:!?)\]}]*(?:\s|$))`;
+const TOKENS = new RegExp(`${[...QUOTED, BRACKETED_PATH, SPACED_PATH].join('|')}|[^\\s"'\`<>${BOX_GLYPHS}]+`, 'gu');
 
 export function fileLinkMatches(text: string): LinkMatch[] {
   const links: LinkMatch[] = [];
   const leadPattern = HAS_RTL.test(text) ? RTL_LEAD : LEAD;
   for (const match of text.matchAll(TOKENS)) {
     const quoted = match[1] ?? match[2] ?? match[3] ?? match[4];
-    const lead = quoted === undefined ? leadPattern.exec(match[0])![0].length : 0;
-    const value = quoted ?? trimTrail(match[0].slice(lead), TRAIL).replace(TEST_ID, '');
+    const whole = quoted ?? match[5];
+    const lead = whole === undefined ? leadPattern.exec(match[0])![0].length : 0;
+    const value = whole ?? trimTrail(match[0].slice(lead), TRAIL).replace(TEST_ID, '');
     // webLinkMatches owns HTTP links, including their path portions.
     if (!value || /^https?:/i.test(value)) continue;
     // Placeholders (`/dock/...`) and bare punctuation or schemes name nothing.

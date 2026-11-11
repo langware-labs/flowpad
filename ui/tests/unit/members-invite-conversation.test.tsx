@@ -43,7 +43,6 @@ vi.mock('@src/components/login-required-dialog', () => ({ ActionType: { MEMBERS:
 vi.mock('@src/components/conversation/useLocalUser', () => ({
   useLocalUser: () => ({ localUser: { id: 'me-id', email: 'me@example.com' } }),
 }));
-vi.mock('@src/components/conversation/ContactPermissionsDialog', () => ({ ContactPermissionsDialog: () => null }));
 vi.mock('@src/components/contact-picker/use-contacts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@src/components/contact-picker/use-contacts')>()),
   useContacts: () => ({ contacts: [], refetch: vi.fn() }),
