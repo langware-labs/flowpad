@@ -65,8 +65,6 @@ async def main() -> None:
     if "no harness is installed" not in message:
         _fail(f"wrong message for an empty machine: {message!r}")
     for vendor in VENDORS:
-        if vendor.hidden:  # a hidden vendor is never offered to a person (no_worker_message)
-            continue
         if vendor.key not in message:
             _fail(f"message does not say {vendor.key} was looked for: {message!r}")
     if elapsed > BUDGET_S:
@@ -75,8 +73,6 @@ async def main() -> None:
     # 2. The query facade agrees, and is equally immediate.
     started = time.monotonic()
     for vendor in VENDORS:
-        if vendor.hidden:  # the bootstrap worker ships with the wheel, so it is always installed
-            continue
         if await AgenticProcess.is_installed(vendor.worker_type):
             _fail(f"is_installed({vendor.key}) is True on an empty machine")
     queried = time.monotonic() - started
