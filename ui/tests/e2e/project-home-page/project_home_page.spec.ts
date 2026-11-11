@@ -8,10 +8,10 @@
  *      again RESUMES the same chat. Only a launch lands there — the project page
  *      itself (no ask) stays on its page.
  *   2. Deleting: resetting the setting, or deleting the agent it names, means
- *      Home no longer lands anywhere but the default home.
+ *      a launch lands nowhere but the project page, and Home on the default home.
  *   3. Malformed: a manifest naming an unknown type, a bad id, or neither, or a
- *      manifest that is not JSON — Home and the Customize card keep working, no
- *      page error.
+ *      manifest that is not JSON — a launch, Home and the Customize card keep
+ *      working, no page error.
  *   4. Foreign: an agent belonging to ANOTHER project is not offered by the
  *      picker, refused by `set-home-page`, and not honoured when written into
  *      the manifest by hand.
@@ -149,6 +149,15 @@ async function expectDefaultHome(page: Page) {
   await expect(page).toHaveURL(/\/(\?|$)/);
   // On the home the bar's Home slot reads "Back to tabs" while tabs are open.
   await expect(page.getByTestId('top-nav-home').or(page.getByTestId('top-nav-tabs'))).toBeVisible();
+}
+
+/** Launch the project when it has no home page to land on: it stays on the project page. The URL starts
+ *  on the project, so it alone passes before the load decides. The router renders nothing until the
+ *  load's redirects are decided (HydrateFallback), so the project page on screen means none was taken. */
+async function expectLaunchStaysOnProjectPage(page: Page, projectId: string) {
+  await launchProject(page, projectId);
+  await expect(page.getByTestId('project-home-tabs')).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/dock/project/${projectId}`));
 }
 
 test.beforeAll(async () => {
@@ -310,9 +319,8 @@ test.describe('project home page', () => {
 
     await clickHome(page);
     await expectDefaultHome(page);
-    // Opening the project no longer redirects either.
-    await page.goto(`/dock/project/${home.id}`);
-    await expect(page).toHaveURL(new RegExp(`/dock/project/${home.id}`));
+    // Launching the project no longer lands on the agent's chat.
+    await expectLaunchStaysOnProjectPage(page, home.id);
 
     expect(errors).toEqual([]);
   });
@@ -330,6 +338,8 @@ test.describe('project home page', () => {
     await expect(card.getByTestId('home-page-picker')).toContainText('Missing asset');
     await clickHome(page);
     await expectDefaultHome(page);
+    // Launching the project does not bring the deleted agent back.
+    await expectLaunchStaysOnProjectPage(page, home.id);
 
     declare(null);
     expect(errors).toEqual([]);
@@ -353,8 +363,8 @@ test.describe('project home page', () => {
       await expect(card.getByTestId('home-page-picker')).toBeVisible();
       await clickHome(page);
       await expectDefaultHome(page);
-      await page.goto(`/dock/project/${home.id}`);
-      await expect(page).toHaveURL(new RegExp(`/dock/project/${home.id}`));
+      // Launching the project reads the declaration and still opens the project page.
+      await expectLaunchStaysOnProjectPage(page, home.id);
 
       declare(null);
       expect(errors).toEqual([]);
@@ -394,8 +404,8 @@ test.describe('project home page', () => {
     await page.goto(projectHomeUrl(home.id));
     await clickHome(page);
     await expectDefaultHome(page);
-    await page.goto(`/dock/project/${home.id}`);
-    await expect(page).toHaveURL(new RegExp(`/dock/project/${home.id}`));
+    // Launching the project does not open the other project's agent.
+    await expectLaunchStaysOnProjectPage(page, home.id);
 
     declare(null);
     expect(errors).toEqual([]);
