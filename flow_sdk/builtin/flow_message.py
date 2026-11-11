@@ -438,6 +438,21 @@ def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
         fm.it_request = {k: it.get(k) for k in ("agent_id", "op_id", "send_id")}
 
 
+def issue_of(payload: dict) -> "dict | None":
+    """The ``metadata.issue`` a hub Monitoring message carries (it names ``issue_typeid``), else None."""
+    metadata = payload.get("metadata")
+    issue = metadata.get("issue") if isinstance(metadata, dict) else None
+    return dict(issue) if isinstance(issue, dict) and issue.get("issue_typeid") else None
+
+
+def derive_issue_reply(fm: "FlowMessage", payload: dict) -> None:
+    """Carry a Monitoring message's ``metadata.issue`` (hub-written) onto ``issue_reply``. Idempotent; absent
+    leaves it as is, so a refresh without metadata keeps the last status the hub sent."""
+    issue = issue_of(payload)
+    if issue is not None:
+        fm.issue_reply = issue
+
+
 def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
     """Sync disk probe: is the entity referenced by a TYPE_ID attachment
     locally present? See ``_type_id_attachment_path`` for where it looks.
@@ -753,6 +768,10 @@ class FlowMessage(Entity):
     # conversation draws the replies that name the same ``send_id`` as a table under it. PRIVATE, re-derived
     # like ``it_reply``.
     it_request: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
+    # An Issue in a project's Monitoring conversation (``ConversationKind.MONITORING``): the hub's
+    # ``metadata.issue`` = ``{issue_typeid, kind, severity, status, count, title, detail, fix, subject_typeid}``.
+    # The hub updates the same message as the issue moves (count, status). PRIVATE, re-derived like ``it_reply``.
+    issue_reply: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)

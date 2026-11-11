@@ -6,8 +6,22 @@ import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
 import { IMessageEnvelope } from '../models/MessageEnvelope';
 import { IMessageSender } from '../models/MessageSender';
 import type { ItReplyMeta, ItRequestMeta } from './agent';
+import { issueStatusOf, type IssueFix, type IssueSeverity, type IssueStatus } from './issue';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
+
+/** A Monitoring message's issue, as the hub stamps it (`metadata.issue`) and keeps it current. */
+export interface IssueReplyMeta {
+  issue_typeid: string;
+  kind: string;
+  severity: IssueSeverity;
+  status: IssueStatus;
+  count: number;
+  title: string;
+  detail: string;
+  fix: IssueFix | null;
+  subject_typeid: string;
+}
 
 export enum DeliveryMode {
   EMAIL = 'email',
@@ -284,6 +298,8 @@ export interface IFlowMessage extends IEntity {
   it_reply?: ItReplyMeta | null;
   /** The owner's request in an IT conversation: its agent, operation and send (kept locally as `it_request`). */
   it_request?: ItRequestMeta | null;
+  /** An Issue in a project's Monitoring conversation: the hub's `metadata.issue` (kept locally as `issue_reply`). */
+  issue_reply?: IssueReplyMeta | null;
   /** Hub-relayed opaque metadata (a hub-page read carries it raw). */
   metadata?: Record<string, unknown> | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
@@ -337,6 +353,25 @@ export function itReplyOf(metadata: Record<string, unknown> | null | undefined):
   return it && typeof it === 'object' && (it as ItReplyMeta).node_typeid ? (it as ItReplyMeta) : null;
 }
 
+/** The Issue a Monitoring message's `metadata.issue` carries (it names `issue_typeid`), else null. */
+export function issueReplyOf(metadata: Record<string, unknown> | null | undefined): IssueReplyMeta | null {
+  const issue = metadata?.issue as Record<string, unknown> | undefined;
+  if (!issue || typeof issue !== 'object' || typeof issue.issue_typeid !== 'string' || !issue.issue_typeid) return null;
+  const fix = issue.fix as Partial<IssueFix> | null | undefined;
+  return {
+    issue_typeid: issue.issue_typeid,
+    kind: typeof issue.kind === 'string' ? issue.kind : '',
+    severity: issue.severity === 'warning' ? 'warning' : 'error',
+    status: issueStatusOf(issue.status),
+    count: typeof issue.count === 'number' ? issue.count : 1,
+    title: typeof issue.title === 'string' ? issue.title : '',
+    detail: typeof issue.detail === 'string' ? issue.detail : '',
+    fix:
+      fix && typeof fix.pointer === 'string' && fix.pointer ? { label: fix.label ?? '', pointer: fix.pointer } : null,
+    subject_typeid: typeof issue.subject_typeid === 'string' ? issue.subject_typeid : '',
+  };
+}
+
 /** The IT request a hub message's `metadata.it` names (the owner's message of a send), else null. */
 export function itRequestOf(metadata: Record<string, unknown> | null | undefined): ItRequestMeta | null {
   const it = metadata?.it as Record<string, unknown> | undefined;
@@ -385,6 +420,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   origin_local?: ICloudOriginLocal | null;
   it_reply?: ItReplyMeta | null;
   it_request?: ItRequestMeta | null;
+  issue_reply?: IssueReplyMeta | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
   envelope?: IMessageEnvelope | null;
   thread_id?: string | null;
@@ -439,6 +475,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.origin_local = entity.origin_local ?? null;
     this.it_reply = entity.it_reply ?? itReplyOf(entity.metadata);
     this.it_request = entity.it_request ?? itRequestOf(entity.metadata);
+    // The hub rewrites `metadata.issue` as the issue moves; a raw hub read's metadata is the newest copy.
+    this.issue_reply = issueReplyOf(entity.metadata) ?? entity.issue_reply ?? null;
     this.envelope = entity.envelope ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;

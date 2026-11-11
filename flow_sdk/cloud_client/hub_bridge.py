@@ -919,14 +919,24 @@ class HubWsBridge:
             # sync the delivery/body fields the hub actually owns.
             persisted = None
             last_field = ""
-            for field in (
+            fields: tuple[str, ...] = (
                 "delivery_status",
                 "delivered_at",
                 "received_at",
                 "handling_at",
                 "body_status",
                 "attachment_filename",
-            ):
+            )
+            # A Monitoring message is ONE message per Issue that the hub keeps current: a repeat or a status
+            # change rewrites its ``metadata.issue`` (and its text). Only those messages take ``text`` from an
+            # UPDATE -- every other message's text is the sender's and stays as it arrived.
+            from flow_sdk.builtin.flow_message import issue_of  # noqa: PLC0415
+
+            issue = issue_of(data)
+            if issue is not None:
+                data = {**data, "issue_reply": issue}
+                fields = (*fields, "issue_reply", *(("text",) if isinstance(data.get("text"), str) else ()))
+            for field in fields:
                 # The hub leaves a cleared field out of a full message: no ``handling_at`` on a message that is
                 # otherwise whole means "not working any more".
                 if field == "handling_at" and field not in data and ("sender_id" in data or "delivery_status" in data):

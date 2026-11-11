@@ -32,7 +32,7 @@ class Issue(Entity):
     fix: Optional[dict] = APIField(default=None)
     #: What the subject's problem stops (e.g. the deployments a budget funds), as typeids.
     affected: list[str] = APIField(default_factory=list)
-    #: ``"open"`` | ``"resolved"``.
+    #: ``"open"`` | ``"seen"`` | ``"in_progress"`` | ``"resolved"`` | ``"closed"``.
     status: str = APIField(default="open")
     opened_at: float = APIField(default=0.0)
     resolved_at: Optional[float] = APIField(default=None)

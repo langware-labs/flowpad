@@ -65,6 +65,7 @@ import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { AutomationMessageActions } from './AutomationMessageActions';
 import { DiagnosisMessageActions } from './DiagnosisMessageActions';
 import { HelpRequestLine } from './HelpRequestLine';
+import { IssueReplyLine } from './IssueReplyLine';
 import { ItReplyLine } from './ItReplyLine';
 import { ItSendTable } from './ItSendTable';
 import type { ItSend } from './it-sends';
@@ -831,6 +832,7 @@ export function FlowMessageBubble({
       {fm.it_reply && (
         <ItReplyLine reply={fm.it_reply} agentId={fm.sender_id ?? ''} conversationId={fm.conversation_id ?? ''} />
       )}
+      {fm.issue_reply && <IssueReplyLine reply={fm.issue_reply} />}
       {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
       {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}

@@ -60,6 +60,7 @@ import { MessageComposer } from './MessageComposer';
 import { ConversationActions, ConversationEndedLine } from './ConversationActions';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
+import { useMarkIssuesSeen } from './useMarkIssuesSeen';
 import { useMarkLatestRead } from './useMarkLatestRead';
 import { useMembers } from '@src/hooks/use-members';
 import {
@@ -962,6 +963,8 @@ export function ConversationView({
   // link only navigate (single writer: navigation → view → action).
   const latestId = latestPointer(pointers)?.id;
   useMarkLatestRead(latestId ? messagesById.get(latestId) : undefined, cloudUserId, localUser?.id, agentId);
+  // A Monitoring conversation also tells the hub its issues were seen.
+  useMarkIssuesSeen(conversation?.kind, messagesById, selfIds);
 
   // Delete a message everywhere. The loader/live-query owns the list, so we
   // only fire the SDK action and let the resulting data-op re-render the view

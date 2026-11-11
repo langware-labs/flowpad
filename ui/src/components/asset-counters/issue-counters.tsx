@@ -1,4 +1,4 @@
-import { Deployment, Issue, QueryRequest, TypeId, type IDockPointer } from '@sdk';
+import { Deployment, Issue, QueryRequest, TypeId, isIssueActive, type IDockPointer } from '@sdk';
 import { entityDock } from '@src/lib/hub-page-url';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
@@ -26,7 +26,7 @@ export interface IssueCounts {
 }
 
 export function openIssues<T extends IssueLike>(issues: T[]): T[] {
-  return issues.filter((i) => i.status === 'open');
+  return issues.filter((i) => isIssueActive(i.status));
 }
 
 export function countIssues(issues: IssueLike[]): IssueCounts {
