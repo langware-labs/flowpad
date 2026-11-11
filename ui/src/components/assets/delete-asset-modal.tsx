@@ -26,13 +26,26 @@ import {
   AlertDialogTitle,
 } from '@src/components/ui/alert-dialog';
 
+export interface DeleteOption {
+  /** The key this option's answer is submitted under. */
+  key: string;
+  label: string;
+  description?: string;
+  /** Shown, as a warning, only while the option is checked. */
+  warning?: string;
+  defaultChecked: boolean;
+}
+
 interface DeleteRequest {
   name: string;
-  onConfirm: (checked: boolean) => Promise<void>;
+  /** Receives each option's answer by its key; `{}` when there are none. */
+  onConfirm: (checked: Record<string, boolean>) => Promise<void>;
   onAfterDelete?: () => void;
   /** Overrides the default "removes the file from disk" warning copy. */
   description?: string;
-  checkbox?: { label: string; description?: string; defaultChecked: boolean };
+  checkboxes?: DeleteOption[];
+  /** The confirm button's label for the current answers; "Delete" when absent. */
+  confirmLabel?: (checked: Record<string, boolean>) => string;
 }
 
 interface ModalState {
@@ -40,10 +53,10 @@ interface ModalState {
   request: DeleteRequest | null;
   busy: boolean;
   error: string | null;
-  checked: boolean;
+  checked: Record<string, boolean>;
 }
 
-const CLOSED_STATE: ModalState = { open: false, request: null, busy: false, error: null, checked: false };
+const CLOSED_STATE: ModalState = { open: false, request: null, busy: false, error: null, checked: {} };
 let state = CLOSED_STATE;
 const listeners = new Set<() => void>();
 
@@ -63,7 +76,9 @@ function notify() {
 }
 
 export function showDeleteAssetModal(request: DeleteRequest): void {
-  state = { ...CLOSED_STATE, open: true, request, checked: request.checkbox?.defaultChecked ?? false };
+  // Every open starts from the defaults: a choice never carries over to the next delete.
+  const checked = Object.fromEntries((request.checkboxes ?? []).map((option) => [option.key, option.defaultChecked]));
+  state = { ...CLOSED_STATE, open: true, request, checked };
   notify();
 }
 
@@ -107,27 +122,30 @@ export function DeleteAssetModal() {
             {request?.description ?? <Trans>This permanently removes the file from disk. This cannot be undone.</Trans>}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {request?.checkbox && (
-          <div className="flex items-start gap-3">
+        {request?.checkboxes?.map((option) => (
+          <div key={option.key} className="flex items-start gap-3">
             <Checkbox
-              id="delete-asset-option"
-              checked={checked}
+              id={`delete-asset-option-${option.key}`}
+              checked={checked[option.key] ?? false}
               disabled={busy}
               onCheckedChange={(value) => {
-                state = { ...state, checked: value === true };
+                state = { ...state, checked: { ...state.checked, [option.key]: value === true } };
                 notify();
               }}
             />
             <div className="grid gap-1">
-              <label htmlFor="delete-asset-option" className="text-sm font-medium">
-                {request.checkbox.label}
+              <label htmlFor={`delete-asset-option-${option.key}`} className="text-sm font-medium">
+                {option.label}
               </label>
-              {request.checkbox.description && (
-                <p className="text-sm text-muted-foreground">{request.checkbox.description}</p>
+              {option.description && <p className="text-sm text-muted-foreground">{option.description}</p>}
+              {option.warning && checked[option.key] && (
+                <p className="text-sm text-destructive" role="alert">
+                  {option.warning}
+                </p>
               )}
             </div>
           </div>
-        )}
+        ))}
         {error && (
           <p className="text-sm text-destructive" data-testid="delete-asset-modal-error">
             {error}
@@ -147,7 +165,7 @@ export function DeleteAssetModal() {
             data-testid="delete-asset-modal-confirm"
           >
             {busy ? <Loader2 className="me-1 h-4 w-4 animate-spin" /> : null}
-            <Trans>Delete</Trans>
+            {request?.confirmLabel ? request.confirmLabel(checked) : <Trans>Delete</Trans>}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

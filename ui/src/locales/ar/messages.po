@@ -3610,6 +3610,10 @@ msgstr "جميع الخطافات"
 msgid "All languages"
 msgstr "جميع اللغات"
 
+#: src/components/assets/confirm-project-delete.ts
+msgid "All local files in this folder, including uncommitted Git changes, will be permanently deleted. This cannot be undone."
+msgstr "سيتم حذف جميع الملفات المحلية في هذا المجلد نهائيًا، بما في ذلك تغييرات Git التي لم تُثبَّت بعد. لا يمكن التراجع عن هذا الإجراء."
+
 #: src/components/conversation/ThreadHeader.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "All messages"
@@ -3849,6 +3853,10 @@ msgstr "محدَّث بالفعل"
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Also"
 msgstr "أيضًا"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "Also delete the project folder from my computer"
+msgstr "حذف مجلد المشروع من جهازي أيضًا"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Also deliver to…"
@@ -10325,7 +10333,7 @@ msgstr "حذف المحادثة"
 msgid "Delete chat?"
 msgstr "حذف هذه المحادثة؟"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/assets/confirm-project-delete.ts
 msgid "Delete chats"
 msgstr "حذف المحادثات"
 
@@ -16275,7 +16283,7 @@ msgstr "الاحتفاظ بالتحية الافتراضية…"
 msgid "Keep the local copy out of git"
 msgstr "استبعاد النسخة المحلية من Git"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/assets/confirm-project-delete.ts
 msgid "Keeping chat history can make this project reappear when projects are scanned."
 msgstr "قد يؤدي الاحتفاظ بسجل المحادثات إلى ظهور هذا المشروع مجددًا عند فحص المشاريع."
 
@@ -25516,6 +25524,14 @@ msgstr "إزالة الخيار"
 msgid "Remove package"
 msgstr "إزالة الحزمة"
 
+#: src/components/assets/confirm-project-delete.ts
+msgid "Remove Project"
+msgstr "إزالة المشروع"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "Remove Project & Delete Files"
+msgstr "إزالة المشروع وحذف الملفات"
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Remove prompt"
 msgstr ""
@@ -25619,6 +25635,10 @@ msgstr "تمت إزالة وكيل vibe"
 msgid "Removed: {0}"
 msgstr "أُزيلت: {0}"
 
+#: src/components/assets/confirm-project-delete.ts
+msgid "Removes {path} and every file in it."
+msgstr "سيُحذف {path} وكل ما فيه من ملفات."
+
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Removes {removes} from the project — the deletion is staged in git"
 msgstr ""
@@ -25630,6 +25650,10 @@ msgstr "تُزال نسخة Flowpad. تبقى الرسالة حيث أُرسلت
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
 msgstr "حذفها من كل مكان"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "Removes the project folder and every file in it."
+msgstr "سيُحذف مجلد المشروع وكل ما فيه من ملفات."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Removes: {removes}"
@@ -32527,12 +32551,16 @@ msgid "This permanently deletes the message and all of its data for everyone in 
 msgstr "سيتم حذف الرسالة وجميع بياناتها بشكل نهائي لجميع المشاركين في المحادثة. هذا الإجراء غير قابل للتراجع."
 
 #: src/components/assets/AssetsPage.tsx
-msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
-msgstr "سيؤدي هذا إلى حذف المشروع وكل ما فيه نهائيًا — جميع السجلات المفهرسة وعناصرها الفرعية، ومجلد المشروع على القرص ({path}). لا يمكن التراجع عن هذا الإجراء."
+#~ msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
+#~ msgstr "سيؤدي هذا إلى حذف المشروع وكل ما فيه نهائيًا — جميع السجلات المفهرسة وعناصرها الفرعية، ومجلد المشروع على القرص ({path}). لا يمكن التراجع عن هذا الإجراء."
 
 #: src/components/assets/AssetsPage.tsx
-msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
-msgstr "سيؤدي هذا إلى حذف المشروع وكل ما فيه نهائيًا — جميع السجلات المفهرسة وعناصرها الفرعية، ومجلد المشروع على القرص. لا يمكن التراجع عن هذا الإجراء."
+#~ msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+#~ msgstr "سيؤدي هذا إلى حذف المشروع وكل ما فيه نهائيًا — جميع السجلات المفهرسة وعناصرها الفرعية، ومجلد المشروع على القرص. لا يمكن التراجع عن هذا الإجراء."
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "This permanently deletes the project and everything in it — all indexed records and their children. This cannot be undone."
+msgstr "سيؤدي هذا إلى حذف المشروع وكل ما فيه نهائيًا — جميع السجلات المفهرسة وعناصرها الفرعية. لا يمكن التراجع عن هذا الإجراء."
 
 #: src/components/assets/delete-asset-modal.tsx
 msgid "This permanently removes the file from disk. This cannot be undone."
@@ -32562,6 +32590,7 @@ msgstr "توقفت هذه العملية."
 msgid "This process points to a deleted project."
 msgstr "هذه العملية تشير إلى مشروع محذوف."
 
+#: src/components/assets/confirm-project-delete.ts
 #: src/components/connections-manager.tsx
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "this project"
