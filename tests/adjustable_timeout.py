@@ -8,6 +8,7 @@ the number in the test stays the fast-machine truth; the slack belongs to the en
 from __future__ import annotations
 
 import os
+from typing import Callable, Optional
 
 
 def _read() -> float:
@@ -19,10 +20,20 @@ def _read() -> float:
 
 ADJUSTABLE_TIMEOUT: float = _read()
 
+#: Set by tests/pytest_plugin.py while a test runs with ADJUSTABLE_TIMEOUT on: grows that test's own cap by the
+#: slack one wait inside it was given, so the cap keeps covering the waits it holds.
+grow_running_test: Optional[Callable[[float], None]] = None
+
 
 def adjusted(seconds: float) -> float:
-    """``seconds`` plus this runner's ADJUSTABLE_TIMEOUT. A budget of 0 (no limit) stays 0."""
-    return seconds + ADJUSTABLE_TIMEOUT if seconds else seconds
+    """``seconds`` plus this runner's ADJUSTABLE_TIMEOUT. A budget of 0 (no limit) stays 0.
+
+    Called inside a running test, the test's own cap grows by the same slack."""
+    if not seconds:
+        return seconds
+    if ADJUSTABLE_TIMEOUT and grow_running_test is not None:
+        grow_running_test(ADJUSTABLE_TIMEOUT)
+    return seconds + ADJUSTABLE_TIMEOUT
 
 
 def _read_factor() -> float:
