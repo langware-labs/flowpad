@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Button } from '@src/components/ui/button';
 import { useCopied } from '@src/components/ui/copy-button';
 import { VersionChip } from '@src/components/version-popover/version-chip';
-import { upgradeOfferVersion } from '@src/components/version-popover/upgrade-offer';
+import { upgradeOfferVersion, waitingEngineBehindPypi } from '@src/components/version-popover/upgrade-offer';
 import {
   desktopUpdateAction,
   isNewerVersion,
@@ -484,6 +484,13 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
     }
   }, [activationMessage]);
 
+  // PyPI is ahead of the engine update waiting: the desktop looks now and quietly swaps the newer one in (the
+  // "Update ready" section follows its push) — not up to 20 minutes of an older ready release beside a newer one.
+  const waitingBehind = open && waitingEngineBehindPypi(updateReady, data?.pypi?.latest);
+  useEffect(() => {
+    if (waitingBehind) void getUpdateReadyApi()?.refreshWaitingEngine?.();
+  }, [waitingBehind, data?.pypi?.latest]);
+
   const upgradeVersion = upgradeOfferVersion({
     desktop: Boolean(electronApi?.upgradeFlowpad),
     desktopTarget,
@@ -774,8 +781,9 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
               label={t`Latest on PyPI`}
               version={pypi?.latest ?? null}
               date={formatDateWithAge(pypiLatestPublished?.published_at)}
-              badge={pypi?.update_available ? t`Update available` : null}
-              muted={!pypi?.update_available}
+              // A ready update already covers it: "Update ready" above is the one place to install from.
+              badge={pypi?.update_available && !updateReady?.ready ? t`Update available` : null}
+              muted={!pypi?.update_available || Boolean(updateReady?.ready)}
             />
             {data?.installed_at && <TimestampRow label={t`Installed on`} timestamp={data.installed_at} />}
             {/* No release notes here: PyPI carries no notes body (``PypiRelease``

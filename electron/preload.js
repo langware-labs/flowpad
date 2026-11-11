@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   activateUpdate: () => ipcRenderer.invoke('update-activate'),
   /** The "Update Ready" toast the desktop asked for and the UI has not shown yet (null when none): taken once. */
   takeUpdateReadyToast: () => ipcRenderer.invoke('update-ready-take-toast'),
+  /** PyPI has a newer release than the engine update waiting: the desktop looks now and quietly replaces it. */
+  refreshWaitingEngine: () => ipcRenderer.invoke('update-refresh-waiting-engine'),
   onUpdateReadyState: (callback) => {
     const handler = (_event, state) => callback(state);
     ipcRenderer.on('update-ready-state', handler);

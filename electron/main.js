@@ -2999,7 +2999,10 @@ async function postBootUpdates() {
   if (desktopFoundAtLaunch) await offerDesktopFoundAtLaunch(desktopFoundAtLaunch);
   // When the engine question was asked pre-start, the cloud policy decides here; when it moved here, it is asked
   // with the pre-start's comparison (any newer release on PyPI).
-  await checkPackageUpdateInBackground({ compareWithPypi: engineOfferDeferredToBoot, label: 'post-boot' });
+  const pkg = await checkPackageUpdateInBackground({ compareWithPypi: engineOfferDeferredToBoot, label: 'post-boot' });
+  // Compared with PyPI: that is the engine's check, so its own clock (engineIntervalDue) starts from here — the first
+  // tick after a launch with a failing feed does not check it again.
+  if (engineOfferDeferredToBoot && pkg === 'ran') scheduleStore.write(updateSchedule.recordEngineCheck(scheduleStore.read(), { at: Date.now() }));
 }
 // Anything that escapes to the top level must reach the user with "Send Report" — an unhandled rejection in
 // startApp used to leave the loading splash up forever, and an uncaught exception only got Electron's stock box.
@@ -3533,6 +3536,14 @@ ipcMain.handle('desktop-update-install', async () => {
 // The one ready update set (updateReadyState), and "Restart" — from the "Update Ready" toast or the top bar's indicator.
 ipcMain.handle('update-ready-info', () => updateReadyState());
 ipcMain.handle('update-activate', () => activateUpdate('Update Ready'));
+// The version popover saw a newer release on PyPI than the engine update waiting: look now — the same quiet check
+// the 20-minute pass runs (a newer release replaces the waiting one, no toast) — instead of at the next pass.
+ipcMain.handle('update-refresh-waiting-engine', () => {
+  if (!engineUpdateWaiting() || packageUpdateInFlight || activationInFlight) return { started: false };
+  void checkPackageUpdateInBackground({ label: 'version popover', quiet: true });
+  return { started: true };
+});
+
 ipcMain.handle('update-ready-take-toast', () => {
   const state = updateReadyState();
   const take = pendingToast && state.ready;

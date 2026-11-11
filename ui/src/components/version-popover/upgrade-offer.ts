@@ -1,3 +1,6 @@
+import { isNewerVersion } from '@src/components/version-popover/desktop-update-action';
+import type { UpdateReadyState } from '@src/components/update-ready/update-ready';
+
 /**
  * The release the version popover's "Upgrade to vX" names — and installs. On the desktop it is the newest release
  * THIS desktop runs (`desktopTarget`, from the desktop: PyPI's newest may need a newer desktop), or nothing when no
@@ -22,4 +25,17 @@ export function upgradeOfferVersion({
   if (!desktop) return pypiLatest ?? null;
   if (desktopTarget === false) return null;
   return desktopTarget ?? pypiLatest ?? null;
+}
+
+/**
+ * The engine update waiting to be installed is older than PyPI's newest: the popover asks the desktop to look now
+ * (the quiet check the 20-minute pass runs) instead of showing an older ready release beside a newer one for up to
+ * 20 minutes. Only an engine-only update — a desktop update decides its own engine.
+ */
+export function waitingEngineBehindPypi(
+  ready: UpdateReadyState | null | undefined,
+  pypiLatest: string | null | undefined,
+): boolean {
+  if (!ready?.ready || ready.restart || !ready.engine) return false;
+  return isNewerVersion(ready.engine.to, pypiLatest);
 }

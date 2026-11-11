@@ -37,6 +37,7 @@ module.exports.__t = {
   setMainWindow: (w) => { mainWindow = w; },
   setPackageUpdateInFlight: (v) => { packageUpdateInFlight = v; }, // "a package check runs": the blocker the offer waits behind
   setBackendReady: (v) => { backendReady = v; },
+  setEngineOfferDeferredToBoot: (v) => { engineOfferDeferredToBoot = v; },
   setQuitting: (v) => { isQuitting = v; },
   setUvManager: (u) => { uvManager = u; },
   getUvManager: () => uvManager,
@@ -590,6 +591,22 @@ const HOUR = 60 * 60 * 1000;
     eq(env.uv.checks, 1, '0.2.180 waits: the 20-minute pass looks for a newer engine');
     eq([toasts(env).length, readyStates(env).at(-1).engine.to], [0, '0.2.181'], '0.2.181 replaces it quietly: no toast, the indicator and popover name the new one');
     eq(env.readSchedule().engineLastAttemptAt, undefined, 'and the engine cadence is not touched');
+  }
+  {
+    // The popover saw PyPI ahead of the engine update waiting: it asks now — the same quiet check.
+    const env = load({ engineReady: '0.2.181' });
+    eq(await env.ipc['update-refresh-waiting-engine'](), { started: false }, 'nothing waits: nothing to refresh');
+    env.uv.prepared = { version: '0.2.180' };
+    eq(await env.ipc['update-refresh-waiting-engine'](), { started: true }, '0.2.180 waits: the desktop looks now');
+    for (let i = 0; i < 4; i++) await tick();
+    eq([env.uv.checks, toasts(env).length, readyStates(env).at(-1).engine.to], [1, 0, '0.2.181'], 'and swaps 0.2.181 in quietly');
+  }
+  {
+    // A launch whose engine check compared with PyPI starts the engine's own clock: the first tick does not repeat it.
+    const env = load();
+    env.t.setEngineOfferDeferredToBoot(true);
+    await env.t.postBootUpdates(); await tick();
+    ok((env.readSchedule() || {}).engineLastCheckAt, 'the post-boot engine check is recorded');
   }
   {
     // The desktop feed fails for hours (ERR_NETWORK_CHANGED): its backoff retries the feed, and the engine keeps its
