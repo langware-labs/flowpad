@@ -42,7 +42,7 @@ import { providerMetaFor } from '@src/tabs/provider-meta';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 /** Registry types deliberately absent from this launcher (still creatable from
- *  the Assets page's per-type "+"). */
+ *  the assets sidebar's header "+", `NewAssetMenu`, even with none yet). */
 const HIDDEN_ASSET_TYPES = new Set(['dynamic_workflow', 'subagent', DiagnosisRequest.type]);
 
 /** Wiki pages behind the non-registry tiles — hoisted so each title is written
