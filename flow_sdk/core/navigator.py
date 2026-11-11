@@ -147,6 +147,12 @@ def _static_options() -> tuple[dict[str, str], dict[str, str]]:
                 names.setdefault(name.lower(), key)
         for sub in place.subplaces:
             options[f"view:{place_address(place, sub.pointer)}"] = f"Screen '{sub.label}'"
+    # A retired screen's name is where it forwards ("signals" is the event bus), as its address is.
+    from flow_sdk.core.dock_address import RETIRED_DOCK_VIEWS  # noqa: PLC0415
+
+    for retired, to in RETIRED_DOCK_VIEWS.items():
+        if (place := place_for(to.view_type.value)) is not None:
+            names.setdefault(retired.value.replace("-", " "), f"view:{place_address(place, to.pointer)}")
     # A type's name opens its list ("specs", "project manifest") -- where no screen has the name.
     from flow_sdk.core.navigation import asset_list_names  # noqa: PLC0415
 

@@ -236,6 +236,12 @@ def test_a_display_name_two_types_share_opens_the_type_with_a_section_of_its_own
     assert navigator.rule_hit("show my document files").value == "assets/list/document_file"
 
 
+def test_a_retired_screens_name_opens_where_it_forwards():
+    # /dock/signals forwards to the event bus (RETIRED_DOCK_VIEWS): the word does too.
+    assert navigator.rule_hit("show signals").value == "automations/bus"
+    assert navigator.rule_hit("open events").value == "automations"
+
+
 def test_this_projects_or_sessions_thing_is_the_screen_that_opens_on_it():
     proj = "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
     here = navigation.kind("navigation.here").model_validate(
