@@ -207,8 +207,6 @@ describe('secured transfer — the journey in the UI', () => {
       await alice.page.getByTestId('sealed-values-panel').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
       const open = alice.page.getByTestId('thread-stack-open').first();
       if (await open.count()) await open.click().catch(() => undefined);
-      // The thread opens asynchronously: give its lines a moment to render before judging the round.
-      await alice.page.getByTestId('sealed-note-line').first().waitFor({ timeout: 8_000 }).catch(() => undefined);
       return (await alice.page.getByTestId('sealed-note-line').count()) >= 1 ? true : null;
     }, 40_000, 'automatic thread lines on Alice\'s side');
     await shot(alice, 'L4-alice-automatic-thread');
