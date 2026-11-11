@@ -166,27 +166,13 @@ def _sign(subject: str, secret: str, *, now: int) -> str:
     return f"{message}.{_mac(secret, message)}"
 
 
-def _verify(value: Optional[str], secret: Optional[str], *, now: int, max_age: int) -> Optional[str]:
-    """The subject a signed value carries, or None when forged, stale, junk — or there is no secret."""
-    if not value or not secret or len(value) > _MAX_HEADER:
-        return None
-    parts = value.split(".")
-    if len(parts) != 4 or parts[0] != _CALLER_VERSION:
-        return None
-    _, subject, ts, mac = parts
-    if not ts.isdigit() or not hmac.compare_digest(mac, _mac(secret, f"{_CALLER_VERSION}.{subject}.{ts}")):
-        return None
-    age = int(now) - int(ts)
-    if age > max_age or age < -_CALLER_SKEW:
-        return None
-    return subject
+def _check(value: Optional[str], secret: Optional[str], *, now: int, max_age: int) -> tuple[str, Optional[str]]:
+    """THE rule for a signed value: ``(reason, subject)``. The subject is set only when the reason is ``ok``.
 
-
-def verify_reason(value: Optional[str], secret: Optional[str], *, now: int, max_age: int) -> str:
-    """Why ``_verify`` would refuse *value* — ``ok``, ``none``, ``malformed``, ``bad-signature``,
-    ``expired <n>s ago`` or ``from the future``. For the Forbidden page and the refusal log: names no secret."""
+    Reasons: ``ok``, ``none``, ``malformed`` (junk, or no secret to check with), ``bad-signature``,
+    ``expired <n>s ago``, ``from the future`` — words for the Forbidden page and the refusal log, naming no secret."""
     if not value:
-        return "none"
+        return "none", None
     parts = value.split(".")
     if (
         not secret
@@ -195,16 +181,21 @@ def verify_reason(value: Optional[str], secret: Optional[str], *, now: int, max_
         or parts[0] != _CALLER_VERSION
         or not parts[2].isdigit()
     ):
-        return "malformed"
+        return "malformed", None
     _, subject, ts, mac = parts
     if not hmac.compare_digest(mac, _mac(secret, f"{_CALLER_VERSION}.{subject}.{ts}")):
-        return "bad-signature"
+        return "bad-signature", None
     age = int(now) - int(ts)
     if age > max_age:
-        return f"expired {age - max_age}s ago"
+        return f"expired {age - max_age}s ago", None
     if age < -_CALLER_SKEW:
-        return "from the future"
-    return "ok"
+        return "from the future", None
+    return "ok", subject
+
+
+def _verify(value: Optional[str], secret: Optional[str], *, now: int, max_age: int) -> Optional[str]:
+    """The subject a signed value carries, or None when forged, stale, junk — or there is no secret."""
+    return _check(value, secret, now=now, max_age=max_age)[1]
 
 
 def sign_caller(caller: str, secret: str, *, now: int) -> str:
@@ -277,10 +268,17 @@ def sign_grant(grant: Grant, secret: str, *, now: int) -> str:
     return _sign(grant.encode(), secret, now=now)
 
 
+def verify_grant_reason(
+    value: Optional[str], secret: Optional[str], *, now: int, max_age: int
+) -> tuple[Optional[Grant], str]:
+    """``(grant, reason)``: the grant a signed value carries, or None and why not (``_check``'s words)."""
+    reason, subject = _check(value, secret, now=now, max_age=max_age)
+    return (Grant.decode(subject) if subject is not None else None), reason
+
+
 def verify_grant(value: Optional[str], secret: Optional[str], *, now: int, max_age: int) -> Optional[Grant]:
     """The grant a signed value carries, or None when forged, stale, malformed — or there is no secret."""
-    subject = _verify(value, secret, now=now, max_age=max_age)
-    return Grant.decode(subject) if subject is not None else None
+    return verify_grant_reason(value, secret, now=now, max_age=max_age)[0]
 
 
 __all__ = [
@@ -303,5 +301,5 @@ __all__ = [
     "upstream_path",
     "verify_caller",
     "verify_grant",
-    "verify_reason",
+    "verify_grant_reason",
 ]

@@ -28,10 +28,10 @@ interface Opened {
 export function openVisitorSandbox(agentId: string, code?: string, anonymous = Boolean(code)): Promise<Opened> {
   const path = `/api/v1/graph/${Agent.type}/${encodeURIComponent(agentId)}/visitor-sandbox`;
   // `client`: what this phone says about itself, for the hub's log only (`client-facts.ts`).
-  const client = clientFacts();
+  const body = { ...(code ? { code } : {}), client: clientFacts() };
   return anonymous
-    ? apiClient.post<Opened>(path, code ? { code, client } : { client }, { adapter: 'fetch', withCredentials: false })
-    : apiClient.post<Opened>(path, { client });
+    ? apiClient.post<Opened>(path, body, { adapter: 'fetch', withCredentials: false })
+    : apiClient.post<Opened>(path, body);
 }
 
 /** The hub asks for a code: the agent is in invite-code mode. */

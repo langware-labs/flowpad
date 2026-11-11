@@ -53,8 +53,9 @@ class SandboxCookieGateMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         secret = cookie_gate.get_cookie_gate()
-        if secret is None or not _presents(HTTPConnection(scope), secret):
-            await deny(scope, receive, send, details=_diagnose(HTTPConnection(scope), secret))
+        conn = HTTPConnection(scope)
+        if secret is None or not _presents(conn, secret):
+            await deny(scope, receive, send, details=_diagnose(conn, secret))
             return
 
         await self.app(scope, receive, send)

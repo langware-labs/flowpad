@@ -37,7 +37,7 @@ from flow_sdk.server.service_proxy import (
     Grant,
     sign_grant,
     verify_grant,
-    verify_reason,
+    verify_grant_reason,
 )
 
 #: The cookie a door sets. ``__Host-``: no Domain, so a cookie minted on one e2b port host is
@@ -88,17 +88,22 @@ def read_grant(value: Optional[str], *, secret: Optional[str] = None, now: Optio
     return None if grant is None or is_revoked(grant, now=moment) else grant
 
 
+def _status(raw: Optional[str], key: str, *, max_age: int, audience: str, moment: int) -> tuple[str, Optional[Grant]]:
+    """Why a signed grant would or would not open *audience*'s door, in words, with the grant when it would."""
+    grant, reason = verify_grant_reason(raw, key, now=moment, max_age=max_age)
+    if reason != "ok":
+        return reason, None
+    if grant is None or grant.audience != audience:
+        return "wrong-door", None
+    return "ok", grant
+
+
 def ticket_status(
     value: Optional[str], *, audience: str, secret: Optional[str] = None, now: Optional[int] = None
 ) -> str:
     """Why a ticket would or would not open *audience*'s door, in words. Names no secret."""
     secret = secret or _secret()
-    moment = int(now or time.time())
-    reason = verify_reason(value, secret, now=moment, max_age=TICKET_MAX_AGE)
-    if reason != "ok":
-        return reason
-    grant = read_ticket(value, secret=secret, now=moment)
-    return "ok" if grant is not None and grant.audience == audience else "wrong-door"
+    return _status(value, secret, max_age=TICKET_MAX_AGE, audience=audience, moment=int(now or time.time()))[0]
 
 
 def grant_status(
@@ -110,16 +115,15 @@ def grant_status(
     started (or by another box), so it says so."""
     secret = secret or _secret()
     moment = int(now or time.time())
-    raw = unquote(value) if value else value
-    reason = verify_reason(raw, _grant_key(secret, _BOOT_NONCE) if secret else None, now=moment, max_age=GRANT_MAX_AGE)
+    key = _grant_key(secret, _BOOT_NONCE) if secret else None
+    reason, grant = _status(
+        unquote(value) if value else value, key, max_age=GRANT_MAX_AGE, audience=audience, moment=moment
+    )
     if reason == "bad-signature":
         return "bad-signature (from before a restart, or another box)"
-    if reason != "ok":
-        return reason
-    grant = verify_grant(raw, _grant_key(secret, _BOOT_NONCE), now=moment, max_age=GRANT_MAX_AGE)
-    if grant is None or grant.audience != audience:
-        return "wrong-door"
-    return "revoked" if is_revoked(grant, now=moment) else "ok"
+    if grant is not None and is_revoked(grant, now=moment):
+        return "revoked"
+    return reason
 
 
 def set_cookie_header(value: str) -> str:
@@ -144,16 +148,14 @@ def safe_next(candidate: Optional[str]) -> str:
     return candidate
 
 
-def exchange(
-    ticket: Optional[str], *, audience: str, landing: str, conn: Optional[HTTPConnection] = None
-) -> Optional[Response]:
+def exchange(ticket: Optional[str], *, audience: str, landing: str, conn: HTTPConnection) -> Optional[Response]:
     """The door's trade: a ticket for THIS door becomes its grant cookie and a 302 to *landing*.
 
     None when the ticket is not for this door (forged, stale, another audience's) — the caller
     says how that is refused. On an unarmed box there is nothing to sign with: the redirect
     happens without a cookie, so a stale link still lands in the app.
 
-    With *conn*, the trade is logged and remembered (``gate_trace``), so a refusal right after it
+    Every trade is logged and remembered (``gate_trace``, from *conn*), so a refusal right after it
     can say this browser was just given a cookie.
     """
     grant = read_ticket(ticket)
@@ -163,8 +165,7 @@ def exchange(
     value = mint_grant(grant)
     if value:
         response.headers.append("set-cookie", set_cookie_header(value))
-    if conn is not None:
-        gate_trace.record_admit(conn, audience=audience, caller=grant.caller, value=value, ticket=ticket)
+    gate_trace.record_admit(conn, audience=audience, caller=grant.caller, value=value, ticket=ticket)
     return response
 
 

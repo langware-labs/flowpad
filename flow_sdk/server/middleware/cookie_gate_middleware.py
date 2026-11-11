@@ -31,7 +31,6 @@ from __future__ import annotations
 import html
 import logging
 import os
-import re
 import secrets
 from datetime import datetime, timezone
 from typing import Optional
@@ -41,6 +40,7 @@ from starlette.responses import HTMLResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketClose
 
+from flow_sdk.server import gate_trace
 from flow_sdk.utils.networking import is_loopback
 
 OFF_SWITCH_ENV = "FLOWPAD_COOKIE_GATE"
@@ -97,22 +97,15 @@ async def deny(
     # What the caller presented is a secret (or a guess at one) and never appears here or on the
     # page: only WHY it failed (``details``, built by the gate) and what the browser said about
     # the request (``Sec-Fetch-*``), so one log line or one screenshot names the cause.
-    from flow_sdk.server import gate_trace  # noqa: PLC0415 -- grants imports back into this package
-
     conn = HTTPConnection(scope)
-    facts = _request_facts(scope, conn, details or {})
-    facts.update(gate_trace.refusal_facts(conn))
+    facts = {**_request_facts(scope, conn, details or {}), **gate_trace.refusal_facts(conn)}
     # One refused page brings its scripts, styles and favicon: log the first in full, point the rest at it.
-    cause = "|".join(facts.get(k, "") for k in ("cookie", "ticket", "box", "cookies sent"))
+    cause = tuple(facts.get(k) for k in ("cookie", "ticket", "box", "cookies sent"))
     head = gate_trace.burst_of(facts["client"], cause, facts["request"])
     if head is None:
+        logged = {k: v for k, v in facts.items() if k not in ("path", "time")}
         logger.warning(
-            "cookie-gate: refused %s %s (%s)",
-            scope["type"],
-            scope.get("path", "?"),
-            " ".join(
-                f"{k.replace(' ', '_')}={v.replace(' ', '_')}" for k, v in facts.items() if k not in ("path", "time")
-            ),
+            "cookie-gate: refused %s %s (%s)", scope["type"], scope.get("path", "?"), gate_trace.log_fields(logged)
         )
     else:
         logger.warning("cookie-gate: refused %s %s (same as request=%s)", scope["type"], scope.get("path", "?"), head)
@@ -130,61 +123,23 @@ def _request_facts(scope: Scope, conn: HTTPConnection, details: dict[str, str]) 
     from flow_sdk import __version__  # noqa: PLC0415 -- the package imports this module
     from flow_sdk.server import grants  # noqa: PLC0415 -- grants imports back into this package
 
-    fetch = " / ".join(conn.headers.get(f"sec-fetch-{h}") or "-" for h in ("dest", "site", "mode"))
-    facts = {
+    return {
         "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "request": secrets.token_hex(3),
         "path": str(scope.get("path", "?"))[:200],
-        "fetch": fetch,
+        "fetch": gate_trace.fetch_summary(conn),
         **details,
         "host": (conn.url.hostname or "?")[:120],
         "box up since": datetime.fromtimestamp(grants.BOOT_TIME, timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "version": str(__version__),
-        "browser": short_browser(conn.headers.get("user-agent") or ""),
+        "browser": gate_trace.short_browser(conn.headers.get("user-agent") or ""),
     }
-    return facts
 
 
 def _header_value(facts: dict[str, str]) -> str:
     """The reason, for callers that never render the page (scripts, styles, API calls)."""
     keep = ("request", "cookie", "ticket", "box")
     return "; ".join(f"{k}={facts[k]}" for k in keep if k in facts).encode("ascii", "replace").decode()
-
-
-_BROWSERS = (
-    (r"CriOS/(\d+)", "Chrome iOS"),
-    (r"FxiOS/(\d+)", "Firefox iOS"),
-    (r"EdgiOS/(\d+)", "Edge iOS"),
-    (r"Edg/(\d+)", "Edge"),
-    (r"SamsungBrowser/(\d+)", "Samsung Internet"),
-    (r"Firefox/(\d+)", "Firefox"),
-    (r"Chrome/(\d+)", "Chrome"),
-    (r"Version/(\d+)[\d.]* .*Safari/", "Safari"),
-)
-_SYSTEMS = (
-    (r"(?:iPhone|iPad); CPU (?:iPhone )?OS (\d+)_(\d+)", "iOS"),
-    (r"Android (\d+)", "Android"),
-    (r"Mac OS X (\d+)_(\d+)", "macOS"),
-    (r"Windows NT (\d+\.\d+)", "Windows"),
-    (r"Linux", "Linux"),
-)
-
-
-def short_browser(user_agent: str) -> str:
-    """``Chrome iOS 157 / iOS 27.2`` from a user agent; an in-app WebView says so. Unknown parts are dropped."""
-    ua = user_agent[:512]
-    name = next(
-        (f"{label} {m.group(1)}" for pattern, label in _BROWSERS if (m := re.search(pattern, ua))),
-        "WebView" if "AppleWebKit" in ua and "Mobile/" in ua else "",
-    )
-    system = next(
-        (f"{label} {'.'.join(m.groups())}".strip() for pattern, label in _SYSTEMS if (m := re.search(pattern, ua))),
-        "",
-    )
-    for app in ("WhatsApp", "Instagram", "FBAN", "Line/"):
-        if app in ua:
-            name = f"{name} in {app.rstrip('/')}".strip()
-    return " / ".join(p for p in (name, system) if p) or "unknown"
 
 
 # Fully inline — static is gated too, so an external stylesheet here would itself

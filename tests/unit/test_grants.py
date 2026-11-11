@@ -7,6 +7,7 @@ import uuid
 from unittest.mock import patch
 
 import pytest
+from starlette.requests import Request
 
 from flow_sdk.server import grants
 from flow_sdk.server.service_proxy import GRANT_MAX_AGE, TICKET_MAX_AGE, Grant, sign_grant
@@ -80,11 +81,13 @@ def test_the_exchange_is_one_trade_for_every_door():
     # ``exchange`` reads the real clock, so the ticket is signed now: ``NOW`` is when this file was
     # imported, and a one-minute ticket from then has expired by the time a full run gets here.
     now = int(time.time())
-    traded = grants.exchange(sign_grant(_grant(), SECRET, now=now), audience="app", landing="/x")
+    # A real request's connection, as each door hands it over: the trade is logged from it.
+    conn = Request({"type": "http", "method": "GET", "path": "/auth/gate", "headers": [], "query_string": b""})
+    traded = grants.exchange(sign_grant(_grant(), SECRET, now=now), audience="app", landing="/x", conn=conn)
     assert traded is not None and traded.status_code == 302 and traded.headers["location"] == "/x"
     assert traded.headers["set-cookie"].startswith(grants.COOKIE_NAME)
-    assert grants.exchange(sign_grant(_grant(), SECRET, now=now), audience="admin", landing="/") is None
-    assert grants.exchange("junk", audience="app", landing="/") is None
+    assert grants.exchange(sign_grant(_grant(), SECRET, now=now), audience="admin", landing="/", conn=conn) is None
+    assert grants.exchange("junk", audience="app", landing="/", conn=conn) is None
 
 
 @pytest.mark.parametrize("hostile", ["//evil.com", "https://x", "evil.com/x", "", None, "/__flowpad/session"])
