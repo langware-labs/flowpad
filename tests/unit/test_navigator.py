@@ -241,6 +241,17 @@ def test_the_search_matches_are_told_apart_from_what_the_context_offers():
     assert f"entity:{TASK}" in keys and f"entity:{proj}" not in keys
 
 
+async def test_the_target_question_agrees_with_scope_on_where_a_thing_is_changed_or_shown(hub):
+    # SCOPE already said a question a screen answers, or a change made on a screen, is no detail; the
+    # target question did not, so "change the view mode" split 0.40 / agentic 0.42 and was handed on.
+    # Live with this: 0.60-0.66 on Preferences > Interface; "manage my API keys" 0.62-0.64 (was 0.48).
+    hub["answer"] = ("view:preferences/ui", 0.9, "show")
+    await navigator.route("change the view mode", here={"view": "home"})
+    said = hub["specs"][-1].questions["target"].instructions
+    assert "change, manage or set something on the listed screen where that is done" in said
+    assert "a question a listed screen shows the answer to" in said
+
+
 def test_a_type_name_opens_its_list_and_a_screen_name_still_wins():
     assert navigator.rule_hit("show specs").value == "assets/list/spec"
     assert navigator.rule_hit("open the project manifest").value == "assets/list/project_manifest"

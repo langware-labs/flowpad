@@ -99,7 +99,10 @@ INSTRUCTIONS = (
     "unless the request is only to open, show or go to one listed thing, or to do one listed action. A request "
     "that also says what to write or fill in (a title, a message, a time, a rule) is `agentic`: an action "
     "opens an empty form. Asking WHERE something is or where to change it ('where do I turn on two-step login', "
-    "'where are my invoices') names a place: pick it. Asking WHAT something says, what changed or why "
+    "'where are my invoices') names a place: pick it. So does asking to change, manage or set something "
+    "on the listed screen where that is done ('edit my env vars', 'change the scrollback lines'), and a "
+    "question a listed screen shows the answer to ('who is in my org', 'which automations failed'): pick "
+    "that screen. Asking WHAT something says, what changed or why "
     "needs an answer written: `agentic` -- and so does asking to be TOLD instead of shown ('do not open it, "
     "just tell me where')."
 )
