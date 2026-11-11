@@ -2,6 +2,7 @@
  * Shared drivers for api-tier tests of "Ask someone for help" and support tickets: a backend
  * logged in to a hub, and the real dialog driven the way a person does it.
  */
+import { adjusted } from '../adjustableTimeout';
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import { dataContext } from '@sdk';
 import { cloudManager } from '@sdk/services/cloud_login';
@@ -78,7 +79,7 @@ export async function askForHelp(opts: {
   const errorRow = () => dialog.querySelector('p.border-destructive\\/60');
   // The tier's own test cap; an ask that takes longer is a finding.
   await waitFor(() => expect(onAsked.mock.calls.length > 0 || errorRow() !== null).toBe(true), {
-    timeout: 15000,
+    timeout: adjusted(15000),
   });
   const asked = onAsked.mock.calls[0]?.[0] as { task_id?: string; conversation_id?: string } | undefined;
   const outcome: AskOutcome = {

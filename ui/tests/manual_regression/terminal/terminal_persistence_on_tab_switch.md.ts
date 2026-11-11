@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, sendCommand, waitForOutput, goHome, gotoShellView } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Terminal Persistence on Tab Switch', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,7 +8,7 @@ test.describe('Terminal Persistence on Tab Switch', () => {
   });
 
   test('terminal state persists when switching views', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: navigate to shell — creates a fresh session at /dock/shell/shell-<uuid>
     await gotoShell(page);
@@ -32,7 +33,7 @@ test.describe('Terminal Persistence on Tab Switch', () => {
     // Step 5: click the specific session tab by its exact data-testid (`tab-<sessionId>`)
     // This is robust against accumulated sessions from prior test runs.
     const sessionTab = page.locator(`[data-testid="tab-${sessionId}"]`);
-    if (await sessionTab.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    if (await sessionTab.isVisible({ timeout: adjusted(5_000) }).catch(() => false)) {
       await sessionTab.click();
       await page.waitForTimeout(1_000);
     }
@@ -40,7 +41,7 @@ test.describe('Terminal Persistence on Tab Switch', () => {
     // Wait for the correct terminal to be active and rendered
     await page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')
       .first()
-      .waitFor({ state: 'attached', timeout: 10_000 });
+      .waitFor({ state: 'attached', timeout: adjusted(10_000) });
 
     // Step 6: wait for xterm.js to re-render and verify output persisted
     await page.waitForTimeout(2_000);

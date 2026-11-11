@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 // Filters cross-cutting console noise that is not the regression under test.
 // Stale user-typeid 404s after a DB clear are filtered per the 2026-05-07 learning.
@@ -14,7 +15,7 @@ function realConsoleErrors(errors: string[]): string[] {
 
 test.describe('Code editor — no 404 console errors (FLOWPAD-1686)', () => {
   test('navigating to /dock/editor does not produce 404 console errors', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -29,9 +30,9 @@ test.describe('Code editor — no 404 console errors (FLOWPAD-1686)', () => {
     });
 
     await page.goto('/dock/editor');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
     // The editor dock renders inside the content panel.
-    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: adjusted(15_000) });
     await page.waitForTimeout(3_000);
 
     const status404 = errors.filter((e) => /404/.test(e));

@@ -34,14 +34,14 @@ test.describe('Search Scan Info Stats', () => {
   test('SearchView header shows indexed count badge after bootstrap', async ({ page }) => {
     await dismissSetupModal(page);
     await page.goto('/dock/search');
-    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
 
     const searchView = page.locator('[data-testid="search-view"]');
-    await expect(searchView).toBeVisible({ timeout: 10_000 });
+    await expect(searchView).toBeVisible({ timeout: adjusted(10_000) });
 
     // Wait for the "N indexed" badge to appear anywhere in the view header
     const indexedBadge = page.locator('text=/\\d+ indexed/').first();
-    await expect(indexedBadge).toBeVisible({ timeout: 8_000 });
+    await expect(indexedBadge).toBeVisible({ timeout: adjusted(8_000) });
   });
 
   // ── Test 3: "indexed" count is a non-negative integer ─────────────────────
@@ -53,7 +53,7 @@ test.describe('Search Scan Info Stats', () => {
     await expect(page.locator('[data-testid="search-view"]')).toBeVisible({ timeout: adjusted(10_000) });
 
     const indexedBadge = page.locator('text=/\\d+ indexed/').first();
-    await expect(indexedBadge).toBeVisible({ timeout: 8_000 });
+    await expect(indexedBadge).toBeVisible({ timeout: adjusted(8_000) });
 
     const text = await indexedBadge.textContent() ?? '';
     const match = text.match(/(\d+)\s+indexed/);
@@ -68,17 +68,17 @@ test.describe('Search Scan Info Stats', () => {
   test('search view stats line shows indexed after a search', async ({ page }) => {
     await dismissSetupModal(page);
     await page.goto('/dock/search');
-    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
 
     const input = page.locator('[data-testid="search-input"]:visible').first();
-    await expect(input).toBeVisible({ timeout: 10_000 });
+    await expect(input).toBeVisible({ timeout: adjusted(10_000) });
     await input.click();
     await input.fill('test');
 
     const view = page.locator('[data-testid="search-view"]');
     // The latency readout renders only after a search completed.
-    await expect(view.locator('text=/\\d+ ms/').first()).toBeVisible({ timeout: 10_000 });
-    await expect(view.locator('text=/\\d[\\d,]* indexed/').first()).toBeVisible({ timeout: 8_000 });
+    await expect(view.locator('text=/\\d+ ms/').first()).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(view.locator('text=/\\d[\\d,]* indexed/').first()).toBeVisible({ timeout: adjusted(8_000) });
   });
 
   // ── Test 5: index-status endpoint returns expected shape ───────────────────
@@ -101,14 +101,14 @@ test.describe('Search Scan Info Stats', () => {
   test('rebuild-index button orchestrates archive, clear, scan and index in order', async ({ page, request }) => {
     await dismissSetupModal(page);
     await page.goto('/dock/search');
-    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
 
     const searchView = page.locator('[data-testid="search-view"]');
-    await expect(searchView).toBeVisible({ timeout: 10_000 });
+    await expect(searchView).toBeVisible({ timeout: adjusted(10_000) });
 
     const readIndexedCount = async (): Promise<number> => {
       const badge = page.locator('text=/\\d+ indexed/').first();
-      await expect(badge).toBeVisible({ timeout: 8_000 });
+      await expect(badge).toBeVisible({ timeout: adjusted(8_000) });
       const text = (await badge.textContent()) ?? '';
       const match = text.match(/(\d+)\s+indexed/);
       expect(match).toBeTruthy();
@@ -123,8 +123,8 @@ test.describe('Search Scan Info Stats', () => {
     // "Enabled" is only the contract once the indexer is idle.
     expect(await waitForIndexerIdle(request), 'indexer idle before the rebuild click').toBe(true);
     const rebuildButton = page.locator('[data-testid="rebuild-index"]');
-    await expect(rebuildButton).toBeVisible({ timeout: 5_000 });
-    await expect(rebuildButton).toBeEnabled({ timeout: 5_000 });
+    await expect(rebuildButton).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(rebuildButton).toBeEnabled({ timeout: adjusted(5_000) });
 
     // Keep this UI contract bounded and side-effect-free: the backend endpoints
     // have their own integration coverage, while this browser test proves the
@@ -177,7 +177,7 @@ test.describe('Search Scan Info Stats', () => {
     ]);
 
     // Button returns to the enabled state once the orchestration finishes (busy=false).
-    await expect(rebuildButton).toBeEnabled({ timeout: 5_000 });
+    await expect(rebuildButton).toBeEnabled({ timeout: adjusted(5_000) });
 
     const indexedAfter = await readIndexedCount();
     expect(indexedAfter).toBeGreaterThanOrEqual(0);

@@ -39,6 +39,7 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import { launchBrowser, openInstancePage, type InstancePage } from './_browser';
+import { adjusted } from '../adjustableTimeout';
 
 let skipReason: string | null = null;
 let alice: ResolvedInstance;
@@ -84,7 +85,7 @@ beforeAll(async () => {
   bob = await getInstance(INST_2);
   browser = await launchBrowser();
   alicePage = await openInstancePage(browser, INST_1);
-}, 60_000);
+}, adjusted(60_000));
 
 afterAll(async () => {
   await browser?.close().catch(() => undefined);
@@ -125,7 +126,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
       `/graph/compute_node/@local/session-transcript-raw?session_id=${SESSION_ID}&project=${encodeURIComponent(workdir)}`,
     );
     expect(raw?.data?.content, 'the backend can read the seeded transcript').toContain(token);
-  }, 30_000);
+  }, adjusted(30_000));
 
   it('alice asks bob for help from the vibe workspace — one button, one dialog', async () => {
     const { page } = alicePage;
@@ -138,7 +139,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     // Exactly ONE get-help affordance in the workspace toolbar — the collaborate
     // twin is gone, and its absence is part of the contract.
     const ask = page.getByTestId('vibe-assign-task');
-    await ask.waitFor({ state: 'visible', timeout: 25_000 });
+    await ask.waitFor({ state: 'visible', timeout: adjusted(25_000) });
     expect(await page.getByTestId('vibe-collaborate').count()).toBe(0);
     expect(await page.getByTestId('vibe-collaborate-open').count()).toBe(0);
     // The Help desk moved from the footer into the first card -- same icon, same action.
@@ -179,9 +180,9 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     expect(await submit.isEnabled(), 'Send enabled with the email typed').toBe(true);
     await submit.click();
     // The wizard closes itself on success and the conversation opens.
-    await submit.waitFor({ state: 'detached', timeout: 25_000 });
-    await page.getByTestId('help-request-chip').first().waitFor({ state: 'visible', timeout: 25_000 });
-  }, 90_000);
+    await submit.waitFor({ state: 'detached', timeout: adjusted(25_000) });
+    await page.getByTestId('help-request-chip').first().waitFor({ state: 'visible', timeout: adjusted(25_000) });
+  }, adjusted(90_000));
 
   it('the task exists on alice, assigned to bob', async () => {
     const task = await pollUntil(
@@ -202,7 +203,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     expect(task.kind).toBe('vibe');
     expect(task.group_name ?? null).toBeNull();
     expect(task.description, 'the notes become the task body').toContain(token);
-  }, 30_000);
+  }, adjusted(30_000));
 
   it('the task lands on bob — one row, no accept, no install', async () => {
     const bobTasks = async () =>
@@ -224,7 +225,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     // Exactly ONE row for this ask, on either side.
     const mine = (await bobTasks()).filter((t) => t.title === TITLE);
     expect(mine, 'one ask, one task row').toHaveLength(1);
-  }, 30_000);
+  }, adjusted(30_000));
 
   it('a message went out to bob carrying the issue, the task, and the transcript', async () => {
     // The notification conversation is titled after the task (Task.assign).
@@ -262,7 +263,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     expect(text, 'the issue as written').toContain(TITLE);
     expect(text, 'the notes ride along').toContain(NOTES);
     expect(msg.kind, 'it is a help request').toBe('help_request');
-  }, 30_000);
+  }, adjusted(30_000));
 
   it('bob receives ONE message: the issue, the task chip, and the diagnosis + context as files', async () => {
     await syncAssignedConversation(bob, conversationId);
@@ -292,24 +293,24 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
       true,
     ).catch(() => [])) ?? []) as any[];
     expect(msgs, 'one request is one message — no diagnosis message after it').toHaveLength(1);
-  }, 60_000);
+  }, adjusted(60_000));
 
   it('in bob\'s browser the diagnosis opens the same message review — before installing', async () => {
     const bobPage = await openInstancePage(browser, INST_2);
     const { page } = bobPage;
     await page.goto(`${bobPage.feUrl}/dock/conversation/${conversationId}`, { waitUntil: 'domcontentloaded' });
     const chip = page.getByText('diagnosis.value.json').or(page.getByText('Diagnosis', { exact: true })).first();
-    await chip.waitFor({ state: 'visible', timeout: 25_000 }).catch(async (e) => {
+    await chip.waitFor({ state: 'visible', timeout: adjusted(25_000) }).catch(async (e) => {
       await page.screenshot({ path: path.join(os.tmpdir(), `ask-help-accept-fail-${token}.png`) });
       throw e;
     });
     await chip.click();
     const dialog = page.getByTestId('asset-review-dialog');
-    await dialog.waitFor({ state: 'visible', timeout: 10_000 });
+    await dialog.waitFor({ state: 'visible', timeout: adjusted(10_000) });
     expect(await dialog.getByText(/review before (installing|copying)/).count()).toBe(1);
     expect(await dialog.getByTestId(/asset-review-row-/).count(), 'every file of the message is listed').toBeGreaterThan(1);
     await bobPage.page.screenshot({ path: path.join(os.tmpdir(), `ask-help-accept-${token}.png`) });
-  }, 60_000);
+  }, adjusted(60_000));
 });
 
 describe('the help desk (preselected): it is just a conversation', () => {

@@ -46,6 +46,7 @@ import {
   type ResolvedInstance,
   heldDeskSourceId,
 } from './_instances';
+import { adjusted } from '../adjustableTimeout';
 
 const TURNS = 10;
 const KEEP = process.env.HELPDESK_KEEP === '1';
@@ -106,7 +107,7 @@ beforeAll(async () => {
   await hubJson(helperToken, `/graph/project/${deskId}/helpdesk_conversations`).catch(() => {
     skipReason = `${helper.email} is not a member of the canonical desk (HELPDESK_STAFF_EMAILS)`;
   });
-}, 30_000);
+}, adjusted(30_000));
 
 beforeEach((context: any) => {
   if (skipReason) context.skip();

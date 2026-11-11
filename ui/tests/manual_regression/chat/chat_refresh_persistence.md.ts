@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
 import { gotoShell } from '../terminal/helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Chat Refresh Persistence', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,7 +9,7 @@ test.describe('Chat Refresh Persistence', () => {
   });
 
   test('Shell session tab persists after page refresh', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: Navigate to new_terminal and wait for shell to be ready
     await gotoShell(page);
@@ -24,11 +25,11 @@ test.describe('Chat Refresh Persistence', () => {
     await page.goto(shellUrl);
 
     // Step 5: Validate terminal is visible after refresh
-    await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible({ timeout: adjusted(30_000) });
 
     // Step 6: Validate the session tab is shown in the tab bar
     const shellId = new URL(shellUrl).pathname.split('/').pop()!;
     const sessionTab = page.locator(`[data-testid="tab-shell|${shellId}"]`);
-    await expect(sessionTab).toBeVisible({ timeout: 15_000 });
+    await expect(sessionTab).toBeVisible({ timeout: adjusted(15_000) });
   });
 });

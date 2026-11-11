@@ -17,6 +17,7 @@
  */
 import { execSync } from 'node:child_process';
 import { expect, test, type Page } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 const WIZARD_NAME = 'e2e-global-default-setup';
 const STEPS = ['git', 'cowsay', 'sl'];
@@ -72,7 +73,7 @@ test('a box with no hub LLMEndpoint falls back to the global default model', asy
     );
     wizard = (await listing.json()).data.find((w: { name: string }) => w.name === WIZARD_NAME);
     expect(wizard, `${WIZARD_NAME} is not indexed yet`).toBeTruthy();
-  }).toPass({ timeout: 20_000 });
+  }).toPass({ timeout: adjusted(20_000) });
 
   await page.goto(`/dock/assets/editor/wizard/typeid/wizard-${wizard!.id}`);
   const viewer = page.getByTestId('wizard-viewer');
@@ -93,7 +94,7 @@ test('a box with no hub LLMEndpoint falls back to the global default model', asy
     const statuses = await stepStatuses(page);
     const pending = Object.entries(statuses).filter(([, s]) => UNSETTLED.has(s));
     expect(pending, `steps still without an answer: ${JSON.stringify(statuses)}`).toEqual([]);
-  }).toPass({ timeout: 90_000 }); // do not increase timeout without approval
+  }).toPass({ timeout: adjusted(90_000) }); // do not increase timeout without approval
 
   const statuses = await stepStatuses(page);
   expect(['satisfied', 'completed'], `git is on every runner: ${JSON.stringify(statuses)}`).toContain(statuses.git);

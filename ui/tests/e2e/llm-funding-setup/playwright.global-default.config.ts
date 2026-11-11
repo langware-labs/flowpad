@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Playwright config for the **llm-global-default-funding** scenario — a box with NO
@@ -12,8 +13,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: 'global_default.spec.ts',
-  timeout: 120_000,
-  expect: { timeout: 20_000 },
+  timeout: adjusted(120_000),
+  expect: { timeout: adjusted(20_000) },
   fullyParallel: false,
   retries: 0,
   workers: 1,

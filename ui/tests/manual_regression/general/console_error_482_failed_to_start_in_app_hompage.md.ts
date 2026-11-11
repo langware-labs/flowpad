@@ -6,6 +6,7 @@
  * error appears (the regression this scenario guards).
  */
 import { test, expect } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('App homepage — no 482 failed-to-start', () => {
   test.beforeEach(async ({ page }) => {
@@ -15,7 +16,7 @@ test.describe('App homepage — no 482 failed-to-start', () => {
   });
 
   test('test 1: app homepage loads without 482 "failed to start" console error', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -24,7 +25,7 @@ test.describe('App homepage — no 482 failed-to-start', () => {
 
     await page.goto('/dock/home');
     // /dock/home renders the HomeLanding dock view with the "Hey <name>" greeting.
-    await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: 25_000 });
+    await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: adjusted(25_000) });
     // Let async homepage fetches settle so a late 482 would surface.
     await page.waitForTimeout(3_000);
 

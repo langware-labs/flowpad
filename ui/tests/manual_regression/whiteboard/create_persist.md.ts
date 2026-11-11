@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import * as fs from 'fs';
 
 import { apiBase } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -28,10 +29,10 @@ function frontmatterId(md: string): string | null {
 
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   // Wait for the excalidraw dev hooks to populate.
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
-    timeout: 15_000,
+    timeout: adjusted(15_000),
   });
 }
 
@@ -46,7 +47,7 @@ async function injectAndSave(page: Page, skeleton: unknown[]) {
     () => typeof (window as any).__chartApi === 'object' && !!(window as any).__chartApi
       && typeof (window as any).__excalidrawLib === 'object' && !!(window as any).__excalidrawLib,
     null,
-    { timeout: 15_000 },
+    { timeout: adjusted(15_000) },
   );
   await page.evaluate((skel) => {
     const lib = (window as any).__excalidrawLib;
@@ -77,7 +78,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
   });
 
   test('C1: create opens the whiteboard editor', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -90,12 +91,12 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     // a whiteboard quick-create toolbar entry). Create then open the editor.
     const { id } = await createWhiteboard(request, `c1-board-${Math.floor(1000 + Math.random() * 9000)}`);
     await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-    await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: 15_000 });
+    await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(15_000) });
     expect(page.url()).toContain('/dock/assets/editor/chart/');
   });
 
   test('C2–C3: files on disk + frontmatter id present (after first save)', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -145,7 +146,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
   });
 
   test('C4: draw + autosave writes board.json (>=2 elements) + thumbnail', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -188,7 +189,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
   });
 
   test('C5: reload preserves content', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');

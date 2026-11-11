@@ -18,6 +18,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { adjusted } from '../adjustableTimeout';
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const INSTANCE = process.env.TEST_INSTANCE || 'projfast';
@@ -61,11 +62,11 @@ beforeAll(async () => {
   } finally {
     await logHandle.close();
   }
-  const up = await waitHealthy(PORT, 60_000); // server-boot budget (setup, not the SLO)
+  const up = await waitHealthy(PORT, adjusted(60_000)); // server-boot budget (setup, not the SLO)
   if (!up) {
     throw new Error(`backend '${INSTANCE}' did not come up on :${PORT} — see ${logPath}`);
   }
-}, 65_000);
+}, adjusted(65_000));
 
 afterAll(() => {
   proc?.kill('SIGTERM');

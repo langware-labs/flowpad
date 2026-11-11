@@ -21,6 +21,7 @@ import time
 import urllib.request
 import uuid
 from pathlib import Path
+from tests.adjustable_timeout import adjusted
 
 BOOT_LINE = re.compile(
     r"^(?P<stamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z) \[boot\] t=(?P<t>\d+\.\d)s "
@@ -118,7 +119,7 @@ def test_a_real_server_boot_writes_its_timeline_into_the_server_log(tmp_path):
             [sys.executable, "-u", "-m", "flow_sdk.server.run"], env=env, stdout=sink, stderr=sink
         )
     try:
-        deadline = time.monotonic() + 30.0
+        deadline = time.monotonic() + adjusted(30.0)
         healthy = False
         while time.monotonic() < deadline and proc.poll() is None:
             try:

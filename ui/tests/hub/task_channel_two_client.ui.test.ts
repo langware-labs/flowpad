@@ -41,6 +41,7 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import { launchBrowser, openConversation, openInstancePage, type InstancePage } from './_browser';
+import { adjusted } from '../adjustableTimeout';
 
 const CAROL_INST = process.env.CAROL_INST?.trim() || '';
 const SHOT_DIR = process.env.SHOT_DIR?.trim() || '';
@@ -78,7 +79,7 @@ beforeAll(async () => {
     carolEmail = String(status?.data?.login?.user?.email ?? '');
     if (carolEmail) carolPage = await openInstancePage(browser, CAROL_INST);
   }
-}, 90_000);
+}, adjusted(90_000));
 
 afterAll(async () => {
   await browser?.close().catch(() => undefined);
@@ -95,7 +96,7 @@ async function shot(inst: InstancePage, step: string): Promise<void> {
   if (SHOT_DIR) await inst.page.screenshot({ path: `${SHOT_DIR}/${step}-${inst.name}.png` });
 }
 
-async function seeText(page: Page, text: string, timeout = 20_000): Promise<void> {
+async function seeText(page: Page, text: string, timeout = adjusted(20_000)): Promise<void> {
   await page.getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout });
 }
 
@@ -108,7 +109,7 @@ async function openThread(inst: InstancePage, title: string): Promise<void> {
     .filter({ hasText: title })
     .filter({ hasText: 'Tasks' })
     .first();
-  await row.waitFor({ state: 'visible', timeout: 20_000 });
+  await row.waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await row.click();
 }
 
@@ -116,13 +117,13 @@ async function openTaskEditor(inst: InstancePage): Promise<void> {
   await inst.page.goto(`${inst.feUrl}/dock/assets/editor/task/typeid/task-${taskId}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
-  await inst.page.getByTestId('task-editor-title').waitFor({ state: 'visible', timeout: 20_000 });
+  await inst.page.getByTestId('task-editor-title').waitFor({ state: 'visible', timeout: adjusted(20_000) });
 }
 
 /** Pick a status from a task chip's menu (the message's, or the thread's first message's). */
 async function chooseStatus(page: Page, status: 'to_do' | 'in_progress' | 'done'): Promise<void> {
   const chips = page.getByTestId('message-task-chips').first();
-  await chips.waitFor({ state: 'visible', timeout: 20_000 });
+  await chips.waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await chips.getByTestId('task-status-chip').click();
   await page.getByTestId(`task-status-${status}`).click();
 }
@@ -138,7 +139,7 @@ async function count(page: Page, text: string): Promise<number> {
  */
 async function openWholeThread(inst: InstancePage, title: string): Promise<void> {
   await openThread(inst, title);
-  await inst.page.getByTestId('message-task-chips').first().waitFor({ state: 'visible', timeout: 20_000 });
+  await inst.page.getByTestId('message-task-chips').first().waitFor({ state: 'visible', timeout: adjusted(20_000) });
 }
 
 describe('tasks in conversations — one thread both people read and act on', () => {
@@ -156,13 +157,13 @@ describe('tasks in conversations — one thread both people read and act on', ()
     const { page } = alicePage;
     await openConversation(alicePage, conv.id);
     const bubble = page.getByText(TITLE, { exact: false }).first();
-    await bubble.waitFor({ state: 'visible', timeout: 20_000 });
+    await bubble.waitFor({ state: 'visible', timeout: adjusted(20_000) });
     await bubble.hover();
     await page.getByTestId('message-actions-menu').first().click();
     await page.getByTestId('message-task-it').click();
 
     const owner = page.getByTestId('message-task-chips').first().getByTestId('task-owner-chip');
-    await owner.waitFor({ state: 'visible', timeout: 20_000 });
+    await owner.waitFor({ state: 'visible', timeout: adjusted(20_000) });
     await expect.poll(() => owner.textContent()).toContain('Me');
     expect(await owner.getAttribute('title')).toBe('This task is local on this machine');
     expect(await owner.locator('[data-task-location="local"]').count()).toBe(1);
@@ -183,27 +184,27 @@ describe('tasks in conversations — one thread both people read and act on', ()
 
     await openThread(alicePage, TITLE);
     await seeText(page, 'with the CRM');
-    await page.getByTestId('message-task-chips').first().waitFor({ state: 'visible', timeout: 20_000 });
+    await page.getByTestId('message-task-chips').first().waitFor({ state: 'visible', timeout: adjusted(20_000) });
     await shot(alicePage, '1-thread');
-  }, 120_000);
+  }, adjusted(120_000));
 
   it('2: alice hands it to bob from the message — shared through the cloud, bob has the thread', async () => {
     const { page } = alicePage;
     await openConversation(alicePage, conversationId);
     const chips = page.getByTestId('message-task-chips').first();
-    await chips.waitFor({ state: 'visible', timeout: 20_000 });
+    await chips.waitFor({ state: 'visible', timeout: adjusted(20_000) });
     await chips.getByTestId('task-owner-chip').click();
     await page.locator(`[data-testid="task-owner-member"][data-email="${bob.email}"]`).click();
 
     const owner = chips.getByTestId('task-owner-chip');
-    await owner.locator('[data-task-location="cloud"]').waitFor({ state: 'attached', timeout: 20_000 });
+    await owner.locator('[data-task-location="cloud"]').waitFor({ state: 'attached', timeout: adjusted(20_000) });
     expect(await owner.getAttribute('title')).toBe(`Shared via cloud with ${bob.email}`);
     await shot(alicePage, '2-message');
 
     await openThread(bobPage, TITLE);
     await seeText(bobPage.page, `Assigned to ${bob.email}`);
     await shot(bobPage, '2-thread');
-  }, 90_000);
+  }, adjusted(90_000));
 
   it('3: bob moves it from his thread — alice sees it on her message, in her thread and in her task', async () => {
     await chooseStatus(bobPage.page, 'in_progress');
@@ -211,15 +212,15 @@ describe('tasks in conversations — one thread both people read and act on', ()
 
     await openConversation(alicePage, conversationId);
     const status = alicePage.page.getByTestId('message-task-chips').first().getByTestId('task-status-chip');
-    await expect.poll(() => status.textContent(), { timeout: 20_000 }).toBe('In progress');
+    await expect.poll(() => status.textContent(), { timeout: adjusted(20_000) }).toBe('In progress');
     await openThread(alicePage, TITLE);
     await seeText(alicePage.page, 'Status: In progress');
     await shot(alicePage, '3-thread');
     await openTaskEditor(alicePage);
     await expect
-      .poll(() => alicePage.page.getByTestId('task-editor-status-in_progress').getAttribute('class'), { timeout: 20_000 })
+      .poll(() => alicePage.page.getByTestId('task-editor-status-in_progress').getAttribute('class'), { timeout: adjusted(20_000) })
       .toContain('bg-primary');
-  }, 90_000);
+  }, adjusted(90_000));
 
   it('4: alice moves it in her task editor — bob\'s thread and chip follow', async () => {
     await openTaskEditor(alicePage);
@@ -227,13 +228,13 @@ describe('tasks in conversations — one thread both people read and act on', ()
     await openThread(bobPage, TITLE);
     await seeText(bobPage.page, 'Status: Done');
     const status = bobPage.page.getByTestId('message-task-chips').first().getByTestId('task-status-chip');
-    await expect.poll(() => status.textContent(), { timeout: 20_000 }).toBe('Done');
+    await expect.poll(() => status.textContent(), { timeout: adjusted(20_000) }).toBe('Done');
     await shot(bobPage, '4-thread');
-  }, 90_000);
+  }, adjusted(90_000));
 
   it('5: bob replies in his thread — alice reads it in her thread and on the task', async () => {
     const composer = bobPage.page.getByRole('textbox').last();
-    await composer.waitFor({ state: 'visible', timeout: 15_000 });
+    await composer.waitFor({ state: 'visible', timeout: adjusted(15_000) });
     await composer.click();
     await composer.fill(REPLY);
     await composer.press('Enter');
@@ -244,20 +245,20 @@ describe('tasks in conversations — one thread both people read and act on', ()
     await openTaskEditor(alicePage);
     await seeText(alicePage.page, REPLY);
     await shot(alicePage, '5-task');
-  }, 90_000);
+  }, adjusted(90_000));
 
   it('6: Done → In progress → Done — every change is its own message, on both sides', async () => {
     await openWholeThread(bobPage, TITLE);
     await chooseStatus(bobPage.page, 'in_progress');
-    await expect.poll(() => count(bobPage.page, 'Status: In progress'), { timeout: 20_000 }).toBe(2);
+    await expect.poll(() => count(bobPage.page, 'Status: In progress'), { timeout: adjusted(20_000) }).toBe(2);
     await chooseStatus(bobPage.page, 'done');
-    await expect.poll(() => count(bobPage.page, 'Status: Done'), { timeout: 20_000 }).toBe(2);
+    await expect.poll(() => count(bobPage.page, 'Status: Done'), { timeout: adjusted(20_000) }).toBe(2);
 
     await openWholeThread(alicePage, TITLE);
-    await expect.poll(() => count(alicePage.page, 'Status: Done'), { timeout: 20_000 }).toBe(2);
+    await expect.poll(() => count(alicePage.page, 'Status: Done'), { timeout: adjusted(20_000) }).toBe(2);
     expect(await count(alicePage.page, 'Status: In progress')).toBe(2);
     await shot(alicePage, '6-thread');
-  }, 90_000);
+  }, adjusted(90_000));
 
   it('7: alice renames the task — both threads follow', async () => {
     // Let step 6's last move land first: a hub refresh arriving mid-typing resets the editor's field.
@@ -268,7 +269,7 @@ describe('tasks in conversations — one thread both people read and act on', ()
     );
     await openTaskEditor(alicePage);
     const title = alicePage.page.getByTestId('task-editor-title');
-    await expect.poll(() => title.inputValue(), { timeout: 15_000 }).toBe(TITLE);
+    await expect.poll(() => title.inputValue(), { timeout: adjusted(15_000) }).toBe(TITLE);
     await title.fill(RENAMED);
     await title.press('Enter');
     await pollUntil(
@@ -282,7 +283,7 @@ describe('tasks in conversations — one thread both people read and act on', ()
       await seeText(inst.page, `Renamed to ${RENAMED}`);
     }
     await shot(bobPage, '7-thread');
-  }, 90_000);
+  }, adjusted(90_000));
 
   it('8: alice hands it to carol — bob\'s thread ends with the hand-over, carol has the thread', async (ctx: any) => {
     if (!carolPage || !carolEmail) {
@@ -307,7 +308,7 @@ describe('tasks in conversations — one thread both people read and act on', ()
     await openThread(carolPage, RENAMED);
     await seeText(carolPage.page, `Reassigned to ${carolEmail}`);
     await shot(carolPage, '8-thread');
-  }, 90_000);
+  }, adjusted(90_000));
 
   it('9: the whole thread is there, waits for no one and names no task id', async () => {
     await openWholeThread(bobPage, RENAMED);
@@ -319,5 +320,5 @@ describe('tasks in conversations — one thread both people read and act on', ()
     await shot(bobPage, '9-thread');
     expect(await bobPage.page.getByText('not picked up yet', { exact: false }).count()).toBe(0);
     expect(await bobPage.page.getByText(taskId, { exact: false }).count()).toBe(0);
-  }, 60_000);
+  }, adjusted(60_000));
 });
