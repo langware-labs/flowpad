@@ -1092,8 +1092,12 @@ class Project(SetupSkippable, Entity):
         questions come to the app. ``root`` sets up one node of the tree and what it needs (a source, a web
         app). Answers at once with the run's address, which a screen claims to draw them in place."""
         from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
+        from flow_sdk.core.wizard.first_run import FirstRunPending  # noqa: PLC0415
 
-        return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
+        try:
+            return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
+        except FirstRunPending as exc:
+            return ApiFailResponse(message=str(exc), status_code=412, data={"error_code": exc.code})
 
     @action.post(action_name="setup-stop")
     async def setup_stop_action(self, root: str = "") -> "ApiResponse":
