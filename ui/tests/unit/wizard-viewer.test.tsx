@@ -390,9 +390,20 @@ describe('a popup wizard', () => {
     expect(screen.queryByTestId('wizard-viewer-shell')).toBeNull();
   });
 
-  it('minimizing flies the dialog into the footer chip and closes it — the page behind was never left', async () => {
+  it('before Start it offers a plain close: nothing runs in the background to minimize', async () => {
     act(() => openWizardPopup('wizard-x'));
     await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
+    expect(screen.queryByTestId('wizard-minimize')).toBeNull();
+    fireEvent.click(screen.getByTestId('wizard-close'));
+    expect(minimize.toProcessChip).not.toHaveBeenCalled();
+    expect(useWizardPopupStore.getState().open).toBe(false);
+  });
+
+  it('minimizing a running wizard flies the dialog into the footer chip and closes it — the page behind was never left', async () => {
+    h.start.mockReturnValue(new Promise(() => {}));
+    act(() => openWizardPopup('wizard-x'));
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
+    fireEvent.click(screen.getByTestId('wizard-start'));
     fireEvent.click(screen.getByTestId('wizard-minimize'));
     expect(minimize.toProcessChip).toHaveBeenCalledTimes(1);
     expect(useWizardPopupStore.getState().open).toBe(false);

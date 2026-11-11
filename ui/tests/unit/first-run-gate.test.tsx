@@ -6,10 +6,11 @@ import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ExitCode } from '@sdk';
 
+import { closeAskModal, openAskModal } from '@src/components/ask/ask-modal-store';
 import { closeWizardPopup, useWizardPopupStore } from '@src/components/assets/editor/wizard/wizard-popup-store';
 import { FirstRunGateRoot, firstRunFirst, pastFirstRun } from '@src/components/setup-incomplete/first-run-gate';
 
-const h = vi.hoisted(() => ({ result: undefined as unknown, open: vi.fn(), closed: vi.fn() }));
+const h = vi.hoisted(() => ({ result: undefined as unknown, live: false, open: vi.fn(), closed: vi.fn() }));
 
 vi.mock('@src/components/setup-incomplete/open-setup-wizard', () => ({
   findSetupWizard: () =>
@@ -21,6 +22,10 @@ vi.mock('@src/components/setup-incomplete/open-setup-wizard', () => ({
     }),
 }));
 
+vi.mock('@src/components/setup-incomplete/use-first-run-wizard', () => ({
+  useFirstRunWizard: () => ({ wizard: { typeId: { toString: () => 'wizard-x' } }, live: h.live }),
+}));
+
 const held = Object.assign(new Error("Flowpad's setup comes first"), {
   response: { status: 412, data: { data: { error_code: 'first_run_setup' } } },
 });
@@ -29,6 +34,7 @@ const flush = () => act(async () => {});
 describe('first-run wizard before project setup', () => {
   beforeEach(() => {
     h.result = undefined;
+    h.live = false;
     h.open.mockReset().mockResolvedValue({ opened: true });
     h.closed.mockReset().mockResolvedValue({ closed: true });
     closeWizardPopup();
@@ -43,6 +49,31 @@ describe('first-run wizard before project setup', () => {
 
     act(() => closeWizardPopup());
     await expect(shown).resolves.toBe(true);
+    expect(h.closed).toHaveBeenCalledTimes(1);
+  });
+
+  it('minimized mid-run: waits for the run to end, and a question it asks brings the window back', async () => {
+    h.live = true;
+    const view = render(<FirstRunGateRoot />);
+    let settled = false;
+    void firstRunFirst().then(() => (settled = true));
+    await flush();
+
+    act(() => closeWizardPopup());
+    await flush();
+    expect(settled).toBe(false);
+
+    act(() => openAskModal('q-1'));
+    expect(useWizardPopupStore.getState().open).toBe(true);
+    act(() => {
+      closeAskModal();
+      closeWizardPopup();
+    });
+
+    h.live = false;
+    view.rerender(<FirstRunGateRoot />);
+    await flush();
+    expect(settled).toBe(true);
     expect(h.closed).toHaveBeenCalledTimes(1);
   });
 
