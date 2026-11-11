@@ -57,19 +57,38 @@ function exitStep(
 }
 
 export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
-  // The home has one look (Vibe); the mode lives on the build the user opens.
+  // Every step names its own dock, so `start` is only where Start lands before
+  // step 1 loads — step 1 says where it wants to be regardless.
+  // A view mode belongs to a session tab and nowhere else (2026-10-11): the root shows one look and
+  // carries no mode, so the journey enters and leaves Vibe through the build's OWN mode switch.
   start: { kind: 'root' },
   steps: [
     // ── in ──
-    // The workspace is ON SCREEN when its display pane is — which is what this
-    // step actually means, and is true however the user got there. The step
-    // cannot open the build itself: a build's id cannot be authored. So the
-    // user opens it, and the gate holds Next until the workspace is really up.
+    // Get into a real build first. Nothing is stated about its mode: a session opens in the mode it
+    // remembers, and the entrance below needs it to be outside Vibe — which the session says, not the URL.
     step(
       'open_build',
       'Open a build',
-      'Open one of your builds — from Chats, or its link. This is the real thing — an agent session, not a demo.',
-      { waitFor: [{ element: { present: 'VibeDisplay' } }] },
+      'Click Chats on the rail to go back to your last build. This is the real thing — an agent session, not a demo.',
+      {
+        present: { dock: { kind: 'root' }, highlight: 'RailChats' },
+        act: { kind: 'click', target: 'RailChats' },
+        // The session's own dock is on screen — its mode switch is what the next steps press.
+        waitFor: [{ location: { viewType: 'shell' } }],
+      },
+    ),
+    // Waits for the workspace to BE there, not for the wand to be pressed: ending on the click would
+    // advance while the mode is still switching, and the next step would narrate a workspace that is not
+    // on screen yet.
+    step(
+      'enter_vibe',
+      'Enter Vibe',
+      "Click the wand in the build's mode switch. Vibe is the workspace a non-technical user is meant to live in.",
+      {
+        present: { dock: { kind: 'stay' }, highlight: 'ViewModeVibe' },
+        act: { kind: 'click', target: 'ViewModeVibe' },
+        waitFor: [{ element: { present: 'VibeDisplay' } }],
+      },
     ),
     step(
       'look_at_it',
@@ -82,7 +101,7 @@ export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
     exitStep(
       'leave',
       'Now take the exit',
-      "Click the speech bubble in the session's switch — Chat. One click, no confirmation.",
+      "Click the speech bubble in the build's mode switch — Chat. One click, no confirmation.",
       'ViewModeChat',
       // The workspace is really gone — not "they clicked the button".
       { element: { gone: 'VibeDisplay' } },
