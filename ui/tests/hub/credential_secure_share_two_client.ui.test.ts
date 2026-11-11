@@ -86,6 +86,15 @@ beforeEach((context: any) => {
   if (skipReason) context.skip();
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.sealed_live_refresh.rules: FAILING at 'Alice sees Delivered'?
+//       read this tag's rules — the open card must update live, never reload to pass
+//     breadcrumb.test.sealed_bob_no_key.rules: FAILING with 'sealed for 1' or 'other
+//       device key'? read this tag's rules — isolate Bob's hub user, do not change withdraw
+// flowpad:endcapsule tag
 describe('secured transfer — the journey in the UI', () => {
   it('Alice shares values securely; Bob fills them in with one click', async () => {
     // ── Alice: the credential's page → Share ──

@@ -146,6 +146,13 @@ afterAll(async () => {
   }
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.helpdesk_masked_roster.rules: FAILING? read this tag's rules before
+//       editing — a guest's masked roster is the contract, not a 403
+// flowpad:endcapsule tag
 describe('help desk — authorization', () => {
   it('a ticket guest cannot enumerate the queue or resolve members (exposure closed)', async () => {
     const ts = Date.now();
