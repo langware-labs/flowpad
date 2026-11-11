@@ -52,7 +52,8 @@ async def test_history_limit_returns_the_newest_rows_and_the_total(monkeypatch):
     frames = [FlowData(flow_value=f"m{i}", attributes={"element-type": "chat", "i": str(i)}) for i in range(5)]
     monkeypatch.setattr(type(process.driver), "load_history", lambda self, proc: frames)
 
-    page = json.loads((await process.get_history_action(limit=2)).body)["data"]
+    # As the route delivers it: a query parameter is a string.
+    page = json.loads((await process.get_history_action(limit="2")).body)["data"]
     assert [row["flow_value"] for row in page["history"]] == ["m3", "m4"]
     assert page["count"] == 2 and page["total"] == 5
 

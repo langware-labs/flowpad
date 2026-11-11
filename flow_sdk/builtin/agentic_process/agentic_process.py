@@ -6767,7 +6767,7 @@ class AgenticProcess(Entity):
         )
 
     @action.get(action_name="get-history")
-    async def get_history_action(self, limit: int = 0) -> "ApiSuccessResponse | JSONResponse":
+    async def get_history_action(self, limit: int | str = 0) -> "ApiSuccessResponse | JSONResponse":
         """Return this process's transcript as a list of FlowData dicts.
 
         Driver-supplied. Stateless — works for processes that have exited
@@ -6807,8 +6807,10 @@ class AgenticProcess(Entity):
                 ),
             )
             total = len(history)
-            if limit > 0:
-                history = history[-limit:]
+            # A query parameter: it arrives as a string ("200"), not the annotated int.
+            newest = int(limit or 0)
+            if newest > 0:
+                history = history[-newest:]
             rows = [fd.model_dump(mode="python", exclude=_DERIVED_TEXT) for fd in history]
             data = {
                 "session_id": self.session_id,
