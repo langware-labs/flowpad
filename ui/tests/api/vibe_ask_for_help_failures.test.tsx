@@ -29,6 +29,13 @@ import { getTestSignupInfo, trackCreatedRows } from '../utils/test-utils';
 
 const HELPER = 'helper@local.test';
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.help_request_title.rules: FAILING? read this tag's rules before
+//       touching _task_base_title, _write_task or _write_request's title rename
+// flowpad:endcapsule tag
 describe('Ask someone for help — stress-run failures', () => {
   const signupInfo = getTestSignupInfo();
   const projectDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'askfail'));

@@ -133,6 +133,14 @@ def _answer_text(transcript) -> str:
     )
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.gemini_thought_signature.rules: FAILING? on a deepagents row,
+#       read this tag's rules before touching EchoingChatOpenAI or the tool-call extra_content
+#       echo
+# flowpad:endcapsule tag
 @pytest.mark.asyncio
 @pytest.mark.parametrize("worker", WORKERS)
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -194,6 +202,14 @@ async def _agent_with_mcp_on_disk(root: Path, worker: str) -> Agent:
     return agent
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.gemini_thought_signature.rules: FAILING? on a deepagents row,
+#       read this tag's rules before touching EchoingChatOpenAI or the tool-call extra_content
+#       echo
+# flowpad:endcapsule tag
 @pytest.mark.asyncio
 @pytest.mark.parametrize("worker", WORKERS)
 @pytest.mark.timeout(30)  # do not increase timeout without approval

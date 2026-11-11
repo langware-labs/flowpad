@@ -65,6 +65,13 @@ test.afterAll(() => {
   for (const tool of ['cowsay', 'sl']) uninstall(tool);
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.asset_owner_project.rules: FAILING? read this tag's rules before
+//       touching assetDocumentAtOwner's owner check
+// flowpad:endcapsule tag
 test('a box with no hub LLMEndpoint falls back to the global default model', async ({ page, request }) => {
   let wizard: { id: string } | undefined;
   await expect(async () => {

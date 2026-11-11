@@ -15,6 +15,13 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { stressDescribe } from './_stress_gate';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.headless_wait_ready.rules: FAILING? read this tag's rules before
+//       touching waitForReady's headless gate
+// flowpad:endcapsule tag
 stressDescribe('waitForReady on a headless process, then switchMode', () => {
   let ap: any = null;
 
