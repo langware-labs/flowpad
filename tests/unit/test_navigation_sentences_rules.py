@@ -18,9 +18,9 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
 from import_navigation_sentences import rows  # noqa: E402
 
-#: Waiting on the owner: "workflows" is the Graph Workflows screen's alias (eac654dc5) and the doc
-#: says the dynamic-workflow list; both types are browseable in advanced mode only.
-OWNER_DECISION = {58: "\"show workflows\": Graph Workflows screen (alias) or the dynamic workflow list (doc)?"}
+#: Sentences waiting on an owner decision (none open: 58 "workflows" was decided for the
+#: dynamic-workflow list, docs/breadcrumbs/nav_owner_decisions.md).
+OWNER_DECISION: dict[int, str] = {}
 
 RULED = [
     (r["n"], r["sentence"], r["target"], f"/dock/{hit.value}")

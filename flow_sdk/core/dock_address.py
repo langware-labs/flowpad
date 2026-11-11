@@ -604,7 +604,9 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.EVENTS: _m(_NONE, addressable=False),
     ViewType.TRIGGERS: _m(_NONE, addressable=False),
     ViewType.CAPABILITIES: _m(_NONE, label="Capabilities", aliases=("checks", "system checks")),
-    ViewType.GRAPH_WORKFLOWS: _m(_OPT, label="Graph Workflows", aliases=("workflows",)),
+    # "workflows" alone are the dynamic workflows a person writes and runs (the Assets list,
+    # ``navigation.LIST_WORDS``); this dev-mode editor is called by its whole name.
+    ViewType.GRAPH_WORKFLOWS: _m(_OPT, label="Graph Workflows"),
     ViewType.SIGNALS: _m(_NONE, addressable=False),
     # Pointer `[drivers[/<driverName>]]`: the drivers live UNDER the sources, and all
     # three levels fold into one tab chip (ui/src/components/data-sources/data-sources-pointer.ts).

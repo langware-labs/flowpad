@@ -91,6 +91,11 @@ def _asset_lists() -> list[tuple[str, str]]:
     return out
 
 
+#: A type's list called by a word beside its own names: dynamic workflows are THE workflows (their
+#: family, ``.claude/workflows``) -- "show workflows" (navigation sentence 58).
+LIST_WORDS: dict[str, tuple[str, ...]] = {"dynamic_workflow": ("workflow",)}
+
+
 def asset_list_names() -> dict[str, str]:
     """``{name: "list/<type>"}``: the words that name a type's list on the Assets screen -- its display
     name and its type, singular and plural ("specs", "project manifest"). A request that is exactly
@@ -106,6 +111,10 @@ def asset_list_names() -> dict[str, str]:
         for word in _type_words(t):
             singular = _singular(word.lower())
             for name in (singular, f"{singular}s"):
+                out.setdefault(name, f"list/{t}")
+    for t, words in LIST_WORDS.items():
+        for word in words:
+            for name in (word, f"{word}s"):
                 out.setdefault(name, f"list/{t}")
     return out
 

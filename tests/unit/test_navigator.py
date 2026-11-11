@@ -499,3 +499,19 @@ def test_a_literal_acts_alone_only_when_it_is_the_whole_request():
     for text, key in inside.items():
         assert navigator.rule_hit(text) is None, text
         assert key in navigator.literal_option(text), "inside a sentence it is one option for the model"
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_owner_decisions.rules: FAILING? read this tag's rules before
+#       changing these names -- each is an owner decision (navigation sentences 58, 121, 191)
+# flowpad:endcapsule tag
+def test_workflows_are_the_workflow_list_and_graph_workflows_keep_their_own_name():
+    # Sentence 58: "workflows" are the dynamic workflows (the .claude/workflows family a person
+    # writes and runs); the dev-mode Graph Workflows editor is called by its whole name.
+    assert navigator.rule_hit("show workflows").value == "assets/list/dynamic_workflow"
+    assert navigator.rule_hit("open my workflows").value == "assets/list/dynamic_workflow"
+    assert navigator.rule_hit("open graph workflows").value == "graph-workflows"
+
