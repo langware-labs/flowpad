@@ -24,20 +24,23 @@ import { useWikiModalStore } from '@src/components/wiki-tip/wiki-modal';
 const h = vi.hoisted(() => ({ install: 'not_installed' }));
 // The status record, as the backend serves it once the boot sweep has looked: every CLI
 // `h.install`. Funding is not read here (null), so only the install warning can fire.
-vi.mock('@sdk/react/hooks/useLazyAsset', () => ({
-  useLazyAsset: (asset: string) => ({
-    data:
-      asset === 'status'
-        ? {
-            harnesses: ['claude', 'codex', 'copilot', 'opencode'].map((w) => ({
-              kind: `harness.${w}.cli`,
-              install: h.install,
-            })),
-          }
-        : null,
-    isLoading: false,
-  }),
-}));
+vi.mock('@sdk/react/hooks/useLazyAsset', () => {
+  // One record per `h.install`, as the real hook returns its cached value: a fresh object every render
+  // would be a new dependency every render, and the warnings would recompute forever.
+  const records = new Map<string, unknown>();
+  const status = () => {
+    if (!records.has(h.install)) {
+      records.set(h.install, {
+        harnesses: ['claude', 'codex', 'copilot', 'opencode'].map((w) => ({
+          kind: `harness.${w}.cli`,
+          install: h.install,
+        })),
+      });
+    }
+    return records.get(h.install);
+  };
+  return { useLazyAsset: (asset: string) => ({ data: asset === 'status' ? status() : null, isLoading: false }) };
+});
 
 const openTab = vi.fn();
 vi.mock('@src/navigation', () => ({
