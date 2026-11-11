@@ -1232,6 +1232,12 @@ class DataSource(SetupSkippable, Entity):
             existing = await self._existing_account()
             if existing is not None:
                 return await self._adopt(existing, *args, **kwargs)
+        elif self.status == SourceStatus.NEW.value:
+            # NEW is where a row starts, never a decision a save makes: a client sends the whole entity and
+            # its model defaults ``status`` to NEW, which would re-run the create rules and park a working source.
+            stored = await type(self).get_by_id(str(self.id))
+            if stored is not None and stored.status != SourceStatus.NEW.value:
+                self.status, self.setup_detail, self.setup_needs = stored.status, stored.setup_detail, stored.setup_needs
         if not self.exist_in_db or self.status == SourceStatus.NEW.value or (self.config and self._driver() is None):
             # An authored source's folder loads on first use, so the create rules can ask its class — and so
             # can the file writer, which leaves out what the class declares private (``file_value``). A

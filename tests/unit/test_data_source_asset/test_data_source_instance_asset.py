@@ -469,3 +469,29 @@ async def test_public_access_is_private_row_policy_preserved_on_reindex(scope):
     assert row.open_to_all is True
     await DataSource.update_by_id(source.id, {"open_to_all": False})
     assert (await DataSource.get_by_id(str(source.id))).open_to_all is False
+
+
+class _OwesSetup(_Mailbox):
+    """A driver with a setup check of its own, as Gmail's IMAP login is."""
+
+    provider = "asset-mailbox-owes-setup-test"
+
+    async def verify(self):
+        from flow_sdk.sources import Verdict
+
+        return Verdict(ready=True, detail="")
+
+
+async def test_an_update_carrying_new_does_not_park_an_active_source(scope):
+    """A client save sends the whole entity, and the TS model defaults `status` to 'new'. On a row that
+    exists, 'new' is no decision: an edit must not re-run the create rules and park it in setup."""
+    DataDriver.register(DataDriver.for_class(_OwesSetup, kind="datasource.test.asset"))
+    source = DataSource(name="mail", provider=_OwesSetup.provider, config={"address": "me@x.test"})
+    await source.save()
+    source.status, source.setup_detail, source.setup_needs = SourceStatus.ACTIVE.value, "", []  # what Verify writes
+    await source.save_runtime()
+
+    await DataSource.update_by_id(source.id, {"poll_interval_seconds": 600, "status": SourceStatus.NEW.value})
+
+    row = await DataSource.get_by_id(str(source.id))
+    assert (row.status, row.setup_detail) == (SourceStatus.ACTIVE.value, "")

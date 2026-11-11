@@ -786,20 +786,33 @@ function ChannelRow({
         aria-label={t`Listen on ${source.name || source.provider}`}
         data-testid="attached-channel-switch"
       />
-      {/* Pull is offered only where it can work: a listening source past setup (as the sources menu gates it). */}
-      {state !== 'off' && !source.needsSetup && (
-        <button
-          type="button"
-          onClick={() => void pull()}
-          disabled={pulling}
-          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
-          aria-label={t`Pull changes now from ${source.name || source.provider}`}
-          title={t`Pull changes now`}
-          data-testid="attached-channel-pull"
-        >
-          <RefreshCw className={cn('size-3.5', pulling && 'animate-spin')} />
-        </button>
-      )}
+      {/* Refresh: a source past setup pulls now; one in setup re-checks its status (Verify), since nothing polls it. */}
+      {state !== 'off' &&
+        (source.needsSetup ? (
+          <button
+            type="button"
+            onClick={() => void verify()}
+            disabled={verifying}
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
+            aria-label={t`Check ${source.name || source.provider} again`}
+            title={t`Check again`}
+            data-testid="attached-channel-recheck"
+          >
+            <RefreshCw className={cn('size-3.5', verifying && 'animate-spin')} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void pull()}
+            disabled={pulling}
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
+            aria-label={t`Pull changes now from ${source.name || source.provider}`}
+            title={t`Pull changes now`}
+            data-testid="attached-channel-pull"
+          >
+            <RefreshCw className={cn('size-3.5', pulling && 'animate-spin')} />
+          </button>
+        ))}
       <button
         type="button"
         onClick={onDelete}
