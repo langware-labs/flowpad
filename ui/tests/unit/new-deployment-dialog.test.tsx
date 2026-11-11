@@ -18,8 +18,12 @@ vi.mock('@src/notifications', () => ({
 // What the hub publishes (`deployment/providers`); each test may narrow it.
 const published = vi.hoisted(() => ({ providers: ['e2b', 'gcp_vm'] as string[], isLoading: false }));
 // The project's agents for the main-agent pick-list.
-const projectAgents = vi.hoisted(() => ({ rows: [] as unknown[] }));
-vi.mock('@src/hooks/entity-hooks', () => ({ useEntitiesQuery: () => ({ data: projectAgents.rows }) }));
+const projectAgents = vi.hoisted(() => ({ rows: [] as unknown[], project: null as unknown }));
+// `useEntity`: the agent's project as the cache holds it (use-agent-secrets, a03b56cc0) -- the dialog's project.
+vi.mock('@src/hooks/entity-hooks', () => ({
+  useEntitiesQuery: () => ({ data: projectAgents.rows }),
+  useEntity: () => ({ data: projectAgents.project }),
+}));
 vi.mock('@src/hooks/use-deploy-providers', () => ({ useDeployProviders: () => published }));
 
 import { NewDeploymentDialog } from '@src/components/assets/editor/agent-profile/NewDeploymentDialog';
@@ -48,6 +52,7 @@ const AGENT_ID = '33333333-3333-4333-8333-333333333333';
 function renderDialog(presetMainAgentId: string | null = null, recommended: string | null = null) {
   const project = new Project({ id: '66666666-6666-4666-8666-666666666666', name: 'proj' } as never);
   projectAgents.rows = [new Agent({ id: AGENT_ID, name: 'brief', enabled: true })];
+  projectAgents.project = project;
   const deploy = vi.spyOn(project, 'deploy').mockResolvedValue({ deployment: { id: 'dep-1' } } as never);
   vi.spyOn(project, 'deployDefaults').mockResolvedValue({
     environment: 'production',
