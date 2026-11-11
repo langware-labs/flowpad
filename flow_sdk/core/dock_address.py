@@ -553,6 +553,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         folds_pointer=True,
         label="Preferences",
         aliases=("my preferences", "appearance"),
+        # The bare address shows the first category (PreferencesView: ``categories[0]``).
+        default_tab="general",
         # The tabs of ``PREF_CATEGORIES`` (ts_sdk/src/preferences/prefRegistry.ts), named by what is in them.
         subplaces=tuple(
             (tab, f"Preferences > {name}")

@@ -21,6 +21,7 @@ const DEFAULT_TAB: Record<string, string> = {
   '/dock/ai-config': '/dock/ai-config/llm-apis',
   '/dock/machine': '/dock/machine/processes',
   '/dock/hub/token-plan': '/dock/hub/token-plan/me',
+  '/dock/preferences': '/dock/preferences/general',
 };
 
 /** What the address must start with: the target up to its first placeholder. */

@@ -252,6 +252,15 @@ async def test_the_target_question_agrees_with_scope_on_where_a_thing_is_changed
     assert "a question a listed screen shows the answer to" in said
 
 
+def test_a_screens_default_tab_is_offered_once_as_the_screen():
+    # Live: "general preferences" split 0.33 / 0.33 between Preferences and Preferences > General --
+    # one place (the bare address shows General) -- and neither cleared the bar.
+    options = navigator.static_options()[0]
+    assert "view:preferences/general" not in options
+    assert options["view:preferences"].endswith("open on Preferences > General: show system skills")
+    assert "view:preferences/i18n" in options
+
+
 def test_a_type_name_opens_its_list_and_a_screen_name_still_wins():
     assert navigator.rule_hit("show specs").value == "assets/list/spec"
     assert navigator.rule_hit("open the project manifest").value == "assets/list/project_manifest"

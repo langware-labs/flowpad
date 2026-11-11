@@ -27,7 +27,7 @@ import re
 from functools import lru_cache
 from typing import Any, Literal, Mapping, NamedTuple, Optional
 
-from flow_sdk.core.dock_address import ViewType, parse_dock_url
+from flow_sdk.core.dock_address import VIEW_META, ViewType, parse_dock_url
 from flow_sdk.core.navigation import filter_keys, forms_for, kind, navigation_map, open_form, place_address, place_for
 from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget, NavigatorRoute
 
@@ -145,13 +145,21 @@ def _static_options() -> tuple[dict[str, str], dict[str, str]]:
     for place in navigation_map().places:
         if place.view in _SKIP:
             continue
+        # The tab a bare address opens is the screen itself (``canonical_address``): offered once, as
+        # the screen -- two keys for one place split its answer ("general preferences": 0.33 / 0.33).
+        default = VIEW_META[ViewType(place.view)].default_tab if place.pointer != "required" else ""
         if place.pointer != "required":
             key = f"view:{place_address(place)}"
             aka = ", ".join(place.aliases)
-            options[key] = f"Screen '{place.label}'" + (f" (also called: {aka})" if aka else "")
+            opens_on = next((s.label for s in place.subplaces if s.pointer == default), None)
+            options[key] = (
+                f"Screen '{place.label}'" + (f" (also called: {aka})" if aka else "") + (f", open on {opens_on}" if opens_on else "")
+            )
             for name in (place.label, *place.aliases):
                 names.setdefault(name.lower(), key)
         for sub in place.subplaces:
+            if default and sub.pointer == default:
+                continue
             options[f"view:{place_address(place, sub.pointer)}"] = f"Screen '{sub.label}'"
     # A retired screen's name is where it forwards ("signals" is the event bus), as its address is.
     from flow_sdk.core.dock_address import RETIRED_DOCK_VIEWS  # noqa: PLC0415

@@ -34,6 +34,11 @@ describe('navigation sentences scoring', () => {
     expect(score(row('/win/assistant'), opened('/'), false, null).verdict).toBe(2);
   });
 
+  it("a screen's bare address is its default tab (VIEW_META default_tab)", () => {
+    expect(score(row('/dock/preferences/general'), opened('/dock/preferences'), false, null).verdict).toBe(1);
+    expect(score(row('/dock/preferences/i18n'), opened('/dock/preferences'), false, null).verdict).toBe(2);
+  });
+
   it('asking the assistant is never landing', () => {
     const at = opened('/dock/project/p/editor/skill/typeid/skill-1');
     expect(score(row('entity:skill'), at, true, null).verdict).toBe(2);
