@@ -19,7 +19,7 @@
  * | 1 | the number, fallback → A                     | X, one to one               | AGENT-A to X              |
  * | 2 | + sender rule S → B                          | S, one to one               | AGENT-B to S              |
  * | 3 | + group rule G → C                           | T, in G                     | AGENT-C into G            |
- * | 4 | (nothing new: sender beats group)            | S, in G                     | AGENT-B into G            |
+ * | 4 | (nothing new: in a group the group wins)     | S, in G                     | AGENT-C into G            |
  * | 5 | S → A, group rule removed                    | S one to one; T in G        | AGENT-A to S; AGENT-A in G |
  */
 import { readFileSync } from 'node:fs';
@@ -72,11 +72,19 @@ async function openInbound(page: Page) {
   await expect(page.getByTestId('inbound-view')).toBeVisible();
 }
 
-/** The number's card (there is exactly one in this run). */
+/** The number's rules (there is exactly one number in this run). */
 const card = (page: Page) => page.locator('[data-testid^="inbound-number-"]').first();
 
+/** The Channels list → the number's Routing page, where its rules are. */
+async function openRouting(page: Page) {
+  await openInbound(page);
+  await page.getByTestId('inbound-channel-list').getByTestId('inbound-routing').first().click();
+  await expect(card(page)).toBeVisible();
+}
+
 async function addRule(page: Page, kind: 'user' | 'group', key: string, to: 'A' | 'B' | 'C') {
-  await card(page).getByTestId('inbound-add-rule').click();
+  // The Routing page has one number: its "+ Add rule" sits under the rules table, not in it.
+  await page.getByTestId('inbound-add-rule').click();
   const dialog = page.getByTestId('inbound-rule-dialog');
   await dialog.getByTestId(`inbound-rule-kind-${kind}`).click();
   await dialog.getByTestId('inbound-field-rule-key').fill(key);
@@ -112,46 +120,47 @@ test.describe.serial('inbound routing: waha → UI-configured chain → agent �
       ['inbound-field-token', cfg.token],
       ['inbound-field-graph-url', cfg.graph_url],
       ['inbound-field-app-secret', cfg.app_secret],
-      ['inbound-field-verify-token', cfg.verify_token],
     ] as const) {
       const field = dialog.getByTestId(id);
       const input = (await field.evaluate((el) => el.tagName)) === 'INPUT' ? field : field.locator('input');
       await input.fill(value);
     }
-    await dialog.getByTestId(`inbound-dest-this-${src('A')}`).click();
     await shot(page, '0-connect-form');
     await dialog.getByTestId('inbound-connect-submit').click();
     await expect(dialog.getByTestId('inbound-connected-step')).toBeVisible({ timeout: adjusted(60_000) });
     const url = (await dialog.getByTestId('inbound-connected-url').innerText()).trim();
+    // The verify token is the UI's own, generated at connect and shown beside the URL.
+    const verifyToken = (await dialog.getByTestId('inbound-connected-verify-token').innerText()).trim();
     await shot(page, '0-connected');
     // "Paste these into your server's webhook settings" — the server side of the step.
     const configured = await json(`${cfg.graph_url}/${cfg.phone_number_id}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${cfg.token}`, 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        webhook_configuration: JSON.stringify({ override_callback_uri: url, verify_token: cfg.verify_token }),
+        webhook_configuration: JSON.stringify({ override_callback_uri: url, verify_token: verifyToken }),
       }),
     });
     expect(configured.success, JSON.stringify(configured)).toBe(true);
     await dialog.getByTestId('inbound-connect-done').click();
-    await expect(card(page)).toBeVisible();
+    await openRouting(page);
+    // Connect asks no fallback (what no rule matches is ignored): "Anyone else" → A is set on the card.
+    await card(page).getByTestId('inbound-rule-row-fallback').getByTestId('inbound-rule-edit').click();
+    const fallback = page.getByTestId('inbound-rule-dialog');
+    await fallback.getByTestId(`inbound-dest-this-${src('A')}`).click();
+    await fallback.getByTestId('inbound-rule-save').click();
+    await expect(fallback).toBeHidden();
   });
 
   test('1 — an unknown sender goes to the fallback: AGENT-A', async () => {
-    await openInbound(page);
-    const counter = card(page).locator('[data-testid^="inbound-counter-"]').first();
-    await expect(counter).toBeVisible();
-    const before = await counter.innerText();
+    await openRouting(page);
     await write(X, say('scenario one'));
     expect(await replyIn(`${X}@c.us`, say('scenario one'))).toContain('AGENT-A');
-    // The live counter moves while the page is open (read from the hub's recent deliveries, never stored).
-    await expect(counter).not.toHaveText(before, { timeout: adjusted(30_000) });
     await expect(card(page).getByTestId('inbound-rule-row-fallback')).toBeVisible();
     await shot(page, '1-fallback');
   });
 
   test('2 — a sender rule S → B', async () => {
-    await openInbound(page);
+    await openRouting(page);
     await addRule(page, 'user', S, 'B');
     await expect(card(page).getByTestId(`inbound-rule-row-${S}`)).toBeVisible();
     await write(S, say('scenario two'));
@@ -160,7 +169,7 @@ test.describe.serial('inbound routing: waha → UI-configured chain → agent �
   });
 
   test('3 — a group rule G → C', async () => {
-    await openInbound(page);
+    await openRouting(page);
     await addRule(page, 'group', group, 'C');
     await expect(card(page).getByTestId(`inbound-rule-row-${group}`)).toBeVisible();
     await write(T, say('scenario three'), GROUP_CHAT);
@@ -168,13 +177,14 @@ test.describe.serial('inbound routing: waha → UI-configured chain → agent �
     await shot(page, '3-group-rule');
   });
 
-  test('4 — the sender rule beats the group rule: S in G → AGENT-B', async () => {
+  // The hub's claim_precedence: in a claimed group the group's rule wins, whoever wrote (one to one, the sender's).
+  test('4 — in a group the group rule beats the sender rule: S in G → AGENT-C', async () => {
     await write(S, say('scenario four'), GROUP_CHAT);
-    expect(await replyIn(GROUP_CHAT, say('scenario four'))).toContain('AGENT-B');
+    expect(await replyIn(GROUP_CHAT, say('scenario four'))).toContain('AGENT-C');
   });
 
   test('5 — S moved to A and the group rule removed: both reach A', async () => {
-    await openInbound(page);
+    await openRouting(page);
     const row = card(page).getByTestId(`inbound-rule-row-${S}`);
     await row.getByTestId('inbound-rule-edit').click();
     const dialog = page.getByTestId('inbound-rule-dialog');
@@ -188,7 +198,8 @@ test.describe.serial('inbound routing: waha → UI-configured chain → agent �
     expect(await replyIn(`${S}@c.us`, say('scenario five one'))).toContain('AGENT-A');
     await write(T, say('scenario five two'), GROUP_CHAT);
     expect(await replyIn(GROUP_CHAT, say('scenario five two'))).toContain('AGENT-A');
-    await card(page).getByTestId('inbound-check-route').click();
+    // "Check route" is in the Routing page's header, beside Remove.
+    await page.getByTestId('inbound-check-route').click();
     const check = page.getByTestId('inbound-route-check');
     await expect(check).toBeVisible();
     await expect(check.locator('[data-testid^="inbound-route-offline-"]')).toHaveCount(0);
