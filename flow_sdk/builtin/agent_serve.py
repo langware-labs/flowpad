@@ -1060,7 +1060,7 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
         await skip_message(message)
         return True
     if getattr(driver_cls, "answers_once", False) and not sends_turn_text(
-        driver_cls, spoke=await _answered_before(message, source)
+        driver_cls, spoke=await _answered_before(message, source, agent)
     ):
         console.info("✗ %s  %s — already answered once; the turn's text is not sent", channel, who)
         await skip_message(message)
@@ -1224,7 +1224,15 @@ def spoke_before(senders: "list[str]", own_ids: "set[str]") -> bool:
     return any(str(sender or "") in own_ids for sender in senders)
 
 
-async def _answered_before(message, source) -> bool:
+def own_sender_ids(agent_id: str, user_ids: "set[str]") -> "set[str]":
+    """Every ``sender_id`` a message of ours carries: the agent's own stamp (an agent-owned source stamps its
+    replies as the Agent) and this machine's user ids."""
+    from flow_sdk.schema.data_spec.message_sender_spec import MessageSender  # noqa: PLC0415
+
+    return {MessageSender.agent(agent_id).wire_id, *user_ids}
+
+
+async def _answered_before(message, source, agent) -> bool:
     """Whether this agent already wrote in the message's conversation. A source that ``answers_once`` sends
     the turn's text back by itself only the first time (a help desk's acknowledgement); anything the agent
     says after that goes through its own commands, where a person's approval is asked."""
@@ -1235,7 +1243,8 @@ async def _answered_before(message, source) -> bool:
     if not conversation:
         return False
     rows = await FlowMessage.get_all({"conversation_id": conversation})
-    return spoke_before([getattr(row, "sender_id", "") for row in rows], set(await User.self_ids()))
+    own = own_sender_ids(str(agent.id), set(await User.self_ids()))
+    return spoke_before([getattr(row, "sender_id", "") for row in rows], own)
 
 
 async def skip_message(message) -> bool:
