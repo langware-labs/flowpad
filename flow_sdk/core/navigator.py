@@ -363,11 +363,19 @@ def _slips(a: str, b: str) -> int:
     return prev[-1]
 
 
+#: Words that only fill a name out: "set up my llm" names what "set up llm" does.
+_FILLER = frozenset({"the", "my", "our"})
+
+
 def _screen_named(core: str) -> Optional[str]:
     """The option key ``core`` names: exactly, else as one slip from exactly one screen's name.
     Short words never count as typos -- "tags" is one slip from "tasks"."""
     names = static_options()[1]
     if key := names.get(core):
+        return key
+    # "the" or "my" inside the name does not change what it names ("set up my llm" is the screen "Set
+    # up LLM"). "a" / "an" do: "open a terminal" asks for a new one, not the Worker screen.
+    if (bare := " ".join(w for w in core.split() if w not in _FILLER)) != core and (key := names.get(bare)):
         return key
     # Exactly a screen's name, of a screen that needs a pointer ("help desk"): never a typo of
     # another word -- the model decides with the context that pointer comes from.

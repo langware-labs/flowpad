@@ -278,6 +278,13 @@ async def test_a_search_match_is_titled_by_its_label_and_carries_its_description
                      "about": "Flowpad works best with a few tools."}
 
 
+def test_the_or_my_inside_a_screens_name_still_names_it_but_a_new_one_does_not():
+    # Live: "set up my LLM" went to the model, which opened the setup wizard (0.60-0.77) -- the
+    # screen's own label is "Set up LLM".
+    assert navigator.rule_hit("set up my LLM").value == "llm-setup"
+    assert navigator.rule_hit("open a terminal") is None, "'a terminal' is a new one, not the Worker screen"
+
+
 def test_this_projects_or_sessions_thing_is_the_screen_that_opens_on_it():
     proj = "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
     here = navigation.kind("navigation.here").model_validate(
