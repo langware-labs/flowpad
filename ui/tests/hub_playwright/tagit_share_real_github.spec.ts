@@ -239,6 +239,13 @@ test.describe('tagit share → a reviewer opens the rules doc on the hub', () =>
     // ── the payoff: a reviewer opens the link and sees the document ──
     const hubCtx = await browser.newContext({ baseURL: HUB_UI });
     await hubCtx.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    // The reviewer is the hub user whose GitHub token was seeded above: the hub clones as the
+    // viewer, and an anonymous context is refused the project outright (403, target_not_found).
+    // The hub's login answers with its session cookie, which this context's pages then carry.
+    const signedIn = await hubCtx.request.post(`${HUB}/api/v1/login`, {
+      data: { email: HUB_EMAIL, password: HUB_PASSWORD },
+    });
+    expect(signedIn.ok(), 'the reviewer could not sign in to the hub').toBe(true);
     const hubPage = await hubCtx.newPage();
     await hubPage.goto('/dock/hub/home');
     // Verify the RUNTIME, not the port — 4098 collides with the desktop UI.
