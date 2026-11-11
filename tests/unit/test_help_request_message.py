@@ -186,26 +186,6 @@ async def test_unshared_context_stays_here_and_share_sends_it_later(hub):
     assert afh.held_context(ask["conversation_id"]) == {}
 
 
-async def test_review_first_sends_nothing_until_share(hub):
-    ask = _ask(send="review_first")
-
-    response = await _call(afh.ask_for_help, ask)
-    await _settle()
-
-    assert response.data["shared"] is False
-    conv = await Conversation.get_one({"id": ask["conversation_id"]})
-    assert not conv.hub_bound
-    hub.assert_not_awaited()
-
-    await _call(afh.help_request_share, {"left_out": ["logs.txt"]}, ask["conversation_id"])
-
-    conv = await Conversation.get_one({"id": ask["conversation_id"]})
-    assert conv.hub_bound
-    *_, follow = await _messages(ask["conversation_id"])
-    assert "logs.txt" not in _files(follow), "what the person left out stays out"
-    hub.assert_awaited()
-
-
 def _verdict(cause: str, asset: str = "") -> DiagnosisSpec:
     return DiagnosisSpec(status="needs_action", title="Plan route rejects plans", cause=cause, cause_asset=asset)
 

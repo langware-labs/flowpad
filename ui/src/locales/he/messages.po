@@ -4731,6 +4731,7 @@ msgid "Attach files"
 msgstr "צרפו קבצים"
 
 #: src/components/help/AskForHelpDialog.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "Attach files or a screenshot"
 msgstr "צירוף קבצים או צילום מסך"
 
@@ -7088,6 +7089,7 @@ msgid "Collect every smart-navigation decision (what you typed, where, what open
 msgstr "אוסף כל החלטת ניווט חכם (מה הוקלד, לאן ומה נפתח) במערך הנתונים SmartNavigationLog, לבדיקה ולאימון. הוא נשמר בתיקייה הזמנית של Flowpad, שמתנקה מדי פעם."
 
 #: src/components/help/AskForHelpDialog.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "Collecting…"
 msgstr "אוסף…"
 
@@ -7638,13 +7640,13 @@ msgstr "מרחק גרף ההקשר"
 msgid "Context list actions"
 msgstr "פעולות רשימת הקשר"
 
-#: src/components/conversation/HelpRequestLine.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "Context not shared"
 msgstr "ההקשר לא שותף"
 
 #: src/components/help/AskForHelpDialog.tsx
-#~ msgid "Context shared"
-#~ msgstr "ההקשר משותף"
+msgid "Context shared"
+msgstr "ההקשר משותף"
 
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 msgid "Context to share — review before sending."
@@ -10720,8 +10722,8 @@ msgid "Diagnosis & context"
 msgstr "אבחון והקשר"
 
 #: src/components/help/AskForHelpDialog.tsx
-#~ msgid "Diagnosis attached"
-#~ msgstr "האבחון מצורף"
+msgid "Diagnosis attached"
+msgstr "האבחון מצורף"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -10760,8 +10762,8 @@ msgid "Diagnosis request created"
 msgstr "בקשת האבחון נוצרה"
 
 #: src/components/help/AskForHelpDialog.tsx
-#~ msgid "Diagnosis runs when you send"
-#~ msgstr "האבחון ירוץ בעת השליחה"
+msgid "Diagnosis runs when you send"
+msgstr "האבחון ירוץ בעת השליחה"
 
 #: src/components/assets/editor/chart/chartControls.tsx
 msgid "Diagram"
@@ -14450,6 +14452,7 @@ msgstr "מוחזק על ידי"
 
 #: src/components/conversation/conversation-category.ts
 #: src/components/conversation/conversation-category.ts
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
@@ -20289,8 +20292,8 @@ msgid "No working directory for this project."
 msgstr "אין תיקיית עבודה לפרויקט הזה."
 
 #: src/components/help/AskForHelpDialog.tsx
-#~ msgid "Nobody — a private conversation on this computer"
-#~ msgstr "אף אחד — שיחה פרטית במחשב הזה"
+msgid "Nobody — a private conversation on this computer"
+msgstr "אף אחד — שיחה פרטית במחשב הזה"
 
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Nobody can log in to this sandbox, including its owner."
@@ -20645,8 +20648,8 @@ msgid "Not sent yet"
 msgstr "טרם נשלחה"
 
 #: src/components/help/AskForHelpDialog.tsx
-#~ msgid "Not sent yet — check your request, edit it if needed, then press Send."
-#~ msgstr "עדיין לא נשלח — בדקו את הבקשה, ערכו אותה אם צריך, ואז לחצו על שליחה."
+msgid "Not sent yet — check your request, edit it if needed, then press Send."
+msgstr "עדיין לא נשלח — בדקו את הבקשה, ערכו אותה אם צריך, ואז לחצו על שליחה."
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "not set"
@@ -23526,8 +23529,8 @@ msgid "Private"
 msgstr "פרטי"
 
 #: src/components/conversation/HelpRequestLine.tsx
-#~ msgid "Private · Not sent to anyone"
-#~ msgstr "פרטי · לא נשלח לאף אחד"
+msgid "Private · Not sent to anyone"
+msgstr "פרטי · לא נשלח לאף אחד"
 
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "Private · one machine per person"
@@ -25884,6 +25887,7 @@ msgid "Review changes"
 msgstr "בדקו שינויים"
 
 #: src/components/help/AskForHelpDialog.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "Review content"
 msgstr "סקירת התוכן"
 
@@ -26727,7 +26731,6 @@ msgstr ""
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/DetectedKeys.tsx
 #: src/components/cron-view/CronForm.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/top-nav-bar/RecordScreenButton.tsx
@@ -27465,6 +27468,7 @@ msgstr "סיכום עצמי"
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/organization/invite-row.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Send"
@@ -27585,6 +27589,7 @@ msgstr "שולח…"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/conversation/SendProgressNotice.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
@@ -27614,8 +27619,8 @@ msgid "Sent — the spoken answer lands in the conversation."
 msgstr "נשלח — התשובה הקולית תופיע בשיחה."
 
 #: src/components/conversation/HelpRequestLine.tsx
-#~ msgid "Sent · Context kept on this computer"
-#~ msgstr "נשלח · ההקשר נשאר במחשב הזה"
+msgid "Sent · Context kept on this computer"
+msgstr "נשלח · ההקשר נשאר במחשב הזה"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Sent along"
@@ -28138,7 +28143,6 @@ msgstr "כמה התאמות"
 #: src/components/artifacts/artifact-card.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
-#: src/components/conversation/HelpRequestLine.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
@@ -28197,6 +28201,7 @@ msgstr "שיתוף לפי שם או דוא״ל…"
 msgid "Share code {0} to invite."
 msgstr "שתפו קוד {0} להזמנה."
 
+#: src/components/conversation/HelpRequestLine.tsx
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Share context"
 msgstr "שיתוף ההקשר"
@@ -32424,6 +32429,7 @@ msgstr "מספר הפעמים שהאירוע התרחש מאז הפעלת Flowpa
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/help/AskForHelpDialog.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
@@ -32449,8 +32455,8 @@ msgid "To open the {label}:"
 msgstr "כדי לפתוח:"
 
 #: src/components/help/AskForHelpDialog.tsx
-#~ msgid "To:"
-#~ msgstr "אל:"
+msgid "To:"
+msgstr "אל:"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "today"
@@ -34339,6 +34345,7 @@ msgstr ""
 msgid "What is this secret used for?"
 msgstr "למה משמש הסוד הזה?"
 
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
 msgid "What is wrong"
 msgstr "מה השתבש"

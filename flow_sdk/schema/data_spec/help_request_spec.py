@@ -62,15 +62,6 @@ class HelpRecipient(DataSpec):
         return self
 
 
-class HelpSend(str, Enum):
-    """What Ask does with the request once it is written."""
-
-    #: Send it, with the diagnosis and context the person chose (the diagnosis runs first).
-    WHEN_DIAGNOSED = "when_diagnosed"
-    #: Keep it on this computer: the conversation is written, nothing reaches the hub until Share.
-    REVIEW_FIRST = "review_first"
-
-
 class AskForHelpRequest(DataSpec):
     """One ask. ``conversation_id`` is minted by the asker and kept across resubmits — the same id is
     the same ask, so pressing Send again after a lost reply never makes a second one.
@@ -100,7 +91,6 @@ class AskForHelpRequest(DataSpec):
     share_context: bool = True
     #: Each context item the person left out in the review ("Leave out"), by file name.
     left_out: list[str] = []
-    send: HelpSend = HelpSend.WHEN_DIAGNOSED
     #: A diagnosis already taken: it is the one attached, and nothing is diagnosed again.
     diagnosis_id: Optional[str] = None
     #: The session on screen (a TypeId) -- what the diagnose is told the person was in.

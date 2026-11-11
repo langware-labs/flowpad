@@ -21,9 +21,6 @@ export type HelpRecipient = {
   name?: string | null;
 };
 
-/** What Ask does once the request is written: send it, or keep it here until the person shares it. */
-export type HelpSend = 'when_diagnosed' | 'review_first';
-
 export type AskForHelpRequest = {
   /** Minted by the asker and kept across resubmits: the same id is the same request. */
   conversation_id?: string | null;
@@ -43,7 +40,6 @@ export type AskForHelpRequest = {
   share_context?: boolean;
   /** Context files the person left out in the review. */
   left_out?: string[];
-  send?: HelpSend;
   /** A diagnosis already taken: it is the one attached, nothing is diagnosed again. */
   diagnosis_id?: string | null;
   /** The session on screen (a TypeId) — what the diagnose is told the person was in. */

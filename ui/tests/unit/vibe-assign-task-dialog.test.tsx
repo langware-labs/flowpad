@@ -250,7 +250,11 @@ describe('AskForHelpDialog — asking again', () => {
   });
 
   /** Walk the cards, run `onCard2` there, pick bob, press `button`; returns the one `ask-for-help` call. */
-  async function submit(onCard2: () => void | Promise<void> = () => {}, button = 'vibe-assign-submit') {
+  async function submit(
+    onCard2: () => void | Promise<void> = () => {},
+    button = 'vibe-assign-submit',
+    onReview?: () => void,
+  ) {
     const calls: unknown[] = [];
     // eslint-disable-next-line @typescript-eslint/require-await -- the mock stands in for an async action
     vi.spyOn(dataManager, 'callAction').mockImplementation(async (info) => {
@@ -277,6 +281,11 @@ describe('AskForHelpDialog — asking again', () => {
     act(() => {
       fireEvent.click(screen.getByTestId(button));
     });
+    if (onReview) {
+      await screen.findByTestId('ask-for-help-confirm');
+      expect(calls).toHaveLength(0); // the review saves nothing
+      act(onReview);
+    }
     await waitFor(() => expect(calls).toHaveLength(1));
     return calls[0];
   }
@@ -289,7 +298,6 @@ describe('AskForHelpDialog — asking again', () => {
       title: 'Popout disabled',
       project_id: P1,
       origin: 'vibe',
-      send: 'when_diagnosed',
     });
     expect(typeof body.conversation_id).toBe('string'); // the asker's id: a resend is the same request
   });
@@ -307,9 +315,16 @@ describe('AskForHelpDialog — asking again', () => {
     expect(body).toMatchObject({ diagnose: false, share_context: false });
   });
 
-  it('"Review before sending" keeps the request here until Share', async () => {
-    const body = (await submit(() => {}, 'ask-for-help-review-first')) as Record<string, unknown>;
-    expect(body.send).toBe('review_first');
+  it('"Review before sending" shows the ticket, editable, and sends nothing until Send', async () => {
+    const body = (await submit(
+      () => {},
+      'ask-for-help-review-first',
+      () => {
+        fireEvent.change(screen.getByTestId('ask-for-help-confirm-title'), { target: { value: 'Edited title' } });
+        fireEvent.click(screen.getByTestId('vibe-assign-submit'));
+      },
+    )) as Record<string, unknown>;
+    expect(body).toMatchObject({ title: 'Edited title' });
   });
 
   it('a diagnosis already taken goes as it stands, and nothing is diagnosed again', async () => {
@@ -318,13 +333,25 @@ describe('AskForHelpDialog — asking again', () => {
     vi.spyOn(dataManager, 'callAction').mockImplementation(async (info) => {
       if (info.name === 'ask-for-help') {
         calls.push(info.bodyParameters as Record<string, unknown>);
-        return { conversation_id: 'c', task_id: null, message_id: 'm', delivery: { header: 'sent', body: null, failure: null } };
+        return {
+          conversation_id: 'c',
+          task_id: null,
+          message_id: 'm',
+          delivery: { header: 'sent', body: null, failure: null },
+        };
       }
       if (info.name === 'help-request-preview') return { title: 'Hub down', items: [] };
       return { desks: [{ kind: 'desk', desk_project_id: 'd1', name: 'Support' }], default_state: 'known' };
     });
     render(
-      <AskForHelpDialog open onOpenChange={() => {}} projectId={P1} origin="footer" diagnosisId="diag-1" initialTitle="Hub down" />,
+      <AskForHelpDialog
+        open
+        onOpenChange={() => {}}
+        projectId={P1}
+        origin="footer"
+        diagnosisId="diag-1"
+        initialTitle="Hub down"
+      />,
     );
     fireEvent.click(screen.getByTestId('ask-for-help-next'));
     await screen.findByTestId('ask-for-help-card-context');
@@ -332,7 +359,11 @@ describe('AskForHelpDialog — asking again', () => {
     await screen.findByTestId('ask-for-help-desks');
     fireEvent.click(screen.getByTestId('vibe-assign-submit'));
     await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0]).toMatchObject({ diagnosis_id: 'diag-1', diagnose: false, recipients: [{ kind: 'desk', desk_project_id: 'd1' }] });
+    expect(calls[0]).toMatchObject({
+      diagnosis_id: 'diag-1',
+      diagnose: false,
+      recipients: [{ kind: 'desk', desk_project_id: 'd1' }],
+    });
   });
 
   it('a file picked with "+" rides with the request', async () => {

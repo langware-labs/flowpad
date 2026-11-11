@@ -8,9 +8,10 @@ import { ContentReviewDialog } from './asset-review/ContentReviewDialog';
 
 /**
  * Under a help request: what it is; while its diagnosis runs, that it runs; and -- on the asker's side, while
- * its context waits on this computer -- "Context not shared · Share · Open". Open is the message review
- * (``ContentReviewDialog``); Share sends the request (when it was kept here) and its context, minus what was
- * left out. A private request (nobody asked yet: Diagnose & fix) has no Share -- its diagnosis offers Report it.
+ * its context waits on this computer -- "Sent · Context kept on this computer · Share context · Open", so it
+ * never reads as unsent. Open is the message review (``ContentReviewDialog``); Share context sends the context,
+ * minus what was left out. A private request (nobody asked yet: Diagnose & fix) says "Private · Not sent to
+ * anyone" and has no Share -- its diagnosis offers Report it.
  */
 export function HelpRequestLine({ conversationId, isMine }: { conversationId: string; isMine: boolean }) {
   const { t } = useLingui();
@@ -54,7 +55,10 @@ export function HelpRequestLine({ conversationId, isMine }: { conversationId: st
   };
 
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground" data-testid="help-request-line">
+    <div
+      className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+      data-testid="help-request-line"
+    >
       <span className="flex items-center gap-1 rounded-full border px-2 py-0.5" data-testid="help-request-chip">
         <LifeBuoy className="h-3 w-3" />
         {t`Help request`}
@@ -67,7 +71,7 @@ export function HelpRequestLine({ conversationId, isMine }: { conversationId: st
       )}
       {held.length > 0 && (
         <span className="flex items-center gap-2" data-testid="help-request-not-shared">
-          {t`Context not shared`}
+          {isPrivate ? t`Private · Not sent to anyone` : t`Sent · Context kept on this computer`}
           {!isPrivate && (
             <button
               type="button"
@@ -76,7 +80,7 @@ export function HelpRequestLine({ conversationId, isMine }: { conversationId: st
               disabled={sharing}
               data-testid="help-request-share"
             >
-              {sharing ? t`Sharing…` : t`Share`}
+              {sharing ? t`Sharing…` : t`Share context`}
             </button>
           )}
           <button

@@ -271,10 +271,14 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
   it('bob receives ONE message: the issue, the task chip, and the diagnosis + context as files', async () => {
     await syncAssignedConversation(bob, conversationId);
 
-    const received = await pollUntil(async () => {
-      const fm: any = await bob.sdk.FlowMessage.getById(fmId).catch(() => null);
-      return fm && fm.body_status === 'ready' ? fm : null;
-    }, 25_000, 'the message READY on bob');
+    const received = await pollUntil(
+      async () => {
+        const fm: any = await bob.sdk.FlowMessage.getById(fmId).catch(() => null);
+        return fm && fm.body_status === 'ready' ? fm : null;
+      },
+      25_000,
+      'the message READY on bob',
+    );
     expect(received.kind, 'bob reads it as a help request too (re-derived from its carrier)').toBe('help_request');
     await postApi(bob.apiUrl, `/graph/flow_message/${received.id}/download_body`, {});
 
@@ -287,22 +291,32 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
       'attachments materialized on bob',
     );
     const refs = attachments.map((a: any) => `${a.asset_type}-${a.asset_id}`);
-    expect(refs.filter((r) => r.startsWith('task-')), `task chips in ${refs.join(',')}`).toEqual([`task-${taskId}`]);
+    expect(
+      refs.filter((r) => r.startsWith('task-')),
+      `task chips in ${refs.join(',')}`,
+    ).toEqual([`task-${taskId}`]);
     const files = attachments.filter((a: any) => a.asset_type === 'file').map((a: any) => a.name);
     expect(files).toEqual(expect.arrayContaining(['diagnosis.value.json', 'screen.value.json']));
 
     const msgs: any[] = ((await alice.sdk.FlowMessage.query(
-      new alice.sdk.QueryRequest({ type: 'flow_message', query: { conversation_id: conversationId }, name: 'ask-help all' }),
+      new alice.sdk.QueryRequest({
+        type: 'flow_message',
+        query: { conversation_id: conversationId },
+        name: 'ask-help all',
+      }),
       true,
     ).catch(() => [])) ?? []) as any[];
     expect(msgs, 'one request is one message — no diagnosis message after it').toHaveLength(1);
   }, 60_000);
 
-  it('in bob\'s browser the diagnosis opens the same message review — before installing', async () => {
+  it("in bob's browser the diagnosis opens the same message review — before installing", async () => {
     const bobPage = await openInstancePage(browser, INST_2);
     const { page } = bobPage;
     await page.goto(`${bobPage.feUrl}/dock/conversation/${conversationId}`, { waitUntil: 'domcontentloaded' });
-    const chip = page.getByText('diagnosis.value.json').or(page.getByText('Diagnosis', { exact: true })).first();
+    const chip = page
+      .getByText('diagnosis.value.json')
+      .or(page.getByText('Diagnosis', { exact: true }))
+      .first();
     await chip.waitFor({ state: 'visible', timeout: 25_000 }).catch(async (e) => {
       await page.screenshot({ path: path.join(os.tmpdir(), `ask-help-accept-fail-${token}.png`) });
       throw e;
@@ -311,84 +325,23 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     const dialog = page.getByTestId('asset-review-dialog');
     await dialog.waitFor({ state: 'visible', timeout: 10_000 });
     expect(await dialog.getByText(/review before (installing|copying)/).count()).toBe(1);
-    expect(await dialog.getByTestId(/asset-review-row-/).count(), 'every file of the message is listed').toBeGreaterThan(1);
+    expect(
+      await dialog.getByTestId(/asset-review-row-/).count(),
+      'every file of the message is listed',
+    ).toBeGreaterThan(1);
     await bobPage.page.screenshot({ path: path.join(os.tmpdir(), `ask-help-accept-${token}.png`) });
-  }, 60_000);
-});
-
-describe('review before sending: nothing leaves until Share', () => {
-  const REVIEW = `review me first ${token}`;
-  let reviewConv = '';
-
-  it('alice keeps the request here: the conversation says its context is not shared', async () => {
-    const { page } = alicePage;
-    await page.goto(`${alicePage.feUrl}/dock/shell/agentic_process-${processId}?viewMode=vibe&scope-mode=project&scope-activeProjectId=${projectId}`, {
-      waitUntil: 'domcontentloaded',
-    });
-    const ask = page.getByTestId('vibe-assign-task');
-    await ask.waitFor({ state: 'visible', timeout: 25_000 });
-    await ask.click();
-    const newAsk = page.getByTestId('vibe-help-new');
-    if (await newAsk.count()) await newAsk.click(); // the button lists the open request first
-    await page.getByTestId('vibe-assign-notes').fill(REVIEW);
-    await page.getByTestId('ask-for-help-next').click();
-    await page.getByTestId('ask-for-help-next').click();
-    await page.getByTestId('ask-for-help-card-who').waitFor({ state: 'visible', timeout: 10_000 });
-    const remove = page.getByTestId('ask-for-help-desk-remove');
-    await remove.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
-    if (await remove.count()) await remove.click();
-    const person = page.getByTestId('vibe-assign-person');
-    await person.click();
-    await page.waitForTimeout(500);
-    await person.pressSequentially(bob.email, { delay: 15 });
-    await person.blur();
-    await page.getByTestId('ask-for-help-review-first').click();
-
-    await page.getByTestId('help-request-not-shared').waitFor({ state: 'visible', timeout: 25_000 });
-    reviewConv = page.url().match(/conversation\/([0-9a-f-]{36})/)?.[1] ?? '';
-    expect(reviewConv, page.url()).toBeTruthy();
-    const conv: any = await alice.sdk.Conversation.getById(reviewConv);
-    expect(conv.remote ?? false, 'kept on this computer').toBe(false);
-  }, 90_000);
-
-  it('Open is the same message review, of what is held here', async () => {
-    const { page } = alicePage;
-    await page.getByTestId('help-request-open').click();
-    const review = page.getByTestId('content-review-dialog');
-    await review.waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByTestId('content-review-row-diagnosis.value.json').waitFor({ state: 'visible' });
-    await page.keyboard.press('Escape');
-    await review.waitFor({ state: 'detached', timeout: 10_000 });
-  }, 30_000);
-
-  it('Share sends it: bob gets the request and its context', async () => {
-    const { page } = alicePage;
-    await page.screenshot({ path: path.join(os.tmpdir(), `ask-help-review-${token}.png`) });
-    await page.getByTestId('help-request-share').click();
-    await page.getByTestId('help-request-not-shared').waitFor({ state: 'detached', timeout: 25_000 });
-
-    await syncAssignedConversation(bob, reviewConv);
-    const withContext = await pollUntil(
-      async () => {
-        const rows: any[] = ((await bob.sdk.FlowMessage.query(
-          new bob.sdk.QueryRequest({ type: 'flow_message', query: { conversation_id: reviewConv }, name: 'shared ctx' }),
-          true,
-        ).catch(() => [])) ?? []) as any[];
-        return rows.find((m) => (m.attachment ?? []).some((a: any) => String(a.data).endsWith('diagnosis.value.json'))) ?? null;
-      },
-      25_000,
-      'the shared context on bob',
-    );
-    expect(withContext.kind).toBe('help_request');
   }, 60_000);
 });
 
 describe('the help desk (preselected): it is just a conversation', () => {
   it('Send once diagnosed opens the conversation — no ticket state, no Close ticket', async () => {
     const { page } = alicePage;
-    await page.goto(`${alicePage.feUrl}/dock/shell/agentic_process-${processId}?viewMode=vibe&scope-mode=project&scope-activeProjectId=${projectId}`, {
-      waitUntil: 'domcontentloaded',
-    });
+    await page.goto(
+      `${alicePage.feUrl}/dock/shell/agentic_process-${processId}?viewMode=vibe&scope-mode=project&scope-activeProjectId=${projectId}`,
+      {
+        waitUntil: 'domcontentloaded',
+      },
+    );
     const ask = page.getByTestId('vibe-assign-task');
     await ask.waitFor({ state: 'visible', timeout: 25_000 });
     await ask.click();
