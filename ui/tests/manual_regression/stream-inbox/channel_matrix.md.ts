@@ -147,7 +147,7 @@ async function open(page: Page, route: string) {
 
 /** The owner's stream inbox showing EVERY channel: an agent's opens on its own mailbox
  *  (AgentStreamInboxView's initialChannel), so its filter is cleared once that pick lands. */
-async function openInbox(page: Page, owner: Owner) {
+async function openStreamInbox(page: Page, owner: Owner) {
   await open(page, streamInboxPath(owner));
   if (owner !== 'agent') return;
   const clear = page.getByTestId('attached-channels-clear');
@@ -199,7 +199,7 @@ for (const owner of OWNERS) {
       const other: Owner = owner === 'user' ? 'agent' : 'user';
 
       // The owner's stream inbox: the row, its chip, the bar's mark.
-      await openInbox(page, owner);
+      await openStreamInbox(page, owner);
       const row = page.getByTestId('stream-inbox-conversation-row').filter({ hasText: nonce });
       await expect(row).toHaveCount(1);
       // The chip wears the CHANNEL's title (a mailbox is "Email" whichever driver reads it), which the
@@ -229,7 +229,7 @@ for (const owner of OWNERS) {
         .toBe(true);
 
       // Nobody else's.
-      await openInbox(page, other);
+      await openStreamInbox(page, other);
       await expect(page.getByTestId('stream-inbox-conversation-row').filter({ hasText: nonce })).toHaveCount(0);
 
       // The cell's source goes now: the doubles are one account per channel, and a delivery is
