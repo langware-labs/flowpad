@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { dismissSetupModal, gotoShell } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.use({ headless: false });
 
@@ -10,7 +11,7 @@ test.describe('Ctrl+V in Claude terminal', () => {
   });
 
   test('Ctrl+V in Claude terminal input does not paste OS clipboard (FLOWPAD-1618)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Navigate to shell first
     await gotoShell(page);
@@ -24,7 +25,7 @@ test.describe('Ctrl+V in Claude terminal', () => {
       .last()
       .locator('.xterm-rows')
       .first();
-    await xtermRows.waitFor({ state: 'attached', timeout: 10_000 });
+    await xtermRows.waitFor({ state: 'attached', timeout: adjusted(10_000) });
     await xtermRows.click({ force: true });
     await page.keyboard.press('Control+v');
     await page.waitForTimeout(500);

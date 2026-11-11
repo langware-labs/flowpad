@@ -75,3 +75,27 @@ def completions(fms: list[FlowMessage]) -> list[FlowMessage]:
             for a in (m.attachment or [])
         )
     ]
+
+
+async def host_approves(session_id: str, *, within: float) -> None:
+    """The host clicks Approve once the guest's prompt has opened the session:
+    nothing runs on the host before that. Same steps as the approve action."""
+    import asyncio
+    import time
+
+    from flow_sdk.app.actions.execute_prompt import redrive_session_prompts
+    from flow_sdk.builtin.remote_worker_session import ApprovedVia, RemoteWorkerSession, RemoteWorkerSessionStatus
+
+    deadline = time.monotonic() + within
+    session = None
+    while time.monotonic() < deadline:
+        session = await RemoteWorkerSession.get_one({"id": session_id})
+        if session is not None and session.status == RemoteWorkerSessionStatus.PENDING.value:
+            break
+        await asyncio.sleep(0.1)
+    assert session is not None and session.status == RemoteWorkerSessionStatus.PENDING.value, (
+        f"session {session_id[:8]} never reached the host as pending: {session and session.status}"
+    )
+    session.project_id = await session.run_project_id()
+    assert await session.approve(via=ApprovedVia.MANUAL)
+    await redrive_session_prompts(session)

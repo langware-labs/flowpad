@@ -29,6 +29,7 @@ from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.builtin.agent_cloud_deploy import _UNSET, DeployRequest
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
+from flow_sdk.builtin.project_secrets import SecretsUseMineRequest
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
 from flow_sdk.config import PLATFORM_WIN32, StorageProvider
 from flow_sdk.core import Entity, action
@@ -3010,6 +3011,18 @@ class Project(SetupSkippable, Entity):
             mode_fields=mode_fields,
         )
 
+    @action.post(action_name="secrets_use_mine")
+    async def secrets_use_mine_action(self, body: SecretsUseMineRequest) -> "ApiResponse":
+        """`POST /project/<id>/secrets_use_mine {names}` — copy this computer's values for those variables into
+        the project's hub store (write-only). Names come back, never a value."""
+        from flow_sdk.builtin.project_secrets import use_mine  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+        try:
+            return ApiSuccessResponse(data=await use_mine(self, list(body.names)))
+        except HubError as exc:
+            return exc.fail_response("Could not copy the values to the hub")
+
     @action.post(action_name="deploy")
     async def deploy_action(self, body: DeployRequest) -> "ApiResponse":
         """`POST /project/<id>/deploy {provider, environment, machine_size, source_kind, source_ref,
@@ -3925,13 +3938,49 @@ class Project(SetupSkippable, Entity):
         await self.close_all_open()
         os.makedirs(workspace_root, exist_ok=True)
         await asyncio.to_thread(shutil.move, src, target_dir)
-        await self.unindex_folder(src)
+        path_keyed: dict[str, tuple[str, str]] = {}
+        await self.unindex_folder(src, path_keyed=path_keyed)
         self.fs_storage_mount_path = target_dir
         await self.save()
         await self._reroot_paths(src, canonical_posix_path(target_dir))
         invalidate_projects_cache()
         invalidate_project_list_cache()
-        return await self._index_after_move()
+        indexed = await self._index_after_move()
+        if indexed:
+            await self._repoint_path_keyed(path_keyed, canonical_posix_path(target_dir))
+        return indexed
+
+    async def _repoint_path_keyed(self, moved: dict[str, tuple[str, str]], new_root: str) -> None:
+        """What names a moved asset by id follows it to its new id.
+
+        An asset that cannot hold an id in its own file (a document, a spreadsheet) is
+        keyed on its path, so the move gave it a new one. ``moved`` is
+        ``{path inside the project: (type, old id)}``, taken before the old rows were
+        dropped; each is found again by its new path, and the favorites and message
+        attachments installed as the old id are given the new one."""
+        from flow_sdk.builtin.bookmark import Bookmark, BookmarkType  # noqa: PLC0415
+        from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: PLC0415
+
+        new_ids: dict[tuple[str, str], str] = {}
+        for rel, (type_name, old_id) in moved.items():
+            row = await Entity.get_by_asset_ref(f"{new_root}/{rel}", resolve_containing=False)
+            if row is not None and row.get_type() == type_name and str(row.id) != old_id:
+                new_ids[(type_name, old_id)] = str(row.id)
+        if not new_ids:
+            return
+        try:
+            for fav in await Bookmark.get_all({"bookmark_type": BookmarkType.FAVORITE.value}) or []:
+                data = fav.data or {}
+                new_id = new_ids.get((str(data.get("entity_type") or ""), str(data.get("entity_id") or "")))
+                if new_id:
+                    fav.data = {**data, "entity_id": new_id}
+                    await fav.save()
+            for (type_name, old_id), new_id in new_ids.items():
+                for ma in await MessageAttachment.get_all({"asset_type": type_name, "installed_asset_id": old_id}) or []:
+                    ma.installed_asset_id = new_id
+                    await ma.save()
+        except Exception:  # noqa: BLE001 — a reference that will not save must not undo a finished move
+            log.exception("[project-move] %s: re-pointing moved assets failed", self.id)
 
     async def _reroot_paths(self, old: str, new: str) -> None:
         """Rows that remember a path inside the old folder follow the project.
@@ -3943,10 +3992,20 @@ class Project(SetupSkippable, Entity):
         Dependency links need nothing: a link whose cached path is gone re-resolves.
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+        from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: PLC0415
         from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-        for cls, field in ((AgenticProcess, "workdir"), (Trigger, "workdir"), (Trigger, "watch_path")):
+        # An installed attachment remembers where it was installed (uninstall removes from
+        # there) and an artifact the file it delivers: neither is re-read from disk.
+        for cls, field in (
+            (AgenticProcess, "workdir"),
+            (Trigger, "workdir"),
+            (Trigger, "watch_path"),
+            (MessageAttachment, "installed_root"),
+            (Artifact, "asset_ref"),
+        ):
             # LIKE narrows by prefix; ``is_path_under`` is the segment-safe check.
             rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=[field, f"{old}%"])))
             for row in rows:
@@ -4066,11 +4125,14 @@ class Project(SetupSkippable, Entity):
                 log.warning("[project-delete] orphan %s:%s failed: %s", meta.get("type"), meta.get("id"), exc)
         return removed
 
-    async def unindex_folder(self, root: str) -> int:
+    async def unindex_folder(self, root: str, *, path_keyed: dict[str, tuple[str, str]] | None = None) -> int:
         """Drop every record of this project that was indexed from a file under ``root``
         (DB row, FTS entry, wiki edges and the on-disk shadow) — the old folder after a
-        move. Records with no file (processes, chats) stay. Returns how many were dropped."""
+        move. Records with no file (processes, chats) stay. Returns how many were dropped.
+        ``path_keyed`` is filled with ``{path under root: (type, id)}`` for the assets whose
+        file cannot hold an id — the ones a move re-ids (``_repoint_path_keyed``)."""
         from flow_sdk.fs_store import FSRecord  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         root = canonical_posix_path(root)
         dropped = 0
@@ -4078,6 +4140,9 @@ class Project(SetupSkippable, Entity):
             asset = meta.get("asset_ref")
             if not isinstance(asset, str) or not is_path_under(canonical_posix_path(asset), root):
                 continue
+            info = SchemaRegistry.get(str(meta.get("type") or ""))
+            if path_keyed is not None and info is not None and not info.carrier.writable and meta.get("id"):
+                path_keyed[canonical_posix_path(asset)[len(root) :].lstrip("/")] = (str(meta["type"]), str(meta["id"]))
             try:
                 await FSRecord.from_dict(meta).destroy()
                 dropped += 1

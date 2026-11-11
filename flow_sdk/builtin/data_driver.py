@@ -153,6 +153,14 @@ class DataDriver(DriverRuntime, Entity):
         here; ``await DataDriver.get(name)`` loads it."""
         return DRIVERS.get_or_none(name or "")
 
+    @classmethod
+    def private_config_fields(cls, name: str) -> frozenset[str]:
+        """The config fields the loaded driver ``name`` declares ``Sharing.PRIVATE`` — on a source's row,
+        never in its file. A driver not loaded yet declares none here."""
+        driver = cls.loaded(name)
+        config_cls = driver.config_cls if driver is not None else None
+        return config_cls.private_fields() if config_cls is not None else frozenset()
+
     @core_action.get(action_name="profile")
     async def profile_action(self):
         """GET /api/v1/graph/data_driver/{id}/profile — what this way of connecting looks like right now

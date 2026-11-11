@@ -195,7 +195,7 @@ export interface TriggerThen {
 
 /** One entry of a trigger row's `actions` — `flow_sdk/schema/data_spec/trigger_action.py`. */
 export interface TriggerActionRow {
-  action_type: 'nop' | 'notify_entity' | 'run_script' | 'callback' | 'run_agent' | string;
+  action_type: 'nop' | 'notify_entity' | 'run_script' | 'callback' | 'run_agent' | 'prompt_process' | string;
   script_path?: string | null;
   script_filename?: string | null;
   callback_name?: string | null;

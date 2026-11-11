@@ -1,0 +1,11 @@
+{
+  "type": "compute_op",
+  "id": "92246952-6a88-4b14-9052-0387481fa43f",
+  "name": "usage-summary",
+  "label": "Usage summary",
+  "description": "Sums up yesterday's agent sessions (cost, time, tokens, skills, agents, tools) and posts it to the conversation of the automation that ran it.",
+  "subkind": "python",
+  "exe_data": {},
+  "input": "automation.ref",
+  "output": "usage.summary"
+}

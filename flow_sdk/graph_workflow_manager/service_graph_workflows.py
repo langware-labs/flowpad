@@ -1,19 +1,16 @@
 """System-scope service flows, seeded at boot (set_service_triggers pattern).
 
-Two flows, written under ``<user_home>/agentic-assets/graph_workflow/`` if absent:
+One flow, written under ``<user_home>/agentic-assets/graph_workflow/`` if absent:
 
 * **mini-analyzer** — a small, fast validation flow: interval Trigger →
   subprocess function counting today's agentic processes via the instance
   REST API (<1s, no LLM) → inline ``flow_echo``. The go-to flow for testing
   the whole machine end-to-end.
-* **daily-analysis** — the real 7am usage report as a staged flow: the
-  ``builtin_daily_usage_analysis`` Trigger node → subprocess ``analyze``
-  function (``flow_sdk.usage_report.graph_workflow_function`` — heavy transcript
-  aggregation + UsageReport persist via REST) → inline
-  ``flow_publish_usage_report`` (Home-Feed post). The trigger has no direct
-  action (spec ships ``actions=[]``) so one fire produces exactly one report.
 
-Both seeds MIGRATE their own existing graphs in place when they still carry
+The daily usage report that was seeded here is the Daily usage summary
+automation now; ``_retire_daily_analysis`` drops an older install's copy.
+
+The seed MIGRATES its own existing graph in place when it still carries
 retired spellings (``pysdk`` / ``process_runner`` / ``program_kind:
 callback``) — seed-owned shapes only; user flows fail validation with a
 pointed message instead.
@@ -69,19 +66,15 @@ def _doc(flow_id: str, name: str, nodes: list[dict], edges: list[dict], **extra)
 
 
 async def set_service_graph_workflows() -> None:
-    """Seed the system flows (idempotent — existing folders are left alone).
+    """Seed the system flow (idempotent — an existing folder is left alone), then retire the old one.
 
-    Sequential and individually guarded: one seed's failure must not stop the
-    others, and they each touch the filesystem, so overlapping them buys little.
+    Individually guarded: one step's failure must not stop the other.
     """
-    for name, seed in (
-        ("mini-analyzer", _seed_mini_analyzer),
-        ("daily-analysis", _seed_daily_analysis),
-    ):
+    for name, step in (("mini-analyzer", _seed_mini_analyzer), ("daily-analysis retirement", _retire_daily_analysis)):
         try:
-            await seed()
+            await step()
         except Exception:
-            logger.exception("set_service_graph_workflows: %s seed failed", name)
+            logger.exception("set_service_graph_workflows: %s failed", name)
 
 
 async def _find_flow(name: str) -> GraphWorkflow | None:
@@ -215,143 +208,39 @@ _MINI_EDGES = [
 ]
 
 
-DAILY_ANALYZE_SCRIPT = '''\
-"""daily-analysis — analyze stage (thin shim).
-
-The real logic is package-versioned: flow_sdk.usage_report.graph_workflow_function.
-Window override: inject event data {"start": iso, "end": iso} to backfill
-a specific range; default is yesterday (local time).
-"""
-from flow_sdk.usage_report.graph_workflow_function import on_graph_workflow_event  # noqa: F401
-'''
-
-
 def _graph_has_retired_shapes(doc: dict) -> bool:
     """True when a seed-owned graph still uses pre-GraphWorkflowFunction spellings.
 
     The retired set has ONE owner — ``graph_workflow_doc.retired_node_shape`` (the same
-    predicate the parse validator raises) — plus one seed-specific addendum:
-    the retired daily-analysis monolith callback."""
+    predicate the parse validator raises)."""
     from flow_sdk.assets.types.graph_workflow_doc import retired_node_shape
 
     for n in doc.get("nodes") or []:
         if retired_node_shape(n):
             return True
-        if (n.get("node_data") or {}).get("program_ref") == "flow_daily_usage_report":
-            return True
     return False
 
 
-def _daily_graph(flow_id: str, trigger_id: str) -> str:
-    nodes = [
-        {
-            "id": "trigger-node",
-            "node_type": "trigger",
-            "name": "Daily 7am",
-            "node_data": {"typeid": f"trigger-{trigger_id}"},
-        },
-        {
-            "id": "analyze",
-            "node_type": "function",
-            "name": "Analyze usage",
-            "node_data": {"function": "scripts/analyze_usage.py", "runtime": "subprocess"},
-        },
-        {
-            "id": "publish",
-            "node_type": "function",
-            "name": "Post to feed",
-            "node_data": {"function": "flow_publish_usage_report", "runtime": "inline"},
-        },
-    ]
-    edges = [
-        {"id": "e1", "from": {"node": "trigger-node", "event": "fired"}, "to": {"node": "analyze"}},
-        {"id": "e2", "from": {"node": "analyze", "event": "report_ready"}, "to": {"node": "publish"}},
-    ]
-    return _doc(flow_id, "daily-analysis", nodes, edges)
+async def _retire_daily_analysis() -> None:
+    """The daily usage report is the Daily usage summary automation now (a shipped ``trigger.json`` whose
+    ``usage-summary`` block posts into its conversation): an older install's seeded trigger row and
+    ``daily-analysis`` flow go -- the flow's shim imports a module that no longer exists."""
+    import asyncio  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
 
+    from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
+    from flow_sdk.builtin.trigger_arming import disarm_trigger  # noqa: PLC0415
 
-def _repin_nodes(graph_path, predicate, patch, *, what: str) -> None:
-    """Re-point seed-owned node references in a user-owned graph.
-
-    A seeded graph belongs to the user once it exists, but the REFERENCES the
-    seed put in it (a builtin trigger row, a shipped SubAgent) are ours: those
-    rows can be recreated or minted late, which strands the node — the flow then
-    fires nothing, or silently runs the inline fallback. So every boot the
-    matching nodes are re-pinned and nothing else is touched.
-
-    ``predicate(node)`` selects the seed-owned nodes; ``patch(node_data)``
-    mutates one and returns whether it changed anything. The file is rewritten
-    only when something did.
-    """
-    try:
-        doc = json.loads(graph_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    old = await Trigger.get_by_uname("builtin_daily_usage_analysis")
+    if old is not None:
+        await disarm_trigger(str(old.id))
+        await old.delete()
+        logger.info("set_service_graph_workflows: retired the builtin_daily_usage_analysis trigger")
+    flow = await _find_flow("daily-analysis")
+    if flow is None or str(flow.scope or "") != "system":
         return
-    changed = False
-    for node in doc.get("nodes") or []:
-        if not predicate(node):
-            continue
-        node_data = node.get("node_data") or {}
-        if patch(node_data):
-            node["node_data"] = node_data
-            changed = True
-    if changed:
-        graph_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
-        logger.info("set_service_graph_workflows: re-pinned %s %s", graph_path.parent.name, what)
-
-
-def _repin_trigger_nodes(graph_path, trigger_id: str) -> None:
-    """Re-point the flow's trigger node(s) at the CURRENT builtin trigger row."""
-    from flow_sdk.fs_store.type_id import TypeId
-
-    want = str(TypeId(type="trigger", id=trigger_id))
-
-    def _patch(node_data: dict) -> bool:
-        current = str(node_data.get("typeid") or "")
-        if not current or current == want:
-            return False
-        node_data["typeid"] = want
-        return True
-
-    _repin_nodes(
-        graph_path,
-        lambda node: node.get("node_type") == "trigger",
-        _patch,
-        what=f"trigger ref to {want}",
-    )
-
-
-async def _seed_daily_analysis() -> None:
-    from flow_sdk.builtin.trigger import Trigger
-
-    trigger = await Trigger.get_by_uname("builtin_daily_usage_analysis")
-    if trigger is None:
-        logger.warning("set_service_graph_workflows: daily usage trigger not found; skipping flow seed")
-        return
-
-    flow, created = await _get_or_create_flow("daily-analysis")
-    folder = flow.folder if flow else None
-    if flow is None or folder is None:
-        return
-    graph = folder / "graph.json"
-
-    if not created:
-        # Flow exists — leave user edits alone UNLESS it still carries the
-        # retired monolith node: that exact shape is ours, migrate it in place.
-        # One structural parse decides migrate-vs-repin (no substring scans).
-        try:
-            doc = json.loads(graph.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return
-        if not _graph_has_retired_shapes(doc):
-            _repin_trigger_nodes(graph, trigger.id)
-            return
-        (folder / "scripts").mkdir(exist_ok=True)
-        (folder / "scripts" / "analyze_usage.py").write_text(DAILY_ANALYZE_SCRIPT, encoding="utf-8")
-        graph.write_text(_daily_graph(flow.id, trigger.id), encoding="utf-8")
-        logger.info("set_service_graph_workflows: migrated daily-analysis (%s) to the staged shape", flow.id)
-        return
-
-    (folder / "scripts" / "analyze_usage.py").write_text(DAILY_ANALYZE_SCRIPT, encoding="utf-8")
-    graph.write_text(_daily_graph(flow.id, trigger.id), encoding="utf-8")
-    logger.info("set_service_graph_workflows: seeded daily-analysis (%s)", flow.id)
+    folder = flow.folder
+    await flow.delete()
+    if folder is not None and folder.is_dir():
+        await asyncio.to_thread(shutil.rmtree, folder, ignore_errors=True)
+    logger.info("set_service_graph_workflows: retired the daily-analysis flow (%s)", flow.id)

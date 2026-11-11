@@ -95,7 +95,7 @@ describe('useAnnotationGutter', () => {
       // ── Annotation arrives, text NOT in buffer yet ──
       annotationData = [{
         id: 'ann-1',
-        labels: ['plan:'],
+        subkind: 'plan',
         session_id: 'sess-1',
         content: '# Hello World Plan',
         data: { file_path: '/plans/hello.md' },
@@ -133,7 +133,7 @@ describe('useAnnotationGutter', () => {
       // renders the heading without the `#` prefix.
       mockAnnotations([{
         id: 'ann-md',
-        labels: ['plan:'],
+        subkind: 'plan',
         session_id: 'sess-1',
         content: '# Hello World Plan\n\nContext\nCreate a simple hello',
         data: { file_path: '/plans/hello.md' },
@@ -160,7 +160,7 @@ describe('useAnnotationGutter', () => {
       // First line "# My Test Plan" appears verbatim (e.g. raw markdown in buffer)
       mockAnnotations([{
         id: 'ann-verbatim',
-        labels: ['plan:'],
+        subkind: 'plan',
         session_id: 'sess-1',
         content: '# My Test Plan\n\n1. Do something\n2. Do another thin',
         data: { file_path: '/plans/test.md' },
@@ -184,7 +184,7 @@ describe('useAnnotationGutter', () => {
 
       mockAnnotations([{
         id: 'ann-nl',
-        labels: ['prompt:'],
+        subkind: 'prompt',
         session_id: 'sess-1',
         content: 'Please update the authentication\nto use the new API endpoints',
         data: {},
@@ -208,7 +208,7 @@ describe('useAnnotationGutter', () => {
       // "Plan created" doesn't appear in buffer → skipped
       mockAnnotations([{
         id: 'ann-skip',
-        labels: ['plan:'],
+        subkind: 'plan',
         session_id: 'sess-1',
         content: 'Plan created',
         data: { file_path: '/plans/hello.md' },

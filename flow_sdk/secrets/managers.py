@@ -23,6 +23,7 @@ import logging
 import os
 import shlex
 import shutil
+import subprocess
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -219,7 +220,7 @@ def shell_line(argv: list[str], env: Mapping[str, str], os: Optional[str] = None
     if not argv:
         return ""
     if (os or current_os()) == "win32":
-        line = " ".join(f'"{a}"' if " " in a and not a.startswith('"') else a for a in argv)
+        line = subprocess.list2cmdline(argv)
         return "".join(f"set {k}={v}&& " for k, v in env.items()) + line
     return " ".join([*(f"{k}={shlex.quote(v)}" for k, v in env.items()), shlex.join(argv)])
 

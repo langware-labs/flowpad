@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import * as fs from 'fs';
 
 import { apiBase } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -27,9 +28,9 @@ async function pickProjectId(request: APIRequestContext): Promise<string> {
 
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
-    timeout: 15_000,
+    timeout: adjusted(15_000),
   });
 }
 
@@ -47,13 +48,13 @@ async function openWhiteboardListExpanded(page: Page, projectId: string, whitebo
   await page.goto(
     `/dock/assets/list/chart?scope-mode=project&scope-activeProjectId=${encodeURIComponent(projectId)}`,
   );
-  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-  await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe', { timeout: 10_000 });
+  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+  await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe', { timeout: adjusted(10_000) });
   // Advanced-browseable types follow the developer switch; flip it through the
   // app's own `window.setDev`, the call the avatar double-click makes.
   await page.evaluate(() => (window as any).setDev(true));
   const chevron = page.getByTestId('browseable-chevron-asset-type:chart');
-  await expect(chevron).toBeVisible({ timeout: 15_000 });
+  await expect(chevron).toBeVisible({ timeout: adjusted(15_000) });
   // The row's delete button is its stable handle, but a row toolbar is
   // `invisible` until the row is hovered (a807f58ee) — so "the row is listed"
   // means the handle is ATTACHED, not visible.
@@ -61,13 +62,13 @@ async function openWhiteboardListExpanded(page: Page, projectId: string, whitebo
   if ((await createdRow.count()) === 0) {
     await chevron.click();
   }
-  await expect(createdRow).toBeAttached({ timeout: 15_000 });
+  await expect(createdRow).toBeAttached({ timeout: adjusted(15_000) });
   return createdRow;
 }
 
 test.describe('Whiteboard — UI / UX (U1–U4)', () => {
   test('U1: tree row carries the ChartNetwork icon', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -102,7 +103,7 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
   });
 
   test('U2: whiteboard list shows whiteboards only', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -138,7 +139,7 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
   });
 
   test('U3: save debounce — five rapid updates coalesce into one write', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     // The save goes through axios, which in the browser uses XMLHttpRequest
     // (NOT window.fetch). Hook XHR.open BEFORE the page loads to count board.json
     // write requests (POST). Counting actual requests with a before/after delta
@@ -188,7 +189,7 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
   });
 
   test('U4: pasted image lives in board.json data.files', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');

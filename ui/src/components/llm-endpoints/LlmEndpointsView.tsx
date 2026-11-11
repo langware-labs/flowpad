@@ -19,7 +19,6 @@ import { notify } from '@src/notifications';
 
 import { LlmEndpointDetail } from './LlmEndpointDetail';
 import { LlmEndpointDialog } from './LlmEndpointDialog';
-import { ShareEndpointDialog } from './ShareEndpointDialog';
 import { LlmEndpointsList } from './LlmEndpointsList';
 import { openLlmEndpoint, parseLlmEndpointsPointer, type LlmEndpointTab } from './llm-endpoints-pointer';
 import { useLlmEndpoints } from './use-llm-endpoints';
@@ -38,7 +37,6 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
   // nothing and the dialog resolves its own — see `LlmEndpointDialog`.
   const [editingKind, setEditingKind] = useState<LLMEndpointKind | null>(null);
   const [deleting, setDeleting] = useState<LLMEndpoint | null>(null);
-  const [sharing, setSharing] = useState<LLMEndpoint | null>(null);
 
   const go = useCallback(
     (id?: string, nextTab?: LlmEndpointTab) =>
@@ -103,7 +101,6 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
           onTab={(nextTab) => go(selectedId, nextTab)}
           onEdit={openEdit}
           onDelete={setDeleting}
-          onShare={setSharing}
         />
       ) : (
         <LlmEndpointsList
@@ -116,9 +113,6 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
         />
       )}
 
-      {/* One dialog instance, driven by a nullable target -- the house pattern for this view: rows
-          and the detail hold no dialogs of their own. */}
-      <ShareEndpointDialog open={!!sharing} onOpenChange={(next) => !next && setSharing(null)} endpoint={sharing} />
 
       <LlmEndpointDialog
         open={editorOpen}

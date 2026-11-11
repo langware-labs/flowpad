@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, addTerminalTab } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Terminal output persists after tab switching', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,7 +8,7 @@ test.describe('Terminal output persists after tab switching', () => {
   });
 
   test('Terminal output remains visible after switching tabs while a process runs (FLOWPAD-1617)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoShell(page);
 

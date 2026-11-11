@@ -1130,6 +1130,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * it at all. Null once answered; computed on every process payload.
    */
   pending_user_input?: { tool_use_id: string; tool_name: string; input: Record<string, unknown> } | null;
+  /** The worker's `/goal` was judged met (newest goal check in its transcript). */
+  goal_met?: boolean;
 
   get workerStatus(): WorkerStatus | undefined {
     return this._workerStatus;
@@ -2346,9 +2348,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     //    same `isReadyForInput` gate the UI toggle uses, so it can't 409). READY
     //    also ignores the STALE pre-switch BUSY/terminal state right after
     //    switchMode — the resume hasn't booted yet.
-    //  - headless: no persistent worker, so a submit always enqueues / boots a
-    //    per-turn worker — it's always ready to accept the next turn.
-    const ready = () => !this.pty_mode || isReadyForInput(this);
+    //  - headless: no persistent worker, so the gate is only that no turn holds
+    //    the slot (`isBusy`, the wire `busy`) — the same predicate the backend's
+    //    switch-mode / restart 409 keys on, so a switch right after this resolves
+    //    is not refused as "a turn is in flight".
+    const ready = () => (this.pty_mode ? isReadyForInput(this) : !isBusy(this));
     const deadline = Date.now() + timeout;
     for (;;) {
       if (ready()) return;

@@ -926,6 +926,10 @@ class FSRecord(Generic[M]):
         if ar_str and (self._asset_ref is None or self._asset_ref.path != ar_str):
             self.__dict__["_asset_ref"] = FSRef(ar_str)
             changed = True
+        # ``save`` below rewrites metadata.json from this record, which was built from the
+        # asset file alone; the entity's shadow-only fields ride along or they are lost.
+        kept = getattr(entity, "shadow_kept_payload", None)
+        self.__dict__.update(kept() if callable(kept) else {})
         # Persist the mirrored state so on-disk metadata.json reflects entity truth.
         if changed and self.type and self.id is not None:
             try:

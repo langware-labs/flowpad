@@ -8,6 +8,7 @@
  */
 import { useLingui } from '@lingui/react/macro';
 import { useMemo } from 'react';
+import { localZone, onceParts, zoneLabel } from './time-zone';
 import { isMessagePattern, type AutomationKind, type AutomationRun, type RunStatus, type ScheduleWhen, type ThenPart, type WhenPart } from '@sdk';
 
 export interface AutomationWords {
@@ -83,8 +84,9 @@ export function useAutomationWords(): AutomationWords {
           text = every(s.interval_seconds ?? 0);
           break;
         case 'once': {
-          const when = s.expr.replace('T', ' ');
-          text = t`Once, at ${when}`;
+          // The day and time as they were set (the zone's own clock), not the raw stored stamp.
+          const { label: date, time } = onceParts(s.expr, locale);
+          text = t`Once, on ${date} at ${time}`;
           break;
         }
         default: {
@@ -92,7 +94,8 @@ export function useAutomationWords(): AutomationWords {
           text = t`On the schedule ${expr}`;
         }
       }
-      return s.timezone ? `${text} (${s.timezone})` : text;
+      // The zone is said only when it is not this computer's — the same rule as the chip by the time.
+      return s.timezone && s.timezone !== localZone() ? `${text} · ${zoneLabel(s.timezone)}` : text;
     };
 
     const when = (w: WhenPart): string => {
@@ -119,6 +122,8 @@ export function useAutomationWords(): AutomationWords {
       switch (p.kind) {
         case 'run_agent':
           return name ? t`run ${name}` : t`run an agent`;
+        case 'run_process':
+          return name ? t`run process ${name} with prompt` : t`run a process with a prompt`;
         case 'open_wizard':
           return name ? t`open ${name}` : t`open a setup wizard`;
         case 'run_script':

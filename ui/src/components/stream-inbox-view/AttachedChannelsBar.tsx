@@ -1,8 +1,10 @@
 /**
  * The attached channels of ONE owner — the local user's stream inbox or an agent's —
- * on the stream inbox's header line, as a row of round marks with a status dot
- * (presence-row pattern): green check = listening, dashed ring = paused, yellow "!" =
- * a person must act (`ATTENTION[kind].mark`). ONE mark per channel kind (provider + channel, the identity a
+ * as a row of round marks with a status dot; the host decides which line it sits on
+ * (presence-row pattern): green check = listening, dashed ring = paused. A source a person must act
+ * on (`needsPerson`) is NOT a mark: those are counted in one yellow chip before the marks, which
+ * lists them (`ChannelWarningsChip`) — never in both places.
+ * ONE mark per channel kind (provider + channel, the identity a
  * glyph draws): several sources of one kind share a mark that carries their
  * count, and hovering it lists just those sources with their switches.
  * Clicking a mark FILTERS the list to that kind; while a filter is on, the
@@ -16,7 +18,7 @@
  * delete — the settings-list pattern. On/off is the ONE pause/resume verb
  * (`useSourceToggle`); the marks themselves never toggle.
  *
- * One component, two mounts, no knowledge of which owner it serves. Its rows
+ * One component, several mounts, no knowledge of which owner it serves. Its rows
  * are exactly `DataSource.find_owned(owner)` ∩ MessageSource — the same
  * `sources` query the Data Sources screen and the row chip already share —
  * keyed on the spec's `sends`, not the row's `channel`, so a just-attached
@@ -28,7 +30,7 @@
  */
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Agent, DataSource, type DataDriver, TypeId, User } from '@sdk';
-import { Check, Plus, RefreshCw, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Check, Plus, RefreshCw, SlidersHorizontal, Trash2, TriangleAlert, X } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useContext } from '@src/hooks/useContext';
@@ -58,15 +60,16 @@ import { useSourceToggle } from '@src/components/data-sources/use-source-toggle'
 import { CallControls } from '@src/components/voice/CallControls';
 import {
   ATTENTION,
-  type AttentionReason,
-  type ChannelMark,
   attentionReason,
+  markOf,
+  needsPerson,
   attentionHeadline,
   attentionText,
 } from '@src/components/data-sources/source-attention';
 import { openSourceSetup } from '@src/components/setup-wizard/source-setup-store';
 import { useSourcePull } from '@src/components/data-sources/source-parts';
-import { channelKeyOf, DIAGNOSIS_CHANNEL, ownerOf } from './channel-owner';
+import { AUTOMATIONS_CHANNEL, channelKeyOf, DIAGNOSIS_CHANNEL, FLOWPAD_CHANNEL, ownerOf } from './channel-owner';
+import flowpadIcon from '@src/assets/flowpad-icon.png';
 
 const EMPTY: DataSource[] = [];
 const NO_OFFERS: ChannelOffer[] = [];
@@ -123,20 +126,15 @@ function useBuiltInEmailOffered(agent: TypeId | null | undefined): boolean {
 }
 
 type SpecFor = (provider: string) => DataDriver | undefined;
-/** How the mark draws a source, from the one classifier: lit unless its kind says otherwise. */
-const markOf = (reason: AttentionReason | null): ChannelMark => (reason ? ATTENTION[reason.kind].mark : 'on');
 
-/** Sources of one channel kind, sharing a mark. Its state is the best of its
- *  members' — one listening source lights the mark; parked beats paused — and
- *  `attention` counts the members a person must act on, so the "!" is never
- *  hidden by a listening sibling: a lit mark can still wear it. */
+/** Sources of one channel kind, sharing a mark: lit when any of them listens, dashed when all are
+ *  paused. A source a person must act on is never among them — it is in the warnings chip. */
 interface ChannelGroup {
   key: string;
   provider: string;
   channel: string;
   sources: DataSource[];
-  state: ChannelMark;
-  attention: number;
+  state: 'on' | 'off';
 }
 export function groupChannels(rows: DataSource[]): ChannelGroup[] {
   const groups = new Map<string, DataSource[]>();
@@ -147,10 +145,8 @@ export function groupChannels(rows: DataSource[]): ChannelGroup[] {
   }
   return [...groups.entries()]
     .map(([key, sources]) => {
-      const states = sources.map((s) => markOf(attentionReason(s)));
-      const state: ChannelMark = states.includes('on') ? 'on' : states.includes('parked') ? 'parked' : 'off';
-      const attention = states.filter((st) => st === 'parked').length;
-      return { key, provider: sources[0].provider, channel: sources[0].channel, sources, state, attention };
+      const state = sources.some((s) => markOf(attentionReason(s)) === 'on') ? ('on' as const) : ('off' as const);
+      return { key, provider: sources[0].provider, channel: sources[0].channel, sources, state };
     })
     .sort((a, b) => a.key.localeCompare(b.key));
 }
@@ -194,16 +190,40 @@ export function AttachedChannelsBar({
   const [adding, setAdding] = useState<{ initial?: DataDriver } | null>(null);
   const { deleting, setDeleting, remove, confirm } = useSourceDelete();
   const filtering = selected.size > 0;
-  const groups = useMemo(() => groupChannels(rows), [rows]);
+  // A source a person must act on is counted in the chip; the marks are the rest.
+  const { flagged, groups } = useMemo(() => {
+    const flagged = rows.filter(needsPerson);
+    return { flagged, groups: groupChannels(rows.filter((s) => !flagged.includes(s))) };
+  }, [rows]);
   const attachedProviders = useMemo(() => new Set(rows.map((r) => r.provider)), [rows]);
 
+  // Every mark is lit (shown) by default; a press dims it (filtered out) or lights it again.
+  // `selected` holds the lit ones while filtering — empty means all lit. The last lit mark stays lit.
+  const allKeys = [
+    ...(owner.type !== Agent.type ? [FLOWPAD_CHANNEL] : []),
+    ...groups.map((g) => g.key),
+    ...(owner.type !== Agent.type ? [DIAGNOSIS_CHANNEL, AUTOMATIONS_CHANNEL] : []),
+  ];
+  const lit = (key: string) => !filtering || selected.has(key);
   const pick = (key: string) => {
     if (onMarkPress) return onMarkPress(key);
-    const next = new Set(selected);
+    const next = new Set(filtering ? selected : allKeys);
     if (next.has(key)) next.delete(key);
     else next.add(key);
-    onSelectedChange?.(next);
+    if (next.size === 0) return;
+    onSelectedChange?.(allKeys.every((k) => next.has(k)) ? new Set() : next);
   };
+
+  const seeAll = (
+    <button
+      type="button"
+      className="w-full border-t border-border/60 px-3 py-2 text-start text-xs text-primary hover:bg-accent"
+      onClick={() => navigation.openTab(ViewType.DATA_SOURCES)}
+      data-testid="attached-channels-see-all"
+    >
+      {t`See all sources`}
+    </button>
+  );
 
   return (
     <div
@@ -214,23 +234,46 @@ export function AttachedChannelsBar({
       role="toolbar"
       aria-label={t`Attached channels`}
     >
+      {flagged.length > 0 && (
+        <ChannelWarningsChip sources={flagged} specFor={specFor} onDelete={setDeleting} footer={seeAll} />
+      )}
+      {owner.type !== Agent.type && (
+        <BuiltInMark
+          channel={FLOWPAD_CHANNEL}
+          label={t`Flowpad — standard messages`}
+          glyph={<img src={flowpadIcon} alt="" className="size-[17px] rounded-sm" />}
+          pressed={lit(FLOWPAD_CHANNEL)}
+          onClick={() => pick(FLOWPAD_CHANNEL)}
+        />
+      )}
       {groups.map((group) => (
         <ChannelMark
           key={group.key}
           group={group}
           spec={specFor(group.provider)}
           filtering={filtering}
-          pressed={selected.has(group.key)}
+          pressed={lit(group.key)}
           onClick={() => pick(group.key)}
           onDelete={setDeleting}
         />
       ))}
       {/* A person's own StreamInbox also narrows to Diagnosis: Diagnose & fix and the help desk it may go to. */}
       {owner.type !== Agent.type && (
-        <DiagnosisMark
-          filtering={filtering}
-          pressed={selected.has(DIAGNOSIS_CHANNEL)}
+        <BuiltInMark
+          channel={DIAGNOSIS_CHANNEL}
+          label={t`Diagnosis — diagnoses and the help desk`}
+          glyph={<DiagnosisGlyph />}
+          pressed={lit(DIAGNOSIS_CHANNEL)}
           onClick={() => pick(DIAGNOSIS_CHANNEL)}
+        />
+      )}
+      {owner.type !== Agent.type && (
+        <BuiltInMark
+          channel={AUTOMATIONS_CHANNEL}
+          label={t`Automations — what your automations report`}
+          glyph={<AutomationsGlyph />}
+          pressed={lit(AUTOMATIONS_CHANNEL)}
+          onClick={() => pick(AUTOMATIONS_CHANNEL)}
         />
       )}
       {offers.map((offer) => (
@@ -287,16 +330,7 @@ export function AttachedChannelsBar({
             sources={rows}
             specFor={specFor}
             onDelete={setDeleting}
-            footer={
-              <button
-                type="button"
-                className="w-full border-t border-border/60 px-3 py-2 text-start text-xs text-primary hover:bg-accent"
-                onClick={() => navigation.openTab(ViewType.DATA_SOURCES)}
-                data-testid="attached-channels-see-all"
-              >
-                {t`See all sources`}
-              </button>
-            }
+            footer={seeAll}
           />
         </PopoverContent>
       </Popover>
@@ -328,6 +362,49 @@ const MARK_GREYED = '[&>:first-child]:opacity-45 [&>:first-child]:grayscale';
 const MARK_BADGE = 'absolute -bottom-0.5 -end-0.5 rounded-full border-2 border-background';
 const MARK_HOVER = { openDelay: 150, closeDelay: 120 };
 
+/** Every source a person must act on, as ONE chip with their count; opening it lists them with the
+ *  same rows the details popover shows (the reason is the control that recovers it). */
+function ChannelWarningsChip({
+  sources,
+  specFor,
+  onDelete,
+  footer,
+}: {
+  sources: DataSource[];
+  specFor: SpecFor;
+  onDelete: (source: DataSource) => void;
+  footer: ReactNode;
+}) {
+  const { t } = useLingui();
+  const count = sources.length;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border-[1.5px] border-yellow-500/60 bg-background px-2.5 text-xs font-semibold tabular-nums text-yellow-600 transition-colors hover:border-yellow-500 dark:text-yellow-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={t`${count} channels need attention`}
+          title={t`${count} channels need attention`}
+          data-testid="channel-warnings-chip"
+        >
+          <TriangleAlert className="size-4" />
+          {count}
+        </button>
+      </PopoverTrigger>
+      {/* `onFocusOutside` is refused for the same reason as the details popover below. */}
+      <PopoverContent align="end" className="w-72 p-0" onFocusOutside={(e) => e.preventDefault()}>
+        <ChannelList
+          title={t`Needs attention · ${count}`}
+          sources={sources}
+          specFor={specFor}
+          onDelete={onDelete}
+          footer={footer}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** The add dialog as the channel line opens it: message drivers not already attached, on `initial` when a channel was picked. */
 function AddChannelDialog({
   owner,
@@ -356,28 +433,46 @@ function AddChannelDialog({
   );
 }
 
-/** The Diagnosis mark: no source behind it, so no listening state — it only narrows the list to the
- *  conversations on the Diagnosis channel. Its glyph is the channel's own (``conversation_channel.DIAGNOSIS``). */
-function DiagnosisMark({ filtering, pressed, onClick }: { filtering: boolean; pressed: boolean; onClick: () => void }) {
-  const { t } = useLingui();
+function DiagnosisGlyph() {
   const { Base } = sourceGlyphs({ icon_name: 'Stethoscope' }, DIAGNOSIS_CHANNEL);
+  return <Base className="size-[17px]" />;
+}
+
+function AutomationsGlyph() {
+  const { Base } = sourceGlyphs({ icon_name: 'Zap' }, AUTOMATIONS_CHANNEL);
+  return <Base className="size-[17px]" />;
+}
+
+/** A mark for a channel no data source delivers (Flowpad, Diagnosis): no listening state — it only
+ *  narrows the list to the conversations that carry that channel. */
+export function BuiltInMark({
+  channel,
+  label,
+  glyph,
+  pressed,
+  onClick,
+  badge,
+}: {
+  channel: string;
+  label: string;
+  glyph: ReactNode;
+  pressed: boolean;
+  onClick: () => void;
+  badge?: ReactNode;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={pressed}
-      aria-label={t`Diagnosis — diagnoses and the help desk`}
-      title={t`Diagnosis — diagnoses and the help desk`}
-      className={cn(
-        MARK,
-        'border-border bg-background',
-        pressed && 'border-primary ring-1 ring-primary',
-        filtering && !pressed && MARK_GREYED,
-      )}
+      aria-label={label}
+      title={label}
+      className={cn(MARK, 'border-border bg-background', !pressed && MARK_GREYED)}
       data-testid="attached-channel"
-      data-provider={DIAGNOSIS_CHANNEL}
+      data-provider={channel}
     >
-      <Base className="size-[17px]" />
+      {glyph}
+      {badge}
     </button>
   );
 }
@@ -404,13 +499,12 @@ function ChannelMark({
   const { t } = useLingui();
   // The channel's mark, badged with whose way it is (Flow's), as on the data source rows.
   const { Base, Badge } = sourceGlyphs(spec, group.channel);
-  const { state, attention } = group;
+  const { state } = group;
   const count = group.sources.length;
   const title = spec?.title || group.provider;
   // Inline, not a helper taking `t`: the lingui macro only compiles a `t` it can
-  // see come from `useLingui()`. A member that needs a person names the mark
-  // "needs attention" even while a sibling listens.
-  const stateLabel = attention > 0 ? t`needs attention` : state === 'on' ? t`listening` : t`paused`;
+  // see come from `useLingui()`.
+  const stateLabel = state === 'on' ? t`listening` : t`paused`;
   return (
     <HoverCard {...MARK_HOVER}>
       <HoverCardTrigger asChild>
@@ -423,34 +517,21 @@ function ChannelMark({
             MARK,
             'bg-background',
             state === 'off' ? 'border-dashed border-border' : 'border-border',
-            pressed && 'border-primary ring-1 ring-primary',
-            ((filtering && !pressed) || state === 'off') && MARK_GREYED,
+            (!pressed || state === 'off') && MARK_GREYED,
           )}
           data-testid="attached-channel"
           data-provider={group.provider}
           data-count={count}
           data-state={state}
-          data-attention={attention}
         >
           {/* The badge sits top-right here: bottom-right is the listening dot's. */}
           <IconWithBadge Base={Base} Badge={Badge} className="size-[17px]" badgeClassName="-top-1 bottom-auto" />
-          {state === 'on' && attention === 0 && (
+          {state === 'on' && (
             <span
               className={cn(MARK_BADGE, 'grid size-3.5 place-items-center bg-emerald-500 text-white')}
               data-testid="attached-channel-on"
             >
               <Check className="size-2" strokeWidth={4} />
-            </span>
-          )}
-          {attention > 0 && (
-            <span
-              className={cn(
-                MARK_BADGE,
-                'grid size-3.5 place-items-center bg-yellow-400 text-[9px] font-bold leading-none text-black',
-              )}
-              data-testid="attached-channel-attention"
-            >
-              !
             </span>
           )}
           {count > 1 && (

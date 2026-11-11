@@ -149,7 +149,7 @@ export function ProjectSetupPage({ projectId, projectName }: { projectId: string
   const edit = (req: ProjectSetupRequirement) => {
     if (req.kind === 'pack') return setEditing(req);
     const pointer = pointerForRequirement(req, projectId);
-    if (pointer) navigation.openDock(pointer);
+    if (pointer) navigation.openDockOnThisPage(pointer);
   };
 
   const rows = useMemo(() => {
@@ -177,7 +177,7 @@ export function ProjectSetupPage({ projectId, projectName }: { projectId: string
         size="sm"
         className="h-7 w-fit gap-1 px-2 text-xs text-muted-foreground"
         data-testid="project-setup-back"
-        onClick={() => navigation.openDock(DockPointer.forProject(projectId))}
+        onClick={() => navigation.openDockOnThisPage(DockPointer.forProject(projectId))}
       >
         <ArrowLeft className="size-3 rtl:-scale-x-100" />
         <Trans>Project home</Trans>

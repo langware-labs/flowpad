@@ -32,7 +32,7 @@ export const VibeAgentsCard: React.FC<VibeAgentsCardProps> = ({ project }) => {
   // Hide agents already in the set from the add-picker.
   const alreadyVibe = useMemo(() => new Set(agents.map((a) => `subagent-${a.id}`)), [agents]);
   const pickerFilter = useCallback(
-    (d: AssetDescriptor) => d.typeid.startsWith('subagent-') && !alreadyVibe.has(d.typeid),
+    (d: AssetDescriptor) => !alreadyVibe.has(d.typeid),
     [alreadyVibe],
   );
 
@@ -90,6 +90,7 @@ export const VibeAgentsCard: React.FC<VibeAgentsCardProps> = ({ project }) => {
               </span>
             </Button>
           }
+          types={['subagent']}
           filter={pickerFilter}
           searchPlaceholder={t`Add an agent…`}
           onPick={(d) => void addVibe(d)}

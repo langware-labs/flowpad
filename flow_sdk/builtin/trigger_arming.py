@@ -122,10 +122,10 @@ async def arm_after_index(record: Any) -> None:
         return
     from flow_sdk.builtin.trigger import _project_setup_changed, set_trigger_on  # noqa: PLC0415
 
-    # Flowpad's own follow their file, as they always did; on a machine the hub runs ONLY for a deployed agent,
+    # Flowpad's own follow their file, as they always did -- but one Flowpad ships off is the person's once decided; on a machine the hub runs ONLY for a deployed agent,
     # the deploy was its owner's choice, so recommended rules are on (nobody is at that box to answer setup).
     # Every other rule's switch is the person's here, and an index never moves it.
-    if entity.is_builtin:
+    if entity.is_builtin and not (entity.switchable and entity.decided):
         target = entity.recommended
     elif not entity.decided and entity.recommended and _deployed_agent_machine():
         target = True
@@ -137,6 +137,19 @@ async def arm_after_index(record: Any) -> None:
     if not entity.decided:  # a rule that came with a project: its setup now has something to ask
         _project_setup_changed(entity)
     await arm_trigger(entity)
+
+
+async def rearm_missed_one_shot(trigger_id: str) -> None:
+    """The scheduler dropped this one-shot as too late: arm it again, which runs it once now
+    (``Trigger._register_schedule_job``)."""
+    from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
+
+    try:
+        trigger = await Trigger.get_by_id(trigger_id)
+        if trigger is not None:
+            await arm_trigger(trigger)
+    except Exception:
+        _log.exception("Could not re-arm missed one-shot %s", trigger_id)
 
 
 async def disarm_trigger(trigger_id: str) -> None:

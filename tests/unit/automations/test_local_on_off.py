@@ -99,3 +99,17 @@ async def test_a_package_is_one_setup_step_and_one_switch(tmp_path):
 
     await set_package_on(str(agent.typeid), False)
     assert [(await Trigger.get_by_id(str(r.id))).enabled for r in (answer, pick)] == [False, False]
+
+
+async def test_flowpad_ships_some_of_its_own_off_and_the_person_may_turn_them_on(tmp_path, monkeypatch):
+    """Flowpad's own follow their file -- except one it ships off (not recommended): that switch is the person's."""
+    monkeypatch.setattr("flow_sdk.config.is_running_install_path", lambda _p: True)
+    offered = await _index(_rule(tmp_path, {"recommended": False}))
+    assert offered.is_builtin and offered.switchable
+    assert (offered.enabled, offered.decided) == (False, True)
+
+    await set_trigger_on(offered, True)
+    assert (await _index(_rule(tmp_path, {"recommended": False}))).enabled is True, "a re-index keeps the choice"
+
+    shipped_on = await _index(_rule(tmp_path, {}))
+    assert not shipped_on.switchable and shipped_on.enabled is True, "one Flowpad ships on stays its file's"

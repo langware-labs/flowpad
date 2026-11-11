@@ -4,7 +4,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { type ConversationParticipant, type User } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
-import { ContactPermissionsDialog } from '@src/components/conversation/ContactPermissionsDialog';
+import { ContactDialog } from '@src/components/conversation/ContactDialog';
 import { Dialog, DialogContent, DialogFooter, DialogHeader } from '@src/components/ui/dialog';
 import { ContactRows, ContactsTitle } from './ContactRows';
 import { filterContacts, participantFromContact, participantKey, useContacts } from './use-contacts';
@@ -102,7 +102,7 @@ export function AddressBookButton({
         </DialogContent>
       </Dialog>
 
-      {detailFor && <ContactPermissionsDialog open onClose={() => setDetailFor(null)} user={detailFor} />}
+      {detailFor && <ContactDialog open onClose={() => setDetailFor(null)} user={detailFor} />}
     </>
   );
 }

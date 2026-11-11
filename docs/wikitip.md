@@ -69,8 +69,8 @@ the generic Tag annotation path. EVERY element carrying `data-tag="<word>"` (see
 the ring **persists while the param names the word** — no timed fade. The URL is
 the state: a journey step's highlight stands until the step advances and the
 param changes, so it can't be burned by a slow cold boot. Several surfaces may
-carry one tag (the footer project name and the rail's project icon both tag
-`ProjectPage`); all of them light, and the first scrolls into view.
+carry one tag; all of them light, and the first scrolls into view. (`ProjectPage`
+is on one today: the top bar's project pill, `top-nav-bar/RuntimeChip.tsx`.)
 
 ## The two utilities
 

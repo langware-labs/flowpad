@@ -24,11 +24,12 @@ vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(
 
 import { AttachedChannelsBar, groupChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
 import { channelOffers } from '@src/components/data-sources/use-source-specs';
+import { needsPerson } from '@src/components/data-sources/source-attention';
 import { useSourceSetupStore } from '@src/components/setup-wizard/source-setup-store';
 
-// A person's own StreamInbox also carries the Diagnosis mark; these cases are about channel marks.
+// A person's own StreamInbox also carries the Diagnosis and Automations marks; these cases are about channel marks.
 const channelMarks = () =>
-  screen.getAllByTestId('attached-channel').filter((e) => e.dataset.provider !== 'diagnosis');
+  screen.getAllByTestId('attached-channel').filter((e) => !['diagnosis', 'automations', 'flowpad'].includes(e.dataset.provider ?? ''));
 
 function mount(rows: DataSource[], selected = new Set<string>()) {
   const onSelectedChange = vi.fn();
@@ -53,8 +54,9 @@ describe('AttachedChannelsBar', () => {
     expect(marks.map((e) => [e.getAttribute('aria-label'), e.dataset.state])).toEqual([
       ['b · paused', 'off'],
       ['a · listening', 'on'],
-      ['c · needs attention', 'parked'],
     ]);
+    // "c" needs a person: it is counted in the chip, never drawn as a mark too.
+    expect(screen.getByTestId('channel-warnings-chip').textContent).toBe('1');
     expect(screen.getByTestId('attached-channels-add')).toBeTruthy();
     expect(screen.getByTestId('attached-channels-details')).toBeTruthy();
     expect(screen.queryByTestId('attached-channels-clear')).toBeNull();
@@ -78,18 +80,28 @@ describe('AttachedChannelsBar', () => {
     expect(onSelectedChange).not.toHaveBeenCalled();
   });
 
-  it('a lit mark still wears "!" when one of its sources needs a person', () => {
-    mount([fake('a', 'setup'), fake('b')]);
-    const mark = channelMarks()[0];
-    expect([mark.dataset.state, mark.dataset.attention, mark.getAttribute('aria-label')]).toEqual([
-      'on',
-      '1',
-      'slack × 2 · needs attention',
+  it('a source that needs a person leaves its mark for the chip, whose list holds exactly those', () => {
+    mount([fake('a', 'setup'), fake('b'), fake('g', 'setup', 'gmail')]);
+    // The slack kind keeps its mark for the listening source; gmail has none left to draw.
+    expect(channelMarks().map((e) => [e.dataset.provider, e.dataset.count, e.dataset.state])).toEqual([
+      ['slack', '1', 'on'],
     ]);
-    expect(screen.getByTestId('attached-channel-attention').textContent).toBe('!');
+    const chip = screen.getByTestId('channel-warnings-chip');
+    expect(chip.textContent).toBe('2');
+    fireEvent.click(chip);
+    expect(screen.getAllByTestId('attached-channel-row').map((e) => e.textContent)).toEqual([
+      expect.stringContaining('a'),
+      expect.stringContaining('g'),
+    ]);
+    expect(screen.getAllByTestId('attached-channel-verify')).toHaveLength(2);
   });
 
-  it('several sources of one kind share a mark with a count; clicking it filters to that kind', () => {
+  it('no chip when nothing needs a person', () => {
+    mount([fake('a'), fake('b', 'disabled', 'gmail')]);
+    expect(screen.queryByTestId('channel-warnings-chip')).toBeNull();
+  });
+
+  it('several sources of one kind share a mark with a count; clicking it dims (filters out) that kind', () => {
     const rows = [fake('a'), fake('b'), fake('c', 'disabled'), fake('g', 'active', 'gmail')];
     const save = vi.spyOn(rows[0], 'save');
     const onSelectedChange = mount(rows);
@@ -99,23 +111,22 @@ describe('AttachedChannelsBar', () => {
       ['slack', '3', 'on'],
     ]);
     expect(screen.getByTestId('attached-channel-count').textContent).toBe('3');
+    // All marks are lit by default; a press dims that one and keeps the rest shown.
+    expect(marks.map((e) => e.getAttribute('aria-pressed'))).toEqual(['true', 'true']);
     fireEvent.click(marks[1]);
-    expect(onSelectedChange).toHaveBeenCalledWith(new Set(['slack|slack']));
+    expect(onSelectedChange).toHaveBeenCalledWith(new Set(['flowpad', 'gmail|gmail', 'diagnosis', 'automations']));
     expect(save).not.toHaveBeenCalled();
   });
 
-  it('a group is parked only when nothing in it listens, and off only when everything is', () => {
-    const state = (rows: DataSource[]) => groupChannels(rows)[0].state;
-    expect(state([fake('a', 'setup'), fake('b')])).toBe('on');
-    // …but a member that needs a person is still counted, so the "!" survives a listening sibling.
-    expect(groupChannels([fake('a', 'setup'), fake('b')])[0].attention).toBe(1);
-    expect(groupChannels([fake('a'), fake('b')])[0].attention).toBe(0);
-    // A held file needs a person, so it draws "!"; a retrying source is the scheduler's own business.
-    expect(state([fake('h', 'active', 'slack', { health: 'ok', error_code: 'write_back_held' })])).toBe('parked');
-    expect(state([fake('r', 'active', 'slack', { health: 'transient_error' })])).toBe('on');
+  it('who needs a person, and a mark is lit when anything in it listens', () => {
+    // A held file needs a person; a retrying source is the scheduler's own business.
+    expect(needsPerson(fake('h', 'active', 'slack', { health: 'ok', error_code: 'write_back_held' }))).toBe(true);
+    expect(needsPerson(fake('r', 'active', 'slack', { health: 'transient_error' }))).toBe(false);
     // Nothing polls a source nobody has evaluated, so it must not draw as listening.
-    expect(state([fake('n', 'new')])).toBe('parked');
-    expect(state([fake('a', 'setup'), fake('b', 'disabled')])).toBe('parked');
+    expect(needsPerson(fake('n', 'new'))).toBe(true);
+    expect(needsPerson(fake('p', 'disabled'))).toBe(false);
+    const state = (rows: DataSource[]) => groupChannels(rows)[0].state;
+    expect(state([fake('a'), fake('b', 'disabled')])).toBe('on');
     expect(state([fake('a', 'disabled'), fake('b', 'disabled')])).toBe('off');
   });
 

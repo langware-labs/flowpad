@@ -14,6 +14,10 @@ const nav = vi.hoisted(() => ({ openDock: vi.fn() }));
 const dock = vi.hoisted(() => ({ current: null as null | { pointer?: string; options?: Record<string, string> } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: nav, currentDock: dock.current }),
+  useCurrentDock: () => dock.current,
+}));
+vi.mock('@src/hooks/use-default-scope-filter', () => ({
+  useDefaultScopeFilter: () => [{ mode: 'all' }, vi.fn(), 'p1'],
 }));
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: { id: 'p1' } }) }));
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
@@ -179,6 +183,17 @@ describe('My automations', () => {
     expect(screen.getByTestId('automation-row-b')).toBeTruthy();
   });
 
+  it('Flowpad’s own are locked, except one it ships off: that switch is the person’s', () => {
+    state.automations = [
+      automation({ id: 'b', group: 'builtin', read_only: true, switchable: false }),
+      automation({ id: 'u', group: 'builtin', read_only: true, switchable: true }),
+    ];
+    render(<AutomationsView />);
+    fireEvent.click(screen.getByTestId('automations-builtin-toggle'));
+    expect((screen.getByTestId('automation-toggle-b') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId('automation-toggle-u') as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('a starter opens the builder prefilled', () => {
     render(<AutomationsView />);
     fireEvent.click(screen.getByTestId('automation-recipe-morning-briefing'));
@@ -341,21 +356,27 @@ describe('the builder', () => {
     expect(state.mutate.save).not.toHaveBeenCalled();
   });
 
-  it('time zone, the saved expression and JSON are one click away, not in the way', () => {
+  it('the time zone is a button by the time — a chip only when it is not this computer\'s — and JSON is one click away', () => {
     dock.current = { options: { creating: 'schedule' } };
     render(<AutomationsView />);
-    expect(screen.queryByTestId('when-schedule-timezone')).toBeNull();
-    fireEvent.click(screen.getByTestId('when-schedule-advanced'));
-    expect(screen.getByTestId('when-schedule-timezone')).toBeTruthy();
+    expect(screen.queryByTestId('when-schedule-advanced')).toBeNull();
+    expect(screen.getByTestId('when-schedule-timezone-open')).toBeTruthy();
+    expect(screen.queryByTestId('when-schedule-timezone-chip')).toBeNull();
     expect(screen.queryByTestId('automation-json-toggle')).toBeNull();
     fireEvent.click(screen.getByTestId('automation-advanced-toggle'));
     expect(screen.getByTestId('automation-json-toggle')).toBeTruthy();
   });
 
-  it('a saved automation loads into the presets it was made with', () => {
+  it('a saved automation opens folded to three lines and unfolds into the presets it was made with', () => {
     state.automations = [automation({ id: 'a1', tested: false })];
     dock.current = { options: { trigger: 'a1' } };
     render(<AutomationsView />);
+    // A saved automation opens as three lines; each unfolds to the form it was made with.
+    expect(screen.queryByTestId('when-schedule-preset')).toBeNull();
+    for (const block of ['automation-when', 'automation-runs-on', 'automation-then'])
+      expect(screen.getByTestId(`${block}-summary`).textContent).not.toBe('');
+    fireEvent.click(screen.getByTestId('automation-when-toggle'));
+    fireEvent.click(screen.getByTestId('automation-then-toggle'));
     expect(screen.getByTestId('when-schedule-preset-weekdays').getAttribute('aria-checked')).toBe('true');
     expect((screen.getByTestId('then-prompt') as HTMLTextAreaElement).value).toBe('Go');
     expect(screen.getByTestId('automation-untested').textContent).toContain('Not tested yet');

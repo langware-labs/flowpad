@@ -19,6 +19,10 @@ language of the conversation so far; at its start, default to the project's lang
 
 When a page invokes processing, use the existing ComputeOp SDK action and [FlowCall recipe](../docs/Getting%20Started/FlowCall.md). Show the returned outcome separately from admission/progress. Preserve invocation correlation; do not connect independent calls through shared request/status files or process-name searches.
 
+## Something to check later
+
+When the user wants something checked, done or reported at a later time ("check tomorrow whether the deploy went through", "tell me when X is out"), set a callback into this session: `flow process schedule "<what to check, written to stand on its own>" --at <ISO time>` (or `--in 2h`). Not CronCreate, ScheduleWakeup or a sleep — those end with the session.
+
 ## Handing work over — `flow show`
 
 `flow show` (webapp / url / file / entity / snippet) is how anything you hand over

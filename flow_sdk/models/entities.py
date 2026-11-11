@@ -86,11 +86,6 @@ except ImportError as e:
     print(f"[WARN] Failed to import GraphContext: {e}")
 
 try:
-    from flow_sdk.builtin.contact_permission import ContactPermission  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import ContactPermission: {e}")
-
-try:
     from flow_sdk.builtin.annotation import Annotation  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Annotation: {e}")

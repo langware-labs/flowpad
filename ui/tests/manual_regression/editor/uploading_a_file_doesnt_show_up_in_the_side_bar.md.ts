@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 function realConsoleErrors(errors: string[]): string[] {
   return errors.filter(
@@ -13,7 +14,7 @@ function realConsoleErrors(errors: string[]): string[] {
 
 test.describe('File explorer sidebar shows file contents (FLOWPAD-1654)', () => {
   test('explorer sidebar/tree surfaces directory structure with entries', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -28,15 +29,15 @@ test.describe('File explorer sidebar shows file contents (FLOWPAD-1654)', () => 
     });
 
     await page.goto('/dock/explorer');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator('[data-testid="file-manager-download-button"]')).toBeAttached({ timeout: 15_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+    await expect(page.locator('[data-testid="file-manager-download-button"]')).toBeAttached({ timeout: adjusted(15_000) });
 
     // Navigate to the VFS root and confirm entries are surfaced (not an empty list).
     await page.locator('[data-testid="file-manager-home-button"]').click();
     await page.waitForTimeout(2_500);
 
     const rows = page.locator('table tbody tr');
-    await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+    await expect(rows.first()).toBeVisible({ timeout: adjusted(15_000) });
     const count = await rows.count();
     expect(count, 'Explorer shows an empty list at VFS root').toBeGreaterThan(0);
 
@@ -48,10 +49,10 @@ test.describe('File explorer sidebar shows file contents (FLOWPAD-1654)', () => 
     // there is only one.) Assert the real panel and that at least one
     // filesystem tree entry (the VFS root chevron) is present.
     const sidebar = page.locator('[data-testid="navigator-panel-explorer"]');
-    await expect(sidebar).toBeAttached({ timeout: 10_000 });
+    await expect(sidebar).toBeAttached({ timeout: adjusted(10_000) });
     await expect(
       sidebar.locator('[data-testid^="browseable-chevron-fs-"]').first(),
-    ).toBeAttached({ timeout: 10_000 });
+    ).toBeAttached({ timeout: adjusted(10_000) });
 
     const real = realConsoleErrors(errors);
     expect(real, `Console errors: ${real.join('\n')}`).toHaveLength(0);

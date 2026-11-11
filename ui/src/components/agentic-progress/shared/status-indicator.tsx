@@ -188,6 +188,15 @@ export const workerStatusConfig: Record<WorkerStatus, StatusConfig> = {
   },
 };
 
+/** Icon config for a compact status gutter (a list row). Every row shows its worker status;
+ *  a missing or unrecognised status reads as Unknown. A stalled model call reads as an error there —
+ *  the gutter has one error mark. */
+export function compactWorkerStatusConfig(v: unknown): StatusConfig {
+  if (!isWorkerStatus(v)) return workerStatusConfig[WorkerStatus.UNKNOWN];
+  if (v === WorkerStatus.API_TIMEOUT) return { ...workerStatusConfig[WorkerStatus.ERROR], label: workerStatusConfig[v].label };
+  return workerStatusConfig[v];
+}
+
 function isWorkerStatus(v: unknown): v is WorkerStatus {
   return (
     typeof v === 'string' &&

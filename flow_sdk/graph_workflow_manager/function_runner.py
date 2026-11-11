@@ -263,7 +263,6 @@ def _resolve_handler(target: str):
         demo_callbacks,  # noqa: F401 — registration side effect
         graph_workflow_functions,
     )
-    from flow_sdk.usage_report import callback as _usage_cb  # noqa: F401 — registration side effect
 
     handler = graph_workflow_functions.get(target)
     if handler is None:

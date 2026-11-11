@@ -1,12 +1,12 @@
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { EntityEnv, EnvVarType } from '../models/env_var';
 import { ExpressionNode, QueryFilter, QueryRequest } from '../FlowSync/query';
 import type { CloudDeployProvider } from './agent';
 import type { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 import { normalizeKind } from '../models/Kind';
 import { isTypeId, TypeId } from '../models/TypeId';
-import { EntityEnv } from '../models/env_var';
 import { ViewType } from '../utils/ui/view-types';
 import { WorldViewProjection } from '../worldview/projection';
 import { DEFAULT_CREDENTIAL_ENVIRONMENT } from '../services/credentials-service';
@@ -232,19 +232,6 @@ export interface DeploymentAuthorizationRow {
   provider: string;
   permissions: string[];
   ts?: number;
-}
-
-/** Where a variable of a deployment's environment comes from. */
-export type DeploymentEnvSource = 'agent' | 'deployment' | 'flowpad';
-
-/** One variable of a deployment's effective environment (`GET deployment/<id>/environment`). Names only. */
-export interface DeploymentEnvRow {
-  name: string;
-  kind: 'secret' | 'plain';
-  source: DeploymentEnvSource;
-  inject?: boolean;
-  written: boolean;
-  placed_at?: string | null;
 }
 
 export interface DeploymentSecretsInventory {
@@ -486,16 +473,21 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     return { secrets: data?.secrets ?? [], authorizations: data?.authorizations ?? [] };
   }
 
-  /** The effective environment the hub places on this machine — inherited from the agent, overridden here, or
-   *  provided by Flowpad (`GET deployment/<id>/environment`). Names only. */
-  async environmentRows(): Promise<DeploymentEnvRow[]> {
-    const data = await this.get<{ rows?: DeploymentEnvRow[] } | null>('environment');
-    return Array.isArray(data?.rows) ? data.rows : [];
+  /** This deployment's own store on the hub (`deployment/<id>/env-var`): values that override the project's. */
+  private overrideStore(): EntityEnv {
+    return new EntityEnv(new TypeId(this.getType(), this.id), { hubReflect: true });
   }
 
-  /** Forget this deployment's own value for `name` (`DELETE deployment/<id>/env-var/<NAME>`): the agent's applies again. */
-  async forget(name: string): Promise<void> {
-    await new EntityEnv(new TypeId(this.getType(), this.id), { hubReflect: true }).delete(name);
+  /** Override the project's value for `name` on this deployment only — write-only. `exists`: it already overrides. */
+  async setOverride(name: string, value: string, exists: boolean): Promise<void> {
+    const store = this.overrideStore();
+    if (exists) await store.update(name, { value, var_type: EnvVarType.API_KEY });
+    else await store.create({ name, value, var_type: EnvVarType.API_KEY });
+  }
+
+  /** Forget this deployment's own value for `name`: the project's value applies again. */
+  async resetToProject(name: string): Promise<void> {
+    await this.overrideStore().delete(name);
   }
 
   /** Let this placement's machine use your `provider` connection: it asks the hub for a fresh token

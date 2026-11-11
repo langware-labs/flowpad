@@ -20,6 +20,7 @@ import contextlib
 import json
 import logging
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -811,7 +812,7 @@ def _request_context(attach_dir: Path, received: list[dict]) -> str:
         "This run only DIAGNOSES: change nothing on this computer -- repair nothing, edit or delete no "
         "file (the file-editing tools are off for this run). Describe the fix for the person who asked "
         "instead. Write what they should see with a shell command, e.g. "
-        f"`cat > {attach_dir}/<short-name>.txt`."
+        f"`cat > {shlex.quote(f'{attach_dir}/<short-name>.txt')}`."
     )
     return "\n\n".join(parts)
 

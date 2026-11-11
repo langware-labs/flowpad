@@ -130,6 +130,8 @@ def derive_skill(data: dict, root: Path, header_raw: dict) -> None:
     data["name"] = resolve_skill_name(fields, root.name)
     if isinstance(fields.get("description"), str):
         data["description"] = fields["description"]
+    if "tags" in fields:  # skill.yaml wins over the SKILL.md header, as for every other key
+        data["tags"] = fields["tags"]
     if fields:
         data["metadata"] = fields
 

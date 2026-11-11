@@ -15,7 +15,6 @@ no prompt limit. Automated twin: `ui/tests/hub_playwright/prompt_request.spec.ts
   the other: `scripts/instance_ctl.sh launch pra-1` (sender, "alice") and
   `scripts/instance_ctl.sh launch prb-2` (recipient, "bob").
 - A conversation between them; on bob, the conversation is mapped to a project.
-- Bob holds no standing grant for alice (`GET /api/v1/graph/contact_permission` is empty).
 
 ## 1. Run & Update
 

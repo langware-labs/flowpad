@@ -1,6 +1,7 @@
 import { Trans, useLingui } from '@lingui/react/macro';
+import { dataContext } from '@sdk';
 import { ChevronDown } from 'lucide-react';
-import { Project, RuntimeKind } from '@sdk';
+import { PageId, Project, RuntimeKind } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -17,6 +18,7 @@ import {
   useProjectListMenu,
 } from '@src/components/terminal/project-list-menu';
 import { cn } from '@src/lib/utils';
+import { tagAttrs } from '@src/tags/tag-attrs';
 import { useRef, useState, type ReactNode } from 'react';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { RUNTIME_APPEARANCE } from './runtime-appearance';
@@ -172,8 +174,14 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
+                      onClick={() => {
+                        // On the hub the project's home is the hub page's own (members, roles, assets).
+                        const home = DockPointer.forProject(project.id);
+                        navigation.openDock(!dataContext.caps.localFiles ? home.withPage(PageId.HUB) : home);
+                      }}
                       data-testid="top-nav-project"
+                      // The project's page opener: the tag journeys and highlights name (the footer carried it before).
+                      {...tagAttrs('ProjectPage', 'button')}
                       aria-label={homeLabel}
                       className={cn(SEGMENT, 'gap-1.5 pl-3 pr-2.5')}
                     >

@@ -149,7 +149,7 @@ async def _flag_break(rel, lock, target_ent, detail: dict, target_hash: str) -> 
         target_type=to_tid.type if to_tid else "",
         target_id=to_tid.id if to_tid else "",
         content=reason[:50],
-        labels=[LOCK_BREAK_FLAG],
+        subkind=LOCK_BREAK_FLAG,
         iso_timestamp=datetime.now(timezone.utc).isoformat(),
         data={
             "flag_type": LOCK_BREAK_FLAG,

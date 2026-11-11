@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, sendCommand, waitForOutput } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Terminal Resize', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,7 +8,7 @@ test.describe('Terminal Resize', () => {
   });
 
   test('terminal resizes when browser window resizes', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: navigate to shell
     await gotoShell(page);

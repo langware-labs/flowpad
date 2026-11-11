@@ -4,6 +4,7 @@
  * Source: refreshing_any_tab_other_than_main_app_error_404_agent_id_mi.md
  */
 import { test, expect } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Non-main tabs — no 404 agent-id-missing', () => {
   test.beforeEach(async ({ page }) => {
@@ -13,7 +14,7 @@ test.describe('Non-main tabs — no 404 agent-id-missing', () => {
   });
 
   test('test 1: Navigating to execute flow tab does not produce 404 (agent ID missing) error', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -21,7 +22,7 @@ test.describe('Non-main tabs — no 404 agent-id-missing', () => {
     });
 
     await page.goto('/dock/execute-flow');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 25_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(25_000) });
     await page.waitForTimeout(3_000);
 
     const offending = errors.filter(
@@ -31,7 +32,7 @@ test.describe('Non-main tabs — no 404 agent-id-missing', () => {
   });
 
   test('test 2: Navigating to skills tab does not produce 404 error', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -42,7 +43,7 @@ test.describe('Non-main tabs — no 404 agent-id-missing', () => {
     // The assets list view mounts; wait for network to settle then assert the
     // view rendered (URL preserved on the skills route, app root non-empty) —
     // the scenario's intent is the absence of a 404, not a specific element.
-    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
     await expect(page.locator('#root')).not.toBeEmpty();
     expect(page.url()).toContain('/dock/assets/list/skill');
     await page.waitForTimeout(3_000);

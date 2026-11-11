@@ -357,16 +357,16 @@ describe('details', () => {
   });
 
   it('density follows the frozen width, not the live share', () => {
-    // 12 tabs in 1200px = 100px each = compact (no popout). Frozen at 120px the
-    // tabs keep normal density even though 11 tabs would share 109px each.
-    render(<Harness n={12} />);
-    const popouts = () => screen.queryAllByRole('button', { name: /open in external browser/i }).length;
-    expect(popouts()).toBe(0);
-    clickClose('t11');
-    expect(popouts()).toBe(11);
+    // 21 tabs in 1200px = 57px each = icon only. Frozen at 120px the tabs keep
+    // their titles even though 20 tabs would share 60px each.
+    render(<Harness n={21} />);
+    const titles = () => screen.queryAllByText(/^Tab \d+$/).length;
+    expect(titles()).toBe(0);
+    clickClose('t20');
+    expect(titles()).toBe(20);
     fireEvent.pointerLeave(strip());
     void act(() => vi.advanceTimersByTime(FREEZE_LEAVE_DELAY_MS));
-    expect(popouts()).toBe(0); // 11 tabs × 109px = compact again
+    expect(titles()).toBe(0); // 20 tabs × 60px = icon only again
   });
 
   it('width changes animate only when motion is allowed', () => {

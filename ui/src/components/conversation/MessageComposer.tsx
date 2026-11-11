@@ -30,6 +30,7 @@ import {
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { genericEntityShareSource, type ShareSource } from '@src/hooks/share-sources';
 import { displayLabelForDescriptor } from '@src/components/asset-manager/asset-row-helpers';
+import { SecureSendDialog } from './SecureSendDialog';
 import { MAX_FILE_SIZE_LABEL } from './constants';
 import { AssetRefChips, useAssetRefSelection } from './AttachMenu';
 import { mergePickedFiles } from './FileAttachmentPicker';
@@ -87,6 +88,9 @@ interface MessageComposerProps {
   onAfterDiscard?: () => void;
   /** A channel send can carry files (`ChannelSpec.accepts_attachments`): the paperclip is live. */
   channelAcceptsFiles?: boolean;
+  /** Replaces the hub send for a conversation whose messages go somewhere else (an IT operation's conversation
+   *  asks its machines again). Gets the text and files; the composer still clears and reports as after a send. */
+  onSend?: ((text: string, files: File[]) => Promise<void>) | null;
   /** The message the next send answers (it quotes it and joins its thread); `inThread` when the
    *  channel's replies only thread. */
   replyTo?: { id: string; sender: string; text: string; inThread?: boolean } | null;
@@ -194,6 +198,7 @@ export function MessageComposer({
   draft,
   onAfterDiscard,
   channelAcceptsFiles = false,
+  onSend = null,
   replyTo = null,
   onClearReply,
   threadTarget = null,
@@ -211,6 +216,7 @@ export function MessageComposer({
   const [text, setText] = useState(draft?.text ?? readDraft(draftScope));
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [credentialPickerOpen, setCredentialPickerOpen] = useState(false);
+  const [secureSendOpen, setSecureSendOpen] = useState(false);
   const [secretShareSource, setSecretShareSource] = useState<ShareSource | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
@@ -227,7 +233,15 @@ export function MessageComposer({
 
   // The session-start control lives on the plain conversation composer only:
   // inside a session view every send is already a turn of that session.
-  const canStartSession = !!sessionHost && !!onStartLiveSession && !liveSessionId && !isDraftMode;
+  // Why the live-session and prompt buttons are disabled (null = available); the buttons show it.
+  const sessionUnavailableReason = isDraftMode
+    ? t`Send the first message to start the conversation, then a live session can run`
+    : !sessionHost
+      ? t`No other participant's machine in this conversation to run on`
+      : !onStartLiveSession
+        ? t`Live sessions are not available here`
+        : null;
+  const canStartSession = !liveSessionId && sessionUnavailableReason === null;
   const terminal = variant === 'terminal';
   useEffect(() => {
     if (autoFocus) textareaRef.current?.focus();
@@ -375,7 +389,14 @@ export function MessageComposer({
       if (!effectiveConversationId) {
         throw new Error('sendReply requires a conversationId');
       }
-      if (channel) {
+      if (onSend && !isDraftMode && !liveSessionId) {
+        const gate = await ensureCloudLogin();
+        if (!gate.ok) {
+          setError(gate.error);
+          return;
+        }
+        await onSend(trimmed, files);
+      } else if (channel) {
         // A channel reply never touches the hub, so it must not drag the user
         // through a Flowpad-Cloud login to send an email. Branch on the CALL
         // only — an early return here would have to restate the cleanup below,
@@ -584,7 +605,7 @@ export function MessageComposer({
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={isDisabled}
-              onSelect={() => setCredentialPickerOpen(true)}
+              onSelect={() => (effectiveConversationId ? setSecureSendOpen(true) : setCredentialPickerOpen(true))}
               data-testid="composer-secured-transfer"
             >
               <Lock className="mr-2 h-3.5 w-3.5" />
@@ -614,50 +635,59 @@ export function MessageComposer({
   /** The live-session icon: opens the conversation's live session (starting one when none is
    *  open) — the turns are typed in the session view, never in this box. */
   const hostName = sessionHost?.name?.trim() || t`the other participant`;
-  const sessionToggle = canStartSession ? (
-    <button
-      type="button"
-      onClick={() => onStartLiveSession?.()}
-      disabled={isDisabled}
-      title={
-        sessionHost?.hasOpenSession
-          ? t`Open the live session on ${hostName}'s machine`
-          : t`Start a live session on ${hostName}'s machine`
-      }
-      data-testid="composer-session-toggle"
-      className={cn(
-        ICON_BUTTON_CLASS,
-        sessionHost?.hasOpenSession && 'text-emerald-700 hover:text-emerald-700 dark:text-emerald-300',
-      )}
-    >
-      <MonitorPlay className="h-3.5 w-3.5" />
-    </button>
-  ) : null;
+  const sessionToggle = liveSessionId ? null : (
+    <span title={sessionUnavailableReason ? t`Live session: ${sessionUnavailableReason}` : undefined}>
+      <button
+        type="button"
+        onClick={() => onStartLiveSession?.()}
+        disabled={isDisabled || !canStartSession}
+        title={
+          sessionUnavailableReason
+            ? undefined
+            : sessionHost?.hasOpenSession
+              ? t`Open the live session on ${hostName}'s machine`
+              : t`Start a live session on ${hostName}'s machine`
+        }
+        data-testid="composer-session-toggle"
+        className={cn(
+          ICON_BUTTON_CLASS,
+          'disabled:pointer-events-none',
+          sessionHost?.hasOpenSession && 'text-emerald-700 hover:text-emerald-700 dark:text-emerald-300',
+        )}
+      >
+        <MonitorPlay className="h-3.5 w-3.5" />
+      </button>
+    </span>
+  );
 
   // A prompt call is offered wherever a live session is: the same other machine, run once, async.
-  const promptCallToggle = canStartSession ? (
-    <button
-      type="button"
-      onClick={() => setPromptCallOn((on) => !on)}
-      disabled={isDisabled}
-      aria-pressed={promptCallOn}
-      title={
-        promptCallOn
-          ? t`This message is a prompt — ${hostName} approves it, it runs once on their machine, you get its status`
-          : t`Attach a prompt — runs once on ${hostName}'s machine after they approve it`
-      }
-      data-testid="composer-prompt-call"
-      className={cn(
-        'flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors disabled:opacity-40',
-        promptCallOn
-          ? 'border border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300'
-          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-      )}
-    >
-      <SquareTerminal className="h-3.5 w-3.5" />
-      {promptCallOn && <Trans>Prompt</Trans>}
-    </button>
-  ) : null;
+  const promptCallToggle = liveSessionId ? null : (
+    <span title={sessionUnavailableReason ? t`Prompt request: ${sessionUnavailableReason}` : undefined}>
+      <button
+        type="button"
+        onClick={() => setPromptCallOn((on) => !on)}
+        disabled={isDisabled || !canStartSession}
+        aria-pressed={promptCallOn}
+        title={
+          sessionUnavailableReason
+            ? undefined
+            : promptCallOn
+              ? t`This message is a prompt — ${hostName} approves it, it runs once on their machine, you get its status`
+              : t`Attach a prompt — runs once on ${hostName}'s machine after they approve it`
+        }
+        data-testid="composer-prompt-call"
+        className={cn(
+          'flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors disabled:pointer-events-none disabled:opacity-40',
+          promptCallOn
+            ? 'border border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+        )}
+      >
+        <SquareTerminal className="h-3.5 w-3.5" />
+        {promptCallOn && <Trans>Prompt</Trans>}
+      </button>
+    </span>
+  );
 
   // Offered on the plain reply box only: a channel send returns no message id, a prompt is a run.
   const canTaskIt = !!onTaskIt && !channel && !isDraftMode && !liveSessionId;
@@ -873,9 +903,19 @@ export function MessageComposer({
         selectedTypeIds={[]}
         onPick={chooseCredentialForSecureShare}
         onUnpick={() => undefined}
-        filter={(descriptor) => new TypeId(descriptor.typeid).type === 'credential'}
+        types={['credential']}
         searchPlaceholder={t`Choose a credential to share securely…`}
       />
+      {secureSendOpen && effectiveConversationId && (
+        <SecureSendDialog
+          conversationId={effectiveConversationId}
+          onClose={() => setSecureSendOpen(false)}
+          onPickSaved={() => {
+            setSecureSendOpen(false);
+            setCredentialPickerOpen(true);
+          }}
+        />
+      )}
       {secretShareSource && (
         <ShareToConversationDialog
           open

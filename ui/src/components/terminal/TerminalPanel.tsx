@@ -196,7 +196,11 @@ const TerminalPanelBody: React.FC<{
   const { data: process } = useEntity<AgenticProcess>(
     isProcess && targetId ? new TypeId(AgenticProcess.type, targetId) : null,
   );
-  const { data: shell } = useEntity<Shell>(!isProcess && targetId ? new TypeId(Shell.type, targetId) : null);
+  // Watched: the backend revives only terminals a UI has open (pty_recovery
+  // `_recover_bare_shells`) — unwatched, a backend restart left this pane dead.
+  const { data: shell } = useEntity<Shell>(!isProcess && targetId ? new TypeId(Shell.type, targetId) : null, {
+    watch: true,
+  });
   const [runtimeStatus, setRuntimeStatus] = useState<ProcessRuntimeStatus>('idle');
   // Transport reconciliation belongs to the always-mounted panel, not the
   // InteractiveTerminal child hidden by the startup gate. This records the

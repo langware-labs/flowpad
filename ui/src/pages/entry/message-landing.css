@@ -294,6 +294,48 @@
   font: inherit;
 }
 
+/* DesktopDownload: the OS's installer button, Linux's format choice, every installer. */
+.nl-download .nl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nl-formats {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: #444;
+}
+
+.nl-format {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.nl-installers {
+  margin: 10px 0 0;
+  padding-inline-start: 18px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.nl-installers a {
+  color: #4f46e5;
+}
+
+.nl-code {
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f1f0fb;
+  color: #1a1a2e;
+  overflow-wrap: anywhere;
+}
+
 /* "FlowPad is connected" line under Open in FlowPad (OpenInFlowpadActions). */
 .nl-connection {
   display: flex;

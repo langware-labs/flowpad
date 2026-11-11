@@ -21,9 +21,14 @@ export interface AutomationRowProps {
   onToggle: (enabled: boolean) => void;
   onRunOnce: () => void;
   busy?: boolean;
+  /** The owning project's chip, for a row shown outside its project. */
+  project?: ReactNode;
 }
 
-export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy }: AutomationRowProps) {
+/** The switch is the person's on every rule but Flowpad's own -- and on Flowpad's own it ships off. */
+export const canSwitch = (a: Pick<AutomationSummary, 'read_only' | 'switchable'>) => a.switchable ?? !a.read_only;
+
+export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy, project }: AutomationRowProps) {
   const { t } = useLingui();
   const sentence = sentenceOf(useAutomationWords(), a.when, a.then);
   return (
@@ -36,7 +41,7 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
       toggle={
         <Switch
           checked={a.enabled}
-          disabled={busy || a.read_only}
+          disabled={busy || !canSwitch(a)}
           onCheckedChange={onToggle}
           aria-label={a.enabled ? t`Turn ${a.name} off` : t`Turn ${a.name} on`}
           data-testid={`automation-toggle-${a.id}`}
@@ -52,6 +57,7 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
       }
     >
       <IfThenLine when={sentence.when} then={sentence.then} />
+      {project}
       <Problem automation={a} />
     </LineShell>
   );

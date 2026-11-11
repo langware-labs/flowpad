@@ -185,9 +185,20 @@ export interface TabEnsureResult {
   created: boolean;
 }
 
+/** `pingCaller: false` is for a caller that re-reads the list right after the write: the
+ *  backend leaves this window out of the write's `tabs_changed` ping. The default pings
+ *  everyone, and a caller with no re-read of its own depends on that ping. */
+function applyPingCaller(info: ActionInfo, pingCaller: boolean | undefined): void {
+  if (pingCaller !== false) return;
+  info.carriesInitiator = true;
+  info.bodyParameters = { ...info.bodyParameters, ping_caller: false };
+}
+
 export interface INewTabOpts extends IEnsureTabOpts {
   /** The opener (current active tab id): a fresh tab lands right after it. */
   afterTabId?: string | null;
+  /** False: this caller re-reads the list itself (`applyPingCaller`). */
+  pingCaller?: boolean;
 }
 
 /** Backward-compatible name for older call sites/tests during the Tab migration. */
@@ -260,16 +271,27 @@ async function namedProject(id: string | null | undefined): Promise<string | nul
   return !live || live.has(id) ? id : null;
 }
 
+/** A project id stamped on the target (step 5), or null when no such project exists: an asset
+ *  indexed from a folder that is not a project carries that folder's derived id. Never trusted by
+ *  shape like `namedProject` — on a cold load the list isn't cached yet and the derived id is a
+ *  valid uuid — so an id the cached list lacks is looked up (a 404 is negative-cached). */
+async function existingProject(id: string | null | undefined): Promise<string | null> {
+  if (!id) return null;
+  if ((await cachedProjectIds())?.has(id)) return id;
+  return (await dataManager.getByTypeId(new TypeId(EntityTypes.Project, id)).catch(() => null)) ? id : null;
+}
+
 /**
  * The asset's OWN project — `resolveTabProject`'s steps 2, 5, 6 (the loader's redirect
- * target, the tab's `target_project_id`); mirrors the backend's `tab_owner_project`.
+ * target, the tab's `target_project_id`); mirrors the backend's `tab_owner_project`, except
+ * that a step-5 stamp must name an existing project.
  */
 export async function tabOwnerProject(dock: IDockPointer, target: TabProjectTarget): Promise<string | null> {
   const targetTypeId = dock.targetTypeId ?? target?.typeId ?? null;
   // 2
   if (targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
-  // 5
-  const own = target?.project_id ?? target?.effective_project_id ?? null;
+  // 5 — a stamp naming no project (a non-project folder's derived id) falls through to the path.
+  const own = await existingProject(target?.project_id ?? target?.effective_project_id);
   if (own) return own;
   // 6 — an unminted file still sits inside a project folder.
   for (const path of [dock.vfsPath?.machinePath, target?.cwd ?? target?.workdir]) {
@@ -401,6 +423,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       after_tab_id: opts.afterTabId ?? null,
       parent_tab_id: opts.parentTabId ?? null,
     };
+    applyPingCaller(info, opts.pingCaller);
     const res = await dataManager.callAction<unknown, { tabs: ITab[]; created?: boolean }>(info);
     return { tabs: Tab.fromResponse(res?.tabs ?? []), created: res?.created ?? false };
   }
@@ -455,7 +478,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
 
   static async getFromDockPointer(
     dock: IDockPointer,
-    opts: { parentTabId?: string | null; afterTabId?: string | null } = {},
+    opts: { parentTabId?: string | null; afterTabId?: string | null; pingCaller?: boolean } = {},
   ): Promise<TabEnsureResult> {
     const pointerJson = dock.toJSON?.();
     if (!pointerJson) return { tabs: [], created: false };
@@ -478,6 +501,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       // navigating (`flow show` outside vibe) has no such opener, so it names
       // the tab it belongs beside.
       afterTabId: opts.afterTabId ?? null,
+      pingCaller: opts.pingCaller,
     });
   }
 
@@ -564,9 +588,10 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  already saved the live name onto its Shell/AgenticProcess; this keeps the
    *  durable `Tab.name` in step so the chip stays right once inactive. NOT `rename`
    *  (which would pin `auto_rename=false` and stop future auto-titles). */
-  static async setNameById(id: string, name: string): Promise<Tab[]> {
+  static async setNameById(id: string, name: string, opts: { pingCaller?: boolean } = {}): Promise<Tab[]> {
     const info = new ActionInfo('set_name', Tab.type, id, 'POST');
     info.bodyParameters = { name };
+    applyPingCaller(info, opts.pingCaller);
     const res = await dataManager.callAction<{ name: string }, { tabs: ITab[] }>(info);
     return Tab.fromResponse(res?.tabs ?? []);
   }

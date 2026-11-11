@@ -136,6 +136,31 @@ deleting the deployment revokes every authorization. `Deployment.secrets_invento
 (`GET deployment/<id>/secrets`) lists each stored name with its last write and placement and
 the authorizations — names only; the cloud place's **Secrets** tab shows it.
 
+## An agent's project — one secret store, every placement
+
+The **names** are the project's Credential assets (`agentic-assets/credential/<name>/credential.json`, value-free);
+an agent requires them by name in `agent.json` `requirements`. The **values** live in one place: the project's
+secret store on the hub (the Project row's env vars, `project/<id>/env-var`, `builtin/project_secrets.py`) —
+write-only, read back as names; the owner and project admins write it. A deployment may override a value on top
+(its **Secrets**: Override here / Reset to project).
+
+Every placement of the agent — deployments, private placements, invite and visitor boxes — gets the project's
+values for its required credentials plus its own overrides. On the machine, `credential_service.place_values` files
+them under the project that declares them: the hub's project id when this machine knows it, else the deployment's
+main agent's project, else the one local project whose Credentials declare the names. A deployment on this
+machine's own node resolves as this computer (`Placement.of`). Processes read the values at spawn.
+
+The agent's **Env** tab (also on the hub page, which finds the project from the agent's hub repo) lists each required
+credential — Credential / Variables / Status / Placed — with Declare, a write-only Set and Use mine
+(`POST project/<id>/secrets_use_mine`); changing a placed value asks **Update all machines** or **Only new machines**
+(`project/<id>/credentials-changed`). A required credential the project does not declare is a project setup issue.
+
+The agent knows its credentials by name only: `flow credentials list [--text]` (name, variables, available) and a
+**Credentials:** block in the worker's system prompt — never a value.
+
+Limitation: a new invite box is placed before its project is cloned, so its values land in the catch-all
+`deployment-secrets` project until they are re-placed (Update all machines).
+
 ## Between people — the project's vaults
 
 A credential's values travel from one person to another ONLY through one of the project's **vaults**:
@@ -299,7 +324,9 @@ whose value grants it). Raw scopes (`auth.scopes`) stay the wire truth.
 `flow_sdk/permissions.py` collects them — no provider name in generic code.
 
 An agent's **requirements** (`AgentSpec.requirements`, `builtin/readiness.py`)
-are what it needs anywhere: the credentials its data sources read, their
+are what it needs anywhere — a credential is named by an explicit object
+`{"kind": "credential", "name": "MY_API_KEY", "vars": ["MY_API_KEY"]}` (a bare string parses as kind
+`variable`): the credentials its data sources read, their
 permissions, each MCP server's `${VAR}`, and anything authored — written into
 `agent.json` when it is published, so they travel with it. **Readiness**
 (`GET agent/<id>/readiness?deployment_id=`) answers per requirement at one
@@ -319,9 +346,12 @@ nothing.
 `flow project setup` folds the same per-source derivation (`--deployment` sets up a
 deployment's values).
 
-Readiness **gates a cloud deploy**: `agent_cloud_deploy.run_deployment_steps` publishes, plans the
+Credentials and variables are advisory too (`ADVISORY_KINDS`): a missing secret never refuses a deploy — the
+readiness step ends with `Secret <name> missing` and the machine gets the value once it is set (Env tab, "Update all
+machines"). The deploy dialog shows one **Secrets** line (✓ / ⚠ missing) with Launch anyway. Readiness still
+**gates a cloud deploy** on the remaining blocking items: `agent_cloud_deploy.run_deployment_steps` publishes, plans the
 placement, and raises `NotReady` (HTTP 409, `code: not_ready`, with the readiness and the
-planned deployment) before any machine is paid for — on a blocking item only, never on funding; the hub checks the same names again
+planned deployment) before any machine is paid for; the hub checks the same names again
 (`require`). The deploy dialog renders that refusal with Use mine / Authorize per item.
 `flow agent deploy <agent> [--environment E]` exits 1 on it; `flow credentials check|set
 --deployment D` and `flow credentials diff <A|here> <B|here>` (which names each holds) work on

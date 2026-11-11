@@ -17,6 +17,7 @@ import path from 'node:path';
 import { dismissSetupModal } from './helpers';
 import { apiBase, apiContext } from '../_shared/api';
 import { withViewMode } from '../_shared/view-mode';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 const TEXTAREA = '[data-testid="entity-execution-input"]';
@@ -142,7 +143,7 @@ test.describe('doc-chat per type', () => {
   });
 
   test('test 1: panel mounts on every doc-type with an asset_ref-resolved target', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
 
     for (const { type, editor, machinePath } of DOCS) {
@@ -162,11 +163,11 @@ test.describe('doc-chat per type', () => {
         expect(target!, `target for ${type} should be ${type}-<uuid>`).toMatch(
           new RegExp(`^${type}-[0-9a-f-]{36}$`),
         );
-      }).toPass({ timeout: 20_000 });
+      }).toPass({ timeout: adjusted(20_000) });
 
       // Composer textarea is visible and NOT disabled (target resolved → send ungated).
       const ta = page.locator(`${TEXTAREA}:visible`).first();
-      await expect(ta).toBeVisible({ timeout: 10_000 });
+      await expect(ta).toBeVisible({ timeout: adjusted(10_000) });
       await expect(ta).not.toBeDisabled();
 
       // Fresh editor: no active-process status (visible), history present-but-disabled.

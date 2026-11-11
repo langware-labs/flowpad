@@ -488,7 +488,7 @@ function AttachmentReviewDialog({
   // the modal offers a jump to the SELECTED entity's real view (e.g. the task
   // view). Staged/not-yet-installed → nothing to open, so it's hidden.
   const openSelected = async () => {
-    const tid = selected.targetTypeId;
+    const tid = selected.localTypeId;
     if (!tid?.id) return;
     // Resolve the entity rather than hand `buildDockPointer` a {type, id} stub.
     // Most types need nothing more — they open by TypeId and the loader resolves

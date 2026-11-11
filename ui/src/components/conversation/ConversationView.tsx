@@ -13,6 +13,7 @@ import {
   FlowMessage,
   MessageThread,
   pickupConversation,
+  releaseTicket,
   settleTicket,
   QueryFilter,
   QueryRequest,
@@ -37,7 +38,15 @@ import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk
 import type { FlowEvent } from '@sdk/tags/EventBus';
 import type { ITask, TaskableMessage } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
-import { replyPickedUp, ticketAffordances } from './ticket-affordances';
+import { conversationFacets, type TicketState } from './conversation-category';
+import { TicketStatusControl } from './TicketStatusControl';
+import {
+  replyPickedUp,
+  ticketActionClassName,
+  ticketAffordances,
+  ticketStatusSteps,
+  type TicketVerb,
+} from './ticket-affordances';
 import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
@@ -65,6 +74,8 @@ import {
   type ConversationItem,
 } from './conversation-items';
 import { indexCalls, runningProcessCalls } from './process-call';
+import { indexItSends, itOperationOf } from './it-sends';
+import { itMessageRequestOf } from '@src/components/assets/editor/agent-profile/it-message';
 import { indexForms } from './message-form';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -122,11 +133,6 @@ interface ConversationViewProps {
   /** Restrict this view and every mutation to one Agent's formal stream inbox. */
   agentId?: string | null;
 }
-
-/** Geometry shared by the ticket-header actions. Only the colour differs
- *  between them, so a padding or type-scale tweak belongs in one place. */
-const ticketActionClassName =
-  'flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50';
 
 export function ConversationView({
   conversationId,
@@ -581,6 +587,28 @@ export function ConversationView({
   // A prompt call's answer is a message of its own on the wire, but it reads as the call's status:
   // it renders on the call's card, never as a bubble.
   const calls = useMemo(() => indexCalls(messagesById.values()), [messagesById]);
+  // An IT request draws each machine's answer to its send as a row of a table under it, never as a bubble.
+  const itSends = useMemo(() => indexItSends(messagesById.values()), [messagesById]);
+  const itOperation = useMemo(
+    () => itOperationOf(messagesById.values(), itSends.sendByMessage),
+    [messagesById, itSends],
+  );
+  const itAgentId = itOperation?.agentId ?? null;
+  // The operation's conversation sends the operation again, to every machine of its agent.
+  const sendItAgain = useMemo(() => {
+    if (!itAgentId) return null;
+    const agent = new Agent({ id: itAgentId });
+    return async (text: string, files: File[]) => {
+      await agent.itMessage({ ...(await itMessageRequestOf(text, files)), conversation_id: conversationId });
+    };
+  }, [itAgentId, conversationId]);
+  const composerPlaceholder = (() => {
+    if (itOperation) {
+      if (itOperation.machines === 1) return t`Send to 1 machine`;
+      return itOperation.machines > 1 ? t`Send to ${itOperation.machines} machines` : t`Send to the machines`;
+    }
+    return channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined;
+  })();
   // Calls running on this machine, asked once per conversation — and only while a call is still
   // unanswered — so a card mounting mid-run says "working…".
   const [runningCalls, setRunningCalls] = useState<ReadonlySet<string>>(() => new Set());
@@ -614,7 +642,11 @@ export function ConversationView({
   const groupedItems = useMemo(() => {
     const getFm = (id: string) => messagesById.get(id) ?? null;
     const feed = orderedItems.filter(
-      (it) => !(it.kind === ConversationItemKind.POINTER && calls.answerMessageIds.has(it.messageId)),
+      (it) =>
+        !(
+          it.kind === ConversationItemKind.POINTER &&
+          (calls.answerMessageIds.has(it.messageId) || itSends.replyMessageIds.has(it.messageId))
+        ),
     );
     if (threadId) {
       const inThread = feed.filter((it) => itemThreadId(it, getFm) === threadId);
@@ -625,7 +657,7 @@ export function ConversationView({
       ...groupThreadItems(threaded, getFm, threadCounts),
       ...anchorSessionItems(plain, getFm, sessionAnchors),
     ].sort((a, b) => a.sortAt - b.sortAt);
-  }, [orderedItems, messagesById, threadId, threadCounts, flatThreadIds, sessionAnchors, calls]);
+  }, [orderedItems, messagesById, threadId, threadCounts, flatThreadIds, sessionAnchors, calls, itSends]);
 
   // A message right under one from the same sender, moments later, drops its avatar and name.
   const continuations = useMemo(() => {
@@ -738,6 +770,8 @@ export function ConversationView({
           onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
           isConversationOwner={isConversationOwner}
           onDeleteMessage={handleDeleteMessage}
+          deleteForEveryone={conversation?.remote === true}
+          selfIds={selfIds}
           isHelpdesk={isHelpdeskConversation}
           viewerCloudUserId={cloudUserId}
           attachmentProjectId={attachmentProjectId}
@@ -755,6 +789,7 @@ export function ConversationView({
           taskPeople={taskPeople}
           onLaunchWorker={launchWorkerOnMessage}
           promptCall={promptCallFor(id)}
+          itSend={itSends.sendByMessage.get(id) ?? null}
           messageForm={messageFormFor(id)}
           formAnswers={formAnswersFor(id)}
           callPeerName={otherParticipant?.name ?? otherParticipant?.email ?? null}
@@ -900,13 +935,21 @@ export function ConversationView({
   const { byMessage: attachmentsByMessage } = useConversationMessageAttachments(conversationId);
 
   // The conversation owner (initiated_by == the local cloud user) may delete ANY
-  // message; everyone may delete their own. The per-bubble sender check is done
+  // message; a sender, their own while it is fresh. The per-bubble sender check is done
   // inside FlowMessageBubble — this only supplies the owner half of the gate.
   const { cloudUser } = useAuth();
   const cloudUserId = cloudUser?.id ?? null;
   const taskPeople = useMemo(
     () => ({ members: participants ?? [], me: myEmail, cloudUserId }),
     [participants, myEmail, cloudUserId],
+  );
+  // Every id this account sends under: the cloud user, and the backend's local user (which `localUser`
+  // is not while signed in) — a message a channel projected as ours names the latter.
+  const localUserId = localUser?.id;
+  const bootstrapUserId = dataContext.bootstrapInfo?.user?.id;
+  const selfIds = useMemo(
+    () => [cloudUserId, localUserId, bootstrapUserId],
+    [cloudUserId, localUserId, bootstrapUserId],
   );
   // Owner = the hub's initiated_by OR the local user holds role "owner" in the roster.
   const isConversationOwner =
@@ -1040,6 +1083,39 @@ export function ConversationView({
     }
   }, [conversationId, isClosed, handleRefresh]);
 
+  // The status button: the hub calls that reach the chosen state, one after the other, then one refresh.
+  const ticket =
+    canSettle && conversation
+      ? conversationFacets({
+          conv: conversation,
+          members: participants,
+          viewer: { email: myEmail ?? '', cloudUserId, localUserId: null },
+          staffView: true,
+        }).ticket
+      : undefined;
+  const handleStatus = useCallback(
+    async (target: TicketState) => {
+      const run: Record<TicketVerb, () => Promise<unknown>> = {
+        close: () => settleTicket(conversationId, 'close'),
+        reopen: () => settleTicket(conversationId, 'reopen'),
+        pickup: () => pickupConversation(conversationId),
+        return: () => releaseTicket(conversationId),
+      };
+      const steps = ticketStatusSteps(target, { closed: isClosed, mine: isParticipant });
+      if (steps.length === 0) return;
+      setSettling(true);
+      try {
+        for (const verb of steps) await run[verb]();
+        await handleRefresh();
+      } catch (err) {
+        console.error('[conversation] status change failed', conversationId, target, err);
+      } finally {
+        setSettling(false);
+      }
+    },
+    [conversationId, isClosed, isParticipant, handleRefresh],
+  );
+
   const handlePickup = useCallback(async () => {
     setPickingUp(true);
     try {
@@ -1060,34 +1136,46 @@ export function ConversationView({
         <ConversationActions
           conversation={conversation}
           messages={conversationMessages}
-          selfIds={[cloudUserId, localUser?.id, dataContext.bootstrapInfo?.user?.id]}
+          selfIds={selfIds}
           onDone={() => void handleRefresh()}
         />
       )}
-      <div className="flex items-center justify-end gap-1">
-        {canPickup && (
+      <div className="flex items-center justify-end gap-2">
+        {ticket && (
+          <TicketStatusControl
+            ticket={ticket}
+            mine={isParticipant}
+            busy={settling}
+            onChoose={(target) => void handleStatus(target)}
+          />
+        )}
+        {canPickup && !isClosed && (
           <button
             type="button"
             onClick={() => void handlePickup()}
             disabled={pickingUp}
             title={t`Join this support ticket. Replying picks it up too.`}
             data-testid="pickup-conversation-button"
-            className={`${ticketActionClassName} border-violet-500/40 bg-violet-500/15 text-violet-600 hover:bg-violet-500/25 dark:text-violet-400`}
+            className={`${ticketActionClassName} border-transparent bg-primary text-primary-foreground shadow-sm hover:bg-primary/90`}
           >
-            <LifeBuoy className="h-3 w-3" />
+            <LifeBuoy className="h-4 w-4" />
             {pickingUp ? <Trans>Picking up…</Trans> : <Trans>Pick up</Trans>}
           </button>
         )}
-        {canSettle && (
+        {canSettle && (isClosed || !canPickup) && (
           <button
             type="button"
             onClick={() => void handleSettle()}
             disabled={settling}
             title={isClosed ? t`Reopen this ticket` : t`Mark this ticket answered and take it off the desk's queue`}
             data-testid="settle-conversation-button"
-            className={`${ticketActionClassName} border-border text-muted-foreground hover:bg-muted hover:text-foreground`}
+            className={`${ticketActionClassName} ${
+              isClosed
+                ? 'border-violet-500/40 bg-violet-500/15 text-violet-600 hover:bg-violet-500/25 dark:text-violet-400'
+                : 'border-transparent bg-emerald-600 text-white shadow-sm hover:bg-emerald-500'
+            }`}
           >
-            {isClosed ? <RotateCcw className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
+            {isClosed ? <RotateCcw className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
             {settling ? <Trans>Saving…</Trans> : isClosed ? <Trans>Reopen</Trans> : <Trans>Close ticket</Trans>}
           </button>
         )}
@@ -1096,9 +1184,9 @@ export function ConversationView({
           onClick={() => void handleRefresh()}
           title={channel ? t`Refresh (checks the channel for new messages)` : t`Refresh (pulls from hub)`}
           data-testid="refresh-conversation-button"
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${hubSyncing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`h-4 w-4 ${hubSyncing ? 'animate-spin' : ''}`} />
         </button>
       </div>
       {threadId && (
@@ -1236,6 +1324,7 @@ export function ConversationView({
         conversationId={conversationId}
         version={conversation?.updated_date ? String(conversation.updated_date) : null}
         members={memberRoster}
+        projectId={attachmentProjectId}
       />
       {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
       {(messagesLoaded || !!messagesError) && (
@@ -1248,7 +1337,8 @@ export function ConversationView({
             setNotSent(null);
             setSendingText(text);
           }}
-          placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
+          placeholder={composerPlaceholder}
+          onSend={sendItAgain}
           agentId={agentId ?? undefined}
           sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
           onStartLiveSession={() => void startLiveSession()}

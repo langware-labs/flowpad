@@ -856,20 +856,20 @@ async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> 
     between that read and this write. Saving the snapshot row would write its
     stale ``visible=True`` back and resurrect the closed tab — so the order is
     applied to the LIVE row, and a row hidden or gone meanwhile is skipped."""
-    wrote = False
+    moved: dict[str, int] = {}
     for idx, tid in enumerate(new_order):
         tab = by_id.get(tid)
         if tab is None or getattr(tab, "tab_order", 0) == idx:
             continue
-        # Field-scoped stamp: the earlier live-read-then-save() still lost a
-        # `close_many` that committed between the read and the save (the whole
-        # row went back, visible=True included). The driver stamp hydrates the
-        # authoritative row INSIDE the writer transaction, no-ops on a hidden
-        # row, and json_sets only tab_order. Callers broadcast tabs_changed.
         tab.tab_order = idx
-        _, stamped = await Tab._db.stamp_tab_order(tid, idx)
-        wrote = wrote or stamped
-    return wrote
+        moved[tid] = idx
+    # Field-scoped stamp: the earlier live-read-then-save() still lost a
+    # `close_many` that committed between the read and the save (the whole
+    # row went back, visible=True included). The driver reads the
+    # authoritative rows INSIDE the writer transaction, skips hidden ones,
+    # and json_sets only tab_order — all moved rows in one statement.
+    # Callers broadcast tabs_changed.
+    return bool(await Tab._db.stamp_tab_orders(moved))
 
 
 # The two live-session target types: their rows are ALWAYS DB-backed, so absence
@@ -1247,6 +1247,19 @@ async def process_tab(process_id: str) -> "Tab | None":
     target-driven tab lookup (``_tabs_for_target``)."""
     rows = await _tabs_for_target("agentic_process", process_id)
     return next((t for t in rows if t.visible), None)
+
+
+async def reopen_process_tab(process: Any) -> bool:
+    """Bring a session's closed tab back, in its old slot and without selecting it. True when a
+    tab was re-shown; False when one is already open or the session never had a tab."""
+    rows = await _tabs_for_target(process.get_type(), str(process.id))
+    if not rows or any(t.visible for t in rows):
+        return False
+    row = max(rows, key=lambda t: t.last_active_at or 0)
+    await ensure_tab(row.pointer, target_type=row.target_type, target_id=row.target_id,
+                     project_id=row.project_id, name=row.name)
+    await broadcast_tabs_changed()
+    return True
 
 
 async def show_placement(process_id: str) -> dict[str, Any]:
@@ -1635,17 +1648,24 @@ async def tab_owner_project(
     *,
     target: Any = _UNSET,
     mounts: "tuple[tuple[str, str], ...] | None" = None,
+    existing_projects: "set[str] | None" = None,
 ) -> str | None:
     """The content's OWN project (the tab's ``target_project_id``; steps 2, 5, 6 of
     ``resolve_tab_project``): a Project target is its own; else the target's
     project (its stamp, else — only when it has a parent — its
-    ``effective_project_id`` ancestor walk); else the deepest project mount holding
-    its path (pointer vfs, then the target's cwd/workdir) — so an unminted file in
-    a project folder still has an owner.
+    ``effective_project_id`` ancestor walk) when that project exists; else the
+    deepest project mount holding its path (pointer vfs, then the target's
+    cwd/workdir) — so an unminted file in a project folder still has an owner.
+
+    A stamp naming no project falls through to the path: an asset indexed from a
+    folder that is not a project carries that folder's derived id. The frontend's
+    ``tabOwnerProject`` (``existingProject``) checks the same way.
 
     ``target`` is an already-loaded row (``None`` = known missing; ``_UNSET`` loads
     it here). ``mounts`` is a list read's one ``load_project_mounts()`` snapshot
-    (``None`` loads it here, only when a path needs it).
+    (``None`` loads it here, only when a path needs it). ``existing_projects`` is a
+    list read's batched answer (``_existing_projects``): a stamp in it is live with
+    no lookup; any other stamp is looked up here.
     """
     if target_type == EntityType.PROJECT.value and target_id:
         return str(target_id)
@@ -1658,7 +1678,7 @@ async def tab_owner_project(
                 own = await target.effective_project_id()
             except Exception:
                 own = None
-        if own:
+        if own and (str(own) in (existing_projects or ()) or await _project_exists(str(own))):
             return str(own)
     view_type, sub = _pointer_target(pointer, fold=False)
     paths = [
@@ -1753,7 +1773,9 @@ async def _resolve_tab_projects(
     from flow_sdk.fs_store.indexer.roots import load_project_mounts  # noqa: PLC0415
 
     target_map = target_map or {}
-    existing = await _existing_projects(_pointer_project_candidates(tabs))
+    # The targets' own stamps go into the same one query, so a live stamp costs no lookup.
+    stamps = {str(pid) for t in target_map.values() if (pid := getattr(t, "project_id", None))}
+    existing = await _existing_projects(_pointer_project_candidates(tabs) | stamps)
     mounts = await load_project_mounts()
     for tab in tabs:
         key = (tab.target_type, str(tab.target_id)) if tab.target_type and tab.target_id else None
@@ -1762,7 +1784,9 @@ async def _resolve_tab_projects(
             # Unstamped and absent from the batch: maybe merely unindexed — one
             # lookup with on-disk recovery (a stamped row keeps its stamp instead).
             target = await Entity.load_by_type(tab.target_type, tab.target_id)
-        owner = await tab_owner_project(tab.pointer, tab.target_type, tab.target_id, target=target, mounts=mounts)
+        owner = await tab_owner_project(
+            tab.pointer, tab.target_type, tab.target_id, target=target, mounts=mounts, existing_projects=existing
+        )
         tab.target_project_id = owner
         tab.project_id = await resolve_tab_project(
             tab.pointer,
@@ -1835,17 +1859,29 @@ async def _build_list(project: str | None) -> list[dict]:
 # (was: creating synthetic tab ID = uuid5(__tabs_changed_signal__), which was horrible design)
 
 
-async def broadcast_tabs_changed() -> None:
+async def broadcast_tabs_changed(skip_connection_id: str = "") -> None:
     """Global ``tabs-changed`` ping so every client refetches the list — covers
     backend-originated changes (death/orphan-cleanup, rename, second window). Sends
-    a proper broadcast message to all connected clients."""
+    a proper broadcast message to all connected clients, except ``skip_connection_id``
+    when given (``_connection_to_skip``)."""
     try:
         from flow_sdk.api.messages import BroadcastMessage  # noqa: PLC0415
         from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415
 
-        await broadcast(BroadcastMessage(broadcast_type="tabs_changed").model_dump_json())
+        await broadcast(BroadcastMessage(broadcast_type="tabs_changed").model_dump_json(), skip_connection_id)
     except Exception as e:
         logger.debug(f"broadcast_tabs_changed failed: {e}")
+
+
+def _connection_to_skip(ping_caller: bool) -> str:
+    """The window a tab write's ping leaves out: the caller, when it said it re-reads the
+    list itself (``ping_caller=False``) and named its connection. Empty pings everyone."""
+    if ping_caller:
+        return ""
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    return request_info.initiator_connection_id if request_info else ""
 
 
 async def _list_response(project: str | None, **extra: object):
@@ -1866,6 +1902,7 @@ async def _http_new_tab(
     worktree: bool = False,
     after_tab_id: str | None = None,
     parent_tab_id: str | None = None,
+    ping_caller: bool = True,
 ):
     """POST /graph/tab/new_tab — loader-driven get-or-create. A fresh tab lands
     right after ``after_tab_id`` (the opener); a reopen keeps its slot unless an opener is given. Returns the
@@ -1882,7 +1919,7 @@ async def _http_new_tab(
         after_tab_id=after_tab_id,
         parent_tab_id=parent_tab_id,
     )
-    await broadcast_tabs_changed()
+    await broadcast_tabs_changed(_connection_to_skip(ping_caller))
     return await _list_response(tab.project_id, created=created)
 
 
@@ -2128,7 +2165,7 @@ _action_registry.register(
 )
 
 
-async def _http_set_name(self: Tab):
+async def _http_set_name(self: Tab, ping_caller: bool = True):
     """POST /graph/tab/<id>/set_name {name} — set ONLY the Tab label, no entity
     reflect and no ``auto_rename`` change.
 
@@ -2145,7 +2182,7 @@ async def _http_set_name(self: Tab):
     before = self.name
     await self.set_label(name)
     if self.name != before:
-        await broadcast_tabs_changed()
+        await broadcast_tabs_changed(_connection_to_skip(ping_caller))
     return await _list_response(self.project_id)
 
 

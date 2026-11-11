@@ -3,7 +3,9 @@ import {
   ComputeNode,
   CredentialsSubview,
   dataContext,
+  dataManager,
   DockPointerData,
+  type AnyEntity,
   isHubOnly,
   type IDockPointer,
   Layout,
@@ -51,6 +53,8 @@ import { vfsLocatorForComputeNode } from './vfs-locator';
 import { dockForDisplayTarget } from './display-target-pointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
+import { assetDocumentAtOwner } from './asset-document-owner';
+import { highlightTab } from '@src/tabs/tab-highlight';
 import { openExternal } from '@src/lib/open-external';
 import { browserProfileManager } from '@src/lib/browser-profiles';
 import { appLinkPath, bareWebUrl, isWebUrl, localWebUrl } from '@src/lib/link-kind';
@@ -844,7 +848,13 @@ export class NavigationActions {
    */
   async openLink(link: string, source: LinkSource | null): Promise<void> {
     try {
-      this.openDock(await this.resolveLinkDock(link, source));
+      const dock = await this.resolveLinkDock(link, source);
+      this.openDock(dock);
+      // Show the user which tab the click landed in. Moving to the plain openDock (80b37df5d) dropped
+      // the highlight presentDockTab gave it; the key is the one the loader mints (a document rebased
+      // onto its owner), and the strip glows the chip as soon as it exists.
+      const placed = (await assetDocumentAtOwner(dock).catch(() => null)) ?? dock;
+      if (placed.tabHash) highlightTab(placed.tabHash);
     } catch (error) {
       notifyLinkError(error);
     }
@@ -1056,13 +1066,28 @@ export class NavigationActions {
     ]);
     const projectId = tabForDockKey(tabs, asset.tabHash ?? '')?.project_id ?? dataContext.project?.id ?? null;
     const target = contentAssetTargetForDock(asset)?.targetVfsPath;
-    const last = target
-      ? pickLastVibeChat(
-          await AgenticProcess.query<AgenticProcess>(lastVibeChatQuery(projectId, target, { openedOnly: false })),
-        )
-      : null;
+    // The doc rides the chat's context, so the agent knows which file "this" is. Both lookups are independent.
+    const [last, doc] = await Promise.all([
+      target
+        ? AgenticProcess.query<AgenticProcess>(lastVibeChatQuery(projectId, target, { openedOnly: false })).then(
+            pickLastVibeChat,
+          )
+        : null,
+      docTypeIdForDock(asset),
+    ]);
+    if (last && doc && !(last.sharedContextEntities ?? []).some((t) => t.toString() === doc)) {
+      void last.shareContextEntities(new TypeId(doc)).catch(() => undefined);
+    }
     const processId =
-      last?.id ?? (await createVibeProcessForProject({ projectId, targetVfsPath: target, open: false })).id;
+      last?.id ??
+      (
+        await createVibeProcessForProject({
+          projectId,
+          targetVfsPath: target,
+          open: false,
+          sharedContextEntities: doc ? [doc] : undefined,
+        })
+      ).id;
     await this.openDocInChat(asset, processId, projectId);
   }
 
@@ -1338,4 +1363,13 @@ export class NavigationActions {
     if (!canGoForward) return;
     void this.navigate(1);
   }
+}
+
+/** The entity TypeId of the doc a content dock shows: its TypeId, else the row at its path. */
+async function docTypeIdForDock(dock: DockPointer): Promise<string | null> {
+  if (dock.targetTypeId) return dock.targetTypeId.toString();
+  const path = dock.vfsPath?.machinePath;
+  if (!path) return null;
+  const entity = await dataManager.getEntityByPath<AnyEntity>(path).catch(() => null);
+  return entity?.typeId.toString() ?? null;
 }

@@ -1,13 +1,14 @@
-import { AgenticProcess, TypeId } from '@sdk';
+import { AgenticProcess, TypeId, WorkerStatus } from '@sdk';
 import { useMemo } from 'react';
 import { cn, RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
-import { List, Loader2, MessageSquare, Star, Trash2 } from 'lucide-react';
+import { Check, List, Loader2, MessageSquare, Star, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { WorkerIcon, pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
-import { useIsBurning } from '@src/store/pending-actions-store';
+import { useIsBurning, useWorkerStatus } from '@src/store/pending-actions-store';
+import { compactWorkerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
 import { ChatPromptsPopover } from './ChatPromptsPopover';
 import { MatchSnippet, type MatchPart } from './matchSnippet';
 
@@ -72,6 +73,19 @@ export function ChatHistoryRow({
   const title = pickHistoryTitle(process, entry);
   // Live "this chat is working" signal — true while its worker is mid-turn.
   const busy = useIsBurning(entry.agentic_process_id);
+  // Live tracker first; a non-live chat falls back to its cached process.
+  const liveStatus = useWorkerStatus(entry.agentic_process_id);
+  // A past session with no live tracker and no process has no worker: it is inactive.
+  const workerStatus = liveStatus ?? (process ? process.workerStatus : WorkerStatus.INACTIVE);
+  // Every busy state draws one spinner; the tooltip names the actual status.
+  // A met /goal → green check; else the worker status's own mark (Unknown when none is known).
+  const cfg = compactWorkerStatusConfig(workerStatus);
+  const mark =
+    busy || cfg.animate
+      ? { key: 'busy', icon: Loader2, cls: 'animate-spin text-emerald-500', label: cfg.animate ? cfg.label : t`Working…` }
+      : process?.goal_met
+        ? { key: 'goal_met', icon: Check, cls: 'text-emerald-500', label: t`Goal completed` }
+        : { key: workerStatus ?? WorkerStatus.UNKNOWN, icon: cfg.icon, cls: cfg.color, label: cfg.label };
   // Project · branch survive only as a hover tooltip on the row (no visible subline).
   const meta = [entry.project_name, entry.git_branch].filter(Boolean).join(' · ');
   const hasMsgs = !!entry.message_count && entry.message_count > 0;
@@ -104,16 +118,17 @@ export function ChatHistoryRow({
       title={meta || undefined}
     >
       <div className="flex items-center gap-1.5">
-        {/* Leftmost status gutter — fills with a spinner only while this chat's
-            worker is actively doing work; reserved so rows stay aligned. */}
+        {/* Leftmost status gutter — spinner while working, green check for a met
+            /goal, else the worker status's mark; reserved so rows stay aligned. */}
         <span
           className="flex h-3 w-3 shrink-0 items-center justify-center"
-          title={busy ? t`Working…` : undefined}
-          aria-label={busy ? t`Working` : undefined}
+          title={mark?.label}
+          aria-label={mark?.label}
           data-testid="chat-history-row-busy"
           data-busy={busy ? 'true' : 'false'}
+          data-status={mark?.key}
         >
-          {busy && <Loader2 className="h-3 w-3 animate-spin text-emerald-500" />}
+          {mark && <mark.icon className={cn('h-3 w-3', mark.cls)} />}
         </span>
         <WorkerIcon workerType={entry.worker_type} />
         <span className={cn('min-w-0 flex-1 font-medium text-foreground', detailed ? 'line-clamp-2 break-words' : 'truncate')}>

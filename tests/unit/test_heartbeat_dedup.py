@@ -115,8 +115,7 @@ async def test_heartbeat_trigger_registered_once():
 
         # get_by_uname resolves PER uname — each spec is its own trigger with
         # its own id. A single shared return value would conflate every
-        # SCHEDULE spec (there are now two: builtin_daily_usage_analysis and
-        # builtin_system_heartbeat) into one mocked id and fake a double
+        # SCHEDULE spec into one mocked id and fake a double
         # registration the production code never performs.
         def fake_get_by_uname(uname):
             return Trigger(

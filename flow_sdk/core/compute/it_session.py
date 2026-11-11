@@ -36,6 +36,9 @@ SESSIONS_DIR = "it-sessions"
 #: The receipt key the agent writes its answer value under.
 VALUE_KEY = "value"
 OUTCOME_KEY = "outcome"
+#: An IT answer is a report the owner reads (a class status with a timeline), not an op's handle: it may be larger
+#: than ``RESULT_VALUE_CAP``.
+IT_VALUE_CAP = 32 * 1024
 #: The agent an IT message runs as (the same one-shot runner a prompt call uses).
 IT_AGENT = "prompt-runner"
 #: How often a run checks that nobody signed in meanwhile.
@@ -163,7 +166,7 @@ def build_prompt(text: str, attachments: list[Path], result_path: Path, answer_s
         "and do not start conversations or send messages."
     )
     if answer_shape is not None:
-        contract = result_contract(result_path, VALUE_KEY, answer_shape)
+        contract = result_contract(result_path, VALUE_KEY, answer_shape, cap=IT_VALUE_CAP)
         shape = (
             f"\n\nPut your answer under `data.{VALUE_KEY}` as a JSON value matching this JSON Schema exactly, "
             "and say it in one sentence as `summary`."
@@ -189,9 +192,11 @@ def read_answer(result_path: Path, answer_shape: Optional[dict], fallback: str) 
     from flow_sdk.core.compute.receipt import read_step_result  # noqa: PLC0415
 
     output = VALUE_KEY if answer_shape is not None else OUTCOME_KEY
-    receipt = read_step_result(result_path, output=output)
+    receipt = read_step_result(result_path, output=output, cap=IT_VALUE_CAP)
     if not receipt.ok:
-        return ItAnswer(answer=receipt.summary or receipt.error or fallback, value=None, ok=False)
+        # The reason first: the machine's own sentence alone reads like an answer and hides why there is none.
+        why = " — ".join(x for x in (receipt.error, receipt.summary) if x)
+        return ItAnswer(answer=why or fallback, value=None, ok=False)
     if answer_shape is None:
         text = receipt.value if isinstance(receipt.value, str) else ""
         return ItAnswer(answer=text or receipt.summary or fallback, value=None)

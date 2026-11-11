@@ -14,8 +14,6 @@ import {
   type Project,
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { msg } from '@lingui/core/macro';
-import type { MessageDescriptor } from '@lingui/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAttachedChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
 import { ChevronLeft, ChevronRight, Loader2, Rocket } from 'lucide-react';
@@ -33,9 +31,10 @@ import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 import { AgentModeFields, DEFAULT_AGENT_MODE, type AgentModeValue } from './AgentModeFields';
 import { AgentDeployChecklist } from './AgentDeployChecklist';
-import { DeploymentSecretsGate } from './DeploymentSecretsGate';
+import { DeploymentSecretsGate, DeploySecretsLine } from './DeploymentSecretsGate';
 import { TokenAllocationField, tokenAllocationComplete } from './TokenAllocationField';
 import { AGENT_MACHINE_SIZES, MACHINE_SIZE_PRICE, MACHINE_SIZE_SPECS, type MachineBilling } from './agent-vocabularies';
+import { machineSizeName } from './MachineSizeChips';
 
 /** A cloud machine's credential environment when nobody names one. */
 const DEFAULT_CLOUD_ENVIRONMENT = 'production';
@@ -65,13 +64,6 @@ const BILLING_PROVIDER: Record<MachineBilling, CloudDeployProvider> = {
   monthly: ComputeProviderType.GCP_VM,
 };
 const BILLINGS: MachineBilling[] = ['hourly', 'monthly'];
-
-/** A size's plain name; its strength is the button's tooltip. */
-const sizeName: Record<ComputeNodeSize, MessageDescriptor> = {
-  [ComputeNodeSize.SMALL]: msg`Small`,
-  [ComputeNodeSize.MEDIUM]: msg`Medium`,
-  [ComputeNodeSize.LARGE]: msg`Large`,
-};
 
 /** The pick-list row for "no main agent" — a web-only deployment. */
 const NO_AGENT = '__none__';
@@ -124,6 +116,8 @@ export function NewDeploymentDialog({
   const [launching, setLaunching] = useState(false);
   // Tri-state from the checklist: `null` (still checking) never disables Launch.
   const [ready, setReady] = useState<boolean | null>(null);
+  // Required credentials with no value in the project yet: Launch still goes ahead.
+  const [secretsMissing, setSecretsMissing] = useState(0);
   const [environment, setEnvironment] = useState(DEFAULT_CLOUD_ENVIRONMENT);
   const [environments, setEnvironments] = useState([DEFAULT_CLOUD_ENVIRONMENT]);
   const [environmentChosen, setEnvironmentChosen] = useState(false);
@@ -275,7 +269,7 @@ export function NewDeploymentDialog({
           <span className={cn(step === 'machine' && 'font-medium text-foreground')}>
             {step === 'setup' && size ? (
               <Trans>
-                1 Machine · {t(sizeName[size])} · {price}
+                1 Machine · {t(machineSizeName[size])} · {price}
               </Trans>
             ) : (
               <Trans>1 Machine</Trans>
@@ -345,7 +339,7 @@ export function NewDeploymentDialog({
                         }}
                         data-testid={`new-deployment-size-${s}`}
                       >
-                        {t(sizeName[s])}
+                        {t(machineSizeName[s])}
                       </button>
                     ))}
                   </div>
@@ -467,6 +461,7 @@ export function NewDeploymentDialog({
                 className={cn('flex flex-col gap-3', setupTab !== 'values' && 'hidden')}
                 data-testid="new-deployment-tab-values"
               >
+                {mainAgent && <DeploySecretsLine key={mainAgent.id} agent={mainAgent} onMissing={setSecretsMissing} />}
                 <AgentDeployChecklist project={project} agent={mainAgent} onReadinessChange={setReady} />
                 <div className="flex flex-wrap items-center gap-2">
                   <Label htmlFor="new-deployment-environment" className="text-xs">
@@ -591,6 +586,12 @@ export function NewDeploymentDialog({
                 <span className="me-auto text-xs text-muted-foreground" data-testid="new-deployment-blocked">
                   <Trans>Finish the setup above first.</Trans>
                 </span>
+              ) : mainAgent && secretsMissing > 0 ? (
+                <span className="me-auto text-xs text-muted-foreground" data-testid="new-deployment-secrets-missing">
+                  {secretsMissing === 1
+                    ? t`1 credential missing — it can be set later on the Env tab.`
+                    : t`${secretsMissing} credentials missing — they can be set later on the Env tab.`}
+                </span>
               ) : null}
               <Button
                 variant="ghost"
@@ -607,7 +608,7 @@ export function NewDeploymentDialog({
                 ) : (
                   <Rocket className="me-1.5 h-4 w-4" />
                 )}
-                <Trans>Launch</Trans>
+                {mainAgent && secretsMissing > 0 ? <Trans>Launch anyway</Trans> : <Trans>Launch</Trans>}
               </Button>
             </>
           )}

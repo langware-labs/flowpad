@@ -179,6 +179,20 @@ function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: ()
   };
 
   const sandbox = async () => deployed ?? (await deploying.current!);
+
+  // Gone before the agent is live (×, or leaving the page): its machine is removed once it exists. A live one stays.
+  const stepRef = useRef(step);
+  stepRef.current = step;
+  useEffect(
+    () => () => {
+      if (stepRef.current === 'live') return;
+      void deploying.current
+        ?.then((d) => d.deployment?.id && Onboarding.removeDeployment(d.deployment.id))
+        .catch(() => undefined);
+    },
+    [],
+  );
+
   const target = (d: DeployedAgent) =>
     ({ kind: 'node', node_typeid: d.node_typeid, data_source_id: made!.data_source_id ?? undefined }) as const;
 
@@ -225,7 +239,7 @@ function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: ()
   const vendorTab = useRef<Window | null>(null);
   const openVendorTab = () => {
     const tab = window.open('', '_blank');
-    tab?.document.write('<p style="font:16px system-ui;margin:2rem">Opening Slack…</p>');
+    tab?.document.write(`<p style="font:16px system-ui;margin:2rem">${t`Opening ${CHANNEL_TITLE[channel]}…`}</p>`);
     vendorTab.current = tab;
   };
   useEffect(() => {
@@ -373,6 +387,7 @@ function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: ()
       const answer = await Onboarding.channelSetup(d.node_typeid, {
         source: made!.data_source_id!,
         config: { channel: { id: slackLinkId, name: slackName.replace(/^#/, '').trim() } },
+        credential: { name: 'slack_channel', values: {}, choice: 'signin' },
         access: { open_to_all: true },
         exclusive: true,
         verify: true,
@@ -704,7 +719,7 @@ function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: ()
                     </Button>
                     {!claim && (
                       <p className="mt-1 text-xs text-muted-foreground" data-testid="first-agent-get-code">
-                        <Trans>Getting your Slack link…</Trans>
+                        <Trans>Getting your {CHANNEL_TITLE[channel]} link…</Trans>
                       </p>
                     )}
                   </div>
@@ -712,7 +727,9 @@ function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: ()
                 {claim?.status === 'active' && (
                   <p className="text-muted-foreground" data-testid="first-agent-proven">
                     <CheckCircle2 className="mr-1 inline h-3 w-3 text-green-600" />
-                    <Trans>Slack is linked. Your agent goes live as soon as its machine is ready.</Trans>
+                    <Trans>
+                      {CHANNEL_TITLE[channel]} is linked. Your agent goes live as soon as its machine is ready.
+                    </Trans>
                   </p>
                 )}
                 {claim && claim.status !== 'active' && (
@@ -909,6 +926,11 @@ function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: ()
                     value={slackName}
                     onChange={(e) => setSlackName(e.target.value)}
                   />
+                </li>
+                <li>
+                  <Trans>
+                    In that channel, type /invite @Flowpad and send it, so the agent can read and answer there.
+                  </Trans>
                 </li>
                 <li>
                   <Trans>Right-click the channel → Copy → Copy link, and paste it here:</Trans>
