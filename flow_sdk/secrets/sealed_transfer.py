@@ -669,6 +669,8 @@ async def _incoming(snap: _Snapshot) -> list[dict]:
     stored = _key_store.load()
     ring = DeviceKeyring.load(stored) if stored else None
     seen = _seen()
+    answered = {tid: rec for tid, rec in _read_json("answered.json").items()
+                if rec.get("conversation_id") == snap.conversation_id}  # fmt: skip
     out = []
     for m, env in _envelopes(snap.messages):
         if not any(r.device_id == mine for r in env.recipients):
@@ -677,7 +679,7 @@ async def _incoming(snap: _Snapshot) -> list[dict]:
                 "sender_name": m.get("sender_name"), "expires_at": env.expires_at}  # fmt: skip
         entry = snap.acks.get(env.transfer_id, {}).get(me)
         if entry:
-            out.append({**card, "state": _answered(entry), **({"test": entry["test"]} if "test" in entry else {})})
+            out.append(_answered_card({**answered.pop(env.transfer_id, {}), **card}, entry))
             continue
         try:
             if ring is None:
@@ -690,8 +692,18 @@ async def _incoming(snap: _Snapshot) -> list[dict]:
         except SealedError as e:
             card.update(state=e.code, error=str(e))
         out.append(card)
+    # Answered here, and the sender has since cleared the envelope (every recipient answered): the card stays, from
+    # what this install kept when it answered and the hub's own ack — as the sender's stays from ``sent.json``.
+    for tid, rec in answered.items():
+        if entry := snap.acks.get(tid, {}).get(me):
+            out.append(_answered_card(rec, entry))
     out.extend(_promise_cards(snap, me))
     return out
+
+
+def _answered_card(rec: dict, entry: dict) -> dict:
+    card = {k: v for k, v in rec.items() if k != "conversation_id"}
+    return {**card, "state": _answered(entry), **({"test": entry["test"]} if "test" in entry else {})}
 
 
 def _promise_cards(snap: _Snapshot, me: str) -> list[dict]:
@@ -778,7 +790,7 @@ async def fill(conversation_id: str, message_id: str, *, project_id: Optional[st
     if extra:
         raise SealedError("undeclared", f"{', '.join(extra)} is not a variable of {spec.name}; nothing was written")
     await set_credential_values(str(spec.typeid), {k: v.get_secret_value() for k, v in payload.values.items()})
-    await _answer(conversation_id, env.transfer_id, FILLED)
+    await _answer(conversation_id, env.transfer_id, FILLED, card=_card_of(message, env, payload))
     try:
         await _reverify_waiting_sources(spec.name, getattr(spec, "project", None))
     except Exception:  # noqa: BLE001 — the values are in; a source re-check is best effort
@@ -789,14 +801,27 @@ async def fill(conversation_id: str, message_id: str, *, project_id: Optional[st
 
 
 async def decline(conversation_id: str, message_id: str) -> dict:
-    _, env = (await _Snapshot.read(conversation_id)).find(message_id)
-    await _answer(conversation_id, env.transfer_id, DECLINED)
+    message, env = (await _Snapshot.read(conversation_id)).find(message_id)
+    await _answer(conversation_id, env.transfer_id, DECLINED, card=_card_of(message, env))
     return {"declined": env.transfer_id}
 
 
-async def _answer(conversation_id: str, transfer_id: str, outcome: str) -> None:
-    """Remember the transfer as opened (no replay), then tell the sender — the outcome, never a value."""
+def _card_of(message: dict, env: SealedValueSpec, payload=None) -> dict:
+    """What the receiver's card shows of an answered transfer — names only, never a value."""
+    card = {"message_id": message.get("id"), "transfer_id": env.transfer_id, "sender_id": message.get("sender_id"),
+            "sender_name": message.get("sender_name"), "expires_at": env.expires_at}  # fmt: skip
+    if payload is not None:
+        card.update(credential_name=payload.credential_name, credential_title=payload.credential_title,
+                    variables=sorted(payload.values))  # fmt: skip
+    return card
+
+
+async def _answer(conversation_id: str, transfer_id: str, outcome: str, *, card: Optional[dict] = None) -> None:
+    """Remember the transfer as opened (no replay) and, for its card, what was answered (the sender deletes the
+    envelope once everyone answered), then tell the sender — the outcome, never a value."""
     _write_json("seen.json", {"transfers": sorted(_seen() | {transfer_id})})
+    if card is not None:
+        _write_json("answered.json", {**_read_json("answered.json"), transfer_id: {**card, "conversation_id": conversation_id}})
     await _ack(conversation_id, transfer_id, outcome)
 
 

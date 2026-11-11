@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Lock, TriangleAlert, X, type LucideIcon } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { credentialsService, dataContext, type EntityMember, type SealedCard, type SealedSent } from '@sdk';
+import { useOnTag } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { useTestVerdict } from '@src/components/credentials/credential-test-verdict';
 import { errorMessage } from '@src/lib/error-message';
@@ -9,8 +10,10 @@ import { errorMessage } from '@src/lib/error-message';
 /**
  * Secured transfer in a conversation (flow_sdk/secrets/sealed_transfer.py): the receiver's card — "Eran sent you
  * values for Acme Gmail" with Fill in / Decline — and the sender's — waiting / filled in / declined. The sealed
- * messages live on the hub only; this re-reads them whenever the conversation changes (`version`). Names only:
- * a value is never fetched to the page.
+ * messages live on the hub only; this re-reads them whenever the conversation changes (`version`) and on every
+ * push of the conversation — a receiver's answer (a hub-only ack) arrives as an UNCHANGED conversation update
+ * (sealed_transfer.on_sealed_arrival), so its updated_date alone would never move. Names only: a value is never
+ * fetched to the page.
  */
 export function SealedValuesPanel({
   conversationId,
@@ -33,18 +36,41 @@ export function SealedValuesPanel({
     [members],
   );
 
+  // One read at a time: a push that lands while a read is in flight (a receiver's `validated` ~0.3 s after its
+  // `filled`) is read once more after it — an identical GET in flight is joined, not re-sent, and its answer predates
+  // the push. Answers are applied in order, so an older one never lands last.
+  const reading = useRef<{ id: string; done: Promise<void>; again: boolean } | null>(null);
+  const shown = useRef(conversationId);
+  shown.current = conversationId;
   const load = useCallback(async () => {
     if (!conversationId || !dataContext.caps.localFiles) return; // sealed values live in this machine's store
-    const { incoming, sent: mine } = await credentialsService
-      .sealedState(conversationId)
-      .catch(() => ({ incoming: [] as SealedCard[], sent: [] as SealedSent[] }));
-    setCards(incoming);
-    setSent(mine);
+    if (reading.current?.id === conversationId) {
+      reading.current.again = true;
+      return reading.current.done;
+    }
+    const read = { id: conversationId, done: Promise.resolve(), again: false };
+    const run = async () => {
+      do {
+        read.again = false;
+        const { incoming, sent: mine } = await credentialsService
+          .sealedState(conversationId)
+          .catch(() => ({ incoming: [] as SealedCard[], sent: [] as SealedSent[] }));
+        if (shown.current !== conversationId) return; // the panel moved to another conversation meanwhile
+        setCards(incoming);
+        setSent(mine);
+      } while (read.again);
+    };
+    read.done = run().finally(() => {
+      if (reading.current === read) reading.current = null;
+    });
+    reading.current = read;
+    return read.done;
   }, [conversationId]);
 
   useEffect(() => {
     void load();
   }, [load, version]);
+  useOnTag('app.entity.updated', () => void load(), { target: `conversation:${conversationId}` });
 
   const act = async (card: SealedCard, what: 'fill' | 'decline' | 'get') => {
     setBusy(card.message_id);
