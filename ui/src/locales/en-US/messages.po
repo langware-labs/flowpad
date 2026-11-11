@@ -6262,11 +6262,17 @@ msgstr "check"
 msgid "Check"
 msgstr "Check"
 
+#. placeholder {0}: source.name || source.provider
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Check {0} again"
+msgstr "Check {0} again"
+
 #: src/components/project-home/ProjectGitShareToggle.tsx
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "check again"
 msgstr "check again"
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
