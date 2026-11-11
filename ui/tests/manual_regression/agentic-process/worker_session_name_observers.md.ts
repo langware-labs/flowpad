@@ -90,7 +90,8 @@ test('two browsers receive native title changes and same-text pinning with an id
     // Open the observer before any process tab exists. It never selects a
     // process, even when the other browser later materializes a shared Tab.
     await observer.goto(withViewMode(`/dock/project/${projectId}`, 'standard'));
-    await observer.goto(withViewMode('/dock/shell', 'standard'));
+    // A bare /dock/shell names no project (the address states it, as 891a4aa33 did for the sibling spec).
+    await observer.goto(withViewMode(`/dock/shell?scope-mode=project&scope-activeProjectId=${projectId}`, 'standard'));
     await expect(observer.getByRole('button', { name: 'Current project: naming-observer-fixture', exact: true }))
       .toHaveAttribute('aria-pressed', 'true');
     await observerIsIdle(observer);
