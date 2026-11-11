@@ -8,9 +8,9 @@ import { Project, type ProjectReadiness, type ProjectSetupRequirement } from '@s
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { openDock } = vi.hoisted(() => ({ openDock: vi.fn() }));
+const { openDockOnThisPage } = vi.hoisted(() => ({ openDockOnThisPage: vi.fn() }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ currentDock: null, navigation: { openDock } }),
+  useDockNavigation: () => ({ currentDock: null, navigation: { openDockOnThisPage } }),
   useCurrentDock: () => null,
 }));
 vi.mock('@src/components/credentials/use-credentials', () => ({
@@ -116,6 +116,6 @@ describe('ProjectSetupPage', () => {
   it('Back goes to Project home by URL', async () => {
     render(<ProjectSetupPage projectId={PID} projectName="owed-demo" />);
     await userEvent.setup().click(screen.getByTestId('project-setup-back'));
-    expect(String(openDock.mock.calls[0][0].pointer)).toBe(PID);
+    expect(String(openDockOnThisPage.mock.calls[0][0].pointer)).toBe(PID);
   });
 });
