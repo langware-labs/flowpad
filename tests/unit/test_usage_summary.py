@@ -41,8 +41,9 @@ async def test_each_run_is_a_message_in_the_automations_one_conversation():
         await post_automation_result(automation, "Sun Nov 8: $12.50 across 3 sessions.", summary)
         await post_automation_result(automation, "Mon Nov 9: no agent sessions.", summary)
 
-    [conv] = await Conversation.get_all({"channel": AUTOMATIONS.name})
-    assert (conv.title, conv.channel_source_id) == ("Daily usage summary", str(rule.typeid))
+    # This rule's one conversation (another test in the run may own its own Automations conversation).
+    [conv] = await Conversation.get_all({"channel": AUTOMATIONS.name, "channel_source_id": str(rule.typeid)})
+    assert conv.title == "Daily usage summary"
     messages = await conv.messages()
     assert [m.kind for m in messages] == [FlowMessageKind.AUTOMATION_RESULT] * 2
     assert arrived.await_count == 2, "its arrival is the one notification"
