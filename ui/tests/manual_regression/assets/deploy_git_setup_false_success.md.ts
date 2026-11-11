@@ -96,8 +96,10 @@ test('Set up Git only reports success once the repository exists', async ({ page
   await page.goto(`/dock/assets/editor/agent/typeid/agent-${AGENT_ID}`);
   await page.getByTestId('agent-tab-summary').click();
   await page.getByTestId('agent-summary-new-deployment').click();
-  await page.getByTestId('project-new-deployment').click();
+  // The agent's Deploy presets it as main agent, and the Deployments page opens New deployment by itself
+  // (ProjectDeploymentsPage: dialogOpen = newOpen || presetMainAgent).
   const dialog = page.getByTestId('new-deployment-dialog');
+  await expect(dialog).toBeVisible();
   await dialog.locator('[data-testid^="new-deployment-size-"]').first().click();
   await dialog.getByTestId('new-deployment-next').click();
   await dialog.getByTestId('new-deployment-tab-values-button').click();
