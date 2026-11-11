@@ -548,28 +548,30 @@ class AgentMailbox(Entity):
         assumes.
 
         Publishing an agent the hub already holds answers 409, and ``share()``
-        absorbs that 409 as "already there" — so a publish that RETURNS proves
-        nothing about whose row it is. Only the probe after it can tell: we adopt
-        the agent and probe once more. If the mailbox is now readable the agent
-        was ours all along (a row published from another instance, or one this
-        publish just created); if it still is not, the agent belongs
-        to someone else, and THAT is the sentence worth showing — not the hub's
-        "a conflicting record already exists", which describes a database
-        constraint rather than anything the reader can act on.
+        settles that 409 itself (``Entity.confirm_hub_row_is_ours``): a row this
+        account cannot reach raises ``HubError`` ``id_taken`` — someone else's
+        agent, answered at once — and a reachable one is absorbed as "already
+        there". So a publish that RETURNS proves only that the row is reachable,
+        not whose it is: we adopt the agent and probe once more. If the mailbox
+        is now readable the agent was ours all along (a row published from
+        another instance, or one this publish just created); if it still is not,
+        the agent belongs to someone else, and THAT is the sentence worth showing
+        — not the hub's "a conflicting record already exists", which describes a
+        database constraint rather than anything the reader can act on.
         """
         from flow_sdk.builtin.agent_mailbox_driver import (  # noqa: PLC0415
             AgentMailboxError,
             AgentMailboxErrorCode,
         )
 
-        # Narrow on purpose. `share()` reports a refused publish as a ValueError
-        # (`FlowpadClient._unwrap` raises one for any non-200) and a missing login
-        # as a RuntimeError; a transport failure raises httpx's own, and that must
-        # propagate as itself — answering a hub outage with "belongs to another
-        # account" would be a fabricated diagnosis, which is worse than the raw
-        # error this whole change replaced. The real fix is a typed `HubError` out
-        # of `_unwrap`; that is a cross-cutting change to every FlowpadClient
-        # caller, so it stays a follow-up.
+        # Narrow on purpose. `share()` publishes through `HubProxy.call(strict=True)`,
+        # not `FlowpadClient._unwrap` (whose non-200 is a ValueError), so a refused
+        # publish — and a transport failure, as `offline` — arrives as a typed
+        # `HubError`; a missing login is a RuntimeError. Those two built-ins are
+        # swallowed and left to the probe below. Of the `HubError`s only `id_taken`
+        # means "someone else's agent"; every other one must propagate as itself —
+        # answering a hub outage with "belongs to another account" would be a
+        # fabricated diagnosis, worse than the raw error this whole change replaced.
         from flow_sdk.cloud_client.shared.errors import HubError, HubErrorCode  # noqa: PLC0415
 
         foreign = AgentMailboxError(
