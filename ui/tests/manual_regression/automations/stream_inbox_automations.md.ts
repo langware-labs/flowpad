@@ -257,6 +257,11 @@ test('3. a second message is caught: the chip on the message and the row, the li
 
   // The current compact list opens the rule; execution details live in Runs.
   await open(page, '/dock/automations');
+  // The list opens on the current project's scope (scope bar, d790e01dc); this rule has no project, so it is
+  // one of the person's own: read the User scope.
+  const userScope = page.getByTitle('User assets only');
+  await userScope.click();
+  await expect(userScope).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId(`automation-row-${ruleId}`)).toBeVisible();
   await shot(page, 'stream-inbox-list');
   await open(page, `/dock/automations/runs?trigger=${ruleId}`);
