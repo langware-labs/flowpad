@@ -668,3 +668,34 @@ async def test_testing_the_account_row_reads_the_hub_login(monkeypatch):
     result = await test_connection("flowpad_account")
 
     assert (result.ok, result.code) == (False, "cloud_login_required")
+
+
+@pytest.mark.parametrize(
+    ("provider", "credential_ref", "hub_name"),
+    [
+        ("github", "github_credentials", "GITHUB_OAUTH_USER_TOKEN"),
+        ("slack", "slack_credentials", "SLACK_OAUTH_USER_TOKEN"),
+        ("notion", "NOTION_OAUTH_USER_TOKEN", "NOTION_OAUTH_USER_TOKEN"),
+    ],
+)
+async def test_token_falls_back_to_the_hub_under_the_hubs_own_name(monkeypatch, provider, credential_ref, hub_name):
+    """A grant the hub holds is read under ITS name: ``github_credentials`` is never a hub row."""
+    import flow_sdk.core.connections.specs as specs_module
+    import flow_sdk.core.oauth.hub_oauth as hub_oauth
+    from flow_sdk.core.connections.specs import _token_for_spec_local
+
+    asked: list[str] = []
+
+    async def no_local_user():
+        return None
+
+    async def hub_value(name, **_kwargs):
+        asked.append(name)
+        return "hub-token" if name == hub_name else None
+
+    monkeypatch.setattr(specs_module, "_connection_user", no_local_user)
+    monkeypatch.setattr(hub_oauth, "hub_credential_value", hub_value)
+    spec = ConnectionSpec(provider=provider, display_name=provider, connected=True, credential_ref=credential_ref)
+
+    assert await _token_for_spec_local(spec) == "hub-token"
+    assert asked == [hub_name]

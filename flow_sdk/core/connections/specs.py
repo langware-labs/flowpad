@@ -177,7 +177,7 @@ async def resolve_connection_spec(provider: str) -> Optional[ConnectionSpec]:
 async def _token_for_spec_local(spec: ConnectionSpec) -> Optional[str]:
     """Resolve a spec's canonical credential reference without provider logic."""
     from flow_sdk.core.oauth.hub_mirror import HubMirrorUnavailable  # noqa: PLC0415
-    from flow_sdk.core.oauth.hub_oauth import hub_credential_value  # noqa: PLC0415
+    from flow_sdk.core.oauth.hub_oauth import hub_credential_value, hub_credentials_name_for  # noqa: PLC0415
     from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
     from flow_sdk.request_context.methods import get_user_credentials  # noqa: PLC0415
 
@@ -192,7 +192,9 @@ async def _token_for_spec_local(spec: ConnectionSpec) -> Optional[str]:
             return None
         except Exception:  # noqa: BLE001 — absence falls through to the Hub tier
             pass
-    return token_from_credential(await hub_credential_value(spec.credential_ref))
+    # The hub stores the grant under its own name (``GITHUB_OAUTH_USER_TOKEN``), not the local
+    # ``credential_ref`` (``github_credentials``): asking for the local one never finds it.
+    return token_from_credential(await hub_credential_value(hub_credentials_name_for(spec.provider)))
 
 
 async def token_for_spec(spec: ConnectionSpec) -> ConnectionTokenResult:
