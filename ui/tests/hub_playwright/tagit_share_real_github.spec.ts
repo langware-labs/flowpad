@@ -204,11 +204,16 @@ test.describe('tagit share → a reviewer opens the rules doc on the hub', () =>
     await expect(link).toHaveAttribute('data-state', 'published', { timeout: 60_000 });
 
     // ── the three canonical markers must survive a reload ──
-    const local = await (await request.get(`${BACKEND}/api/v1/graph/project/${projectId}`)).json();
+    // The control reads `published` from `remote`, which goes live while Project.share runs; the share
+    // action saves the publication (hub_published_at, origin) after that. Read once it has landed.
+    const readLocal = async () => (await (await request.get(`${BACKEND}/api/v1/graph/project/${projectId}`)).json());
+    await expect.poll(async () => (await readLocal())?.data?.hub_published_at ?? null, { timeout: 30_000 }).toBeTruthy();
+    const local = await readLocal();
     expect(local?.data?.remote).toBe(true);
     // Regression pin: this was null once because share_action skipped the save.
     expect(local?.data?.hub_published_at).toBeTruthy();
-    expect(local?.data?.git_origin).toBeTruthy();
+    // The local row names it `origin`; `git_origin` is only its name on the hub's wire (hub_name, e0030e6f8).
+    expect(local?.data?.origin?.kind).toBe('git');
 
     const onHub = await request.get(`${HUB}/api/v1/graph/project/${projectId}`, {
       headers: { Authorization: `Bearer ${hubKey}` },
