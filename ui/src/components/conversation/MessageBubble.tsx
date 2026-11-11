@@ -440,13 +440,6 @@ export function MessageBubble({
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} message={flowMessage ?? undefined} />}
-          {!editing && flowMessageId && onLaunchWorker && (
-            <QuickWorkerButton
-              onLaunch={onLaunchWorker}
-              testId={`message-quick-worker-${flowMessageId}`}
-              className="self-center"
-            />
-          )}
           {!editing && onAutomate && (
             <button
               type="button"
@@ -509,7 +502,7 @@ export function MessageBubble({
           />
         )}
         {footer}
-        {!editing && (onReply || onForwardMessage) && (
+        {!editing && (onReply || onForwardMessage || (flowMessageId && onLaunchWorker)) && (
           <div className="mt-1.5 flex items-center gap-1.5" data-testid="message-reply-forward">
             {onReply && (
               <button type="button" onClick={onReply} className={LABELED_ACTION_CLASS} data-testid="message-reply">
@@ -527,6 +520,14 @@ export function MessageBubble({
                 <Forward className="size-3.5 rtl:-scale-x-100" />
                 {t`Forward`}
               </button>
+            )}
+            {flowMessageId && onLaunchWorker && (
+              <QuickWorkerButton
+                onLaunch={onLaunchWorker}
+                labeled
+                className={LABELED_ACTION_CLASS}
+                testId={`message-quick-worker-${flowMessageId}`}
+              />
             )}
           </div>
         )}

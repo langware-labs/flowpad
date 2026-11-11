@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, Loader2, Play } from 'lucide-react';
+import { ChevronRight, Forward, Loader2, Play } from 'lucide-react';
 import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_opener_types';
 import { cn } from '@src/lib/utils';
 import { useIsDev } from '@src/components/view-mode';
@@ -262,10 +262,13 @@ export function QuickWorkerButton({
   onLaunch,
   testId,
   className,
+  labeled = false,
 }: {
   onLaunch: (worker: WorkerType) => void;
   testId?: string;
   className?: string;
+  /** "Forward to worker": the worker icon with a forward badge, and the words. */
+  labeled?: boolean;
 }) {
   const { t } = useLingui();
   const { rememberWorker } = useLastWorkerType();
@@ -283,12 +286,21 @@ export function QuickWorkerButton({
       title={label}
       aria-label={label}
       data-testid={testId}
-      className={cn(
-        MESSAGE_ROW_ICON_BUTTON_CLASS,
-        className,
-      )}
+      className={cn(labeled ? null : MESSAGE_ROW_ICON_BUTTON_CLASS, className)}
     >
-      <Icon className={cn('size-3', iconClassName)} />
+      {labeled ? (
+        <>
+          <span className="relative inline-flex">
+            <Icon className={cn('size-3.5', iconClassName)} />
+            <span className="absolute -bottom-1 -end-1.5 flex rounded-full bg-foreground p-px text-background ring-1 ring-background">
+              <Forward className="size-2 rtl:-scale-x-100" strokeWidth={3.5} />
+            </span>
+          </span>
+          <span className="ms-1">{t`Forward to worker`}</span>
+        </>
+      ) : (
+        <Icon className={cn('size-3', iconClassName)} />
+      )}
     </button>
   );
 }

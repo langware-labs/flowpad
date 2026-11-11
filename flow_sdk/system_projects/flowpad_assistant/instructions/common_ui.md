@@ -56,6 +56,14 @@ submit or a file to review is one click away — in a vibe session it pins the d
 something that lives outside Flowpad (a vendor login that must stay in their own browser profile)
 gets the `! open "<url>"` link instead. `flow navigate` only when they asked to be taken there.
 
+## Pages you show are theme-aware
+
+Any HTML you hand over (a mock, a preview, a report) follows the app's light and dark theme: colours are
+CSS variables on `:root`, redefined under `@media (prefers-color-scheme: dark)` and `.dark` — never a
+hard-coded `#000` / `#fff` page. Icons draw with `currentColor` or a theme variable; an SVG loaded with
+`<img>` cannot inherit colour and turns black on dark — inline it instead. Look at the page in both
+themes before you show it.
+
 ## What to build
 
 Route every build request through the **building-deliverables** skill — it owns the
