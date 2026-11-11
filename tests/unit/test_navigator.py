@@ -242,6 +242,12 @@ def test_a_retired_screens_name_opens_where_it_forwards():
     assert navigator.rule_hit("open events").value == "automations"
 
 
+def test_the_list_of_every_asset_is_a_place_on_the_map():
+    # Live: without it "show all my assets" opened the Assets tree at 0.45; offered, 0.94 x3.
+    assert "view:assets/list/all" in navigator.static_options()[0]
+    assert parse_dock_url("/dock/assets/list/all") is not None
+
+
 def test_this_projects_or_sessions_thing_is_the_screen_that_opens_on_it():
     proj = "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
     here = navigation.kind("navigation.here").model_validate(

@@ -650,7 +650,11 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         pages=("desk", "hub"),
         provides=("entity",),
         # The per-type lists (``list/<type>``) come from the type registry: ``navigation.place_of``.
-        subplaces=(("project-home", "Project home: the current project's overview page"),),
+        subplaces=(
+            ("project-home", "Project home: the current project's overview page"),
+            # The list the screen opens on (``DockPointer.forAssetList('all')``).
+            ("list/all", "Assets > all my assets: the list of every asset, of every type"),
+        ),
     ),
     # Same: a bare project dock is the assets workspace (see the PROJECT arm in
     # `content-panel.tsx`, which documents exactly that and was unaddressable).
