@@ -50,6 +50,8 @@ The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `htt
 
 > **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is a separate service — run it from your hub checkout (it serves** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
 
+> **Smart navigation on a local hub needs `JEV_API_KEY` in the hub's env.** A local hub keys its built-in decision endpoint from it at startup; without it the hub logs a warning and every request goes to the assistant, even "open preferences".
+
 ### Validating the HUB UI (non-negotiable)
 
 **"Open the hub UI" means a frontend configured against the HUB server — never the local backend.** The hub page rendered against `localhost:$LOCAL_SERVER_PORT` is a *different runtime*: the local server declares `supported_pages: ["desk","hub"]`, so `isHubOnly()` is false, the full desktop API is present, and the type registry is populated. Every hub-only behavior — the API subset, `isHubOnly()` gates, missing `types` — is invisible there. Validating a hub change against the local backend proves nothing about the hub.
