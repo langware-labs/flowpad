@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Playwright config for the Knowledge Atlas (k-browser) manual regression tests.
@@ -15,8 +16,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.md.ts',
-  timeout: 60_000,
-  expect: { timeout: 15_000 },
+  timeout: adjusted(60_000),
+  expect: { timeout: adjusted(15_000) },
   fullyParallel: false,
   retries: 0,
   workers: 1,
