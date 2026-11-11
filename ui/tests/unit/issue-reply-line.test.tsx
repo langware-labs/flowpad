@@ -59,10 +59,10 @@ describe('IssueReplyLine', () => {
     expect(screen.getByTestId('issue-reply-status').textContent).toBe('Seen');
   });
 
-  it('the fix button opens the fix pointer', () => {
+  it('the fix button opens the fix pointer', async () => {
     render(<IssueReplyLine reply={reply()} />);
     fireEvent.click(screen.getByTestId('issue-reply-fix'));
-    expect(h.openDockOnThisPage).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(h.openDockOnThisPage).toHaveBeenCalledTimes(1));
     expect(h.openDockOnThisPage.mock.calls[0][0]).toBeTruthy();
   });
 

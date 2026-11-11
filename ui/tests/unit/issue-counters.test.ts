@@ -2,10 +2,11 @@
  * Issues on the home: the chip counts OPEN issues split by severity and is shown only while one is
  * open; a subject page shows the open issues about it (its subject or one it stops), errors first.
  */
-import type { Issue } from '@sdk';
+import { Deployment, ViewType, type Issue } from '@sdk';
 import {
   countIssues,
   fixPointer,
+  fixPointerFor,
   issuesConcerning,
   openIssues,
   showIssuesChip,
@@ -60,5 +61,21 @@ describe('issue counters', () => {
     const pointer = JSON.stringify(fixPointer(live));
     expect(pointer).toContain(dep);
     expect(pointer).not.toContain('editor/markdown');
+  });
+
+  it("opens a project's deployment on its project's Deployments page, which the hub page can show", () => {
+    const dep = 'deployment-ac5708e1-d328-41a9-aecf-dd9f698716a1';
+    const live = { ...issue('t', 'error'), fix: { label: 'Edit settings', pointer: dep } } as Issue;
+    const deployment = new Deployment({
+      id: 'ac5708e1-d328-41a9-aecf-dd9f698716a1',
+      name: 'invite',
+      parent_type_id: 'project-0b7e6f1c-1d2e-4f3a-9b8c-7d6e5f4a3b2c',
+      target: { provider: 'e2b', scope: 'project-0b7e6f1c-1d2e-4f3a-9b8c-7d6e5f4a3b2c' },
+    } as never);
+    const pointer = fixPointerFor(live, deployment)!;
+    expect(pointer.viewType).toBe(ViewType.PROJECT);
+    expect(pointer.pointer).toBe('0b7e6f1c-1d2e-4f3a-9b8c-7d6e5f4a3b2c/project-deployments');
+    expect(pointer.options).toEqual({ deployment: 'ac5708e1-d328-41a9-aecf-dd9f698716a1' });
+    expect(JSON.stringify(fixPointerFor(live, null))).toContain(dep); // no project: the world view
   });
 });

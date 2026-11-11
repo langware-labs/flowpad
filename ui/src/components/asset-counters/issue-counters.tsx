@@ -66,6 +66,37 @@ export function fixPointer(issue: Pick<Issue, 'fix'>): IDockPointer | null {
   }
 }
 
+/**
+ * Where a fix button goes once the deployment it names is known: that deployment's page in its project's
+ * Deployments tab. The world view is a desk-only page -- on the hub page it bounces to Home -- so it is used
+ * only for a deployment that belongs to no project.
+ */
+export function fixPointerFor(
+  issue: Pick<Issue, 'fix'>,
+  deployment: Pick<Deployment, 'projectPagePointer'> | null,
+): IDockPointer | null {
+  return deployment?.projectPagePointer ?? fixPointer(issue);
+}
+
+/** `fixPointerFor` with the deployment loaded through the SDK when the fix names one. */
+export async function resolveFixPointer(issue: Pick<Issue, 'fix'>): Promise<IDockPointer | null> {
+  const raw = issue.fix?.pointer;
+  let deployment: Deployment | null = null;
+  if (raw && !raw.startsWith('/')) {
+    try {
+      const typeId = new TypeId(raw);
+      if (typeId.type === Deployment.type) {
+        deployment =
+          Deployment.getByIdFromCache<Deployment>(typeId.id) ??
+          (await Deployment.getById<Deployment>(typeId.id).catch(() => null));
+      }
+    } catch {
+      deployment = null;
+    }
+  }
+  return fixPointerFor(issue, deployment);
+}
+
 export const SEVERITY_DOT: Record<Issue['severity'], string> = { error: 'bg-red-500', warning: 'bg-amber-400' };
 
 export function SeverityDot({ severity }: { severity: Issue['severity'] }) {
@@ -83,7 +114,7 @@ export function IssueFixButton({ issue, className }: { issue: Issue; className?:
       className={cn('h-7', className)}
       onClick={(e) => {
         e.stopPropagation();
-        navigation.openDockOnThisPage(pointer);
+        void resolveFixPointer(issue).then((target) => navigation.openDockOnThisPage(target ?? pointer));
       }}
       data-testid={`issue-fix-${issue.id}`}
     >

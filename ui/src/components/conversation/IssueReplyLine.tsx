@@ -4,7 +4,7 @@ import { AlertTriangle, CircleAlert, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Issue, type IssueManualStatus, type IssueReplyMeta, type IssueStatus } from '@sdk';
 import { isIssueActive } from '@sdk/entities/issue';
-import { fixPointer } from '@src/components/asset-counters/issue-counters';
+import { fixPointer, resolveFixPointer } from '@src/components/asset-counters/issue-counters';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -94,7 +94,9 @@ export function IssueReplyLine({ reply }: { reply: IssueReplyMeta }) {
           variant="outline"
           size="sm"
           className="h-6 px-2 text-xs"
-          onClick={() => navigation.openDockOnThisPage(pointer)}
+          onClick={() =>
+            void resolveFixPointer(reply).then((target) => navigation.openDockOnThisPage(target ?? pointer))
+          }
           data-testid="issue-reply-fix"
         >
           {reply.fix.label}
