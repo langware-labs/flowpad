@@ -1110,6 +1110,14 @@ class AgenticProcess(Entity):
             "``flow llm user use`` does. Ignored without ``llm_endpoint_typeid``."
         ),
     )
+    llm_endpoint_tiers: dict[str, str] = APIField(
+        default_factory=dict,
+        description=(
+            "The sizes (``sm``/``md``/``lg`` -> model) of ``llm_endpoint_typeid``, when the caller knows "
+            "them and this box cannot list them -- a signed-out run of a public budget gets them from the "
+            "request's brief. Process-scoped like ``llm_endpoint_public``. Ignored without ``llm_endpoint_typeid``."
+        ),
+    )
     process_hook_events: list[str] = APIField(
         default_factory=list,
         description="Process-local worker hook events enabled for this process.",

@@ -48,6 +48,7 @@ class _Hub:
             "open": True,
             "instructions": "",
             "llm_endpoint_typeid": BUDGET,
+            "llm_endpoint_tiers": {"sm": "google/gemini-3.1-pro-preview"},
             "max_run_bytes": 2_000_000,
             # The tests below walk the questions; the unasked default has its own test.
             "ask_permission": True,
@@ -146,7 +147,8 @@ def test_approve_all_runs_on_the_requests_budget_and_submits_the_diagnosis():
     assert {k: v for k, v in calls[0]["process_options"].items() if k != "workdir"} == {
         "llm_endpoint_typeid": BUDGET,
         "llm_endpoint_public": True,
-    }
+        "llm_endpoint_tiers": {"sm": "google/gemini-3.1-pro-preview"},
+    }, "the budget's sizes ride the brief: a signed-out box cannot list them"
     assert calls[0]["approved"] == ["search server.log for 'locked'"], "approved together, each step still runs first"
     assert "step-<n>.txt" in calls[0]["extra"], "the diagnosis turn sums up what the steps found"
     sent = hub.submitted[0]

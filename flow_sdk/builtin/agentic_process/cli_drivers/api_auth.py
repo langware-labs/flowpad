@@ -354,7 +354,9 @@ DEEPAGENTS_API_AUTH_SPEC = ApiAuthSpec(
     # CLI a person types, hence no ``prompt_model_env_vars`` -- the slug always rides ``--model``.
     token_env_var=_DEEPAGENTS_KEY_ENV,
     base_env={_DEEPAGENTS_URL_ENV: "https://openrouter.ai/api/v1"},
-    # One wire, so ONE tier table: unlike claude/codex there is no separate native spelling.
+    # One wire, so ONE tier table: no native spelling of its own. Agents are written with claude's
+    # aliases (``model: haiku``), so those name the same sizes here when such an agent runs on deepagents.
+    native_tiers=dict(CLAUDE_CLI_ALIASES),
     supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
     hub_endpoint_binding=_deepagents_hub_binding,
