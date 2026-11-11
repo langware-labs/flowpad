@@ -39,6 +39,13 @@ describe('navigation sentences scoring', () => {
     expect(score(row('/dock/preferences/i18n'), opened('/dock/preferences'), false, null).verdict).toBe(2);
   });
 
+  it('a Vibe host dock is vibe mode, as the address states it', () => {
+    const vibe = opened('/dock/vibe/agentic_process-44ca?scope-mode=project');
+    expect(score(row('ACTION: view mode vibe'), vibe, false, null).verdict).toBe(1);
+    expect(score(row('ACTION: view mode advanced'), vibe, false, null).verdict).toBe(2);
+    expect(score(row('ACTION: view mode advanced'), opened('/dock/shell/x?viewMode=advanced'), false, null).verdict).toBe(1);
+  });
+
   it('asking the assistant is never landing', () => {
     const at = opened('/dock/project/p/editor/skill/typeid/skill-1');
     expect(score(row('entity:skill'), at, true, null).verdict).toBe(2);

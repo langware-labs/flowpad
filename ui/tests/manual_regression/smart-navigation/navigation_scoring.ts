@@ -63,7 +63,9 @@ export function score(r: Row, url: URL, asked: boolean, log: LogRow | null, popu
     const what = r.target.slice('ACTION:'.length).trim();
     if (/view mode (\w+)/.test(what)) {
       const mode = what.match(/view mode (\w+)/)![1];
-      return url.searchParams.get('viewMode') === mode
+      // Vibe is also stated by the address itself: a Vibe host dock (`/dock/vibe/<session>`, DockPointer.viewMode).
+      const stated = url.searchParams.get('viewMode') ?? (url.pathname.startsWith('/dock/vibe/') ? 'vibe' : null);
+      return stated === mode
         ? { verdict: 1, reason: '' }
         : { verdict: 2, reason: `reachable as ?viewMode=${mode}; ${did}` };
     }
