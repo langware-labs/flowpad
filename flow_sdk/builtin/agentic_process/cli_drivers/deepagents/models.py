@@ -11,7 +11,6 @@ import os
 
 from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.runner import API_KEY_ENV, BASE_URL_ENV, MAX_OUTPUT_ENV
 
-
 #: Where an assistant message keeps each tool call's opaque ``extra_content`` (tool call id -> object).
 TOOL_CALL_EXTRA = "tool_call_extra"
 
