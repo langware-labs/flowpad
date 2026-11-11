@@ -57,6 +57,7 @@ from flow_sdk.schema.data_spec.help_request_spec import (
     HelpRecipient,
     HelpRecipientKind,
     HelpRequestCarrier,
+    HelpSend,
 )
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure, HubFailureKind
 
@@ -119,7 +120,7 @@ async def ask_for_help() -> ApiResponse:
         return ApiFailResponse(message="Say what you need help with", status_code=400)
     if ask.conversation_id and not is_valid_entity_id(ask.conversation_id):
         return ApiFailResponse(message="conversation_id must be a UUID (v4/v5)", status_code=400)
-    if ask.recipients and _local_mode_share_blocked():
+    if ask.recipients and ask.send is HelpSend.WHEN_DIAGNOSED and _local_mode_share_blocked():
         return ApiFailResponse(message=LOCAL_MODE_SHARE_MESSAGE, status_code=403)
     recorded = await _recorded(ask.diagnosis_id) if ask.diagnosis_id else None
     if ask.diagnosis_id and recorded is None:
@@ -314,7 +315,7 @@ async def _first_delivery(conv: Conversation, tag: str) -> None:
 
 def _shares_context(ask: AskForHelpRequest) -> bool:
     """The person sends the context with the request -- else it waits here for Share or Report."""
-    return ask.share_context and bool(ask.recipients)
+    return ask.share_context and ask.send is HelpSend.WHEN_DIAGNOSED and bool(ask.recipients)
 
 
 DIAGNOSIS_LINE = "Diagnosis: "
@@ -763,7 +764,7 @@ async def _capture_conversation(ask: AskForHelpRequest, someone) -> tuple[Conver
         conv = Conversation(id=conv_id, title=ask.title.strip() or _ticket_title(ask.text))
         if _is_diagnosis(ask):
             conv.channel = DIAGNOSIS.name
-    conv.awaits_hub = bool(ask.recipients)
+    conv.awaits_hub = bool(ask.recipients) and ask.send is HelpSend.WHEN_DIAGNOSED
     conv.origin_project_id = ask.project_id
     conv = await conv.save(someone)
     return conv, task, True

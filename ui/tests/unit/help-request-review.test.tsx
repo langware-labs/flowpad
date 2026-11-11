@@ -31,14 +31,7 @@ describe('ContentReviewDialog', () => {
   it('reviews what will be sent with Share / Leave out, never Install', () => {
     const onLeftOutChange = vi.fn();
     render(
-      <ContentReviewDialog
-        open
-        onClose={() => {}}
-        items={ITEMS}
-        leftOut={[]}
-        onLeftOutChange={onLeftOutChange}
-        onShare={() => {}}
-      />,
+      <ContentReviewDialog open onClose={() => {}} items={ITEMS} leftOut={[]} onLeftOutChange={onLeftOutChange} onShare={() => {}} />,
     );
 
     expect(screen.getByText('Context to share — review before sending.')).toBeInTheDocument();
@@ -58,7 +51,6 @@ describe('HelpRequestLine', () => {
     sdk.share.mockResolvedValue(['diagnosis.value.json', 'logs.txt']);
     render(<HelpRequestLine conversationId="c1" isMine />);
 
-    expect(await screen.findByText('Sent · Context kept on this computer')).toBeInTheDocument();
     fireEvent.click(await screen.findByTestId('help-request-share'));
 
     await waitFor(() => expect(sdk.share).toHaveBeenCalledWith('c1', []));
@@ -70,7 +62,7 @@ describe('HelpRequestLine', () => {
     sdk.diagnosis.mockResolvedValue({ diagnosing: true });
     render(<HelpRequestLine conversationId="c1" isMine />);
 
-    expect(await screen.findByText('Private · Not sent to anyone')).toBeInTheDocument();
+    expect(await screen.findByText('Context not shared')).toBeInTheDocument();
     expect(await screen.findByTestId('help-request-diagnosing')).toBeInTheDocument();
     expect(screen.queryByTestId('help-request-share')).toBeNull();
   });

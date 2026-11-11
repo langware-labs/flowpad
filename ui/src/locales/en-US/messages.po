@@ -4731,7 +4731,6 @@ msgid "Attach files"
 msgstr "Attach files"
 
 #: src/components/help/AskForHelpDialog.tsx
-#: src/components/help/AskForHelpDialog.tsx
 msgid "Attach files or a screenshot"
 msgstr "Attach files or a screenshot"
 
@@ -7089,7 +7088,6 @@ msgid "Collect every smart-navigation decision (what you typed, where, what open
 msgstr "Collect every smart-navigation decision (what you typed, where, what opened) in the SmartNavigationLog dataset, to review and train on. It lives in Flowpad's temp folder, which is cleared now and then."
 
 #: src/components/help/AskForHelpDialog.tsx
-#: src/components/help/AskForHelpDialog.tsx
 msgid "Collecting…"
 msgstr "Collecting…"
 
@@ -7640,13 +7638,13 @@ msgstr "Context graph distance"
 msgid "Context list actions"
 msgstr "Context list actions"
 
-#: src/components/help/AskForHelpDialog.tsx
+#: src/components/conversation/HelpRequestLine.tsx
 msgid "Context not shared"
 msgstr "Context not shared"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Context shared"
-msgstr "Context shared"
+#~ msgid "Context shared"
+#~ msgstr "Context shared"
 
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 msgid "Context to share — review before sending."
@@ -10722,8 +10720,8 @@ msgid "Diagnosis & context"
 msgstr "Diagnosis & context"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Diagnosis attached"
-msgstr "Diagnosis attached"
+#~ msgid "Diagnosis attached"
+#~ msgstr "Diagnosis attached"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -10762,8 +10760,8 @@ msgid "Diagnosis request created"
 msgstr "Diagnosis request created"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Diagnosis runs when you send"
-msgstr "Diagnosis runs when you send"
+#~ msgid "Diagnosis runs when you send"
+#~ msgstr "Diagnosis runs when you send"
 
 #: src/components/assets/editor/chart/chartControls.tsx
 msgid "Diagram"
@@ -14452,7 +14450,6 @@ msgstr "Held by"
 
 #: src/components/conversation/conversation-category.ts
 #: src/components/conversation/conversation-category.ts
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
@@ -20292,8 +20289,8 @@ msgid "No working directory for this project."
 msgstr "No working directory for this project."
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Nobody — a private conversation on this computer"
-msgstr "Nobody — a private conversation on this computer"
+#~ msgid "Nobody — a private conversation on this computer"
+#~ msgstr "Nobody — a private conversation on this computer"
 
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Nobody can log in to this sandbox, including its owner."
@@ -20652,8 +20649,8 @@ msgid "Not sent yet"
 msgstr "Not sent yet"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Not sent yet — check your request, edit it if needed, then press Send."
-msgstr "Not sent yet — check your request, edit it if needed, then press Send."
+#~ msgid "Not sent yet — check your request, edit it if needed, then press Send."
+#~ msgstr "Not sent yet — check your request, edit it if needed, then press Send."
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "not set"
@@ -23533,8 +23530,8 @@ msgid "Private"
 msgstr "Private"
 
 #: src/components/conversation/HelpRequestLine.tsx
-msgid "Private · Not sent to anyone"
-msgstr "Private · Not sent to anyone"
+#~ msgid "Private · Not sent to anyone"
+#~ msgstr "Private · Not sent to anyone"
 
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "Private · one machine per person"
@@ -25891,7 +25888,6 @@ msgid "Review changes"
 msgstr "Review changes"
 
 #: src/components/help/AskForHelpDialog.tsx
-#: src/components/help/AskForHelpDialog.tsx
 msgid "Review content"
 msgstr "Review content"
 
@@ -26735,6 +26731,7 @@ msgstr "Saving the recording"
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/DetectedKeys.tsx
 #: src/components/cron-view/CronForm.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/top-nav-bar/RecordScreenButton.tsx
@@ -27472,7 +27469,6 @@ msgstr "Self-Summary"
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/organization/invite-row.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Send"
@@ -27593,7 +27589,6 @@ msgstr "sending…"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/conversation/SendProgressNotice.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
@@ -27623,8 +27618,8 @@ msgid "Sent — the spoken answer lands in the conversation."
 msgstr "Sent — the spoken answer lands in the conversation."
 
 #: src/components/conversation/HelpRequestLine.tsx
-msgid "Sent · Context kept on this computer"
-msgstr "Sent · Context kept on this computer"
+#~ msgid "Sent · Context kept on this computer"
+#~ msgstr "Sent · Context kept on this computer"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Sent along"
@@ -28147,6 +28142,7 @@ msgstr "Several matches"
 #: src/components/artifacts/artifact-card.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
+#: src/components/conversation/HelpRequestLine.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
@@ -28205,7 +28201,6 @@ msgstr "Share by name or email…"
 msgid "Share code {0} to invite."
 msgstr "Share code {0} to invite."
 
-#: src/components/conversation/HelpRequestLine.tsx
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Share context"
 msgstr "Share context"
@@ -32433,7 +32428,6 @@ msgstr "Times this event happened since Flowpad started"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/help/AskForHelpDialog.tsx
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
@@ -32459,8 +32453,8 @@ msgid "To open the {label}:"
 msgstr "To open the {label}:"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "To:"
-msgstr "To:"
+#~ msgid "To:"
+#~ msgstr "To:"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "today"
@@ -34349,7 +34343,6 @@ msgstr "What is this app for?"
 msgid "What is this secret used for?"
 msgstr "What is this secret used for?"
 
-#: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
 msgid "What is wrong"
 msgstr "What is wrong"

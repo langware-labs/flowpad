@@ -12,6 +12,7 @@ import {
   helpRecipients,
   type HelpRecipients,
   helpRequestPreview,
+  type HelpSend,
   normalizeEmail,
   TypeId,
 } from '@sdk';
@@ -27,7 +28,6 @@ import {
 import { HelpdeskLoadDialog } from '@src/components/helpdesk/HelpdeskLoadDialog';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import type { VibeTaskRow } from '@src/hooks/use-my-vibe-tasks';
@@ -73,8 +73,7 @@ type Step = 1 | 2 | 3;
  * 2. Diagnosis & context — Run diagnosis, Share context, and Review content: the message review
  *    (``ContentReviewDialog``) of exactly what would be attached.
  * 3. Who gets it — the title (written for you), the help desk (removable), people. Nobody: a private
- *    conversation that stays here. Review before sending shows the whole ticket here, editable,
- *    with Send — nothing is saved or sent until then.
+ *    conversation that stays here. Review before sending keeps it here until Share.
  *
  * The request is a conversation with ONE ``help_request`` message; its context rides as ordinary files.
  * Test ids keep their ``vibe-assign-*`` names: the dialog grew out of the Vibe one.
@@ -99,8 +98,6 @@ export function AskForHelpDialog({
   const { t } = useLingui();
   const ensureCloudLogin = useCloudLoginGate();
   const [step, setStep] = useState<Step>(1);
-  // Card 3's "Review before sending": the whole ticket, editable, before anything is saved.
-  const [confirming, setConfirming] = useState(false);
   const [text, setText] = useState('');
   const [title, setTitle] = useState('');
   const [runDiagnosis, setRunDiagnosis] = useState(true);
@@ -113,11 +110,11 @@ export function AskForHelpDialog({
   const [deskId, setDeskId] = useState<string | null>(desk?.desk_project_id ?? null);
   const [deskOn, setDeskOn] = useState(true);
   const [showDesk, setShowDesk] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<HelpSend | null>(null);
   const [error, setError] = useState<string | null>(null);
   // One request per dialog: a resubmit after a lost answer is the SAME request, never a second.
   const conversationId = useRef<string>(crypto.randomUUID());
-  const picker = usePickedFiles({ enabled: true, disabled: busy });
+  const picker = usePickedFiles({ enabled: true, disabled: !!busy });
   const handlePaste = useAnnotatedImagePaste(picker.addFiles, { enabled: !busy, setText });
 
   const { addFiles } = picker;
@@ -128,7 +125,6 @@ export function AskForHelpDialog({
   useEffect(() => {
     if (!open) return;
     setStep(1);
-    setConfirming(false);
     setText([initialTitle, initialNotes].filter(Boolean).join('\n\n'));
   }, [open, initialTitle, initialNotes]);
 
@@ -167,39 +163,28 @@ export function AskForHelpDialog({
     ? openTasks.find((row) => normalizeEmail(row.task.assignee) === pickedEmail)
     : undefined;
 
-  const request = (): AskForHelpRequest => ({
+  const request = (send: HelpSend): AskForHelpRequest => ({
     conversation_id: conversationId.current,
     recipients: chosen,
     title: title.trim(),
     text: text.trim(),
     project_id: projectId,
     origin,
-    diagnose: willDiagnose,
+    diagnose: runDiagnosis && !diagnosisId,
     // The diagnosis is `flow diagnose`'s agent (minutes, reads the report), not the generic quick checks.
     purpose: 'repair',
     diagnosis_id: diagnosisId,
     share_context: shareContext,
     left_out: leftOut,
+    send,
     process: sessionTypeId ? sessionTypeId.toString() : null,
     connection_id: connectionManager.id,
   });
 
-  const willDiagnose = runDiagnosis && !diagnosisId;
-  // With no diagnosis to wait for, the request goes out right away.
-  const sendLabel = !chosen.length
-    ? t`Save`
-    : willDiagnose
-      ? busy
-        ? t`Diagnosing…`
-        : t`Send once diagnosed`
-      : busy
-        ? t`Sending…`
-        : t`Send`;
-
   const toCard3 = () => {
     setStep(3);
     // The title is written for the person (a small, fast model; the first line when none answers).
-    void helpRequestPreview({ ...request(), diagnose: false })
+    void helpRequestPreview({ ...request('when_diagnosed'), diagnose: false })
       .then((p) => setTitle((current) => current || p.title))
       .catch(() => setTitle((current) => current || text.trim().split('\n')[0].slice(0, 80)));
   };
@@ -207,7 +192,7 @@ export function AskForHelpDialog({
   const openReview = async () => {
     setReviewing(true);
     try {
-      const preview = await helpRequestPreview({ ...request(), left_out: [] });
+      const preview = await helpRequestPreview({ ...request('when_diagnosed'), left_out: [] });
       setReview(preview.items);
     } catch (e: unknown) {
       notify.error({ title: t`Could not collect the context`, message: errorMessage(e, ''), forceToast: true });
@@ -216,13 +201,13 @@ export function AskForHelpDialog({
     }
   };
 
-  const submit = async () => {
+  const submit = async (send: HelpSend) => {
     if (!text.trim() || busy) return;
-    if (chosen.length && !guardCloudAction('share')) return;
-    setBusy(true);
+    if (send === 'when_diagnosed' && chosen.length && !guardCloudAction('share')) return;
+    setBusy(send);
     setError(null);
     try {
-      const result = await askForHelp(request(), picker.files);
+      const result = await askForHelp(request(send), picker.files);
       const openIt = { label: t`Open`, href: DockPointer.forConversation(result.conversation_id).toUrl() };
       onOpenChange(false);
       onAsked?.(result);
@@ -244,7 +229,7 @@ export function AskForHelpDialog({
       setError(message);
       notify.error({ title: t`Could not ask for help`, message, forceToast: true });
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -371,14 +356,14 @@ export function AskForHelpDialog({
               <PickedFileList
                 files={picker.files}
                 rejected={picker.rejected}
-                disabled={busy}
+                disabled={!!busy}
                 onRemoveAt={picker.removeAt}
               />
               <div>
                 <AttachFilesButton
                   inputId={picker.inputId}
                   onFiles={picker.addFiles}
-                  disabled={busy}
+                  disabled={!!busy}
                   title={t`Attach files or a screenshot`}
                   testId="vibe-assign-attach"
                 />
@@ -386,81 +371,7 @@ export function AskForHelpDialog({
             </div>
           )}
 
-          {step === 3 && confirming && (
-            <div className="flex flex-col gap-3" data-testid="ask-for-help-confirm">
-              <p className="text-xs text-muted-foreground">
-                {t`Not sent yet — check your request, edit it if needed, then press Send.`}
-              </p>
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                {t`Title`}
-                <Input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  disabled={busy}
-                  data-testid="ask-for-help-confirm-title"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                {t`What is wrong`}
-                <Textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onPaste={handlePaste}
-                  rows={5}
-                  className="resize-none text-sm text-foreground"
-                  disabled={busy}
-                  data-testid="ask-for-help-confirm-text"
-                />
-              </label>
-              <div className="rounded-md border px-3 py-2 text-xs" data-testid="ask-for-help-confirm-to">
-                <span className="text-muted-foreground">{t`To:`} </span>
-                {chosen.length
-                  ? chosen
-                      .map((r) => (r.kind === 'desk' ? (r.name ?? t`Help desk`) : (r.name ?? r.email ?? '')))
-                      .join(', ')
-                  : t`Nobody — a private conversation on this computer`}
-              </div>
-              <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-xs">
-                <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1">
-                  {[
-                    willDiagnose ? t`Diagnosis runs when you send` : runDiagnosis ? t`Diagnosis attached` : null,
-                    shareContext ? t`Context shared` : t`Context not shared`,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-                {shareContext && (
-                  <button
-                    type="button"
-                    className="rounded-full border border-primary bg-primary/10 px-2.5 py-0.5"
-                    onClick={() => void openReview()}
-                    disabled={reviewing}
-                    data-testid="ask-for-help-confirm-review-content"
-                  >
-                    {reviewing ? t`Collecting…` : t`Review content`}
-                  </button>
-                )}
-              </div>
-              <PickedFileList
-                files={picker.files}
-                rejected={picker.rejected}
-                disabled={busy}
-                onRemoveAt={picker.removeAt}
-              />
-              <div>
-                <AttachFilesButton
-                  inputId={picker.inputId}
-                  onFiles={picker.addFiles}
-                  disabled={busy}
-                  title={t`Attach files or a screenshot`}
-                  testId="ask-for-help-confirm-attach"
-                />
-              </div>
-            </div>
-          )}
-
-          {step === 3 && !confirming && (
+          {step === 3 && (
             <div className="flex flex-col gap-3" data-testid="ask-for-help-card-who">
               <div className="rounded-md border p-2 text-sm">
                 <span className="text-xs text-muted-foreground">{t`Title`}</span>
@@ -548,14 +459,14 @@ export function AskForHelpDialog({
 
           <div className="flex items-center justify-between gap-2 pt-2">
             {step === 1 ? (
-              <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
+              <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={!!busy}>
                 {t`Cancel`}
               </Button>
             ) : (
               <Button
                 variant="outline"
-                onClick={() => (confirming ? setConfirming(false) : setStep((s) => (s - 1) as Step))}
-                disabled={busy}
+                onClick={() => setStep((s) => (s - 1) as Step)}
+                disabled={!!busy}
                 data-testid="ask-for-help-back"
               >
                 {t`Back`}
@@ -572,18 +483,20 @@ export function AskForHelpDialog({
             )}
             {step === 3 && (
               <span className="flex gap-2">
-                {!confirming && (
-                  <Button
-                    variant="outline"
-                    onClick={() => setConfirming(true)}
-                    disabled={busy}
-                    data-testid="ask-for-help-review-first"
-                  >
-                    {t`Review before sending`}
-                  </Button>
-                )}
-                <Button onClick={() => void submit()} disabled={busy || !text.trim()} data-testid="vibe-assign-submit">
-                  {sendLabel}
+                <Button
+                  variant="outline"
+                  onClick={() => void submit('review_first')}
+                  disabled={!!busy}
+                  data-testid="ask-for-help-review-first"
+                >
+                  {busy === 'review_first' ? t`Saving…` : t`Review before sending`}
+                </Button>
+                <Button
+                  onClick={() => void submit('when_diagnosed')}
+                  disabled={!!busy}
+                  data-testid="vibe-assign-submit"
+                >
+                  {busy === 'when_diagnosed' ? t`Diagnosing…` : chosen.length ? t`Send once diagnosed` : t`Save`}
                 </Button>
               </span>
             )}
