@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 import { selectViewMode } from '../_shared/view-mode';
 import { destroyVibeFixture, seedLastVibeChat, type VibeFixture } from '../vibe/_helpers';
 
@@ -67,15 +68,6 @@ async function expectStep(n: number): Promise<void> {
   await expect(currentTitle(), `step ${n}: ${STEPS[n - 1]}`).toHaveText(STEPS[n - 1]);
   await expect.poll(stepParam, { message: `?journeyStep= on step ${n}` }).toBe(String(n));
   await expect(stepsLeft()).toHaveText(`${STEPS.length - (n - 1)} steps left`);
-}
-
-/** The seeded build's own address, with the journey's step on it — how a user
- *  opens a build mid-journey (step 1 cannot open one: a build id is not authored). */
-async function openBuildAt(n: number): Promise<void> {
-  await page.goto(
-    `/dock/vibe/agentic_process-${fixture.processId}?journeyId=${encodeURIComponent(JOURNEY)}&journeyStep=${n}`,
-  );
-  await expect(workspace()).toBeVisible();
 }
 
 /** Open the journey at a given step, cold — no prior navigation. */
@@ -156,15 +148,15 @@ test.describe('the journey demonstrates — the app really moves', () => {
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
 
     await next(); // commentary
-    await expectStep(3);
+    await expectStep(4);
 
     await next(); // the exit under review — the session's Chat button
-    await expectStep(4);
+    await expectStep(5);
     await expect(workspace()).toHaveCount(0);
     await expect(page.locator('html')).toHaveAttribute('data-view', 'standard');
 
     await next(); // the way home — the session's Vibe button
-    await expectStep(5);
+    await expectStep(6);
     await expect(workspace()).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
 
@@ -186,7 +178,7 @@ test.describe('the journey demonstrates — the app really moves', () => {
 
 test.describe('the step number is the address', () => {
   /** The property none of this had before: a step is a URL you can open. */
-  for (const n of [1, 2, 3, 5]) {
+  for (const n of [1, 2, 3, 6]) {
     test(`?journeyStep=${n} opens that step cold`, async () => {
       await openAt(n);
       await expectStep(n);
@@ -231,27 +223,31 @@ test.describe('Back', () => {
 
 test.describe('the gate holds a press, it does not drive', () => {
   test('a gated step does not land until its condition is true', async () => {
+    // Step 2 waits for the workspace to exist. At home there is no build — no workspace, and no
+    // wand for its act to press — so a press is held: the step does not land on the click alone.
+    await openAt(2);
+    await expectStep(2);
+    await expect(workspace()).toHaveCount(0);
+    await next();
+    await expect(page.getByTestId('journey-tray-continue')).toHaveText('Waiting…');
+    await page.waitForTimeout(adjusted(2000));
+    await expectStep(2);
+
+    // In the build, outside Vibe, the press's act (the wand) opens the workspace — and the step
+    // lands once the workspace is REALLY there, never before.
     await buildOutsideVibe();
     await launch();
     await next(); // into the build, outside Vibe
     await expectStep(2);
-
-    // Step 2 waits for the workspace to exist. Its act (the wand) opens one, so the press
-    // completes on its own — but only once the workspace is REALLY there, and never before.
     await expect(workspace()).toHaveCount(0);
     await next();
-    await page.waitForTimeout(2000);
-    await expectStep(1);
-
-    // Once the workspace is REALLY there, the same press completes.
-    await openBuildAt(1);
-    await next();
-    await expectStep(2);
+    await expect(workspace()).toBeVisible();
+    await expectStep(3);
   });
 
   test('nothing advances without a press', async () => {
-    await openAt(3); // its gate (the workspace) may already be satisfied
+    await openAt(4); // its gate (the workspace gone) is already satisfied at home
     await page.waitForTimeout(3000);
-    await expectStep(3); // still there — a satisfied condition moves nothing
+    await expectStep(4); // still there — a satisfied condition moves nothing
   });
 });
