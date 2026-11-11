@@ -23,6 +23,15 @@ vi.mock('@src/components/assets/editor/AssetEditorRouter', () => ({
     <div data-testid="asset-editor" data-pointer={pointer} data-hub-reflect={String(hubReflect)} />
   ),
 }));
+vi.mock('@src/components/project-deployments/ProjectDeploymentsPage', () => ({
+  ProjectDeploymentsPage: ({ project }: { project: { id: string } }) => (
+    <div data-testid="project-deployments" data-project={project.id} />
+  ),
+}));
+vi.mock('@sdk/react/hooks', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useProject: (typeId: { id: string }) => ({ project: { id: typeId.id } }),
+}));
 vi.mock('@src/components/graph-view/icons/iconRegistry', () => ({
   iconForType: () => (props: Record<string, unknown>) => <span {...props} />,
 }));
@@ -110,5 +119,12 @@ describe('HubProjectPage', () => {
         ],
       ),
     ).toEqual(['agent', 'markdown', 'skill']);
+  });
+
+  it("opens the project's Deployments page, not the asset editor", () => {
+    h.currentDock = { pointer: `${PROJECT_ID}/project-deployments` };
+    renderPage();
+    expect(screen.getByTestId('project-deployments').getAttribute('data-project')).toBe(PROJECT_ID);
+    expect(screen.queryByTestId('asset-editor')).toBeNull();
   });
 });
