@@ -46,10 +46,6 @@ def short_id(value: Optional[str]) -> str:
     return hashlib.sha256(unquote(value).encode()).hexdigest()[:8] if value else "-"
 
 
-#: Kept for readers of the log: a grant's id and a ticket's id are the same function.
-grant_id = ticket_id = short_id
-
-
 def fetch_summary(conn: HTTPConnection, sep: str = " / ") -> str:
     """How the browser says it sent this request: ``Sec-Fetch-Dest / -Site / -Mode``."""
     return sep.join(conn.headers.get(f"sec-fetch-{h}") or "-" for h in ("dest", "site", "mode"))
@@ -115,10 +111,28 @@ def referer_origin(conn: HTTPConnection) -> str:
     return host[:120] if host else "-"
 
 
+def _cookie_names_sent(conn: HTTPConnection) -> list[str]:
+    """Every cookie name in the raw header, duplicates kept — ``conn.cookies`` keeps only one of each."""
+    return [n for part in (conn.headers.get("cookie") or "").split(";") if (n := part.split("=", 1)[0].strip())]
+
+
 def cookie_names(conn: HTTPConnection) -> str:
     """The names of the cookies that arrived — which tells "no cookies at all" from "not ours"."""
-    names = sorted({part.split("=", 1)[0].strip() for part in (conn.headers.get("cookie") or "").split(";")} - {""})
+    names = sorted(set(_cookie_names_sent(conn)))
     return ",".join(names)[:200] if names else "none"
+
+
+def cookie_count(conn: HTTPConnection, name: str) -> int:
+    """How many cookies named *name* arrived: a browser can send two (partitioned and not)."""
+    return _cookie_names_sent(conn).count(name)
+
+
+def _remember(store: OrderedDict, key, value) -> None:
+    """Store newest-last, dropping the oldest past ``_MAX_CLIENTS``: memory stays bounded under a flood."""
+    store[key] = value
+    store.move_to_end(key)
+    while len(store) > _MAX_CLIENTS:
+        store.popitem(last=False)
 
 
 def record_admit(
@@ -127,10 +141,7 @@ def record_admit(
     """Log and remember one successful ticket trade. ``ticket=`` joins this line to the hub's answer that issued it."""
     key = client_key(conn)
     gid = short_id(value) if value else "none(unarmed)"
-    _admits[key] = (time.monotonic(), gid)
-    _admits.move_to_end(key)
-    while len(_admits) > _MAX_CLIENTS:
-        _admits.popitem(last=False)
+    _remember(_admits, key, (time.monotonic(), gid))
     facts = {
         "door": audience,
         "visitor": caller or "-",
@@ -164,10 +175,7 @@ def burst_of(client: str, cause: tuple, request_id: str) -> Optional[str]:
     head = _bursts.get((client, cause))
     if head is not None and now - head[0] < BURST_SECONDS:
         return head[1]
-    _bursts[(client, cause)] = (now, request_id)
-    _bursts.move_to_end((client, cause))
-    while len(_bursts) > _MAX_CLIENTS:
-        _bursts.popitem(last=False)
+    _remember(_bursts, (client, cause), (now, request_id))
     return None
 
 

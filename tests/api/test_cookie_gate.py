@@ -503,11 +503,11 @@ async def test_a_cookie_dropped_right_after_the_admit_is_named_as_such(client, c
         admitted = await client.get(f"/auth/gate?ticket={_ticket()}&next=/dock/vibe/x", headers=_PHONE)
         refused = await client.get("/dock/vibe/x", headers={**_PHONE, "cookie": "_ga=1"})
 
-    gid = gate_trace.grant_id(_cookie_value(admitted))
+    gid = gate_trace.short_id(_cookie_value(admitted))
     admit_line = next(r.getMessage() for r in caplog.records if "cookie-gate: admitted" in r.getMessage())
     assert f"grant={gid}" in admit_line and "visitor=user-alice" in admit_line
     # The hub logs the same id for the ticket it handed out (visitor-open: … ticket=), so the two lines join.
-    assert f"ticket={gate_trace.ticket_id(_ticket())}" in admit_line
+    assert f"ticket={gate_trace.short_id(_ticket())}" in admit_line
     assert "referer=app.flowpad.ai" in admit_line and "browser=Chrome_iOS_157" in admit_line
 
     refusal = next(r.getMessage() for r in caplog.records if "cookie-gate: refused" in r.getMessage())

@@ -107,33 +107,33 @@ def test_the_cookie_line_is_host_only_partitioned_and_a_session_cookie():
 # ── why a credential was refused: words for the Forbidden page, never the value ─────────────
 
 
-def test_ticket_status_names_each_reason():
+def test_check_ticket_names_each_reason():
     system = "system"
     fresh = sign_grant(_grant(audience=system), SECRET, now=NOW)
-    assert grants.ticket_status(fresh, audience=system, now=NOW) == "ok"
-    assert grants.ticket_status(None, audience=system, now=NOW) == "none"
-    assert grants.ticket_status("junk", audience=system, now=NOW) == "malformed"
-    assert grants.ticket_status(sign_grant(_grant(audience=system), "other", now=NOW), audience=system) == (
+    assert grants.check_ticket(fresh, audience=system, now=NOW)[0] == "ok"
+    assert grants.check_ticket(None, audience=system, now=NOW)[0] == "none"
+    assert grants.check_ticket("junk", audience=system, now=NOW)[0] == "malformed"
+    assert grants.check_ticket(sign_grant(_grant(audience=system), "other", now=NOW), audience=system)[0] == (
         "bad-signature"
     )
-    assert grants.ticket_status(fresh, audience=system, now=NOW + TICKET_MAX_AGE + 5) == "expired 5s ago"
-    assert grants.ticket_status(fresh, audience="app", now=NOW) == "wrong-door"
+    assert grants.check_ticket(fresh, audience=system, now=NOW + TICKET_MAX_AGE + 5)[0] == "expired 5s ago"
+    assert grants.check_ticket(fresh, audience="app", now=NOW)[0] == "wrong-door"
 
 
-def test_grant_status_names_each_reason():
+def test_check_cookie_names_each_reason():
     value = grants.mint_grant(_grant(), now=NOW)
-    assert grants.grant_status(value, audience="app", now=NOW) == "ok"
-    assert grants.grant_status(None, audience="app", now=NOW) == "none"
-    assert grants.grant_status(value, audience="app", now=NOW + GRANT_MAX_AGE + 1) == "expired 1s ago"
-    assert grants.grant_status(value, audience="system", now=NOW) == "wrong-door"
+    assert grants.check_cookie(value, audience="app", now=NOW)[0] == "ok"
+    assert grants.check_cookie(None, audience="app", now=NOW)[0] == "none"
+    assert grants.check_cookie(value, audience="app", now=NOW + GRANT_MAX_AGE + 1)[0] == "expired 1s ago"
+    assert grants.check_cookie(value, audience="system", now=NOW)[0] == "wrong-door"
     grants.revoke(None, [ENDPOINT], now=NOW)
-    assert grants.grant_status(value, audience="app", now=NOW) == "revoked"
+    assert grants.check_cookie(value, audience="app", now=NOW)[0] == "revoked"
 
 
 def test_a_grant_from_before_a_restart_says_so():
     """A restart changes the boot nonce, so the grant's signature no longer matches."""
     before = grants.mint_grant(_grant(), now=NOW)
     with patch.object(grants, "_BOOT_NONCE", uuid.uuid4().hex):
-        assert grants.grant_status(before, audience="app", now=NOW) == (
+        assert grants.check_cookie(before, audience="app", now=NOW)[0] == (
             "bad-signature (from before a restart, or another box)"
         )

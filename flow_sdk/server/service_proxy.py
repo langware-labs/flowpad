@@ -268,17 +268,18 @@ def sign_grant(grant: Grant, secret: str, *, now: int) -> str:
     return _sign(grant.encode(), secret, now=now)
 
 
-def verify_grant_reason(
-    value: Optional[str], secret: Optional[str], *, now: int, max_age: int
-) -> tuple[Optional[Grant], str]:
-    """``(grant, reason)``: the grant a signed value carries, or None and why not (``_check``'s words)."""
+def check_grant(value: Optional[str], secret: Optional[str], *, now: int, max_age: int) -> tuple[str, Optional[Grant]]:
+    """``(reason, grant)`` — ``_check``'s rule plus a decodable subject. The grant is set only when the reason is ``ok``."""
     reason, subject = _check(value, secret, now=now, max_age=max_age)
-    return (Grant.decode(subject) if subject is not None else None), reason
+    if subject is None:
+        return reason, None
+    grant = Grant.decode(subject)
+    return ("ok", grant) if grant is not None else ("malformed", None)
 
 
 def verify_grant(value: Optional[str], secret: Optional[str], *, now: int, max_age: int) -> Optional[Grant]:
     """The grant a signed value carries, or None when forged, stale, malformed — or there is no secret."""
-    return verify_grant_reason(value, secret, now=now, max_age=max_age)[0]
+    return check_grant(value, secret, now=now, max_age=max_age)[1]
 
 
 __all__ = [
@@ -293,6 +294,7 @@ __all__ = [
     "TICKET_MAX_AGE",
     "USER_HEADER",
     "VISITOR",
+    "check_grant",
     "inbound_headers",
     "outbound_headers",
     "public_base",
@@ -301,5 +303,4 @@ __all__ = [
     "upstream_path",
     "verify_caller",
     "verify_grant",
-    "verify_grant_reason",
 ]

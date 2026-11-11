@@ -36,13 +36,15 @@ non-loopback ``Host`` with nothing to verify has no legitimate sender.
 from __future__ import annotations
 
 import secrets
+from typing import Optional
 
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from flow_sdk.instance_settings import cookie_gate
-from flow_sdk.server import grants
+from flow_sdk.server import gate_trace, grants
 from flow_sdk.server.service_proxy import SYSTEM_AUDIENCE
+from flow_sdk.utils.serialization import epoch_to_iso_utc
 
 from .cookie_gate_middleware import HEADER_NAME, deny
 
@@ -52,45 +54,45 @@ class SandboxCookieGateMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        secret = cookie_gate.get_cookie_gate()
-        conn = HTTPConnection(scope)
-        if secret is None or not _presents(conn, secret):
-            await deny(scope, receive, send, details=_diagnose(conn, secret))
+        refusal = _refusal(HTTPConnection(scope), cookie_gate.get_cookie_gate())
+        if refusal is not None:
+            reasons, context = refusal
+            await deny(scope, receive, send, details=reasons, context=context)
             return
 
         await self.app(scope, receive, send)
 
 
-def _presents(conn: HTTPConnection, secret: str) -> bool:
-    """Whether this caller holds a credential for the system door, by any of the three transports.
+def _refusal(conn: HTTPConnection, secret: Optional[str]) -> Optional[tuple[dict[str, str], dict[str, str]]]:
+    """None when this caller holds a credential for the system door, by any of the three transports;
+    otherwise ``(reasons, context)``: why each transport failed, and what happened just before — words, never values.
 
-    Each is checked independently rather than collapsed into ``a or b or c``: a stale
+    Each transport is checked on its own rather than collapsed into ``a or b or c``: a stale
     cookie must not veto a valid header, and a grant from before a restart must not
-    veto the fresh ticket that is there to replace it.
+    veto the fresh ticket that is there to replace it. The same check decides and explains,
+    so the page can never name a reason other than the one that refused.
     """
+    if secret is None:
+        return {"box": "not armed by the hub yet"}, _context(conn)
     presented = conn.headers.get(HEADER_NAME)
     if presented and secrets.compare_digest(presented, secret):
-        return True
-    grant = grants.read_grant(conn.cookies.get(grants.COOKIE_NAME), secret=secret)
-    if grant is not None and grant.audience == SYSTEM_AUDIENCE:
-        return True
-    ticket = grants.read_ticket(conn.query_params.get(grants.TICKET_PARAM), secret=secret)
-    return ticket is not None and ticket.audience == SYSTEM_AUDIENCE
+        return None
+    cookie, _ = grants.check_cookie(conn.cookies.get(grants.COOKIE_NAME), audience=SYSTEM_AUDIENCE, secret=secret)
+    if cookie == "ok":
+        return None
+    ticket, _ = grants.check_ticket(conn.query_params.get(grants.TICKET_PARAM), audience=SYSTEM_AUDIENCE, secret=secret)
+    if ticket == "ok":
+        return None
+    count = gate_trace.cookie_count(conn, grants.COOKIE_NAME)
+    reasons = {"cookie": f"{cookie} (x{count})" if count > 1 else cookie, "ticket": ticket}
+    if presented:
+        reasons["machine header"] = "wrong"
+    return reasons, _context(conn)
 
 
-def _diagnose(conn: HTTPConnection, secret: str | None) -> dict[str, str]:
-    """Why this caller was refused, per transport — words only, never a credential's value."""
-    if secret is None:
-        return {"box": "not armed by the hub yet"}
-    raw_cookie = conn.headers.get("cookie") or ""
-    count = sum(1 for part in raw_cookie.split(";") if part.strip().startswith(grants.COOKIE_NAME + "="))
-    cookie = grants.grant_status(conn.cookies.get(grants.COOKIE_NAME), audience=SYSTEM_AUDIENCE, secret=secret)
-    details = {
-        "cookie": f"{cookie} (x{count})" if count > 1 else cookie,
-        "ticket": grants.ticket_status(
-            conn.query_params.get(grants.TICKET_PARAM), audience=SYSTEM_AUDIENCE, secret=secret
-        ),
-    }
-    if conn.headers.get(HEADER_NAME):
-        details["machine header"] = "wrong"
-    return details
+def _context(conn: HTTPConnection) -> dict[str, str]:
+    """What only this gate knows: its last admits (``gate_trace``) and when this process started."""
+    return {**gate_trace.refusal_facts(conn), "box up since": _BOOT}
+
+
+_BOOT = epoch_to_iso_utc(grants.BOOT_TIME)

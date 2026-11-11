@@ -32,7 +32,7 @@ import html
 import logging
 import os
 import secrets
-from datetime import datetime, timezone
+import time
 from typing import Optional
 
 from starlette.requests import HTTPConnection
@@ -40,8 +40,10 @@ from starlette.responses import HTMLResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketClose
 
+from flow_sdk._version import __version__
 from flow_sdk.server import gate_trace
 from flow_sdk.utils.networking import is_loopback
+from flow_sdk.utils.serialization import epoch_to_iso_utc
 
 OFF_SWITCH_ENV = "FLOWPAD_COOKIE_GATE"
 
@@ -88,20 +90,35 @@ async def deny(
     message: Optional[str] = None,
     *,
     details: Optional[dict[str, str]] = None,
+    context: Optional[dict[str, str]] = None,
 ) -> None:
+    """Refuse: one log line, a 403 page for a person, an ``X-Flowpad-Gate`` header for everything else.
+
+    *details* is WHY, per credential, as the gate decided it; *context* is what the gate knows
+    around it. Neither ever holds what the caller presented — that is a secret, or a guess at one.
+    """
     # Denials used to be silent, and that silence was expensive. Uvicorn's
     # access logger sets ``propagate=False``, so its 403 lines never reach
     # the root handler ``init_dev_file_logging`` installs -- meaning a gated
     # instance refused every request with NO on-disk trace anywhere.
-    #
-    # What the caller presented is a secret (or a guess at one) and never appears here or on the
-    # page: only WHY it failed (``details``, built by the gate) and what the browser said about
-    # the request (``Sec-Fetch-*``), so one log line or one screenshot names the cause.
+    details = details or {}
     conn = HTTPConnection(scope)
-    facts = {**_request_facts(scope, conn, details or {}), **gate_trace.refusal_facts(conn)}
+    request = secrets.token_hex(3)
+    facts = {
+        "time": epoch_to_iso_utc(int(time.time())),
+        "request": request,
+        "path": str(scope.get("path", "?"))[:200],
+        "fetch": gate_trace.fetch_summary(conn),
+        **details,
+        "host": (conn.url.hostname or "?")[:120],
+        "version": __version__,
+        "browser": gate_trace.short_browser(conn.headers.get("user-agent") or ""),
+        **(context or {}),
+    }
     # One refused page brings its scripts, styles and favicon: log the first in full, point the rest at it.
-    cause = tuple(facts.get(k) for k in ("cookie", "ticket", "box", "cookies sent"))
-    head = gate_trace.burst_of(facts["client"], cause, facts["request"])
+    # The cause is the reason's first word, so "expired 3s ago" and "expired 4s ago" are one burst.
+    cause = tuple((k, v.split(" ", 1)[0]) for k, v in sorted(details.items()))
+    head = gate_trace.burst_of(gate_trace.client_key(conn), cause, request)
     if head is None:
         logged = {k: v for k, v in facts.items() if k not in ("path", "time")}
         logger.warning(
@@ -114,32 +131,10 @@ async def deny(
         # the handshake, which is the correct rejection for a WS upgrade.
         await WebSocketClose(code=1008, reason="cookie-gate")(scope, receive, send)
         return
-    headers = {"Cache-Control": "no-store", "X-Flowpad-Gate": _header_value(facts)}
+    # The reason, for callers that never render the page (scripts, styles, API calls).
+    reason = "; ".join(f"{k}={v}" for k, v in {"request": request, **details}.items())
+    headers = {"Cache-Control": "no-store", "X-Flowpad-Gate": reason.encode("ascii", "replace").decode()}
     await HTMLResponse(forbidden_html(message, facts), status_code=403, headers=headers)(scope, receive, send)
-
-
-def _request_facts(scope: Scope, conn: HTTPConnection, details: dict[str, str]) -> dict[str, str]:
-    """The lines under "Details": when, which request, how the browser sent it, why it failed, which box."""
-    from flow_sdk import __version__  # noqa: PLC0415 -- the package imports this module
-    from flow_sdk.server import grants  # noqa: PLC0415 -- grants imports back into this package
-
-    return {
-        "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "request": secrets.token_hex(3),
-        "path": str(scope.get("path", "?"))[:200],
-        "fetch": gate_trace.fetch_summary(conn),
-        **details,
-        "host": (conn.url.hostname or "?")[:120],
-        "box up since": datetime.fromtimestamp(grants.BOOT_TIME, timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "version": str(__version__),
-        "browser": gate_trace.short_browser(conn.headers.get("user-agent") or ""),
-    }
-
-
-def _header_value(facts: dict[str, str]) -> str:
-    """The reason, for callers that never render the page (scripts, styles, API calls)."""
-    keep = ("request", "cookie", "ticket", "box")
-    return "; ".join(f"{k}={facts[k]}" for k in keep if k in facts).encode("ascii", "replace").decode()
 
 
 # Fully inline — static is gated too, so an external stylesheet here would itself

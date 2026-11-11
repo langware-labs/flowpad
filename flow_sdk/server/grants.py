@@ -36,8 +36,9 @@ from flow_sdk.server.service_proxy import (
     TICKET_MAX_AGE,
     Grant,
     sign_grant,
-    verify_grant,
-    verify_grant_reason,
+)
+from flow_sdk.server.service_proxy import (
+    check_grant as _check_signed,
 )
 
 #: The cookie a door sets. ``__Host-``: no Domain, so a cookie minted on one e2b port host is
@@ -65,10 +66,18 @@ def _grant_key(secret: str, nonce: str) -> str:
     return hmac.new(secret.encode(), f"flowpad.grant.{nonce}".encode(), hashlib.sha256).hexdigest()
 
 
+def check_ticket(
+    value: Optional[str], *, audience: Optional[str] = None, secret: Optional[str] = None, now: Optional[int] = None
+) -> tuple[str, Optional[Grant]]:
+    """THE ticket rule: ``(reason, grant)``, signed with the gate secret, a minute old at most, for *audience*
+    (any door when None). The reason is words for the Forbidden page; it names no secret."""
+    reason, grant = _check_signed(value, secret or _secret(), now=int(now or time.time()), max_age=TICKET_MAX_AGE)
+    return _at_door(reason, grant, audience)
+
+
 def read_ticket(value: Optional[str], *, secret: Optional[str] = None, now: Optional[int] = None) -> Optional[Grant]:
     """The grant a hub ticket carries — verified with the gate secret — or None."""
-    secret = secret or _secret()
-    return verify_grant(value, secret, now=int(now or time.time()), max_age=TICKET_MAX_AGE) if secret else None
+    return check_ticket(value, secret=secret, now=now)[1]
 
 
 def mint_grant(grant: Grant, *, secret: Optional[str] = None, now: Optional[int] = None) -> Optional[str]:
@@ -77,53 +86,33 @@ def mint_grant(grant: Grant, *, secret: Optional[str] = None, now: Optional[int]
     return sign_grant(grant, _grant_key(secret, _BOOT_NONCE), now=int(now or time.time())) if secret else None
 
 
-def read_grant(value: Optional[str], *, secret: Optional[str] = None, now: Optional[int] = None) -> Optional[Grant]:
-    """The grant a cookie carries — this process's signature, not revoked — or None."""
-    secret = secret or _secret()
-    if not secret or not value:
-        return None
-    moment = int(now or time.time())
-    # The browser returns the cookie exactly as it was set: percent-encoded (``set_cookie_header``).
-    grant = verify_grant(unquote(value), _grant_key(secret, _BOOT_NONCE), now=moment, max_age=GRANT_MAX_AGE)
-    return None if grant is None or is_revoked(grant, now=moment) else grant
-
-
-def _status(raw: Optional[str], key: str, *, max_age: int, audience: str, moment: int) -> tuple[str, Optional[Grant]]:
-    """Why a signed grant would or would not open *audience*'s door, in words, with the grant when it would."""
-    grant, reason = verify_grant_reason(raw, key, now=moment, max_age=max_age)
-    if reason != "ok":
-        return reason, None
-    if grant is None or grant.audience != audience:
-        return "wrong-door", None
-    return "ok", grant
-
-
-def ticket_status(
-    value: Optional[str], *, audience: str, secret: Optional[str] = None, now: Optional[int] = None
-) -> str:
-    """Why a ticket would or would not open *audience*'s door, in words. Names no secret."""
-    secret = secret or _secret()
-    return _status(value, secret, max_age=TICKET_MAX_AGE, audience=audience, moment=int(now or time.time()))[0]
-
-
-def grant_status(
-    value: Optional[str], *, audience: str, secret: Optional[str] = None, now: Optional[int] = None
-) -> str:
-    """Why a grant cookie would or would not open *audience*'s door, in words. Names no secret.
-
-    A bad signature on a well-formed grant almost always means it was minted before this process
-    started (or by another box), so it says so."""
+def check_cookie(
+    value: Optional[str], *, audience: Optional[str] = None, secret: Optional[str] = None, now: Optional[int] = None
+) -> tuple[str, Optional[Grant]]:
+    """THE grant-cookie rule: ``(reason, grant)``, signed by this process, not expired, not revoked, for *audience*
+    (any door when None). A bad signature on a well-formed grant almost always means it was minted before this
+    process started (or by another box), so the reason says so. Names no secret."""
     secret = secret or _secret()
     moment = int(now or time.time())
     key = _grant_key(secret, _BOOT_NONCE) if secret else None
-    reason, grant = _status(
-        unquote(value) if value else value, key, max_age=GRANT_MAX_AGE, audience=audience, moment=moment
-    )
+    # The browser returns the cookie exactly as it was set: percent-encoded (``set_cookie_header``).
+    reason, grant = _check_signed(unquote(value) if value else value, key, now=moment, max_age=GRANT_MAX_AGE)
     if reason == "bad-signature":
-        return "bad-signature (from before a restart, or another box)"
+        return "bad-signature (from before a restart, or another box)", None
     if grant is not None and is_revoked(grant, now=moment):
-        return "revoked"
-    return reason
+        return "revoked", None
+    return _at_door(reason, grant, audience)
+
+
+def read_grant(value: Optional[str], *, secret: Optional[str] = None, now: Optional[int] = None) -> Optional[Grant]:
+    """The grant a cookie carries — this process's signature, not revoked — or None."""
+    return check_cookie(value, secret=secret, now=now)[1]
+
+
+def _at_door(reason: str, grant: Optional[Grant], audience: Optional[str]) -> tuple[str, Optional[Grant]]:
+    if grant is not None and audience is not None and grant.audience != audience:
+        return "wrong-door", None
+    return reason, grant
 
 
 def set_cookie_header(value: str) -> str:
@@ -205,7 +194,8 @@ __all__ = [
     "RESERVED_PREFIX",
     "TICKET_PARAM",
     "exchange",
-    "grant_status",
+    "check_cookie",
+    "check_ticket",
     "is_revoked",
     "mint_grant",
     "read_grant",
@@ -213,5 +203,4 @@ __all__ = [
     "revoke",
     "safe_next",
     "set_cookie_header",
-    "ticket_status",
 ]
