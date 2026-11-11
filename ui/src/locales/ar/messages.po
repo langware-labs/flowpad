@@ -721,6 +721,11 @@ msgstr "{0} مُفهرس بدون مسار مصدر صحيح ولا يمكن ف�
 
 #. placeholder {0}: funded.name
 #: src/components/llm-setup/LlmSetupView.tsx
+msgid "{0} is issuing your LLM calls."
+msgstr "{0} يُصدر طلبات LLM الخاصة بكم."
+
+#. placeholder {0}: funded.name
+#: src/components/llm-setup/LlmSetupView.tsx
 msgid "{0} is issuing your LLM calls. Close this window (⌘W) — you're done here."
 msgstr "{0} يُصدر طلبات LLM الخاصة بكم. أغلقوا هذه النافذة (⌘W) — انتهيتم هنا."
 
@@ -1880,6 +1885,7 @@ msgstr "{trimmed} جاهزة."
 msgid "{trimmed} was added to {parentLabel}."
 msgstr "تمت إضافة {trimmed} إلى {parentLabel}."
 
+#: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/InviteCard.tsx
 msgid "{typeLabel} · shared by {sender}"
 msgstr "{typeLabel} · شاركه {sender}"
@@ -22179,6 +22185,10 @@ msgstr "فتح الجلسات الحية"
 msgid "Open LLM Indexers"
 msgstr "فتح أداة فهرسة LLM"
 
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "Open LLM sources"
+msgstr "افتحوا مصادر LLM"
+
 #: src/components/account/system-log.tsx
 msgid "Open Log File"
 msgstr "فتح ملف السجل"
@@ -32613,6 +32623,7 @@ msgid "This project has no folder on disk and can't be opened."
 msgstr "لا يوجد لهذا المشروع مجلد على القرص، لذلك يتعذّر فتحه."
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/git/GitSetupWizard.tsx
 msgid "This project has no folder on this computer."
 msgstr "لا يوجد لهذا المشروع مجلد على هذا الكمبيوتر."
 

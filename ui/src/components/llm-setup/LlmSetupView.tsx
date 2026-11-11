@@ -13,7 +13,9 @@
  *
  * **It carries on by itself.** The command that sent the user here is blocked on a socket, and it
  * returns the instant the box can fund a call. So this route watches the SAME resolver the CLI
- * blocks on, and leaves when it agrees. Closing the keys dialog with nothing chosen goes back to
+ * blocks on, and leaves when it agrees — when a source ARRIVES while it is open. A box that was
+ * already funded when the screen opened was asked for on purpose ("set up my LLM", "connect an
+ * LLM"): it stays on "You're set up", with the way to LLM sources, instead of bouncing home. Closing the keys dialog with nothing chosen goes back to
  * the question — it is not treated as a Skip, because a source picked a moment ago closes the
  * dialog slightly before the funding status catches up.
  *
@@ -32,6 +34,7 @@ import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
 import { getHistoryPosition } from '@src/navigation/history-position-store';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewType } from '@src/types/ViewType';
 
 export function LlmSetupView() {
   const open = useHarnessLoginStore((s) => s.open);
@@ -44,6 +47,10 @@ export function LlmSetupView() {
    * re-derived here.
    */
   const funded = status?.default?.source ?? null;
+  // Funded at the FIRST known status (not while it loads): this screen was opened on purpose, and
+  // there is no waiting command to carry on for.
+  const fundedOnArrival = useRef<boolean | null>(null);
+  if (status && fundedOnArrival.current === null) fundedOnArrival.current = !!funded;
 
   const { navigation, windowMode } = useDockNavigation();
   // `ask` is the small two-button popup; `keys` is the "Assistants & keys" dialog it opened.
@@ -78,13 +85,13 @@ export function LlmSetupView() {
     openHarnessLoginModal();
   }, []);
 
-  // The box can fund a call (a login, a key or a FlowPad sign-in, from either seam): close the
-  // dialog and carry on. In a browser window of its own there is nowhere to go back to, so that
-  // one keeps the "You're set up" card below.
+  // A source arrived (a login, a key or a FlowPad sign-in, from either seam): close the dialog and
+  // carry on. In a browser window of its own there is nowhere to go back to, and a box funded
+  // before this opened has nothing to carry on to: both keep the "You're set up" card below.
   useEffect(() => {
     if (!funded) return;
     setOpen(false);
-    if (!windowMode && !answered.current) {
+    if (!windowMode && !answered.current && fundedOnArrival.current === false) {
       answered.current = true;
       leave();
     }
@@ -114,7 +121,20 @@ export function LlmSetupView() {
             <p className="text-sm text-muted-foreground">
               <Trans>{funded.name} is issuing your LLM calls. Close this window (⌘W) — you're done here.</Trans>
             </p>
-          ) : null}
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">
+                <Trans>{funded.name} is issuing your LLM calls.</Trans>
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => navigation.openTab(ViewType.LLM_SOURCES)}
+                data-testid="llm-setup-open-sources"
+              >
+                <Trans>Open LLM sources</Trans>
+              </Button>
+            </>
+          )}
         </div>
       </div>
     );

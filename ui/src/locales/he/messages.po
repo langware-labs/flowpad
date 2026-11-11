@@ -721,6 +721,11 @@ msgstr "\"{0}\" מאונדקסת ללא נתיב מקור תקף, ולא נית�
 
 #. placeholder {0}: funded.name
 #: src/components/llm-setup/LlmSetupView.tsx
+msgid "{0} is issuing your LLM calls."
+msgstr "{0} מנפיק את קריאות ה-LLM שלכם."
+
+#. placeholder {0}: funded.name
+#: src/components/llm-setup/LlmSetupView.tsx
 msgid "{0} is issuing your LLM calls. Close this window (⌘W) — you're done here."
 msgstr "{0} מנפיק את קריאות ה-LLM שלכם. אפשר לסגור את החלון (⌘W) — סיימתם כאן."
 
@@ -1880,6 +1885,7 @@ msgstr "{trimmed} מוכן."
 msgid "{trimmed} was added to {parentLabel}."
 msgstr "{trimmed} נוסף אל {parentLabel}."
 
+#: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/InviteCard.tsx
 msgid "{typeLabel} · shared by {sender}"
 msgstr "{typeLabel} · שותף על ידי {sender}"
@@ -22179,6 +22185,10 @@ msgstr "פתיחת הסשנים החיים"
 msgid "Open LLM Indexers"
 msgstr "פתחו מנהלי אינדקס LLM"
 
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "Open LLM sources"
+msgstr "פתחו את מקורות ה-LLM"
+
 #: src/components/account/system-log.tsx
 msgid "Open Log File"
 msgstr "פתחו קובץ רישום"
@@ -32613,6 +32623,7 @@ msgid "This project has no folder on disk and can't be opened."
 msgstr "לפרויקט זה אין תיקייה בדיסק, ולכן לא ניתן לפתוח אותו."
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/git/GitSetupWizard.tsx
 msgid "This project has no folder on this computer."
 msgstr "אין לפרויקט הזה תיקייה במחשב הזה."
 
