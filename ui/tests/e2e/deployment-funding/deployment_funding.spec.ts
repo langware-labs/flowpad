@@ -113,6 +113,13 @@ test.afterAll(async ({ browser }) => {
   if (folder) rmSync(folder, { recursive: true, force: true });
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.hub_project_pages.rules: FAILING? read this tag's rules before
+//       touching HubProjectPage's sub-pointer routing or ProjectHome's page order
+// flowpad:endcapsule tag
 test('a user moves a deployment onto an lg sub-budget of their own allowance, from the hub page', async ({ page }) => {
   // Hub home → the agent's card → Deployments (Agents › agent › Deployments): the deployment and who pays for it.
   await ready(page);
