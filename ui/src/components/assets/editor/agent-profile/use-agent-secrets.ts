@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { dataContext } from '@sdk';
-import { credentialsService, Project, type Agent } from '@sdk';
+import { credentialsService, Project, TypeId, type Agent } from '@sdk';
+import { useEntity } from '@src/hooks/entity-hooks';
 
 import {
   projectCredentials,
@@ -48,7 +49,10 @@ function useAgentProjectId(agent: Agent): string | null {
  */
 export function useAgentSecrets(agent: Agent): AgentSecrets {
   const projectId = useAgentProjectId(agent);
-  const project = useMemo(() => (projectId ? new Project({ id: projectId }) : null), [projectId]);
+  // The project as the cache holds it. `new Project({ id })` registered an id-only instance over the loaded
+  // one, so every reader of that project (the git setup wizard's folder path) lost its fields.
+  const projectTypeId = useMemo(() => (projectId ? new TypeId(Project.type, projectId) : null), [projectId]);
+  const project = useEntity<Project>(projectTypeId).data ?? null;
   const required = useMemo(() => requiredCredentials(agent.requirements), [agent.requirements]);
   const [rows, setRows] = useState<SecretRow[] | null>(null);
   const [setNames, setSetNames] = useState<Set<string>>(new Set());

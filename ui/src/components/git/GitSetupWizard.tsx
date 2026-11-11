@@ -29,7 +29,7 @@ type WizardStep = 'where' | 'setup' | 'done';
  */
 async function runProjectGitSetup(project: Project, target: Exclude<GitTarget, { mode: 'flowpad' }>): Promise<boolean> {
   const path = project.fs_storage_mount_path;
-  if (!path) return false;
+  if (!path) throw new Error(tCore`This project has no folder on this computer.`);
   const result = await launchWizard('git-dependency', {
     title: tCore`Set up Git for project sharing`,
     targetTypeId: project.typeId.toString(),
