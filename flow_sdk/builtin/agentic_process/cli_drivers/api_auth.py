@@ -450,6 +450,7 @@ def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: 
     model the caller named, and runs as named.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchErrorCode  # noqa: PLC0415
 
     def spelled(slug: str) -> str:
         return slug if slug.startswith(spec.slug_prefix) else f"{spec.slug_prefix}{slug}"
@@ -469,10 +470,12 @@ def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: 
                 worker_type,
                 f"Model mismatch: this session needs the {size!r} model size, but the budget it runs on "
                 f"({where}) does not offer it -- use a budget that does, or change the size the agent asks for",
+                LaunchErrorCode.MODEL_UNAVAILABLE,
             )
         raise WorkerSpawnError(
             worker_type,
             f"{where} declares no {size!r} model -- set its model sizes (sm/md/lg) on the endpoint, or name a model",
+            LaunchErrorCode.MODEL_UNAVAILABLE,
         )
     return spelled(slug)
 
