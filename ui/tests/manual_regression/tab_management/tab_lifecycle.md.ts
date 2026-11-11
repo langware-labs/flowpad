@@ -21,6 +21,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
 import { withViewMode } from '../_shared/view-mode';
+import { adjusted } from '../../adjustableTimeout';
 
 interface TabRow {
   pointer: string;
@@ -103,7 +104,7 @@ test.describe('Tab Management — content tab lifecycle', () => {
     const projectId = await defaultProjectId();
     const assetsKey = `assets|project:${projectId}`;
     await page.goto(projectDock('/dock/assets', projectId));
-    await expect(page.locator(`[data-testid="tab-content-${assetsKey}"]`)).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator(`[data-testid="tab-content-${assetsKey}"]`)).toBeVisible({ timeout: adjusted(10_000) });
     const rows = await visibleTabs();
     expect(rows.find((r) => r.pointer === assetsKey)?.visible).toBe(true);
   });
@@ -115,8 +116,8 @@ test.describe('Tab Management — content tab lifecycle', () => {
     const filesKey = `explorer|project:${projectId}`;
     await page.goto(projectDock('/dock/assets', projectId));
     await page.goto(projectDock('/dock/explorer', projectId));
-    await expect(page.locator(`[data-testid="tab-content-${assetsKey}"]`)).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator(`[data-testid="tab-content-${filesKey}"]`)).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator(`[data-testid="tab-content-${assetsKey}"]`)).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(page.locator(`[data-testid="tab-content-${filesKey}"]`)).toBeVisible({ timeout: adjusted(10_000) });
   });
 
   // ── 3. select — clicking a content chip is URL-first ──────────────────────
@@ -126,7 +127,7 @@ test.describe('Tab Management — content tab lifecycle', () => {
     await page.goto(projectDock('/dock/assets', projectId));
     await page.goto(projectDock('/dock/explorer', projectId));
     await page.locator(`[data-testid="tab-content-${assetsKey}"]`).click();
-    await expect(page).toHaveURL(/\/dock\/assets/, { timeout: 10_000 });
+    await expect(page).toHaveURL(/\/dock\/assets/, { timeout: adjusted(10_000) });
   });
 
   // ── 4. soft-close — close flips the Tab to visible=false; the row survives ─
@@ -135,7 +136,7 @@ test.describe('Tab Management — content tab lifecycle', () => {
     const filesKey = `explorer|project:${projectId}`;
     await page.goto(projectDock('/dock/explorer', projectId));
     const chip = page.locator(`[data-testid="tab-content-${filesKey}"]`);
-    await expect(chip).toBeVisible({ timeout: 10_000 });
+    await expect(chip).toBeVisible({ timeout: adjusted(10_000) });
     await chip.hover();
     // Close button is hover-gated; force the click past the opacity transition.
     await chip.locator('[aria-label="Close tab"]').click({ force: true });
@@ -144,7 +145,7 @@ test.describe('Tab Management — content tab lifecycle', () => {
     await expect(async () => {
       const rows = await visibleTabs();
       expect(rows.find((r) => r.pointer === filesKey)?.visible).not.toBe(true);
-    }).toPass({ timeout: 10_000 });
+    }).toPass({ timeout: adjusted(10_000) });
   });
 
   // ── 5. reopen — same pointer reuses the one row (no duplicate) ────────────

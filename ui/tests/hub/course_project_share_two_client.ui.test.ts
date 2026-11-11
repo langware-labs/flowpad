@@ -51,6 +51,7 @@ import {
 } from './_browser';
 import { seedCourseProject, type SeededCourse } from './_course_fixture';
 import { testEntityName } from '../_cleanup';
+import { adjusted } from '../adjustableTimeout';
 
 /** The only directory an installed project may land in — and the only one this
  *  test is ever allowed to delete from. Bob's own workspace root: prod's is
@@ -105,7 +106,7 @@ beforeAll(async () => {
   const creds = await getAliceCreds();
   if (!creds) return void (skipReason = 'no ALICE creds');
   aliceToken = (await hubLogin(creds.email, creds.password)).token;
-}, 30_000); // do not increase timeout without approval
+}, adjusted(30_000)); // do not increase timeout without approval
 
 beforeEach((context: any) => {
   if (skipReason) {
@@ -213,12 +214,12 @@ describe('course project share → install → auto-launch (two instances)', () 
     );
     await openAssignedConversationInUI(bobPage, inviteConversationId);
     const card = bobPage.page.getByTestId('invite-card').filter({ hasText: created.data.name });
-    await card.waitFor({ state: 'visible', timeout: 30_000 });
+    await card.waitFor({ state: 'visible', timeout: adjusted(30_000) });
     expect(await bobPage.page.getByTestId('project-chip').count(), 'no legacy project chip').toBe(0);
     await card.getByTestId('invite-open').click();
     // Open lands on the project, which offers to set it up here.
     const installButton = bobPage.page.getByTestId('incoming-project-dialog').getByTestId('incoming-project-install');
-    await installButton.waitFor({ state: 'visible', timeout: 30_000 });
+    await installButton.waitFor({ state: 'visible', timeout: adjusted(30_000) });
     await shot(bobPage.page, '02-bob-install-offer');
 
     await installButton.click();
@@ -226,7 +227,7 @@ describe('course project share → install → auto-launch (two instances)', () 
     // Installing lands him in the project — and opening the project IS entering
     // the session, as a load-time redirect.
     // The session opens as a Vibe host tab (docs/tab-management.md): /dock/vibe/agentic_process-<id>.
-    await bobPage.page.waitForURL(/\/dock\/vibe\/agentic_process-[0-9a-f-]+/, { timeout: 60_000 });
+    await bobPage.page.waitForURL(/\/dock\/vibe\/agentic_process-[0-9a-f-]+/, { timeout: adjusted(60_000) });
     await shot(bobPage.page, '03-bob-course-open');
 
     const installed = await jsonApi(bob.apiUrl, `/graph/project/${projectId}`);
@@ -258,7 +259,7 @@ describe('course project share → install → auto-launch (two instances)', () 
     // ── the session Bob landed in ────────────────────────────────────────
     const page2 = bobPage;
     const intro = page2.page.getByTestId('agent-intro-message');
-    await intro.first().waitFor({ state: 'visible', timeout: 30_000 });
+    await intro.first().waitFor({ state: 'visible', timeout: adjusted(30_000) });
     expect(await intro.first().innerText()).toContain(course.agentName);
 
     // The prompt rode the queue: still queued, or already the first user turn.
@@ -266,7 +267,7 @@ describe('course project share → install → auto-launch (two instances)', () 
     const userTurn = page2.page
       .locator('[data-testid="execution-message"][data-role="user"]')
       .filter({ hasText: `COURSE READY ${token}` });
-    await queued.or(userTurn).first().waitFor({ state: 'visible', timeout: 30_000 });
+    await queued.or(userTurn).first().waitFor({ state: 'visible', timeout: adjusted(30_000) });
     await shot(page2.page, '04-bob-agent-started');
 
     expect(realConsoleErrors(page2.consoleErrors)).toEqual([]);
@@ -282,7 +283,7 @@ describe('course project share → install → auto-launch (two instances)', () 
       .getByTestId('invite-card')
       .filter({ hasText: created.data.name })
       .getByTestId('invite-open')
-      .waitFor({ state: 'visible', timeout: 20_000 });
+      .waitFor({ state: 'visible', timeout: adjusted(20_000) });
     await shot(bobPage.page, '05-bob-chip-open-project');
-  }, 120_000); // do not increase timeout without approval
+  }, adjusted(120_000)); // do not increase timeout without approval
 });

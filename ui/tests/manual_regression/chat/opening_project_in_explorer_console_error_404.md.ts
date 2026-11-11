@@ -4,22 +4,23 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('explorer — no 404', () => {
   test('test 1: opening the file explorer produces no 404 console errors', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const consoleErrors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 
     await dismissSetupModal(page);
     await page.goto('/dock/explorer');
-    await page.waitForURL(/\/dock\/explorer/, { timeout: 15_000 });
+    await page.waitForURL(/\/dock\/explorer/, { timeout: adjusted(15_000) });
     await page.waitForTimeout(3_000);
 
     // The explorer view rendered (the dock content area mounted, not a blank /
     // error page). The explorer tree itself carries no testid, so assert the
     // app shell + a non-trivial DOM rather than a specific tree node.
-    await expect(page.locator('#root, [data-dock], main').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('#root, [data-dock], main').first()).toBeVisible({ timeout: adjusted(15_000) });
     const bodyText = (await page.locator('body').innerText().catch(() => '')) ?? '';
     expect(bodyText.length).toBeGreaterThan(0);
 

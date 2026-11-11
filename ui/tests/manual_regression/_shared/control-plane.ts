@@ -5,6 +5,7 @@
 import { execFileSync } from 'child_process';
 import { expect, type Page } from '@playwright/test';
 import { REPO_ROOT } from './api';
+import { adjusted } from '../../adjustableTimeout';
 
 /** Run a flow CLI verb against `instance` (default: this run's FLOW_INSTANCE). */
 export function flow(args: string[], instance = process.env.FLOW_INSTANCE ?? ''): { code: number; out: string } {
@@ -13,7 +14,7 @@ export function flow(args: string[], instance = process.env.FLOW_INSTANCE ?? '')
       cwd: REPO_ROOT,
       env: { ...process.env, FLOW_INSTANCE: instance },
       encoding: 'utf8',
-      timeout: 30_000,
+      timeout: adjusted(30_000),
     });
     return { code: 0, out };
   } catch (e: unknown) {
@@ -47,7 +48,7 @@ export async function awaitSteerable(page: Page, backend: string): Promise<void>
         lastUrl = urlBefore;
         return settled;
       },
-      { timeout: 15_000 },
+      { timeout: adjusted(15_000) },
     )
     .toBe(true);
 }

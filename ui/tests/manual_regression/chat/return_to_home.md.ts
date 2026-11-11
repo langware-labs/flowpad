@@ -5,6 +5,7 @@ import {
   submitFromLanding,
   goHome,
 } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Return to Home', () => {
   test.beforeEach(async ({ page }) => {
@@ -12,13 +13,13 @@ test.describe('Return to Home', () => {
   });
 
   test('navigate back to home from active shell session', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoLanding(page);
     await submitFromLanding(page, 'return home test');
 
     // wait for shell terminal to open
-    await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-/, { timeout: 45_000 });
+    await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-/, { timeout: adjusted(45_000) });
 
     // click home button to navigate back to landing page
     await goHome(page);
@@ -35,6 +36,6 @@ test.describe('Return to Home', () => {
     // Validate the home session input is visible.
     // Home renders <SessionInput> inline as a textarea with
     // aria-label="What would you like to work on?".
-    await expect(page.locator('textarea[aria-label="What would you like to work on?"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('textarea[aria-label="What would you like to work on?"]')).toBeVisible({ timeout: adjusted(10_000) });
   });
 });

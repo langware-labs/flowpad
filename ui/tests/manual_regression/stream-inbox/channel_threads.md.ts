@@ -15,6 +15,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { REPO_ROOT, apiContext, apiOrigin, configuredFileEnv } from '../_shared/api';
 import { graphCall, sendButton, skipLlmSetup } from '../_shared/conversation';
+import { adjusted } from '../../adjustableTimeout';
 
 const INSTANCE = process.env.FLOW_INSTANCE || '';
 
@@ -70,7 +71,7 @@ const graph = <T = Record<string, unknown>>(method: 'get' | 'post' | 'delete', r
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-  test.setTimeout(180_000);
+  test.setTimeout(adjusted(180_000));
   api = await apiContext();
   const users = await graph<Array<{ id: string; uname?: string }>>('get', '/graph/user');
   localUserId = users.find((u) => u.uname === 'local')?.id ?? '';
@@ -264,7 +265,7 @@ for (const [i, channel] of WANTED.entries()) {
     const answering = await sentWith(channel, `answer ${nonce}`);
     const namesRoot = [root.external_id, root.thread].filter(Boolean).some((id) => JSON.stringify(answering).includes(bare(id!)));
     expect(namesRoot, `${channel}: the reply does not name the root: ${JSON.stringify(answering)}`).toBe(true);
-    await expect(page.getByTestId('thread-header-count')).toContainText('5 messages', { timeout: 15_000 });
+    await expect(page.getByTestId('thread-header-count')).toContainText('5 messages', { timeout: adjusted(15_000) });
     if (shots) await page.screenshot({ path: `${shots}/${channel}-3-replied.png`, fullPage: true });
 
     // Back to every message: the thread packs again.

@@ -12,6 +12,7 @@
  * what "never fails" has to mean: the request is not lost, not duplicated, and the user is told.
  * Ground truth for delivery is the hub's own rows, read as the helper.
  */
+import { adjusted } from '../adjustableTimeout';
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { dataContext, dataManager, oauthService, Project, systemTools } from '@sdk';
@@ -46,7 +47,7 @@ const HELPER_API = process.env.HELPER_API ?? 'http://localhost:6023';
 const HELPER_EMAIL = process.env.HELPER_EMAIL ?? '';
 const HELPER_PW = process.env.HELPER_PW ?? '';
 /** How long delivery is given, polled. */
-const DEADLINE_MS = 15000;
+const DEADLINE_MS = adjusted(15000);
 
 // ---------------------------------------------------------------------------
 // Faults: one request that does not come back
@@ -187,7 +188,7 @@ describe.skipIf(!HELPER_EMAIL)('Ask for help never fails', () => {
       const { dialog, submit } = fillAndAssign(title);
 
       // The person sees it failed and presses Ask again — the same request (same id).
-      await waitFor(() => expect(dialog.textContent).toContain('injected'), { timeout: 10000 });
+      await waitFor(() => expect(dialog.textContent).toContain('injected'), { timeout: adjusted(10000) });
       submit();
       await waitFor(
         () =>
@@ -236,7 +237,7 @@ describe.skipIf(!HELPER_EMAIL)('Ask for help never fails', () => {
       release();
     });
     await waitFor(() => expect(document.querySelector('[data-testid="dialog-closed"]')).not.toBeNull(), {
-      timeout: 15000,
+      timeout: adjusted(15000),
     });
     expect(told, 'the person must be told the ask went').toHaveBeenCalled();
   });
@@ -247,7 +248,7 @@ describe.skipIf(!HELPER_EMAIL)('Ask for help never fails', () => {
     const onAssigned = vi.fn();
     render(<AskHost onAssigned={onAssigned} />);
     fillAndAssign(title);
-    await waitFor(() => expect(onAssigned).toHaveBeenCalled(), { timeout: 15000 });
+    await waitFor(() => expect(onAssigned).toHaveBeenCalled(), { timeout: adjusted(15000) });
     const taskId = onAssigned.mock.calls[0][0] as string;
 
     await helperSocket('connect');

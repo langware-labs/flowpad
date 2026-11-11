@@ -22,6 +22,7 @@
  * page comes from VITE_PORT.
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 import { apiContext } from '../_shared/api';
 import { AP_WORKER_TYPE, dismissSetupModal } from './_ap_helpers';
 
@@ -122,19 +123,19 @@ async function launchSession(page: Page, rq: APIRequestContext, convId: string):
   // workers" chevron. Expand it when claude_code isn't already surfaced so this
   // test always launches claude_code regardless of the persisted last worker.
   const toolbar = page.locator('[data-testid="conversation-launch-toolbar"]');
-  await toolbar.waitFor({ state: 'visible', timeout: 30_000 });
+  await toolbar.waitFor({ state: 'visible', timeout: adjusted(30_000) });
   const claudeBtn = toolbar.locator(`[data-testid="conversation-launch-${AP_WORKER_TYPE}"]`);
   if (!(await claudeBtn.isVisible().catch(() => false))) {
     await toolbar.locator('[data-testid="conversation-launch-more"]').click();
   }
   await claudeBtn.click();
-  await page.waitForURL(SHELL_URL, { timeout: 60_000 });
+  await page.waitForURL(SHELL_URL, { timeout: adjusted(60_000) });
   const pid = pidFromUrl(page);
   // Launch links the process onto the conversation AFTER navigating (startSession
   // order), so poll until the linkage lands.
   await expect(async () => {
     expect(await convProcessIds(rq, convId)).toEqual([pid]);
-  }).toPass({ timeout: 30_000 });
+  }).toPass({ timeout: adjusted(30_000) });
   return pid;
 }
 
@@ -151,7 +152,7 @@ test.describe.serial('conversation session lifecycle', () => {
   let launched: { convId: string; projectId: string; workdir: string; pid: string } | null = null;
 
   test('launch spawns a visible conversation-process, links it, opens its dock', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const rq = await apiContext();
     try {
       // Defensive: free a leftover session if a prior pair's test 2 didn't run
@@ -190,7 +191,7 @@ test.describe.serial('conversation session lifecycle', () => {
   });
 
   test('opening again reuses the existing session — no duplicate', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     expect(launched, 'test 1 must have launched a session first').not.toBeNull();
     const { convId, pid } = launched!;
     const rq = await apiContext();
@@ -198,12 +199,12 @@ test.describe.serial('conversation session lifecycle', () => {
       // Back on the conversation, the header collapses to the single Open button.
       await page.goto(`/dock/conversation/${convId}`);
       const openBtn = page.locator('[data-testid="conversation-open-session"]');
-      await openBtn.waitFor({ state: 'visible', timeout: 30_000 });
+      await openBtn.waitFor({ state: 'visible', timeout: adjusted(30_000) });
       const countBefore = (await processIds(rq)).length;
 
       // Click Open → same dockPointer, no second process.
       await openBtn.click();
-      await page.waitForURL(new RegExp(`/dock/shell/agentic_process-${pid}`), { timeout: 60_000 });
+      await page.waitForURL(new RegExp(`/dock/shell/agentic_process-${pid}`), { timeout: adjusted(60_000) });
       expect(pidFromUrl(page)).toBe(pid);
 
       const countAfter = (await processIds(rq)).length;

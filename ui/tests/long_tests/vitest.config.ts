@@ -2,6 +2,7 @@ import path from 'path';
 import { defineConfig, mergeConfig } from 'vitest/config';
 import { loadEnv } from 'vite';
 import viteConfig from '../../vite.config';
+import { adjusted } from '../adjustableTimeout';
 
 // Instance-aligned target: FLOW_INSTANCE (e.g. a dedicated instance_ctl
 // instance) selects the vite mode so loadEnv picks up `.env.<instance>.local`
@@ -28,8 +29,8 @@ export default mergeConfig(
     test: {
       // Every backend a test spawns inherits this: the tests' requests carry no cookie-gate token.
       env: { FLOWPAD_COOKIE_GATE: 'off' },
-      testTimeout: 240000, // 4 min — real Claude subprocess tests
-      hookTimeout: 15000,
+      testTimeout: adjusted(240000), // 4 min — real Claude subprocess tests
+      hookTimeout: adjusted(15000),
       include: ['tests/long_tests/**/*.test.{ts,tsx}', 'tests/api/**/*.test.{ts,tsx}'],
       exclude: ['**/node_modules/**'],
       // The include also pulls in `tests/api/**` component tests (e.g.
