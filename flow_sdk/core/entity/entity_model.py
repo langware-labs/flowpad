@@ -2661,8 +2661,26 @@ class Entity(DBEntity):
             return None
         incoming = cls.accepted_from_hub(hub_row, nulls_clear=nulls_clear)
         incoming["id"] = row_id
+        if existing is _UNSET_ROW and _VERIFIED_ABSENT.get() is None:
+            # Read, merge and save as one step for this row: the save writes the whole row, so a
+            # local save landing between our read and our write (a share stamping its private
+            # ``hub_published_at``) was overwritten by the stale copy. The record guard is the one
+            # a save already takes (same-task reentrant); a ``mirror_batch`` holds the writer
+            # lock and reads its rows under it, so it never takes this one.
+            from flow_sdk.fs_store.fs_record import record_sync_guard  # noqa: PLC0415
+
+            async with record_sync_guard(cls.get_type(), row_id):
+                existing = await cls.get_one({"id": row_id})
+                return await cls._mirror_onto(existing, hub_row, incoming, someone_typeid, notify=notify)
         if existing is _UNSET_ROW:
             existing = await cls.get_one({"id": row_id})
+        return await cls._mirror_onto(existing, hub_row, incoming, someone_typeid, notify=notify)
+
+    @classmethod
+    async def _mirror_onto(
+        cls, existing: Any, hub_row: dict, incoming: dict, someone_typeid: Optional[str], *, notify: bool
+    ) -> Optional["Entity"]:
+        """``mirror_from_hub``'s write: create the row, or copy the hub's accepted fields onto ``existing``."""
         now = datetime.now(timezone.utc)
         if existing is None:
             fresh = dict(incoming)
