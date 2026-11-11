@@ -219,7 +219,7 @@ _FORBIDDEN_HTML = """<!doctype html>
        font:.71875rem/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;
        display:grid; grid-template-columns:auto 1fr; gap:.0625rem 1rem; }
   dt { color:#71717a; white-space:nowrap; }
-  dd { margin:0; word-break:break-all; color:#d4d4d8; }
+  dd { margin:0; overflow-wrap:anywhere; color:#d4d4d8; }
   .foot { display:flex; justify-content:space-between; gap:1rem; font-size:.75rem; color:#5f5f68; margin-top:1rem; }
 </style>
 </head>
