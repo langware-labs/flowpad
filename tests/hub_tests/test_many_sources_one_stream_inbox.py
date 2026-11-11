@@ -38,6 +38,7 @@ from tests.hub_tests.test_helpdesk_source_roundtrip import (
     _auth,
     _await_hub_message,
     _hub_messages,
+    _pick_up,
     _open_ticket,
 )
 
@@ -103,6 +104,7 @@ async def test_two_desks_one_loop_attribution_resolves_by_source(hub_session, bo
     async with _desk(hub_session, "a") as desk_a, _desk(hub_session, "b") as desk_b:
         ticket_a = await _open_ticket(base, bob_token, desk_a, f"printer is broken {ts}")
         ticket_b = await _open_ticket(base, bob_token, desk_b, f"invoice question {ts}")
+        await _pick_up(base, hub_session["api_key"], ticket_a)
         bob = str((await _hub_messages(base, hub_session["api_key"], ticket_a))[0]["sender_id"])
 
         box_a, box_b = StreamInbox(desk_a, provider="helpdesk"), StreamInbox(desk_b, provider="helpdesk")
@@ -155,6 +157,8 @@ async def mailbox(hub_base_url, hub_login_payload):
         allocated.append(agent_id)
         outsider_box = await driver.create_mailbox(outsider_id)
         allocated.append(outsider_id)
+        # A new mailbox sends only to its owner (the hub's Sending list): the outsider may write to the agent.
+        await driver.configure_mailbox(outsider_id, {"allowed_recipients": [str(agent_box.get("address") or "")]})
         yield {
             "agent_id": agent_id, "agent_address": str(agent_box.get("address") or ""),
             "outsider_id": outsider_id, "outsider_address": str(outsider_box.get("address") or ""),
