@@ -396,6 +396,13 @@ def test_a_screen_that_opens_on_a_project_named_with_one_in_context_opens_on_it(
     assert navigator.context_rule("open the help desk", navigation.kind("navigation.here").model_validate({})) is None
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_subplace_names.rules: FAILING? read this tag's rules before
+#       editing a subplace's names or the navigator's rules
+# flowpad:endcapsule tag
 def test_a_subplace_is_called_what_people_call_it_and_that_name_is_a_rule():
     # Live: "show failed runs" split between Runs (agent runs, 0.29-0.39) and Automations > Runs that
     # failed (0.35-0.48) and was handed on 2 of 3 times: the subplace had no name a person uses -- a
