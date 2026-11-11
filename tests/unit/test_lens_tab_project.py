@@ -14,14 +14,19 @@ one (where the on-disk recovery applies).
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+import flow_sdk.instance_settings as instance_settings
+
 # Importing the entity registers the type (Entity.__init_subclass__).
 from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: F401
+from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.tab import ensure_tab
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
+from tests import pytest_plugin
 
 CLAUDE_SID = "7313667f-ab48-4add-8918-e6b30b8f8a77"
 
@@ -44,6 +49,16 @@ async def test_lens_tab_gets_project_from_unindexed_session(
         "flow_sdk.transcript_analyzer.resolver._claude_projects_dir",
         lambda: projects_root,
     )
+    # The session's cwd sits inside a REAL project (a tab takes only a project
+    # that exists; a non-project folder's derived id is not one). The sync
+    # resolver opens the sqlite file ``db_path`` names: point it at the session's
+    # test database so it sees that row (as test_project_cwd_cache_lifecycle does).
+    settings = replace(
+        instance_settings.get_instance_settings(),
+        db_path=Path(pytest_plugin._test_db_driver.config.database),
+    )
+    monkeypatch.setattr(instance_settings, "get_instance_settings", lambda: settings)
+    await Project(name=f"lens-tab-{CLAUDE_SID[:8]}", fs_storage_mount_path=str(cwd)).save()
 
     expected = resolve_project_id_for_cwd(str(cwd))
     assert expected, "precondition: cwd resolves to a project id"

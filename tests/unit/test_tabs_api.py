@@ -15,6 +15,7 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.claude_memory_entities import Docs
+from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.shell import Shell
 from flow_sdk.builtin.tab import (
     Tab,
@@ -114,6 +115,9 @@ async def test_tab_target_project_marks_a_guest_content_tab():
     """The content target's own project rides the response (never saved), so the
     chip can mark a guest tab; shell/process targets never carry one."""
     own, other = str(uuid.uuid4()), str(uuid.uuid4())
+    # REAL Project rows: a target's stamp counts only when that project exists.
+    await Project(id=own, name=f"tab-own-{own[:8]}").save()
+    await Project(id=other, name=f"tab-other-{other[:8]}").save()
     doc_id, shell_id = str(uuid.uuid4()), str(uuid.uuid4())
     guest = Tab(id=str(uuid.uuid4()), target_type="markdown", target_id=doc_id, project_id=own)
     shell = Tab(id=str(uuid.uuid4()), target_type="shell", target_id=shell_id, project_id=own)
