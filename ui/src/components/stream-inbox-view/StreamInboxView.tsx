@@ -1456,15 +1456,15 @@ export function StreamInboxView({
   // row is not drawn (an agent's StreamInbox, an embedded list, a selection in progress) they fall back to the filter row.
   const hasTopRow = !agentId && !embedded && selectedCount === 0;
   const channelButtons = (
+  const invitesChip = !agentId && !embedded && (
+    <InvitesChannelChip
+      active={inInvitesView}
+      pending={membershipPendingCount}
+      onClick={() => setView(inInvitesView ? 'all' : 'invites')}
+    />
+  );
     <>
-      {!agentId && !embedded && (
-        <InvitesChannelChip
-          active={inInvitesView}
-          pending={membershipPendingCount}
-          onClick={() => setView(inInvitesView ? 'all' : 'invites')}
-        />
-      )}
-      {channelsOwner && !embedded && (
+      {channelsOwner && !embedded ? (
         <AttachedChannelsBar
           owner={channelsOwner}
           rows={ownerChannels}
@@ -1475,7 +1475,10 @@ export function StreamInboxView({
           onSelectedChange={setChannelFilter}
           className="shrink-0"
         />
+          leading={invitesChip}
       )}
+      ) : (
+        invitesChip
     </>
   );
 

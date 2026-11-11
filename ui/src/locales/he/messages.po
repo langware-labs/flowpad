@@ -6836,6 +6836,10 @@ msgstr "הלוח אינו זמין"
 msgid "Clone"
 msgstr "שיבוט"
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Click: show only this · ⌘/Ctrl-click: add or remove"
+msgstr "לחיצה: הצג רק את זה · ⌘/Ctrl-לחיצה: הוסף או הסר"
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Clone @ {branch}"
 msgstr "שכפלו @ {branch}"
@@ -29260,6 +29264,11 @@ msgstr "התחברות ל-{0}"
 
 #. placeholder {0}: chosen.title
 #: src/components/credentials/SecretVaultPicker.tsx
+#. placeholder {0}: allKeys .filter((k) => selected.has(k)) .map(nameOf) .join(', ')
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Showing: {0}"
+msgstr "מוצג: {0}"
+
 msgid "Sign in to {0} first, then save again."
 msgstr ""
 

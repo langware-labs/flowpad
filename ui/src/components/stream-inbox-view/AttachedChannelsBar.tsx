@@ -7,10 +7,9 @@
  * ONE mark per channel kind (provider + channel, the identity a
  * glyph draws): several sources of one kind share a mark that carries their
  * count, and hovering it lists just those sources with their switches.
- * Clicking a mark FILTERS the list to that kind; while a filter is on, the
- * "+" turns into a high-contrast × in the same place that shows everything
- * again. Nothing else on the line moves or disappears: the line keeps its
- * width, so the marks a person is pointing at stay where they are.
+ * Clicking a mark shows only that kind (again: everything); ⌘/Ctrl-click adds or
+ * removes it. While a filter is on, a "Showing: … ×" chip names what is shown and
+ * its × shows everything again.
  *
  * At rest the line carries two controls — plus a call control for each channel that takes calls
  * (`CallControls`, from the driver's `calls`): + adds a source owned by this owner,
@@ -28,8 +27,9 @@
  * featured ones (`channelOffers`): the greyed glyph with a "+", which opens the add dialog on
  * that channel. It is the absence of a source, not a state of one, so it never filters.
  */
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Agent, DataSource, type DataDriver, TypeId, User } from '@sdk';
+import { NavBadge } from '@src/components/ui/nav-badge';
 import { Check, Plus, RefreshCw, SlidersHorizontal, Trash2, TriangleAlert, X } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -153,6 +153,8 @@ export function groupChannels(rows: DataSource[]): ChannelGroup[] {
 
 interface Props {
   owner: TypeId;
+  /** Drawn right after the warnings chip, so the chip stays leftmost. */
+  leading?: ReactNode;
   /** The owner's message sources and their spec lookup — from ONE
    *  `useAttachedChannels` in the mount, which also filters its list by them. */
   rows: DataSource[];
@@ -183,6 +185,7 @@ export function AttachedChannelsBar({
   onSelectedChange,
   onMarkPress,
   className,
+  leading,
 }: Props) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -197,22 +200,39 @@ export function AttachedChannelsBar({
   }, [rows]);
   const attachedProviders = useMemo(() => new Set(rows.map((r) => r.provider)), [rows]);
 
-  // Every mark is lit (shown) by default; a press dims it (filtered out) or lights it again.
-  // `selected` holds the lit ones while filtering — empty means all lit. The last lit mark stays lit.
+  // Every mark is lit (shown) by default. A click shows only that channel, or all again when it is
+  // already the only one; ⌘/Ctrl-click adds or removes it. `selected` holds the lit ones while
+  // filtering — empty means all lit, so removing the last one shows all again.
   const allKeys = [
     ...(owner.type !== Agent.type ? [FLOWPAD_CHANNEL] : []),
     ...groups.map((g) => g.key),
     ...(owner.type !== Agent.type ? [DIAGNOSIS_CHANNEL, AUTOMATIONS_CHANNEL] : []),
   ];
   const lit = (key: string) => !filtering || selected.has(key);
-  const pick = (key: string) => {
+  const pick = (key: string, e: MouseEvent) => {
     if (onMarkPress) return onMarkPress(key);
-    const next = new Set(filtering ? selected : allKeys);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    if (next.size === 0) return;
+    let next: Set<string>;
+    if (filtering && (e.metaKey || e.ctrlKey)) {
+      next = new Set(selected);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+    } else {
+      next = selected.size === 1 && selected.has(key) ? new Set() : new Set([key]);
+    }
     onSelectedChange?.(allKeys.every((k) => next.has(k)) ? new Set() : next);
   };
+  const builtInNames: Record<string, string> = {
+    [FLOWPAD_CHANNEL]: 'Flowpad',
+    [DIAGNOSIS_CHANNEL]: t`Diagnosis`,
+    [AUTOMATIONS_CHANNEL]: t`Automations`,
+  };
+  const nameOf = (key: string) => {
+    if (builtInNames[key]) return builtInNames[key];
+    const group = groups.find((g) => g.key === key);
+    return group ? channelTitle(specFor(group.provider), group.provider) : key;
+  };
+  // With `onMarkPress` a click opens the channel, so the filter hint would mislead.
+  const markHint = onMarkPress ? undefined : t`Click: show only this · ⌘/Ctrl-click: add or remove`;
 
   const seeAll = (
     <button
@@ -237,13 +257,15 @@ export function AttachedChannelsBar({
       {flagged.length > 0 && (
         <ChannelWarningsChip sources={flagged} specFor={specFor} onDelete={setDeleting} footer={seeAll} />
       )}
+      {leading}
       {owner.type !== Agent.type && (
         <BuiltInMark
           channel={FLOWPAD_CHANNEL}
           label={t`Flowpad — standard messages`}
           glyph={<img src={flowpadIcon} alt="" className="size-[17px] rounded-sm" />}
           pressed={lit(FLOWPAD_CHANNEL)}
-          onClick={() => pick(FLOWPAD_CHANNEL)}
+          onClick={(e) => pick(FLOWPAD_CHANNEL, e)}
+          hint={markHint}
         />
       )}
       {groups.map((group) => (
@@ -251,9 +273,9 @@ export function AttachedChannelsBar({
           key={group.key}
           group={group}
           spec={specFor(group.provider)}
-          filtering={filtering}
           pressed={lit(group.key)}
-          onClick={() => pick(group.key)}
+          onClick={(e) => pick(group.key, e)}
+          hint={markHint}
           onDelete={setDeleting}
         />
       ))}
@@ -264,7 +286,8 @@ export function AttachedChannelsBar({
           label={t`Diagnosis — diagnoses and the help desk`}
           glyph={<DiagnosisGlyph />}
           pressed={lit(DIAGNOSIS_CHANNEL)}
-          onClick={() => pick(DIAGNOSIS_CHANNEL)}
+          onClick={(e) => pick(DIAGNOSIS_CHANNEL, e)}
+          hint={markHint}
         />
       )}
       {owner.type !== Agent.type && (
@@ -273,7 +296,8 @@ export function AttachedChannelsBar({
           label={t`Automations — what your automations report`}
           glyph={<AutomationsGlyph />}
           pressed={lit(AUTOMATIONS_CHANNEL)}
-          onClick={() => pick(AUTOMATIONS_CHANNEL)}
+          onClick={(e) => pick(AUTOMATIONS_CHANNEL, e)}
+          hint={markHint}
         />
       )}
       {offers.map((offer) => (
@@ -285,29 +309,35 @@ export function AttachedChannelsBar({
         />
       ))}
       <CallControls rows={rows} specFor={specFor} />
-      {filtering ? (
-        // Same size and place as the "+", so the line does not shift: only the glyph and its contrast change.
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(CONTROL, 'bg-foreground text-background hover:bg-foreground/85 hover:text-background')}
-          onClick={() => onSelectedChange?.(new Set())}
-          aria-label={t`Show all channels`}
-          data-testid="attached-channels-clear"
+      <Button
+        variant="ghost"
+        size="icon"
+        className={CONTROL}
+        onClick={() => setAdding({})}
+        aria-label={t`Add a source`}
+        data-testid="attached-channels-add"
+      >
+        <Plus />
+      </Button>
+      {filtering && (
+        <span
+          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-border bg-muted pe-1 ps-2.5 text-xs text-foreground"
+          data-testid="attached-channels-showing"
         >
-          <X />
-        </Button>
-      ) : (
-        <Button
-          variant="ghost"
-          size="icon"
-          className={CONTROL}
-          onClick={() => setAdding({})}
-          aria-label={t`Add a source`}
-          data-testid="attached-channels-add"
-        >
-          <Plus />
-        </Button>
+          {t`Showing: ${allKeys
+            .filter((k) => selected.has(k))
+            .map(nameOf)
+            .join(', ')}`}
+          <button
+            type="button"
+            className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+            onClick={() => onSelectedChange?.(new Set())}
+            aria-label={t`Show all channels`}
+            data-testid="attached-channels-clear"
+          >
+            <X className="size-3" />
+          </button>
+        </span>
       )}
       <Popover>
         <PopoverTrigger asChild>
@@ -325,13 +355,7 @@ export function AttachedChannelsBar({
               saves, focus falls to the body, and Radix would read that as
               "clicked elsewhere" and close the list mid-action. */}
         <PopoverContent align="end" className="w-72 p-0" onFocusOutside={(e) => e.preventDefault()}>
-          <ChannelList
-            title={t`Channels`}
-            sources={rows}
-            specFor={specFor}
-            onDelete={setDeleting}
-            footer={seeAll}
-          />
+          <ChannelList title={t`Channels`} sources={rows} specFor={specFor} onDelete={setDeleting} footer={seeAll} />
         </PopoverContent>
       </Popover>
       {adding && (
@@ -382,13 +406,13 @@ function ChannelWarningsChip({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border-[1.5px] border-yellow-500/60 bg-background px-2.5 text-xs font-semibold tabular-nums text-yellow-600 transition-colors hover:border-yellow-500 dark:text-yellow-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative me-2 grid size-7 shrink-0 place-items-center rounded-full border-[1.5px] border-yellow-500/60 bg-background text-yellow-600 transition-colors hover:border-yellow-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-yellow-400"
           aria-label={t`${count} channels need attention`}
           title={t`${count} channels need attention`}
           data-testid="channel-warnings-chip"
         >
-          <TriangleAlert className="size-4" />
-          {count}
+          <TriangleAlert className="size-3.5" />
+          <NavBadge count={count} className="-end-1 -top-1 border-2 border-background bg-yellow-500 text-white" />
         </button>
       </PopoverTrigger>
       {/* `onFocusOutside` is refused for the same reason as the details popover below. */}
@@ -445,19 +469,21 @@ function AutomationsGlyph() {
 
 /** A mark for a channel no data source delivers (Flowpad, Diagnosis): no listening state — it only
  *  narrows the list to the conversations that carry that channel. */
-export function BuiltInMark({
+function BuiltInMark({
   channel,
   label,
   glyph,
   pressed,
   onClick,
+  hint,
   badge,
 }: {
   channel: string;
   label: string;
   glyph: ReactNode;
   pressed: boolean;
-  onClick: () => void;
+  onClick: (e: MouseEvent) => void;
+  hint?: string;
   badge?: ReactNode;
 }) {
   return (
@@ -466,7 +492,8 @@ export function BuiltInMark({
       onClick={onClick}
       aria-pressed={pressed}
       aria-label={label}
-      title={label}
+      aria-description={hint}
+      title={hint ? `${label}\n${hint}` : label}
       className={cn(MARK, 'border-border bg-background', !pressed && MARK_GREYED)}
       data-testid="attached-channel"
       data-provider={channel}
@@ -477,6 +504,9 @@ export function BuiltInMark({
   );
 }
 
+/** A channel kind's name: its driver's title, else the provider. */
+const channelTitle = (spec: DataDriver | undefined, provider: string) => spec?.title || provider;
+
 /** One round mark per channel kind: the brand glyph, a status dot, a count when
  *  several sources share it, and — while filtering — a ring on the ones the
  *  list is narrowed to. Hovering lists just this kind's sources with their
@@ -484,16 +514,16 @@ export function BuiltInMark({
 function ChannelMark({
   group,
   spec,
-  filtering,
   pressed,
   onClick,
+  hint,
   onDelete,
 }: {
   group: ChannelGroup;
   spec: DataDriver | undefined;
-  filtering: boolean;
   pressed: boolean;
-  onClick: () => void;
+  onClick: (e: MouseEvent) => void;
+  hint?: string;
   onDelete: (source: DataSource) => void;
 }) {
   const { t } = useLingui();
@@ -501,7 +531,7 @@ function ChannelMark({
   const { Base, Badge } = sourceGlyphs(spec, group.channel);
   const { state } = group;
   const count = group.sources.length;
-  const title = spec?.title || group.provider;
+  const title = channelTitle(spec, group.provider);
   // Inline, not a helper taking `t`: the lingui macro only compiles a `t` it can
   // see come from `useLingui()`.
   const stateLabel = state === 'on' ? t`listening` : t`paused`;
@@ -512,6 +542,7 @@ function ChannelMark({
           type="button"
           onClick={onClick}
           aria-pressed={pressed}
+          aria-description={hint}
           aria-label={`${count === 1 ? group.sources[0].name || title : `${title} × ${count}`} · ${stateLabel}`}
           className={cn(
             MARK,
