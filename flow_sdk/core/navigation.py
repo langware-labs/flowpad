@@ -94,9 +94,15 @@ def _asset_lists() -> list[tuple[str, str]]:
 def asset_list_names() -> dict[str, str]:
     """``{name: "list/<type>"}``: the words that name a type's list on the Assets screen -- its display
     name and its type, singular and plural ("specs", "project manifest"). A request that is exactly
-    one of them opens the list with no model (``navigator.rule_hit``)."""
+    one of them opens the list with no model (``navigator.rule_hit``).
+
+    A display name two types share belongs to the one with a section of its own: "Documents" is the
+    markdown tree, and document files (``browseable_by=None``) are listed inside it."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    own_section = set(SchemaRegistry.browseable_type_names())
     out: dict[str, str] = {}
-    for t in _listed_types():
+    for t in sorted(_listed_types(), key=lambda t: t not in own_section):
         for word in _type_words(t):
             singular = _singular(word.lower())
             for name in (singular, f"{singular}s"):

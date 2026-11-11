@@ -229,6 +229,13 @@ def test_a_type_name_opens_its_list_and_a_screen_name_still_wins():
     assert navigator.rule_hit("open the help desk") is None, "a screen that needs a pointer owns its name too"
 
 
+def test_a_display_name_two_types_share_opens_the_type_with_a_section_of_its_own():
+    # markdown and document_file are both "Documents"; document files are listed inside the markdown
+    # tree (browseable_by=None), so "my documents" is the markdown list -- not the alphabetically first.
+    assert navigator.rule_hit("show my documents").value == "assets/list/markdown"
+    assert navigator.rule_hit("show my document files").value == "assets/list/document_file"
+
+
 def test_this_projects_or_sessions_thing_is_the_screen_that_opens_on_it():
     proj = "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
     here = navigation.kind("navigation.here").model_validate(
