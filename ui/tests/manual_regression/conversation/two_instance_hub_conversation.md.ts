@@ -72,7 +72,10 @@ test('binding criterion: real alice↔bob conversation through the local hub', a
     ...auth(alice.token),
     data: {
       recipient_email: BOB_EMAIL,
-      invitation_targets: [{ typeid: `project-${pid}`, role: 'member' }],
+      // What the app itself sends for a project invite: a `roles` LIST with its default role,
+      // PROJECT_DEFAULT_INVITE_ROLE = 'reader' (flow_sdk/builtin/project.py). 'member' is not a role
+      // (owner/admin/editor/reader/runner), and a scalar `role` is refused by the hub.
+      invitation_targets: [{ typeid: `project-${pid}`, roles: ['reader'] }],
     },
   });
   expect(invite.status()).toBe(200);

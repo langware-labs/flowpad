@@ -14,7 +14,7 @@
  */
 import { adjusted } from '../../adjustableTimeout';
 import { test, expect } from '@playwright/test';
-import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, fetchProcess, sessionAction } from './_ap_helpers';
+import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, fetchProcess, sessionAction, activePanel } from './_ap_helpers';
 
 async function fetchShellWorkdir(page: import('@playwright/test').Page, shellId: string): Promise<string | null> {
   return page.evaluate(async ({ base, id }) => {
@@ -53,10 +53,17 @@ test.describe('open shell from process workdir', () => {
 
     // The new shell renders an interactive xterm whose prompt carries the
     // workdir basename.
-    await expect(page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows').first()).toBeAttached();
+    // The new shell's own panel: `activePanel` (the last active one). For a commit after the switch the
+    // panel just left still reads data-active="true" too (TerminalPool), so `.first()` across every
+    // active panel can land on the Claude panel's now-hidden xterm and wait on it forever.
+    const shell = activePanel(page);
+    await expect(shell.locator('.xterm-rows').first()).toBeAttached();
     const base = workdir.split('/').filter(Boolean).pop()!;
+    // The prompt only names the directory in some shells (zsh's %~); `pwd` shows it in any.
+    await shell.locator('.xterm').first().click();
+    await page.keyboard.type('pwd\n');
     await expect(async () => {
-      const txt = await page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows').first().textContent();
+      const txt = await shell.locator('.xterm-rows').first().textContent();
       expect(txt).toContain(base);
     }).toPass({ timeout: adjusted(15_000) });
 

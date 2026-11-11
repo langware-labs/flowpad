@@ -54,11 +54,10 @@ test.describe('LLM configuration view', () => {
     await expect(page.locator('body')).toBeVisible();
 
     // App remains functional (search bar or session input visible)
-    const hasInteractiveElement = await page
-      .locator('input, button, textarea')
-      .first()
-      .isVisible({ timeout: 10_000 })
-      .catch(() => false);
-    expect(hasInteractiveElement, 'Home page appears broken after returning from AI config').toBe(true);
+    // `isVisible()` answers at once (its timeout is ignored): wait for the page to paint something to use.
+    await expect(
+      page.locator('input:visible, button:visible, textarea:visible').first(),
+      'Home page appears broken after returning from AI config',
+    ).toBeVisible({ timeout: adjusted(20_000) });
   });
 });

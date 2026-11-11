@@ -8,13 +8,17 @@
  * Gemini, an allowance carved from it, and an agent set to `lg` with a deployment planned on its owner's
  * default. Deleted at the end. Nothing is launched; the root's key is a dummy.
  */
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
 const FLASH = 'google/gemini-3.1-flash-lite';
 const PRO = 'google/gemini-3.1-pro-preview';
 const STAMP = `funding-e2e-${Date.now()}`;
 
-const ids = { root: '', allowance: '', agent: '', deployment: '' };
+const ids = { root: '', allowance: '', project: '', agent: '', deployment: '' };
+let folder = '';
 
 type Answer = { status: number; body: { data?: Record<string, unknown> } };
 
@@ -67,14 +71,25 @@ test.beforeAll(async ({ browser }) => {
     }),
   );
   ids.allowance = String(allowance.id);
+  // A deployment places an agent the hub holds: an agent is an asset of a cloud-linked project, published
+  // into its hub repo (what the deploy dialog's Publish step does) before it can be planned — a desktop-only
+  // agent has no hub row to plan against (the hub answers 403 "Target entity not found").
+  folder = mkdtempSync(join(tmpdir(), 'funding-e2e-'));
+  const project = ok(
+    await api(page, 'POST', '/api/v1/graph/project', { type: 'project', name: STAMP, fs_storage_mount_path: folder }),
+  );
+  ids.project = String(project.id);
+  ok(await api(page, 'POST', `/api/v1/graph/project/${ids.project}/share`, {}));
   const agent = ok(
-    await api(page, 'POST', '/api/v1/graph/agent', {
+    await api(page, 'POST', `/api/v1/graph/project/${ids.project}/agent`, {
+      type: 'agent',
       name: `${STAMP} procurement`,
       worker_type: 'claude',
       model: 'lg',
     }),
   );
   ids.agent = String(agent.id);
+  ok(await api(page, 'POST', `/api/v1/graph/agent/${ids.agent}/publish`, {}));
   const planned = ok(
     await api(page, 'POST', `/api/v1/graph/project/${String(agent.project_id)}/plan_deployment`, {
       provider: 'e2b',
@@ -93,7 +108,9 @@ test.afterAll(async ({ browser }) => {
   if (ids.agent) await api(page, 'DELETE', `/api/v1/graph/agent/${ids.agent}`);
   if (ids.allowance) await api(page, 'DELETE', `/api/v1/graph/llm_endpoint/${ids.allowance}`);
   if (ids.root) await api(page, 'DELETE', `/api/v1/graph/llm_endpoint/${ids.root}`);
+  if (ids.project) await api(page, 'DELETE', `/api/v1/graph/project/${ids.project}`);
   await page.close();
+  if (folder) rmSync(folder, { recursive: true, force: true });
 });
 
 test('a user moves a deployment onto an lg sub-budget of their own allowance, from the hub page', async ({ page }) => {
@@ -120,12 +137,25 @@ test('a user moves a deployment onto an lg sub-budget of their own allowance, fr
   await page.waitForLoadState('networkidle');
   const card = page.getByTestId('deployment-funding');
   await expect(card).toBeVisible();
-  // On its owner's default, which declares no lg model: red, and the user was told.
-  await expect(card.getByTestId('deployment-funding-problem')).toContainText("'lg'");
+  // On its owner's default. Whether that default declares an lg model is the hub's global root's
+  // business (a QA hub sizes its root; a fresh one does not): the card agrees with the hub's own answer —
+  // red, naming 'lg', when the default cannot run it; clean, showing its lg model, when it can.
+  const before = ok(await api(page, 'GET', `/api/v1/graph/deployment/${ids.deployment}/funding`));
+  expect(before.kind).toBe('default');
+  if (String(before.exhausted ?? '')) {
+    expect(String(before.exhausted)).toContain("'lg'");
+    await expect(card.getByTestId('deployment-funding-problem')).toContainText("'lg'");
+  } else {
+    expect(before.model).toBeTruthy();
+    await expect(card.getByTestId('deployment-funding-problem')).toHaveCount(0);
+    await expect(card.getByTestId('deployment-funding-model')).toHaveText(`lg → ${String(before.model)}`);
+  }
   await card.getByTestId('deployment-change-allocation').click();
   const editor = page.getByTestId('deployment-allocation-editor');
   await editor.getByTestId('token-allocation-toggle').click();
   await editor.getByTestId('token-allocation-source').selectOption(`llm_endpoint-${ids.allowance}`);
+  // The model field is a plain input until the source's models load, then the size picker: open the picker.
+  await expect(editor.getByTestId('token-allocation-model')).toHaveAttribute('role', 'combobox');
   await editor.getByTestId('token-allocation-model').click();
   await expect(page.getByTestId('token-allocation-size-lg')).toContainText(PRO);
   await page.getByTestId('token-allocation-size-lg').click();

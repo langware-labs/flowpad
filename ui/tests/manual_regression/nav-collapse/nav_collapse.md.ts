@@ -98,7 +98,11 @@ test.describe('navigation collapse — root is a location', () => {
   });
 
   test('back from a dock returns to the root as a real history entry', async () => {
-    await page.goto('/');
+    // Reach the root the way a user does (Home), not by opening a bare `/`: a document opened at a
+    // bare `/` is a LAUNCH, which reopens the last place (here the explorer the test before left).
+    await page.goto('/dock/explorer');
+    await page.getByTestId('top-nav-home').click();
+    await expect.poll(() => herePath()).toBe('/');
     await page.goto('/dock/explorer');
     await expect.poll(() => here()).toContain('/dock/explorer');
     await page.goBack();
@@ -192,8 +196,13 @@ test.describe('the root has one look', () => {
 
     await page.goto('/?viewMode=standard');
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
+    // The home has no view mode of its own (home-loader canonicalizes `/?viewMode=…` to the plain
+    // home, so no history entry can show a second home): the address settles on `/` while the mode
+    // it asked for holds — through a reload too.
+    await expect.poll(() => here()).toBe('/');
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
+    await expect.poll(() => here()).toBe('/');
   });
 });
 
@@ -230,7 +239,8 @@ test.describe('the root adopts scope', () => {
     try {
       for (const project of seeded) {
         await page.goto(`/?scope-mode=project&scope-activeProjectId=${project.id}`);
-        await expect(page.getByTestId('footer')).toContainText(project.name);
+        // The project in context is named by the top bar's project pill (the footer no longer carries it).
+        await expect(page.getByTestId('top-nav-project')).toContainText(project.name);
       }
     } finally {
       await Promise.all(seeded.map((p) => request.delete(`${API}/api/v1/graph/project/${p.id}`).catch(() => undefined)));

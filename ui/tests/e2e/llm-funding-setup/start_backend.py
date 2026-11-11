@@ -57,11 +57,22 @@ def _install_command(tool: str) -> str:
     return f"apt-get update && apt-get install -y {tool}"
 
 
-def _sm_tier_default() -> str:
-    sys.path.insert(0, str(REPO_ROOT))
-    from flow_sdk.builtin.agentic_process.model_tiers import DEEPAGENTS_MODEL_TIERS
+# The provider the box binding names; its dialect's sizes are what the hub serves for an endpoint
+# that sets none of its own (``LLMEndpoint`` fills ``tiers`` from them).
+BINDING_PROVIDER = "openrouter"
 
-    return DEEPAGENTS_MODEL_TIERS["sm"]
+
+def _binding_tiers() -> dict[str, str]:
+    """The model sizes the hub pushes with the box binding: the provider dialect's defaults."""
+    sys.path.insert(0, str(REPO_ROOT))
+    from flow_sdk.external_apis.llm.dialects import get_dialect
+
+    return dict(get_dialect(BINDING_PROVIDER).default_models)
+
+
+def _sm_tier_default() -> str:
+    """The slug a funded spawn runs for size ``sm``: the endpoint's own size map (``api_auth._slug_for``)."""
+    return _binding_tiers()["sm"]
 
 
 def _fake_hub_config(scenario: str) -> tuple[str, dict, str]:
@@ -231,8 +242,9 @@ def main() -> None:
     set_hub_llm_endpoint(
         f"llm_endpoint-{endpoint_id}",
         f"/api/v1/graph/llm_endpoint/{endpoint_id}/invoke",
-        provider="openrouter",
+        provider=BINDING_PROVIDER,
         name="e2e fake endpoint",
+        tiers=_binding_tiers(),
     )
 
     backend_env = {
