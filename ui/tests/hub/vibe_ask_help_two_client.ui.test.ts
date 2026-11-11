@@ -6,7 +6,9 @@
  *          one screen: what is wrong, diagnosis & context (both on by default; Review opens the
  *          message review on what will be sent), who gets it (bob), Diagnose and Send.
  *   → ONE help request: a TASK assigned to bob, and a conversation holding ONE help_request message
- *     with the issue text, the task chip, and the diagnosis + context as ordinary files.
+ *     with the issue text, the task chip, and the context as ordinary files — delivered at once.
+ *   → the diagnosis follows, when ready, as a `diagnosis` message of its own (diagnosis.value.json)
+ *     in the same conversation: the helper never waits on it (docs/collab/ask-for-help.md).
  *   bob (dev-2): the task arrives unassisted; the message's files are staged on his side, and in
  *          his browser the diagnosis chip opens the SAME message review — before installing.
  *
@@ -58,6 +60,23 @@ let processId = '';
 let taskId = '';
 let conversationId = '';
 let fmId = '';
+let diagnosisId = '';
+
+/** The diagnosis is `flow diagnose`'s agent (it reads the report: about 80 s here). It follows the request
+ *  and never holds it up, so it has a budget of its own; the request keeps the 25 s delivery budget. */
+const DIAGNOSIS_BUDGET = 240_000;
+
+/** Every message of the ask's conversation, on alice. */
+async function conversationMessages(): Promise<any[]> {
+  return ((await alice.sdk.FlowMessage.query(
+    new alice.sdk.QueryRequest({
+      type: 'flow_message',
+      query: { conversation_id: conversationId },
+      name: 'ask-help all',
+    }),
+    true,
+  ).catch(() => [])) ?? []) as any[];
+}
 
 const getApi = (apiUrl: string, p: string) => fetch(`${apiUrl}/api/v1${p}`).then((r) => r.json());
 
@@ -294,7 +313,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
   );
 
   it(
-    'bob receives ONE message: the issue, the task chip, and the diagnosis + context as files',
+    'bob receives the request at once: the issue, the task chip, and the context as files',
     async () => {
       await syncAssignedConversation(bob, conversationId);
 
@@ -312,7 +331,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
       const attachments = await pollUntil(
         async () => {
           const rows = await queryMessageAttachments(bob, fmId);
-          return rows.some((a: any) => a.name === 'diagnosis.value.json') ? rows : null;
+          return rows.some((a: any) => a.name === 'screen.value.json') ? rows : null;
         },
         25_000,
         'attachments materialized on bob',
@@ -323,19 +342,46 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
         `task chips in ${refs.join(',')}`,
       ).toEqual([`task-${taskId}`]);
       const files = attachments.filter((a: any) => a.asset_type === 'file').map((a: any) => a.name);
-      expect(files).toEqual(expect.arrayContaining(['diagnosis.value.json', 'screen.value.json']));
+      expect(files).toEqual(expect.arrayContaining(['screen.value.json']));
+      expect(files, 'the request never waits for the diagnosis').not.toContain('diagnosis.value.json');
 
-      const msgs: any[] = ((await alice.sdk.FlowMessage.query(
-        new alice.sdk.QueryRequest({
-          type: 'flow_message',
-          query: { conversation_id: conversationId },
-          name: 'ask-help all',
-        }),
-        true,
-      ).catch(() => [])) ?? []) as any[];
-      expect(msgs, 'one request is one message — no diagnosis message after it').toHaveLength(1);
+      const requests = (await conversationMessages()).filter((m) => m.kind === 'help_request');
+      expect(requests, 'one request is one help_request message').toHaveLength(1);
     },
     adjusted(60_000),
+  );
+
+  it(
+    'the diagnosis follows as a message of its own once ready, with diagnosis.value.json',
+    async () => {
+      const diagnosis = await pollUntil(
+        async () => (await conversationMessages()).find((m) => m.kind === 'diagnosis') ?? null,
+        DIAGNOSIS_BUDGET,
+        'the diagnosis message on alice',
+      );
+      diagnosisId = diagnosis.id;
+      await syncAssignedConversation(bob, conversationId);
+      await pollUntil(
+        async () => {
+          const fm: any = await bob.sdk.FlowMessage.getById(diagnosisId).catch(() => null);
+          return fm && fm.body_status === 'ready' ? fm : null;
+        },
+        25_000,
+        'the diagnosis READY on bob',
+      );
+      await postApi(bob.apiUrl, `/graph/flow_message/${diagnosisId}/download_body`, {});
+      await pollUntil(
+        async () => {
+          const rows = await queryMessageAttachments(bob, diagnosisId);
+          return rows.some((a: any) => a.name === 'diagnosis.value.json') ? rows : null;
+        },
+        25_000,
+        'diagnosis.value.json materialized on bob',
+      );
+      const requests = (await conversationMessages()).filter((m) => m.kind === 'help_request');
+      expect(requests, 'the diagnosis is an update, not a second request').toHaveLength(1);
+    },
+    adjusted(DIAGNOSIS_BUDGET + 60_000),
   );
 
   it(

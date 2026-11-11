@@ -209,10 +209,10 @@ drops the `kind` field (`derive_help_request_kind` re-derives it on arrival). Th
 
 **Diagnose & fix** and **Ask for help** are the same request; the diagnosis never holds it up.
 
-- `ask-for-help` writes the conversation and the person's `help_request` message at once and answers; the diagnosis
-  runs in the background (`_diagnose_then_deliver`) and lands as a `diagnosis` message of its own — its text the one
-  bottom line (`bottom_line`), `diagnosis.value.json` the details (held here unless the context is shared). Only then is
-  the request delivered.
+- `ask-for-help` writes the conversation and the person's `help_request` message, delivers it at once and answers;
+  the diagnosis runs in the background (`_diagnose_then_deliver`) and follows, when ready, as a `diagnosis` message of
+  its own — its text the one bottom line (`bottom_line`), `diagnosis.value.json` the details (held here unless the
+  context is shared) — delivered as an update to the same conversation. The helper never waits on the diagnosis.
 - **Diagnose & fix** (warnings popover, error toasts, the error screen, Error details — `diagnoseAndFix`) is one click,
   no window: `recipients: []`, `purpose: repair` (the repairing agent, told it was asked to fix and which folders are
   the project's dependencies). Private by design: nothing reaches the hub until **Report it**.

@@ -108,3 +108,37 @@ async def test_a_conversation_already_on_the_hub_is_never_opened_again():
 
     opened.assert_not_awaited()
     assert not (await Conversation.get_one({"id": conv.id})).awaits_hub
+
+
+async def test_the_request_is_delivered_at_once_and_the_diagnosis_follows():
+    """The helper never waits on the diagnosis: the request is delivered inside the call, and the diagnosis
+    message is delivered again as an update once it lands."""
+    import asyncio
+
+    conv_id = str(uuid.uuid4())
+    body = {"conversation_id": conv_id, "recipient": {"kind": "person", "email": "dana@x.test"}, "text": "help me"}
+    release = asyncio.Event()
+    delivered: list[list[str]] = []
+
+    async def deliver(self, *_a, **_k):
+        delivered.append([getattr(m.kind, "value", m.kind) for m in await _messages(self.id)])
+
+    async def slow_diagnosis(_ask):
+        await release.wait()
+        return None, None  # "could not run": still a diagnosis message
+
+    someone = (await get_or_create_local_user()).typeid
+    request = SimpleNamespace(someone_typeid=someone, get_post_data=AsyncMock(return_value=body))
+    with (
+        patch.object(afh, "get_current_request_info", return_value=request),
+        patch.object(afh, "_diagnose", slow_diagnosis),
+        patch.object(Conversation, "deliver", deliver),
+        patch.object(Conversation, "kick_delivery", lambda *_a, **_k: None),
+    ):
+        response = await afh.ask_for_help()
+        assert response.data["diagnosing"] is True
+        assert delivered == [["help_request"]], "the request went out before the diagnosis finished"
+
+        release.set()
+        await asyncio.gather(*afh._DIAGNOSING)
+    assert len(delivered) == 2 and sorted(delivered[1]) == ["diagnosis", "help_request"], delivered
