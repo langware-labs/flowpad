@@ -280,8 +280,17 @@ async def run_trigger_actions(trigger: "Trigger", changes: list, *, inputs: Opti
     return DispatchOutcome([execution.result], [error] if error else [], execution.duration_ms)
 
 
+#: One-shot schedules whose fire is in flight. A one-shot counts as fired only once its accept step
+#: stamps ``last_run``; until then a re-arm (any re-index) must not start it a second time.
+_FIRING: set[str] = set()
+
+#: How many callbacks a session may have waiting at once.
+MAX_PENDING_CALLBACKS = 20
+
+
 async def _fire_schedule_job(trigger_id: str) -> None:
     """Deliver a scheduler tick to the automation's wizard."""
+    _FIRING.add(trigger_id)
     try:
         entity = await Trigger.get_by_id(trigger_id)
         if not (entity and entity.enabled):
@@ -294,6 +303,26 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         await run_schedule_fire(entity, None, is_test=False)
     except Exception:
         logger.exception("Schedule trigger fire error for %s", trigger_id)
+    finally:
+        _FIRING.discard(trigger_id)
+
+
+async def pending_callbacks(process: Any) -> list["Trigger"]:
+    """The callbacks ``process`` set that have not fired yet — found through its context links."""
+    ids = [tid.id for tid in getattr(process, "private_context_entities_", None) or []
+           if tid.type == BuiltinEntityType.TRIGGER.value]
+    if not ids:
+        return []
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryOp  # noqa: PLC0415
+
+    rows = await Trigger.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids])))
+    return [t for t in rows if t.calls_back(process) and not t.last_run]
+
+
+async def drop_callbacks(process: Any) -> None:
+    """A session that is going away takes its waiting callbacks with it."""
+    for trigger in await pending_callbacks(process):
+        await trigger.delete()
 
 
 async def run_schedule_fire(entity: "Trigger", event_id: Optional[str], *, is_test: bool,
@@ -568,6 +597,18 @@ class Trigger(ProjectedFields, Entity):
         """
         if not self.id or not self.expr:
             return
+        if self.id in _FIRING:
+            return
+        if self._overdue_one_shot():
+            # Its time passed while nothing could run it (the app was closed, the machine asleep).
+            # The scheduler drops a run that late and a one-shot has no next one, so it would
+            # never happen: run it once now instead. Off stays off; turning it on arms it again.
+            if self.enabled:
+                from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+                _FIRING.add(self.id)
+                create_detached_task(_fire_schedule_job(self.id), name=f"overdue-one-shot-{self.id[:8]}")
+            return
         if self._spent_one_shot():
             # Re-arming is idempotent for a cron — the job is replaced and its
             # next run recomputed. For a `date` job it is NOT: the run time is
@@ -600,16 +641,89 @@ class Trigger(ProjectedFields, Entity):
 
     def _spent_one_shot(self) -> bool:
         """A `date` schedule that has already fired at (or after) its run time."""
-        if (self.sched_trigger_type or "cron") != "date" or not self.last_run or not self.expr:
-            return False
-        try:
-            run_date = datetime.fromisoformat(self.expr)
-        except ValueError:
+        run_date = self._one_shot_date()
+        if run_date is None or not self.last_run:
             return False
         last_run = self.last_run
         if run_date.tzinfo is None or last_run.tzinfo is None:
             run_date, last_run = run_date.replace(tzinfo=None), last_run.replace(tzinfo=None)
         return last_run >= run_date
+
+    def _one_shot_date(self) -> Optional[datetime]:
+        """A `date` schedule's run time as written (naive when the expr names no zone), else None."""
+        if (self.sched_trigger_type or "cron") != "date" or not self.expr:
+            return None
+        try:
+            return datetime.fromisoformat(self.expr)
+        except ValueError:
+            return None
+
+    def _overdue_one_shot(self) -> bool:
+        """A `date` schedule whose run time has passed and that never fired."""
+        run_date = self._one_shot_date()
+        if run_date is None or self.last_run:
+            return False
+        if run_date.tzinfo is None:
+            if self.timezone:
+                from zoneinfo import ZoneInfo  # noqa: PLC0415
+
+                run_date = run_date.replace(tzinfo=ZoneInfo(self.timezone))
+            else:
+                run_date = run_date.astimezone()
+        return run_date <= datetime.now(timezone.utc)
+
+    # ── Calling back into a session ───────────────────────────────────────────
+
+    def calls_back(self, process: Any = None) -> bool:
+        """This rule sends its prompt into an existing session (``process``, when given)."""
+        return any(
+            a.action_type == ActionType.PROMPT_PROCESS
+            and (process is None or a.target_type_id == str(process.typeid))
+            for a in self.actions
+        )
+
+    async def target_process(self) -> Any:
+        """The session a ``prompt_process`` action names, or None."""
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+
+        target = next((a.target_type_id for a in self.actions
+                       if a.action_type == ActionType.PROMPT_PROCESS and a.target_type_id), None)
+        if not str(target or "").startswith(f"{AgenticProcess.get_type()}-"):
+            return None
+        return await AgenticProcess.get_by_typeid(target)
+
+    async def bind_callback(self) -> Optional[str]:
+        """Before the first save of a callback: take the session's project, and answer why it can't
+        be saved, in words — or None (also for a rule that is not a callback)."""
+        if not self.calls_back():
+            return None
+        if self.trigger_type != TriggerType.SCHEDULE or (self.sched_trigger_type or "cron") != "date":
+            return "A callback into a session runs once, at a set time."
+        process = await self.target_process()
+        if process is None:
+            return "The session to call back does not exist."
+        if len(await pending_callbacks(process)) >= MAX_PENDING_CALLBACKS:
+            return f"This session already has {MAX_PENDING_CALLBACKS} callbacks waiting."
+        self.project_id = self.project_id or process.project_id
+        return None
+
+    async def delete(self):
+        """Every delete leaves nothing behind: no link on the session it calls back, no live subscription."""
+        from flow_sdk.builtin.trigger_arming import disarm_trigger  # noqa: PLC0415
+
+        await self.link_process(on=False)
+        if self.id:
+            await disarm_trigger(str(self.id))
+        return await super().delete()
+
+    async def link_process(self, *, on: bool = True) -> None:
+        """Link this rule and the session it calls back into each other's context (or undo it)."""
+        from flow_sdk.core.entity.cross_link import cross_link_entities, uncross_link_entities  # noqa: PLC0415
+
+        process = await self.target_process()
+        if process is not None:
+            await (cross_link_entities if on else uncross_link_entities)(self, process)
+            await process.notify_updated()
 
     # ── Hook trigger logic ────────────────────────────────────────────────────
 
@@ -728,7 +842,11 @@ class Trigger(ProjectedFields, Entity):
             entity = cls(**kwargs)
         except ValueError as exc:  # pydantic ValidationError is a ValueError
             return ApiFailResponse(message=f"That automation can't be saved: {exc}", status_code=422)
+        problem = await entity.bind_callback()
+        if problem:
+            return ApiFailResponse(message=problem, status_code=422)
         await entity.save()
+        await entity.link_process()
         # The one arming seam: it also applies the "runs here" gates (another
         # install's copy, a schedule placed on another machine) the indexer path
         # gets — a rule made here must not be armed by a different rule.

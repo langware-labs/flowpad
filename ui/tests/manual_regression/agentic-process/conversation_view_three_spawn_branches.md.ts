@@ -22,9 +22,9 @@
  * page comes from VITE_PORT.
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 import { apiContext } from '../_shared/api';
 import { AP_WORKER_TYPE, dismissSetupModal, restoreStandardMode, selectAdvancedMode } from './_ap_helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 /** Resolve the bootstrap default project's id + real workdir (mount path). */
 async function defaultProject(rq: APIRequestContext): Promise<{ id: string; workdir: string }> {

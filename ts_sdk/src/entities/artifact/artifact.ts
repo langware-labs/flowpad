@@ -38,6 +38,9 @@ interface LegacyArtifactInput {
   health?: string | null;
 }
 
+/** The kind of an artifact that stands for one shared file (backend `SHARED_FILE_KIND`). */
+export const SHARED_FILE_KIND = 'content.file.text';
+
 const LEGACY_KIND_MAP: Readonly<Record<string, string>> = {
   WEBAPP: ARTIFACT_KINDS.APPLICATION_WEB,
   WEBPAGE: 'content.web.page',
@@ -45,7 +48,7 @@ const LEGACY_KIND_MAP: Readonly<Record<string, string>> = {
   CLOUD_SERVICE: 'resource.infrastructure',
   FUNCTION: 'workload.function',
   FILE: ARTIFACT_KINDS.CONTENT_FILE,
-  TEXT_FILE: 'content.file.text',
+  TEXT_FILE: SHARED_FILE_KIND,
   DATA: ARTIFACT_KINDS.CONTENT_DATA,
 };
 

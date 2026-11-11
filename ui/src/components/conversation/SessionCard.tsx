@@ -312,8 +312,6 @@ export function SessionCard({
       )}
       {role === 'host' && session && (state === 'active' || state === 'pending') && (
         <GuestPermissionChip
-          contact={{ userId: session.guest_user_id ?? null, email: null }}
-          projectId={session.project_id ?? null}
           guestName={guest}
           pending={state === 'pending'}
           onApprove={() => void run('approve', onApprove)}
@@ -321,7 +319,7 @@ export function SessionCard({
         />
       )}
       {role === 'guest' && session && (state === 'active' || state === 'pending') && (
-        <HostApprovalChip hostName={host} pending={state === 'pending'} approvedVia={session.approved_via} />
+        <HostApprovalChip hostName={host} pending={state === 'pending'} />
       )}
       {failedLive && (
         <span className="shrink-0 font-medium text-red-700 dark:text-red-300" data-testid="session-card-failed">

@@ -184,10 +184,10 @@ as the agent, and the row is adopted **at the hub's id**
 (`Deployment.adopt_from_hub`) — never re-minted; the activity says when the
 machine is up. The machine step runs in this process after the answer, so a script
 that exits right after `project.deploy` cuts it off: wait for the activity to
-end (`wait_released`), then read its state (`deploy.spec().state`). The deploy is refused (`NotReady`, naming each missing value)
-until the placement's store — the hub — holds every value the agent needs:
-`use_mine(deployment_id)` copies this computer's; the hub places them on the
-machine when it starts. Live only; the unit tier stops at the refusal in §2.
+end (`wait_released`), then read its state (`deploy.spec().state`). A missing secret does not refuse the deploy — the readiness
+step warns (`Secret <name> missing`); `use_mine(deployment_id)` copies this
+computer's values and the hub places them on the machine when it starts or when
+they are re-placed. Live only.
 
 ## 6. Serve it your way — you pick the channels and the routing
 

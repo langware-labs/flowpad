@@ -1379,25 +1379,20 @@ class Conversation(ProjectedFields, Entity):
     async def remove_message(self, flow_message_id: str) -> dict:
         """Delete a FlowMessage from this conversation on the hub.
 
-        Hits ``POST <hub>/api/v1/graph/conversation/<id>/remove_message`` via the
-        standard cloud client. The hub enforces the gate (sender of the message
-        OR conversation owner), removes the child + deletes the FlowMessage, then
-        fans a DELETE data-op out to every participant. Returns the response
-        ``data`` (``{flow_message_id}``).
+        ``POST <hub>/api/v1/graph/conversation/<id>/remove_message`` as the signed-in user — the
+        same door every other conversation call takes, so the hub sees the member's own roles. The
+        hub enforces the gate (the sender, for 15 minutes; the conversation owner, any time), deletes
+        the FlowMessage and fans a DELETE data-op out to every participant. Raises ``HubError``.
         """
-        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         if not self.id:
             raise RuntimeError("Conversation.id is required")
         if not flow_message_id:
             raise RuntimeError("flow_message_id is required")
-        creds = load_credentials()
-        if not creds or not creds.api_key:
-            raise RuntimeError("Cloud login required before remove_message()")
-        path = build_hub_url(self, action="remove_message")
-        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            return await client.post(path, {"flow_message_id": flow_message_id})
+        return await HubProxy.call(
+            "POST", self.get_type(), self.id, "remove_message", payload={"flow_message_id": flow_message_id}
+        )
 
     @property
     def data_path(self) -> str:

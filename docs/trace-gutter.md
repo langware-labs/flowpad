@@ -179,7 +179,7 @@ Backend path:
 
 Prompt annotations are auxiliary row anchors:
 
-1. Something creates an `Annotation` with `labels=["prompt:"]`, `session_id`, and truncated prompt content.
+1. Something creates an `Annotation` with `subkind="prompt"`, `session_id`, and truncated prompt content.
 2. `useAnnotationGutter()` queries annotations and resolves prompt rows by searching xterm text.
 3. `InteractiveTerminal` matches transcript prompts to nearby prompt annotations within 1000 ms, and feeds `getAnchors()` into `PtySyncSession.buildSegmentsFromAnchors()`.
 4. If an annotation exists, the prompt can scroll to its terminal row. If it is missing, the prompt still renders from the transcript endpoint and segmentation falls back to one default segment.

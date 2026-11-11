@@ -1,7 +1,7 @@
 """The ``tag`` subgraph projection — taxonomy + bound assets, derived live.
 
 Nothing is stored: hierarchy comes from dot-paths (``grammar.tag_tree``),
-bindings come from their carriers (doc frontmatter / skill frontmatter / code
+bindings come from their carriers (any entity's ``tags`` / code
 capsules — ``tags/bindings.py``), observation comes from the bus. Blessed
 tags render as entity nodes; anonymous/implied tags and code files render
 as ghosts.
@@ -41,7 +41,7 @@ async def build_tag_graph(
     include_assets = not tree_only
 
     # ── collect the full name universe first, then emit ────────────────────
-    # One entity scan feeds all three carriers (see all_entity_bindings).
+    # One entity scan: the blessed Tag rows and every tagged entity (see all_entity_bindings).
     entity_bindings = await all_entity_bindings(
         root if include_assets else None,
         include_assets=include_assets,
@@ -50,8 +50,7 @@ async def build_tag_graph(
 
     observed = {name: stat for name, stat in event_bus.observed_tags().items() if is_valid_tag(name)}
 
-    doc_bindings = entity_bindings["docs"] if include_assets else []
-    skill_bindings = entity_bindings["skills"] if include_assets else []
+    bound = entity_bindings["entities"]
     code_bindings: list[dict[str, Any]] = []
     if include_assets and code_root:
         code_dir = Path(code_root).expanduser()
@@ -59,7 +58,7 @@ async def build_tag_graph(
             code_bindings = scan_code_capsules(code_dir, root)
 
     names = {name for name in (*blessed, *observed) if root is None or tag_is_within(name, root)}
-    for binding in (*doc_bindings, *skill_bindings, *code_bindings):
+    for binding in (*bound, *code_bindings):
         names.update(binding["tags"])
     if root is not None and is_valid_tag(root):
         names.add(root)
@@ -107,28 +106,17 @@ async def build_tag_graph(
 
     # ── edges: bindings (association) ───────────────────────────────────────
     if include_assets:
-        for doc in doc_bindings:
+        for item in bound:
             nodes.append(
                 node(
-                    "markdown",
-                    doc["id"],
-                    label=doc["title"] or doc["id"],
-                    properties={"asset_ref": doc["asset_ref"], "tags": doc["tags"]},
+                    item["type"],
+                    item["id"],
+                    label=item["title"] or item["id"],
+                    properties={"asset_ref": item["asset_ref"], "tags": item["tags"]},
                 )
             )
-            for tag_name in doc["tags"]:
-                edges.append(edge("markdown", doc["id"], "tag", tag_name, kind="bound", topology="association"))
-        for skill in skill_bindings:
-            nodes.append(
-                node(
-                    "skill",
-                    skill["id"],
-                    label=skill["name"] or skill["id"],
-                    properties={"tags": skill["tags"]},
-                )
-            )
-            for tag_name in skill["tags"]:
-                edges.append(edge("skill", skill["id"], "tag", tag_name, kind="bound", topology="association"))
+            for tag_name in item["tags"]:
+                edges.append(edge(item["type"], item["id"], "tag", tag_name, kind="bound", topology="association"))
         # One ghost node per FILE, not per capsule block: `tag` is repeatable,
         # so a test module reports one site per annotated test and those must
         # coalesce or the payload carries duplicate `file-<path>` keys.

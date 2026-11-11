@@ -167,3 +167,40 @@ async def test_invitation_recipient_email_normalized():
     assert inv.recipient_email == "frank@example.com"
     via_validate = Invitation.model_validate({"recipient_email": "UPPER@CASE.IO"})
     assert via_validate.recipient_email == "upper@case.io"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_person_learned_by_id_then_by_email_ends_as_one_row():
+    from flow_sdk.builtin.user import User
+
+    # A roster gives the hub id, a bundle sender gives the email: two rows.
+    by_id = await User.upsert_contact(user_id="hub-dana", name="Dana")
+    by_email = await User.upsert_contact(email="dana@example.com")
+    assert by_id.id != by_email.id
+
+    # A sighting with both proves they are one person: the rows are folded.
+    merged = await User.upsert_contact(user_id="hub-dana", email="dana@example.com")
+    assert merged.id == by_email.id
+    assert merged.user_id == "hub-dana"
+    assert merged.name == "Dana"  # carried over from the folded row
+    assert [u.id for u in await User.get_all({"user_id": "hub-dana"})] == [merged.id]
+    assert await User.get_one({"id": by_id.id}) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_rows_already_sharing_a_hub_id_fold_on_the_next_sighting():
+    from flow_sdk.builtin.user import User
+
+    # Two rows left behind by the old writer: same hub id, one has the email.
+    bare = User(user_id="hub-erez", name="Erez")
+    await bare.save()
+    full = User(user_id="hub-erez", email="erez@example.com", name="Erez")
+    await full.save()
+
+    # An id-only sighting (a roster scan) is enough to fold them.
+    kept = await User.upsert_contact(user_id="hub-erez")
+    rows = await User.get_all({"user_id": "hub-erez"})
+    assert [u.id for u in rows] == [kept.id]
+    assert kept.email == "erez@example.com"

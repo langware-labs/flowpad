@@ -89,3 +89,13 @@ capsules; pass `--root <path>` to scan elsewhere.
 
 Tag names are lowercase dot-paths (letters, digits, `_`, `-`); user-world
 tags start with a `--<namespace>--` first segment.
+
+## Tagging an entity
+
+To classify an entity (a task, an agent, a doc — any type), attach a tag to it; the
+name is converted to a valid tag and `flow tag get` then lists the entity:
+
+```bash
+flow tag add <name> <type-id>      # e.g. flow tag add crm.lead task-<uuid>
+flow tag remove <name> <type-id>
+```

@@ -97,7 +97,7 @@ beforeEach((context: any) => {
 const openedTickets: string[] = [];
 
 async function openTicket(text: string): Promise<{ conversation_id: string }> {
-  const started = await guest.sdk.askForHelp({ recipient: { kind: 'desk' }, text });
+  const started = await guest.sdk.askForHelp({ recipient: { kind: 'desk' }, text, diagnose: false });
   if (started?.conversation_id) openedTickets.push(started.conversation_id);
   return started;
 }
@@ -128,6 +128,7 @@ async function expectMaskedRoster(convId: string, guestToken: string, guestId: s
   const own = await get(`members/${guestId}`);
   expect(own.status).toBe(200);
   expect(own.rows.length).toBeGreaterThan(0);
+  expect(own.rows.every((m) => m.user_id === guestId)).toBe(true);
 
   const other = await get(`members/${staffAuth.user.id}`);
   expect(other.status).toBe(200);
@@ -204,15 +205,15 @@ describe('help desk — authorization', () => {
     const convId = started.conversation_id;
     expect(convId).toBeTruthy();
 
-    // It lands locally as a hub-mirrored helpdesk ticket. Ask for help answers once the request is
-    // saved; the hub mirror (``remote``) follows on the first delivery, so wait for that, read from
-    // the backend rather than the realm's cache.
+    // It lands locally as a hub-mirrored helpdesk ticket. With no diagnosis (``openTicket``), Ask for help
+    // sends the ticket to the hub before it answers, so the mirror (``remote``) is there at once; read it
+    // from the backend rather than the realm's cache.
     const guestConv: any = await pollUntil(
       async () => {
         const row = (await jsonApi(guest.apiUrl, `/graph/conversation/${convId}`))?.data;
         return row?.remote === true ? row : null;
       },
-      10_000,
+      3_000,
       'guest local helpdesk conversation mirrored to the hub',
     );
     expect(guestConv.kind).toBe('helpdesk');

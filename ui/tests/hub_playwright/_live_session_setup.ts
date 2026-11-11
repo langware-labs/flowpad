@@ -102,27 +102,3 @@ export async function shot(page: Page, name: string) {
   if (!SCREENSHOT_DIR) return;
   await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}.png`, fullPage: false });
 }
-
-/** Alice's cloud user id as bob's backend knows it (the key of a standing grant). */
-export async function aliceCloudId(): Promise<string> {
-  const status = await fetch(`${ALICE.backendUrl}/api/v1/cloud/status`).then((r) => r.json());
-  const id = status?.data?.login?.user?.id ?? status?.data?.user?.id;
-  if (!id) throw new Error('could not read alice cloud user id');
-  return id as string;
-}
-
-/** Remove every standing grant bob holds for alice — a spec that ticks the
- * checkbox must leave the host as it found it, or the next spec's new session
- * skips PENDING and its Approve step never appears. */
-export async function revokeAliceGrantsOnBob(): Promise<number> {
-  const id = await aliceCloudId().catch(() => null);
-  const rows = await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission`)
-    .then((r) => r.json())
-    .catch(() => null);
-  const mine = ((rows?.data ?? []) as Array<Record<string, unknown>>).filter((r) => !id || r.contact_user_id === id);
-  for (const r of mine)
-    await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission/${String(r.id)}`, { method: 'DELETE' }).catch(
-      () => undefined,
-    );
-  return mine.length;
-}

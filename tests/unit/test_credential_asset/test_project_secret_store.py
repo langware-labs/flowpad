@@ -218,7 +218,9 @@ async def test_a_received_credential_respects_auto_run_off(home, project, mount,
         return None
 
     monkeypatch.setattr(mod, "_shared_file_target", no_file)
-    ma = SimpleNamespace(asset_type="credential", asset_id=str(spec.id), name="bright_data", project_id=str(project.id))
+    ma = SimpleNamespace(
+        asset_type="credential", asset_id=str(spec.id), local_asset_id=str(spec.id), name="bright_data", project_id=str(project.id)
+    )
     await mod._setup_after_install(ma, None, auto_run=False)
     assert called == {}, "auto_run=False is never bypassed by a receive handler"
 

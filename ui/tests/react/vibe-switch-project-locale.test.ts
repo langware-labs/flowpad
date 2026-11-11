@@ -48,6 +48,13 @@ async function runHomeLoader(projectId: string): Promise<void> {
   }
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.locale_activation_order.rules: FAILING? read this tag's rules
+//       before touching loadAndActivate's activation ticket
+// flowpad:endcapsule tag
 describe('vibe home project switch applies the destination language', () => {
   beforeAll(async () => {
     await apiTestSetup(getTestSignupInfo(), 'vibe-switch-project-locale');

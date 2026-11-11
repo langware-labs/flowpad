@@ -17,9 +17,13 @@ The screen was the Events dock until 2026-10-05.
 | `/dock/automations/runs` (`?status=failed&trigger=&run=`) | Runs | Every fire: why it ran, what it did, what broke; "Run again with this event". |
 | `/dock/automations/bus` (`?tag=&target=`) | Event bus | Experts. Every event type, how often it happened, who listens, what they do; live stream; pattern sandbox; send a test event. |
 
-Simple first: presets, a picker, a prompt. Advanced is one click inside each
-block (cron, time zone, event pattern) and at the bottom of the page (run once
-ever, storm guard, the fields as JSON, an agent rule's code). The grammar is
+Simple first: a SAVED automation opens as three lines — When · Where · Then, each the backend's own
+sentence (`useAutomationWords`), each unfolding to its form (`Block` with a `summary`); a new one opens
+unfolded. Presets, a picker, a prompt. A schedule's time zone is not an "Advanced" field: a chip by
+the time shows only when the zone is not this computer's, and one searchable list sets it — under
+the calendar for "Once" (`blocks/TimeZonePicker.tsx`). The rest of Advanced is one click inside an
+event or file block (the pattern) and at the bottom of the page (run once ever, storm guard, the
+fields as JSON, an agent rule's code). The grammar is
 `ui/src/components/automations/automations-pointer.ts`; `events`, `triggers`,
 `cron` (→ the list) and `signals` (→ the bus) are retired ids
 (`ts_sdk/src/utils/ui/retired-views.ts`, `flow_sdk/core/dock_address.py`).
@@ -151,7 +155,32 @@ _automations_here`): the setup window lists it under "Recommended automations" w
 (`POST project/<id>/setup-automation {typeid, on}`), and the "Setup required" button counts it. The
 Automations screen's switch writes the same machine-local value.
 
+## A callback into a session
+
+A session can set a one-time rule that calls back into ITSELF: `flow process schedule "<prompt>" --at
+<ISO time> | --in 2h` (`schedules` lists the waiting ones, `unschedule <id>` removes one). It is an
+ordinary `date` schedule made through `POST /graph/trigger` with one `prompt_process` action
+(`ActionType.PROMPT_PROCESS`: `target_type_id` is the session, `prompt` what it is asked). Row-only — a
+session id is one machine's, so no `trigger.json` can say it.
+
+- **Linked both ways.** `Trigger.link_process` cross-links the rule and the session with the generic
+  `cross_link_entities`; the session's toolbar shows the rule as a chip, and `pending_callbacks(process)`
+  reads the waiting ones back through that link. The screen says it as "run process <name> with prompt"
+  (`ThenPart` kind `run_process`): the name is the session's chip, "prompt" opens the text. At most `MAX_PENDING_CALLBACKS` wait per session.
+- **The fire** (`PromptProcessActionHandler` → `AgenticProcess.deliver_when_idle`): the session's closed
+  tab comes back (unselected), the prompt goes on its prompt queue — injected at the next idle edge —
+  and a stopped terminal session is started, taking the queue head as its launch prompt. No wait loop.
+  The session reads one line: `This is trigger <id> callback: <prompt> (… check it is still relevant …)`.
+- **Gone with the session.** Deleting a session deletes its waiting callbacks (`drop_callbacks`); a
+  fired one stays, as every spent one-shot does.
+
 ## Rules that are easy to break
+
+- **A one-shot whose time passed still runs, once.** The scheduler drops a run more than 60s late and a
+  `date` schedule has no next one, so a rule whose time fell while the app was closed or the machine
+  asleep would never run. `Trigger._register_schedule_job` runs an overdue, never-fired one-shot when it
+  is armed (boot, re-index, turning it on), and the scheduler's missed-run listener re-arms it. `_FIRING`
+  keeps a re-arm during the fire from starting it twice.
 
 - **Run once now** runs even when the automation is off and spends nothing a real
   fire spends: no counter bump (a once-only rule stays unspent), no storm budget,

@@ -40,8 +40,8 @@ interface AttachMenuProps {
   /** Suppress the inline asset-chip list (parent renders chips externally
    *  via {@link AssetRefChips} — used by composer rows in flex layouts). */
   hideAssetList?: boolean;
-  /** Which assets the picker offers. Default: everything. */
-  assetFilter?: (descriptor: AssetDescriptor) => boolean;
+  /** Which asset types the picker offers, asked of the server. Default: everything. */
+  assetTypes?: readonly string[];
   /** When set, the menu offers "Prompt" — a one-shot prompt the receiver approves and runs. */
   onPromptPicked?: () => void;
 }
@@ -61,7 +61,7 @@ export function AttachMenu({
   onFilesPicked,
   disabled,
   hideAssetList,
-  assetFilter,
+  assetTypes,
   onPromptPicked,
 }: AttachMenuProps) {
   const inputId = useId();
@@ -142,7 +142,7 @@ export function AttachMenu({
               setView('menu');
             }
           }}
-          filter={assetFilter}
+          types={assetTypes}
           {...selection}
           // Attach lives in forms (a message, a diagnosis request): looking at an asset must not
           // leave the screen and throw away what was typed.

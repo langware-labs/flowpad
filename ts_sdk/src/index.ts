@@ -33,7 +33,6 @@ export * from './tags/grammar';
 export * from './tags/event-bus-debug';
 export * from './tags/ws-bridge';
 export * from './tabs/index';
-export * from './stores/ontology-store';
 export * from './icons';
 // NOT `export * from './react/FlowIcon'` — the barrel is imported by non-React
 // consumers, and re-exporting the component drags React into every one of them.

@@ -150,19 +150,21 @@ def ensure_project_namespace(project) -> None:
         namespace_roots.remember(spec.ns, mount)
 
 
-async def origin_for_asset(asset_ref: str):
+async def origin_for_asset(asset_ref: str, rel_path: str):
     """WHERE a reader can fetch this asset: its repo's ``GitOrigin`` (repo,
-    branch, commit, rel_path) when the checkout has a usable remote, else the
-    ``LocalOrigin`` of the asset root — enough for a reader on this machine and
-    honestly ``missing`` for anyone else. Blocking git reads run in a thread."""
+    branch, commit, rel_path) when the checkout has a usable remote, else a
+    ``LocalOrigin`` that names it INSIDE its project (``rel_path``, no base). A
+    manifest is a shared file, so no path of this machine goes into it: a reader
+    finds the publishing project's folder itself (``_source_root``) — on this
+    machine, and honestly ``missing`` for anyone else. Blocking git reads run in a thread."""
     from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
-    from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
 
     try:
         origin = await asyncio.to_thread(GitOrigin.for_asset_path, str(asset_ref))
     except Exception:  # noqa: BLE001 — a broken checkout is not a publish failure
         origin = None
-    return origin or local_origin_for_path(asset_ref)
+    return origin or LocalOrigin(rel_path=rel_path)
 
 
 async def set_published(entity: Entity, *, published: bool, project_id: str | None = None, actor=None) -> Entity:
@@ -222,7 +224,7 @@ async def set_published(entity: Entity, *, published: bool, project_id: str | No
                 rel_path=rel_path,
                 name=str(getattr(entity, "name", "") or ""),
                 description=str(getattr(entity, "description", "") or ""),
-                origin=published_origin(entity) or await origin_for_asset(asset_ref),
+                origin=published_origin(entity) or await origin_for_asset(asset_ref, rel_path),
             ),
         )
         await ensure_manifest_indexed(project)
@@ -255,15 +257,24 @@ async def _default_worker() -> str:
         return "claude"
 
 
-async def _source_root(origin) -> Path:
-    """Where the published bytes are on THIS machine — the origin's own path for
-    a local origin, a materialized checkout joined with ``rel_path`` otherwise."""
+async def _source_root(origin, source_project_id: str = "") -> Path:
+    """Where the published bytes are on THIS machine — inside the publishing
+    project's folder for a local origin (a row written before origins were
+    project-relative holds its own absolute base), a materialized checkout
+    joined with ``rel_path`` otherwise."""
     from flow_sdk.builtin.drivers.local_driver import _resolve_local_path  # noqa: PLC0415
     from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.fs_store.origin.fs_origin import safe_join  # noqa: PLC0415
 
     if getattr(origin, "kind", "") == "local":
-        return _resolve_local_path(origin)
+        if getattr(origin, "base", ""):
+            return _resolve_local_path(origin)
+        mount = _mount_of(await Project.get_one({"id": source_project_id})) if source_project_id else None
+        inside = safe_join(mount, origin.rel_path or ".") if mount is not None else None
+        if inside is None:
+            raise PublishRefused("missing", "the project that published this asset is not on this machine")
+        return inside
     local_root, _pid = await get_origin_driver(origin.kind).materialize(origin)
     joined = safe_join(Path(local_root), origin.rel_path or ".")
     if joined is None:
@@ -320,7 +331,7 @@ async def install_published(project, request: dict, *, overwrite: bool = False) 
     if mount is None:
         raise PublishRefused("no_project", "the target project has no folder")
 
-    src = await _source_root(entry.origin)
+    src = await _source_root(entry.origin, str(request.get("source_project_id") or ""))
     if not src.exists():
         raise PublishRefused("missing", f"the published files are not reachable from this machine ({src})")
     if rel_path_for(mount, src) is not None:

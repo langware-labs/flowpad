@@ -1,6 +1,14 @@
 import { t } from '@lingui/core/macro';
 import type { ItReplyMeta } from '@sdk/entities/agent';
 
+/** The text colour of each reply tone. */
+export const TONE: Record<ItReplyView['tone'], string> = {
+  ok: 'text-emerald-600 dark:text-emerald-400',
+  warn: 'text-amber-600 dark:text-amber-400',
+  bad: 'text-red-600 dark:text-red-400',
+  muted: 'text-muted-foreground',
+};
+
 /** How a machine's IT reply reads: its state pill, and whether it offers "Enable and run" / "Open machine". */
 export interface ItReplyView {
   label: string;

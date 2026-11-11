@@ -100,6 +100,13 @@ test.afterAll(async ({ request }) => {
   }
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.project_page_tag.rules: FAILING? read this tag's rules before
+//       moving or renaming the ProjectPage tag
+// flowpad:endcapsule tag
 test('hard-cut tag vocabulary works across API, graph, taxonomy UI, and identity', async ({ page, request }) => {
   const stamp = Date.now().toString(36);
   const boundTag = `qa.e2e.naming.${stamp}`;
@@ -230,6 +237,13 @@ test('hard-cut tag vocabulary works across API, graph, taxonomy UI, and identity
   expect(consoleErrors.filter((message) => !/ResizeObserver|favicon/i.test(message))).toEqual([]);
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.project_page_tag.rules: FAILING? read this tag's rules before
+//       moving or renaming the ProjectPage tag
+// flowpad:endcapsule tag
 test('tag journey advances through UI and backend WebSocket events', async ({ page, request }) => {
   const stamp = Date.now().toString(36);
   const boundTag = `qa.e2e.journey.${stamp}`;

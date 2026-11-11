@@ -14,14 +14,7 @@
 import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
 
 import { ALICE, BOB, assertPreconditions } from './helpers';
-import {
-  HOST_PROJECT_ID,
-  revokeAliceGrantsOnBob,
-  sendOpeningPrompt,
-  sessionCards,
-  setupLiveConversation,
-  shot,
-} from './_live_session_setup';
+import { HOST_PROJECT_ID, sendOpeningPrompt, sessionCards, setupLiveConversation, shot } from './_live_session_setup';
 
 const SPEC_BUDGET_MS = 120_000;
 const TURN_BUDGET_MS = 60_000; // a real Claude turn on bob's machine
@@ -69,7 +62,6 @@ test.describe.configure({ mode: 'serial' });
 let browser: Browser;
 test.beforeAll(async () => {
   await assertPreconditions();
-  await revokeAliceGrantsOnBob(); // a request must PARK for bob's answer
   browser = await chromium.launch();
 });
 test.afterAll(async () => browser?.close());

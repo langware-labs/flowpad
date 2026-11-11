@@ -46,7 +46,6 @@ class Task(Entity):
     # the hub, and the owner (authorized on the child) pulls it during
     # ``sync-group`` — see ``group_task_action._sync_group_owner``.
     priority: Optional[str] = APIField(None)
-    tags: List[str] = APIField([], sharing=Sharing.PRIVATE)
     shared_by_id: Optional[str] = APIField(None)
     spec_type: Optional[str] = APIField(None)
     my_process_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)

@@ -88,6 +88,13 @@ async def test_publishing_someone_elses_agent_really_conflicts(hub_login_payload
     assert response.status_code == 409, f"publishing a foreign agent was not refused: {response.status_code} {response.text[:200]}"
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.foreign_agent_mailbox.rules: FAILING? read this tag's rules before
+#       touching _publish_then_probe or confirm_hub_row_is_ours
+# flowpad:endcapsule tag
 async def test_a_mailbox_on_someone_elses_agent_names_the_reason(hub_login_payload, bobs_agent_id):
     """The refusal a person can act on — not the hub's word for a unique index."""
     login_as(hub_login_payload)

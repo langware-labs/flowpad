@@ -17,3 +17,6 @@ Setup: a desktop instance in dev mode signed in to a hub that offers agent mail
 7. Send a mail to the address from the added sender. Within two minutes the live box shows it
    and the agent's reply.
 8. × closes the wizard: the channel tiles and the rest of the home page are back.
+9. Start again and press × on "Connect Email", before **Done**: the agent's machine is removed once it is up
+   (the project's Deployments list is empty again); leaving the page for another does the same. × after
+   "Your agent is live" keeps the machine.

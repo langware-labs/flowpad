@@ -1,21 +1,17 @@
 import { plural } from '@lingui/core/macro';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useState } from 'react';
 import { Users } from 'lucide-react';
 import { ConversationKind, isHelpdeskKind, type ConversationParticipant } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import {
-  contactFromParticipant,
   participantInitials,
   participantIsUser,
   participantName,
   participantRoleLabel,
-  type ContactIdentity,
 } from './participant-display';
 import { avatarColorForParticipant } from './avatar-color';
-import { ContactPermissionsDialog } from './ContactPermissionsDialog';
 
 // Show names inline only when the room allows them AND the roster is small
 // enough to fit; otherwise fall back to overlapping initials-avatars.
@@ -40,8 +36,6 @@ interface ConversationParticipantsProps {
  */
 export function ConversationParticipants({ participants, kind }: ConversationParticipantsProps) {
   const { t } = useLingui();
-  const [open, setOpen] = useState(false);
-  const [permissionsContact, setPermissionsContact] = useState<ContactIdentity | null>(null);
   const { cloudUser, currentUser } = useAuth();
 
   if (!participants || participants.length === 0) return null;
@@ -77,7 +71,7 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover>
         <PopoverTrigger asChild>
           <button
             type="button"
@@ -99,7 +93,6 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
           <ul className="flex flex-col gap-1">
             {participants.map((p, i) => {
               const role = participantRoleLabel(p);
-              const contact = participantIsUser(p, me) ? null : contactFromParticipant(p);
               const row = (
                 <>
                   <Avatar className="h-5 w-5">
@@ -115,31 +108,13 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
               );
               return (
                 <li key={p.user_id || p.email || i} className="flex items-center gap-2 text-xs">
-                  {contact ? (
-                    <button
-                      type="button"
-                      className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-start transition-colors hover:bg-muted"
-                      onClick={() => {
-                        setPermissionsContact(contact);
-                        setOpen(false);
-                      }}
-                      aria-label={`Open permissions for ${participantName(p)}`}
-                      data-testid={`conversation-participant-contact-${p.user_id || p.email || i}`}
-                    >
-                      {row}
-                    </button>
-                  ) : (
-                    <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{row}</div>
-                  )}
+                  <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{row}</div>
                 </li>
               );
             })}
           </ul>
         </PopoverContent>
       </Popover>
-      {permissionsContact && (
-        <ContactPermissionsDialog open onClose={() => setPermissionsContact(null)} contact={permissionsContact} />
-      )}
     </>
   );
 }

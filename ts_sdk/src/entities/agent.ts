@@ -147,7 +147,16 @@ export interface PublicDeploymentsState {
   deployments: PublicDeployment[];
 }
 
-export type PublicDeploymentOp = 'open' | 'pause' | 'resume' | 'reset';
+export type PublicDeploymentOp = 'open' | 'pause' | 'resume' | 'reset' | 'refill';
+
+function itResult(data: Partial<ItMessageResult> | null): ItMessageResult {
+  return {
+    conversation_id: data?.conversation_id ?? '',
+    targets: Array.isArray(data?.targets) ? data.targets : [],
+    op_id: data?.op_id ?? '',
+    send_id: data?.send_id ?? '',
+  };
+}
 
 /** Which public machines an IT message (or an IT Sessions switch) reaches: all of them, or these `node_typeid`s. */
 export type ItTargets = 'all' | string[];
@@ -164,13 +173,28 @@ export interface ItMessageRequest {
   /** A JSON shape each machine's answer value must match; null for a plain answer. */
   answer_shape?: Record<string, unknown> | null;
   targets: ItTargets;
-  /** Append to this IT conversation instead of opening a new one. */
+  /** The operation's name: every send of the same operation lands in one IT conversation (its id is the name's slug). */
+  op?: string;
+  /** Append to this IT conversation instead of opening a new one (wins over `op`). */
   conversation_id?: string;
 }
 
 export interface ItMessageResult {
   conversation_id: string;
   targets: string[];
+  /** The operation the send belongs to (the conversation's id for it). */
+  op_id: string;
+  /** This send: stamped on the request and on every machine's answer to it. */
+  send_id: string;
+}
+
+/** One of the owner's IT operations of an agent: one IT conversation. */
+export interface ItOperation {
+  op_id: string;
+  name: string;
+  conversation_id: string;
+  message_count: number;
+  last_message_at: string;
 }
 
 export interface ItSessionsBox {
@@ -189,6 +213,16 @@ export interface ItReplyMeta {
   woke?: boolean;
   value?: Record<string, unknown> | null;
   call_id?: string;
+  /** The operation and the send this reply answers (absent on replies written before operations existed). */
+  op_id?: string;
+  send_id?: string | null;
+}
+
+/** The owner's request in an IT conversation, as the hub stamps it on the message (`metadata.it`). */
+export interface ItRequestMeta {
+  agent_id: string | null;
+  op_id: string | null;
+  send_id: string;
 }
 
 export interface PublicDeploymentOpResult {
@@ -621,16 +655,19 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /** Mint `count` (1..100) codes, optionally named in order; their plaintext is answered this once only.
-   * `machineSize` is the size every one of them opens (omitted: the agent's). */
+   * `machineSize` is the size every one of them opens (omitted: the agent's). `codes`: the owner's own values
+   * (`XXXX-XXXX`), minted instead of `count` random ones; a revoked one is issued again. */
   async addPublicCodes(
     count: number,
     names: string[] = [],
     machineSize?: ComputeNodeSize,
+    codes: string[] = [],
   ): Promise<NewPublicInviteCode[]> {
     const data = await this.publicDeploymentsCall<{ codes?: NewPublicInviteCode[] }>('add_public_codes', 'POST', {
       count,
       ...(names.length ? { names } : {}),
       ...(machineSize ? { machine_size: machineSize } : {}),
+      ...(codes.length ? { codes } : {}),
     });
     return data?.codes ?? [];
   }
@@ -645,9 +682,18 @@ export class Agent extends APIEntity<Agent> {
     await this.publicDeploymentsCall('revoke_public_code', 'POST', { code_id: codeId });
   }
 
-  /** `reset` gives the same deployment a brand-new machine, filled from scratch; it answers like `open`. */
-  async managePublicDeployment(nodeTypeId: string, op: PublicDeploymentOp): Promise<PublicDeploymentOpResult> {
-    return this.publicDeploymentsCall('manage_public_deployment', 'POST', { node_typeid: nodeTypeId, op });
+  /** `reset` gives the same deployment a brand-new machine, filled from scratch; it answers like `open`.
+   * `refill` gives it a new, unspent LLM budget of `capUsd` (omitted: the deployment's $ per user). */
+  async managePublicDeployment(
+    nodeTypeId: string,
+    op: PublicDeploymentOp,
+    capUsd?: number,
+  ): Promise<PublicDeploymentOpResult> {
+    return this.publicDeploymentsCall('manage_public_deployment', 'POST', {
+      node_typeid: nodeTypeId,
+      op,
+      ...(capUsd ? { cap_usd: capUsd } : {}),
+    });
   }
 
   /**
@@ -658,20 +704,27 @@ export class Agent extends APIEntity<Agent> {
     const data = await this.publicDeploymentsCall<Partial<ItMessageResult> | null>('it_message', 'POST', {
       ...request,
     });
-    return { conversation_id: data?.conversation_id ?? '', targets: Array.isArray(data?.targets) ? data.targets : [] };
+    return itResult(data);
   }
 
   /**
-   * "Turn on and run": ask these machines the IT conversation's own first request again -- its text, files and answer
-   * shape -- posting nothing new in the thread.
+   * "Turn on and run": ask these machines a send's request again -- its text, files and answer shape -- posting
+   * nothing new in the thread. `sendId` names the send (the conversation's latest when absent); the answers carry it.
    */
-  async itRerun(conversationId: string, targets: ItTargets): Promise<ItMessageResult> {
+  async itRerun(conversationId: string, targets: ItTargets, sendId?: string | null): Promise<ItMessageResult> {
     const data = await this.publicDeploymentsCall<Partial<ItMessageResult> | null>('it_message', 'POST', {
       rerun: true,
       conversation_id: conversationId,
       targets,
+      ...(sendId ? { send_id: sendId } : {}),
     });
-    return { conversation_id: data?.conversation_id ?? '', targets: Array.isArray(data?.targets) ? data.targets : [] };
+    return itResult(data);
+  }
+
+  /** The caller's IT operations of this agent, newest first -- one IT conversation each. Hub-only and owner-only. */
+  async itOperations(): Promise<ItOperation[]> {
+    const data = await this.publicDeploymentsCall<{ operations?: ItOperation[] } | null>('it_operations', 'GET');
+    return Array.isArray(data?.operations) ? data.operations : [];
   }
 
   /** Turn IT Sessions on or off on the targeted public machines; answers each machine's resulting state. */

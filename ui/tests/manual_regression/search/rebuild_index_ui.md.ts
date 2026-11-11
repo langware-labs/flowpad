@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 import { waitForIndexerIdle, apiBase } from '../_shared/api';
-import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 

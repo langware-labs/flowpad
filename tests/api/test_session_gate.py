@@ -8,7 +8,6 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.app.actions import execute_prompt as ep
-from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction
 from flow_sdk.builtin.flow_message import FlowMessage, FlowMessageKind
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSessionStatus as S
@@ -49,7 +48,7 @@ async def test_terminal_session_ignores(bootstrapped_client, user, monkeypatch):
     assert ran == []
 
 
-async def test_unknown_session_without_grant_parks_pending(bootstrapped_client, user, monkeypatch):
+async def test_a_contacts_prompt_never_runs_before_the_host_approves(bootstrapped_client, user, monkeypatch):
     """The guest-minted id is adopted at PENDING with the opening proposal,
     the prompt stays unconsumed for the approve re-drive, nothing runs, and a
     re-delivery is a no-op."""
@@ -110,46 +109,6 @@ async def test_invalid_foreign_id_is_replaced(bootstrapped_client, user, monkeyp
     rows = await RemoteWorkerSession.get_all({"conversation_id": conv_id})
     assert len(rows) == 1 and rows[0].id != v7ish
     assert (await FlowMessage.get_one({"id": fm.id})).remote_worker_session_id == rows[0].id
-
-
-async def test_standing_grant_approves_and_runs(bootstrapped_client, user, monkeypatch):
-    ran = _patch_run(monkeypatch)
-    conv_id = await make_conversation(bootstrapped_client)
-    grant = ContactPermission(contact_user_id="guest-remote", project_id=None,
-                              allowed_actions=[PermissionAction.AUTO_APPROVE_SESSION.value])
-    await grant.save(notify=False)
-    try:
-        sid = "b2b2b2b2-0000-4000-8000-0000000000e0"
-        fm = inbound_prompt_fm(conv_id, sid, fm_id="b2b2b2b2-0000-4000-8000-0000000000e1")
-        await fm.save(notify=False)
-
-        await ep.process_inbound_prompt(fm.id, conv_id)
-
-        session = await RemoteWorkerSession.get_one({"id": sid})
-        assert session.status == S.IDLE.value
-        assert session.approved_via == "standing_grant" and session.approved_at
-        assert ran == [(sid, fm.id)]
-        events = await session_messages(conv_id, kind=FlowMessageKind.SESSION_EVENT.value)
-        assert any(event_marker(m) == "approved" for m in events)
-    finally:
-        await grant.delete()
-
-
-async def test_project_scoped_grant_does_not_leak_to_other_projects(bootstrapped_client, user, monkeypatch):
-    ran = _patch_run(monkeypatch)
-    conv_id = await make_conversation(bootstrapped_client)
-    grant = ContactPermission(contact_user_id="guest-remote", project_id="some-other-project",
-                              allowed_actions=[PermissionAction.AUTO_APPROVE_SESSION.value])
-    await grant.save(notify=False)
-    try:
-        sid = "b2b2b2b2-0000-4000-8000-0000000000e2"
-        fm = inbound_prompt_fm(conv_id, sid, fm_id="b2b2b2b2-0000-4000-8000-0000000000e3")
-        await fm.save(notify=False)
-        await ep.process_inbound_prompt(fm.id, conv_id)
-        assert ran == []
-        assert (await RemoteWorkerSession.get_one({"id": sid})).status == S.PENDING.value
-    finally:
-        await grant.delete()
 
 
 async def test_active_session_runs(bootstrapped_client, user, monkeypatch):

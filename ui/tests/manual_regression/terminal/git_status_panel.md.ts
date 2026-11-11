@@ -169,7 +169,7 @@ async function getComputeNodeId(): Promise<string | null> {
 /** Open the Git side tab through the dock URL's side-window list (the ribbon no longer carries it). */
 async function openGitTab(page: import('@playwright/test').Page) {
   const tabStrip = getSideWindow(page).locator('.border-b').first();
-  if (await tabStrip.getByText('Git', { exact: true }).isVisible({ timeout: 1_000 }).catch(() => false)) return;
+  if (await tabStrip.getByText('Git', { exact: true }).isVisible({ timeout: adjusted(1_000) }).catch(() => false)) return;
   const url = new URL(page.url());
   const open = (url.searchParams.get('sideWindows') ?? '').split(',').filter(Boolean);
   if (!open.includes('git')) open.push('git');

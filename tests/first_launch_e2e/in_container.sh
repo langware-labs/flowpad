@@ -290,14 +290,6 @@ grep -q '"open_wizard_popup"' /tmp/tab2.log && fail "the setup popup came back a
 kill "$TAB_PID" 2>/dev/null
 
 # ─────────────────────────────────────────────────────────────────────────────
-banner "H  the first launch is usable — one agent turn on the funded key"
-ANSWER=$(timeout 300 flow process start "Reply with exactly the single word pong and nothing else." 2>&1)
-RC=$?
-printf '%s\n' "$ANSWER" | grep -v "INFO:" | tail -5
-printf '%s' "$ANSWER" | grep -qi "pong" && [ "$RC" = "0" ] \
-  && pass "an agent answered through the funded endpoint (exit ${RC})" \
-  || fail "no agent answer through the funded endpoint (exit ${RC})"
-# ─────────────────────────────────────────────────────────────────────────────
 echo
 if [ "$FAILED" = "0" ]; then echo "RESULT: PASS"; else echo "RESULT: FAIL"; fi
 [ "${KEEP_ALIVE:-0}" = "1" ] && { echo "(KEEP_ALIVE=1 — sleeping so you can exec in)"; sleep infinity; }

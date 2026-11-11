@@ -5,8 +5,7 @@
  * exactly 1 session card (no follow-up or reply leaks into it), the session's
  * view shows 14 prompts and 14 replies in send order, bob runs ONE
  * worker for the conversation, and his backend log has no
- * "database is locked". A standing grant is set first so no approvals gate the
- * run. Real worker turns — the spec carries its own budget.
+ * "database is locked". Bob approves the session once, by hand. Real worker turns — the spec carries its own budget.
  * do not increase timeout without approval
  */
 import { chromium, expect, test, type Browser } from '@playwright/test';
@@ -14,8 +13,6 @@ import { chromium, expect, test, type Browser } from '@playwright/test';
 import { BOB, assertPreconditions } from './helpers';
 import {
   HOST_PROJECT_ID,
-  aliceCloudId,
-  revokeAliceGrantsOnBob,
   sendFollowUp,
   sendOpeningPrompt,
   sessionCards,
@@ -29,32 +26,19 @@ const FOLLOW_UPS = 10;
 const THREAD_PROMPTS = 3;
 const TURNS = 1 + FOLLOW_UPS + THREAD_PROMPTS;
 
-async function grantAliceOnBob() {
-  const id = await aliceCloudId();
-  const r = await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      type: 'contact_permission',
-      contact_user_id: id,
-      project_id: null,
-      allowed_actions: ['auto_approve_session'],
-    }),
-  });
-  if (!r.ok) throw new Error(`grant failed: ${r.status} ${await r.text()}`);
-}
-
 test('browser stress: 10 rapid follow-ups + 3 thread prompts join the one open session', async () => {
   test.setTimeout(SPEC_BUDGET_MS);
   test.skip(!HOST_PROJECT_ID, 'HOST_PROJECT_ID (a project on bob with a workdir) is required');
   await assertPreconditions();
-  await grantAliceOnBob();
   const browser: Browser = await chromium.launch();
   try {
     const { alice, bob, convId } = await setupLiveConversation(browser);
     const t0 = Date.now();
     const m = (i: number) => `SX-${t0}-${i}`;
     await sendOpeningPrompt(alice.page, `Reply with exactly the text ${m(0)} and nothing else.`);
+    const bobCard = sessionCards(bob.page).first();
+    await expect(bobCard).toHaveAttribute('data-status', 'pending', { timeout: 5_000 });
+    await bobCard.getByTestId('session-card-approve').click();
     await expect(sessionCards(alice.page).first()).toHaveAttribute('data-status', 'active', { timeout: 5_000 });
 
     // fire 10 follow-ups back-to-back from the session view, no waiting
@@ -101,6 +85,5 @@ test('browser stress: 10 rapid follow-ups + 3 thread prompts join the one open s
     expect(mine.length).toBe(1);
   } finally {
     await browser.close();
-    await revokeAliceGrantsOnBob();
   }
 });

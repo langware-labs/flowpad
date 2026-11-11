@@ -9,7 +9,8 @@
 * a credential or variable — its values are present in the store that deployment keeps them in →
   ``declared`` (a key is present; what it allows cannot be checked); else ``missing``;
 * an OAuth permission or connection — the connection is held and grants the mapped scopes → ``verified``;
-* an API-key permission — the variable that grants it is present → ``declared``.
+* an API-key permission — the variable that grants it is present → ``declared``; a variable that is one way of
+  a ONE_OF credential stands for the whole group: whichever way the credential uses grants it.
 """
 
 from __future__ import annotations
@@ -377,17 +378,22 @@ async def readiness(
     )
     rows = {row.name: row for row in status.credentials}  # user first, then project: the project's own wins
     present = {v.env_var: (v.present, v.store) for row in status.credentials for v in row.vars}
+    one_of = {v.env_var: row for row in status.credentials for v in row.vars if v.is_one_of}
     # A cloud deployment's missing value is filled by copying this computer's ("use mine").
     use_mine = "use_mine" if cloud else ""
 
+    def credential_item(req: RequirementSpec, row: Any, declared: list[str]) -> ReadinessItemSpec:
+        names = _needed_names(row, declared=declared)
+        if not names and row.state == "connected":
+            # Held with no stored value at all: a sign-in on this computer settles its ONE_OF group.
+            return ReadinessItemSpec(requirement=req, status=STATUS_DECLARED, where="signed in on this computer")
+        return _values_item(req, names, present, f"flow credentials set {row.name} --stdin", use_mine)
+
     async def item(req: RequirementSpec) -> ReadinessItemSpec:
         if req.kind == REQUIREMENT_CREDENTIAL:
-            row = rows.get(req.name)
-            names = _needed_names(row, declared=req.vars) if row is not None else list(req.vars or [])
-            if not names and row is not None and row.state == "connected":
-                # Held with no stored value at all: a sign-in on this computer settles its ONE_OF group.
-                return ReadinessItemSpec(requirement=req, status=STATUS_DECLARED, where="signed in on this computer")
-            return _values_item(req, names, present, f"flow credentials set {req.name} --stdin", use_mine)
+            if (row := rows.get(req.name)) is not None:
+                return credential_item(req, row, req.vars)
+            return _values_item(req, list(req.vars or []), present, f"flow credentials set {req.name} --stdin", use_mine)
         if req.kind == REQUIREMENT_VARIABLE:
             return _values_item(req, [req.name], present, f"declare a credential with {req.name}", use_mine)
         if grant := connection_of(req):
@@ -405,6 +411,8 @@ async def readiness(
             )
         mapping = permissions.mapping(req.name)
         if mapping is not None and mapping.mechanism == MECHANISM_API_KEY and mapping.api_key:
+            if (row := one_of.get(mapping.api_key)) is not None:
+                return credential_item(req, row, [mapping.api_key])
             return _values_item(req, [mapping.api_key], present, f"store {mapping.api_key}", use_mine)
         return ReadinessItemSpec(
             requirement=req,

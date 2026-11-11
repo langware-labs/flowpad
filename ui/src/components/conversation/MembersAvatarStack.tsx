@@ -42,13 +42,11 @@ import { isGroupMember, memberPrincipalId } from '@src/components/organization/m
 import { useLocalUser } from './useLocalUser';
 import { nestTeamMembers, useTeamRosters } from './team-member-nesting';
 import { avatarColorForParticipant } from './avatar-color';
-import { ContactPermissionsDialog } from './ContactPermissionsDialog';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
 import {
   assignableRoles,
   CONFERRABLE_ROLES,
   canInviteMembers,
-  contactFromParticipant,
   grantableRoles,
   participantInitials,
   participantIsUser,
@@ -58,7 +56,6 @@ import {
   participantRoles,
   participantRoleLabel,
   participantSubtitle,
-  type ContactIdentity,
   personName,
 } from './participant-display';
 
@@ -162,7 +159,6 @@ export function MembersAvatarStack({
   const [linkCopied, setLinkCopied] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [changingId, setChangingId] = useState<string | null>(null);
-  const [permissionsContact, setPermissionsContact] = useState<ContactIdentity | null>(null);
 
   // My roster row drives every affordance gate: rank for the role selector
   // (mirrors the hub's ``can_assign`` ceiling), editor+ for invite and — on
@@ -496,7 +492,6 @@ export function MembersAvatarStack({
     const roles = nested ? [] : rowRoles(p);
     const group = isGroupMember(p);
     const principalId = memberPrincipalId(p);
-    const contact = group || participantIsUser(p, localUser) ? null : contactFromParticipant(p);
     const identity = (
       <>
         <Avatar className="h-6 w-6">
@@ -521,22 +516,7 @@ export function MembersAvatarStack({
         className={`flex items-center gap-2 text-xs ${nested ? 'ms-6' : ''}`}
         data-testid={nested ? 'member-nested' : undefined}
       >
-        {contact ? (
-          <button
-            type="button"
-            className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-start transition-colors hover:bg-muted"
-            onClick={() => {
-              setPermissionsContact(contact);
-              setOpen(false);
-            }}
-            aria-label={`Open permissions for ${participantLabel(p)}`}
-            data-testid={`member-contact-${p.user_id || p.email || i}`}
-          >
-            {identity}
-          </button>
-        ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{identity}</div>
-        )}
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{identity}</div>
         {roles.length > 0 ? (
           <RolesPicker
             ariaLabel={`Change role of ${participantLabel(p)}`}
@@ -1065,9 +1045,6 @@ export function MembersAvatarStack({
           </PopoverContent>
         </Popover>
       </div>
-      {permissionsContact && (
-        <ContactPermissionsDialog open onClose={() => setPermissionsContact(null)} contact={permissionsContact} />
-      )}
       {/* Sign-in popup for the unauthenticated case (handleOpenChange routes here
         instead of opening the roster). */}
       <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />

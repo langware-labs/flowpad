@@ -1,9 +1,9 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo } from 'react';
 import { GitFork, Network } from 'lucide-react';
-import { TypeId } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { NodeData } from './graph/graphEngine';
 import { tagGraphCodec } from './codecs';
@@ -20,19 +20,14 @@ export { tagGraphCodec } from './codecs';
  * `view=tree` filter) on the dagre layout, parents above children.
  */
 
-function assetEditorPointer(node: NodeData): DockPointer | null {
+/** Where an entity node opens. A markdown node keeps its file path; every other type opens by type + id. */
+function entityPointer(node: NodeData): DockPointer | null {
+  if (node.type === 'file') return null;
   const assetRef = (node.properties?.asset_ref as string | undefined) ?? '';
   if (node.type === 'markdown' && assetRef) {
     return DockPointer.forAssetEditor('markdown', assetRef);
   }
-  if (node.type === 'skill') {
-    try {
-      return DockPointer.forAssetEditorByTypeId('skill', new TypeId('skill', node.id));
-    } catch {
-      return null;
-    }
-  }
-  return null;
+  return buildDockPointer({ type: node.type, id: node.id }, undefined);
 }
 
 export function TagGraphView() {
@@ -48,12 +43,12 @@ export function TagGraphView() {
     return out;
   }, [view]);
 
-  // Tag nodes zoom in place; asset nodes leave for their own editor — this
+  // Tag nodes zoom in place; entity nodes leave for their own view — this
   // surface performs that navigation (the canvas only owns its own URL state).
   const onNodeDoubleClickIntent = useCallback(
     (node: NodeData): 'focus' | 'handled' => {
       if (node.type === 'tag') return 'focus';
-      const pointer = assetEditorPointer(node);
+      const pointer = entityPointer(node);
       if (pointer) navigation.openDock(pointer);
       return 'handled';
     },

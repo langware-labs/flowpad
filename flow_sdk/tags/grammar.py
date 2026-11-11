@@ -77,6 +77,49 @@ def is_valid_tag(value: object) -> bool:
     return True
 
 
+# ── conversion (the lenient door for classification tags) ────────────────────
+
+_TAG_SPACE = re.compile(r"[ \t\r\n]+")
+_TAG_UNUSABLE = re.compile(r"[^a-z0-9_.-]")
+
+
+def to_tag(value: object) -> Optional[str]:
+    """``value`` folded into a valid tag, or ``None`` when nothing usable is left.
+
+    The LENIENT door, for a tag a person typed or a file carries (``Meeting Notes``
+    -> ``meeting-notes``, ``project/alpha`` -> ``project.alpha``): lower, ``/`` is a
+    level, a space is a ``-``, any other character is dropped. Never raises.
+    ``normalize_tag`` stays the strict gate for names that must already be right
+    (kinds, a ``Tag`` entity's name). TS twin: ``toTag``.
+    """
+    return _to_tag(value) if isinstance(value, str) else None
+
+
+@lru_cache(maxsize=4096)
+def _to_tag(value: str) -> Optional[str]:
+    """``to_tag`` for a string. Memoized: every row load converts its stored tags again."""
+    folded = _TAG_SPACE.sub("-", value.strip().lower().replace("/", "."))
+    folded = _TAG_UNUSABLE.sub("", folded)
+    folded = ".".join(seg for seg in folded.split(".") if seg)
+    try:
+        return _validated(folded)
+    except ValueError:
+        return None
+
+
+def to_tags(values: object) -> list[str]:
+    """Every usable tag in ``values``, converted, in order, once each.
+
+    ``values`` is a list, or the one-line string a file header may hold
+    (``"a, b"``, ``"[a, b]"``, ``""``). Anything else is no tags.
+    """
+    if isinstance(values, str):
+        values = values.strip().removeprefix("[").removesuffix("]").split(",")
+    if not values or not isinstance(values, (list, tuple, set, frozenset)):
+        return []
+    return list(dict.fromkeys(tag for tag in map(to_tag, values) if tag))
+
+
 def tag_segments(tag: str) -> list[str]:
     return tag.split(".")
 

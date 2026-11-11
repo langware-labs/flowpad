@@ -1290,6 +1290,15 @@ class Shell(Entity):
             raise RuntimeError("No PTY session — call start_pty() first")
         await pty_handle.write(data)
 
+    async def paste_then_submit(self, text: str) -> None:
+        """Paste *text* (bracketed) into a TUI's composer, then press Enter as its own key once the
+        terminal is quiet. Glued to the text, the Enter of a long or multi-line prompt is read as
+        part of the paste: the prompt is typed and never sent."""
+        await self.wait_for_input_ready()
+        await self.write_raw(f"\x1b[200~{text}\x1b[201~".encode())
+        await self.wait_for_input_ready()
+        await self.write_raw(b"\r")
+
     async def write_then_submit(self, text: str, submit_delay: float = 0.4) -> None:
         """Type *text* into the PTY, settle, then send Enter as a SEPARATE write.
 

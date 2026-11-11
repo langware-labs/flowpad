@@ -89,12 +89,6 @@ router = APIRouter()
 # Constants (migrated from desktop_loader.py)
 # ---------------------------------------------------------------------------
 
-DESKTOP_LABEL = "--user-type--.desktop"
-
-# Marks a user whose `name` was set manually via the UI — bootstrap will not
-# overwrite it from `git config user.name` on subsequent server starts.
-NAME_OVERRIDE_LABEL = "--user--.name-overridden"
-
 # Domain for default desktop user email
 DESKTOP_EMAIL_DOMAIN = "desktop.local"
 
@@ -593,7 +587,7 @@ async def get_desktop_user() -> Optional[Entity]:
     """
     try:
         all_users = await User.get_all(entities_filter=None)
-        desktop_users = [user for user in all_users if DESKTOP_LABEL in (user.labels or [])]
+        desktop_users = [user for user in all_users if user.desktop]
 
         if len(desktop_users) == 0:
             return None
@@ -717,7 +711,7 @@ async def get_or_create_local_user() -> User:
             desktop_user.email = default_email
             await desktop_user.save()
         # Refresh name from git config user.name unless the user manually overrode it
-        manually_overridden = NAME_OVERRIDE_LABEL in (desktop_user.labels or [])
+        manually_overridden = desktop_user.name_overridden
         git_name = await asyncio.to_thread(get_name)
         if not manually_overridden and git_name and desktop_user.name != git_name:
             old_name = desktop_user.name
@@ -737,15 +731,14 @@ async def get_or_create_local_user() -> User:
                 existing_by_uname.id,
                 local_id,
             )
-        # Ensure it has the desktop label
-        if DESKTOP_LABEL not in (existing_by_uname.labels or []):
-            existing_by_uname.add_label(DESKTOP_LABEL)
+        if not existing_by_uname.desktop:
+            existing_by_uname.desktop = True
             await existing_by_uname.save()
         # Update email/name: prefer git config user.name unless manually overridden
         email = await asyncio.to_thread(get_email) or get_default_desktop_email()
         git_name = await asyncio.to_thread(get_name)
         name_from_email = email.split("@")[0].replace(".", " ").title()
-        manually_overridden = NAME_OVERRIDE_LABEL in (existing_by_uname.labels or [])
+        manually_overridden = existing_by_uname.name_overridden
         needs_email_update = not existing_by_uname.email
         needs_name_update = not manually_overridden and (
             existing_by_uname.name == "Local Desktop User" or (git_name and existing_by_uname.name != git_name)
@@ -776,8 +769,8 @@ async def get_or_create_local_user() -> User:
         name=name,
         email=email,
         visitor_roles=["owner"],
+        desktop=True,
     )
-    user.add_label(DESKTOP_LABEL)
 
     # Try to save - if it fails due to existing email, delete the old user and retry
     try:

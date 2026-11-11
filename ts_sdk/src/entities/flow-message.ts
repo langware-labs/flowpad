@@ -5,7 +5,7 @@ import { ActionInfo } from '../models/ActionInfo';
 import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
 import { IMessageEnvelope } from '../models/MessageEnvelope';
 import { IMessageSender } from '../models/MessageSender';
-import type { ItReplyMeta } from './agent';
+import type { ItReplyMeta, ItRequestMeta } from './agent';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
@@ -282,6 +282,8 @@ export interface IFlowMessage extends IEntity {
   origin_local?: ICloudOriginLocal | null;
   /** A machine's reply in an IT conversation: the hub's `metadata.it` (kept locally as `it_reply`). */
   it_reply?: ItReplyMeta | null;
+  /** The owner's request in an IT conversation: its agent, operation and send (kept locally as `it_request`). */
+  it_request?: ItRequestMeta | null;
   /** Hub-relayed opaque metadata (a hub-page read carries it raw). */
   metadata?: Record<string, unknown> | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
@@ -335,6 +337,17 @@ export function itReplyOf(metadata: Record<string, unknown> | null | undefined):
   return it && typeof it === 'object' && (it as ItReplyMeta).node_typeid ? (it as ItReplyMeta) : null;
 }
 
+/** The IT request a hub message's `metadata.it` names (the owner's message of a send), else null. */
+export function itRequestOf(metadata: Record<string, unknown> | null | undefined): ItRequestMeta | null {
+  const it = metadata?.it as Record<string, unknown> | undefined;
+  if (!it || typeof it !== 'object' || it.node_typeid || typeof it.send_id !== 'string' || !it.send_id) return null;
+  return {
+    agent_id: typeof it.agent_id === 'string' ? it.agent_id : null,
+    op_id: typeof it.op_id === 'string' ? it.op_id : null,
+    send_id: it.send_id,
+  };
+}
+
 @registerEntity
 export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage {
   text?: string;
@@ -371,6 +384,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   origin?: ICloudOrigin | null;
   origin_local?: ICloudOriginLocal | null;
   it_reply?: ItReplyMeta | null;
+  it_request?: ItRequestMeta | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
   envelope?: IMessageEnvelope | null;
   thread_id?: string | null;
@@ -424,6 +438,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.origin = entity.origin ?? null;
     this.origin_local = entity.origin_local ?? null;
     this.it_reply = entity.it_reply ?? itReplyOf(entity.metadata);
+    this.it_request = entity.it_request ?? itRequestOf(entity.metadata);
     this.envelope = entity.envelope ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;

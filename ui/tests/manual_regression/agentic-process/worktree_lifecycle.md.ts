@@ -20,9 +20,9 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
+import { adjusted } from '../../adjustableTimeout';
 import { apiContext } from '../_shared/api';
 import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, sessionPopover, sessionAction, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER, restoreStandardMode, selectAdvancedMode } from './_ap_helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 // The instance's OWN project folder, asked of the backend — a named instance's
 // workspace is `~/Flowpad workspaces/<name>/`, so a hardcoded prod path both

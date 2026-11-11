@@ -423,13 +423,19 @@ def derive_help_request_kind(fm: "FlowMessage") -> None:
 
 
 def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
-    """Carry an IT reply's ``metadata.it`` (hub-written) onto ``it_reply``. Idempotent; absent leaves it as is."""
+    """Carry an IT message's ``metadata.it`` (hub-written) onto the message. Idempotent; absent leaves it as is.
+
+    A MACHINE's reply names its node and lands on ``it_reply``. The owner's request carries ``metadata.it`` too;
+    when it names its send (``send_id``) its ids land on ``it_request`` -- never the request body, which only the
+    hub keeps for a rerun."""
     metadata = payload.get("metadata")
     it = metadata.get("it") if isinstance(metadata, dict) else None
-    # Only a MACHINE's reply names its node; the owner's IT message carries ``metadata.it`` too (its attachment
-    # names) and is the IT message itself, not a reply.
-    if isinstance(it, dict) and it.get("node_typeid"):
+    if not isinstance(it, dict):
+        return
+    if it.get("node_typeid"):
         fm.it_reply = dict(it)
+    elif it.get("send_id"):
+        fm.it_request = {k: it.get(k) for k in ("agent_id", "op_id", "send_id")}
 
 
 def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
@@ -743,6 +749,10 @@ class FlowMessage(Entity):
     # ``metadata.it`` = ``{node_typeid, code_last4, state, woke, value, call_id}``. PRIVATE like ``mark``:
     # re-derived from that metadata on every arrival (``derive_it_reply``), never sent back.
     it_reply: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
+    # The owner's request in an IT conversation: ``{agent_id, op_id, send_id}`` from its ``metadata.it``. The
+    # conversation draws the replies that name the same ``send_id`` as a table under it. PRIVATE, re-derived
+    # like ``it_reply``.
+    it_request: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
@@ -1010,6 +1020,29 @@ class FlowMessage(Entity):
             await purge_flow_message_local_data(self.id)
         except Exception:  # noqa: BLE001 — cleanup must never block deletion
             logger.warning("[flow_message] staging purge failed fm=%s", self.id, exc_info=True)
+
+    async def erase_local(self, conversation_id: Optional[str] = None) -> None:
+        """Remove this machine's copy of a message that is gone: its child edge, then the row.
+
+        The edge goes FIRST. Membership is the edge, so pruning only the conversation's jsonl
+        pointer would leave the message in the projection; and after ``destroy()`` the child no
+        longer resolves, so ``detach_child`` would find nothing to remove and announce nothing.
+        ``destroy`` erases the DB row, its relationships and the on-disk record folder. Neither
+        step may block the other, so each failure is logged and passed over."""
+        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+
+        conv_id = conversation_id or self.conversation_id
+        if conv_id:
+            try:
+                conv = await Conversation.get_one({"id": conv_id})
+                if conv is not None:
+                    await conv.detach_child(self.typeid, notify=True)
+            except Exception:  # noqa: BLE001
+                logger.exception("[flow_message] child detach failed fm=%s conv=%s", self.id, conv_id)
+        try:
+            await self.destroy()
+        except Exception:  # noqa: BLE001
+            logger.exception("[flow_message] local destroy failed fm=%s", self.id)
 
     async def delete(self):
         await super().delete()

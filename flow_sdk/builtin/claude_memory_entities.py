@@ -91,10 +91,6 @@ class Docs(Markdown):
     # Hub storage is entity-scoped and canonical, independent of the sender's
     # local asset path. Share-time byte transport publishes this record's main
     # ref under the stable Hub name.
-    # OKF-compatible metadata. Values are preserved as authored for
-    # storage/search; the tag binding readers independently select and
-    # normalize the grammar-valid dot paths used by the taxonomy.
-    tags: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
     links: List[str] = APIField(default_factory=list)
 
 

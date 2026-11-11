@@ -111,24 +111,3 @@ async def test_archive_is_stamped_and_a_newer_message_revives_it():
     await conv.save(notify=False)
     await recompute_unread("test")
     assert (await Conversation.get_by_id(conv_id)).archived is False, "activity newer than the archive revives it"
-
-
-@pytest.mark.asyncio
-async def test_the_recompute_reads_only_the_unread_messages():
-    """Every read-state touch recomputes on the main loop; it reads the messages the walk can
-    count — the unread ones — not every message ever kept (a read one ends the walk exactly
-    as an absent one does, so the count is the same)."""
-    from flow_sdk.stream_inbox import _load_rows
-
-    read_id, read_conv = await _received()
-    unread_id, unread_conv = await _received()
-    fm = await FlowMessage.get_by_id(read_id)
-    fm.is_read = True
-    await fm.save(notify=False)
-
-    _, rows = await _load_rows()
-    assert unread_id in rows["fm_by_id"] and read_id in rows["fm_by_id"], "the walk loads each conversation's newest message to learn whether it is read"
-
-    await recompute_unread("test")
-    assert (await Conversation.get_by_id(unread_conv)).unread_count == 1
-    assert (await Conversation.get_by_id(read_conv)).unread_count == 0

@@ -29,6 +29,7 @@ from typing import Any
 from flow_sdk.assets.layout import Layout, LayoutKind
 from flow_sdk.fs_store.gitignore import flowignored
 from flow_sdk.fs_store.indexer.reconcile import reconcile
+from flow_sdk.fs_store.path_utils import disk_spelling
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 
 
@@ -109,7 +110,7 @@ async def resolve_asset(
     p = Path(path).expanduser()
     if not p.is_absolute():
         p = Path("/") / p
-    p = p.resolve()
+    p = disk_spelling(p)  # one asset, one path key, however the caller typed it
     if flowignored(p):
         raise NotAnAsset(f"{p} is excluded by a .flowignore")
     if type_name is None:

@@ -12,9 +12,9 @@
  * text. New-tab creation is verified by the URL switching to a fresh shell-<uuid>
  * (exact accumulated tab counts are not asserted).
  */
+import { adjusted } from '../../adjustableTimeout';
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, fetchProcess, sessionAction, activePanel } from './_ap_helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 async function fetchShellWorkdir(page: import('@playwright/test').Page, shellId: string): Promise<string | null> {
   return page.evaluate(async ({ base, id }) => {
