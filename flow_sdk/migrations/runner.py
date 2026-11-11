@@ -101,6 +101,103 @@ def _is_process_alive(pid: int | None) -> bool:
         return pid_is_alive(pid)
 
 
+def _migrations_root() -> Path:
+    override = os.environ.get("FLOWPAD_MIGRATIONS_ROOT")
+    if override:
+        return Path(override)
+    from flow_sdk.config import flowpad_assistant_project_root
+
+    return flowpad_assistant_project_root() / "migrations"
+
+
+def _version_key(version: str) -> tuple[int, ...] | None:
+    try:
+        return tuple(int(part) for part in version.split("."))
+    except ValueError:
+        return None
+
+
+def _declared_stranded(root: Path) -> set[str]:
+    """Versions a recipe declares in its ``STRANDED`` tuple: recipes that never shipped in their own
+    wheel. They are never re-driven on launch (0.2.152 did: 249 s with no port bound; 69e5cc510)."""
+    stranded: set[str] = set()
+    for script in root.glob("*/scripts/migrate.py"):
+        try:
+            text = script.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if "STRANDED" not in text:
+            continue
+        name = f"_flowpad_stranded_probe_{script.parent.parent.name.replace('.', '_')}"
+        try:
+            with load_script_module(name, script) as module:
+                stranded.update(getattr(module, "STRANDED", ()))
+        except Exception:
+            continue
+    return stranded
+
+
+def _installed_version(status_dir: Path, current: tuple[int, ...]) -> tuple[int, ...]:
+    """The newest version this install recorded a migration for, below the running one.
+
+    Every run records its version (the chain below records each recipe it runs), so this is where
+    the install stood. None recorded (an install from before any recipe ran, such as 0.2.25): every
+    recipe is newer than it.
+    """
+    keys = [k for r in migration_status.list_all(status_dir) if (k := _version_key(r.version)) and k < current]
+    return max(keys, default=())
+
+
+def _chain_pending(version: str, status_dir: Path) -> list[str]:
+    """The recipes an upgrade to ``version`` still owes, oldest first.
+
+    Above the installed version and below ``version`` (whose own recipe the caller runs as before);
+    a script recipe only (an agent recipe is never driven on launch); never one declared
+    ``STRANDED``; never one with a record already: done, failed or orphaned runs once only.
+    """
+    current = _version_key(version)
+    root = _migrations_root()
+    if current is None or not root.is_dir():
+        return []
+    installed = _installed_version(status_dir, current)
+    candidates = sorted(
+        (k, p.name)
+        for p in root.iterdir()
+        if p.is_dir() and (k := _version_key(p.name)) and installed < k < current
+        and (p / "scripts" / "migrate.py").is_file()
+    )
+    if not candidates:
+        return []
+    stranded = _declared_stranded(root)
+    return [v for _, v in candidates if v not in stranded and migration_status.read(status_dir, v) is None]
+
+
+def _run_chain(version: str, status_dir: Path) -> int:
+    """Run each recipe an upgrade skipped, once, and record it. Best effort: an older recipe that
+    fails is recorded as failed (never retried on launch) and does not block the start."""
+    for older in _chain_pending(version, status_dir):
+        lock = FileLock(str(migration_status.lock_path(status_dir, older)))
+        try:
+            lock.acquire(timeout=0)
+        except Timeout:
+            continue
+        try:
+            if migration_status.read(status_dir, older) is not None:
+                continue
+            typer.echo(f"Migration {older} (skipped by this upgrade): starting.")
+            record = MigrationRecord.fresh(version=older, pid=os.getpid())
+            migration_status.write(status_dir, record)
+            script = _migrations_root() / older / "scripts" / "migrate.py"
+            if _drive_migration_script(older, script, status_dir, record) == 130:
+                return 130
+        finally:
+            try:
+                lock.release()
+            except Exception:
+                pass
+    return 0
+
+
 def _resolve_recipe(version: str) -> Recipe | None:
     """Discover migration artifacts for ``version``.
 
@@ -117,15 +214,7 @@ def _resolve_recipe(version: str) -> Recipe | None:
     Returns None when neither artifact exists — caller treats this as
     "nothing to do for this version" and exits silently.
     """
-    override = os.environ.get("FLOWPAD_MIGRATIONS_ROOT")
-    if override:
-        migrations_root = Path(override)
-    else:
-        from flow_sdk.config import flowpad_assistant_project_root
-
-        migrations_root = flowpad_assistant_project_root() / "migrations"
-
-    base = migrations_root / version
+    base = _migrations_root() / version
     script_path = base / "scripts" / "migrate.py"
     skill_dir = base / "skill"
 
@@ -356,6 +445,11 @@ async def _run_if_needed_async(
         from flow_sdk._version import __version__
 
         version = __version__
+
+    # An upgrade across several releases (0.2.25 -> 0.2.261) owes the recipes in between.
+    chain_dir = _resolve_status_dir()
+    if _chain_pending(version, chain_dir) and _run_chain(version, chain_dir) == 130:
+        return 130
 
     recipe = _resolve_recipe(version)
     if recipe is None:
