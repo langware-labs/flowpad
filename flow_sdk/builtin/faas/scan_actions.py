@@ -1106,9 +1106,12 @@ class ScanActionsMixin:
                             process.id,
                             exc_info=True,
                         )
-                # Reattach shell + flip visible so the tab strip surfaces the row.
+                # Reattach shell + flip visible so the tab strip surfaces the row. A headless
+                # session (``pty_mode is False``) is never visible and has no PTY by design:
+                # spawning one here put a terminal worker under a chat surface, which then
+                # switched back to headless and killed it — a respawn on every reopen.
                 start_data = None
-                if not process.shell_id or not process.visible:
+                if process.pty_mode is not False and (not process.shell_id or not process.visible):
                     try:
                         start_resp = await process.start_pty(visible=True, terminal_theme=terminal_theme)
                     except Exception as start_err:
