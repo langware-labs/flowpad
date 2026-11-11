@@ -11,6 +11,11 @@ import { adjusted } from '../../adjustableTimeout';
  * opens only when a tool is missing. Locally, a just-launched
  * disposable instance (`scripts/instance_ctl.sh launch dev-1`) is fresh.
  *
+ * The box must also have NO LLM source, as on CI: a funded box is never shown setup
+ * (`llm_source_funded` in `_run_llm_setup_trigger`), so a codex / Claude / Copilot sign-in in
+ * the backend's provider homes means no popup. Launch that backend with empty
+ * CODEX_HOME, CLAUDE_CONFIG_DIR / FLOWPAD_CLAUDE_HOME, COPILOT_HOME and XDG_* homes.
+ *
  * Run:
  *   SETUP_FE_PORT=5001 npx playwright test --config ui/tests/e2e/first-run-setup/playwright.config.ts
  */
