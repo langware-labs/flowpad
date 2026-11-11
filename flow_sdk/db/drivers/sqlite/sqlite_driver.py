@@ -16,7 +16,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal,
 
 from fastapi import HTTPException
 from pydantic import TypeAdapter
-from sqlalchemy import DateTime, and_, asc, delete, desc, func, or_, select, text, update
+from sqlalchemy import DateTime, and_, asc, case, delete, desc, func, or_, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -796,8 +796,12 @@ class SQLiteDBDriver(DBDriver):
         status: str | None = None,
         calibration: "SearchCalibration | None" = None,
         match: Literal["all", "any"] = "all",
+        tags: "Sequence[str] | None" = None,
     ) -> list:
         """Execute FTS5 MATCH query and return hydrated Entity objects.
+
+        ``tags``: only rows carrying every one of them, itself or a tag under it — in the
+        query, so ``limit`` counts matches and a tagged row past the first page is found.
 
         ``match="all"``: every term must appear. ``match="any"``: any term may, bm25 ranking the rows
         that match more of them (and rarer ones) first -- for a sentence, whose words are not all
@@ -861,6 +865,13 @@ class SQLiteDBDriver(DBDriver):
             if status:
                 sql += " AND json_extract(e.data, '$.status') = :status"
                 params["status"] = status
+            # ``grammar.tag_is_within`` in SQL (``Entity.has_tag`` is the Python side of the same rule).
+            for i, tag in enumerate(tags or ()):
+                sql += (
+                    " AND EXISTS (SELECT 1 FROM json_each(e.data, '$.tags') AS jt"
+                    f" WHERE jt.value = :tag_{i} OR substr(jt.value, 1, length(:tag_{i}) + 1) = :tag_{i} || '.')"
+                )
+                params[f"tag_{i}"] = tag
 
             order_parts = [bm25_expr]
 
@@ -1525,6 +1536,54 @@ class SQLiteDBDriver(DBDriver):
             setattr(current, field_name, value)
             current._dirty = False
             return current, True
+
+    async def stamp_tab_orders(self, orders: dict[str, int]) -> set[str]:
+        """Batched :meth:`stamp_tab_order`: ONE writer transaction, one keyed read of
+        just ``visible``/``tab_order`` and one ``UPDATE ... CASE`` — opening a tab
+        mid-strip shifts every later tab, and stamping them one hydrated row at a
+        time made ``new_tab`` O(open tabs) round trips (about 270 ms at 87 tabs).
+        The race rule is kept: the read and the write share the writer transaction,
+        so a tab ``close_many`` hid meanwhile is skipped, never resurrected."""
+        if not orders:
+            return set()
+        from types import SimpleNamespace  # noqa: PLC0415
+
+        ids = list(orders)
+        async with self._session_ctx() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        EntitySchema.id,
+                        func.json_extract(EntitySchema.data, "$.visible"),
+                        func.json_extract(EntitySchema.data, "$.tab_order"),
+                    ).where(EntitySchema.id.in_(ids))
+                )
+            ).all()
+            todo = {
+                rid: orders[rid]
+                for rid, visible, current in rows
+                if visible not in (0, False) and current != orders[rid]
+            }
+            if not todo:
+                return set()
+            stamp = SimpleNamespace(type="tab", id=None, updated_by=None, updated_date=None, updated_through=None,
+                                    get_type=lambda: "tab")
+            self.apply_update_fields(stamp)
+            await session.execute(
+                update(EntitySchema)
+                .where(EntitySchema.id.in_(list(todo)))
+                .values(
+                    updated_by=stamp.updated_by,
+                    updated_through=stamp.updated_through,
+                    data=func.json_set(
+                        func.coalesce(EntitySchema.data, "{}"),
+                        "$.tab_order",
+                        case(todo, value=EntitySchema.id),
+                    ),
+                )
+                .execution_options(synchronize_session=False)
+            )
+            return set(todo)
 
     async def stamp_last_active_at(self, entity_id: str, timestamp_ms: int) -> tuple[DBBaseRecord | None, bool]:
         """Atomically stamp recency without rewriting a stale entity snapshot.

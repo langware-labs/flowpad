@@ -27,14 +27,14 @@ export interface TabGateway {
   newTab(pointer: string, options?: INewTabOpts): Promise<Tab[]>;
   getFromDockPointer(
     dock: IDockPointer,
-    options?: { parentTabId?: string | null; afterTabId?: string | null },
+    options?: { parentTabId?: string | null; afterTabId?: string | null; pingCaller?: boolean },
   ): Promise<TabEnsureResult>;
   resolveDockTarget(dock: IDockPointer): ReturnType<typeof Tab.resolveDockTarget>;
   activateById(tabId: string): Promise<void>;
   closeById(tabId: string): Promise<Tab[]>;
   closeManyByIds(tabIds: string[], projectId?: string | null): Promise<Tab[]>;
   renameById(tabId: string, name: string): Promise<Tab[]>;
-  setNameById(tabId: string, name: string): Promise<Tab[]>;
+  setNameById(tabId: string, name: string, options?: { pingCaller?: boolean }): Promise<Tab[]>;
   reorder(
     tabId: string,
     afterId: string | null,
@@ -275,7 +275,12 @@ export class TabManager {
    *  a minted row reports it to view-mode memory as `TabCreate`. */
   async ensureDock(
     dock: IDockPointer,
-    options: { parentTabId?: string | null; afterTabId?: string | null; viewMode?: string | null } = {},
+    options: {
+      parentTabId?: string | null;
+      afterTabId?: string | null;
+      viewMode?: string | null;
+      pingCaller?: boolean;
+    } = {},
   ): Promise<TabEnsureResult> {
     const { viewMode, ...placement } = options;
     const result = await this.gateway.getFromDockPointer(dock, placement);
@@ -338,8 +343,8 @@ export class TabManager {
     return this.gateway.renameById(tabId, name);
   }
 
-  setName(tabId: string, name: string): Promise<Tab[]> {
-    return this.gateway.setNameById(tabId, name);
+  setName(tabId: string, name: string, options?: { pingCaller?: boolean }): Promise<Tab[]> {
+    return this.gateway.setNameById(tabId, name, options);
   }
 
   reorder(
@@ -379,7 +384,7 @@ export class TabManager {
     if (!tabHash || !trimmed) return;
     const tab = this.findByDockKey(tabHash);
     if (!tab || tab.name === trimmed) return;
-    await this.setName(tab.id, trimmed);
+    await this.setName(tab.id, trimmed, { pingCaller: false });
     await this.refresh();
   }
 
@@ -399,7 +404,7 @@ export class TabManager {
       const remoteChanged = typeof remote === 'boolean' && tab.target_remote !== remote;
       if (!nameChanged && !remoteChanged) return;
       void (async () => {
-        if (nameChanged) await this.setName(tab.id, name);
+        if (nameChanged) await this.setName(tab.id, name, { pingCaller: false });
         await this.refresh();
       })().catch(() => undefined);
     };

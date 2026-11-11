@@ -50,6 +50,7 @@ import httpx
 import pytest
 
 from tests.test_settings import test_service_config
+from tests.adjustable_timeout import adjusted
 
 pytestmark = pytest.mark.skipif(
     not test_service_config.deep_testing,
@@ -89,6 +90,7 @@ def _start_server(port: int, db_path: str) -> subprocess.Popen:
 
 
 async def _wait_for_server(base_url: str, timeout: float = 30.0) -> None:
+    timeout = adjusted(timeout)
     deadline = time.monotonic() + timeout
     async with httpx.AsyncClient() as client:
         while time.monotonic() < deadline:

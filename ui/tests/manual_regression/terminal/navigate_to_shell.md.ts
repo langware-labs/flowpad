@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Navigate to Shell', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,7 +8,7 @@ test.describe('Navigate to Shell', () => {
   });
 
   test('open the shell view and validate terminal loads', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: navigate to shell (creates a new terminal via /dock/shell/new_terminal)
     await gotoShell(page);
@@ -17,7 +18,7 @@ test.describe('Navigate to Shell', () => {
 
     // Step 3: validate terminal tab bar has at least one tab
     const tabs = page.locator('[data-testid^="tab-"]');
-    await expect(tabs.first()).toBeVisible({ timeout: 10_000 });
+    await expect(tabs.first()).toBeVisible({ timeout: adjusted(10_000) });
 
     // Step 4: validate terminal content area is visible
     const terminalPanels = page.locator('[data-testid="terminal-panels"]');

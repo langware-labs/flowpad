@@ -2,25 +2,24 @@
 
 ``analyze_usage(start, end)`` walks the Claude session transcripts whose start
 falls in ``[start, end)`` and aggregates cost / time / tokens / skills / agents /
-prompts / tools into a :class:`UsageReportData`. It is a *pure* function (no DB
+prompts / tools into a ``usage.summary`` value (:class:`UsageSummarySpec`). It is a *pure* function (no DB
 writes, no LLM) so weekly/monthly variants reuse it by passing a wider range, and
 it is cheap to unit-test.
 
-The daily-analysis GraphWorkflow consumes it in stages: the subprocess ``analyze``
-node (``flow_node.py``) runs it and persists the ``UsageReport`` via REST, and
-the ``flow_publish_usage_report`` callback (``callback.py``) posts the
-Home-Feed entry.
+The Daily usage summary automation runs it through the ``usage-summary`` FlowCall block
+(``flowpad_assistant/agentic-assets/compute_op/usage-summary``), which keeps the
+``UsageReport`` and posts the headline into the automation's conversation.
 """
 from .analyze import (
-    SessionRow,
-    UsageReportData,
     analyze_usage,
+    headline,
     render_markdown,
+    yesterday,
 )
 
 __all__ = [
-    "SessionRow",
-    "UsageReportData",
     "analyze_usage",
+    "headline",
     "render_markdown",
+    "yesterday",
 ]

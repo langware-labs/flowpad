@@ -617,6 +617,18 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             )
             + "\n"
         )
+        if not context.resume_session_id:
+            # Under ``--print --input-format stream-json`` the CLI never titles a
+            # session by itself (its interactive auto-title is off; measured on 2.1.310:
+            # a headless first turn leaves no ``ai-title`` row while a PTY one does).
+            # The Agent SDK host asks for it with this control request; ``persist``
+            # makes the CLI append the native ``ai-title`` row the naming adapter reads.
+            CTRL_REQUEST_GENERATE_SESSION_TITLE = {
+                "type": "control_request",
+                "request_id": f"session-title-{uuid4().hex[:8]}",
+                "request": {"subtype": "generate_session_title", "description": prompt, "persist": True},
+            }
+            stdin_payload += json.dumps(CTRL_REQUEST_GENERATE_SESSION_TITLE) + "\n"
         env_from_opts = dict(opts.env_vars)
 
         # Start from os.environ so the CLI can find its creds, home. Strip the

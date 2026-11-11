@@ -6,7 +6,7 @@ import { mainFileForType } from '../models/asset-editor';
 
 /**
  * UsageReport entity — a deterministic agentic-usage summary over a date range,
- * produced by the daily `builtin_daily_usage_analysis` trigger. The entity row
+ * kept by the Daily usage summary automation (`usage-summary` block). The entity row
  * carries only the small headline fields the Home Feed card needs; the full
  * payload (breakdowns, sample prompts, the per-session drill-down spine, and the
  * rendered markdown) lives at `asset_ref`

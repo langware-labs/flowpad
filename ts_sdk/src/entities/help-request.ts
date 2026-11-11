@@ -89,7 +89,7 @@ export interface HelpContextItem {
   content: string;
 }
 
-/** What Ask would attach, and the title card 3 shows — nothing is written. */
+/** What Ask would attach, and a suggested title — nothing is written. */
 export async function helpRequestPreview(
   request: AskForHelpRequest,
 ): Promise<{ title: string; items: HelpContextItem[] }> {

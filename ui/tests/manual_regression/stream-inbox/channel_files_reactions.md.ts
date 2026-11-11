@@ -6,6 +6,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { REPO_ROOT, apiContext, apiOrigin, configuredFileEnv } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const INSTANCE = process.env.FLOW_INSTANCE || '';
 const CHANNELS = ['whatsapp', 'telegram'] as const;
@@ -45,7 +46,7 @@ async function graph<T = Record<string, unknown>>(method: 'get' | 'post' | 'dele
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-  test.setTimeout(120_000);
+  test.setTimeout(adjusted(120_000));
   api = await apiContext();
   const users = await graph<Array<{ id: string; uname?: string }>>('get', '/graph/user');
   localUserId = users.find((u) => u.uname === 'local')?.id ?? '';

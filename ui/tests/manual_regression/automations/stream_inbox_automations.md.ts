@@ -23,6 +23,7 @@ import { mkdirSync } from 'node:fs';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { REPO_ROOT, apiContext, apiOrigin, configuredFileEnv } from '../_shared/api';
 import { dismissSetupModal } from '../triggers/helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const INSTANCE = process.env.FLOW_INSTANCE || '';
 const CHANNEL = 'telegram';
@@ -84,7 +85,7 @@ async function open(page: Page, route: string) {
   await dismissSetupModal(page);
   await page.goto(route);
   const skip = page.getByRole('button', { name: 'Skip' });
-  if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
+  if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
 }
 
 async function shot(page: Page, name: string) {
@@ -98,7 +99,7 @@ async function shot(page: Page, name: string) {
 }
 
 test.describe.configure({ mode: 'serial' });
-test.setTimeout(240_000);
+test.setTimeout(adjusted(240_000));
 
 test.beforeAll(async () => {
   api = await apiContext();

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('project Git-coupled invite', () => {
   test('project home shows the invite control and gates invite actions through scoped GitHub test', async ({ page }) => {
@@ -8,11 +9,11 @@ test.describe('project Git-coupled invite', () => {
     });
 
     await page.goto('/dock/assets/project-home');
-    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
     const settings = page.getByRole('dialog', { name: 'Assistants & keys' });
     if (await settings.count()) await settings.getByRole('button', { name: 'Close' }).click();
-    await expect(page.getByTestId('project-home-members')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId('members-invite-button')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('project-home-members')).toBeVisible({ timeout: adjusted(20_000) });
+    await expect(page.getByTestId('members-invite-button')).toBeVisible({ timeout: adjusted(20_000) });
 
     await page.getByTestId('members-invite-button').click();
     await expect(page.getByTestId('members-avatar-stack')).toBeVisible();

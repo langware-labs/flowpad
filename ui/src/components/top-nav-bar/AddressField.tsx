@@ -136,6 +136,7 @@ export function AddressField({
             filename={crumb.filename}
             path={crumb.path}
             directory={!!crumb.directory}
+            typeId={crumb.typeId}
           >
             <button
               type="button"

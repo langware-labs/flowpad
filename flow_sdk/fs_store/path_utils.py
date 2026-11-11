@@ -63,6 +63,33 @@ def canonical_posix_path(p: Path | str) -> str:
     return unicodedata.normalize("NFC", Path(p).resolve().as_posix())
 
 
+def disk_spelling(p: Path | str) -> Path:
+    """``p`` resolved AND spelled the way the disk spells it.
+
+    For a path handed in from outside (a CLI argument, an API parameter). On a
+    case-insensitive, normalization-insensitive volume (macOS) ``resolve()``
+    keeps the caller's letter case and unicode form, so one folder typed two
+    ways became two path keys — two ids for one asset. The walker needs none of
+    this: it yields names as the disk lists them. A path that does not exist is
+    returned resolved, unchanged.
+    """
+    resolved = Path(p).resolve()
+    if platform.system() != "Darwin":
+        return resolved  # Windows ``resolve()`` already answers in the disk's case; elsewhere a spelling IS the name
+    import fcntl  # noqa: PLC0415 — POSIX only
+
+    try:
+        fd = os.open(resolved, os.O_RDONLY)
+    except OSError:
+        return resolved
+    try:
+        return Path(os.fsdecode(fcntl.fcntl(fd, fcntl.F_GETPATH, b"\0" * 1024).split(b"\0", 1)[0]))
+    except OSError:
+        return resolved
+    finally:
+        os.close(fd)
+
+
 def asset_ref_spellings(p: Path | str) -> list[str]:
     """Every spelling a stored ``asset_ref`` may have for ``p``, deduped.
 

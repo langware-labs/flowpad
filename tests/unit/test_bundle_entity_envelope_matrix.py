@@ -122,7 +122,7 @@ async def test_full_pipeline_nested_mixed_types(env, scope):
     home = env / "home"
 
     # scan: deploy a mixed-type nested tree  task → spec(child) → task(grandchild)
-    parent = Task(title="Ship Parent", status="in_progress", labels=["alpha", "beta"])
+    parent = Task(title="Ship Parent", status="in_progress")
     await parent.save(notify=False)
     child = Spec(title="Ship Spec Child", parent_type_id=f"task-{parent.id}")
     await child.save(notify=False)
@@ -162,7 +162,6 @@ async def test_full_pipeline_nested_mixed_types(env, scope):
 
     # portable metadata-only fields survive the round-trip (not just the link)
     assert g2.status == "todo", "status dropped on round-trip"
-    assert set(p2.labels or []) == {"alpha", "beta"}, f"labels dropped: {p2.labels}"
 
     # minted project_id (receiver's), re-derived asset_ref (project-scope lands
     # in the project mount; user-scope lands under the receiver's home).
@@ -289,7 +288,7 @@ async def test_file_backed_markdown_shape(env):
     from flow_sdk.responses.response import ApiSuccessResponse
 
     home = env / "home"
-    doc = Markdown(title="Notes", labels=["x"])
+    doc = Markdown(title="Notes")
     await doc.save(notify=False)
     await _reindex_home(home)
 
@@ -317,7 +316,7 @@ async def test_file_backed_markdown_shape(env):
     res = await handle_attachment_install(ma.id, "project", project.id)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
     d2 = await Markdown.get_one({"id": doc.id})
-    assert d2 is not None and set(d2.labels or []) == {"x"}, "markdown metadata lost"
+    assert d2 is not None and d2.title == "Notes", "markdown metadata lost"
     assert d2.project_id == project.id, "markdown project_id not minted"
 
 
@@ -415,9 +414,9 @@ async def test_multi_attachment_bundle(env):
     from flow_sdk.responses.response import ApiSuccessResponse
 
     home = env / "home"
-    a = Task(title="Multi A", status="in_progress", labels=["a"])
+    a = Task(title="Multi A", status="in_progress")
     await a.save(notify=False)
-    b = Task(title="Multi B", status="todo", labels=["b"])
+    b = Task(title="Multi B", status="todo")
     await b.save(notify=False)
     await _reindex_home(home)
 
@@ -453,7 +452,7 @@ async def test_multi_attachment_bundle(env):
     a2 = await Task.get_one({"id": a.id})
     b2 = await Task.get_one({"id": b.id})
     assert a2 and b2, "both attachments must materialize"
-    assert set(a2.labels or []) == {"a"} and set(b2.labels or []) == {"b"}, "per-attachment metadata crossed or dropped"
+    assert a2.status == "in_progress" and b2.status == "todo", "per-attachment metadata crossed or dropped"
     assert a2.project_id == project.id and b2.project_id == project.id
 
 
@@ -524,9 +523,9 @@ async def test_git_transport_body_plus_overlay(env):
     recv = env / "recv_repo"
     _git(env, "clone", "-q", "--branch", "feature/x", origin.resolve().as_uri(), str(recv))
 
-    # metadata-only fields (parent_type_id, labels) live ONLY in the entity JSON,
+    # a metadata-only field (parent_type_id) lives ONLY in the entity JSON,
     # never in SKILL.md — so surviving proves the git-mode overlay ran.
-    skill = Skill(id=skill_id, name="foo", asset_ref=str(sdir), parent_type_id="task-ghost", labels=["g"])
+    skill = Skill(id=skill_id, name="foo", asset_ref=str(sdir), parent_type_id="task-ghost")
     await skill.save(notify=False)
 
     fm = FlowMessage(id=str(uuid.uuid4()), text="carrier")
@@ -556,7 +555,6 @@ async def test_git_transport_body_plus_overlay(env):
     assert str(recv) in str(got.asset_ref), "skill not indexed from the receiver worktree"
     # …and the metadata-only fields were applied by the entities.json overlay.
     assert got.parent_type_id == "task-ghost", "git-mode overlay dropped parent_type_id"
-    assert set(got.labels or []) == {"g"}, "git-mode overlay dropped labels"
 
 
 # --------------------------------------------------------------------------- #

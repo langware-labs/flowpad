@@ -57,6 +57,7 @@ describe('Vibe host tab re-point', () => {
     expect(result.tab?.id).toBe(TAB_ID);
     expect(ensure).toHaveBeenCalledTimes(1);
     expect((ensure.mock.calls[0][0] as DockPointer).toJSON()).toBe(landed.toJSON());
+    expect(ensure.mock.calls[0][1]?.pingCaller).toBeUndefined(); // no re-read follows: it needs its ping
     release();
   });
 

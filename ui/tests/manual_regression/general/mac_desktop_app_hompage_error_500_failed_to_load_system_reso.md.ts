@@ -6,6 +6,7 @@
  * console error appears.
  */
 import { test, expect } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('App homepage — no 500 failed-to-load-system-resource', () => {
   test.beforeEach(async ({ page }) => {
@@ -15,7 +16,7 @@ test.describe('App homepage — no 500 failed-to-load-system-resource', () => {
   });
 
   test('test 1: App home page does not produce 500 error on macOS', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -24,7 +25,7 @@ test.describe('App homepage — no 500 failed-to-load-system-resource', () => {
 
     await page.goto('/dock/home');
     // /dock/home renders the HomeLanding dock view with the "Hey <name>" greeting.
-    await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: 25_000 });
+    await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: adjusted(25_000) });
     // Wait for the home page to load (async system-resource fetches).
     await page.waitForTimeout(3_000);
 

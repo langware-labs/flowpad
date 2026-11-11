@@ -163,11 +163,25 @@ async def resolve_project_secrets(
     targets = [(d.spec, d.scope, d.env_var) for d in declared.values() if allowed is None or d.env_var in allowed]
     if not targets:
         return {}
+    placement = placement or await placement_for_deployment()
     try:
-        return await read_values(targets, placement or await placement_for_deployment())
+        values = await read_values(targets, placement)
     except Exception as e:  # noqa: BLE001
         logger.debug("[credentials] could not resolve values: %s", type(e).__name__)
         return {}
+    # A project declaration overrides a user one's DECLARATION, not its value: a name the project declares but holds
+    # no value for is read from the user scope. On an invite box the hub places before the project is cloned, so the
+    # value lands in the user scope and the project's empty declaration would otherwise hide it.
+    unvalued = {t[2] for t in targets if t[1].scope == SCOPE_PROJECT and t[2] not in values}
+    if unvalued:
+        users = declare([pair for pair in await credentials_in_scope(None) if pair[1].scope == SCOPE_USER])
+        fallback = [(d.spec, d.scope, d.env_var) for d in users.values() if d.env_var in unvalued]
+        if fallback:
+            try:
+                values = {**await read_values(fallback, placement), **values}
+            except Exception as e:  # noqa: BLE001
+                logger.debug("[credentials] could not resolve user-scope values: %s", type(e).__name__)
+    return values
 
 
 async def placement_for(process: Any = None) -> Placement:

@@ -1,7 +1,7 @@
 """UsageReport entity — a deterministic agentic-usage summary over a date range.
 
-Produced by the daily ``builtin_daily_usage_analysis`` trigger (and reusable for
-weekly/monthly). The entity row carries only the small headline fields the Home
+Kept by the Daily usage summary automation's ``usage-summary`` block (and reusable
+for weekly/monthly). The entity row carries only the small headline fields the Home
 Feed card needs to render instantly; the full payload — token split, breakdowns,
 sample prompts, and the per-session drill-down spine + the rendered markdown —
 lives in the entity's ``asset_ref`` file (``.claude/usage_reports/<name>/report.json``)
@@ -45,12 +45,11 @@ class UsageReport(Entity):
 
     @classmethod
     def from_data(cls, data, *, name: str | None = None, markdown: str | None = None) -> "UsageReport":
-        """Build the entity from a UsageReportData (single mapping authority).
+        """Build the entity from a ``usage.summary`` value (single mapping authority).
 
-        ``data`` is a ``flow_sdk.usage_report.UsageReportData`` (or its ``.to_dict()``).
         ``markdown`` is the rendered report body; both are ferried into report.json.
         """
-        d = data.to_dict() if hasattr(data, "to_dict") else dict(data)
+        d = data.model_dump(mode="json")
         start = (d.get("period_start") or "")[:10]
         kind = d.get("period_kind") or "day"
         report_name = name or (f"usage-{kind}-{start}" if start else "usage-report")

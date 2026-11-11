@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { markdownToPlain } from '@src/components/conversation/message-markdown';
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { CSSProperties, Dispatch, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from 'react';
 import {
   Archive,
   BookUser,
@@ -52,7 +52,12 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer, STREAM_INBOX_CHANNEL_PARAM } from '@src/navigation/DockPointer';
+import {
+  DockPointer,
+  STREAM_INBOX_CHANNEL_PARAM,
+  type StreamInboxColumns,
+  type StreamInboxDateWindow,
+} from '@src/navigation/DockPointer';
 import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
@@ -84,6 +89,7 @@ import {
   conversationFacets,
   actionsFor,
   compareConversationsByRecency,
+  isDeskTicket,
   isViewer,
 } from '@src/components/conversation/conversation-category';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
@@ -119,18 +125,24 @@ type RowDeleteAction =
 
 // ── Time formatter (Gmail-style) ────────────────────────────────────────────
 // today → "12:34 PM"  ·  this year → "Apr 28"  ·  older → locale date
+// Every row formats its time on every render of the list, and the list re-renders on each
+// conversation/message change: ``toLocale*String(undefined, opts)`` builds a fresh
+// Intl.DateTimeFormat per call (311 ms of one create in a profile). One formatter per shape.
+const TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const DAY_FMT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const DATE_FMT = new Intl.DateTimeFormat(undefined);
 function formatGmailTime(iso?: string | Date | null): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   const now = new Date();
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+    return TIME_FMT.format(d);
   }
   if (d.getFullYear() === now.getFullYear()) {
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return DAY_FMT.format(d);
   }
-  return d.toLocaleDateString();
+  return DATE_FMT.format(d);
 }
 
 // ── Conversation list row (Gmail thread row) ────────────────────────────────
@@ -150,22 +162,37 @@ function readStoredChannels(key: string | null): string[] {
 // ── Column filters ──────────────────────────────────────────────────────────
 // One filter per row column, typed into the header line above that column:
 // From narrows on the sender names, Subject on the subject + preview text,
-// Date on the conversation's last activity. Local, like the channel filter.
-type DateWindow = 'any' | 'today' | '7d' | '30d';
+// Date on the conversation's last activity. URL-owned (`?from=&subject=&date=`), like the search.
+const NO_COLUMN_FILTER: StreamInboxColumns = { from: '', subject: '', date: 'any' };
 
-export interface ColumnFilter {
-  from: string;
-  subject: string;
-  date: DateWindow;
+function sameColumns(a: StreamInboxColumns, b: StreamInboxColumns): boolean {
+  return a.from === b.from && a.subject === b.subject && a.date === b.date;
 }
 
-const NO_COLUMN_FILTER: ColumnFilter = { from: '', subject: '', date: 'any' };
+/** A box whose value the dock URL owns: it types into a local draft and commits after a pause, so
+ *  history doesn't take one entry per keystroke. Back/forward re-seeds the draft. */
+function useUrlDraft<T>(
+  urlValue: T,
+  commit: (value: T) => void,
+  same: (a: T, b: T) => boolean = Object.is,
+): [T, Dispatch<SetStateAction<T>>] {
+  const [draft, setDraft] = useState(urlValue);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setDraft((cur) => (same(cur, urlValue) ? cur : urlValue)), [urlValue]);
+  const settled = useDebounced(draft);
+  useEffect(() => {
+    if (!same(settled, urlValue)) commit(settled);
+    // Commit only when the typed text settles; a dock change alone must not re-commit stale text.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settled]);
+  return [draft, setDraft];
+}
 
-function isColumnFilterActive(f: ColumnFilter): boolean {
+function isColumnFilterActive(f: StreamInboxColumns): boolean {
   return f.from.trim() !== '' || f.subject.trim() !== '' || f.date !== 'any';
 }
 
-function windowStart(date: DateWindow): number | null {
+function windowStart(date: StreamInboxDateWindow): number | null {
   if (date === 'any') return null;
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -175,7 +202,7 @@ function windowStart(date: DateWindow): number | null {
 }
 
 export function matchesColumnFilter(
-  f: ColumnFilter,
+  f: StreamInboxColumns,
   row: { senders: string; subjectLine: string; updated?: string | Date | null },
 ): boolean {
   const from = f.from.trim().toLowerCase();
@@ -194,6 +221,10 @@ interface ConversationListRowProps {
   /** The newest session an automation started on a message of this conversation. */
   automationMark?: AgenticProcess;
   conv: Conversation;
+  /** What the row shows of `conv` and `automationMark`, as one string (`rowRevision`). The store
+   *  updates an entity IN PLACE, so its identity never says it changed — this does, and lets an
+   *  unchanged row skip the list's re-renders (`memo`). */
+  revision: string;
   isFocused: boolean;
   /** Conversation-level archive. Stamps ``Conversation.archived_at = now()``
    *  server-side; row auto-revives when a FlowMessage newer than the stamp
@@ -227,7 +258,7 @@ interface ConversationListRowProps {
   /** Set while the list is narrowed to some channels: does this message's source pass? */
   channelMatch?: (message: FlowMessage, conversation: Conversation) => boolean;
   /** Set while a header column filter is engaged. */
-  columnFilter?: ColumnFilter;
+  columnFilter?: StreamInboxColumns;
   /** The list resolves attribution once and hands each row its answer. */
   attributionFor: (
     origin: FlowMessage['origin'],
@@ -239,6 +270,28 @@ interface ConversationListRowProps {
   /** A host that shows the conversation itself (a source's page): where a row opens. Still URL-first — the host
    *  navigates. Omitted: the conversation view, scoped to `agentId`. */
   onOpenConversation?: (conversationId: string) => void;
+}
+
+/** `ConversationListRow`'s `revision`: everything stored on the row's conversation, plus its
+ *  automation mark's state. A field the row reads through a hook (its messages, the viewer)
+ *  re-renders it on its own. */
+export function rowRevision(conv: Conversation, automationMark?: AgenticProcess): string {
+  return `${entityRevision(conv)}|${automationMark?.id ?? ''}:${automationMark?.status ?? ''}`;
+}
+
+/** Every own field of an entity (stored, projected and private alike), as JSON. One that cannot
+ *  be written out reads as changed every time — a re-render, never a stale row. */
+function entityRevision(entity: object): string {
+  const fields: Record<string, unknown> = {};
+  for (const key of Object.keys(entity)) {
+    const value = (entity as Record<string, unknown>)[key];
+    if (typeof value !== 'function') fields[key] = value;
+  }
+  try {
+    return JSON.stringify(fields);
+  } catch {
+    return `unserializable:${Math.random()}`;
+  }
 }
 
 /**
@@ -323,7 +376,11 @@ export const ConversationListRow = memo(function ConversationListRow({
     invitation,
     viewer: { email: myEmail, cloudUserId, localUserId },
     // A row the help desk SOURCE delivered is a staff row: label its state from the desk's side.
-    staffView: latestMessage?.origin?.kind === 'helpdesk' || firstMessage?.origin?.kind === 'helpdesk' || undefined,
+    staffView:
+      isDeskTicket(conv) ||
+      latestMessage?.origin?.kind === 'helpdesk' ||
+      firstMessage?.origin?.kind === 'helpdesk' ||
+      undefined,
   });
   // Once staff pick a ticket up, later messages reach them through the hub mirror, not the desk source:
   // the message the desk source delivered still names which desk the row belongs to.
@@ -775,7 +832,17 @@ export function StreamInboxView({
         : undefined,
     [channelFilter, ownerChannels],
   );
-  const [columnFilter, setColumnFilter] = useState<ColumnFilter>(NO_COLUMN_FILTER);
+  // The list filters on the URL's value; the boxes hold the draft.
+  const urlColumns = currentDock?.streamInboxColumns ?? NO_COLUMN_FILTER;
+  const columnFilter = useMemo<StreamInboxColumns>(
+    () => ({ from: urlColumns.from, subject: urlColumns.subject, date: urlColumns.date }),
+    [urlColumns.from, urlColumns.subject, urlColumns.date],
+  );
+  const [columnInput, setColumnInput] = useUrlDraft(
+    columnFilter,
+    (next) => currentDock && navigation.openDock(currentDock.withStreamInboxColumns(next)),
+    sameColumns,
+  );
   const [fromWidth, setFromWidth] = useState(readFromWidth);
   const listRef = useRef<HTMLDivElement | null>(null);
   const commitFromWidth = useCallback((width: number) => {
@@ -820,16 +887,22 @@ export function StreamInboxView({
       (currentDock.streamInboxView !== 'all' ||
         currentDock.streamInboxSearch ||
         currentDock.pageBefore ||
-        currentDock.streamInboxChannels !== null)
+        currentDock.streamInboxChannels !== null ||
+        columnFilterActive)
     )
-      navigation.openDock(currentDock.withStreamInboxFilters({ view: 'all', search: '' }).withStreamInboxChannels([]));
-    setColumnFilter(NO_COLUMN_FILTER);
+      navigation.openDock(
+        currentDock
+          .withStreamInboxFilters({ view: 'all', search: '' })
+          .withStreamInboxChannels([])
+          .withStreamInboxColumns(NO_COLUMN_FILTER),
+      );
+    setColumnInput(NO_COLUMN_FILTER);
     setSelectedIds(new Set());
   });
   const setColumn = useCallback(
-    <K extends keyof ColumnFilter>(key: K, value: ColumnFilter[K]) =>
-      setColumnFilter((cur) => ({ ...cur, [key]: value })),
-    [],
+    <K extends keyof StreamInboxColumns>(key: K, value: StreamInboxColumns[K]) =>
+      setColumnInput((cur) => ({ ...cur, [key]: value })),
+    [setColumnInput],
   );
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();
@@ -852,18 +925,12 @@ export function StreamInboxView({
   // `text: ""`), so the backend searches BOTH residences and hands back
   // conversation ids. The URL commit debounces typing; the previous result is held
   // while the next request is in flight so the list doesn't blank.
-  // URL-owned (`?q=`): the box types into local state and commits to the dock URL after a pause,
-  // so history doesn't take one entry per keystroke. Back/forward re-seeds the box.
+  // URL-owned (`?q=`).
   const searchQuery = currentDock?.streamInboxSearch ?? '';
-  const [searchInput, setSearchInput] = useState(searchQuery);
-  useEffect(() => setSearchInput(searchQuery), [searchQuery]);
-  const settledSearch = useDebounced(searchInput);
-  useEffect(() => {
-    if (settledSearch !== searchQuery && currentDock)
-      navigation.openDock(currentDock.withStreamInboxFilters({ search: settledSearch }));
-    // Commit only when the typed text settles; a dock change alone must not re-commit stale text.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settledSearch]);
+  const [searchInput, setSearchInput] = useUrlDraft(
+    searchQuery,
+    (next) => currentDock && navigation.openDock(currentDock.withStreamInboxFilters({ search: next })),
+  );
   const needle = searchQuery.trim();
   const searchActive = needle !== '';
   const [matchIds, setMatchIds] = useState<Set<string>>(new Set());
@@ -1371,6 +1438,33 @@ export function StreamInboxView({
   };
 
   // List mode
+  // The list's main verbs get a row of their own; the channel buttons sit at its far end. Where that
+  // row is not drawn (an agent's StreamInbox, an embedded list, a selection in progress) they fall back to the filter row.
+  const hasTopRow = !agentId && !embedded && selectedCount === 0;
+  const channelButtons = (
+    <>
+      {!agentId && !embedded && (
+        <InvitesChannelChip
+          active={inInvitesView}
+          pending={membershipPendingCount}
+          onClick={() => setView(inInvitesView ? 'all' : 'invites')}
+        />
+      )}
+      {channelsOwner && !embedded && (
+        <AttachedChannelsBar
+          owner={channelsOwner}
+          rows={ownerChannels}
+          offers={channelOffers}
+          builtInOffered={builtInOffered}
+          specFor={specFor}
+          selected={channelFilter}
+          onSelectedChange={setChannelFilter}
+          className="shrink-0"
+        />
+      )}
+    </>
+  );
+
   return (
     <div className="relative flex h-full flex-col">
       {!cloudUser && (
@@ -1379,7 +1473,7 @@ export function StreamInboxView({
         />
       )}
       {/* The list's main verbs get a row of their own, full-size, so they can't be missed. */}
-      {!agentId && !embedded && selectedCount === 0 && (
+      {hasTopRow && (
         <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2" data-testid="stream-inbox-primary-actions">
           <Button
             onClick={() => setShowNewConversation(true)}
@@ -1398,6 +1492,7 @@ export function StreamInboxView({
               </Button>
             </>
           )}
+          <div className="ms-auto flex min-w-0 items-center gap-2">{channelButtons}</div>
         </div>
       )}
       <div className="flex shrink-0 items-center border-b px-3 py-1.5">
@@ -1605,7 +1700,7 @@ export function StreamInboxView({
             </span>
             <input
               type="text"
-              value={columnFilter.from}
+              value={columnInput.from}
               onChange={(e) => setColumn('from', e.target.value)}
               placeholder={t`From`}
               aria-label={t`Filter by sender`}
@@ -1628,7 +1723,7 @@ export function StreamInboxView({
             </span>
             <input
               type="text"
-              value={columnFilter.subject}
+              value={columnInput.subject}
               onChange={(e) => setColumn('subject', e.target.value)}
               placeholder={t`Subject`}
               aria-label={t`Filter by subject`}
@@ -1636,8 +1731,8 @@ export function StreamInboxView({
               data-testid="stream-inbox-filter-subject"
             />
             <select
-              value={columnFilter.date}
-              onChange={(e) => setColumn('date', e.target.value as DateWindow)}
+              value={columnInput.date}
+              onChange={(e) => setColumn('date', e.target.value as StreamInboxDateWindow)}
               aria-label={t`Filter by date`}
               className={columnInputClass}
               data-testid="stream-inbox-filter-date"
@@ -1650,7 +1745,7 @@ export function StreamInboxView({
             {columnFilterActive && (
               <button
                 type="button"
-                onClick={() => setColumnFilter(NO_COLUMN_FILTER)}
+                onClick={() => setColumnInput(NO_COLUMN_FILTER)}
                 className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
                 title={t`Clear filters`}
                 aria-label={t`Clear filters`}
@@ -1659,25 +1754,7 @@ export function StreamInboxView({
                 <X className="h-3 w-3" />
               </button>
             )}
-            {!agentId && !embedded && (
-              <InvitesChannelChip
-                active={inInvitesView}
-                pending={membershipPendingCount}
-                onClick={() => setView(inInvitesView ? 'all' : 'invites')}
-              />
-            )}
-            {channelsOwner && !embedded && (
-              <AttachedChannelsBar
-                owner={channelsOwner}
-                rows={ownerChannels}
-                offers={channelOffers}
-                builtInOffered={builtInOffered}
-                specFor={specFor}
-                selected={channelFilter}
-                onSelectedChange={setChannelFilter}
-                className="shrink-0"
-              />
-            )}
+            {!hasTopRow && channelButtons}
           </div>
         )}
 
@@ -1743,6 +1820,7 @@ export function StreamInboxView({
               key={conv.id ?? ''}
               conv={conv}
               isFocused={false}
+              revision={rowRevision(conv, conv.id ? automationMarks.get(conv.id) : undefined)}
               onArchive={rowArchive}
               onUnarchive={rowUnarchive}
               onToggleRead={rowToggleRead}

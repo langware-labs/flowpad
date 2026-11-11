@@ -31,6 +31,7 @@ import {
   type LongChat,
   type World,
 } from './_world';
+import { adjusted } from '../../adjustableTimeout';
 
 let world: World;
 let chat: LongChat;
@@ -81,7 +82,7 @@ test('a long chat keeps its place across a tab switch and a layout change', asyn
   await navigateTo(page, `${chatAddress}?viewMode=standard`, `/shell/agentic_process-${chat.processId}`);
   await expect
     .poll(async () => (await readScroll(page, chat.processId))?.max ?? 0, {
-      timeout: 30_000,
+      timeout: adjusted(30_000),
       message: 'the long chat never rendered its recent window',
     })
     // Only the recent turns mount (useRecentWindow), still well past a screenful.

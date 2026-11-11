@@ -16,13 +16,14 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, fetchProcess, activePanel, waitForAssistantTurnOrSkip } from './_ap_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const forkBtn = (page: import('@playwright/test').Page) =>
   activePanel(page).locator('button:has(svg.lucide-git-fork)');
 
 test.describe('processtoolbar fork', () => {
   test('test 1: Fork disabled before any assistant turn (no transcript)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoNewShell(page);
 
@@ -40,11 +41,11 @@ test.describe('processtoolbar fork', () => {
     await forkBtn(page).hover({ force: true });
     await expect(
       page.getByText('Send a message first — fork requires conversation history'),
-    ).toBeVisible({ timeout: 5_000 });
+    ).toBeVisible({ timeout: adjusted(5_000) });
   });
 
   test('test 2: Fork enabled after an assistant turn; creates a sibling process', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const errors: string[] = [];
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', e => errors.push(e.message));
@@ -64,7 +65,7 @@ test.describe('processtoolbar fork', () => {
     // conditionally skip when the live-Claude turn can't land on this host.
     await waitForAssistantTurnOrSkip(page, apiBase(), pid);
 
-    await expect(forkBtn(page)).toBeEnabled({ timeout: 15_000 });
+    await expect(forkBtn(page)).toBeEnabled({ timeout: adjusted(15_000) });
 
     await forkBtn(page).click();
 
@@ -73,7 +74,7 @@ test.describe('processtoolbar fork', () => {
     await expect(async () => {
       expect(page.url()).toMatch(/agentic_process-[\w-]+/);
       expect(processIdFromUrl(page)).not.toBe(pid);
-    }).toPass({ timeout: 30_000 });
+    }).toPass({ timeout: adjusted(30_000) });
     const newPid = processIdFromUrl(page);
     expect(newPid).not.toBe(pid);
 

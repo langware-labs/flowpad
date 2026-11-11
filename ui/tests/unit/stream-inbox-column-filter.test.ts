@@ -3,9 +3,10 @@
  * row shows: sender names, subject + preview, and the last-activity time.
  */
 import { describe, expect, it } from 'vitest';
-import { matchesColumnFilter, type ColumnFilter } from '@src/components/stream-inbox-view/StreamInboxView';
+import { matchesColumnFilter } from '@src/components/stream-inbox-view/StreamInboxView';
+import { DockPointer, type StreamInboxColumns } from '@src/navigation/DockPointer';
 
-const none: ColumnFilter = { from: '', subject: '', date: 'any' };
+const none: StreamInboxColumns = { from: '', subject: '', date: 'any' };
 const row = {
   senders: 'Dave Miller, Alice Sh',
   subjectLine: 'shared interview sandbox Extract the Flowpad logs',
@@ -38,5 +39,16 @@ describe('matchesColumnFilter', () => {
 
   it('requires every engaged column to match', () => {
     expect(matchesColumnFilter({ from: 'dave', subject: 'invoice', date: 'any' }, row)).toBe(false);
+  });
+});
+
+describe('column filters on the dock URL', () => {
+  it('round-trips through the pointer and keeps the page', () => {
+    const base = DockPointer.forStreamInbox().withPageBefore('2026-01-01T00:00:00Z');
+    const set = base.withStreamInboxColumns({ from: 'ami', subject: '', date: '7d' });
+    expect(set.streamInboxColumns).toEqual({ from: 'ami', subject: '', date: '7d' });
+    expect(set.pageBefore).toBe(base.pageBefore);
+    expect(set.tabHash).toBe(base.tabHash);
+    expect(set.withStreamInboxColumns({ from: '', subject: '', date: 'any' }).options).toEqual(base.options);
   });
 });

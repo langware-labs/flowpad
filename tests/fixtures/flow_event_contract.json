@@ -286,6 +286,70 @@
       "node",
       "resource",
       "workload"
+    ],
+    "convert_cases": [
+      {
+        "raw": " CRM.Lead ",
+        "tag": "crm.lead"
+      },
+      {
+        "raw": "Meeting Notes",
+        "tag": "meeting-notes"
+      },
+      {
+        "raw": "project/alpha",
+        "tag": "project.alpha"
+      },
+      {
+        "raw": "#todo",
+        "tag": "todo"
+      },
+      {
+        "raw": "[terminal",
+        "tag": "terminal"
+      },
+      {
+        "raw": "a..b.",
+        "tag": "a.b"
+      },
+      {
+        "raw": "--acme--.orders",
+        "tag": "--acme--.orders"
+      },
+      {
+        "raw": "!!!",
+        "tag": null
+      },
+      {
+        "raw": "",
+        "tag": null
+      }
+    ],
+    "convert_list_cases": [
+      {
+        "raw": "[terminal, navigation, smoke]",
+        "tags": [
+          "terminal",
+          "navigation",
+          "smoke"
+        ]
+      },
+      {
+        "raw": "",
+        "tags": []
+      },
+      {
+        "raw": [
+          "Hot Lead",
+          "hot-lead",
+          "  ",
+          "crm.lead"
+        ],
+        "tags": [
+          "hot-lead",
+          "crm.lead"
+        ]
+      }
     ]
   }
 }

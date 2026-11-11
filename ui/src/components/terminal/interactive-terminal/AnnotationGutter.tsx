@@ -824,15 +824,6 @@ function AnnotationCell({
           </button>
         </div>
         {showCoords && coordsPanel}
-        {annotation.labels && annotation.labels.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {annotation.labels.map((l) => (
-              <span key={l} className="rounded bg-sky-400/10 px-1 py-0.5 font-mono text-[9px] text-sky-500">
-                {l}
-              </span>
-            ))}
-          </div>
-        )}
         {annotation.content && (
           <p className="whitespace-pre-wrap text-sm text-muted-foreground">{annotation.content}</p>
         )}
@@ -903,15 +894,6 @@ function AnnotationCell({
           </button>
         </div>
         {showCoords && coordsPanel}
-        {annotation.labels && annotation.labels.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {annotation.labels.map((l) => (
-              <span key={l} className="rounded bg-lime-400/10 px-1 py-0.5 font-mono text-[9px] text-lime-500">
-                {l}
-              </span>
-            ))}
-          </div>
-        )}
         {annotation.content && (
           <p className="whitespace-pre-wrap text-sm text-muted-foreground">{annotation.content}</p>
         )}

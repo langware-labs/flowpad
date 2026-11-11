@@ -53,7 +53,6 @@ const TYPE_LABELS: Record<string, MessageDescriptor> = {
   comment: msg`Comment`,
   compute_node: msg`Compute Node`,
   compute_op: msg`Compute Op`,
-  contact_permission: msg`Contact Permission`,
   contacts_group: msg`Contacts Group`,
   conversation: msg`Conversation`,
   copilot_session: msg`Copilot Session`,

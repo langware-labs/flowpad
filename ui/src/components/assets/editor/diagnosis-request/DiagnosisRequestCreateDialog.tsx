@@ -42,8 +42,7 @@ import { ErrorLine } from './ErrorLine';
 const HOURS = ['24', '48', '72', '168'] as const;
 export const MAX_RUN_MB = ['2', '5', '10'] as const;
 /** The asset types a request may send along -- the backend's ``ATTACHABLE_ASSET_TYPES``. */
-const ATTACHABLE_TYPES = ['skill', 'subagent', 'markdown', 'prompt'];
-export const isAttachable = (d: AssetDescriptor) => ATTACHABLE_TYPES.some((type) => d.typeid.startsWith(`${type}-`));
+export const ATTACHABLE_TYPES = ['skill', 'subagent', 'markdown', 'prompt'];
 
 export function HoursSelect({
   id,
@@ -401,7 +400,7 @@ export const DiagnosisRequestCreateDialog: React.FC<{
                 onFilesPicked={addFiles}
                 disabled={busy}
                 hideAssetList
-                assetFilter={isAttachable}
+                assetTypes={ATTACHABLE_TYPES}
               />
             </div>
             <AssetRefChips assetRefs={assetRefs} onChange={setAssetRefs} disabled={busy} />

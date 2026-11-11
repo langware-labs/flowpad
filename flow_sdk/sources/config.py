@@ -23,10 +23,20 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Mapping, Optional, Union, get_args, get_origin
 
-from pydantic import ConfigDict, TypeAdapter, ValidationError, model_validator
-from pydantic.fields import FieldInfo
+from pydantic import ConfigDict, Field, TypeAdapter, ValidationError, model_validator
+from pydantic.fields import FieldInfo, PydanticUndefined
 
+from flow_sdk.api.api_types.api_field import Sharing, is_portable
 from flow_sdk.schema.data_spec.spec import DataSpec
+
+
+def config_field(default: Any = PydanticUndefined, *, sharing: Sharing = Sharing.SHARED, **kwargs: Any) -> Any:
+    """A config field that says whether its value may reach another machine — the entity fields' own
+    ``Sharing``. ``PRIVATE`` is a fact of ONE machine (whose mailbox, a local path): it stays on the
+    source's row and is never written to ``data_source.json``, so a teammate who receives the source
+    fills in their own. Undeclared fields are ``SHARED``."""
+    extra = {**(kwargs.pop("json_schema_extra", None) or {}), "sharing": str(Sharing(sharing))}
+    return Field(default, json_schema_extra=extra, **kwargs)
 
 
 def _is_list(annotation: Any) -> bool:
@@ -151,6 +161,11 @@ class SourceConfig(DataSpec):
             if value:
                 out.append((label, {**rest, new: value}))
         return out
+
+    @classmethod
+    def private_fields(cls) -> frozenset[str]:
+        """The fields declared ``Sharing.PRIVATE`` (``config_field``): on the row, never in the file."""
+        return frozenset(name for name, field in cls.model_fields.items() if not is_portable(field))
 
     @classmethod
     def secret_fields(cls) -> list[str]:

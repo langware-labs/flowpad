@@ -8,9 +8,8 @@ as a ``prompt_completion`` attachment stamped with the session id; the
 session's ``reply_policy`` decides whether it is sent (auto) or saved as a host
 draft inside the session (review).
 
-Consent lives on the session (approve / decline / disconnect)
-plus the optional standing grant ``ContactPermission(auto_approve_session)``.
-There is no per-message approval and no per-message auto-reply grant.
+Consent lives on the session (approve / decline / disconnect), and only the
+host's own click approves it: nothing from another machine ever starts approved.
 """
 
 from __future__ import annotations
@@ -1297,8 +1296,8 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
     """Called (detached) after a remote FlowMessage materializes locally.
 
     Resolve-or-mint the session FIRST, then decide once from its state:
-    terminal → ignore; active → run; awaiting consent → run
-    when a standing grant pre-approves the session, else park at PENDING.
+    terminal → ignore; active → run; awaiting consent → park at PENDING
+    until the host approves it by hand.
     Failure-isolated — logs and dies.
     """
     try:
@@ -1306,7 +1305,6 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         from flow_sdk.builtin.conversation import Conversation
         from flow_sdk.builtin.flow_message import FlowMessage
         from flow_sdk.builtin.remote_worker_session import (
-            UNAPPROVED_STATUSES,
             InboundDecision,
             decide_inbound_prompt,
         )
@@ -1335,11 +1333,10 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         if await _local_is_guest_of(fm, local_id):
             return  # the host typed into a session we are the guest of — it runs on the host
 
-        session, host_id, someone_typeid = await _host_session_for(fm, conv, local_id)
+        session = await _host_session_for(fm, conv, local_id)
+        someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
 
-        needs_consent = session.status in UNAPPROVED_STATUSES or not session.status
-        standing = needs_consent and await _standing_grant(conv, host_id, fm.sender_id)
-        decision = decide_inbound_prompt(status=session.status, standing_grant=standing, expired=session.is_expired())
+        decision = decide_inbound_prompt(status=session.status, expired=session.is_expired())
         logger.info("[session] inbound fm=%s session=%s status=%s → %s", fm.id, session.id, session.status, decision)
 
         if decision is InboundDecision.IGNORE:
@@ -1353,8 +1350,6 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         # deliveries keep arrival order and a prompt can never run twice (the
         # opening prompt must not run after a follow-up that landed while its
         # approval was still being written).
-        if needs_consent and not await _approve_by_standing_grant(session, someone_typeid):
-            return
         await redrive_session_prompts(session, conv=conv, local_user=local_user)
     except Exception as e:  # noqa: BLE001
         logger.warning("[session] process_inbound_prompt failed: %s", e, exc_info=True)
@@ -1379,42 +1374,10 @@ async def _local_is_guest_of(fm: "FlowMessage", local_id: Optional[str]) -> bool
     return session.guest_user_id in {i for i in (local_id, cloud_id) if i}
 
 
-async def _standing_grant(conv: "Conversation", host_id: Optional[str], sender_id: Optional[str]) -> bool:
-    """Does the host hold a standing grant pre-approving this guest's sessions?"""
-    from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction  # noqa: PLC0415
-
-    # Roster ids are CLOUD ids — exclude the host's cloud id, not the local one.
-    peer_id, _peer_name, contact_email = _peer_of(conv, host_id)
-    return await ContactPermission.grants(
-        action=PermissionAction.AUTO_APPROVE_SESSION.value,
-        contact_user_id=sender_id,
-        contact_email=contact_email if peer_id == sender_id else None,
-        project_id=conv.project_id,
-    )
-
-
-async def _approve_by_standing_grant(session: "RemoteWorkerSession", someone_typeid: str) -> bool:
-    """Approve on the standing grant — the host said "always" for this guest.
-
-    It runs where the conversation's project is; with no project anywhere it runs
-    in the instance's temp folder — the host's own "Run (Skip project)" — so a
-    remembered guest really starts without asking, even in a person-to-person chat.
-    """
-    from flow_sdk.builtin.remote_worker_session import ApprovedVia, scratch_workdir  # noqa: PLC0415
-
-    if not session.workdir:
-        project_id = await session.run_project_id()
-        if project_id is None:
-            session.workdir = str(scratch_workdir())
-        else:
-            session.project_id = project_id
-    return await session.approve(via=ApprovedVia.STANDING_GRANT, someone_typeid=someone_typeid)
-
-
 async def _host_session_for(
     fm: "FlowMessage", conv: "Conversation", local_id: Optional[str]
-) -> tuple["RemoteWorkerSession", Optional[str], str]:
-    """The host side of an inbound session message: (session, host id, someone).
+) -> "RemoteWorkerSession":
+    """The host side of an inbound session message: its resolved-or-minted session.
 
     The host's identity on the session is the CLOUD user id — the id the guest's
     roster carries and the UI compares against (``isHost``); the local user is
@@ -1424,23 +1387,19 @@ async def _host_session_for(
 
     who = await User.current_sender_participant()
     host_id = who.get("user_id") or local_id
-    session = await resolve_or_mint_session(fm, conv, host_user_id=host_id, host_name=who.get("name") or None)
-    someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
-    return session, host_id, someone_typeid
+    return await resolve_or_mint_session(fm, conv, host_user_id=host_id, host_name=who.get("name") or None)
 
 
 async def process_session_request(fm_id: str, conversation_id: str) -> None:
     """The host side of a guest's ``requested`` line (a session opened before any prompt).
 
     The line's snapshot already materialized the PENDING row; this fills the
-    host's own identity on it (the UI's ``isHost`` compares the cloud id) and
-    approves it at once when a standing grant covers the guest — the same consent
-    an opening prompt gets. Failure-isolated — logs and dies.
+    host's own identity on it (the UI's ``isHost`` compares the cloud id). It
+    stays PENDING until the host approves it. Failure-isolated — logs and dies.
     """
     try:
         from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-        from flow_sdk.builtin.remote_worker_session import UNAPPROVED_STATUSES  # noqa: PLC0415
         from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
         fm = await FlowMessage.get_one({"id": fm_id})
@@ -1451,11 +1410,7 @@ async def process_session_request(fm_id: str, conversation_id: str) -> None:
         local_id = local_user.id if local_user else None
         if fm.sender_id and local_id and fm.sender_id == local_id:
             return  # our own request
-        session, host_id, someone_typeid = await _host_session_for(fm, conv, local_id)
+        session = await _host_session_for(fm, conv, local_id)
         logger.info("[session] request fm=%s session=%s status=%s", fm.id, session.id, session.status)
-        if session.status not in UNAPPROVED_STATUSES:
-            return
-        if await _standing_grant(conv, host_id, fm.sender_id):
-            await _approve_by_standing_grant(session, someone_typeid)
     except Exception as e:  # noqa: BLE001
         logger.warning("[session] process_session_request failed: %s", e, exc_info=True)

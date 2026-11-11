@@ -19,6 +19,7 @@ import socket
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Optional, Protocol
 
 from flow_sdk.builtin.flow_message import FlowMessageKind
@@ -238,6 +239,17 @@ async def publish_device_key(*, rotate: bool = False) -> Optional[DeviceKeyAdver
     return advert
 
 
+def _stored_device_id() -> Optional[str]:
+    """The keyring's device id, or None when the keychain can't be read: withdraw still removes what it can match."""
+    from keyring.errors import KeyringError  # noqa: PLC0415
+
+    try:
+        return (_key_store.load() or {}).get("device_id")
+    except (KeyringError, RuntimeError, ValueError) as error:
+        logger.warning("sealed withdraw: keychain unreadable (%s)", type(error).__name__)
+        return None
+
+
 async def withdraw_device_key() -> None:
     """Remove EVERY advert this install published (its current device and any it started over from), so nobody seals
     to a key this install no longer holds. Asks the hub, not the local record: an advert left by an older keyring is
@@ -247,9 +259,12 @@ async def withdraw_device_key() -> None:
     HubProxy, Types = _hub()
     mine = await HubProxy.try_call("GET", Types.USER, _user_id(), "device_key") or []
     install = instance_uid()
+    # The keyring's own device id and the one last published are ours too: they carry an older instance uid when
+    # config.json was reset while the keys survived, and matching the uid alone would leave that advert on the hub.
+    known = {d for d in (_stored_device_id(), _read_json("published.json").get("device_id")) if d}
     for advert in mine:
         did = str((advert or {}).get("device_id") or "")
-        if did == install or did.startswith(f"{install}."):
+        if did in known or did == install or did.startswith(f"{install}."):
             await HubProxy.try_call("DELETE", Types.USER, _user_id(), "device_key", params={"device_id": did})
     _write_json("published.json", {})
 
@@ -446,17 +461,38 @@ async def seal_credential(credential_typeid: str, conversation_id: str, recipien
     nothing posted.
     """
     spec, values = await _credential_values(credential_typeid)
-    me = _user_id()
-    keys = await member_keys(conversation_id)
-    # No list: every other member of the conversation (a share into a new conversation knows emails, not ids).
-    wanted = [u for u in dict.fromkeys(recipient_user_ids or list(keys)) if u and u != me]
-    sealed_for = [u for u in wanted if keys.get(u)]
-    later = [u for u in wanted if not keys.get(u)]
+    keys, sealed_for, later = await _recipients(conversation_id, recipient_user_ids)
     transfer_id = await _seal_and_post(conversation_id, spec, values, keys, sealed_for) if sealed_for else None
     if later:  # no key yet: a promise they redeem after installing — no warning to the sender
         await _promise(conversation_id, credential_typeid, later)
     return {"transfer_id": transfer_id, "sealed_for": sealed_for, "later": later, "cannot_receive": [],
             "variables": sorted(values)}
+
+
+async def _recipients(conversation_id: str, recipient_user_ids: list[str]) -> tuple[dict, list[str], list[str]]:
+    """``(keys, with a key, without one)`` — no list means every other member of the conversation (a share into a new
+    conversation knows emails, not ids)."""
+    me = _user_id()
+    keys = await member_keys(conversation_id)
+    wanted = [u for u in dict.fromkeys(recipient_user_ids or list(keys)) if u and u != me]
+    return keys, [u for u in wanted if keys.get(u)], [u for u in wanted if not keys.get(u)]
+
+
+async def seal_values(conversation_id: str, name: str, value: str, recipient_user_ids: list[str]) -> dict:
+    """Seal a typed ``name`` + ``value`` for the recipients' devices — no credential on this computer needed. The
+    receiver saves it as a credential with one click (``fill`` with a ``place``). A member with no key yet is in
+    ``no_key``: the value is never kept here to answer later."""
+    from flow_sdk.schema.data_spec.credential_contract import ENV_VAR_RE  # noqa: PLC0415
+
+    name = (name or "").strip().upper()
+    if not ENV_VAR_RE.match(name):
+        raise SealedError("bad_name", "a name is letters, digits and _ (like OPENAI_API_KEY)")
+    if not value:
+        raise SealedError("no_values", "type the key to send")
+    keys, sealed_for, no_key = await _recipients(conversation_id, recipient_user_ids)
+    typed = SimpleNamespace(name=name, title=name)
+    transfer_id = await _seal_and_post(conversation_id, typed, {name: value}, keys, sealed_for, typed=True) if sealed_for else None
+    return {"transfer_id": transfer_id, "sealed_for": sealed_for, "no_key": no_key, "variables": [name]}
 
 
 async def _credential_values(credential_typeid: str):
@@ -474,7 +510,9 @@ async def _credential_values(credential_typeid: str):
     return spec, values
 
 
-async def _seal_and_post(conversation_id: str, spec, values, keys, users: list[str], *, answers: str = "") -> str:
+async def _seal_and_post(
+    conversation_id: str, spec, values, keys, users: list[str], *, answers: str = "", typed: bool = False
+) -> str:
     ring, previous = load_keyring()
     if previous is not None:  # a due rotation: publish it before sealing with the new key
         await publish_device_key()
@@ -483,7 +521,12 @@ async def _seal_and_post(conversation_id: str, spec, values, keys, users: list[s
         recipients=[a for u in users for a in keys[u]], credential_name=spec.name,
         credential_title=spec.title or spec.name, values=values,
     )  # fmt: skip
-    await _post(conversation_id, SEALED_KIND, {SEALED_KIND: env.model_dump(mode="json"), **({"answers": answers} if answers else {})})
+    meta: dict[str, Any] = {SEALED_KIND: env.model_dump(mode="json")}
+    if answers:
+        meta["answers"] = answers
+    if typed:
+        meta["typed"] = True
+    await _post(conversation_id, SEALED_KIND, meta)
     _record_sent(env.transfer_id, conversation_id, users, env.expires_at)
     return env.transfer_id
 
@@ -660,7 +703,8 @@ async def _incoming(snap: _Snapshot) -> list[dict]:
         if not any(r.device_id == mine for r in env.recipients):
             continue
         card = {"message_id": m["id"], "transfer_id": env.transfer_id, "sender_id": m.get("sender_id"),
-                "sender_name": m.get("sender_name"), "expires_at": env.expires_at}  # fmt: skip
+                "sender_name": m.get("sender_name"), "expires_at": env.expires_at,
+                **({"typed": True} if (m.get("metadata") or {}).get("typed") else {})}  # fmt: skip
         entry = snap.acks.get(env.transfer_id, {}).get(me)
         if entry:
             out.append({**card, "state": _answered(entry), **({"test": entry["test"]} if "test" in entry else {})})
@@ -747,8 +791,39 @@ async def _target_credential(name: str, project_id: Optional[str]):
     )
 
 
-async def fill(conversation_id: str, message_id: str, *, project_id: Optional[str] = None) -> dict:
-    """Open the sealed value and write it into this computer's own credential, then tell the sender (no value)."""
+#: ``place`` of a typed key saved for the person, in every project (else ``place`` is a project id).
+PERSONAL = "personal"
+
+
+async def _save_typed(name: str, values: dict[str, str], place: str, replace: bool):
+    """A typed key becomes a credential in ``place``: the credential there that declares ``name`` gets the value
+    (one that already holds a value only with ``replace`` — else ``exists``), or a new one named ``name``."""
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope, resolve_project_secrets  # noqa: PLC0415
+    from flow_sdk.builtin.credential_service import get_project, save_credential, set_credential_values  # noqa: PLC0415
+    from flow_sdk.builtin.credential_store import Placement, project_scope, user_scope  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT, SCOPE_USER  # noqa: PLC0415
+
+    project = None if place == PERSONAL else await get_project(place)
+    if place != PERSONAL and project is None:
+        raise SealedError("no_project", "that project is not on this computer")
+    scope = user_scope() if project is None else project_scope(project)
+    owner = next((c for c, s in await credentials_in_scope(project) if s.key == scope.key and name in c.var_names()), None)
+    if owner is None:
+        return await save_credential(manifest={"name": name, "vars": {name: {}}}, values=values, require_setup=False,
+                                     scope=SCOPE_USER if project is None else SCOPE_PROJECT,
+                                     project_id=str(project.id) if project else None)  # fmt: skip
+    has = await resolve_project_secrets(project, only=[name], placement=await Placement.of(None))
+    current = has.get(name)
+    if current is not None and current.get_secret_value() and not replace:
+        raise SealedError("exists", f"{name} already has a value here ({owner.title or owner.name})")
+    return await set_credential_values(str(owner.typeid), values)
+
+
+async def fill(
+    conversation_id: str, message_id: str, *, project_id: Optional[str] = None, place: str = "", replace: bool = False
+) -> dict:
+    """Open the sealed value and write it into this computer's own credential, then tell the sender (no value).
+    A typed key (no credential behind it) is saved in ``place`` — a project id or ``personal``."""
     from flow_sdk.builtin.credential_service import _reverify_waiting_sources, set_credential_values  # noqa: PLC0415
 
     snap = await _Snapshot.read(conversation_id)
@@ -759,11 +834,15 @@ async def fill(conversation_id: str, message_id: str, *, project_id: Optional[st
     payload = open_sealed(env, DeviceKeyring.load(stored), device_id=device_id(),
                           sender_advert=snap.sender_advert(message, env), sender_user_id=str(message.get("sender_id") or ""),
                           conversation_id=conversation_id, seen=_seen())  # fmt: skip
-    spec = await _target_credential(payload.credential_name, project_id)
-    extra = sorted(set(payload.values) - set(spec.vars or {}))
-    if extra:
-        raise SealedError("undeclared", f"{', '.join(extra)} is not a variable of {spec.name}; nothing was written")
-    await set_credential_values(str(spec.typeid), {k: v.get_secret_value() for k, v in payload.values.items()})
+    values = {k: v.get_secret_value() for k, v in payload.values.items()}
+    if (message.get("metadata") or {}).get("typed"):
+        spec = await _save_typed(payload.credential_name, values, place or project_id or PERSONAL, replace)
+    else:
+        spec = await _target_credential(payload.credential_name, project_id)
+        extra = sorted(set(payload.values) - set(spec.vars or {}))
+        if extra:
+            raise SealedError("undeclared", f"{', '.join(extra)} is not a variable of {spec.name}; nothing was written")
+        await set_credential_values(str(spec.typeid), values)
     await _answer(conversation_id, env.transfer_id, FILLED)
     try:
         await _reverify_waiting_sources(spec.name, getattr(spec, "project", None))

@@ -21,7 +21,7 @@ export type ReasonCode =
   | 'decision_no'
   | 'decision_unavailable';
 export type SchedulePreset = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'every' | 'once' | 'cron';
-export type ThenKind = 'run_agent' | 'run_script' | 'open_wizard' | 'builtin_step' | 'notify' | 'workflow' | 'nothing';
+export type ThenKind = 'run_agent' | 'run_process' | 'run_script' | 'open_wizard' | 'builtin_step' | 'notify' | 'workflow' | 'nothing';
 
 export interface ScheduleWhen {
   preset: SchedulePreset;
@@ -184,6 +184,8 @@ export interface AutomationSummary {
   fires: number;
   tested: boolean;
   read_only: boolean;
+  /** A person may turn it on or off here (read-only rules too, when Flowpad ships them off). Older backends omit it. */
+  switchable?: boolean;
   asset_ref?: string | null;
   /** Where it runs. Older backends omit it; read it through `placeOf`. */
   place?: AutomationPlace;

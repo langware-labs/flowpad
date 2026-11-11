@@ -20,6 +20,7 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
+import { adjusted } from '../../adjustableTimeout';
 import { apiContext } from '../_shared/api';
 import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, sessionPopover, sessionAction, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER } from './_ap_helpers';
 
@@ -78,7 +79,7 @@ test.describe('worktree lifecycle', () => {
     // for codex/copilot/opencode), so the Open-in-Worktree affordance correctly
     // does not render on those arms.
     test.skip(!AP_HAS_CLAUDE_ONLY_CLI_FLAGS, `${AP_OPENER} has no --worktree flag`);
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     cleanGit(PROJECT_DIR);
     gitInitWithCommit(PROJECT_DIR);
 
@@ -90,7 +91,7 @@ test.describe('worktree lifecycle', () => {
     await acceptFolderTrust(page);
 
     // Parent (non-worktree): OpenInWorktree enabled, no CommitMerge button.
-    await expect(await worktreeItem(page)).not.toHaveAttribute('data-disabled', /.*/, { timeout: 15_000 });
+    await expect(await worktreeItem(page)).not.toHaveAttribute('data-disabled', /.*/, { timeout: adjusted(15_000) });
     expect(await (await commitMergeItem(page)).count()).toBe(0);
 
     await (await worktreeItem(page)).click();
@@ -100,7 +101,7 @@ test.describe('worktree lifecycle', () => {
     await expect(async () => {
       expect(page.url()).toMatch(/agentic_process-[\w-]+/);
       expect(processIdFromUrl(page)).not.toBe(pid);
-    }).toPass({ timeout: 30_000 });
+    }).toPass({ timeout: adjusted(30_000) });
     const wtPid = processIdFromUrl(page);
     expect(wtPid).not.toBe(pid);
     await waitForRunningSession(page, apiBase(), wtPid);
@@ -108,7 +109,7 @@ test.describe('worktree lifecycle', () => {
     // Info popover: Worktree row "enabled" + Command contains --worktree.
     await (await sessionAction(page, 'session-action-info')).click();
     const pop = sessionPopover(page);
-    await expect(pop).toBeVisible({ timeout: 10_000 });
+    await expect(pop).toBeVisible({ timeout: adjusted(10_000) });
     const worktreeRow = pop.getByText(/^Worktree$/).locator('xpath=..');
     await expect(worktreeRow.getByText('enabled')).toBeVisible();
     // CopyRow redesign: value lives in the flex-1 mono span (copy is a
@@ -118,11 +119,11 @@ test.describe('worktree lifecycle', () => {
     await page.keyboard.press('Escape');
 
     // Commit & Merge IS offered inside the worktree tab.
-    await expect(await commitMergeItem(page)).toBeVisible({ timeout: 10_000 });
+    await expect(await commitMergeItem(page)).toBeVisible({ timeout: adjusted(10_000) });
   });
 
   test('test 2: OpenInWorktree disabled when the workdir has no commits', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     cleanGit(PROJECT_DIR);
     gitInitNoCommit(PROJECT_DIR);
 
@@ -134,7 +135,7 @@ test.describe('worktree lifecycle', () => {
 
     // hasCommit() is false → item disabled, with the reason printed on it.
     const item = await worktreeItem(page);
-    await expect(item).toHaveAttribute('data-disabled', /.*/, { timeout: 15_000 });
-    await expect(item.getByText('Requires a git repository with at least one commit')).toBeVisible({ timeout: 5_000 });
+    await expect(item).toHaveAttribute('data-disabled', /.*/, { timeout: adjusted(15_000) });
+    await expect(item.getByText('Requires a git repository with at least one commit')).toBeVisible({ timeout: adjusted(5_000) });
   });
 });

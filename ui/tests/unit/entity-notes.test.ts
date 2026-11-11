@@ -2,11 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { AgenticProcess, Annotation, TypeId } from '@sdk';
 import {
   newNote,
-  NOTE_LABEL,
   notesByTarget,
   notesOf,
   noteTitle,
-  QUICK_PROMPT_LABEL,
   quickPromptsFor,
 } from '@src/hooks/use-entity-notes';
 import { DEFAULT_NOTE_COLOR, NOTE_COLOR_TOKENS, NOTE_PALETTE, noteColor } from '@src/components/notes/note-palette';
@@ -24,9 +22,9 @@ function note(content: string, iso: string, extra: Partial<Annotation> = {}): An
 }
 
 describe('newNote', () => {
-  it('is a note: label, the entity it sits on, its colour, name and view', () => {
+  it('is a note, the entity it sits on, its colour, name and view', () => {
     const n = newNote(target, 'Ask Dana', 'blue');
-    expect(n.labels).toEqual([NOTE_LABEL]);
+    expect(n.subkind).toBe('note');
     expect([n.target_type, n.target_id]).toEqual([PROC.type, PROC.id]);
     expect(n.data).toEqual({ color: 'blue', name: target.name, dock: target.dock });
     expect(n.content).toBe('Ask Dana');
@@ -37,7 +35,7 @@ describe('notesOf', () => {
   it('keeps only notes, newest first — the first one colours the tab badge', () => {
     const old = note('old', '2026-10-20T10:00:00.000Z');
     const fresh = note('fresh', '2026-10-23T10:00:00.000Z');
-    const comment = new Annotation({ labels: ['comment:'], content: 'x', iso_timestamp: '2026-10-24T00:00:00.000Z' });
+    const comment = new Annotation({ subkind: 'comment', content: 'x', iso_timestamp: '2026-10-24T00:00:00.000Z' });
     expect(notesOf([old, comment, fresh]).map((n) => n.content)).toEqual(['fresh', 'old']);
   });
 });
@@ -96,7 +94,7 @@ describe('quickPromptsFor', () => {
   const PROJECT = 'c82a1115-2f20-52e0-aa2a-4658898b5873';
   const qp = (content: string, type: string, id: string, used: string) =>
     new Annotation({
-      labels: [NOTE_LABEL, QUICK_PROMPT_LABEL],
+      subkind: 'quick_prompt',
       target_type: type,
       target_id: id,
       content,

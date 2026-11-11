@@ -6,8 +6,7 @@ returns aggregates + a per-session drill-down spine. No DB, no network, no LLM.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -15,8 +14,8 @@ from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_pa
 from flow_sdk.fs_store.indexer.functions.claude_sessions import (
     claude_session_start_time,
     discover_claude_session_paths_iter,
-    ensure_claude_session_stats,
 )
+from flow_sdk.schema.data_spec.usage_report_spec import UsageSessionSpec, UsageSummarySpec
 from flow_sdk.transcript_analyzer import (
     AgentTranscriptFile,
     EntryKind,
@@ -29,73 +28,6 @@ from flow_sdk.transcript_analyzer.pricing import pricing_for
 _TOP_N = 8
 _SAMPLE_PROMPTS = 5
 _PROMPT_PREVIEW_CHARS = 160
-
-
-@dataclass
-class SessionRow:
-    """One session's slice of the report — the drill-down spine.
-
-    ``session_id`` is enough for the UI to deep-link the raw transcript / call
-    stack at ``/dock/lens/claude/transcript/<session_id>``. ``agent_trace_id`` is
-    populated best-effort by the persisting layer when an AgentTrace exists.
-    """
-
-    session_id: str
-    title: str
-    cwd: str
-    project: str  # basename of cwd — a short, human label
-    start: Optional[str]  # ISO timestamp
-    duration_ms: int = 0
-    cost_usd: float = 0.0
-    total_tokens: int = 0
-    prompt_count: int = 0
-    skills: list[str] = field(default_factory=list)
-    agents: list[str] = field(default_factory=list)
-    tool_failures: int = 0
-    agent_trace_id: Optional[str] = None
-
-
-@dataclass
-class UsageReportData:
-    """Aggregated usage over ``[period_start, period_end)``."""
-
-    period_start: str
-    period_end: str
-    period_kind: str  # "day" | "week" | "month" | "range"
-    generated_at: str
-
-    # Headline
-    total_cost_usd: float = 0.0
-    session_count: int = 0
-    total_duration_ms: int = 0
-    total_tokens: int = 0
-
-    # Token split + efficiency
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cache_read_tokens: int = 0
-    cache_creation_tokens: int = 0
-    cache_hit_rate: float = 0.0  # cache_read / (input + cache_read)
-
-    # Activity
-    prompt_count: int = 0
-    skill_invocations: int = 0
-    agent_spawns: int = 0
-
-    # Breakdowns: list[{name/type/model, count/cost}]
-    top_skills: list[dict] = field(default_factory=list)
-    top_agents: list[dict] = field(default_factory=list)
-    top_tools: list[dict] = field(default_factory=list)
-    models: list[dict] = field(default_factory=list)
-    sample_prompts: list[str] = field(default_factory=list)
-
-    # Highlights (session ids) + the drill-down spine
-    busiest_session_id: Optional[str] = None
-    most_expensive_session_id: Optional[str] = None
-    sessions: list[SessionRow] = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        return asdict(self)
 
 
 def _parse_iso(value: Optional[str]) -> Optional[datetime]:
@@ -125,7 +57,37 @@ def _session_start(rec) -> Optional[datetime]:
     return dt
 
 
-def analyze_usage(start: datetime, end: datetime) -> UsageReportData:
+_IDLE_GAP = timedelta(minutes=5)
+
+
+def _active_spans(entries) -> list[tuple[datetime, datetime]]:
+    """Merge event timestamps into active spans; a gap over ``_IDLE_GAP`` splits them."""
+    times = sorted(t for t in (_parse_iso(getattr(e, "timestamp", None)) for e in entries) if t)
+    spans: list[tuple[datetime, datetime]] = []
+    for t in times:
+        if spans and t - spans[-1][1] <= _IDLE_GAP:
+            spans[-1] = (spans[-1][0], t)
+        else:
+            spans.append((t, t))
+    return spans
+
+
+def _union_ms(spans: list[tuple[datetime, datetime]]) -> int:
+    total = 0
+    cur = None
+    for a, b in sorted(spans):
+        if cur and a <= cur[1]:
+            cur = (cur[0], max(cur[1], b))
+        else:
+            if cur:
+                total += int((cur[1] - cur[0]).total_seconds() * 1000)
+            cur = (a, b)
+    if cur:
+        total += int((cur[1] - cur[0]).total_seconds() * 1000)
+    return total
+
+
+def analyze_usage(start: datetime, end: datetime) -> UsageSummarySpec:
     """Aggregate Claude usage for sessions started in ``[start, end)``.
 
     ``start``/``end`` should be timezone-aware; naive values are treated as UTC.
@@ -150,36 +112,36 @@ def analyze_usage(start: datetime, end: datetime) -> UsageReportData:
     else:
         period_kind = "range"
 
-    data = UsageReportData(
-        period_start=start.isoformat(),
-        period_end=end.isoformat(),
-        period_kind=period_kind,
-        generated_at=datetime.now(timezone.utc).isoformat(),
-    )
+    sessions: list[UsageSessionSpec] = []
+    cost_total = 0.0
+    in_total = out_total = read_total = write_total = prompts_total = 0
 
     skill_counter: Counter[str] = Counter()
     agent_counter: Counter[str] = Counter()
     tool_counter: Counter[str] = Counter()
     model_cost: Counter[str] = Counter()
     sample_prompts: list[str] = []
+    all_spans: list[tuple[datetime, datetime]] = []
 
     for path in discover_claude_session_paths_iter():
         # Cheap overlap pre-gate. A session contributes to this window iff some of
         # its activity lands inside it, so we keep any session that *could* overlap
         # and let the per-event filter below decide. Skip only sessions that
         # provably can't: started at/after `end`, or last written before `start`.
+        # The mtime check is a stat; run it before parsing so a daily run never
+        # reads the sessions that were last written before the window.
+        try:
+            last_activity = datetime.fromtimestamp(Path(path).stat().st_mtime, tz=timezone.utc)
+        except OSError:
+            last_activity = None
+        if last_activity is not None and last_activity < start:
+            continue
         try:
             rec = extract_claude_session_from_path(path, include_content=False)
         except Exception:  # noqa: BLE001 — a single unreadable session must not abort the run
             continue
         started = _session_start(rec)
         if started is not None and started >= end:
-            continue
-        try:
-            last_activity = datetime.fromtimestamp(Path(path).stat().st_mtime, tz=timezone.utc)
-        except OSError:
-            last_activity = None
-        if last_activity is not None and last_activity < start:
             continue
 
         # Single source of truth for cost + tokens: the transcript analyzer.
@@ -256,15 +218,13 @@ def analyze_usage(start: datetime, end: datetime) -> UsageReportData:
             if len(sample_prompts) < _SAMPLE_PROMPTS and p.text:
                 sample_prompts.append(p.text.strip()[:_PROMPT_PREVIEW_CHARS])
 
-        # Duration is a soft whole-session metric (not splittable per message).
-        try:
-            ensure_claude_session_stats(rec)
-        except Exception:  # noqa: BLE001
-            pass
-        duration = int(getattr(rec, "duration_ms", 0) or 0)
+        # Active time: in-window stretches between events; a longer gap is idle.
+        spans = _active_spans(entries_in)
+        all_spans.extend(spans)
+        duration = sum(int((b - a).total_seconds() * 1000) for a, b in spans)
 
         cwd = str(getattr(rec, "cwd", "") or "")
-        row = SessionRow(
+        sessions.append(UsageSessionSpec(
             session_id=str(getattr(rec, "session_id", "") or path.stem),
             title=str(getattr(rec, "name", "") or ""),
             cwd=cwd,
@@ -277,47 +237,42 @@ def analyze_usage(start: datetime, end: datetime) -> UsageReportData:
             skills=sorted(set(skills)),
             agents=sorted(set(agents)),
             tool_failures=tool_failures,
-        )
-        data.sessions.append(row)
+        ))
+        cost_total += cost
+        in_total += in_tok
+        out_total += out_tok
+        read_total += cache_read
+        write_total += cache_creation
+        prompts_total += prompt_count
 
-        # Aggregate headline.
-        data.total_cost_usd += cost
-        data.total_duration_ms += duration
-        data.input_tokens += in_tok
-        data.output_tokens += out_tok
-        data.cache_read_tokens += cache_read
-        data.cache_creation_tokens += cache_creation
-        data.prompt_count += prompt_count
-
-    # Finalize.
-    data.session_count = len(data.sessions)
-    data.total_cost_usd = round(data.total_cost_usd, 4)
-    data.total_tokens = (
-        data.input_tokens + data.output_tokens
-        + data.cache_read_tokens + data.cache_creation_tokens
+    cache_denom = in_total + read_total + write_total
+    return UsageSummarySpec(
+        period_start=start.isoformat(),
+        period_end=end.isoformat(),
+        period_kind=period_kind,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        total_cost_usd=round(cost_total, 4),
+        session_count=len(sessions),
+        # Parallel sessions count once: the union of their active spans.
+        total_duration_ms=_union_ms(all_spans),
+        total_tokens=in_total + out_total + read_total + write_total,
+        input_tokens=in_total,
+        output_tokens=out_total,
+        cache_read_tokens=read_total,
+        cache_creation_tokens=write_total,
+        cache_hit_rate=round(read_total / cache_denom, 4) if cache_denom else 0.0,
+        prompt_count=prompts_total,
+        skill_invocations=sum(skill_counter.values()),
+        agent_spawns=sum(agent_counter.values()),
+        top_skills=[{"name": n, "count": c} for n, c in skill_counter.most_common(_TOP_N)],
+        top_agents=[{"type": n, "count": c} for n, c in agent_counter.most_common(_TOP_N)],
+        top_tools=[{"name": n, "count": c} for n, c in tool_counter.most_common(_TOP_N)],
+        models=[{"model": m, "cost_usd": round(c, 4)} for m, c in model_cost.most_common(_TOP_N)],
+        sample_prompts=sample_prompts,
+        busiest_session_id=max(sessions, key=lambda r: (r.prompt_count, r.duration_ms)).session_id if sessions else None,
+        most_expensive_session_id=max(sessions, key=lambda r: r.cost_usd).session_id if sessions else None,
+        sessions=sessions,
     )
-    cache_denom = data.input_tokens + data.cache_read_tokens
-    data.cache_hit_rate = round(data.cache_read_tokens / cache_denom, 4) if cache_denom else 0.0
-    data.skill_invocations = sum(skill_counter.values())
-    data.agent_spawns = sum(agent_counter.values())
-
-    data.top_skills = [{"name": n, "count": c} for n, c in skill_counter.most_common(_TOP_N)]
-    data.top_agents = [{"type": n, "count": c} for n, c in agent_counter.most_common(_TOP_N)]
-    data.top_tools = [{"name": n, "count": c} for n, c in tool_counter.most_common(_TOP_N)]
-    data.models = [
-        {"model": m, "cost_usd": round(c, 4)} for m, c in model_cost.most_common(_TOP_N)
-    ]
-    data.sample_prompts = sample_prompts
-
-    if data.sessions:
-        data.busiest_session_id = max(
-            data.sessions, key=lambda s: (s.prompt_count, s.duration_ms)
-        ).session_id
-        data.most_expensive_session_id = max(
-            data.sessions, key=lambda s: s.cost_usd
-        ).session_id
-
-    return data
 
 
 def _fmt_duration(ms: int) -> str:
@@ -337,7 +292,23 @@ def _fmt_tokens(n: int) -> str:
     return str(n)
 
 
-def render_markdown(data: UsageReportData) -> str:
+def yesterday() -> tuple[datetime, datetime]:
+    """[yesterday 00:00, today 00:00) in this machine's local time -- the Daily usage summary's window."""
+    today = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    return today - timedelta(days=1), today
+
+
+def headline(data: UsageSummarySpec) -> str:
+    """The one line a person reads first: the day, cost, sessions, active time, prompts."""
+    start = _parse_iso(data.period_start)
+    day = start.strftime("%a %b %-d") if start else data.period_start
+    if not data.session_count:
+        return f"{day}: no agent sessions."
+    return (f"{day}: ${data.total_cost_usd:,.2f} across {data.session_count} sessions, "
+            f"{_fmt_duration(data.total_duration_ms)} active, {data.prompt_count} prompts.")
+
+
+def render_markdown(data: UsageSummarySpec) -> str:
     """Render a concise, drillable markdown report from the aggregates.
 
     Headline → breakdown tables → a per-session table whose rows deep-link the
@@ -364,7 +335,7 @@ def render_markdown(data: UsageReportData) -> str:
     lines.append(f"| output | {_fmt_tokens(data.output_tokens)} |")
     lines.append(f"| cache read | {_fmt_tokens(data.cache_read_tokens)} |")
     lines.append(f"| cache write | {_fmt_tokens(data.cache_creation_tokens)} |")
-    lines.append(f"| cache hit rate | {data.cache_hit_rate * 100:.0f}% |")
+    lines.append(f"| cache hit rate | {data.cache_hit_rate * 100:.1f}% |")
     lines.append("")
 
     if data.top_skills:

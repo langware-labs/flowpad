@@ -797,7 +797,7 @@ class HubWsBridge:
                             )
 
                     # Route a contact's prompt through the session gate (the
-                    # session's state — and a standing grant — decide). Cheap
+                    # session's state decides; only the host's Approve starts it). Cheap
                     # pre-check on the raw payload so a plain text message never
                     # spawns the task (and its DB fetch). Detached so a slow/failed run never blocks persist
                     # or the auto-ack below; failure-isolated inside the hook.
@@ -829,7 +829,7 @@ class HubWsBridge:
                             asyncio.create_task(process_inbound_prompt(fm_id, conversation_id))
                     elif _is_session_request(payload.get("attachment")):
                         # A session opened before any prompt: the host's own
-                        # identity on the row, and a standing grant's approval.
+                        # identity on the row; it waits for the host's Approve.
                         from flow_sdk.app.actions.execute_prompt import process_session_request
 
                         asyncio.create_task(process_session_request(fm_id, conversation_id))
@@ -1040,23 +1040,9 @@ class HubWsBridge:
             existing = await FlowMessage.get_one({"id": fm_id})
             conv_id = parent_conv_id or (getattr(existing, "conversation_id", None) if existing is not None else None)
             if existing is not None:
-                # Detach the child edge first — membership is the edge, so the
-                # pointer prune below is not enough on its own, and after
-                # ``destroy()`` the child no longer resolves for the detach to
-                # find. Announces CHILD_DELETED to watchers of the conversation.
-                if conv_id:
-                    try:
-                        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
-
-                        parent = await Conversation.get_one({"id": conv_id})
-                        if parent is not None:
-                            await parent.detach_child(existing.typeid, notify=True)
-                    except Exception:
-                        logger.exception("hub_bridge: child detach failed fm=%s conv=%s", fm_id, conv_id)
-                # Erase the message's entire existence — DB row + relationships
-                # AND the on-disk record folder (body bundle, metadata, .hash).
-                # ``delete_by_id`` would leave the folder behind.
-                await existing.destroy()
+                # Child edge, then the row and its record folder (``delete_by_id`` would
+                # leave the folder behind). Announces CHILD_DELETED to the conversation's watchers.
+                await existing.erase_local(conv_id)
             # Drop the dangling conversation pointer so an open conversation view
             # removes the bubble instead of rendering a permanent "Loading
             # message…" placeholder for the now-deleted FlowMessage.

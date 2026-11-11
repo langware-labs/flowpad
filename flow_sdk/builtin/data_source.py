@@ -245,8 +245,9 @@ class DataSource(SetupSkippable, Entity):
     # to open (the same argument that pulled `reflect` out of it, below).
     # `None` on rows written before the field existed; `stream_inbox.projection.owner_of`
     # is the ONE reader and resolves those (config.agent_id → that agent, else
-    # the local user), so nothing depends on a backfill having run. PRIVATE: an
-    # owner is a fact about this machine, never a thing that travels.
+    # the local user), so nothing depends on a backfill having run. PRIVATE: a user
+    # owner is a fact about this machine and never reaches the file; an agent owner
+    # is a project asset and does (``file_value``).
     owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
     #: The one place (a Deployment id) that answers this source for its owning agent.
     #: A fact of the SOURCE — it is in ``data_source.json`` — so every machine that
@@ -1209,22 +1210,27 @@ class DataSource(SetupSkippable, Entity):
                     else:
                         self.status = SourceStatus.NEW.value
                 else:
-                    # It arrived (cloned, shared, copied): wait for this machine's own connection.
+                    # It arrived (cloned, shared, copied): wait for this machine's own connection. A private
+                    # value a file from before the split still names is its author's, never this machine's.
                     self.status = SourceStatus.SETUP.value
                     self.setup_detail = RECEIVED_SETUP_DETAIL
+                    self.config = self._shared_config()
             elif not _RUNTIME_WRITE.get():
                 # A re-read file carries no runtime facts, only the indexer's defaults: keep the row's.
                 stored = await type(self).get_by_id(str(self.id))
                 for name in RUNTIME_FIELDS if stored is not None else ():
                     setattr(self, name, getattr(stored, name))
+                if stored is not None:
+                    self._keep_private(stored)
             return await super().save(*args, **kwargs)
         if not self.exist_in_db:
             existing = await self._existing_account()
             if existing is not None:
                 return await self._adopt(existing, *args, **kwargs)
-        if not self.exist_in_db or self.status == SourceStatus.NEW.value:
-            # An authored source's folder loads on first use, so the create rules can ask its class. The
-            # poller's per-tick re-save of an existing row never pays for the lookup.
+        if not self.exist_in_db or self.status == SourceStatus.NEW.value or (self.config and self._driver() is None):
+            # An authored source's folder loads on first use, so the create rules can ask its class — and so
+            # can the file writer, which leaves out what the class declares private (``file_value``). A
+            # loaded driver costs the poller's per-tick re-save nothing.
             from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
             await DataDriver.find(self.provider or "")
@@ -1289,6 +1295,43 @@ class DataSource(SetupSkippable, Entity):
                 self.setup_detail = "Finish setup, then press Verify."
         else:
             self.status = SourceStatus.ACTIVE.value
+
+    # ── shared and private: what reaches ``data_source.json`` ───────────────
+    def _shared_config(self, private: Optional[frozenset[str]] = None) -> dict[str, Any]:
+        """The config without the fields its driver declares ``Sharing.PRIVATE`` (``config_field``). A
+        driver not loaded yet declares nothing: the whole config reads as shared."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        private = DataDriver.private_config_fields(self.provider) if private is None else private
+        return {k: v for k, v in self.config.items() if k not in private} if isinstance(self.config, dict) else {}
+
+    def file_value(self, name: str) -> Any:
+        """What the FILE holds for field ``name`` — the file travels with the project (git, a copied
+        share), so it carries ``Sharing.SHARED`` only: the config without its private fields, and an
+        owner only when it is an agent (a project asset; a user owner is a fact of one machine).
+        What is withheld here is what ``_keep_private`` restores when the file is read again."""
+        if name == "config":
+            return self._shared_config()
+        if name == "owner":
+            from flow_sdk.stream_inbox.projection import is_agent_owner  # noqa: PLC0415
+
+            return self.owner if is_agent_owner(self.owner) else None
+        return getattr(self, name)
+
+    def _keep_private(self, stored: "DataSource") -> None:
+        """A re-read file never sets what is private: the config's private fields and a user owner stay
+        the stored row's. With the driver not loaded (the indexer cannot import it), what is private is
+        unknown — every stored key the file lacks is kept, so no private value is ever lost."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import is_agent_owner  # noqa: PLC0415
+
+        private = DataDriver.private_config_fields(self.provider)
+        shared = self._shared_config(private)
+        held = stored.config if isinstance(stored.config, dict) else {}
+        kept = private if self._driver() is not None else held.keys() - shared.keys()
+        self.config = {**shared, **{k: held[k] for k in kept if k in held}}
+        if stored.owner is not None and not is_agent_owner(self.owner):
+            self.owner = stored.owner
 
     async def _authored_here(self, names_owner: bool) -> bool:
         """Whether a source FILE with no row yet was written by one of this machine's own authors.

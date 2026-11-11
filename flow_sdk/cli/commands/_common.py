@@ -272,6 +272,11 @@ def get_graph_json(
     return _graph_json("GET", url, params=params or {}, timeout=timeout, on_error=on_error)
 
 
+def delete_graph_json(url: str, *, timeout: int = 15, on_error: "Callable[[int, dict], NoReturn]") -> dict:
+    """DELETE a graph endpoint and return the SUCCESS envelope's ``data``."""
+    return _graph_json("DELETE", url, timeout=timeout, on_error=on_error) or {}
+
+
 def server_error(status_code: int, body: dict) -> NoReturn:
     """The default ``on_error``: any non-success answer is the server's fault."""
     fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", str(body.get("message") or f"HTTP {status_code}"))

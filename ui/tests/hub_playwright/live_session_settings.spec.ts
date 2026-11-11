@@ -16,7 +16,6 @@ import { chromium, expect, test, type Browser } from '@playwright/test';
 import { BOB, assertPreconditions } from './helpers';
 import {
   HOST_PROJECT_ID,
-  revokeAliceGrantsOnBob,
   sendFollowUp,
   sendOpeningPrompt,
   sessionCards,
@@ -27,11 +26,10 @@ import {
 const SPEC_BUDGET_MS = 240_000;
 const TURN_BUDGET_MS = 60_000;
 
-test('live session settings: follow-up, review policy, standing grant', async () => {
+test('live session settings: follow-up, review policy, every session approved by hand', async () => {
   test.setTimeout(SPEC_BUDGET_MS);
   test.skip(!HOST_PROJECT_ID, 'HOST_PROJECT_ID (a project on bob with a workdir) is required');
   await assertPreconditions();
-  await revokeAliceGrantsOnBob(); // a stale grant would skip PENDING
   const browser: Browser = await chromium.launch();
   try {
     const { alice, bob, convId } = await setupLiveConversation(browser);
@@ -84,11 +82,7 @@ test('live session settings: follow-up, review policy, standing grant', async ()
     await expect(alice.page.getByTestId('live-session-reply').nth(2)).toContainText(m3);
     await shot(alice.page, 'settings-05-alice-reviewed-reply-delivered');
 
-    // ── standing grant: alice's next session starts approved ───────────────
-    await bob.page.getByTestId('live-session-standing-grant').click();
-    await expect(bob.page.getByTestId('live-session-standing-grant')).toHaveAttribute('data-state', 'checked', {
-      timeout: 3_000,
-    });
+    // ── a second session waits for the host again: nothing remembers alice ──
     await alice.page.goBack();
     await alice.page.locator('textarea[placeholder^="Reply to sender"]').waitFor({ state: 'visible' });
     // The composer icon reopens the open session; a new one starts once this one ends.
@@ -97,16 +91,18 @@ test('live session settings: follow-up, review policy, standing grant', async ()
     const m4 = `S2-${Date.now()}`;
     await sendOpeningPrompt(alice.page, `Reply with exactly the text ${m4} and nothing else.`);
     await expect(sessionCards(alice.page)).toHaveCount(2, { timeout: 3_000 });
+    const bobSecond = sessionCards(bob.page).nth(1);
+    await expect(bobSecond).toHaveAttribute('data-status', 'pending', { timeout: 5_000 });
+    await bobSecond.getByTestId('session-card-approve').click();
     const second = sessionCards(alice.page).nth(1);
     await expect(second).toHaveAttribute('data-status', 'active', { timeout: 5_000 });
     const sessions = await fetch(`${BOB.backendUrl}/api/v1/graph/remote_worker_session`).then((r) => r.json());
     const mine = ((sessions?.data ?? []) as Array<Record<string, unknown>>).filter((s) => s.conversation_id === convId);
-    expect(mine.map((s) => s.approved_via).sort()).toEqual(['manual', 'standing_grant']);
+    expect(mine.map((s) => s.approved_via)).toEqual(['manual', 'manual']);
     await expect(second).toContainText(/(?<!\d)2 messages/, { timeout: TURN_BUDGET_MS });
-    await shot(alice.page, 'settings-06-alice-two-sessions-second-auto-approved');
-    console.log('[settings] follow-up, review, standing grant: all verified');
+    await shot(alice.page, 'settings-06-alice-second-session-approved-by-hand');
+    console.log('[settings] follow-up, review, second session approved by hand: all verified');
   } finally {
     await browser.close();
-    await revokeAliceGrantsOnBob(); // leave the host as we found it
   }
 });

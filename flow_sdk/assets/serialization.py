@@ -144,8 +144,15 @@ def _field_adapter(cls: type, name: str) -> TypeAdapter:
     return TypeAdapter(cls.model_fields[name].rebuild_annotation())
 
 
+def _held(obj: Any, name: str, default: Any = None) -> Any:
+    """What the FILE holds for one field: the entity's value, or what the entity says the file gets
+    (its ``file_value``) when part of the field is private to this machine."""
+    file_value = getattr(obj, "file_value", None)
+    return file_value(name) if callable(file_value) and hasattr(obj, name) else getattr(obj, name, default)
+
+
 def _field_value(obj: Any, name: str) -> Any:
-    value = getattr(obj, name)
+    value = _held(obj, name)
     # Hydrated rows can already hold their serialized scalar (e.g. an enum's
     # string value). Only structured/custom values need annotation serialization.
     return value if value is None or isinstance(value, (str, int, float, bool)) else _field_adapter(type(obj), name).dump_python(value)
@@ -495,7 +502,7 @@ def _patch_entity_main(obj: Any, info: Any, main: Path) -> None:
     from pydantic_core import to_jsonable_python  # noqa: PLC0415
 
     def _back_to_default(key: str) -> bool:
-        held = getattr(obj, field_of[key], _NOT_ON_OBJ)
+        held = _held(obj, field_of[key], _NOT_ON_OBJ)
         if held is None:
             # Unset because the file's value did not validate (``validate_best_effort``), not because the
             # entity cleared it: the bad value is kept for a person to fix, never silently removed.
@@ -619,6 +626,21 @@ def _write_fields(obj: Any, info: Any, root: Path) -> None:
                 field_spec=getattr(obj, "field_spec", None) or {}, delimiter=getattr(obj, "delimiter", None) or ",",
                 source=Path(source) if source else None,
             )
+
+
+def write_header_field(info: Any, root: Path, name: str, value: Any) -> bool:
+    """Set ONE header key of a stored markdown asset, leaving its body and other keys alone.
+
+    For a header fact the entity owns on a type whose file it does not re-render
+    (``owns_main_ref`` False): a doc's or a skill's ``tags``. Answers whether a file was written.
+    """
+    main = _main_doc(info, root)
+    if main is None or main.suffix.casefold() != ".md" or not main.is_file():
+        return False
+    from flow_sdk.assets.document import write_document  # noqa: PLC0415
+
+    write_document(main, fields={name: value})
+    return True
 
 
 def write_asset_tree(obj: Any, info: Any, root: Path, *, force: bool = False) -> str:
