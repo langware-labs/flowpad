@@ -169,8 +169,10 @@ function domSurface(name: string, open: Surface['open']): Surface {
   };
 }
 
-/** A form's command in the xterm — on its newest row, which may be Claude Code's echo of a run (`!  sh …`). */
-const xtermPoint = async (page: Page, form: Form) => {
+type Point = { x: number; y: number };
+
+/** `act` on a form's command in the xterm — on its newest row, which may be Claude Code's echo of a run (`!  sh …`). */
+const atXtermPoint = async (page: Page, form: Form, act: (point: Point) => Promise<void>) => {
   // Claude Code answers every `!` command, repainting the screen as it streams; a point read while
   // the rows still move is a different row by the time the mouse lands. Read it from a still screen,
   // the way a person clicks what they see.
@@ -192,13 +194,22 @@ const xtermPoint = async (page: Page, form: Form) => {
   // Claude Code owns the wheel (there is no xterm scrollback) and its scrolled view paints a
   // "Jump to bottom" pill over the rows. Give the terminal more rows instead: Claude Code repaints
   // its view at the new size, earlier turns included.
-  const forForm = page.locator('.xterm-rows:visible > div').filter({ hasText: pattern });
-  for (let grow = 0; (await forForm.count()) === 0 && grow < 3; grow++) {
-    const size = page.viewportSize() ?? { width: 1280, height: 720 };
-    await page.setViewportSize({ width: size.width, height: size.height * 2 });
-    await still();
+  // The grown size is this one action's: the page is shared by the serial tests, so it goes back once the mouse
+  // has acted, even on a throw. Not before: the point is a spot on the grown screen. The repaint the restore
+  // sets off needs no wait here, since every call starts from a still screen.
+  const viewport = page.viewportSize();
+  try {
+    const forForm = page.locator('.xterm-rows:visible > div').filter({ hasText: pattern });
+    for (let grow = 0; (await forForm.count()) === 0 && grow < 3; grow++) {
+      const size = page.viewportSize() ?? { width: 1280, height: 720 };
+      await page.setViewportSize({ width: size.width, height: size.height * 2 });
+      await still();
+    }
+    await act(await printedLinkPoint(page, pattern));
+  } finally {
+    const now = page.viewportSize();
+    if (viewport && now?.height !== viewport.height) await page.setViewportSize(viewport);
   }
-  return printedLinkPoint(page, pattern);
 };
 
 const SURFACES: Surface[] = [
@@ -212,15 +223,13 @@ const SURFACES: Surface[] = [
       // has scrolled it up (the commands themselves are found through scrollback).
       await expect(page.locator('.xterm-rows:visible').first()).toContainText(/! +sh mark\.sh (line|quoted|inline)/);
     },
-    click: async (page, form) => {
-      const point = await xtermPoint(page, form);
-      await page.mouse.move(point.x, point.y);
-      await page.mouse.click(point.x, point.y);
-    },
-    rightClick: async (page, form) => {
-      const point = await xtermPoint(page, form);
-      await page.mouse.click(point.x, point.y, { button: 'right' });
-    },
+    click: (page, form) =>
+      atXtermPoint(page, form, async (point) => {
+        await page.mouse.move(point.x, point.y);
+        await page.mouse.click(point.x, point.y);
+      }),
+    rightClick: (page, form) =>
+      atXtermPoint(page, form, (point) => page.mouse.click(point.x, point.y, { button: 'right' })),
   },
   domSurface('UI chat', async (page, processId) => {
     await page.goto(`/dock/shell/agentic_process-${processId}?viewMode=standard`);
