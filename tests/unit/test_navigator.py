@@ -522,3 +522,11 @@ def test_endpoint_usage_with_no_endpoint_named_is_the_endpoints_list():
     assert navigator.rule_hit("show endpoint usage").value == "hub/llm-endpoints"
     assert navigator.rule_hit("show endpoints usage").value == "hub/llm-endpoints"
 
+
+def test_the_question_an_alias_states_names_its_screen():
+    # Sentence 191: "what we delivered" is the Artifacts screen's alias; asked as a question it
+    # names the same screen. Live, without it: SCOPE "more" 0.63-0.71, the assistant was asked.
+    assert navigator.rule_hit("what did we deliver?").value == "artifacts"
+    assert navigator.rule_hit("what have we delivered").value == "artifacts"
+    # Only a question whose statement IS a name: anything else stays the model's.
+    assert navigator.rule_hit("what did we decide") is None

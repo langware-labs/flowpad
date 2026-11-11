@@ -384,12 +384,27 @@ def _slips(a: str, b: str) -> int:
 _FILLER = frozenset({"the", "my", "our"})
 
 
+#: "what did we deliver" / "what have we delivered": the question whose statement is a name ("what we
+#: delivered", the Artifacts screen's alias) names that screen (navigation sentence 191).
+_ASKED = re.compile(r"^what (?:did|have) (we|i) (\w+?)(?:ed|d)?$")
+
+
+def _stated(core: str) -> tuple[str, ...]:
+    """The statements a ``what did we <verb>`` question asks about: ``what we <verb>ed`` / ``<verb>d``."""
+    if not (m := _ASKED.match(core)):
+        return ()
+    who, verb = m.groups()
+    return (f"what {who} {verb}ed", f"what {who} {verb}d")
+
+
 def _screen_named(core: str) -> Optional[str]:
     """The option key ``core`` names: exactly, else as one slip from exactly one screen's name.
     Short words never count as typos -- "tags" is one slip from "tasks"."""
     names = static_options()[1]
     if key := names.get(core):
         return key
+    if stated := {names[s] for s in _stated(core) if s in names}:
+        return stated.pop() if len(stated) == 1 else None
     # "the" or "my" inside the name does not change what it names ("set up my llm" is the screen "Set
     # up LLM"). "a" / "an" do: "open a terminal" asks for a new one, not the Worker screen.
     if (bare := " ".join(w for w in core.split() if w not in _FILLER)) != core and (key := names.get(bare)):
