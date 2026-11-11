@@ -1,4 +1,4 @@
-import { dataContext, dataManager, isContentSubPointer, Project, tabOwnerProject, TypeId, type AnyEntity, type TabProjectTarget } from '@sdk';
+import { dataContext, dataManager, isContentSubPointer, Project, tabOwnerProject, type AnyEntity, type TabProjectTarget } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from './DockPointer';
 
@@ -34,8 +34,5 @@ export async function assetDocumentAtOwner(dock: DockPointer): Promise<DockPoint
     }
   }
   if (!owner) return null;
-  // A stamped owner that is not a project here is no owner: an asset indexed from a folder that is
-  // not a project carries that folder's derived id, and rebasing onto it lands on "Project not found".
-  if (!(await dataManager.getByTypeId(new TypeId(Project.type, owner)).catch(() => null))) return null;
   return DockPointer.rebaseAssetsOntoProject(dock, owner);
 }
