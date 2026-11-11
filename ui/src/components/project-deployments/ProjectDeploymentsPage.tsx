@@ -22,6 +22,7 @@ import { useActivitySpec } from '@src/store/activity-store';
 import { useSourceLabel } from './DeploymentContext';
 import { ProjectDeploymentPage } from './ProjectDeploymentPage';
 import { PROJECT_DEPLOY_MAIN_AGENT_OPTION, PROJECT_DEPLOYMENT_OPTION } from './project-deployments-url';
+import { useCameFromAgent } from './use-came-from-agent';
 
 /**
  * The project's deployments (`/dock/project/<id>/project-deployments`): every placement of the project — this
@@ -36,6 +37,8 @@ export function ProjectDeploymentsPage({ project }: { project: Project }) {
   const options = currentDock?.options ?? {};
   const selectedId = options[PROJECT_DEPLOYMENT_OPTION] ?? null;
   const presetMainAgent = options[PROJECT_DEPLOY_MAIN_AGENT_OPTION] ?? null;
+  // The agent the page came from outlives the dialog: this computer's switch places it too.
+  const cameFromAgent = useCameFromAgent(presetMainAgent);
   const [newOpen, setNewOpen] = useState(false);
   const dialogOpen = newOpen || !!presetMainAgent;
 
@@ -93,7 +96,7 @@ export function ProjectDeploymentsPage({ project }: { project: Project }) {
         </Button>
       </div>
 
-      {!hub && <LocalSwitch project={project} local={local} presetMainAgent={presetMainAgent} />}
+      {!hub && <LocalSwitch project={project} local={local} mainAgent={cameFromAgent} />}
 
       {isLoading ? null : deployments.length === 0 ? (
         <p className="text-xs text-muted-foreground" data-testid="project-deployments-empty">
@@ -151,11 +154,12 @@ export function ProjectDeploymentsPage({ project }: { project: Project }) {
 function LocalSwitch({
   project,
   local,
-  presetMainAgent,
+  mainAgent,
 }: {
   project: Project;
   local: Deployment | null;
-  presetMainAgent: string | null;
+  /** The agent the page came from: the local deployment's main agent. */
+  mainAgent: string | null;
 }) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
@@ -165,7 +169,7 @@ function LocalSwitch({
       if (next)
         await project.deploy({
           provider: 'local',
-          ...(presetMainAgent ? { mainAgentId: `${Agent.type}-${presetMainAgent}` } : {}),
+          ...(mainAgent ? { mainAgentId: `${Agent.type}-${mainAgent}` } : {}),
         });
       else await local?.delete();
     } catch (e) {
