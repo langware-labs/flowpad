@@ -33,7 +33,6 @@ pytestmark = [
 from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
 from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
-from tests.long_tests._model_tier import model_for
 from tests.long_tests._transcript_helpers import assert_prompt_ok
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
@@ -179,7 +178,7 @@ async def test_markdown_index_cold_build(
             "markdown_index_id": root_index.id,
         },
         workdir=str(docs_root),
-        cli_config=({"model": m} if (m := model_for(worker_id, ModelTier.MD)) else {}),
+        cli_config={"model": ModelTier.MD.value},
     )
     # Never launched, so readiness is the transport's: a fresh PTY process waits for
     # its worker, a fresh headless one (deepagents is headless-only) takes the first
@@ -257,7 +256,7 @@ async def test_markdown_index_incremental(
             "markdown_index_id": root_index.id,
         },
         workdir=str(docs_root),
-        cli_config=({"model": m} if (m := model_for(worker_id, ModelTier.MD)) else {}),
+        cli_config={"model": ModelTier.MD.value},
     )
     assert_prompt_ok(await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid))))
     async for _ in process.stream_transcript(timeout=240):
@@ -282,7 +281,7 @@ async def test_markdown_index_incremental(
             "markdown_index_id": root_index.id,
         },
         workdir=str(docs_root),
-        cli_config=({"model": m} if (m := model_for(worker_id, ModelTier.MD)) else {}),
+        cli_config={"model": ModelTier.MD.value},
     )
     assert_prompt_ok(await process2.prompt(_rebuild_instruction(docs_root, str(root_index.typeid))))
     async for _ in process2.stream_transcript(timeout=240):

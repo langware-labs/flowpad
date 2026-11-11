@@ -88,8 +88,6 @@ async def mailboxes(hub_base_url, hub_login_payload):
         allocated.append(agent_id)
         outsider_box = await driver.create_mailbox(outsider_id)
         allocated.append(outsider_id)
-        # A new mailbox sends only to its owner (the hub's Sending list): the outsider may write to the agent.
-        await driver.configure_mailbox(outsider_id, {"allowed_recipients": [str(agent_box.get("address") or "")]})
         yield {
             "agent_id": agent_id,
             "agent_address": str(agent_box.get("address") or ""),
@@ -187,9 +185,6 @@ async def _agent_mailbox(mailboxes, server, *, allow: list[str]) -> DataSource:
     either test uses — handing back the Agent meant stashing the source on a
     private attribute and reaching through it at every call site.
     """
-    # The hub's Receiving list is the one the gate mirrors (``AgentMailbox._cache_policy``): a new mailbox
-    # admits only its owner, so the allowlist is set where it is enforced, then copied onto the source.
-    await get_agent_mailbox_driver().configure_mailbox(mailboxes["agent_id"], {"allowed_senders": list(allow)})
     agent = Agent(
         id=mailboxes["agent_id"],
         name=f"Mailbot {mailboxes['agent_id'][:8]}",

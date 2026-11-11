@@ -170,7 +170,6 @@ def test_repo_docs_walk_covers_all_non_gitignored_md():
     expected = {
         rel for rel in walk_markdown_files(docs)
         if Path(rel).name != "index.md"          # generated index excluded from leaves
-        and rel.lower().endswith((".md", ".mdx"))  # walk also lists .txt/.docx; scan_tree is markdown-only
     }
     # scan_tree additionally includes .mdx; the repo docs are .md-only, so the
     # two contracts coincide here.

@@ -21,20 +21,12 @@ function unavailableWorkerOutput(process: AgenticProcess): string | null {
 
 const vendors = ['claude_code', 'codex', 'copilot'] as const;
 
-// flowpad:capsule tag
-// version: 1
-// data:
-//   tags:
-//     breadcrumb.test.prompt_spawn_refusal.rules: FAILING? on a 500 from prompt, read
-//       this tag's rules before touching _http_prompt's WorkerSpawnError branch
-// flowpad:endcapsule tag
 describe('process hook shared real-worker acceptance', () => {
   it.each(vendors)('%s: setHook → registerCallback → prompt delivers one canonical hook', async (workerType) => {
     await apiTestSetup(undefined, `process-hook-${workerType}`);
     const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'process-hook-acceptance-'));
     const cliConfig: Record<string, unknown> = { permission_mode: 'bypassPermissions' };
-    // Only Claude's CLI knows sizes natively; codex/copilot on a device login refuse an unmapped size.
-    if (workerType === 'claude_code') cliConfig.model = 'sm';
+    if (workerType !== 'copilot') cliConfig.model = 'sm';
     if (workerType === 'claude_code') cliConfig.effort = 'low';
     const process = await new AgenticProcess({
       worker_type: workerType,

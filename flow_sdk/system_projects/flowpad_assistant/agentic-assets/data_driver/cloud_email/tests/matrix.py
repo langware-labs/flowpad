@@ -119,14 +119,6 @@ class HubDouble:
             if r.json().get("status") != "SUCCESS":
                 raise RuntimeError(f"outsider mailbox: {r.json().get('message')}")
         self.outsider_address = str(((data.get("mailbox") or {}).get("address")) or "")
-        # A new hub mailbox is closed both ways — it sends only to its owner and admits only its owner (the
-        # Sending / Receiving lists): open the outsider's to the agent and the agent's to the outsider.
-        async with httpx.AsyncClient(timeout=30) as client:
-            for agent, lists in ((self.outsider_id, {"allowed_recipients": [self.config["address"]]}),
-                                 (self.config["agent_id"], {"allowed_senders": [self.outsider_address]})):
-                r = await client.post(f"{self._backend}/api/v1/graph/agent/{agent}/configure_mailbox", json=lists)
-                if r.json().get("status") != "SUCCESS":
-                    raise RuntimeError(f"mailbox lists: {r.json().get('message')}")
         return self
 
     async def close(self) -> None:

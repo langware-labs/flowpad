@@ -138,14 +138,9 @@ async def test_relaunch_kills_session_orphan(bootstrapped_client, tmp_path):
         # --resume <sid>`` process left running after ``worker_pid`` had been
         # overwritten by a relaunch.
         master, slave = _pty.openpty()
-        # A worker this instance spawned carries its FLOW_INSTANCE (the sweep only takes this
-        # instance's own workers: ``Shell._is_this_instances``), and so did the incident's orphan.
-        from flow_sdk.instance_settings import get_instance_settings
-
         orphan = subprocess.Popen(
             [claude_exe, "--resume", session_id],
             cwd=str(tmp_path),
-            env={**os.environ, "FLOW_INSTANCE": get_instance_settings().instance_name},
             stdin=slave,
             stdout=slave,
             stderr=slave,

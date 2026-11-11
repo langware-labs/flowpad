@@ -125,11 +125,8 @@ async def test_a_brand_new_user_can_spend_by_saying_hi(hub_base_url):
     # look like a spend that booked nothing.
     from flow_sdk.external_apis.llm.dialects import get_dialect  # noqa: PLC0415
 
-    model = (endpoint.tiers or {}).get("sm") or (endpoint.tiers or {}).get("md")
-    if not model and endpoint.provider:
-        # Only a tierless endpoint needs the provider's default; a root the box has no dialect for
-        # (the hub's ``vertex``) always advertises its sizes.
-        model = get_dialect(endpoint.provider).default_models.get("sm")
+    fallback = get_dialect(endpoint.provider).default_models.get("sm") if endpoint.provider else None
+    model = (endpoint.tiers or {}).get("sm") or (endpoint.tiers or {}).get("md") or fallback
     assert model, f"{endpoint.name} advertises no model and its provider has no default"
     print(f"[model ] {model}")
 

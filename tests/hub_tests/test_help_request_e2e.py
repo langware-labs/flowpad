@@ -105,8 +105,7 @@ async def test_a_person_gets_one_request_with_its_diagnosis_and_context(hub_sess
     assert response.data["shared"] and response.data["context_shared"], response.data
 
     row, diagnosis = await _ready_on_hub(base, bob_token, body["conversation_id"], n=2)
-    # The request names the diagnosis it carries on its last line (ask_for_help_action.diagnosis_line).
-    assert (row.get("text") or "").strip() == f'{body["text"]}\n\n{afh.diagnosis_line(diagnosing=True, attached=False)}'
+    assert (row.get("text") or "").strip() == body["text"]
     assert CONTEXT <= _names(row), _names(row)
     assert CONTEXT <= await _body_files(base, bob_token, row["id"])
     assert DIAGNOSIS in await _body_files(base, bob_token, diagnosis["id"])
@@ -126,8 +125,7 @@ async def test_a_desk_ticket_is_one_request_with_its_context(hub_session, task_s
     assert response.data["shared"], response.data
 
     row, diagnosis = await _ready_on_hub(base, bob_token, body["conversation_id"], n=2)
-    # The request names the diagnosis it carries on its last line (ask_for_help_action.diagnosis_line).
-    assert (row.get("text") or "").strip() == f'{body["text"]}\n\n{afh.diagnosis_line(diagnosing=True, attached=False)}'
+    assert (row.get("text") or "").strip() == body["text"]
     # A desk agent opens a ticket once they pick it up -- then its attachments are theirs to read.
     await _hub(base, bob_token, "POST", f"/graph/conversation/{body['conversation_id']}/pickup", json={})
     assert CONTEXT <= await _body_files(base, bob_token, row["id"])

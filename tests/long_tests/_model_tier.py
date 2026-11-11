@@ -1,12 +1,9 @@
 """Portable small-model tier selection for the live worker tests.
 
-Only Claude's CLI has native size aliases (``haiku``/``sonnet``/``opus``). Every
-other worker on its own device login resolves a size through
-``Capability.model_map['device']``, and an unmapped size is refused at spawn
-(``model_tiers.resolve_model_tier``, since 51d4d97f1) rather than silently
-replaced by the vendor default. So a size is named only for Claude; the other
-workers omit the model and their vendor chooses, which is what an unconfigured
-box does in production. An endpoint-funded worker resolves either way.
+The long tests persist the same ``sm`` intent for every worker. Claude and Codex
+resolve it to a concrete model; native Copilot resolves it to vendor auto and
+omits ``--model``. The tests therefore exercise the production tier seam instead
+of carrying a Copilot-only workaround.
 
 TIER POLICY (why some tests override ``sm``)
 --------------------------------------------
@@ -35,19 +32,10 @@ from __future__ import annotations
 from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 
 
-_NATIVE_SIZE_WORKERS = frozenset({"claude", "claude_code", "claude-code"})
-
-
-def model_for(worker: object, tier: ModelTier | str) -> str | None:
-    """``tier`` for a worker whose CLI knows sizes natively (Claude), else ``None`` (omit: vendor choice).
+def small_model_for(_worker: object) -> str:
+    """Return the portable ``sm`` tier for any worker.
 
     Accepts a ``WorkerType`` or a driver short-id (``"claude"`` / ``"codex"`` /
     ``"copilot"`` / ``"claude_code"``) so every call site can use it as-is.
     """
-    name = str(getattr(worker, "value", worker)).lower()
-    return (tier.value if isinstance(tier, ModelTier) else str(tier)) if name in _NATIVE_SIZE_WORKERS else None
-
-
-def small_model_for(worker: object) -> str | None:
-    """The portable ``sm`` tier where the worker can honour it (see ``model_for``)."""
-    return model_for(worker, ModelTier.SM)
+    return ModelTier.SM.value

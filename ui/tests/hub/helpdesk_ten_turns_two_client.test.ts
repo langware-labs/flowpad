@@ -117,9 +117,6 @@ const rowsOf = queryConversationMessages;
 
 const hubMessages = (convId: string): Promise<any[]> => hubJson(helperToken, `/graph/conversation/${convId}/messages`);
 
-const sameLine = (text: string | undefined, line: string): boolean =>
-  text === line || text === `${line}\n\nDiagnosis: not requested`;
-
 const fromRequester = (m: any): boolean => [requesterUserId, `helpdesk:${requesterUserId}`].includes(m.sender_id);
 
 let source: any = null;
@@ -166,8 +163,7 @@ describe('a ten-turn support conversation', () => {
 
       // Requester: open the ticket, then follow up in it.
       if (turn === 1) {
-        // No diagnosis: the subject is the ten turns, and a diagnosis is a message of its own.
-        convId = (await requester.sdk.askForHelp({ recipient: { kind: 'desk' }, text: ask, diagnose: false })).conversation_id;
+        convId = (await requester.sdk.askForHelp({ recipient: { kind: 'desk' }, text: ask })).conversation_id;
       } else {
         expect(convId, 'the ticket exists').toBeTruthy();
         await requester.sdk.sendReply({ conversationId: convId }, ask);
@@ -178,8 +174,7 @@ describe('a ten-turn support conversation', () => {
       // it (or projects it outright on the first turn). Wait for the stamp.
       await postApi(helper.apiUrl, `/graph/data_source/${source.id}/request_poll`, {});
       const inbound: any = await pollUntil(
-        // A help request's text ends with its Diagnosis line (``ask_for_help_action.diagnosis_line``).
-        async () => (await rowsOf(helper, convId)).find((m) => sameLine(m.text, ask) && m.origin?.kind === 'helpdesk') ?? null,
+        async () => (await rowsOf(helper, convId)).find((m) => m.text === ask && m.origin?.kind === 'helpdesk') ?? null,
         15_000,
         `turn ${turn}: the requester's line reached the helper's stream inbox as a channel message`,
       );

@@ -6,7 +6,6 @@ import { adjusted } from '../adjustableTimeout';
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import { dataContext } from '@sdk';
 import { cloudManager } from '@sdk/services/cloud_login';
-import { MemoryRouter } from 'react-router';
 import { expect, vi } from 'vitest';
 import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
 import { apiTestSetup } from './test-utils';
@@ -54,10 +53,7 @@ export async function askForHelp(opts: {
 }): Promise<AskOutcome> {
   const onAsked = vi.fn();
   const { container, unmount } = render(
-    // The dialog hosts the help-desk loader, which navigates (useDockNavigation): it lives under a router.
-    <MemoryRouter>
-      <AskForHelpDialog open onOpenChange={() => {}} projectId={opts.projectId} origin="vibe" onAsked={onAsked} />
-    </MemoryRouter>,
+    <AskForHelpDialog open onOpenChange={() => {}} projectId={opts.projectId} origin="vibe" onAsked={onAsked} />,
   );
   // Radix portals the dialog to body: the newest one is this render's.
   const dialogs = container.ownerDocument.querySelectorAll('[role="dialog"]');
