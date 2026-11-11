@@ -1,3 +1,4 @@
+import { useLingui } from '@lingui/react/macro';
 import { type WizardData, type WizardProcessResult } from '@sdk';
 import { useWizardRun } from '@src/hooks/use-wizard-run';
 import type { WizardModalAttachment } from '@src/components/wizard/wizard-modal';
@@ -43,12 +44,13 @@ export function WizardButton<T = unknown>({
   onResult,
   adopt,
   children,
-  runningLabel = 'Working',
+  runningLabel,
   className,
   title,
   disabled,
   testId,
 }: WizardButtonProps<T>) {
+  const { t } = useLingui();
   const { phase, toolCount, onClick } = useWizardRun<T>({
     wizardName,
     buildRequest,
@@ -58,6 +60,7 @@ export function WizardButton<T = unknown>({
     adopt,
   });
   const running = phase === 'running';
+  const runningText = runningLabel ?? t`Working`;
 
   return (
     <button
@@ -66,7 +69,7 @@ export function WizardButton<T = unknown>({
       disabled={disabled}
       data-testid={testId}
       aria-busy={running}
-      title={title ?? 'Click to run · double-click to open the wizard'}
+      title={title ?? t`Click to run · double-click to open the wizard`}
       className={cn(
         'flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 disabled:opacity-50',
         className,
@@ -75,9 +78,9 @@ export function WizardButton<T = unknown>({
       {running ? (
         <>
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          <span>{runningLabel}</span>
+          <span>{runningText}</span>
           {toolCount > 0 && (
-            <span className="inline-flex items-center gap-0.5" title="tools used">
+            <span className="inline-flex items-center gap-0.5" title={t`tools used`}>
               · {toolCount}
               <Wrench className="h-3 w-3" />
             </span>

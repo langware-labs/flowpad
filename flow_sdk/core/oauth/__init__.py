@@ -104,12 +104,21 @@ async def get_oauth_providers_as_env_table(user=None) -> EntityEnvVars:
     is not, so shadowing would send the user through a flow for a token they
     already hold.
     """
-    from flow_sdk.core.oauth.hub_providers import hub_provider_rows, union_providers  # noqa: PLC0415
+    from flow_sdk.core.oauth.hub_providers import hub_held_providers, hub_provider_rows, union_providers  # noqa: PLC0415
+    from flow_sdk.core.entity.entity_env.env_types import EnvStatusEnum  # noqa: PLC0415
+    from flow_sdk.core.oauth.provider_registry import hub_provider_name  # noqa: PLC0415
 
     providers = union_providers(oauth_provider_rows(), await hub_provider_rows())
     # No user, nobody holds anything: merged against an empty table, so every row is
     # still an ``EnvVarStatus`` (MISSING) and readers never branch on the row type.
-    return merge_env_tables(providers, user.get_env_table() if user is not None else EntityEnvVars())
+    table = merge_env_tables(providers, user.get_env_table() if user is not None else EntityEnvVars())
+    # A token the HUB holds is held too: ``credential_for`` resolves it (its hub tier), so a row that
+    # reads it as missing tells the user to connect what already works.
+    held = hub_held_providers()
+    for row in table.values:
+        if row.var_status == EnvStatusEnum.MISSING and hub_provider_name(row.name or "").lower() in held:
+            row.var_status = EnvStatusEnum.AVAILABLE
+    return table
 
 
 async def resolve_user_credentials_name(provider: str) -> Optional[str]:

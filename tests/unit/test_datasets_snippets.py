@@ -46,7 +46,9 @@ async def test_read_a_dataset():
 async def test_write_rows_and_labels(folder):
     ns = await run_fence(fence_under(DOC, "3."), {"folder": folder})
     assert [g["target"]["value"] for g in ns["gold"]] == ["data-sources", "connectors"]
-    assert (folder / "rows/0001/ground_truth-2/decision.json").is_file()
+    from flow_sdk.datasets.stores import rows_root_of
+
+    assert (rows_root_of(folder) / "rows/0001/ground_truth-2/decision.json").is_file()   # in the project's data store
 
 
 @pytest.fixture
@@ -145,16 +147,16 @@ async def test_ask_across_links_count_and_find_by_text(project):
     assert [r["key"] for r in ns["colleagues"]["rows"]] == ["dana", "eli", "fay"]      # everyone at a company a Levi is at
 
 
-from tests.unit.test_data_spec.test_declared_mirror import served  # noqa: E402,F401 -- a tasks dataset a CRM source mirrors into
+from tests.unit.test_data_spec.test_system_of_record import served  # noqa: E402,F401 -- a tasks dataset whose data source is a CRM
 
 
 async def test_change_a_field_the_outside_system_owns(served, monkeypatch):  # noqa: F811
     from flow_sdk.tags import ws_forward
-    from tests.unit.test_data_spec.test_declared_mirror import _seed
+    from tests.unit.test_data_spec.test_system_of_record import _seed
 
     await _seed(served)
     monkeypatch.setattr(ws_forward, "_started", True)   # the server: the one process that holds a driver
     ns = await run_fence(fence_under(DOC, "11."), {"tasks": served.tasks})
-    assert served.store.calls == [("update", "T-1", {"status": "DONE"})]      # only what changed, and only the CRM's field
-    assert (ns["now"]["status"], ns["now"]["notes"]) == ("DONE", "called twice")
+    assert served.crm.calls == [("update", "T-1", {"status": "DONE", "label": "hot"})]      # only what changed
+    assert (ns["now"]["status"], ns["now"]["label"]) == ("DONE", "hot")
     assert ns["code"] == "not_writable"

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import apiClient from '@sdk/client';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import { applyFilterToParams } from '@src/components/assets/assetFilter';
+import { sectionRecordTypes } from '@src/components/assets/section-record-types';
 
 /** A row from the `/search` endpoint. Shared fields live in `SearchRow`. */
 export interface SearchResult extends SearchRow {
@@ -67,7 +68,8 @@ export function useAssetSearch(params: UseAssetSearchParams): UseAssetSearchResu
     timerRef.current = setTimeout(() => {
       const offset = (page - 1) * pageSize;
       const urlParams = new URLSearchParams();
-      urlParams.set('record_type', recordType);
+      // A section lists more than its own type (Documents: markdown + .docx / .txt).
+      urlParams.set('record_type', sectionRecordTypes(recordType).join(','));
       urlParams.set('offset', String(offset));
       urlParams.set('limit', String(pageSize));
 

@@ -28,6 +28,7 @@ node-addressed events alongside it. A future in-sandbox handler subscribes to
 ``agent.run.requested`` with ``target=compute_node:<its own id>`` and needs no
 change to the tags or the addressing — only (2) has to land.
 """
+
 from __future__ import annotations
 
 import logging
@@ -77,12 +78,13 @@ async def dispatch_agent_run(
     lie, and it would be invisible in the answer.
     """
     from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
     # An agent placement is always node-backed, so this resolves; the fallback
     # keeps the lifecycle emission addressable rather than crashing the run if a
     # row ever arrives with a provider that is not.
     node_id = deployment.compute_node_id or "unknown"
-    agent = await deployment.agent()
-    agent_name = getattr(agent, "name", None) or str(deployment.parent_type_id)
+    agent = await deployment.main_agent()
+    agent_name = getattr(agent, "name", None) or str(deployment.main_agent_id)
 
     base = {
         "deployment_id": deployment.id,
@@ -122,14 +124,14 @@ def process_id_of(answer) -> "str | None":
     return None
 
 
-async def create_agentic_process_from_agent(agent, prompt: str = "", *, place=None, **options) -> "AgenticProcess":
+async def create_agentic_process_from_agent(agent, prompt: str = "", *, overrides=None, **options) -> "AgenticProcess":
     """Project *agent* onto an AgenticProcess. Not saved, not started.
 
     The primitive every launch of an agent builds on. Every field the agent declares (worker,
     model, permissions, system prompt, MCP servers, dirs) comes from the Agent; only per-run
     concerns (``visible``, ``process_type``, ``context_data``, ``workdir``, ``pty_mode``, …) are
-    accepted here and passed through. *place* is a placement's overrides (agent.json ``places``):
-    ``Deployment.create_process`` passes its own; a run that belongs to no placement (a task run,
+    accepted here and passed through. *overrides* are a deployment's main-agent launch overrides:
+    ``Deployment.create_process`` passes its own; a run that belongs to no deployment (a task run,
     ``tasks.dispatch``) passes none.
     """
     from flow_sdk.builtin.agent import worker_type_value  # noqa: PLC0415
@@ -137,9 +139,10 @@ async def create_agentic_process_from_agent(agent, prompt: str = "", *, place=No
     from flow_sdk.builtin.agentic_process.agentic_process import selected_worker_type  # noqa: PLC0415
     from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
 
-    place_mcp = place.mcp_servers if place is not None else None
-    if place is not None:
-        agent = agent.model_copy(update={k: v for k, v in place.overrides().items() if k != "mcp_servers"})
+    overrides = {k: v for k, v in (overrides or {}).items() if v is not None}
+    place_mcp = overrides.get("mcp_servers")
+    if overrides:
+        agent = agent.model_copy(update={k: v for k, v in overrides.items() if k != "mcp_servers"})
 
     # A per-run worker override has to reach BOTH sides — the options object
     # (dispatched on the driver key) and the process field (a WorkerType
@@ -157,16 +160,21 @@ async def create_agentic_process_from_agent(agent, prompt: str = "", *, place=No
     context_data = {**(options.pop("context_data", None) or {})}
     if agent.system_prompt:
         existing = str(context_data.get("instructions") or "").strip()
-        context_data["instructions"] = "\n\n".join(
-            p for p in (agent.system_prompt.strip(), existing) if p
-        )
+        context_data["instructions"] = "\n\n".join(p for p in (agent.system_prompt.strip(), existing) if p)
     context_data.setdefault("launched_by_agent", agent.name)
+    # The agent's own skills (``<agent>/skills/<name>/SKILL.md``) reach its session; a project skill of the
+    # same name replaces one (``process_projection.link_mounted_skills``).
+    if agent.asset_ref:
+        context_data.setdefault("agent_skills_dir", str(Path(agent.asset_ref) / "skills"))
     # Chief of Staff mode — CoS.md, the skill, the native staff roster. Off: nothing changes.
     from flow_sdk.tasks.cos import apply_to_launch, staff_dir  # noqa: PLC0415
 
     cli_config = opts.to_json()
     cos_options = apply_to_launch(
-        agent, context_data=context_data, cli_config=cli_config, worker_type=worker_override or agent.worker_type,
+        agent,
+        context_data=context_data,
+        cli_config=cli_config,
+        worker_type=worker_override or agent.worker_type,
         project_dir=await staff_dir(agent) if getattr(agent, "chief_of_staff", False) else None,
     )
 
@@ -192,8 +200,18 @@ async def create_agentic_process_from_agent(agent, prompt: str = "", *, place=No
         if source_project is not None:
             dependencies = await source_project.dependencies(asset=str(agent.typeid), fetch=True)
             for dependency in dependencies:
-                if dependency.state == "ready" and dependency.local_path and dependency.local_path not in additional_dirs:
+                if (
+                    dependency.state == "ready"
+                    and dependency.local_path
+                    and dependency.local_path not in additional_dirs
+                ):
                     additional_dirs.append(dependency.local_path)
+    from flow_sdk.builtin.agent_mailbox import channels_block  # noqa: PLC0415
+
+    if block := await channels_block(str(agent.id)):
+        context_data["instructions"] = "\n\n".join(
+            p for p in (str(context_data.get("instructions") or "").strip(), block) if p
+        )
     home = await _foreign_home(agent, acting_project_id)
     if home:
         if home not in additional_dirs:
@@ -214,6 +232,7 @@ async def create_agentic_process_from_agent(agent, prompt: str = "", *, place=No
         worker_type=worker_type_value(worker_override or agent.worker_type or await selected_worker_type()),
         project_id=acting_project_id,
         load_flowpad_assistant=cos_options.get("load_flowpad_assistant", agent.load_flowpad_assistant),
+        assistant_skills=cos_options.get("assistant_skills", agent.assistant_skills),
         additional_dirs=additional_dirs,
         # The agent's MCP assets, resolved from its folder. Set on the
         # constructor rather than via ``process.add_mcp`` because this verb

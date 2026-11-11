@@ -3,11 +3,13 @@
  * payload (+ optional target node) → POST /graph-workflows/<id>/inject. Starts
  * a run; the run/journal surfaces light up from the live streams.
  */
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
 import { graphWorkflows } from '@sdk/services/graph-workflows';
 import { useStudio } from '../store';
 
 export function InjectPanel() {
+  const { t } = useLingui();
   const flowId = useStudio((s) => s.flowId);
   const doc = useStudio((s) => s.doc);
   const flowEnabled = useStudio((s) => s.flowEnabled);
@@ -38,15 +40,27 @@ export function InjectPanel() {
 
   return (
     <div className="afl-panel afl-inject">
-      <div className="eye">inject event</div>
-      {!flowEnabled && <p className="afl-note warn">Flow is inactive — injections are refused.</p>}
-      <label>event</label>
-      <input value={event} onChange={(e) => setEvent(e.target.value)} placeholder="event name" />
-      <label>payload</label>
+      <div className="eye">
+        <Trans>inject event</Trans>
+      </div>
+      {!flowEnabled && (
+        <p className="afl-note warn">
+          <Trans>Flow is inactive — injections are refused.</Trans>
+        </p>
+      )}
+      <label>
+        <Trans>event</Trans>
+      </label>
+      <input value={event} onChange={(e) => setEvent(e.target.value)} placeholder={t`event name`} />
+      <label>
+        <Trans>payload</Trans>
+      </label>
       <textarea rows={5} value={payload} onChange={(e) => setPayload(e.target.value)} placeholder="{}" />
-      <label>target node (optional — otherwise routes via $external edges)</label>
+      <label>
+        <Trans>target node (optional — otherwise routes via $external edges)</Trans>
+      </label>
       <select value={targetNode} onChange={(e) => setTargetNode(e.target.value)}>
-        <option value="">— route by edges —</option>
+        <option value="">{t`— route by edges —`}</option>
         {(doc?.nodes ?? [])
           .filter((n) => n.node_type !== 'trigger')
           .map((n) => (
@@ -56,7 +70,7 @@ export function InjectPanel() {
           ))}
       </select>
       <button className="afl-cta" onClick={() => void inject()} disabled={!flowId}>
-        Inject ▶
+        <Trans>Inject ▶</Trans>
       </button>
       {status && <div className="afl-status">{status}</div>}
     </div>

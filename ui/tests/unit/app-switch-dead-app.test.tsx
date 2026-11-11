@@ -29,19 +29,21 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ currentDock: null, navigation: { openDock: vi.fn() } }),
 }));
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: { id: projectId } }) }));
-vi.mock('@src/components/webapp-display/WebappSetupGate', () => ({
-  WebappSetupGate: ({ webappId }: { webappId: string }) => <p data-testid="setup-gate">{webappId}</p>,
+const lifecycle = vi.hoisted(() => ({
+  of: (id: string | null) =>
+    ({
+      app: null, record: { state: id === 'cf255aa4-1156-45d2-bfa0-3767d01a2e25' ? 'up' : 'starting', detail: 'npm install' },
+      loading: false, notFound: false, showable: id === 'cf255aa4-1156-45d2-bfa0-3767d01a2e25', questionId: null,
+      settleQuestion: () => {}, fixIt: async () => {}, stop: async () => {}, reportPage: async () => null,
+    }) as unknown,
 }));
-vi.mock('@src/components/project-setup/ProjectLoadGate', () => ({
-  ProjectLoadGate: ({ children }: { children: ReactNode }) => children,
+vi.mock('@src/components/webapp-display/useAppLifecycle', () => ({ useAppLifecycle: (id: string | null) => lifecycle.of(id) }));
+vi.mock('@src/components/webapp-display/AppLifecyclePanel', () => ({
+  AppLifecyclePanel: ({ lifecycle: l }: { lifecycle: { record: { state: string } } }) => (
+    <p data-testid="lifecycle-panel">{l.record.state}</p>
+  ),
 }));
 vi.mock('@src/components/display-toolbar', () => ({ WebappDisplayToolbar: () => null }));
-vi.mock('@src/components/webapp-display/useWebappDiagnostics', () => ({
-  useWebappDiagnostics: () => ({ severity: 'ok', code: 'ok', detail: [], refresh: vi.fn() }),
-}));
-vi.mock('@src/components/webapp-display/useWebappFix', () => ({
-  useWebappFix: () => ({ running: false, toolCount: 0, start: vi.fn(), autoAttempted: false }),
-}));
 
 const { AppDisplayViewer } = await import('@src/pages/flow-page/app-display-viewer');
 
@@ -80,6 +82,6 @@ it('a dead app opened after a running one shows its own state, and the running a
 
   view.rerender(routed(<AppDisplayViewer artifactId={null} microAppId={B} />));
 
-  expect(view.getByTestId('setup-gate')).toHaveTextContent(B);
+  expect(view.getByTestId('lifecycle-panel')).toHaveTextContent('starting');
   expect(hidden()).toBe(true);
 });

@@ -1,13 +1,7 @@
 import { t } from '@lingui/core/macro';
-import {
-  type BranchSummary,
-  type RepoSummary,
-  connectionManager,
-  isHubOnly,
-  oauthService,
-  navigator as sdkNavigator,
-} from '@sdk';
+import { type BranchSummary, type RepoSummary, isHubOnly, navigator as sdkNavigator } from '@sdk';
 import { BranchPicker } from '@src/components/git/BranchPicker';
+import { ConnectGithubButton } from '@src/components/git/ConnectGithubButton';
 import { CreatePrivateRepoForm } from '@src/components/git/CreatePrivateRepoForm';
 import { RepoPicker } from '@src/components/git/RepoPicker';
 import { Button } from '@src/components/ui/button';
@@ -25,7 +19,7 @@ import { useAuth } from '@src/hooks/useAuth';
 import { contentInstallSpec, INSTALL_REVIEW_BRANCH, parseInstallIntent } from '@src/lib/content-install';
 import { Trans } from '@lingui/react/macro';
 import { ExternalLink, GitBranch, Lock, PackagePlus } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 type PickerView = 'repos' | 'branches' | 'create' | 'confirm';
 
@@ -38,40 +32,15 @@ export default function InstallLanding() {
   const [branch, setBranch] = useState<BranchSummary | null>(null);
   const [started, setStarted] = useState(false);
   const [cancelled, setCancelled] = useState(false);
-  const [connectingGithub, setConnectingGithub] = useState(false);
   const [githubConnectionError, setGithubConnectionError] = useState('');
   // Bumping this remounts RepoPicker, which is how a freshly granted token
   // gets used: useGitRepos caches for 5 minutes, so the failed fetch would
   // otherwise stay cached and the panel keep showing the dead end it was just
   // rescued from.
   const [repoPickerRevision, setRepoPickerRevision] = useState(0);
-
-  useEffect(() => {
-    const handleGithubConnection = (message: { auth_method?: string; status?: string }) => {
-      if (message.auth_method !== 'github') return;
-      setConnectingGithub(false);
-      if (message.status === 'success') {
-        setGithubConnectionError('');
-        setRepoPickerRevision((revision) => revision + 1);
-      } else {
-        setGithubConnectionError(t`GitHub connection failed. Please try again.`);
-      }
-    };
-    connectionManager.on('on_llm_config_msg', handleGithubConnection);
-    return () => {
-      // Braced: `off` returns the manager for chaining, and an effect cleanup
-      // must return void.
-      connectionManager.off('on_llm_config_msg', handleGithubConnection);
-    };
-  }, []);
-
-  const connectGithub = useCallback(() => {
-    setConnectingGithub(true);
+  const onGithubConnected = useCallback(() => {
     setGithubConnectionError('');
-    void oauthService.connect('github').catch(() => {
-      setConnectingGithub(false);
-      setGithubConnectionError(t`GitHub connection failed.`);
-    });
+    setRepoPickerRevision((revision) => revision + 1);
   }, []);
   const failed = steps.some((step) => step.status === 'error');
 
@@ -150,6 +119,8 @@ export default function InstallLanding() {
     </div>
   );
 
+  const intentName = intent.name;
+
   return (
     <>
       {page}
@@ -158,11 +129,13 @@ export default function InstallLanding() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <PackagePlus className="h-5 w-5" />
-              Where do you want to install {intent.name}?
+              <Trans>Where do you want to install {intentName}?</Trans>
             </DialogTitle>
             <DialogDescription>
-              Flowpad will propose the install on <code>{INSTALL_REVIEW_BRANCH}</code>. Your default branch is not
-              changed and no pull request is opened automatically.
+              <Trans>
+                Flowpad will propose the install on <code>{INSTALL_REVIEW_BRANCH}</code>. Your default branch is not
+                changed and no pull request is opened automatically.
+              </Trans>
             </DialogDescription>
           </DialogHeader>
 
@@ -184,7 +157,14 @@ export default function InstallLanding() {
                 provider="github"
                 allowedRoles={['admin', 'write']}
                 onSelect={selectRepo}
-                connectionAction={{ label: t`Connect GitHub`, pending: connectingGithub, onClick: connectGithub }}
+                connectionAction={
+                  <ConnectGithubButton
+                    className="h-7 shrink-0 px-2 text-xs"
+                    onConnected={onGithubConnected}
+                    onError={setGithubConnectionError}
+                    testId="repo-picker-connect"
+                  />
+                }
               />
               {githubConnectionError && <p className="text-xs text-destructive">{githubConnectionError}</p>}
               <Button
@@ -208,7 +188,7 @@ export default function InstallLanding() {
               </div>
               <div className="mt-1 font-mono text-xs text-muted-foreground">{branch.name}</div>
               <p className="mt-3 text-xs text-muted-foreground">
-                {intent.name} stays linked as shared project context after the workspace opens.
+                <Trans>{intentName} stays linked as shared project context after the workspace opens.</Trans>
               </p>
             </div>
           ) : null}

@@ -22,6 +22,21 @@ from dataclasses import dataclass
 # PROGRESS_TEXT_COMPLETE in ts_sdk/src/services/system-tools-service.ts.
 PROGRESS_TEXT_COMPLETE: str = "complete"
 
+# The row ``index()`` appends after the per-type rows while it sweeps away
+# entries whose files are gone. Counted in record types checked, not records,
+# so it is kept out of the table's done/total. The UI maps the word to
+# "Cleaning up" (ui/src/components/footer/activity-words.ts).
+SWEEP_ROW_NAME: str = "cleanup"
+
+
+@dataclass(frozen=True, slots=True)
+class ErrorSample:
+    """One error, kept so the person can see WHAT failed, not only how many."""
+
+    ref: str      # the file the error is about
+    message: str  # the exception text, e.g. the YAML parser's
+    code: str = ""  # what failed: "index.identity" | "index.parse"
+
 
 @dataclass(frozen=True, slots=True)
 class TypeProgressRow:
@@ -30,6 +45,8 @@ class TypeProgressRow:
     total: int         # pre-flight count; 0 when unknown (scan/discovery phase)
     errors: int = 0
     skipped: int = 0   # subset of done that was skipped-fresh
+    finished: bool = False  # the producer is done with this row, whatever its count
+    error_samples: tuple[ErrorSample, ...] = ()  # the first MAX_ERROR_SAMPLE errors, by message
 
 
 @dataclass(frozen=True, slots=True)

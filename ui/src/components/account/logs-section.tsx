@@ -76,7 +76,7 @@ export function LogsSection({ onNavigate }: { onNavigate?: () => void } = {}) {
         }}
       >
         <Terminal className="me-2 h-4 w-4" />
-        CLI Invocation Log
+        <Trans>CLI Invocation Log</Trans>
       </Button>
 
       <SystemDiagnoses />

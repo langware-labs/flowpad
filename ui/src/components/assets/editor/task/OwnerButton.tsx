@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { ConversationParticipant, Task, TaskKind } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { Button } from '@src/components/ui/button';
@@ -40,7 +41,7 @@ export function OwnerButton({ task }: OwnerButtonProps) {
   // `group_name` is only ever set by the contacts-group fan-out; a task handed
   // to one person carries the person on `assignee`.
   const assigned = taskOwner(task);
-  const label = assigned ? `Owner: ${assigned}` : 'Owner';
+  const label = assigned ? t`Owner: ${assigned}` : t`Owner`;
   const Icon = isGroup ? Users : UserIcon;
 
   const openIndividual = () => {
@@ -116,7 +117,7 @@ export function OwnerButton({ task }: OwnerButtonProps) {
           {mode === 'menu' ? (
             <div className="flex flex-col gap-1">
               <div className="px-1 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Assign this task to
+                <Trans>Assign this task to</Trans>
               </div>
               <button
                 type="button"
@@ -126,8 +127,12 @@ export function OwnerButton({ task }: OwnerButtonProps) {
               >
                 <UserIcon className="h-4 w-4 text-muted-foreground" />
                 <span>
-                  <span className="block font-medium">Individual</span>
-                  <span className="block text-xs text-muted-foreground">One person owns this task</span>
+                  <span className="block font-medium">
+                    <Trans>Individual</Trans>
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    <Trans>One person owns this task</Trans>
+                  </span>
                 </span>
               </button>
               <button
@@ -138,9 +143,11 @@ export function OwnerButton({ task }: OwnerButtonProps) {
               >
                 <Users className="h-4 w-4 text-muted-foreground" />
                 <span>
-                  <span className="block font-medium">Group</span>
+                  <span className="block font-medium">
+                    <Trans>Group</Trans>
+                  </span>
                   <span className="block text-xs text-muted-foreground">
-                    Every member of a contacts group gets their own copy
+                    <Trans>Every member of a contacts group gets their own copy</Trans>
                   </span>
                 </span>
               </button>
@@ -148,7 +155,7 @@ export function OwnerButton({ task }: OwnerButtonProps) {
           ) : (
             <div className="flex flex-col gap-2">
               <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Pick the owner
+                <Trans>Pick the owner</Trans>
               </div>
               <ContactPicker
                 value={picked}
@@ -172,7 +179,7 @@ export function OwnerButton({ task }: OwnerButtonProps) {
                   disabled={!picked[0] || sending}
                   data-testid="task-owner-assign"
                 >
-                  {sending ? 'Assigning…' : 'Assign'}
+                  {sending ? t`Assigning…` : t`Assign`}
                 </Button>
               </div>
             </div>

@@ -5,12 +5,10 @@ import { chromeEntityActionClassName, chromeGlyphClassName } from '@src/componen
 import { WorkerIcon } from '@src/components/entity-execution-panel/history-row';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
-import { useLastWorkerType, workerToOpener } from '@src/components/terminal/openers/useLastWorkerType';
+import { usePrimaryWorkerType, workerToOpener } from '@src/components/terminal/openers/useLastWorkerType';
 import { WORKER_LABELS } from '@src/hooks/useWorkerHistory';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { openNewChat } from '@src/navigation/open-new-chat';
-import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
+import { openNewChatOrExplain } from '@src/navigation/open-new-chat';
 
 /**
  * Quick launch: one glyph in the navigation bar that starts a fresh agentic
@@ -18,7 +16,7 @@ import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
  *
  * The two things a chat launcher normally asks for are both already decided:
  *   - the HARNESS is the last one launched from any surface (the shared
- *     last-opener preference the terminal strip and `WorkerToolbar` write),
+ *     last-opener preference the terminal strip and `ContextWorkerToolbar` write),
  *     falling back to the capability-selected default before a first launch;
  *   - the MODE is the current View mode — `openNewChat` reads it and settles
  *     transport, surface and persona from that one value, so this button gets
@@ -31,11 +29,9 @@ import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
 export function NewChatButton() {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const { lastWorker } = useLastWorkerType();
-  const defaultWorker = useDefaultWorkerType();
   const [starting, setStarting] = useState(false);
 
-  const worker = lastWorker ?? defaultWorker;
+  const worker = usePrimaryWorkerType();
   const label = WORKER_LABELS[workerToOpener(worker)];
 
   const start = useCallback(() => {
@@ -44,14 +40,8 @@ export function NewChatButton() {
     // it still leaves a trace if a launch promise never settles).
     if (starting) return;
     setStarting(true);
-    void openNewChat(navigation, { workerType: worker })
-      .catch((err) => {
-        console.error('[NewChatButton] new chat failed', err);
-        // A failed create is almost always the harness missing from this
-        // machine; Capabilities re-probes the kind it arrives with.
-        openCapabilitiesForWorker(navigation, worker);
-      })
-      .finally(() => setStarting(false));
+    // A refused launch shows the one launch-failure card, in place of a jump elsewhere.
+    void openNewChatOrExplain(navigation, { workerType: worker }).finally(() => setStarting(false));
   }, [starting, worker, navigation]);
 
   return (

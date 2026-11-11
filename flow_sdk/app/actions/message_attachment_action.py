@@ -80,6 +80,30 @@ async def _load_ma(attachment_id: str) -> MessageAttachment | None:
     return await MessageAttachment.get_one({"id": attachment_id})
 
 
+async def _installed_entity(ma: MessageAttachment):
+    """The entity an installed attachment put on this machine: by its local id,
+    else by its installed path — the staged copy's own shape under
+    ``installed_root``. A path-keyed asset installed before installs recorded the
+    local id names only the sender's; found this way, the row learns it."""
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    cls = SchemaRegistry.get_entity_cls(ma.asset_type)
+    ent = await cls.get_one({"id": ma.local_asset_id}) if cls is not None else None
+    entry_dir = _entry_dir_for(ma)
+    if ent is not None or not ma.installed_root or entry_dir is None or not entry_dir.exists():
+        return ent
+    paths = [p.relative_to(entry_dir).as_posix() for p in sorted(entry_dir.rglob("*")) if p.is_file()]
+    asset_root, _ = _locate_staged_asset(entry_dir, paths, SchemaRegistry.get(ma.asset_type))
+    if asset_root is None:
+        return None
+    found = await Entity.get_by_asset_ref(Path(ma.installed_root) / asset_root, resolve_containing=False)
+    if found is None or found.get_type() != ma.asset_type:
+        return None
+    ma.installed_asset_id = str(found.id)
+    return found
+
+
 async def _maybe_mint_bookmark(ma: MessageAttachment, someone_typeid) -> None:
     """If the sender opted in (``ma.create_bookmark``), mint a FAVORITE bookmark
     on the receiver pointing at the just-installed entity. Best-effort: a mint
@@ -92,12 +116,12 @@ async def _maybe_mint_bookmark(ma: MessageAttachment, someone_typeid) -> None:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     cls = SchemaRegistry.get_entity_cls(ma.asset_type)
-    ent = await cls.get_one({"id": ma.asset_id}) if cls is not None else None
+    ent = await cls.get_one({"id": ma.local_asset_id}) if cls is not None else None
     try:
         await mint_share_favorite(
             owner=someone_typeid,
             entity_type=ma.asset_type,
-            entity_id=ma.asset_id,
+            entity_id=ma.local_asset_id,
             title=ma.name or (getattr(ent, "display_name", None) if ent else None) or ma.asset_id,
             asset_ref=str(getattr(ent, "asset_ref", "") or ""),
             icon=SchemaRegistry.get_icon(ma.asset_type),
@@ -138,7 +162,8 @@ async def _setup_after_install(
     file case). Only a type that actually spawns a setup session loads the entity
     and calls ``Entity.setup_on_receive``. ``auto_run=False`` forces that plain
     open even for a setup-capable type — Git Download defers setup to the explicit
-    ``setup`` action. Best-effort — a setup failure never fails the install."""
+    ``setup`` action. A ``receive_handler`` type (its own ``setup_on_receive``, no skill) is dispatched
+    like a setup-capable one — and held back by ``auto_run=False`` the same way. Best-effort — a setup failure never fails the install."""
     from flow_sdk.core.display_target import entity_target  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
@@ -146,18 +171,19 @@ async def _setup_after_install(
     if shared_file is not None:
         return shared_file
     info = SchemaRegistry.get(ma.asset_type)
-    if not auto_run or info is None or not getattr(info, "setup_skill", None):
-        return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
+    handler = info is not None and getattr(info, "receive_handler", False)
+    if not auto_run or info is None or not (handler or getattr(info, "setup_skill", None)):
+        return entity_target(ma.asset_type, ma.local_asset_id, name=ma.name)
 
     cls = SchemaRegistry.get_entity_cls(ma.asset_type)
-    ent = await cls.get_one({"id": ma.asset_id}) if cls is not None else None
+    ent = await cls.get_one({"id": ma.local_asset_id}) if cls is not None else None
     if ent is None:
-        return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
+        return entity_target(ma.asset_type, ma.local_asset_id, name=ma.name)
     try:
         return await ent.setup_on_receive(project_id=ma.project_id, workdir=installed_root)
     except Exception:
         logger.warning("[message_attachment] setup_on_receive failed for %s", ma.asset_id, exc_info=True)
-        return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
+        return entity_target(ma.asset_type, ma.local_asset_id, name=ma.name)
 
 
 async def _cross_link_installed_siblings(ma: MessageAttachment) -> None:
@@ -257,7 +283,7 @@ async def _apply_receive_row_overrides(ma: MessageAttachment, someone_typeid) ->
     if cls is None:
         return
     try:
-        ent = await cls.get_one({"id": ma.asset_id})
+        ent = await cls.get_one({"id": ma.local_asset_id})
         if ent is None:
             return
         dirty = False
@@ -359,6 +385,7 @@ async def _install_git_reference(
     overwrite: bool,
     someone_typeid,
     name: str | None = None,
+    project_root: Path | None = None,
 ) -> ApiResponse:
     """Install a staged git reference (``TypeInfo.receive_transfer``): the type's
     ``restore_reference`` writes its row from the staged metadata — an artifact
@@ -390,6 +417,8 @@ async def _install_git_reference(
             overwrite=overwrite,
             owner_typeid=someone_typeid,
             name=name,
+            project_root=project_root,
+            project_id=project_id if scope == AttachmentScope.PROJECT.value else None,
         )
     except FlowMessageExistsError as e:
         return ApiFailResponse(
@@ -473,6 +502,15 @@ async def _install_webapp_artifact_copy(
         )
     if served is None:
         return ApiFailResponse(message="webapp artifact restore failed", status_code=500)
+    # A generated web app is an Artifact, not a manifest-backed micro_app, so
+    # its copy install is the point where its local static route must be placed.
+    # Without this, the review UI says Installed but Open has no served URL.
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_placement import place_webapp_artifact_locally  # noqa: PLC0415
+
+    artifact = await Artifact.get_by_id(ma.asset_id)
+    if artifact is not None:
+        await place_webapp_artifact_locally(artifact)
     await _notify_received_assets({(ma.asset_type, ma.asset_id)})
     return await _finalize_install(ma, scope, project_id, str(root), someone_typeid)
 
@@ -493,14 +531,20 @@ def _staging_gone(suffix: str = "") -> ApiFailResponse:
 # ---------------------------------------------------------------------------
 
 
-async def _adopt_indexed_asset_id(ma: MessageAttachment, root: Path, placed: list[Path]) -> None:
-    """Point a zip-derived row at the entity its install indexed.
+async def _adopt_indexed_asset_id(ma: MessageAttachment, root: Path, placed: list[Path], owner=None) -> None:
+    """Name the entity this install indexed, so Open / uninstall / the chip resolve it.
 
-    A typed asset that arrived inside a ZIP carries no id of its own — the row's
-    ``asset_id`` is a placeholder, and the indexer mints the real one from the
-    installed folder. Look that entity up by its installed path (its natural key)
-    and adopt its id, so Open / uninstall / the chip resolve it."""
-    from flow_sdk.builtin.flow_message_bundle import _notify_received_assets  # noqa: PLC0415
+    An id written in the asset's own files arrives with them and nothing changes.
+    One that is not is minted here from the installed folder, so the id the message
+    carries names nothing on this machine. The entity is looked up by its installed
+    path (its natural key). A ZIP's ``asset_id`` is only a placeholder, so the row
+    adopts the real one; any other attachment keeps ``asset_id`` — it is what the
+    message names — and records the local one in ``installed_asset_id``."""
+    from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+        _entry_key,
+        _notify_received_assets,
+        _stamp_origins,
+    )
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
@@ -512,11 +556,40 @@ async def _adopt_indexed_asset_id(ma: MessageAttachment, root: Path, placed: lis
     if ent is None or str(ent.typeid.type) != ma.asset_type:
         logger.warning("[install] no indexed %s at %s for %s", ma.asset_type, root / asset_root, ma.id)
         return
-    ma.asset_id = str(ent.id)
-    await _notify_received_assets({(ma.asset_type, ma.asset_id)})
-
+    if str(ent.id) == ma.asset_id:
+        return
+    if is_zip_filename(ma.name or ""):
+        ma.asset_id = str(ent.id)
+    else:
+        ma.installed_asset_id = str(ent.id)
+    received = {(ma.asset_type, str(ent.id))}
+    await _stamp_origins(received, _origin_map(_entry_key(ma.asset_type, str(ent.id)), ma), owner)
+    await _notify_received_assets(received)
 
 async def handle_attachment_install(
+    attachment_id: str,
+    scope: str,
+    project_id: str | None,
+    *,
+    overwrite: bool = False,
+    someone_typeid=None,
+    name: str | None = None,
+) -> ApiResponse:
+    """Install a staged attachment (``_install``). A git share that would write the
+    receiver's branch (a pull or a cherry-pick) without their consent answers
+    ``needs: "apply"`` with the plan — the same call inside ``share_consent(True)``
+    runs it."""
+    from flow_sdk.builtin.drivers.git_driver import NeedsApply  # noqa: PLC0415
+
+    try:
+        return await _install(
+            attachment_id, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid, name=name
+        )
+    except NeedsApply as e:
+        return ApiSuccessResponse(data=e.answer())
+
+
+async def _install(
     attachment_id: str,
     scope: str,
     project_id: str | None,
@@ -568,15 +641,38 @@ async def handle_attachment_install(
     # the rest (artifact / folder: the row only, the checkout resolves at open).
     from flow_sdk.builtin.flow_message_bundle import git_reference_cls  # noqa: PLC0415
 
-    if git_reference_cls(ma.asset_type) is not None and ma.transfer_mode == TransferMode.GIT.value:
-        return await _install_git_reference(
-            ma,
-            scope,
-            project_id,
-            overwrite=overwrite,
-            someone_typeid=someone_typeid,
-            name=name,
-        )
+    if git_reference_cls(ma.asset_type) is not None and ma.transfer_mode in (
+        TransferMode.GIT.value,
+        TransferMode.BOTH.value,
+    ):
+        project_root = await _project_mount(project_id) if scope == AttachmentScope.PROJECT.value else None
+        if ma.transfer_mode == TransferMode.BOTH.value and not await _opens_by_git(ma, project_root):
+            # Not a checkout of the shared repo: the copy, never a hidden clone.
+            return await _install_webapp_artifact_copy(
+                ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid
+            )
+        try:
+            return await _install_git_reference(
+                ma,
+                scope,
+                project_id,
+                overwrite=overwrite,
+                someone_typeid=someone_typeid,
+                name=name,
+                project_root=project_root,
+            )
+        except GitShareError as e:
+            if (
+                ma.transfer_mode != TransferMode.BOTH.value
+                or ma.asset_type != EntityType.ARTIFACT.value
+                or e.keeps_copy_out
+            ):
+                return _git_share_failed(e)
+            # Git could not open it here: the bytes that rode beside the pointer can.
+            res = await _install_webapp_artifact_copy(
+                ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid
+            )
+            return _with_git_share_error(res, e)
     # Copy mode: a webapp ARTIFACT can't be a git reference — mirror the shipped
     # folder bytes and serve them.
     if ma.asset_type == EntityType.ARTIFACT.value:
@@ -627,7 +723,7 @@ async def handle_attachment_install(
         root = Path(mount)
     else:
         project_id = None
-        if ma.transfer_mode != TransferMode.GIT.value:
+        if ma.transfer_mode != TransferMode.GIT.value:  # copy, or both (whose bytes are the fallback)
             # Same policy that stamped `user_scope_allowed` at stage time —
             # the single owner is placement.user_scope_allowed.
             if not user_scope_allowed(asset_class):
@@ -651,6 +747,26 @@ async def handle_attachment_install(
         except ValueError:
             return ApiFailResponse(message=f"unknown record type: {ma.asset_type!r}", status_code=400)
 
+    git_error: GitShareError | None = None
+    if ma.transfer_mode == TransferMode.BOTH.value and await _opens_by_git(ma, root):
+        # Git first, into the receiver's project; the bytes are the fallback.
+        try:
+            if opened := await _restore_git_transfer_entry(
+                unpacked_dir(ma.flow_message_id),
+                entry_key,
+                ma.git_transfer or {},
+                _origin_map(entry_key, ma),
+                preferred_project_root=root,
+                preferred_project_id=project_id,
+                overwrite=overwrite,
+                owner_typeid=someone_typeid,
+            ):
+                ma.asset_id = opened  # the id this checkout carries, not the sender's
+                return await _finalize_install(ma, scope, project_id, None, someone_typeid)
+        except GitShareError as e:
+            if e.keeps_copy_out:
+                return _git_share_failed(e)
+            git_error = e
     try:
         if ma.transfer_mode == TransferMode.GIT.value:
             # Clone/pull + index happen HERE, behind explicit consent (at
@@ -672,6 +788,7 @@ async def handle_attachment_install(
             )
             if not restored:
                 return ApiFailResponse(message="git transfer restore failed", status_code=500)
+            ma.asset_id = restored  # the id this checkout carries, not the sender's
         else:
             entry_dir = _entry_dir_for(ma)
             if entry_dir is None or not entry_dir.exists():
@@ -698,8 +815,8 @@ async def handle_attachment_install(
                 project_id=project_id,
                 owner=someone_typeid,
             )
-            if not is_raw_file and is_zip_filename(ma.name or ""):
-                await _adopt_indexed_asset_id(ma, root, placed)
+            if not is_raw_file:
+                await _adopt_indexed_asset_id(ma, root, placed, someone_typeid)
     except FlowMessageExistsError as e:
         return ApiFailResponse(
             message="asset already exists — overwrite?",
@@ -707,33 +824,68 @@ async def handle_attachment_install(
             data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
         )
     except GitShareError as e:
-        # The shared version could not be opened here (no access, offline,
-        # rewritten history, no git): say which, with its code, and leave the
-        # attachment staged so a retry can still install it.
-        return ApiFailResponse(
-            message=str(e),
-            status_code=424,
-            data={"git_share_error": e.code},
-        )
+        return _git_share_failed(e)
 
     # Metadata axis: overlay the portable entity-JSON envelopes (entities.json)
-    # onto the freshly materialized rows — parent_type_id / labels / status /
+    # onto the freshly materialized rows — parent_type_id / status /
     # semantic_lock, etc. Independent of transfer mode; sender-local fields never
     # travel, so the receiver's own scope/project_id/asset_ref stay intact.
     try:
         from flow_sdk.builtin.flow_message_bundle import apply_entities_overlay  # noqa: PLC0415
 
-        await apply_entities_overlay(unpacked_dir(ma.flow_message_id), someone_typeid)
+        # The envelope is keyed by the SENDER's id; an install that adopted a local one names it.
+        await apply_entities_overlay(unpacked_dir(ma.flow_message_id), someone_typeid, adopted={entry_key: ma.local_asset_id})
     except Exception:
         logger.warning("[install] entities.json overlay failed for %s", ma.id, exc_info=True)
 
-    return await _finalize_install(
+    res = await _finalize_install(
         ma,
         scope,
         project_id,
         str(root) if root is not None else None,
         someone_typeid,
     )
+    return _with_git_share_error(res, git_error) if git_error is not None else res
+
+
+async def _opens_by_git(ma: MessageAttachment, root: Path | None) -> bool:
+    """A ``both`` share opens by git only inside a project that is a checkout of
+    the shared repo; anywhere else (another project, the receiver's own folder, a
+    temp folder) it opens from the bytes that rode with it."""
+    if not ma.origin or not getattr(ma.origin, "transportable", False):
+        return False
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.builtin.share_target import is_checkout_of  # noqa: PLC0415
+
+    return await asyncio.to_thread(is_checkout_of, ma.origin, root)
+
+
+async def _project_mount(project_id: str | None) -> Path | None:
+    """The receiver's project folder, or None."""
+    if not project_id:
+        return None
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    project = await Project.get_one({"id": project_id})
+    mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
+    return Path(mount) if mount else None
+
+
+def _git_share_failed(e) -> ApiFailResponse:
+    """The shared version could not be opened here (no access, offline, rewritten
+    history, no git): say which, with its code, and leave the attachment staged so
+    a retry can still install it."""
+    return ApiFailResponse(message=str(e), status_code=424, data={"git_share_error": e.code, **e.data})
+
+
+def _with_git_share_error(res: ApiResponse, e) -> ApiResponse:
+    """A ``both`` install that opened from the copy because git failed: the copy is
+    in place, and the response says why git did not open it (the UI offers to
+    request access)."""
+    if isinstance(res, ApiSuccessResponse) and isinstance(res.data, dict):
+        res.data = {**res.data, "git_share_error": e.code, "git_share_message": str(e)}
+    return res
 
 
 # ---------------------------------------------------------------------------
@@ -785,7 +937,14 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
     # (the shared destroy tail below); there is no installed_root to sweep.
     row_only = getattr(SchemaRegistry.get(ma.asset_type), "receive_policy", None) == "auto"
 
-    if ma.transfer_mode != TransferMode.GIT.value and not row_only:
+    ent = await _installed_entity(ma)  # before the files go: it may be found by its installed path
+
+    # A ``both`` row opened by git copied no bytes (no installed_root) — nothing to sweep.
+    if (
+        ma.transfer_mode != TransferMode.GIT.value
+        and not row_only
+        and (ma.transfer_mode != TransferMode.BOTH.value or ma.installed_root)
+    ):
         if not ma.installed_root:
             return ApiFailResponse(message="installed_root missing — cannot uninstall", status_code=409)
         entry_dir = _entry_dir_for(ma)
@@ -796,8 +955,6 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
         remove_transferred_tree(entry_dir, Path(ma.installed_root))
 
     # Drop the asset entity (row + record folder) and tell the live UI.
-    cls = SchemaRegistry.get_entity_cls(ma.asset_type)
-    ent = await cls.get_one({"id": ma.asset_id}) if cls is not None else None
     if ent is not None:
         try:
             op = DataOpMessage(data=ent, op=OperationType.DELETE, to_entity=ent.typeid)
@@ -813,6 +970,7 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
     ma.scope = ""
     ma.project_id = ""
     ma.installed_root = ""
+    ma.installed_asset_id = ""
     await ma.save(someone_typeid, notify=True)
     return ApiSuccessResponse(data=ma)
 
@@ -848,6 +1006,11 @@ async def handle_staged_files(attachment_id: str) -> ApiResponse:
     entry_dir = _entry_dir_for(ma)
     if entry_dir is None or not entry_dir.exists():
         return _staging_gone()
+    if ma.installed:
+        known = ma.local_asset_id
+        await _installed_entity(ma)
+        if ma.local_asset_id != known:  # installed before installs recorded the local id: Open reads this
+            await ma.save(notify=True)
     files = [
         {"path": p.relative_to(entry_dir).as_posix(), "size": p.stat().st_size}
         for p in sorted(entry_dir.rglob("*"))
@@ -988,6 +1151,13 @@ async def handle_conversation_install_all(
 # ---------------------------------------------------------------------------
 
 
+def _consent(body: dict):
+    """The receiver's yes (``apply``) to a pull / cherry-pick, for this request."""
+    from flow_sdk.builtin.drivers.git_driver import share_consent  # noqa: PLC0415
+
+    return share_consent(bool(body.get("apply", False)))
+
+
 @action.post(action_name="install", types=["message_attachment"])
 async def install_attachment_action() -> ApiResponse:
     try:
@@ -998,17 +1168,272 @@ async def install_attachment_action() -> ApiResponse:
         scope = str(body.get("scope") or "")
         project_id = body.get("project_id") or None
         overwrite = bool(body.get("overwrite", False))
-        return await handle_attachment_install(
-            str(request_info.target_entity_typeid.id),
-            scope,
-            project_id,
-            overwrite=overwrite,
-            someone_typeid=await _local_owner_typeid(),
-            name=(body.get("name") or "").strip() or None,
-        )
+        with _consent(body):
+            return await handle_attachment_install(
+                str(request_info.target_entity_typeid.id),
+                scope,
+                project_id,
+                overwrite=overwrite,
+                someone_typeid=await _local_owner_typeid(),
+                name=(body.get("name") or "").strip() or None,
+            )
     except Exception as e:
         logger.error("[message_attachment] install error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"install failed: {e}")
+
+
+async def handle_open_shared(
+    attachment_id: str,
+    *,
+    project_id: str | None = None,
+    choice: str | None = None,
+    overwrite: bool = False,
+    someone_typeid=None,
+) -> ApiResponse:
+    """Open a received share in the right place — the receiver's one entry point.
+
+    ``project_id``: the receiver picked it. ``choice="clone"``: clone the shared
+    repo as a new project and open it there. ``choice="copy"``: open the copy in
+    the receiver's own folder. Neither: resolve it (``resolve_share_target``) —
+    one answer opens straight away, otherwise ``data.needs`` asks the UI for a
+    ``choice`` (2+ projects) or a ``placement`` (none). The answer is saved by
+    binding the conversation to the project, so it is asked once.
+
+    The receiver already has the asset (an earlier share of it): ``data.needs ==
+    "overwrite"`` asks to replace it; the same call with ``overwrite=True`` does.
+    """
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.drivers.git_driver import GitShareError  # noqa: PLC0415
+    from flow_sdk.builtin.share_target import (  # noqa: PLC0415
+        clone_as_project,
+        remember_project_for_sender,
+        resolve_share_target,
+    )
+
+    ma = await _load_ma(attachment_id)
+    if ma is None:
+        return _not_found(attachment_id)
+    clone_error: GitShareError | None = None
+    if choice == "clone":
+        try:
+            project_id = (await clone_as_project(ma.origin)).id
+        except GitShareError as e:
+            choice, clone_error = "copy", e  # the repo could not be cloned here: the copy, and why
+    if choice == "copy":
+        res = _conflict_as_question(
+            await handle_attachment_install(
+                attachment_id, AttachmentScope.USER.value, None, overwrite=overwrite, someone_typeid=someone_typeid
+            )
+        )
+        return _with_git_share_error(res, clone_error) if clone_error else res
+    conv = await Conversation.get_one({"id": ma.conversation_id}) if ma.conversation_id else None
+    mismatch = False
+    if not project_id:
+        target = await resolve_share_target(
+            ma.origin,
+            bound_project_id=getattr(conv, "project_id", None),
+            remote_project_id=getattr(conv, "remote_project_id", None),
+        )
+        if target.project_id is None:
+            needs = "choice" if target.candidates else "placement"
+            return ApiSuccessResponse(data={"needs": needs, "candidates": target.candidates})
+        project_id, mismatch = target.project_id, target.mismatch
+    res = _conflict_as_question(
+        await handle_attachment_install(
+            attachment_id, AttachmentScope.PROJECT.value, project_id, overwrite=overwrite, someone_typeid=someone_typeid
+        )
+    )
+    if not isinstance(res, ApiSuccessResponse):
+        return res
+    if (res.data or {}).get("needs"):
+        if res.data.get("needs") == "apply":  # the confirm re-sends this project with ``apply``
+            res.data = {**res.data, "project_id": project_id, "mismatch": mismatch}
+        return res
+    if conv is not None and not conv.project_id:
+        conv.project_id = project_id  # the answer, kept: later shares here open in it too
+        await conv.save(someone_typeid)
+    # The sender's project is this one here — later conversations from it open in it too.
+    remember_project_for_sender(getattr(conv, "remote_project_id", None), project_id)
+    if isinstance(res.data, dict):
+        res.data = {**res.data, "project_id": project_id, "mismatch": mismatch}
+    return res
+
+
+def _conflict_as_question(res: ApiResponse) -> ApiResponse:
+    """The install's 409 ``asset_conflict`` as the open's own question — ``needs: overwrite`` —
+    asked like ``choice`` / ``placement``, so the UI answers it without reading HTTP errors."""
+    data = getattr(res, "data", None)
+    if getattr(res, "status_code", None) == 409 and isinstance(data, dict) and data.get("asset_conflict"):
+        return ApiSuccessResponse(data={"needs": "overwrite", "conflicts": data.get("conflicts")})
+    return res
+
+
+@action.post(action_name="open-shared", types=["message_attachment"])
+async def open_shared_attachment_action() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+        body = await request_info.get_post_data() or {}
+        with _consent(body):
+            return await handle_open_shared(
+                str(request_info.target_entity_typeid.id),
+                project_id=body.get("project_id") or None,
+                choice=body.get("choice") or None,
+                overwrite=bool(body.get("overwrite", False)),
+                someone_typeid=await _local_owner_typeid(),
+            )
+    except Exception as e:
+        logger.error("[message_attachment] open-shared error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"open failed: {e}")
+
+
+#: Marker keys of the structured share replies (``prompt_preview`` JSON on the URL carrier).
+GIT_ACCESS_REQUEST_KEY = "git_access_request"
+SHARE_MISMATCH_KEY = "share_mismatch_report"
+
+
+async def handle_share_reply(attachment_id: str, kind: str, someone_typeid=None) -> ApiResponse:
+    """Send the sharer a structured reply about a received share, in its conversation.
+
+    ``kind`` is ``GIT_ACCESS_REQUEST_KEY`` ("Git request access": the receiver
+    cannot open the repo by git) or ``SHARE_MISMATCH_KEY`` (the conversation's
+    project is not a checkout of the shared repo). The reply is a message whose
+    URL attachment is the repo, with the details as a marker in ``prompt_preview``
+    — fields the hub keeps — so the sharer's app shows it as a request card.
+    """
+    import json  # noqa: PLC0415
+
+    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    ma = await _load_ma(attachment_id)
+    if ma is None:
+        return _not_found(attachment_id)
+    origin = ma.origin
+    if origin is None or not callable(getattr(origin, "clone_url", None)) or not ma.conversation_id:
+        return ApiFailResponse(message="this share has no git repo to ask about", status_code=400)
+    sender = await User.current_sender_participant(None)
+    who = sender.get("name") or sender.get("email") or "The receiver"
+    repo_url = origin.clone_url()
+    detail = {
+        "requester_name": sender.get("name"),
+        "requester_email": sender.get("email"),
+        "repo_url": repo_url,
+        "branch": getattr(origin, "branch", None),
+        "path": getattr(origin, "rel_path", None),
+        "asset_name": ma.name,
+    }
+    if kind == GIT_ACCESS_REQUEST_KEY:
+        text = f"Git request access: {who} asks for access to {repo_url}"
+    elif kind == SHARE_MISMATCH_KEY:
+        conv = await Conversation.get_one({"id": ma.conversation_id})
+        project = await Project.get_one({"id": conv.project_id}) if conv and conv.project_id else None
+        detail["project_name"] = getattr(project, "name", None)
+        text = (
+            f"Please check: {ma.name or 'the shared file'} is from {repo_url}, "
+            f"but {who} has this conversation in project {detail['project_name'] or 'another project'}"
+        )
+    else:
+        return ApiFailResponse(message=f"unknown share reply: {kind!r}", status_code=400)
+    return await handle_add_message(
+        {
+            "conversation_id": ma.conversation_id,
+            "message": text,
+            "attachment": [
+                {
+                    "attachment_type": AttachmentType.URL.value,
+                    "data": repo_url,
+                    "prompt_preview": json.dumps({kind: detail}),
+                }
+            ],
+        },
+        someone_typeid or await _local_owner_typeid(),
+    )
+
+
+@action.post(action_name="request-git-access", types=["message_attachment"])
+async def request_git_access_action() -> ApiResponse:
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found", status_code=400)
+    return await handle_share_reply(str(request_info.target_entity_typeid.id), GIT_ACCESS_REQUEST_KEY)
+
+
+@action.post(action_name="report-share-mismatch", types=["message_attachment"])
+async def report_share_mismatch_action() -> ApiResponse:
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found", status_code=400)
+    return await handle_share_reply(str(request_info.target_entity_typeid.id), SHARE_MISMATCH_KEY)
+
+
+SECRET_ACCESS_REQUEST_KEY = "secret_access_request"
+
+
+async def handle_secret_access_request(credential_id: str, vault: str, someone_typeid=None) -> ApiResponse:
+    """Ask the sharer of credential ``credential_id`` for access to ``vault`` — a share reply in the
+    conversation the credential arrived through, carrying only names (vault, manager, who asks), so
+    the sharer's ``ShareReplyCard`` offers **Approve** (``credentials/grant``). Never a value.
+    """
+    import json  # noqa: PLC0415
+
+    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+    from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
+    from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    received = [
+        ma
+        for ma in await MessageAttachment.get_all({"match": {"asset_type": "credential", "asset_id": credential_id}})
+        if ma.conversation_id
+    ]
+    if not received:
+        return ApiFailResponse(message="this credential did not arrive in a conversation", status_code=400)
+    ma = max(received, key=lambda m: str(getattr(m, "created_at", "") or ""))
+    cred = await Credential.get_one({"id": credential_id})
+    project = await Project.get_one({"id": cred.project_id}) if cred is not None and cred.project_id else None
+    spec = vaults_of(project).get(vault)
+    if spec is None:
+        return ApiFailResponse(message=f"unknown vault: {vault!r}", status_code=400)
+    sender = await User.current_sender_participant(None)
+    who = sender.get("name") or sender.get("email") or "The receiver"
+    detail = {
+        "requester_name": sender.get("name"),
+        "requester_email": sender.get("email"),
+        "vault": vault,
+        "manager": spec.manager,
+        "asset_name": ma.name or getattr(cred, "name", None),
+    }
+    return await handle_add_message(
+        {
+            "conversation_id": ma.conversation_id,
+            "message": f"Secret access request: {who} asks for access to vault {vault}",
+            "attachment": [
+                {
+                    "attachment_type": AttachmentType.URL.value,
+                    "data": f"secret-vault:{vault}",
+                    "prompt_preview": json.dumps({SECRET_ACCESS_REQUEST_KEY: detail}),
+                }
+            ],
+        },
+        someone_typeid or await _local_owner_typeid(),
+    )
+
+
+@action.post(action_name="request-secret-access", types=["credential"])
+async def request_secret_access_action() -> ApiResponse:
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found", status_code=400)
+    body = await request_info.get_post_data() or {}
+    vault = str(body.get("vault") or "")
+    if not vault:
+        return ApiFailResponse(message="vault is required", status_code=400)
+    return await handle_secret_access_request(str(request_info.target_entity_typeid.id), vault)
 
 
 @action.post(action_name="setup", types=["message_attachment"])

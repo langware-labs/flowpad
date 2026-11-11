@@ -18,13 +18,14 @@ asserts the pending message is delivered.
 from __future__ import annotations
 
 import uuid
-from contextlib import asynccontextmanager
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from flow_sdk._compat import UTC
+from flow_sdk.api.api_request import APIRequest
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 
 @pytest.mark.asyncio
@@ -61,23 +62,16 @@ async def test_share_delivers_offline_composed_message_to_hub():
     # Neutralize all hub I/O so the test is a pure unit on share()'s ordering:
     #   - super().share() (Entity.share) → no-op
     #   - credentials present
-    #   - FlowpadClient (join + members POST) → async-context no-op
+    #   - HubProxy.call (join + members POST) → no-op
     #   - the normal-send hub create is the observation point
     creds = MagicMock(api_key="k", user={})
-
-    @asynccontextmanager
-    async def _fake_client(*_a, **_k):
-        client = MagicMock()
-        client.post = AsyncMock(return_value={})
-        yield client
 
     header = AsyncMock(return_value=None)  # None = the hub has it
 
     with (
         patch.object(Entity, "share", new=AsyncMock(return_value=None)),
         patch("flow_sdk.cli.auth.credentials.load_credentials", return_value=creds),
-        patch("flow_sdk.cloud_client.client.FlowpadClient", side_effect=_fake_client),
-        patch("flow_sdk.cloud_client.client.ApiConfig", MagicMock()),
+        patch.object(HubProxy, "call", new=AsyncMock(return_value={})),
         patch(
             "flow_sdk.app.actions.notification_action._send_conversation_message_header",
             header,
@@ -105,16 +99,11 @@ async def test_share_joins_before_any_fallible_post_create_work():
     events: list[str] = []
     creds = MagicMock(api_key="k", user={})
 
-    @asynccontextmanager
-    async def _fake_client(*_a, **_k):
-        client = MagicMock()
+    hub_api = f"https://hub.test{APIRequest.api_prefix}"
 
-        async def _post(path, _body):
-            events.append(path)
-            return {}
-
-        client.post = AsyncMock(side_effect=_post)
-        yield client
+    async def _call(_method, entity_type, entity_id=None, action=None, sub_path=None, **_kw):
+        events.append("/graph/" + "/".join(str(p) for p in (entity_type, entity_id, action) if p))
+        return {}
 
     async def _link():
         events.append("link")
@@ -129,8 +118,8 @@ async def test_share_joins_before_any_fallible_post_create_work():
         patch.object(Conversation, "kick_delivery", new=lambda *_a, **_k: None),
         patch.object(Conversation, "_share_hostable_assets", new=AsyncMock(return_value=[])),
         patch("flow_sdk.cli.auth.credentials.load_credentials", return_value=creds),
-        patch("flow_sdk.cloud_client.client.FlowpadClient", side_effect=_fake_client),
-        patch("flow_sdk.cloud_client.client.ApiConfig", MagicMock()),
+        patch("flow_sdk.cloud_client.transport.hub_http.hub_base_url", return_value="https://hub.test"),
+        patch.object(HubProxy, "call", new=AsyncMock(side_effect=_call)),
     ):
         await conv.share(recipients=["alice@example.com"])
 

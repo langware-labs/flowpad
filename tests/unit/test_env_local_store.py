@@ -69,7 +69,7 @@ def test_a_repo_ignoring_only_env_local_still_protects_a_named_environment_file(
     status = ensure_gitignored(tmp_path, "production")
 
     assert status["code"] == GITIGNORE_IGNORED
-    assert ".env.production.local" in (tmp_path / ".gitignore").read_text().splitlines()
+    assert ".env.production.local" not in (tmp_path / ".gitignore").read_text(), "the repository is left unchanged"
     assert "production" not in gitignore_status(tmp_path)["reason"], "development still names its own file"
 
 
@@ -267,7 +267,7 @@ def test_ensure_gitignored_appends_and_verifies(tmp_path):
     # Returns the VERIFIED status, not a bool — callers need the code to explain
     # a refusal without re-probing.
     assert ensure_gitignored(_project(tmp_path))["ignored"] is True
-    assert ".env.local" in (tmp_path / ".gitignore").read_text()
+    assert not (tmp_path / ".gitignore").exists()
 
 
 def test_ensure_gitignored_overrides_an_earlier_negation(tmp_path):
@@ -318,7 +318,7 @@ def test_write_env_local_succeeds_once_excluded(tmp_path):
     write_env_local(project, "TOKEN", "sk-fine")
 
     assert "TOKEN" in (tmp_path / ".env.local").read_text()
-    assert ".env.local" in (tmp_path / ".gitignore").read_text()
+    assert not (tmp_path / ".gitignore").exists(), "storing a value leaves no change in the repository"
 
 
 def test_write_env_local_outside_a_repo_is_allowed(tmp_path):

@@ -18,7 +18,9 @@ import { notificationText, type NotificationData, type NotificationLevel } from 
 import { runAction } from './commands';
 import { closeShown, isAlertLevel } from './notify';
 import { useCenterStore } from './center-store';
+import { clearAllHost, useToastStackStore } from './toast-stack-store';
 import { DiagnoseIconButton } from './diagnose/DiagnoseIconButton';
+import { ErrorDetailsButton } from './ErrorDetailsDialog';
 import { NotificationProcessLine } from './NotificationProcessLine';
 
 const LEVEL_ICON: Record<NotificationLevel, LucideIcon> = {
@@ -61,7 +63,7 @@ const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} bg-muted text-muted-foreground 
  * component (not inline in `renderToast`) because the box is state: its value rides the clicked
  * action's args as `remember`.
  */
-function ToastActions({ data }: { data: NotificationData }) {
+function ToastActions({ data, centered }: { data: NotificationData; centered: boolean }) {
   const [remember, setRemember] = useState(false);
   return (
     <div className="mt-2 flex flex-col gap-2">
@@ -79,6 +81,16 @@ function ToastActions({ data }: { data: NotificationData }) {
             {action.label}
           </button>
         ))}
+        {/* A toast's actions sit far from its ×; the centered dialog has no way out but an answer. */}
+        {!centered && (
+          <button
+            data-testid="notification-dismiss"
+            onClick={() => closeShown(data.id)}
+            className={ACTION_BTN_SECONDARY}
+          >
+            {t`Dismiss`}
+          </button>
+        )}
       </div>
       {data.remember && (
         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
@@ -119,8 +131,13 @@ function NotificationContent({ data, centered = false }: { data: NotificationDat
           </Description>
         )}
         <NotificationProcessLine data={data} />
+        {!centered && isAlertLevel(data.level) && (
+          <div className="mt-2">
+            <ErrorDetailsButton data={data} />
+          </div>
+        )}
         {data.actions && data.actions.length > 0 ? (
-          <ToastActions data={data} />
+          <ToastActions data={data} centered={centered} />
         ) : (
           // A centered notification with nothing to answer with must still let the person out.
           centered && (
@@ -136,6 +153,21 @@ function NotificationContent({ data, centered = false }: { data: NotificationDat
   );
 }
 
+/** "Clear all", drawn above the top toast once the stack holds more than two. */
+function ClearAllToasts({ id }: { id: string }) {
+  const isHost = useToastStackStore((s) => clearAllHost(s.ids) === id);
+  if (!isHost) return null;
+  return (
+    <button
+      data-testid="notification-clear-all"
+      onClick={() => useToastStackStore.getState().ids.forEach(closeShown)}
+      className={cn(ACTION_BTN_SECONDARY, 'absolute bottom-full end-0 mb-1.5 border border-border shadow-lg')}
+    >
+      {t`Clear all`}
+    </button>
+  );
+}
+
 /**
  * The body of a single toast. Rendered by `notify()` via `sonner.toast.custom`,
  * so the same component handles entity icon, pre-line message, and serializable
@@ -143,7 +175,8 @@ function NotificationContent({ data, centered = false }: { data: NotificationDat
  */
 export function renderToast(data: NotificationData, toastId: string) {
   return (
-    <div className="flex w-full items-start gap-3 rounded-lg border border-border bg-background p-4 shadow-lg">
+    <div className="relative flex w-full items-start gap-3 rounded-lg border border-border bg-background p-4 shadow-lg">
+      <ClearAllToasts id={data.id} />
       <NotificationContent data={data} />
       <div className="flex flex-shrink-0 items-center gap-0.5">
         {/* A failure is the one notification people need to paste into an issue

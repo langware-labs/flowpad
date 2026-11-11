@@ -440,7 +440,10 @@ class PtyActionsMixin:
             # (recovery respawns into the SAME stream file): seqs must stay
             # monotonic within one file or the frontend's replay-vs-live
             # dedup drops post-restart output — "PTY looks dead after restart".
-            persisted_max = pty_stream_file.max_seq()
+            # Off the loop: it parses every frame of the file, ~0.1 s for a long session's
+            # 17 MB, and every other request waited behind each terminal open. Not a tail
+            # read: files written before seqs were resumed are not monotonic.
+            persisted_max = await asyncio.to_thread(pty_stream_file.max_seq)
             if persisted_max > session_state.seq:
                 session_state.seq = persisted_max
             # A previous process may have died fullscreen (alternate screen,
@@ -461,11 +464,11 @@ class PtyActionsMixin:
             try:
                 import re as _re
 
+                from flow_sdk.api.api_types.identifier import UUID_PATTERN
                 from flow_sdk.builtin.shell import Shell
                 from flow_sdk.core.entity.entity_model import Entity
 
-                _UUID = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                if _re.match(_UUID, str(record.id), _re.I):
+                if _re.match(rf"^{UUID_PATTERN}$", str(record.id), _re.I):
                     was_new = await Shell.get_one({"id": record.id}) is None
                     shell = await Shell.from_record(record)
                     if shell:

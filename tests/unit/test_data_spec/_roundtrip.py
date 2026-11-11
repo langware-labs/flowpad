@@ -82,6 +82,8 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
     if origin is list:
         (inner,) = get_args(ann) or (str,)
         return [sample(name, inner, None)]
+    if origin is tuple and len(get_args(ann)) == 2 and get_args(ann)[1] is Ellipsis:  # tuple[X, ...]
+        return (sample(name, get_args(ann)[0], None),)
     if origin is dict:
         _, v = get_args(ann) or (str, str)
         return {f"{name}_key": sample(name, v, None)}

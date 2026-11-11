@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { apiBase, apiContext } from '../_shared/api';
 import { clickPrintedLink, printLink, printedLinkPoint, sdkModule } from '../_shared/xterm';
 import { openVibe } from '../vibe/_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 /** A solid red 4×4 PNG, so the lightbox has real bytes to show. */
@@ -329,7 +330,7 @@ async function openAssistant(page: Page): Promise<void> {
   const chat = page.getByTestId('assistant-chat');
   // The panel remembers it was open and comes back on its own after a load; clicking
   // before it does would toggle it shut.
-  const reopened = await chat.waitFor({ state: 'visible', timeout: 3_000 }).then(
+  const reopened = await chat.waitFor({ state: 'visible', timeout: adjusted(3_000) }).then(
     () => true,
     () => false,
   );
@@ -495,8 +496,15 @@ async function newPage(
   return { context, page: await context.newPage() };
 }
 
-const displayRe = () =>
-  new RegExp(`/process/agentic_process-${processId}/display/|host=agentic_process-${processId}.*activeDisplay=1`);
+/**
+ * The active Display's address (`activeDisplayDock`): the target's own dock, hosted by the
+ * process in vibe — project-placed (`/process/<id>/display/…`) or, for a dock with no
+ * project form such as a web page, `?host=<process>&viewMode=vibe`.
+ */
+/** The click reached this session's Display: its /display/ route, or a page hosted by it in Vibe. */
+const displayRe = () => (raw: URL) =>
+  raw.pathname.includes(`/process/agentic_process-${processId}/display/`) ||
+  (raw.searchParams.get('host') === `agentic_process-${processId}` && raw.searchParams.get('viewMode') === 'vibe');
 
 /**
  * The newest Display history entry's stamp, as the server keeps it. A show always moves
@@ -548,7 +556,7 @@ for (const surface of SURFACES) {
         await surface.click(page, kind);
         await kind.landed(page);
         if (surface.vibe && !kind.media) {
-          // The active Display, in either address form (project-placed, or hosted with `activeDisplay`).
+          // The active Display, in either address form (project-placed, or hosted by the process).
           await expect(page).toHaveURL(displayRe());
           await expect.poll(lastShownAt).not.toBe(before);
         }

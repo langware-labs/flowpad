@@ -32,6 +32,8 @@ cli_init()
 #: alone was 10.7s, so a setup step that ran `flow status --check` blew its 30s budget.
 _EXTRA = {"context_settings": {"allow_extra_args": True, "ignore_unknown_options": True}}
 LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
+    "compat": ("flow_sdk.cli.commands.compat_cmd", "compat_check", None),
+    "proc": ("flow_sdk.cli.commands.proc_cmd", "proc_app", None),
     "connect": ("flow_sdk.cli.commands.connect_cmd", "connect", {}),
     "navigate": ("flow_sdk.cli.commands.navigate_cmd", "navigate_app", None),
     "artifact": ("flow_sdk.cli.commands.artifact_cmd", "artifact_app", None),
@@ -49,6 +51,7 @@ LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
     "connections": ("flow_sdk.cli.commands.connections_cmd", "connections_app", None),
     "status": ("flow_sdk.cli.commands.status_cmd", "status_app", None),
     "credentials": ("flow_sdk.cli.commands.credentials_cmd", "credentials_app", None),
+    "secrets": ("flow_sdk.cli.commands.secrets_cmd", "secrets_app", None),
     "agent": ("flow_sdk.cli.commands.agent_cmd", "agent_app", None),
     "dep": ("flow_sdk.cli.commands.dep_cmd", "dep_app", None),
     "project": ("flow_sdk.cli.commands.project_cmd", "project_app", None),
@@ -57,6 +60,7 @@ LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
     "test": ("flow_sdk.cli.commands.test_cmd", "test_app", None),
     "record": ("flow_sdk.cli.commands.record_cmd", "record_app", None),
     "conversation": ("flow_sdk.cli.commands.conversation_cmd", "conversation_app", None),
+    "contacts": ("flow_sdk.cli.commands.contacts_cmd", "contacts_app", None),
     "process": ("flow_sdk.cli.commands.process_cmd", "process_app", None),
     "task": ("flow_sdk.cli.commands.task_cmd", "task_app", None),
     "ask": ("flow_sdk.cli.commands.ask_cmd", "ask_app", None),
@@ -132,6 +136,10 @@ def main(ctx: typer.Context):
     """
     # Ensure config defaults are set
     setup_defaults()
+
+    from flow_sdk.cli.cli_use import record_cli_use  # noqa: PLC0415
+
+    record_cli_use(ctx.invoked_subcommand)
 
     # If no subcommand was invoked, show version
     if ctx.invoked_subcommand is None:
@@ -243,6 +251,12 @@ def upgrade(
     if self_update.is_editable_install():
         typer.echo(f"flowpad {__version__} is an editable (source) install; update the checkout instead.", err=True)
         raise typer.Exit(1)
+    # Desktop-managed backends carry the desktop's compatibility floor in the env
+    # (FLOWPAD_DESKTOP_MIN_BACKEND_VERSION); a headless install has no constraint.
+    compat_block = self_update.desktop_compat_block(latest)
+    if compat_block:
+        typer.echo(compat_block, err=True)
+        raise typer.Exit(1)
 
     # An explicit flowpad==<latest> -- never `uv tool upgrade`: the desktop app and the version
     # picker install an exact pin, and `uv tool upgrade` refreshes the dependencies under that pin
@@ -273,6 +287,16 @@ def upgrade(
     if result.returncode != 0:
         typer.echo("Upgrade failed.", err=True)
         raise typer.Exit(result.returncode)
+    rolled = self_update.rollback_if_incompatible(__version__)
+    if rolled is not None:
+        typer.echo(f"flowpad {latest} is not compatible with the running desktop: {rolled.reason}.", err=True)
+        typer.echo(
+            f"flowpad {__version__} has been restored."
+            if rolled.restored
+            else f"Restoring {__version__} failed -- run: {rolled.manual_command}",
+            err=True,
+        )
+        raise typer.Exit(1)
     typer.echo(f"flowpad upgraded: {__version__} -> {latest}.")
     _echo_restart_hint(latest)
 
@@ -316,6 +340,7 @@ def _start_service_guarded(port: int) -> None:
     from flow_sdk.server.launch import (
         EXIT_FATAL_FAILURE,
         check_server_health,
+        latest_server_log_tail,
         refuse_start_reason,
         start_monitor_detached,
         wait_for_server_health,
@@ -352,6 +377,11 @@ def _start_service_guarded(port: int) -> None:
                 typer.echo("Server is ready")
             else:
                 typer.echo("Server may still be starting...")
+                # The backend logs only to its own file; on a cloud box this output is the only
+                # log that reaches the serial console and the hub, so name the file and its tail.
+                log_path, tail = latest_server_log_tail()
+                if log_path is not None:
+                    typer.echo(f"Server log: {log_path}\n{tail}", err=True)
     finally:
         boot_progress.stop()
 
@@ -688,10 +718,10 @@ def auth_set_cookie_gate(
 
     Example: flow auth set-cookie-gate <secret>
     """
-    from flow_sdk.instance_settings.cookie_gate import set_cookie_gate
+    from flow_sdk.instance_settings.cookie_gate import set_cookie
 
     try:
-        set_cookie_gate(value)
+        set_cookie(value)
     except ValueError as e:
         # Empty value: arming on "" would store a secret that reads as unset,
         # leaving the instance open while looking locked. Or DesktopGateRefused:
@@ -716,6 +746,22 @@ def auth_clear_cookie_gate():
         # Distinguished from success on purpose: "already open" and "I just
         # opened it" are different facts about the machine.
         typer.echo("⚠ Cookie gate was not armed")
+
+
+@auth_app.command("get-cookie-gate")
+def auth_get_cookie_gate():
+    """
+    Print this instance's gate token, for a script that calls the backend itself.
+
+    Example: curl -H "X-Cookie-Gate: $(flow auth get-cookie-gate)" http://localhost:9007/health/status
+    """
+    from flow_sdk.instance_settings.cookie_gate import get_header
+
+    header = get_header()
+    if header is None:
+        typer.echo("✗ No cookie-gate token (cannot read or create it)", err=True)
+        raise typer.Exit(1)
+    typer.echo(header.value)
 
 
 @auth_app.command("hub-login")
@@ -803,6 +849,98 @@ def auth_set_compute_node(
         typer.echo(f"✗ {e}", err=True)
         raise typer.Exit(1)
     typer.echo(f"✓ Compute node set to {typeid}")
+
+
+@auth_app.command("configure-box")
+def auth_configure_box(
+    cookie_gate: Annotated[str, typer.Option("--cookie-gate", help="The gate secret, minted by the hub")],
+    runtime: Annotated[str, typer.Option("--runtime", help="sandbox | agent")],
+    compute_node: Annotated[str | None, typer.Option("--compute-node", help="compute_node-<uuid>")] = None,
+    login_port: Annotated[int | None, typer.Option("--login-port", help="The app's port, to sign in on")] = None,
+    api_key: Annotated[str | None, typer.Option("--api-key", help="The node-bound key to sign in with")] = None,
+    login_timeout: Annotated[float, typer.Option("--login-timeout")] = 30.0,
+):
+    """
+    Everything the hub hands a box, in one process. Hub-driven; not for interactive use.
+
+    Same steps, same order and same failure rules as running `set-cookie-gate`,
+    `set-runtime`, `set-compute-node` and then the loopback `/auth/login_callback`
+    one by one -- only without a process start and a hub round trip per step.
+
+    The gate and the runtime are fatal (exit 1, later steps skipped). The compute
+    node is not: a box that cannot record it only loses its keep-alive. The login
+    runs only with both `--login-port` and `--api-key`, through the app's own route
+    (it owns the live state a login changes), presenting the gate armed above.
+
+    The size the hub created the machine at arrives in the env (``FLOWPAD_NODE_SIZE``) and is stored too.
+
+    Prints one JSON line: {"cookie_gate", "runtime", "compute_node", "node_size", "login_status"}.
+    """
+    import json
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    from flow_sdk.instance_settings.cookie_gate import set_cookie
+    from flow_sdk.instance_settings.runtime import (
+        set_assigned_compute_node,
+        set_assigned_node_size,
+        set_assigned_runtime,
+    )
+
+    report: dict = {"cookie_gate": None, "runtime": None, "compute_node": None, "node_size": None, "login_status": None}
+
+    def _done(code: int = 0):
+        typer.echo(json.dumps(report))
+        raise typer.Exit(code)
+
+    try:
+        set_cookie(cookie_gate)
+        report["cookie_gate"] = "ok"
+    except ValueError as e:
+        report["cookie_gate"] = f"error: {e}"
+        _done(1)
+    try:
+        set_assigned_runtime(runtime)
+        report["runtime"] = "ok"
+    except ValueError as e:
+        report["runtime"] = f"error: {e}"
+        _done(1)
+    if compute_node:
+        try:
+            set_assigned_compute_node(compute_node)
+            report["compute_node"] = "ok"
+        except ValueError as e:
+            report["compute_node"] = f"error: {e}"
+
+    # The size the hub created this machine at, from the standard box env. Not fatal: an unknown or
+    # missing size only leaves the box reporting the default.
+    if size := os.environ.get("FLOWPAD_NODE_SIZE"):
+        try:
+            set_assigned_node_size(size)
+            report["node_size"] = "ok"
+        except ValueError as e:
+            report["node_size"] = f"error: {e}"
+
+    if login_port and api_key:
+        query = urllib.parse.urlencode({"flowpad-api-key": api_key, "next": "/"})
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{login_port}/auth/login_callback?{query}",
+            headers={"X-Cookie-Gate": cookie_gate},
+        )
+
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *args, **kwargs):  # a 302 IS the success answer; do not follow it
+                return None
+
+        try:
+            with urllib.request.build_opener(_NoRedirect).open(request, timeout=login_timeout) as resp:
+                report["login_status"] = resp.status
+        except urllib.error.HTTPError as e:
+            report["login_status"] = e.code
+        except Exception:  # noqa: BLE001 -- nothing answered; 0 is the "no response" sentinel
+            report["login_status"] = 0
+    _done(0)
 
 
 @auth_app.command("test")

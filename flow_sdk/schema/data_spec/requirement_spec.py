@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk.schema.data_spec.permission_spec import STATUS_MISSING
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -27,6 +27,10 @@ REQUIREMENT_FUNDING = "funding"
 REQUIREMENT_KINDS = (
     REQUIREMENT_CREDENTIAL, REQUIREMENT_PERMISSION, REQUIREMENT_CONNECTION, REQUIREMENT_VARIABLE, REQUIREMENT_FUNDING,
 )
+#: Kinds a deployment may start without: a missing one is reported, never a reason to refuse it. Funding is
+#: one — a placement whose budget is used up still deploys; its turns are refused until the limit moves.
+#: Credentials and variables are too: a value set later in the project store reaches the machine then.
+ADVISORY_KINDS = frozenset({REQUIREMENT_FUNDING, REQUIREMENT_CREDENTIAL, REQUIREMENT_VARIABLE})
 
 
 class RequirementSpec(DataSpec):
@@ -50,6 +54,14 @@ class RequirementSpec(DataSpec):
     derived: bool = False
     #: The data sources (by name) that need it.
     used_by: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _bare_name(cls, value):
+        """A bare name (``"GA4_PROPERTY_ID"``) is the common hand-written shorthand: a variable read by name."""
+        if isinstance(value, str) and value.strip():
+            return {"kind": REQUIREMENT_VARIABLE, "name": value.strip()}
+        return value
 
     @field_validator("kind")
     @classmethod
@@ -88,6 +100,11 @@ class ReadinessItemSpec(DataSpec):
     #: (only ``fix`` says what to do).
     remedy: str = ""
 
+    @property
+    def blocks(self) -> bool:
+        """Missing, and of a kind a deployment cannot start without (not an ``ADVISORY_KINDS`` one)."""
+        return self.status == STATUS_MISSING and self.requirement.kind not in ADVISORY_KINDS
+
 
 class ReadinessSpec(DataSpec):
     """Does this deployment satisfy the agent's requirements? Names only."""
@@ -108,8 +125,13 @@ class ReadinessSpec(DataSpec):
             return list(dict.fromkeys(n for i in self.items if i.status == STATUS_MISSING for n in i.missing))
         return list(dict.fromkeys(name for item in self.items for name in item.vars))
 
+    def advisories(self) -> list[ReadinessItemSpec]:
+        """The missing items that do not block — what a deploy proceeds without, and warns about."""
+        return [i for i in self.items if i.status == STATUS_MISSING and not i.blocks]
+
 
 __all__ = [
+    "ADVISORY_KINDS",
     "REQUIREMENT_CONNECTION",
     "REQUIREMENT_CREDENTIAL",
     "REQUIREMENT_FUNDING",

@@ -197,7 +197,8 @@ async def test_headless_prompt_syncs_only_after_the_turn_actually_finishes(monke
     driver = driver_module.DeepAgentsDriver()
     await driver.headless_prompt(process, "install ripgrep")
 
-    assert process.resolved_model_slug == "z-ai/glm-5.3-flash", "not synced before the turn finished"
+    # The pre-spawn stamp (the endpoint's slug for the size) stands until the turn has drained.
+    assert process.resolved_model_slug != "anthropic/claude-haiku-4.5", "not synced before the turn finished"
     assert callable(captured.get("on_turn_finally")), "headless_prompt must hand run_headless_turn the sync callback"
 
     # Only NOW does the transcript exist — exactly as it would once the real turn's stream

@@ -71,6 +71,11 @@ class AskRequest(BaseModel):
     detail: str = ""
     submit_label: str = ""
     cancel_label: str = ""
+    #: What each field of a record answer is called, where the question stands in a sequence, and a check the
+    #: person can run on the typed value before sending (``AskOp.labels`` / ``stage`` / ``verify``).
+    labels: dict[str, str] = {}
+    stage: Optional[dict] = None
+    verify: Optional[dict] = None
     #: The answer is a secret: the window masks it.
     secret: bool = False
     #: The answer is a file's content: the window offers a file picker and a paste box.
@@ -106,6 +111,9 @@ async def ask_for_another_process(body: AskRequest):
         detail=body.detail,
         submit_label=body.submit_label,
         cancel_label=body.cancel_label,
+        labels=body.labels,
+        stage=body.stage,
+        verify=body.verify,
         secret=body.secret,
         file=body.file,
         auto=body.auto,
@@ -173,6 +181,25 @@ async def cancel_question(question_id: str):
     if not decline(question_id):
         return _fail("that question is no longer waiting", 404)
     return ApiSuccessResponse(data={"cancelled": question_id})
+
+
+@router.post("/{question_id}/skip")
+async def skip_question(question_id: str):
+    """Skip the setup step asking (``skippable``): marked skipped on this machine, its question withdrawn, the
+    setup goes on. 409 when no setup asked it."""
+    from flow_sdk.builtin.project_setup import SkipRefused, skip_asking  # noqa: PLC0415
+    from flow_sdk.request_context.json_body import current_user_id  # noqa: PLC0415
+
+    question = pending(question_id)
+    if question is None:
+        return _fail("that question is no longer waiting", 404)
+    try:
+        skipped = await skip_asking(question.run, question.step, by=current_user_id())
+    except SkipRefused as exc:
+        return _fail(str(exc), 409)
+    if not skipped:
+        return _fail("no setup is asking this question", 409)
+    return ApiSuccessResponse(data={"skipped": question_id})
 
 
 @router.post("/{question_id}/seen")

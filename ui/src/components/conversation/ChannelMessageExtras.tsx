@@ -10,6 +10,7 @@ import {
   type IMessageMark,
   type IMessageReaction,
 } from '@sdk/entities/flow-message';
+import { SenderKind, senderOf } from '@sdk/models/MessageSender';
 import { attachmentSummary } from './useAttachments';
 
 /** A FILE attachment's name — its `data/<name>` subpath, last segment. */
@@ -20,7 +21,10 @@ export function attachmentFileName(a: Parameters<typeof attachmentDataString>[0]
 /** Who wrote a message and what it says, as a quote or a reply banner shows it: a message with no
  *  text is named by what it carries. `someone` is the caller's translated fallback. */
 export function messageSummary(fm: FlowMessage, someone: string): { sender: string; text: string } {
-  return { sender: fm.sender_name || fm.envelope?.sender?.name || someone, text: fm.text || attachmentSummary(fm) };
+  // An agent's reply carries the PERSON in `sender_name` (the wire pair); the typed sender says agent.
+  const byAgent = senderOf(fm)?.kind === SenderKind.Agent;
+  const name = byAgent ? fm.envelope?.sender?.name : fm.sender_name || fm.envelope?.sender?.name;
+  return { sender: name || someone, text: fm.text || attachmentSummary(fm) };
 }
 
 const MARK_TONE: Record<NonNullable<IMessageMark['tone']>, string> = {
@@ -29,17 +33,34 @@ const MARK_TONE: Record<NonNullable<IMessageMark['tone']>, string> = {
   neutral: 'border-border bg-muted/50',
 };
 
+// A conversation's neutral marks (its repository) get a cool tint so the row is caught at a glance.
+const CONVERSATION_NEUTRAL = 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300';
+
 /** What the message did (approved, merged), drawn before its text: tinted by tone, words in the
  *  foreground colour. Drawn for any message that carries a mark — never by channel. */
-export function MessageMarkChip({ mark }: { mark: IMessageMark }) {
+
+export function MessageMarkChip({ mark, onConversation }: { mark: IMessageMark; onConversation?: boolean }) {
   const tone = mark.tone ?? 'neutral';
+  const toneClass = onConversation && tone === 'neutral' ? CONVERSATION_NEUTRAL : `text-foreground ${MARK_TONE[tone]}`;
   return (
     <span
       data-testid="message-mark"
       data-tone={tone}
-      className={`mb-1 inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-medium text-foreground ${MARK_TONE[tone]}`}
+      className={`mb-1 inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-medium ${toneClass}`}
     >
       {mark.label}
+    </span>
+  );
+}
+
+/** The chips a source put on the whole conversation (its repository, the bot that opened it). */
+export function ConversationMarkChips({ marks }: { marks?: readonly IMessageMark[] | null }) {
+  if (!marks?.length) return null;
+  return (
+    <span data-testid="conversation-marks" className="inline-flex shrink-0 items-center gap-1 [&>span]:mb-0">
+      {marks.map((mark) => (
+        <MessageMarkChip key={mark.key} mark={mark} onConversation />
+      ))}
     </span>
   );
 }

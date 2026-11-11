@@ -28,8 +28,10 @@ field set on both sides.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Literal, Optional
+from urllib.parse import quote
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity, action
@@ -198,14 +200,22 @@ class ServiceEndpoint(Entity):
             deployment = await Deployment.get_by_typeid(self.parent_type_id) if self.parent_type_id else None
             if deployment is None:
                 return "failing", "no deployment answers this channel"
-            return deployment_process.loop_state(deployment)
+            state = deployment_process.loop_state(deployment)
+            if state[0] != "alive":
+                return state
+            # A running loop is not an answering one: its newest turns say whether messages get answers.
+            from flow_sdk.builtin.agent_serve import turns_health, turns_of  # noqa: PLC0415
+            from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+            processes = await AgenticProcess.local_rows({"match": {"deployment_id": deployment.id}})
+            return turns_health([record for ap in processes for record in turns_of(ap).values()])
         return "unknown", f"no builtin check for a {self.backend.type} backend"
 
     async def _health_from_hub(self) -> EndpointHealth:
-        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         try:
-            data = await hub_http.hub_get(self.get_type(), self.id, "health")
+            data = await HubProxy.try_call("GET", self.get_type(), self.id, "health")
             return EndpointHealth.model_validate(data)
         except Exception as exc:  # noqa: BLE001 — the hub not answering is not the service failing
             return EndpointHealth(endpoint_id=self.id, name=self.name, state="unknown", detail=f"hub: {exc}")
@@ -292,16 +302,60 @@ class ServiceEndpoint(Entity):
             is_compute_node = get_assigned_compute_node() is not None
             url = await self._direct_url_from_hub(route) if is_compute_node else None
             if is_compute_node and url is None:
-                # No row there, or the call failed: hub_get answers None for both. Not silent.
+                # No row there, or the call failed: try_call answers None for both. Not silent.
                 logger.warning("direct-url: the hub gave no address for %s; answering on this box", self.id)
-            url = url or local_direct_url(self, route)
+            url = url or await self._reported_url(route) or local_direct_url(self, route)
             if url is None:
                 return ApiFailResponse(
                     message="a static route has no address of its own on this machine", status_code=409
                 )
+            url = static_dev_address(self, route, url)
         if str(redirect).lower() in ("1", "true", "yes"):
             return RedirectResponse(url, status_code=302, headers={"Cache-Control": "no-store"})
         return ApiSuccessResponse(data={"url": url})
+
+    async def _webapp_of(self, mount: Optional[str]):
+        """The web app definition a route (or this endpoint) serves, or None."""
+        from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+
+        route = self.route(mount or "")
+        webapp_id = (route.webapp_id if route is not None else None) or self.webapp_id
+        return await WebApp.get_by_id(webapp_id.removeprefix("micro_app-")) if webapp_id else None
+
+    async def _reported_url(self, mount: Optional[str]) -> Optional[str]:
+        """On a desktop, a dev server's address through the page-error reporter (``server/reporter_relay``),
+        unless its app turned reporting off. None: load it directly."""
+        from flow_sdk.instance_settings.runtime import own_sandbox_id  # noqa: PLC0415
+        from flow_sdk.server.reporter_relay import relay_port  # noqa: PLC0415
+
+        backend = self.proxy_of(mount)
+        if backend is None or own_sandbox_id():
+            return None
+        app = await self._webapp_of(mount)
+        if app is None or not app.report_errors:
+            return None
+        port = await relay_port(int(backend.port))
+        return f"http://localhost:{port}" if port else None
+
+    @action.post(action_name="page-report")
+    async def page_report_action(self, errors: list | None = None, settled: bool = True, route: str | None = None,
+                                 load_id: str = ""):
+        """``POST service_endpoint/<id>/page-report`` — what the app's page threw, handed to its coordinator.
+
+        The viewer forwards the reporter's message (``server/reporter_relay``). Each error is matched against the
+        app's learned handlings (``core/webapp/handling``); one no handling ignores moves the app to DEGRADED and
+        starts recovery on the backend (``core/webapp/coordinator.report_page``) — the screen only shows it.
+        ``load_id``: the document the report came from; a report for an older one decides nothing.
+        """
+        from flow_sdk.core.webapp import coordinator  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        app = await self._webapp_of(route)
+        if app is None or not app.asset_ref:
+            return ApiFailResponse(message="this endpoint serves no web app with a folder", status_code=409)
+        decided = await coordinator.report_page(app, list(errors or []), load_id=load_id, settled=bool(settled))
+        return ApiSuccessResponse(data={**decided, "settled": bool(settled), "webapp_id": str(app.typeid),
+                                        "app_folder": str(app.asset_ref)})
 
     @action.post(action_name="probe")
     async def probe_action(self, route: str | None = None):
@@ -332,10 +386,10 @@ class ServiceEndpoint(Entity):
         return ApiSuccessResponse(data=(await self.health_check()).model_dump(mode="json"))
 
     async def _direct_url_from_hub(self, route: Optional[str] = None) -> Optional[str]:
-        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         params = None if route is None else {"route": route}
-        data = await hub_http.hub_get(self.get_type(), self.id, "direct-url", params=params)
+        data = await HubProxy.try_call("GET", self.get_type(), self.id, "direct-url", params=params)
         return str(data.get("url") or "") or None if isinstance(data, dict) else None
 
 
@@ -357,6 +411,24 @@ def local_direct_url(endpoint, route: Optional[str] = None) -> Optional[str]:
         return sandbox_public_url(audience_ports()[endpoint.subkind], sandbox_id) + (f"/{route}/" if route else "/")
     backend = endpoint.proxy_of(route)
     return f"http://localhost:{int(backend.port)}" if backend is not None else None
+
+
+def static_dev_address(endpoint, route: Optional[str], origin: str) -> str:
+    """*origin* with the app's service path, when the route runs the static dev server.
+
+    A page learns which app it is from its own path (``…/service_endpoint/<id>/service/<mount>/``,
+    ``ts_sdk/src/apps/host.ts``). The static dev server (``server/dev_front.py``) serves its folder
+    under that same path on its own origin, so a dev page resolves its app exactly as the served one.
+    Any other dev server is addressed at its root, as it always was.
+    """
+    from flow_sdk.core.dev_server import is_static_dev  # noqa: PLC0415
+    from flow_sdk.server.service_proxy import service_path  # noqa: PLC0415
+
+    backend = endpoint.proxy_of(route)
+    if backend is None or not is_static_dev(backend.start_cmd or ""):
+        return origin
+    mount = f"{quote(route, safe='')}/" if route else ""
+    return origin.rstrip("/") + service_path(endpoint.id) + mount
 
 
 async def _http_state(port: int, path: str, timeout: float) -> tuple[str, str]:

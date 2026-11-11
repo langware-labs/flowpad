@@ -31,7 +31,6 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 
 const { useFavorites } = await import('@src/hooks/use-favorites');
 const { FAVORITES_UNDO_MS, flushPendingFavoriteDelete } = await import('@src/hooks/favorites-pending-delete');
-const { runCommand } = await import('@src/notifications/commands');
 const { useFavoritesRoots } = await import('@src/components/browseable-tree/adapters/useFavoritesRoots');
 const { BrowseableTree, ToolbarButton } = await import('@src/components/browseable-tree/BrowseableTree');
 const { TooltipProvider } = await import('@src/components/ui/tooltip');
@@ -89,29 +88,10 @@ describe('favorites undo window', () => {
     rerender();
     expect(ids(result.current.favorites)).toEqual([b.id]);
     expect(deletes).not.toContain(a.id);
-    expect(h.notify.info).toHaveBeenCalledWith(
-      expect.objectContaining({ actions: [expect.objectContaining({ command: 'favorites.undo' })] }),
-    );
+    expect(h.notify.info).not.toHaveBeenCalled();
 
     await act(() => vi.advanceTimersByTimeAsync(FAVORITES_UNDO_MS));
     expect(deletes).toContain(a.id);
-    // The toast pauses its own timer on hover; once the write happens its Undo
-    // would be a dead button, so the commit takes it down.
-    expect(h.notify.dismiss).toHaveBeenCalledWith('favorites-undo');
-  });
-
-  it('Undo brings the row back and writes nothing', async () => {
-    const a = leaf(nextId());
-    h.bookmarks = [a];
-    const { result, rerender } = renderHook(() => useFavorites());
-
-    act(() => result.current.removeFavorite(a));
-    act(() => runCommand('favorites.undo', {}, { id: 'favorites-undo' }));
-    rerender();
-    expect(ids(result.current.favorites)).toEqual([a.id]);
-
-    await act(() => vi.advanceTimersByTimeAsync(FAVORITES_UNDO_MS * 2));
-    expect(deletes).not.toContain(a.id);
   });
 
   it('is shared: a pending row is hidden in every useFavorites() and survives a refetch', () => {

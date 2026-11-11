@@ -25,7 +25,7 @@ function parsed(content: string): { kind: string; value: unknown } | { error: st
 
 /**
  * A `.value.json` — one value of a kind (a diagnosis a helper was sent, an eval run), shown by
- * that kind's viewer (`createViewerContext`, the data-viewer registry), the generic one else.
+ * that kind's viewer (its value viewer, via `createViewerContext`), the generic one else.
  * The file is read on mount — the view's work, never the loader's.
  *
  * `path` is the file's compute-node vpath or its plain machine path (local).

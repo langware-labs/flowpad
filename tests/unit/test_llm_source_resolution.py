@@ -16,6 +16,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.core.status import InstallState, LoginState
 from flow_sdk.schema.data_spec.llm_source_spec import LLMScope
 from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
@@ -125,6 +126,8 @@ async def _signed_in(*workers: str) -> None:
 
 EP1 = "llm_endpoint-11111111-2222-4333-8444-555555555555"
 EP2 = "llm_endpoint-22222222-2222-4333-8444-555555555555"
+#: The model per size the test endpoints declare (the endpoint, not code, decides what a size runs).
+TIERS = {"sm": "anthropic/claude-haiku-5.5", "md": "anthropic/claude-sonnet-4.5", "lg": "anthropic/claude-opus-4.1"}
 
 
 def _bind(monkeypatch, *, login: bool = True, typeid: str = EP1) -> None:
@@ -136,7 +139,9 @@ def _bind(monkeypatch, *, login: bool = True, typeid: str = EP1) -> None:
     if login:
         set_api_key("fp-hub-key")
     llm_endpoint.reset_cache()
-    llm_endpoint.set_hub_llm_endpoint(typeid, f"/api/v1/graph/{typeid}/invoke", provider="openrouter", name="Team pool")
+    llm_endpoint.set_hub_llm_endpoint(
+        typeid, f"/api/v1/graph/{typeid}/invoke", provider="openrouter", name="Team pool", tiers=TIERS
+    )
 
 
 def _grant(monkeypatch, *, typeid: str = EP1) -> None:
@@ -162,6 +167,7 @@ def _grant(monkeypatch, *, typeid: str = EP1) -> None:
         provider="openrouter",
         kind="hub",
         invoke_url=f"/api/v1/graph/{typeid}/invoke",
+        tiers=dict(TIERS),
     )
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [granted])
     assert settings.get_hub_llm_endpoint() is None, "a grant is not a binding"
@@ -484,7 +490,6 @@ async def test_an_unavailable_preference_fails_loudly_rather_than_spending_somet
 
 async def test_resolution_makes_no_network_call(env, monkeypatch) -> None:
     """A spawn must never wait on the hub to find out what may fund it."""
-    import flow_sdk.cloud_client.transport.hub_http as hub_http
 
     _bind(monkeypatch)
     calls: list[str] = []
@@ -493,7 +498,7 @@ async def test_resolution_makes_no_network_call(env, monkeypatch) -> None:
         calls.append("hub")
         return None
 
-    monkeypatch.setattr(hub_http, "hub_get", _no_network)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_no_network))
     await _resolve_source(_process())
     assert calls == [], "resolution reached for the hub"
 
@@ -502,26 +507,23 @@ async def test_resolution_makes_no_network_call(env, monkeypatch) -> None:
 
 
 def test_no_harness_collapses_its_model_tiers() -> None:
-    """sm/md/lg must name three different models on the key and endpoint paths.
+    """sm/md/lg must name three different sizes on the claude device login.
 
-    codex, copilot and opencode each mapped ``md`` and ``lg`` to the SAME slug, so asking
-    for the accurate model quietly got the balanced one -- a tier that silently does
-    nothing is worse than one that does not exist, because the caller believes it worked.
-    The device-login path has always had three distinct tiers; this keeps the funded paths
-    honest about the same promise.
+    A funded spawn reads the ENDPOINT's slug for the size (``ApiAuthSpec.tier_models`` is gone),
+    so the only code-side size names left are claude's own words, and they must stay distinct.
     """
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _SPECS
+    from flow_sdk.builtin.agentic_process.model_tiers import CLAUDE_CLI_ALIASES, CLAUDE_MODEL_TIERS
 
-    for worker, spec in _SPECS.items():
-        slugs = [spec.tier_models[t] for t in ("sm", "md", "lg")]
-        assert len(set(slugs)) == 3, f"{worker} maps two tiers to one model: {spec.tier_models}"
+    assert CLAUDE_MODEL_TIERS == {"sm": "haiku", "md": "sonnet", "lg": "opus"}
+    assert CLAUDE_CLI_ALIASES == {"haiku": "sm", "sonnet": "md", "opus": "lg"}
 
 
 def test_every_harness_declares_all_three_tiers() -> None:
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _SPECS
+    from flow_sdk.builtin.agentic_process import model_tiers
 
-    for worker, spec in _SPECS.items():
-        assert set(spec.tier_models) >= {"sm", "md", "lg"}, worker
+    assert set(model_tiers.CLAUDE_MODEL_TIERS) >= {"sm", "md", "lg"}
+    # Other native tiers need a configured binding: no model ids in code.
+    assert dict(model_tiers.VENDOR_DEFAULT_TIERS) == {"sm": None, "md": None, "lg": None}
 
 
 # ── the device rung's verdict has to actually be resolved ────────────────────────
@@ -611,46 +613,26 @@ async def test_the_sweeps_login_probe_does_not_undo_a_source_picked_while_it_ran
 # ── a binding the hub no longer honours ──────────────────────────────────────────
 
 
-async def test_a_bound_endpoint_a_successful_listing_denies_is_not_offered(env, monkeypatch) -> None:
-    """A deleted (or un-shared) endpoint must stop being a candidate once we can SEE that.
-
-    The box keeps spending whatever the hub last pushed, and nothing tells it when that endpoint
-    is deleted -- so the binding outlives the row. Because a bound endpoint outranks an unproven
-    device login, every spawn then posted to an invoke URL answering ``Entity ... not found``
-    and the harness burned its whole retry budget on it. Observed three times in one day on
-    prod, and the box never fell back to anything.
-
-    The signal that separates "gone" from "the cache has not caught up" is whether a listing has
-    ever SUCCEEDED: ``_list_cache`` is written only on a successful read, so an entry means the
-    hub has answered and its answer did not include this endpoint.
-    """
+async def test_runner_binding_survives_a_successful_read_listing_omission(env, monkeypatch) -> None:
+    """A readable-row omission must not silently spend a personal subscription instead."""
     import time
 
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates, resolve_llm_endpoint
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
     from flow_sdk.instance_settings import llm_endpoint as settings
 
-    await _signed_in("claude")
-    _bind(monkeypatch)  # box bound to EP1
-    # A listing that SUCCEEDED and does not mention EP1 -- what the hub answers once EP1 is gone.
+    _bind(monkeypatch)
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
-    assert settings.listing_supersedes_binding()
-
-    assert not _by_kind(await list_llm_candidates("claude"), "hub"), (
-        "the deleted endpoint is still being offered as a source"
-    )
-    # ...and the ladder falls through to what the box can actually spend.
-    assert str((await resolve_llm_endpoint(_process())).endpoint.kind) == "device"
+    endpoint, chosen = await resolve_llm_endpoint(_process())
+    assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP1
 
 
 async def test_a_bound_endpoint_is_still_trusted_before_any_listing_succeeds(env, monkeypatch) -> None:
-    """The other half, and the reason the rule is keyed on the listing rather than on absence:
-    a freshly bound or freshly shared endpoint has to work before any cache has heard of it."""
+    """A freshly bound endpoint works before any cache has heard of it."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
     from flow_sdk.instance_settings import llm_endpoint as settings
 
     _bind(monkeypatch)
     settings.reset_cache()  # nobody has managed to ask yet
-    assert not settings.listing_supersedes_binding()
 
     endpoint, chosen = await resolve_llm_endpoint(_process())
     assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP1
@@ -674,24 +656,14 @@ async def test_a_stale_listing_does_not_deny_a_freshly_pushed_binding(env, monke
     # ``_bind``'s own ``reset_cache`` and the test would pass on the empty-cache branch instead,
     # proving nothing about ordering.
     name = settings.get_instance_settings().instance_name
-    settings._list_cache[name] = (settings._bound_at[name] - 1.0, [])
+    settings._list_cache[name] = (0.0, [])
 
-    assert not settings.listing_supersedes_binding(), "a listing older than the binding cannot deny it"
     endpoint, chosen = await resolve_llm_endpoint(_process())
     assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP1
 
 
-async def test_a_process_constraint_on_a_vanished_endpoint_still_fails_loudly(env, monkeypatch) -> None:
-    """Dropping a DEFAULT binding must not soften an EXPLICIT one.
-
-    The default order is soft -- that is what lets a deleted endpoint fall through to whatever
-    the box can actually spend. A named endpoint is a constraint, and the whole point of a
-    constraint is that it is not silently substituted: quietly falling back would spend a
-    personal subscription the caller did not choose, which is worse than failing.
-
-    ``_apply_constraint`` is a separate path from ``_endpoint_sources`` and still stubs the
-    named typeid, so the listing's silence cannot turn a hard rung into a soft one.
-    """
+async def test_a_process_constraint_is_not_substituted_after_read_listing_omission(env, monkeypatch) -> None:
+    """An explicit endpoint remains the invocation target; a read cannot select another budget."""
     import time
 
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates
@@ -699,7 +671,6 @@ async def test_a_process_constraint_on_a_vanished_endpoint_still_fails_loudly(en
 
     _bind(monkeypatch)
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
-    assert settings.listing_supersedes_binding()
 
     chosen = await _resolve_source(_process(endpoint=EP2))
     assert chosen.endpoint_typeid == EP2, "a named endpoint was substituted after the listing dropped it"
@@ -707,17 +678,11 @@ async def test_a_process_constraint_on_a_vanished_endpoint_still_fails_loudly(en
     assert not device.eligible and "this process requires" in device.reason
 
 
-async def test_an_explicit_hub_preference_fails_rather_than_spending_the_subscription(env, monkeypatch) -> None:
-    """The user picked "the hub endpoint" in LLM Sources. If it is gone, say so.
-
-    This is the case that would be worst to get wrong: silently resolving to the device login
-    means the turn succeeds and quietly bills a personal Claude subscription instead of the
-    budget the user chose.
-    """
+async def test_an_explicit_hub_preference_survives_read_listing_omission(env, monkeypatch) -> None:
+    """The chosen hub budget is an invocation constraint, independent of Reader visibility."""
     import time
 
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import LLMSourceError
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.instance_settings import llm_endpoint as settings
 
@@ -727,8 +692,7 @@ async def test_an_explicit_hub_preference_fails_rather_than_spending_the_subscri
     await cap.save(notify=False)
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
 
-    with pytest.raises(LLMSourceError):
-        await _resolve_source(_process())
+    assert (await _resolve_source(_process())).endpoint_typeid == EP1
 
 
 # ── what the auth-status action REPORTS about a key-funded harness ────────────────
@@ -916,13 +880,8 @@ async def test_a_key_on_the_machine_is_spent_before_an_assigned_wallet(env, monk
     assert hub.eligible and not hub.reason
 
 
-async def test_deleting_the_wallet_hands_a_signed_out_box_back_nothing(env, monkeypatch) -> None:
-    """Delete the budget out from under a box that has no other source and the spawn fails
-    naming both refusals -- it does not quietly find something else.
-
-    The listing is what makes the deletion visible (``listing_supersedes_binding``), and the
-    failure has to be a rendering of the list, so both sentences appear.
-    """
+async def test_explicit_unbinding_hands_a_signed_out_box_back_nothing(env, monkeypatch) -> None:
+    """Explicit unbinding clears the chosen wallet; signed-out fallbacks cannot spend."""
     import time
 
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
@@ -934,7 +893,7 @@ async def test_deleting_the_wallet_hands_a_signed_out_box_back_nothing(env, monk
     cap.login_state = DeviceLoginState.IDLE
     await cap.save(notify=False)
     _bind(monkeypatch)
-    # A listing that SUCCEEDED and does not contain the bound endpoint: the budget is gone.
+    settings.clear_hub_llm_endpoint()
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
 
     with pytest.raises(LLMSourceError) as excinfo:
@@ -1208,7 +1167,12 @@ def _bind_public(monkeypatch, *, typeid: str = EP1, hub_origin: str = "https://o
 
     llm_endpoint.reset_cache()
     llm_endpoint.set_hub_llm_endpoint(
-        typeid, f"/api/v1/graph/{typeid}/invoke", name="open budget", public=True, hub_origin=hub_origin
+        typeid,
+        f"/api/v1/graph/{typeid}/invoke",
+        name="open budget",
+        public=True,
+        hub_origin=hub_origin,
+        tiers=TIERS,
     )
 
 
@@ -1279,6 +1243,22 @@ async def test_a_process_pinned_to_a_public_endpoint_spends_it_without_a_login(e
         await resolve_llm_endpoint(_process(endpoint=EP2))
 
 
+@pytest.fixture
+async def _openrouter_key_models_restored():
+    """The page tunes the shared OpenRouter key row's ``sm`` (``LLMEndpointConfig``) and a funded spawn
+    RUNS ``endpoint.tiers[size]`` -- left tuned, every later test on that key runs the page's model."""
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+
+    before = await LLMEndpoint.find_by_secret("lm_api.openrouter")
+    saved = dict(before.tiers) if before is not None else None
+    yield
+    after = await LLMEndpoint.find_by_secret("lm_api.openrouter")
+    if after is not None and saved is not None and after.tiers != saved:
+        after.tiers = saved
+        await after.save()
+
+
+@pytest.mark.usefixtures("_openrouter_key_models_restored")
 async def test_the_llm_endpoints_page_runs_in_order(monkeypatch, tmp_path):
     """``docs/snippets/llm-endpoints.md``, every fence but the long tier's script, verbatim and in order.
 
@@ -1452,3 +1432,17 @@ async def test_a_process_pinned_to_a_public_endpoint_spends_it_signed_out_and_on
     assert chosen.endpoint_typeid == EP2 and chosen.eligible
     assert endpoint.public, "the stub must carry public so the key resolves to the public placeholder"
     assert not untold[0].eligible and "not logged in" in untold[0].reason
+
+
+def test_the_bound_endpoint_is_labelled_with_the_provider_the_hub_pushed() -> None:
+    """The listing row of an allowance carries the entity default (``openrouter``); the binding names the
+    root that actually pays, and that is what the sources page shows."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _endpoint_sources
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    from flow_sdk.instance_settings.llm_endpoint import HubLLMEndpoint
+
+    row = LLMEndpoint.projection("hub", "allowance", name="allowance", provider="openrouter")
+    bound = HubLLMEndpoint(endpoint_typeid=str(row.typeid), invoke_path="/x", provider="vertex", name="allowance")
+    (candidate,) = _endpoint_sources(driver_api_auth_spec("claude"), [row], bound, True)
+    assert candidate.source.detail == "vertex"

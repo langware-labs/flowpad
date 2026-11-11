@@ -16,7 +16,7 @@ call, not after a process restart.
 down must not take a worker spawn with it". A mailbox caller has to tell "this
 agent has no mailbox" (a person must act) from "the hub is unreachable" (try again
 next tick), and collapsing both to ``None`` makes that impossible — so this
-raises with the status intact and lets the caller decide. See ``hub_get_or_raise``.
+raises with the status intact and lets the caller decide. See ``HubProxy.call``.
 
 The status is re-raised as the FAMILY's ``AgentMailboxError``, never as
 ``HubError``: everything above this file is supposed to work against any mailbox
@@ -54,9 +54,11 @@ class HubAgentMailboxDriver:
         body = {k: v for k, v in options.items() if v}
         return await self._post(agent_id, "provision", body)
 
-    async def enable_mailbox(self, agent_id: str) -> dict:
-        """Provision or reactivate the agent's existing Hub allocation."""
-        return await self._post(agent_id, "enable", {})
+    async def enable_mailbox(self, agent_id: str, **options: Any) -> dict:
+        """Provision or reactivate the agent's existing Hub allocation. ``options`` (``username``,
+        ``display_name``) name a NEW mailbox; an existing one keeps its address."""
+        body = {k: v for k, v in options.items() if v}
+        return await self._post(agent_id, "enable", body)
 
     async def disable_mailbox(self, agent_id: str) -> dict:
         """Pause the Hub allocation without deleting the provider mailbox."""
@@ -76,6 +78,17 @@ class HubAgentMailboxDriver:
         data = await self._get(agent_id, None)
         return (data or {}).get("mailbox") or None
 
+    async def offered(self, agent_id: str = "") -> bool:
+        """Whether the hub gives agents a mailbox at all — a fact about the hub, asked with no agent (an agent
+        not yet on the hub cannot read its own mailbox). A hub too old to answer is taken at its word later."""
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+        try:
+            data = await HubProxy.call("GET", BuiltinEntityType.AGENT, None, "mailbox_offer", quiet=True)
+        except HubError:
+            return True
+        return bool((data or {}).get("offered", True))
+
     async def delete_mailbox(self, agent_id: str) -> bool:
         """Release the address.
 
@@ -84,10 +97,10 @@ class HubAgentMailboxDriver:
         whether it is the first or second attempt. Every other failure still
         raises — a hub that is down must not read as "already gone".
         """
-        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         try:
-            await hub_delete(BuiltinEntityType.AGENT, agent_id, MAILBOX_ACTION)
+            await HubProxy.call("DELETE", BuiltinEntityType.AGENT, agent_id, MAILBOX_ACTION)
             return True
         except HubError as exc:
             if exc.status_code == 404:
@@ -112,26 +125,27 @@ class HubAgentMailboxDriver:
     # ── transport ────────────────────────────────────────────────────────────
 
     async def _get(self, agent_id: str, sub_path: Optional[str], *, params: Optional[dict] = None) -> dict:
-        """Through ``hub_get_or_raise``, never ``hub_get``.
+        """Through ``HubProxy.call``, never ``HubProxy.try_call``.
 
-        ``hub_get`` collapses "no hub configured", "signed out", "network down",
+        ``HubProxy.try_call`` collapses "no hub configured", "signed out", "network down",
         "5xx" and a definitive 404 all to ``None``. Callers of a mailbox have to
         act differently on those, so the status has to survive.
         """
-        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         try:
-            return await hub_get_or_raise(
+            return await HubProxy.call(
+                "GET",
                 BuiltinEntityType.AGENT, agent_id, MAILBOX_ACTION, sub_path, params=params
             )
         except HubError as exc:
             raise await _as_email_error(exc) from exc
 
     async def _post(self, agent_id: str, sub_path: str, body: dict) -> dict:
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         try:
-            return await hub_post(BuiltinEntityType.AGENT, body, agent_id, MAILBOX_ACTION, sub_path) or {}
+            return await HubProxy.call("POST", BuiltinEntityType.AGENT, agent_id, MAILBOX_ACTION, sub_path, payload=body)
         except HubError as exc:
             raise await _as_email_error(exc) from exc
 

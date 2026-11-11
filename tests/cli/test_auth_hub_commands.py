@@ -1,4 +1,4 @@
-"""`flow auth` — the four commands the HUB drives, never a human.
+"""`flow auth` — the four commands the HUB drives, never a human, and ``get-cookie-gate`` for scripts.
 
 These exist so the hub has a channel into a running box that does not require
 the box's HTTP server to be up and answering. The loopback
@@ -51,7 +51,7 @@ def test_the_hub_driven_commands_are_registered():
 
 
 def test_set_cookie_gate_arms_with_the_value_it_was_given():
-    with patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm:
+    with patch("flow_sdk.instance_settings.cookie_gate.set_cookie") as arm:
         result = runner.invoke(app, ["auth", "set-cookie-gate", "s3cret-gate"])
 
     assert result.exit_code == 0
@@ -63,7 +63,7 @@ def test_set_cookie_gate_refuses_an_empty_secret():
     open while looking locked. The store raises; the command must not swallow
     it into a success."""
     with patch(
-        "flow_sdk.instance_settings.cookie_gate.set_cookie_gate",
+        "flow_sdk.instance_settings.cookie_gate.set_cookie",
         side_effect=ValueError("cookie-gate secret must be non-empty"),
     ):
         result = runner.invoke(app, ["auth", "set-cookie-gate", ""])
@@ -88,10 +88,10 @@ def test_set_cookie_gate_takes_a_dash_leading_secret_after_the_separator():
     The hub's fix is to send `--` first. This pins the other half of that
     contract: the CLI must keep treating everything after `--` as the value. It is
     a real risk because the separator is invisible in the signature -- nothing in
-    `set_cookie_gate`'s definition mentions it, so a later refactor (custom
+    `set_cookie`'s definition mentions it, so a later refactor (custom
     parsing, an eager option, `allow_interspersed_args`) could drop the behaviour
     with nothing here to notice."""
-    with patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm:
+    with patch("flow_sdk.instance_settings.cookie_gate.set_cookie") as arm:
         result = runner.invoke(app, ["auth", "set-cookie-gate", "--", "-9tNyP6uJ6GaI_QoUw8D"])
 
     assert result.exit_code == 0
@@ -118,6 +118,16 @@ def test_clear_cookie_gate_succeeds_on_an_instance_that_was_never_armed():
 
     assert result.exit_code == 0
     assert "not armed" in result.output
+
+
+# ── get-cookie-gate ───────────────────────────────────────────────────────────
+
+
+def test_get_cookie_gate_prints_the_token_the_backend_checks(local_gate):
+    result = runner.invoke(app, ["auth", "get-cookie-gate"])
+
+    assert result.exit_code == 0
+    assert result.output.strip() == local_gate.read_text(encoding="utf-8")
 
 
 # ── hub-login ─────────────────────────────────────────────────────────────────
@@ -227,3 +237,124 @@ def test_set_runtime_accepts_the_end_of_options_separator():
 
     assert result.exit_code == 0
     assign.assert_called_once_with("sandbox")
+
+
+# ── configure-box: the four hub steps in one process ─────────────────────────
+
+
+def _configure(*extra: str):
+    import json
+
+    result = runner.invoke(app, ["auth", "configure-box", "--cookie-gate=-9tNyP6uJ6GaI", "--runtime=sandbox", *extra])
+    report = json.loads(result.output.strip().splitlines()[-1])
+    return result, report
+
+
+def test_configure_box_runs_every_step_in_order_and_reports_each():
+    calls = []
+    with (
+        patch("flow_sdk.instance_settings.cookie_gate.set_cookie", side_effect=lambda v: calls.append(("gate", v))),
+        patch(
+            "flow_sdk.instance_settings.runtime.set_assigned_runtime",
+            side_effect=lambda v: calls.append(("runtime", v)),
+        ),
+        patch(
+            "flow_sdk.instance_settings.runtime.set_assigned_compute_node",
+            side_effect=lambda v: calls.append(("node", v)),
+        ),
+    ):
+        result, report = _configure("--compute-node=compute_node-1")
+
+    assert result.exit_code == 0
+    # The `=` form carries a dash-leading secret intact -- the risk `--` covers for set-cookie-gate.
+    assert calls == [("gate", "-9tNyP6uJ6GaI"), ("runtime", "sandbox"), ("node", "compute_node-1")]
+    assert report == {"cookie_gate": "ok", "runtime": "ok", "compute_node": "ok", "node_size": None, "login_status": None}
+
+
+def test_configure_box_stops_at_a_gate_it_could_not_arm():
+    """Fatal, like the separate step: nothing after an unarmed gate may run -- above all not the login."""
+    with (
+        patch("flow_sdk.instance_settings.cookie_gate.set_cookie", side_effect=ValueError("empty")),
+        patch("flow_sdk.instance_settings.runtime.set_assigned_runtime") as runtime,
+    ):
+        result, report = _configure("--login-port=1", "--api-key=k")
+
+    assert result.exit_code == 1
+    runtime.assert_not_called()
+    assert report["cookie_gate"].startswith("error") and report["login_status"] is None
+
+
+def test_configure_box_stops_at_a_runtime_it_could_not_record():
+    with (
+        patch("flow_sdk.instance_settings.cookie_gate.set_cookie"),
+        patch("flow_sdk.instance_settings.runtime.set_assigned_runtime", side_effect=ValueError("desktop")),
+    ):
+        result, report = _configure("--login-port=1", "--api-key=k")
+
+    assert result.exit_code == 1
+    assert report["runtime"].startswith("error") and report["login_status"] is None
+
+
+def test_configure_box_a_bad_compute_node_is_reported_not_fatal():
+    with (
+        patch("flow_sdk.instance_settings.cookie_gate.set_cookie"),
+        patch("flow_sdk.instance_settings.runtime.set_assigned_runtime"),
+        patch("flow_sdk.instance_settings.runtime.set_assigned_compute_node", side_effect=ValueError("bad id")),
+    ):
+        result, report = _configure("--compute-node=nope")
+
+    assert result.exit_code == 0
+    assert report["compute_node"].startswith("error")
+
+
+def test_configure_box_signs_in_through_the_apps_route_presenting_the_gate():
+    """A real loopback server: the login must reach /auth/login_callback with the key and the
+    armed gate, and a 302 (the route's success answer) must be reported, not followed."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from urllib.parse import parse_qs, urlparse
+
+    seen = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen["path"] = urlparse(self.path).path
+            seen["key"] = parse_qs(urlparse(self.path).query).get("flowpad-api-key")
+            seen["gate"] = self.headers.get("X-Cookie-Gate")
+            self.send_response(302)
+            self.send_header("Location", "/")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.handle_request, daemon=True).start()
+    try:
+        with (
+            patch("flow_sdk.instance_settings.cookie_gate.set_cookie"),
+            patch("flow_sdk.instance_settings.runtime.set_assigned_runtime"),
+        ):
+            result, report = _configure(f"--login-port={server.server_port}", "--api-key=fp_live_x")
+    finally:
+        server.server_close()
+
+    assert result.exit_code == 0
+    assert report["login_status"] == 302
+    assert seen == {"path": "/auth/login_callback", "key": ["fp_live_x"], "gate": "-9tNyP6uJ6GaI"}
+
+
+def test_configure_box_reports_0_when_nothing_answers_the_login():
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    with (
+        patch("flow_sdk.instance_settings.cookie_gate.set_cookie"),
+        patch("flow_sdk.instance_settings.runtime.set_assigned_runtime"),
+    ):
+        result, report = _configure(f"--login-port={port}", "--api-key=k", "--login-timeout=2")
+
+    assert result.exit_code == 0
+    assert report["login_status"] == 0

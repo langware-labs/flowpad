@@ -12,9 +12,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
 import type { GitCheck } from '@src/components/project-home/ProjectGitChip';
+import type { Project } from '@sdk';
 
 vi.mock('@src/journey/SetupJourneyButton', () => ({
-  SETUP_GITHUB_JOURNEY_ID: 'journey-id',
+  SETUP_GITHUB_JOURNEY: 'journey-id',
   // Renders its label so a test can tell WHICH step's button it is.
   SetupJourneyButton: ({ children }: { children?: React.ReactNode }) => (
     <button data-testid="setup-github">{children}</button>
@@ -43,11 +44,14 @@ const checks = (over: Partial<Record<GitCheck['id'], boolean | null>> = {}): Git
     detail: null,
   }));
 
-function show(list: GitCheck[], onSetupRepo = vi.fn().mockResolvedValue(undefined)) {
-  render(
-    <ProjectGitChecksDialog open onOpenChange={() => {}} checks={list} onSetupRepo={onSetupRepo} />,
-  );
-  return onSetupRepo;
+vi.mock('@src/components/git/GitRequiredStrip', () => ({
+  GitRequiredStrip: () => <div data-testid="git-required-strip" />,
+}));
+
+const PROJECT = { fs_storage_mount_path: '/w/p' } as unknown as Project;
+
+function show(list: GitCheck[]) {
+  render(<ProjectGitChecksDialog open onOpenChange={() => {}} checks={list} project={PROJECT} />);
 }
 
 describe('ProjectGitChecksDialog', () => {
@@ -57,9 +61,10 @@ describe('ProjectGitChecksDialog', () => {
     expect(screen.getByText('no remote')).toBeTruthy();
   });
 
-  it('puts the fix on the failing row and nowhere else', () => {
+  it('routes a missing repo to the one "Git is required" strip', () => {
     show(checks({ setup: false }));
-    expect(fixIn('setup')?.dataset.testid).toBe('project-git-checks-setup-repo');
+    expect(screen.getByTestId('git-required-strip')).toBeTruthy();
+    expect(fixIn('setup')).toBeNull();
     expect(fixIn('installed')).toBeNull();
     expect(fixIn('logged-in')).toBeNull();
   });
@@ -68,12 +73,13 @@ describe('ProjectGitChecksDialog', () => {
     show(checks({ installed: false, 'logged-in': false, setup: false }));
     expect(fixIn('installed')?.textContent).toBe('Install gh');
     expect(fixIn('logged-in')?.textContent).toBe('Sign in');
-    expect(fixIn('setup')?.textContent).toContain('Set up Git');
+    expect(screen.getByTestId('git-required-strip')).toBeTruthy();
   });
 
   it('offers nothing when every check passed', () => {
     show(checks());
     for (const id of ['installed', 'setup', 'logged-in'] as const) expect(fixIn(id)).toBeNull();
+    expect(screen.queryByTestId('git-required-strip')).toBeNull();
   });
 
   it('treats an unreadable capability as unknown, not as a failure', () => {

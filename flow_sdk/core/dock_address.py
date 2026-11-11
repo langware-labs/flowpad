@@ -192,6 +192,8 @@ class ViewType(StrEnum):
     # Inbound routing: the hub webhook claims (numbers / bots, sender + group rules) and where each one's
     # messages go. Rendered on the hub page AND the desk.
     INBOUND = "inbound"  # /dock/<hub|desk>/inbound
+    # The hub's machines: cloud sandboxes and connected computers, with + Add machine.
+    MACHINES = "machines"  # /dock/hub/machines
 
 
 # ── pointer vocabularies for the views whose pointer is a closed set ───────
@@ -288,13 +290,24 @@ RETIRED_DOCK_VIEWS: Mapping[ViewType, RetiredTarget] = {
 }
 
 
+#: Mirrors ``RETIRED_DOCK_POINTERS`` in ``ts_sdk/src/utils/ui/retired-views.ts``:
+#: a retired SECTION of a live view, keyed by view type AND exact pointer, so the
+#: view's other pointers are untouched.
+RETIRED_DOCK_POINTERS: Mapping[ViewType, Mapping[str, RetiredTarget]] = {
+    # Data sources › Channels became the one Channels screen (/dock[/hub]/inbound).
+    ViewType.DATA_SOURCES: {"channels": RetiredTarget(ViewType.INBOUND, "")},
+}
+
+
 def normalize_retired(view_type: ViewType, pointer: Optional[str] = None) -> tuple[ViewType, Optional[str]]:
-    """Resolve a retired view forward.
+    """Resolve a retired view (or a retired section of a live view) forward.
 
     Returns the pair unchanged when it names a live view, so callers can apply
     it unconditionally (the TS ``normalizeRetiredDockPointer`` contract).
     """
     target = RETIRED_DOCK_VIEWS.get(view_type)
+    if target is None and pointer is not None:
+        target = RETIRED_DOCK_POINTERS.get(view_type, {}).get(pointer)
     if target is None:
         return view_type, pointer
     return target.view_type, target.pointer
@@ -740,6 +753,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         aliases=("webhooks", "inbound webhooks", "message routing"),
         pages=("hub", "desk"),
     ),
+    ViewType.MACHINES: _m(_NONE, label="Machines", aliases=("sandboxes", "computers"), pages=("hub",)),
 }
 
 

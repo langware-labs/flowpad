@@ -161,3 +161,38 @@ def user_turn_count(path: Path) -> int:
     except OSError:
         return 0
     return count
+
+
+def session_covers_stream(session: Path, stream: Path) -> bool:
+    """Native history wins only once every streamed message is durable there.
+
+    A user-turn count alone cannot distinguish a native record still waiting
+    for its last assistant message. Event ids preserve repeated equal text;
+    old records without ids use their complete message data as the identity.
+    Flowpad-only terminal errors must remain visible in the local transcript.
+    """
+    def messages(path: Path) -> tuple[set[tuple[str, str]], bool]:
+        identities: set[tuple[str, str]] = set()
+        terminal_error = False
+        with path.open(encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                kind = event.get("type")
+                if kind in {"flowpad.error", "flowpad.interrupted"}:
+                    terminal_error = True
+                elif kind in {"user.message", "assistant.message"}:
+                    identity = event.get("id") or json.dumps(event.get("data"), sort_keys=True)
+                    identities.add((kind, str(identity)))
+        return identities, terminal_error
+
+    try:
+        native, _ = messages(session)
+        local, error = messages(stream)
+    except OSError:
+        return False
+    return bool(local) and not error and local <= native

@@ -20,7 +20,6 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from flow_sdk.builtin.data_driver import DataDriver
-from flow_sdk.builtin.source_item import TelegramMessageSpec
 from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, asset_module, load_module
 from flow_sdk.ingest.driver_runtime import SendStatus
 from flow_sdk.ingest.testing import local_http_server, position
@@ -34,6 +33,7 @@ from flow_sdk.sources.values.items import FileItem, FileKind, MessageFileData, R
 
 MAX_TEXT_LEN = asset_module("telegram").MAX_TEXT_LEN
 TelegramSource = asset_module("telegram").TelegramSource
+TelegramMessageSpec = asset_module("telegram").TelegramMessageSpec
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 

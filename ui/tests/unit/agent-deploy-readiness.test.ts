@@ -62,6 +62,18 @@ describe('deployReadiness', () => {
   });
 });
 
+describe('a git checkout', () => {
+  it('holds Deploy on its version row: the deploy refuses uncommitted work', () => {
+    const states = deployReadiness({
+      cloudAuthed: true,
+      projectPublished: true,
+      version: { published: true, pending_changes: 1, git_native: true },
+    });
+    expect(deployReadyState(states)).toBe(true);
+    expect(deployReadyState(states, true)).toBe(false);
+  });
+});
+
 describe('the published-version row', () => {
   it('is todo when the published version lacks this computer’s edits — but Deploy stays enabled', () => {
     const states = deployReadiness({ ...ALL_GOOD, version: { published: true, pending_changes: 2 } });
@@ -76,6 +88,14 @@ describe('the published-version row', () => {
     const states = deployReadiness({ ...ALL_GOOD, version: { published: false, pending_changes: 3 } });
 
     expect(states.version).toBe('done');
+  });
+
+  it('is todo for a git checkout with uncommitted or unpushed work, even before a first publish', () => {
+    const dirty = deployReadiness({ ...ALL_GOOD, version: { published: false, pending_changes: 1, git_native: true } });
+    const clean = deployReadiness({ ...ALL_GOOD, version: { published: false, pending_changes: 0, git_native: true } });
+
+    expect(dirty.version).toBe('todo');
+    expect(clean.version).toBe('done');
   });
 
   it('is checking while the version is unknown, without holding Deploy back', () => {

@@ -18,8 +18,8 @@ import logging
 
 from flow_sdk.actions import action
 from flow_sdk.app.actions.flow_message_action import (
-    _learn_normalized_participants,
-    _normalize_participants,
+    _learn_normalized_members,
+    _normalize_members,
     _participant_value,
 )
 from flow_sdk.builtin.conversation import Conversation
@@ -63,7 +63,7 @@ async def scan_address_book(user_tokens: set[str] | None = None) -> dict:
         roster = list(getattr(conv, "members", None) or [])
         if not roster:
             continue
-        norm = _normalize_participants(roster)  # normalize once; reused below
+        norm = _normalize_members(roster)  # normalize once; reused below
         if user_tokens is not None:
             if not any(_participant_matches(p, user_tokens) for p in norm):
                 continue
@@ -77,7 +77,7 @@ async def scan_address_book(user_tokens: set[str] | None = None) -> dict:
                 }
             )
         scanned += 1
-        upserted += await _learn_normalized_participants(norm)
+        upserted += await _learn_normalized_members(norm)
     result = {"scanned_conversations": scanned, "upserted": upserted}
     if user_tokens is not None:
         result["conversations"] = matched

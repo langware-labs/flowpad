@@ -38,7 +38,7 @@ LOCK_BREAK_FLAG = "lock_break"
 _VOLATILE_FIELDS = frozenset({
     "created_by", "updated_by", "created_date", "updated_date",
     "fetched_at", "remote", "system", "message_count", "tags",
-    "env_vars", "visitor_role", "members",
+    "env_vars", "visitor_roles", "authenticated_roles", "public_roles", "members",
     # The lock marker itself and the share rail are not semantic content —
     # flipping semantic_lock or sharing the entity must not read as drift.
     "semantic_lock",
@@ -149,7 +149,7 @@ async def _flag_break(rel, lock, target_ent, detail: dict, target_hash: str) -> 
         target_type=to_tid.type if to_tid else "",
         target_id=to_tid.id if to_tid else "",
         content=reason[:50],
-        labels=[LOCK_BREAK_FLAG],
+        subkind=LOCK_BREAK_FLAG,
         iso_timestamp=datetime.now(timezone.utc).isoformat(),
         data={
             "flag_type": LOCK_BREAK_FLAG,

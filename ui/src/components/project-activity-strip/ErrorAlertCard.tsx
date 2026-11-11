@@ -1,4 +1,5 @@
 import { AlertTriangle } from 'lucide-react';
+import { Plural } from '@lingui/react/macro';
 
 export function ErrorAlertCard({ count, onClick }: { count: number; onClick: () => void }) {
   return (
@@ -10,7 +11,7 @@ export function ErrorAlertCard({ count, onClick }: { count: number; onClick: () 
       <div className="bookmark-card-header">
         <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
         <span className="bookmark-card-title text-destructive">
-          You have {count} error{count !== 1 ? 's' : ''} to handle
+          <Plural value={count} one="You have # error to handle" other="You have # errors to handle" />
         </span>
       </div>
     </button>

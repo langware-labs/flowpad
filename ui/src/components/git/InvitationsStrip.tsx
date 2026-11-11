@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { GitProvider } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { useGitInvitations, useRespondInvitation } from '@src/hooks/use-git-providers';
@@ -15,6 +16,7 @@ interface InvitationsStripProps {
  * picker dialog stays clean for the common case.
  */
 export function InvitationsStrip({ provider, enabled = true }: InvitationsStripProps) {
+  const { t } = useLingui();
   const { data: invitations, isLoading } = useGitInvitations(provider, enabled);
   const respond = useRespondInvitation(provider);
   // Per-row in-flight tracker so only the clicked invitation's buttons spin.
@@ -25,6 +27,8 @@ export function InvitationsStrip({ provider, enabled = true }: InvitationsStripP
 
   if (isLoading || !invitations || invitations.length === 0) return null;
 
+  const invitationCount = invitations.length;
+
   const handleRespond = (id: number, action: 'accept' | 'decline', fullName: string) => {
     setPendingId(id);
     respond.mutate(
@@ -32,13 +36,13 @@ export function InvitationsStrip({ provider, enabled = true }: InvitationsStripP
       {
         onSuccess: () => {
           notify.success({
-            title: action === 'accept' ? `Accepted ${fullName}` : `Declined ${fullName}`,
+            title: action === 'accept' ? t`Accepted ${fullName}` : t`Declined ${fullName}`,
             durationMs: 2500,
           });
         },
         onError: (err) => {
           notify.error({
-            title: `Failed to ${action} invitation`,
+            title: action === 'accept' ? t`Failed to accept invitation` : t`Failed to decline invitation`,
             message: err instanceof Error ? err.message : String(err),
           });
         },
@@ -53,11 +57,12 @@ export function InvitationsStrip({ provider, enabled = true }: InvitationsStripP
     <div className="flex min-w-0 flex-col gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
       <div className="flex items-center gap-1.5 text-xs font-medium">
         <MailPlus className="h-3.5 w-3.5" />
-        Pending repo invitations ({invitations.length})
+        <Trans>Pending repo invitations ({invitationCount})</Trans>
       </div>
       <ul className="flex min-w-0 flex-col gap-1">
         {invitations.map((inv) => {
           const isRowPending = pendingId === inv.id;
+          const inviter = inv.inviter_login;
           return (
             // `min-w-0` + a truncating inviter: every piece of this row must be
             // able to shrink or be marked `shrink-0`, or the row's min-content
@@ -66,7 +71,7 @@ export function InvitationsStrip({ provider, enabled = true }: InvitationsStripP
             <li key={inv.id} className="flex min-w-0 items-center gap-2 text-xs">
               <span className="min-w-0 flex-1 truncate font-mono">{inv.repo.full_name}</span>
               <span className="min-w-0 flex-[0_1_auto] truncate text-muted-foreground">
-                from @{inv.inviter_login}
+                <Trans>from @{inviter}</Trans>
               </span>
               <span className="shrink-0 rounded bg-muted px-1.5 py-px text-[10px] uppercase text-muted-foreground">
                 {inv.permissions}
@@ -78,7 +83,7 @@ export function InvitationsStrip({ provider, enabled = true }: InvitationsStripP
                 disabled={isRowPending}
                 onClick={() => handleRespond(inv.id, 'accept', inv.repo.full_name)}
               >
-                {isRowPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Accept'}
+                {isRowPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trans>Accept</Trans>}
               </Button>
               <Button
                 size="sm"
@@ -87,7 +92,7 @@ export function InvitationsStrip({ provider, enabled = true }: InvitationsStripP
                 disabled={isRowPending}
                 onClick={() => handleRespond(inv.id, 'decline', inv.repo.full_name)}
               >
-                Decline
+                <Trans>Decline</Trans>
               </Button>
             </li>
           );

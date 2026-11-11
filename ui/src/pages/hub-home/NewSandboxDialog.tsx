@@ -1,5 +1,4 @@
-import { gitOriginFromUrl, OAUTH_PROVIDERS, OAuthStatus, oauthService, Project, TypeId, type GitOrigin } from '@sdk';
-import { useOAuthFlowComplete } from '@sdk/react/hooks';
+import { gitOriginFromUrl, OAUTH_PROVIDERS, oauthService, Project, TypeId, type GitOrigin } from '@sdk';
 import { AutoLoginField } from '@src/pages/hub-home/AutoLoginField';
 import { LoginAccessField } from '@src/pages/hub-home/LoginAccessField';
 import { Button } from '@src/components/ui/button';
@@ -15,9 +14,12 @@ import { Input } from '@src/components/ui/input';
 import { ProjectSelector } from '@src/components/project-selector/ProjectSelector';
 import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import { cn } from '@src/lib/utils';
-import { fetchGithubStatus } from '@src/lib/github-oauth-status';
-import { RepoPicker } from '@src/components/git/RepoPicker';
-import type { ComputeNode } from '@sdk';
+import { GitRepoPicker, type GitTarget } from '@src/components/git/GitRepoPicker';
+import { ComputeNodeSize, type ComputeNode } from '@sdk';
+import {
+  AGENT_MACHINE_SIZE_LABELS,
+  AGENT_MACHINE_SIZES,
+} from '@src/components/assets/editor/agent-profile/agent-vocabularies';
 import {
   DEFAULT_LOGIN_ACCESS,
   type ContextProject,
@@ -26,7 +28,7 @@ import {
   type Step,
 } from '@src/hooks/use-sandboxes';
 import { StepList } from '@src/components/ui/step-list';
-import { Briefcase, GitBranch, Github, Link2, Loader2, X } from 'lucide-react';
+import { Briefcase, GitBranch, Loader2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -46,7 +48,7 @@ interface Source {
 }
 
 /** Which chip's panel is open, if any. */
-type Panel = 'project' | 'github' | 'url';
+type Panel = 'project' | 'git';
 
 /** Which field owns the one open panel. */
 interface OpenPanel {
@@ -75,7 +77,11 @@ interface NewSandboxDialogProps {
    * fire-and-forget: the dialog stays open across the call so it can report what
    * happened, which means it has to be able to await the outcome.
    */
-  onCreate: (opts: { name: string; sandboxProject?: SandboxSetup }) => Promise<ComputeNode | null>;
+  onCreate: (opts: {
+    name: string;
+    size: ComputeNodeSize;
+    sandboxProject?: SandboxSetup;
+  }) => Promise<ComputeNode | null>;
   /**
    * Boot the created box and set it up. Resolves when it is ready, or rejects.
    *
@@ -121,13 +127,14 @@ interface NewSandboxDialogProps {
  * still no placeholder tab to claim up front and none to close on error.
  *
  * Both fields are the same control ({@link SourceField}): the picks as
- * removable pills, then a chip per way in — pick a project, browse GitHub,
- * paste a URL — each opening its own panel directly underneath. The only
+ * removable pills, then a chip per way in — pick a project, or a git repo
+ * (the shared `GitRepoPicker`: paste a URL or browse GitHub, with its branch) —
+ * each opening its own panel directly underneath. The only
  * difference is what a pick does (replace vs. append) and which projects are
  * on offer.
  *
  * Only ONE panel is open across the whole dialog, which is why the open-panel
- * state lives here rather than in each field: the GitHub panel carries the repo
+ * state lives here rather than in each field: the git panel carries the repo
  * table (and, unconnected, the Connect button), and two of those stacked would
  * both bury the footer and offer the same connection twice.
  *
@@ -150,10 +157,12 @@ export function NewSandboxDialog({
 }: NewSandboxDialogProps) {
   const { t } = useLingui();
   const [name, setName] = useState(defaultName);
+  // The hub's own default size. Fixed at create: the box is provisioned at it.
+  const [size, setSize] = useState<ComputeNodeSize>(ComputeNodeSize.LARGE);
+  // Once picked, the size list folds to the chosen row so the dialog's footer stays in view.
+  const [sizesOpen, setSizesOpen] = useState(true);
   const [loadedProject, setLoadedProject] = useState<Source | null>(null);
   const [assets, setAssets] = useState<Source[]>([]);
-  const [githubConnected, setGithubConnected] = useState(false);
-  const [connecting, setConnecting] = useState(false);
   const [openPanel, setOpenPanel] = useState<OpenPanel | null>(null);
   // idle -> creating -> created -> launching -> launched. The dialog stays
   // mounted across all five, so a failure lands back on the last settled state
@@ -173,12 +182,13 @@ export function NewSandboxDialog({
   useEffect(() => {
     if (!open) return;
     setName(defaultName);
+    setSize(ComputeNodeSize.LARGE);
+    setSizesOpen(true);
     const fromUrl = initialGitUrl ? gitOriginFromUrl(initialGitUrl) : null;
     setLoadedProject(
       fromUrl ? { name: fromUrl.name, gitOrigin: fromUrl } : currentProject ? sourceFromProject(currentProject) : null,
     );
     setAssets([]);
-    setConnecting(false);
     setOpenPanel(null);
     setError('');
     setAutoLogin(true);
@@ -188,48 +198,12 @@ export function NewSandboxDialog({
     setPhase('idle');
     setCreated(null);
 
-    // `null` means the question couldn't be asked yet — the bootstrap race where
-    // `userTypeId` isn't populated — so retry briefly rather than reporting a
-    // connection the user does have as missing (same as NewProjectFromGitDialog).
-    let cancelled = false;
-    const poll = () => {
-      void fetchGithubStatus().then((r) => {
-        if (cancelled) return;
-        if (r === null) setTimeout(poll, 500);
-        else setGithubConnected(r);
-      });
-    };
-    poll();
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // An asset has to be cloned, so a project with no repository behind it can't
   // be one — it would attach an empty folder with nothing to index.
   const assetCandidates = useMemo(() => (projects ?? []).filter((p) => !!p.origin), [projects]);
-
-  const connectGithub = useCallback(() => {
-    setConnecting(true);
-    setError('');
-    void oauthService.connect(OAUTH_PROVIDERS.GITHUB).catch((e: unknown) => {
-      setConnecting(false);
-      // Prefer the backend's ApiFailResponse message over axios's generic
-      // "Request failed with status code 500" (same unwrap NewProjectFromGitDialog does).
-      const ax = e as { response?: { data?: { message?: string } }; message?: string };
-      setError(ax.response?.data?.message ?? ax.message ?? t`Couldn't start GitHub connection.`);
-    });
-  }, [t]);
-
-  // Listened to for as long as the dialog is mounted, NOT only while a connect
-  // is pending: gating it on `connecting` would mean the moment we stop waiting
-  // (see below) a grant that does land is thrown away.
-  useOAuthFlowComplete(OAUTH_PROVIDERS.GITHUB, (msg) => {
-    setConnecting(false);
-    if (msg.status === OAuthStatus.SUCCESS) setGithubConnected(true);
-    else setError(t`GitHub connection failed.`);
-  });
 
   const onInvalidUrl = useCallback(() => setError(t`Enter a valid GitHub repository URL.`), [t]);
 
@@ -284,6 +258,7 @@ export function NewSandboxDialog({
     const opts = loadedProject
       ? {
           name: sandboxName,
+          size,
           sandboxProject: {
             name: loadedProject.name,
             ...(loadedProject.gitOrigin ? { gitOrigin: loadedProject.gitOrigin } : {}),
@@ -291,7 +266,7 @@ export function NewSandboxDialog({
             ...(contextProjects.length ? { contextProjects } : {}),
           },
         }
-      : { name: sandboxName }; // nothing to load → a plain sandbox
+      : { name: sandboxName, size }; // nothing to load → a plain sandbox
 
     setPhase('creating');
     setError('');
@@ -315,7 +290,7 @@ export function NewSandboxDialog({
       setError(e instanceof Error ? e.message : String(e));
       setPhase('idle');
     }
-  }, [phase, name, defaultName, loadedProject, assets, onCreate, lendRepoAccessToRecipients]);
+  }, [phase, name, size, defaultName, loadedProject, assets, onCreate, lendRepoAccessToRecipients]);
 
   const handleLaunch = useCallback(async () => {
     if (!created || phase !== 'created') return;
@@ -349,13 +324,8 @@ export function NewSandboxDialog({
   }, [created, onOpen, onOpenChange]);
 
   return (
-    /* Closing is never conditional. `connecting` clears only when an
-       OAUTH_FLOW_COMPLETE arrives, and that event may never come — the user
-       shuts the popup, or the message lands with no matching flow id and
-       oauth-service returns without emitting. Gating dismissal on it turned an
-       abandoned connect into a dialog with no way out: Escape and the overlay
-       swallowed, Cancel disabled. A pending connect is a reason to spin the
-       Connect button, and nothing more. */
+    /* Closing is never conditional — a pending GitHub connect (which may never
+       complete) spins its own button and nothing more. */
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
@@ -378,6 +348,39 @@ export function NewSandboxDialog({
           autoFocus
         />
 
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+          <Trans>Machine size</Trans>
+        </label>
+        <div className="mb-4 flex flex-col gap-1.5" role="radiogroup" aria-label={t`Machine size`}>
+          {(sizesOpen ? AGENT_MACHINE_SIZES : [size]).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={size === value}
+              aria-expanded={sizesOpen}
+              disabled={phase !== 'idle'}
+              onClick={() => {
+                if (!sizesOpen) return setSizesOpen(true);
+                setSize(value);
+                setSizesOpen(false);
+              }}
+              className={cn(
+                'flex items-center justify-between rounded-md border px-3 py-2 text-start text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                size === value ? 'border-primary bg-primary/5' : 'hover:bg-muted/60',
+              )}
+              data-testid={`sandbox-size-${value}`}
+            >
+              {AGENT_MACHINE_SIZE_LABELS[value]}
+              {!sizesOpen && (
+                <span className="text-xs text-muted-foreground">
+                  <Trans>Change</Trans>
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
         <SourceField
           label={t`Project to load`}
           testId="loaded-project"
@@ -389,9 +392,6 @@ export function NewSandboxDialog({
           onInvalidUrl={onInvalidUrl}
           panel={openPanel?.field === 'loaded-project' ? openPanel.panel : null}
           onPanelChange={(panel) => setOpenPanel(panel ? { field: 'loaded-project', panel } : null)}
-          githubConnected={githubConnected}
-          connecting={connecting}
-          onConnectGithub={connectGithub}
         />
 
         <SourceField
@@ -405,9 +405,6 @@ export function NewSandboxDialog({
           onInvalidUrl={onInvalidUrl}
           panel={openPanel?.field === 'assets' ? openPanel.panel : null}
           onPanelChange={(panel) => setOpenPanel(panel ? { field: 'assets', panel } : null)}
-          githubConnected={githubConnected}
-          connecting={connecting}
-          onConnectGithub={connectGithub}
         />
 
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
@@ -510,9 +507,6 @@ function SourceField({
   onInvalidUrl,
   panel,
   onPanelChange,
-  githubConnected,
-  connecting,
-  onConnectGithub,
 }: {
   label: string;
   testId: string;
@@ -524,29 +518,27 @@ function SourceField({
   onInvalidUrl: () => void;
   panel: Panel | null;
   onPanelChange: (panel: Panel | null) => void;
-  githubConnected: boolean;
-  connecting: boolean;
-  onConnectGithub: () => void;
 }) {
   const { t } = useLingui();
-  const [url, setUrl] = useState('');
+  const [target, setTarget] = useState<GitTarget | null>(null);
   const togglePanel = (next: Panel) => onPanelChange(panel === next ? null : next);
 
   const pickedIds = useMemo(() => values.map((v) => v.projectId).filter((id): id is string => !!id), [values]);
 
   const pick = (source: Source) => {
     onPanelChange(null);
-    setUrl('');
+    setTarget(null);
     onPick(source);
   };
 
-  const submitUrl = () => {
-    const gitOrigin = gitOriginFromUrl(url.trim());
+  const submitRepo = () => {
+    if (target?.mode !== 'existing') return;
+    const gitOrigin = gitOriginFromUrl(target.url);
     if (!gitOrigin) {
       onInvalidUrl();
       return;
     }
-    pick({ name: gitOrigin.name, gitOrigin });
+    pick({ name: gitOrigin.name, gitOrigin: target.branch ? { ...gitOrigin, branch: target.branch } : gitOrigin });
   };
 
   return (
@@ -600,18 +592,11 @@ function SourceField({
           icon={<Briefcase className="h-3 w-3" />}
         />
         <Chip
-          active={panel === 'github'}
-          onClick={() => togglePanel('github')}
-          testId={`${testId}-chip-github`}
-          label={githubConnected ? t`Browse GitHub` : t`Connect GitHub`}
-          icon={<Github className="h-3 w-3" />}
-        />
-        <Chip
-          active={panel === 'url'}
-          onClick={() => togglePanel('url')}
-          testId={`${testId}-chip-url`}
-          label={t`Git URL`}
-          icon={<Link2 className="h-3 w-3" />}
+          active={panel === 'git'}
+          onClick={() => togglePanel('git')}
+          testId={`${testId}-chip-git`}
+          label={t`Git repo`}
+          icon={<GitBranch className="h-3 w-3" />}
         />
       </div>
 
@@ -621,7 +606,7 @@ function SourceField({
             projects={projectEntitiesToSelectorItems(projects)}
             selectedId={null}
             excludeIds={pickedIds}
-            emptyMessage={t`No projects to choose from — use GitHub or a git URL.`}
+            emptyMessage={t`No projects to choose from — use a git repo.`}
             onSelect={(id) => {
               const project = projects.find((p) => p.id === id);
               if (project) pick(sourceFromProject(project));
@@ -630,52 +615,26 @@ function SourceField({
         </div>
       )}
 
-      {/* Connected, this is the repo table; unconnected it is the one place the
-          connection is offered, so the chip that promises repos is also what
-          gets you them. `githubConnected` is the dialog's state, so finishing
-          OAuth swaps this panel to the picker with nothing else to click. */}
-      {panel === 'github' && (
-        <div className="mt-1.5 rounded-md border border-border p-2" data-testid={`${testId}-github`}>
-          {githubConnected ? (
-            <RepoPicker provider="github" onSelect={(repo) => pick({ name: repo.name, gitOrigin: repo.git_origin })} />
-          ) : (
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="text-muted-foreground">
-                <Trans>Connect GitHub to pick from your repos, including private ones.</Trans>
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-6 shrink-0 px-2 text-xs"
-                onClick={onConnectGithub}
-                disabled={connecting}
-                data-testid="connect-github"
-              >
-                {connecting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Github className="h-3 w-3" />}
-                <span className="ms-1.5">
-                  <Trans>Connect</Trans>
-                </span>
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {panel === 'url' && (
-        <div className="mt-1.5 flex items-center gap-1.5">
-          <Input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder={t`https://github.com/owner/repo`}
-            className="h-8 font-mono text-xs"
-            spellCheck={false}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') submitUrl();
-            }}
-            data-testid={`${testId}-url-input`}
+      {/* The shared picker: paste a URL (public repos need no connection) or
+          browse GitHub — connecting, when needed, happens inside it and swaps
+          to the repo table on its own. */}
+      {panel === 'git' && (
+        <div className="mt-1.5 flex flex-col gap-2 rounded-md border border-border p-2" data-testid={`${testId}-git`}>
+          <GitRepoPicker
+            modes={['existing']}
+            onChange={setTarget}
+            onEnter={submitRepo}
+            urlPlaceholder="https://github.com/owner/repo"
+            testIdPrefix={`${testId}-git`}
           />
-          <Button size="sm" variant="outline" className="h-8 shrink-0 px-2 text-xs" onClick={submitUrl}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 self-end px-2 text-xs"
+            onClick={submitRepo}
+            disabled={target?.mode !== 'existing'}
+            data-testid={`${testId}-git-use`}
+          >
             <Trans>Use</Trans>
           </Button>
         </div>

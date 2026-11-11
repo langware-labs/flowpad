@@ -142,7 +142,7 @@ async def test_while_it_serves_a_fast_lane_driver_the_loop_holds_its_lease(mail_
     ("provider", "status", "health", "armed"),
     [
         ("telegram", "active", "ok", 5),
-        ("slack", "active", "ok", None),
+        ("gmail", "active", "ok", None),
         ("telegram", "active", "config_error", None),
         ("telegram", "disabled", "ok", None),
     ],

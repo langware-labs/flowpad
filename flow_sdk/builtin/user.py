@@ -3,20 +3,21 @@ import logging
 import random
 import string
 from datetime import datetime, timedelta
-from flow_sdk._compat import UTC
 from typing import TYPE_CHECKING, ClassVar, Optional
+
+from flow_sdk._compat import UTC
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.api_key import ApiKey
 
 from fastapi import HTTPException
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.visitor import Visitor
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.type_id import TypeId
 
 char_set = string.ascii_lowercase + string.digits
 
@@ -31,6 +32,54 @@ def normalize_email(email: str | None) -> str | None:
     """
     normalized = (email or "").strip().lower()
     return normalized or None
+
+
+NAME_FROM_EMAIL_MAX = 20
+
+
+def person_name(name: str | None, email: str | None = None, user_id: str | None = None) -> str:
+    """The one name for a person — never empty, never "unknown", never an email: a real
+    name, else ``john.doe@x`` -> ``John Doe`` (capped), else ``User <id[:6]>``. Same
+    rule as the hub's ``name_from_email`` and the UI's ``personName``."""
+    if name and name.strip() and "@" not in name:
+        return name.strip()
+    local = (email or name or "").strip().split("@")[0]
+    words = [w for w in local.replace("_", ".").replace("+", ".").replace("-", ".").split(".") if w]
+    derived = " ".join(w.capitalize() for w in words)[:NAME_FROM_EMAIL_MAX].strip()
+    if derived:
+        return derived
+    return f"User {(user_id or '').strip()[:6]}" if (user_id or "").strip() else "Guest"
+
+
+def _roster_value(member: dict, *keys: str) -> str | None:
+    for key in keys:
+        value = member.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def normalize_roster(members: list | None) -> list[dict]:
+    """A roster in the local shape: ``email``/``name``/``picture`` filled from the hub's
+    ``user_email``/``user_name``/``user_picture`` when missing; the email lowercased."""
+    normalized: list[dict] = []
+    for member in members or []:
+        if not isinstance(member, dict):
+            continue
+        item = dict(member)
+        email = normalize_email(_roster_value(member, "email", "user_email"))
+        name = _roster_value(member, "name", "user_name")
+        picture = _roster_value(member, "picture", "user_picture")
+        if isinstance(item.get("email"), str):
+            item["email"] = normalize_email(item["email"]) or ""
+        if email and not item.get("email"):
+            item["email"] = email
+        if name and not item.get("name"):
+            item["name"] = name
+        if picture and not item.get("picture"):
+            item["picture"] = picture
+        normalized.append(item)
+    return normalized
 
 
 def recipient_user_id(value: object) -> str | None:
@@ -70,6 +119,12 @@ class UserAlreadyExistsException(Exception):
         super().__init__(self.message)
 
 
+def flags_of_labels(labels) -> dict[str, bool]:
+    """The two flags a legacy user ``labels`` list carried."""
+    labels = labels or ()
+    return {"desktop": "--user-type--.desktop" in labels, "name_overridden": "--user--.name-overridden" in labels}
+
+
 class User(Entity):
     type: str = APIField(default=BuiltinEntityType.USER.value)
     name: str | None = APIField(None)
@@ -84,12 +139,16 @@ class User(Entity):
     user_id: str | None = APIField(None)
     last_login: datetime | None = APIField(None)
     onboarded: bool = APIField(default=False)
+    #: This machine's own person (the one desktop user), as opposed to a contact.
+    desktop: bool = APIField(default=False, sharing=Sharing.PRIVATE)
+    #: ``name`` was typed by the person, so bootstrap must not replace it from ``git config user.name``.
+    name_overridden: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     # Optional cloud organization the user belongs to (one org, hub-authoritative).
     # Set on cloud login from the hub login payload; the org itself is materialized
     # locally as a remote=True Organization at this id. Role lives on the edge here,
     # not on the shared Organization entity. Defaults to "member".
     organization_id: str | None = APIField(None)
-    organization_role: str = APIField(default="member")
+    organization_roles: list[str] = APIField(default_factory=lambda: ["reader"])
     # Credentials never leave this machine. They were bare pydantic defaults —
     # no policy at all — which resolved to SHARED, i.e. they would have ridden a
     # User share to the hub.
@@ -108,6 +167,16 @@ class User(Entity):
         if v is None or isinstance(v, str):
             return normalize_email(v)
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flags_from_labels(cls, data):
+        """A user row written before these two flags existed carried them as ``labels`` markers."""
+        if isinstance(data, dict) and "labels" in data:
+            data = dict(data)
+            for flag, held in flags_of_labels(data.pop("labels")).items():
+                data[flag] = bool(data.get(flag)) or held
+        return data
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -257,6 +326,27 @@ class User(Entity):
         return None
 
     @classmethod
+    async def _same_person_rows(cls, user_id: str | None, email: str | None) -> list["User"]:
+        """Every address-book row that is this person, the one to keep first.
+
+        A person is learned on two axes that may arrive separately (a roster
+        gives a hub id, a bundle sender gives an email), so one person can sit
+        in two rows until a sighting carries both. Order: the email row, then
+        every row holding the hub id, then the row whose local id IS the id.
+        """
+        found: dict[str, User] = {}
+        if email:
+            for row in await cls.get_all({"email": email}):
+                found.setdefault(row.id, row)
+        if user_id:
+            for row in await cls.get_all({"user_id": user_id}):
+                found.setdefault(row.id, row)
+            local = await cls.get_one({"id": user_id})
+            if local:
+                found.setdefault(local.id, local)
+        return list(found.values())
+
+    @classmethod
     async def upsert_contact(
         cls,
         *,
@@ -268,12 +358,12 @@ class User(Entity):
     ) -> "User | None":
         """The single writer into the address book.
 
-        Match by email or user_id (:meth:`get_by_identity`); backfill any
+        Find the person's rows by email and by user_id; backfill any
         missing-or-changed field (email, user_id, name, picture) and save only
-        when something changed (idempotent). No match → create a contact whose
-        local ``id`` is deterministically minted from the natural key so a
-        re-scan of the same participant never duplicates. Returns the contact,
-        or None when there is no usable identity at all.
+        when something changed (idempotent). When the person turns out to sit
+        in more than one row, the extra rows are folded into the first and
+        deleted. No match → create a contact. Returns the contact, or None when
+        there is no usable identity at all.
         """
         email = normalize_email(email)
         user_id = (user_id or "").strip() or None
@@ -282,12 +372,23 @@ class User(Entity):
         if not email and not user_id:
             return None
 
-        existing = await cls.get_by_identity(user_id=user_id, email=email)
-        if existing is not None:
+        rows = await cls._same_person_rows(user_id, email)
+        if rows:
+            existing = rows[0]
+            # A second row is the same person only when it holds the same hub id
+            # as the kept row. The desktop's own user row is never folded away.
+            hub_id = existing.user_id or user_id
+            duplicates = [
+                row for row in rows[1:] if hub_id and row.user_id == hub_id and not row.uname
+            ]
             changed = False
             # Backfill only what's missing/newly-known — never clobber an
             # existing value with an empty one; email/user_id are stable keys so
             # only set them when absent.
+            for row in duplicates:
+                email = email or normalize_email(row.email)
+                name = name or row.name
+                picture = picture or row.picture
             if email and not existing.email:
                 existing.email = email
                 changed = True
@@ -300,6 +401,8 @@ class User(Entity):
             if picture and existing.picture != picture:
                 existing.picture = picture
                 changed = True
+            for row in duplicates:
+                await row.delete()
             if changed:
                 return await existing.save()
             return existing
@@ -307,7 +410,7 @@ class User(Entity):
         from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
         contact = cls(
-            id=mint_uuid(key=f"contact:{user_id or email}"),
+            id=mint_uuid(),
             email=email,
             user_id=user_id,
             name=name,
@@ -338,7 +441,7 @@ class User(Entity):
                 await self.attach_child(child.value)
                 await visitor.detach_child(child.value.typeid)
                 # the chat belongs to the user now, we don't want it to be available to random visitors
-                child.value.visitor_role = None
+                child.value.visitor_roles = []
                 await child.value.save()
         except Exception as e:
             logging.error(f"Error migrating visitor to user: {e}")

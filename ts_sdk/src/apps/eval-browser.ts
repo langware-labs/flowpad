@@ -178,13 +178,14 @@ async function run(root: HTMLElement): Promise<void> {
         if (event === 'slice') go({ run: r.run_id, slice: state.slice === detail ? undefined : (detail as string) });
       },
     });
+    const items = inScope(rows, state);
     await ctx.renderCollection(issues, {
       kind: 'eval.row',
-      items: inScope(rows, state),
+      items,
       meta,
       on: (event, detail) => {
         if (event === 'cause') go({ ...state, cause: state.cause === detail ? undefined : (detail as string), row: undefined });
-        if (event === 'select') go({ ...state, row: detail as string });
+        if (event === 'select') go({ ...state, row: items[detail as number]?.row_id });
       },
     });
   }

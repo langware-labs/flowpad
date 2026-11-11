@@ -35,7 +35,7 @@ export function indexCalls(fms: Iterable<FlowMessage>): {
 } {
   const callByMessage = new Map<string, ProcessCall>();
   const answerByCall = new Map<string, ReturnedValue>();
-  const answerMessageIds = new Set<string>();
+  const answers: Array<[messageId: string, callId: string]> = [];
   for (const fm of fms) {
     if (!fm.id) continue;
     const call = processCallOf(fm);
@@ -43,9 +43,13 @@ export function indexCalls(fms: Iterable<FlowMessage>): {
     const answer = carriedValue<ReturnedValue>(fm.attachment, RETURNED_VALUE_TYPE);
     if (answer) {
       answerByCall.set(answer.id, answer.value);
-      answerMessageIds.add(fm.id);
+      answers.push([fm.id, answer.id]);
     }
   }
+  // An answer folds onto its call's card only when that call is in this conversation. A returned value with no
+  // call here (an IT machine's reply) is a message in its own right and stays in the feed.
+  const callIds = new Set([...callByMessage.values()].map((c) => c.call_id));
+  const answerMessageIds = new Set(answers.filter(([, callId]) => callIds.has(callId)).map(([id]) => id));
   const unanswered = [...callByMessage.values()].some((c) => !answerByCall.has(c.call_id));
   return { callByMessage, answerByCall, answerMessageIds, unanswered };
 }

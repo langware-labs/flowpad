@@ -17,7 +17,7 @@ because ``ApiAuthSpec`` references :class:`LMApiProvider`.
 
 from __future__ import annotations
 
-import fnmatch
+import asyncio
 import functools
 import json
 import logging
@@ -27,11 +27,7 @@ from typing import TYPE_CHECKING, Callable
 
 from flow_sdk.builtin.agentic_process.model_tiers import (
     CLAUDE_CLI_ALIASES,
-    CLAUDE_MODEL_TIERS,
-    is_family_model,
     is_model_tier,
-    resolve_family_tier,
-    resolve_model_tier,
 )
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.flowpad_types.vendors import vendor_or_none
@@ -40,6 +36,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
 logger = logging.getLogger(__name__)
+_FETCHES: set = set()  # in-flight budget-list fetches, kept alive
 
 
 @dataclass(frozen=True)
@@ -77,15 +74,13 @@ class ApiAuthSpec:
 
     token_env_var: str
     base_env: dict[str, str]
-    tier_models: dict[str, str]  # sm/md/lg → provider model slug
     supported_providers: tuple[LMApiProvider, ...]
     default_provider: LMApiProvider
     config_overrides: tuple[tuple[str, str], ...] = ()  # codex `-c key=val` pairs
     provider_key: str = ""  # the ``model_providers.<name>`` those overrides declare
     model_env_vars: tuple[str, ...] = ()  # extra env vars that also carry the slug
-    #: How this harness spells a canonical ``vendor/model`` slug: prepended to a family model's
-    #: slug (``kimi:sm``). opencode addresses every model as ``<provider>/<model>``, so its
-    #: ``tier_models`` above are already spelled this way; a family slug is not, until here.
+    #: How this harness spells a canonical ``vendor/model`` slug (an endpoint's size): prepended to it.
+    #: opencode addresses every model as ``<provider>/<model>``.
     slug_prefix: str = ""
     #: The env var through which this harness takes a cap on one reply's length, if it has one
     #: and does not cap it by itself. A funded spawn sets it to ``FUNDED_MAX_OUTPUT_TOKENS``.
@@ -242,18 +237,13 @@ CLAUDE_API_AUTH_SPEC = ApiAuthSpec(
         "MAX_THINKING_TOKENS": "0",
         "DISABLE_INTERLEAVED_THINKING": "1",
     },
-    tier_models={
-        "sm": "anthropic/claude-haiku-5.5",
-        "md": "anthropic/claude-sonnet-4.5",
-        "lg": "anthropic/claude-opus-4.1",
-    },
     # OpenRouter directly, or the hub's LLMEndpoint (a passthrough to it). A
     # direct vendor is NOT here: base_env is fixed to OpenRouter's URL, so
     # selecting one would post its key to OpenRouter.
     supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
     prompt_model_env_vars=("ANTHROPIC_MODEL",),
-    native_tiers={**CLAUDE_CLI_ALIASES, **{name: size for size, name in CLAUDE_MODEL_TIERS.items()}},
+    native_tiers=dict(CLAUDE_CLI_ALIASES),
     user_config_path=".claude/settings.json",
     user_config_fmt="json",
     hub_endpoint_binding=_claude_hub_binding,
@@ -263,14 +253,6 @@ CLAUDE_API_AUTH_SPEC = ApiAuthSpec(
 CODEX_API_AUTH_SPEC = ApiAuthSpec(
     token_env_var="OPENROUTER_API_KEY",
     base_env={},
-    tier_models={
-        "sm": "openai/gpt-5-mini",
-        "md": "openai/gpt-5",
-        # Was also ``openai/gpt-5``, which made the lg tier a no-op: asking for the
-        # accurate model got the balanced one. Verified against the live OpenRouter
-        # catalog rather than guessed.
-        "lg": "openai/gpt-5-pro",
-    },
     supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
     # OpenRouter serves an OpenAI Responses-compatible endpoint; codex 0.144
@@ -304,11 +286,6 @@ COPILOT_API_AUTH_SPEC = ApiAuthSpec(
         "COPILOT_PROVIDER_TYPE": "openai",
         "COPILOT_PROVIDER_BASE_URL": "https://openrouter.ai/api/v1",
     },
-    tier_models={
-        "sm": "openai/gpt-5-mini",
-        "md": "openai/gpt-5",
-        "lg": "openai/gpt-5-pro",  # was a duplicate of md -- see the codex spec
-    },
     supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
     model_env_vars=("COPILOT_PROVIDER_MODEL_ID", "COPILOT_PROVIDER_WIRE_MODEL", "COPILOT_MODEL"),
@@ -340,11 +317,6 @@ OPENCODE_API_AUTH_SPEC = ApiAuthSpec(
     # the full catalog with no config file present at all.
     token_env_var="OPENROUTER_API_KEY",
     base_env={},
-    tier_models={
-        "sm": "openrouter/z-ai/glm-4.7-flash",
-        "md": "openrouter/z-ai/glm-5.2",
-        "lg": "openrouter/z-ai/glm-5.3",  # was a duplicate of md -- see the codex spec
-    },
     supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
     slug_prefix="openrouter/",
@@ -368,7 +340,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.runner import (  # 
 from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.runner import (  # noqa: E402
     MAX_OUTPUT_ENV as _DEEPAGENTS_MAX_OUTPUT_ENV,
 )
-from flow_sdk.builtin.agentic_process.model_tiers import DEEPAGENTS_MODEL_TIERS  # noqa: E402
 
 
 def _deepagents_hub_binding(url: str) -> ProviderBinding:
@@ -384,7 +355,6 @@ DEEPAGENTS_API_AUTH_SPEC = ApiAuthSpec(
     token_env_var=_DEEPAGENTS_KEY_ENV,
     base_env={_DEEPAGENTS_URL_ENV: "https://openrouter.ai/api/v1"},
     # One wire, so ONE tier table: unlike claude/codex there is no separate native spelling.
-    tier_models=dict(DEEPAGENTS_MODEL_TIERS),
     supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
     hub_endpoint_binding=_deepagents_hub_binding,
@@ -434,34 +404,88 @@ def endpoint_invoke_url(typeid) -> str | None:
     return f"{hub_origin(str(parsed))}{hub_invoke_path(parsed)}"
 
 
-def _model_allowed(slug: str, allow: list[str]) -> bool:
-    """Whether *slug* matches one of *allow*'s glob patterns (``anthropic/claude-*``)."""
-    return any(fnmatch.fnmatch(slug, pattern) for pattern in allow)
+def default_size() -> str:
+    """The size a spawn runs when nobody named one: ``preferences.llm.default_size``, else ``md``."""
+    from flow_sdk.preferences import DEFAULT_LLM_SIZE, PREF_LLM_DEFAULT_SIZE, read_instance_pref  # noqa: PLC0415
+
+    size = read_instance_pref(PREF_LLM_DEFAULT_SIZE, DEFAULT_LLM_SIZE)
+    return size if is_model_tier(size) else DEFAULT_LLM_SIZE
 
 
-def _model_within_allowance(slug: str | None, allow: list[str]) -> str | None:
-    """*slug*, or — when *allow* rules it out — the first LITERAL (non-glob) model *allow*
-    permits instead.
+async def _size_overrides(worker_type: str, provider: LMApiProvider | str) -> dict[str, str]:
+    """The user's per-harness overrides for this provider (``Capability.model_map``), layered over the endpoint."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+        worker_capability_kind,
+    )
+    from flow_sdk.builtin.capability import Capability  # noqa: PLC0415
 
-    An endpoint's ``filters.models_allow`` narrows a shared budget to a few models (a team
-    scoped to ``anthropic/claude-haiku-4.5`` only); the tier map's slug is a code default that
-    knows nothing about any one endpoint, so it can name a model that endpoint refuses outright.
-    Rather than let the spawn fail at call time with "model not allowed", fall back to a model
-    the endpoint actually permits. A wildcard entry (``openai/*``) is not a concrete slug to
-    call, so it is skipped; with no literal entry either, *slug* passes through unchanged —
-    exactly today's behaviour.
+    cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
+    return dict((getattr(cap, "model_map", None) or {}).get(str(provider)) or {})
+
+
+async def _fresh_hub_tiers(endpoint_typeid) -> dict[str, str]:
+    """The sizes the hub serves for one endpoint NOW, read past the listing's memo; ``{}`` when unreadable."""
+    from flow_sdk.instance_settings.llm_endpoint import _list_cache, fetch_hub_llm_endpoints  # noqa: PLC0415
+
+    _list_cache.clear()
+    try:
+        endpoints = await fetch_hub_llm_endpoints()
+    except Exception:  # noqa: BLE001 -- the refusal below explains a size that stays missing
+        return {}
+    wanted = str(endpoint_typeid or "")
+    for endpoint in endpoints:
+        if str(getattr(endpoint, "typeid", "")) == wanted or str(getattr(endpoint, "endpoint_typeid", "")) == wanted:
+            return dict(getattr(endpoint, "tiers", None) or {})
+    return {}
+
+
+def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: str | None, overrides: dict) -> str:
+    """The model a funded spawn runs: the slug the ENDPOINT declares for the size, never a code default.
+
+    A size (``sm``/``md``/``lg``, the harness's own word for one such as claude's ``haiku``, or nothing
+    at all -> the preferred default size) reads ``sizes[size]`` -- the endpoint's own map, which for a hub
+    endpoint is the size inherited down its chain. A name the user mapped in ``Capability.model_map``
+    (a size or a custom name such as ``coding``) runs that mapping first. A size the endpoint does not declare is refused in words -- a
+    guessed model is how a worker ended up silently answered by another vendor. Anything else is a
+    model the caller named, and runs as named.
     """
-    if not slug or not allow or _model_allowed(slug, allow):
-        return slug
-    return next((m for m in allow if "*" not in m), slug)
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchErrorCode  # noqa: PLC0415
+
+    def spelled(slug: str) -> str:
+        return slug if slug.startswith(spec.slug_prefix) else f"{spec.slug_prefix}{slug}"
+
+    if tier and not is_model_tier(tier) and overrides.get(tier):
+        return spelled(overrides[tier])  # a custom name the user mapped
+    size = spec.native_tiers.get(tier, tier) if tier else default_size()
+    if not is_model_tier(size):
+        return tier  # a named model
+    slug = overrides.get(size) or sizes.get(size)
+    if not slug:
+        where = source.endpoint_typeid or source.name or "this endpoint"
+        if tier:
+            # A size was ASKED for (the agent's model size, or the composer's picker): the budget the person
+            # works with and what was asked for disagree, and the person is the one who can settle it.
+            raise WorkerSpawnError(
+                worker_type,
+                f"Model mismatch: this session needs the {size!r} model size, but the budget it runs on "
+                f"({where}) does not offer it -- use a budget that does, or change the size the agent asks for",
+                LaunchErrorCode.MODEL_UNAVAILABLE,
+            )
+        raise WorkerSpawnError(
+            worker_type,
+            f"{where} declares no {size!r} model -- set its model sizes (sm/md/lg) on the endpoint, or name a model",
+            LaunchErrorCode.MODEL_UNAVAILABLE,
+        )
+    return spelled(slug)
 
 
 async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:
     """Materialize the spawn binding for whichever ``LLMSource`` funds *process*.
 
-    Returns ``None`` for a DEVICE source -- the vendor CLI reads its own credentials, so
-    there is nothing to inject, and ``None`` is what "spawn with device auth" has always
-    meant to every caller.
+    DEVICE sources keep the vendor CLI's own credentials. A configured device model
+    returns a model-only binding; otherwise native aliases or the vendor default apply.
+    An explicit size without a configured mapping or native alias is refused.
 
     Which source wins is NOT decided here any more: ``resolve_llm_endpoint`` owns the
     ladder, so the answer this spawn uses and the answer the picker renders come from one
@@ -474,8 +498,10 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (  # noqa: PLC0415
         LLMSourceError,
+        _hub_budget_pending,
         resolve_llm_endpoint,
     )
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints  # noqa: PLC0415
 
     worker_type = getattr(process.driver, "name", None)
     if not worker_type or driver_api_auth_spec(worker_type) is None:
@@ -484,20 +510,14 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     try:
         candidate = await resolve_llm_endpoint(process)
     except LLMSourceError as exc:
+        exc.budget_not_ready = _hub_budget_pending()
+        if exc.budget_not_ready:  # fetch the list once, without holding the refusal; the card's retry finds it
+            _FETCHES.add(task := asyncio.create_task(fetch_hub_llm_endpoints()))
+            task.add_done_callback(_FETCHES.discard)
         raise WorkerSpawnError(worker_type, str(exc)) from exc
 
     model = (process.cli_config or {}).get("model")
     auth = await binding_for_candidate(worker_type, candidate, tier=model)
-    if auth is None and is_family_model(model):
-        # A device login runs the vendor's own models under the vendor's own names; there is no
-        # gateway for ``kimi:sm`` to name a slug against. Passing it through would hand the CLI a
-        # model it has never heard of, and the turn would die with the vendor's sentence, not ours.
-        raise WorkerSpawnError(
-            worker_type,
-            f"{worker_type}: model {model!r} names a model family, which only an LLM endpoint serves, "
-            f"and {worker_type} is on its own login -- bind one (`flow llm user use <endpoint-id>`) "
-            "or name a model this CLI knows",
-        )
     return auth
 
 
@@ -509,17 +529,13 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     that: the user names a row from the picker's own list and wants the binding for it, so the
     recipe must be reachable without inventing a fake process to carry it.
 
-    ``None`` for a DEVICE source, for the same reason as the caller above: the vendor CLI reads
-    its own credentials and there is nothing to inject.
+    DEVICE sources inject no credentials. Their ``Capability.model_map['device']``
+    overrides return a model-only binding; otherwise native aliases/defaults apply.
 
-    *tier* is the ``sm``/``md``/``lg`` key (or a literal slug); ``None`` means the small tier,
-    which is what every caller without an explicit ``cli_config.model`` has always got.
+    *tier* is the ``sm``/``md``/``lg`` key (or a literal slug); ``None`` means the default size from
+    preferences (``preferences.llm.default_size``).
     """
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-        WorkerSpawnError,
-        worker_capability_kind,
-    )
-    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
     from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
 
     spec = driver_api_auth_spec(worker_type)
@@ -528,7 +544,15 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
 
     endpoint, source = candidate
     if endpoint.kind == LLMEndpointKind.DEVICE:
-        return None
+        overrides = await _size_overrides(worker_type, LLMEndpointKind.DEVICE.value)
+        selected = overrides.get(tier or default_size())
+        if tier and is_model_tier(tier) and not selected and tier not in spec.native_tiers.values():
+            raise WorkerSpawnError(
+                worker_type,
+                f"Model size {tier!r} has no device mapping for {worker_type}; configure "
+                "Capability.model_map['device'] or name a concrete model",
+            )
+        return WorkerApiAuth(model_slug=selected) if selected else None
 
     is_hub = endpoint.kind == LLMEndpointKind.HUB
     # A hub endpoint is spent through the harness's FLOWPAD binding whatever its root
@@ -550,24 +574,9 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     if is_hub:
         from flow_sdk.instance_settings.llm_endpoint import hub_llm_endpoint_invoke_url  # noqa: PLC0415
 
-        hub_invoke_url = endpoint_invoke_url(source.endpoint_typeid) or hub_llm_endpoint_invoke_url()
+        own_url = endpoint_invoke_url(source.endpoint_typeid)
+        hub_invoke_url = own_url or hub_llm_endpoint_invoke_url()
         key = endpoint.resolve_api_key() if hub_invoke_url else None
-        # ``tier_models`` are OpenRouter slugs, and the wire quirks around them (claude's
-        # blank ANTHROPIC_API_KEY, codex's ``wire_api = responses``) were proven against
-        # OpenRouter's protocol endpoints. A hub endpoint whose ROOT is a direct vendor is
-        # therefore about to be sent a slug it does not know. We do not refuse -- an
-        # endpoint's own ``filters.model_map`` can legitimately remap it, and refusing
-        # would break a working setup -- but this must not be a silent field-only failure.
-        root_provider = (endpoint.provider or "").strip().lower()
-        if root_provider and root_provider != LMApiProvider.OPENROUTER.value:
-            logger.warning(
-                "%s is spending hub endpoint %s whose root provider is %r, not openrouter; the "
-                "tier slugs are OpenRouter names and will only resolve if that endpoint's "
-                "filters.model_map remaps them",
-                worker_type,
-                source.endpoint_typeid or "(box binding)",
-                root_provider,
-            )
     else:
         # Stored only, matching what the resolver judged eligible — a spawn must not be
         # funded by an environment variable the picker never counted.
@@ -579,43 +588,22 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     except ValueError as exc:
         raise WorkerSpawnError(worker_type, str(exc)) from exc
 
-    # Effective tier→slug map = code defaults ⊕ the harness's user overrides for
-    # this provider (Capability.model_map). Custom option names resolve here too;
-    # an unknown value still passes through as a literal slug.
-    cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
-    overrides = (getattr(cap, "model_map", None) or {}).get(provider.value) or {}
-    # Deliberately NOT merged with ``endpoint.models``. Those are the slugs for calling this
-    # credential directly (an embedding model, a general-purpose chat model); the harness
-    # tier map is what THIS CLI should run, and codex asking for its small tier must get
-    # gpt-5-mini rather than whatever general-purpose model the endpoint happens to name.
-    # Folding them made every harness inherit the endpoint's defaults and silently
-    # re-pointed codex at a Claude slug.
-    merged = {**spec.tier_models, **overrides}
-    # The harness's own name for a size (claude's ``haiku``) runs that size's slug -- still a NAMED
-    # model below, never swapped for an allowance default.
-    native_size = spec.native_tiers.get(tier) if tier else None
-    try:
-        family_slug = resolve_family_tier(tier)
-    except ValueError as exc:
-        raise WorkerSpawnError(worker_type, str(exc)) from exc
-    if family_slug:
-        slug = f"{spec.slug_prefix}{family_slug}"
-    else:
-        slug = resolve_model_tier(merged, native_size or tier or "sm")  # merged always has "sm"
-        # Only a SIZE is ours to re-pick: no model, or sm/md/lg, names the tier map's code default.
-        # A named model -- a family, "haiku", "anthropic/claude-haiku-4.5" -- is the caller's, and
-        # an endpoint that refuses it refuses it in words rather than quietly running another.
-        if not tier or is_model_tier(tier):
-            allowed_slug = _model_within_allowance(slug, endpoint.filters.models_allow)
-            if allowed_slug != slug:
-                logger.info(
-                    "%s: tier slug %r isn't in endpoint %s's models_allow; using %r instead",
-                    worker_type,
-                    slug,
-                    source.endpoint_typeid or "(box binding)",
-                    allowed_slug,
-                )
-                slug = allowed_slug
+    sizes = dict(endpoint.tiers or {})
+    if is_hub and not sizes:
+        # Known only by id so far (no listing yet): the sizes the hub pushed with the box binding
+        # apply when the spawn is routed down that binding -- the same endpoint, or a pin that
+        # could not name an invoke URL of its own and so falls back to it.
+        from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint  # noqa: PLC0415
+
+        bound = get_hub_llm_endpoint()
+        if bound is not None and (not own_url or bound.endpoint_typeid == source.endpoint_typeid):
+            sizes = dict(bound.tiers)
+    wanted = spec.native_tiers.get(tier, tier) if tier else default_size()
+    if is_hub and is_model_tier(wanted) and not sizes.get(wanted):
+        # The sizes above are a copy (the listing's memo, or what the hub pushed when this box was bound);
+        # a pool's sizes set since then reach a spawn only through a fresh read of the hub's listing.
+        sizes = {**sizes, **await _fresh_hub_tiers(source.endpoint_typeid)}
+    slug = _slug_for(worker_type, spec, sizes, source, tier, await _size_overrides(worker_type, provider))
     env = {**binding.base_env, binding.token_env_var: key}
     if spec.max_output_env_var:
         env[spec.max_output_env_var] = str(FUNDED_MAX_OUTPUT_TOKENS)
@@ -633,8 +621,7 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
 
 
 async def apply_api_model_to_options(cmd, process: "AgenticProcess") -> None:
-    """When *process* is in api mode, stamp the resolved model slug (and codex `-c`
-    overrides) onto the CLI options *cmd* before its argv is frozen."""
+    """Stamp the source's resolved model and config onto options before argv is frozen."""
     auth = await resolve_worker_api_auth(process)
     if auth is None:
         return

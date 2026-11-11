@@ -262,7 +262,7 @@ async def test_a_records_typed_field_changing_is_an_update():
 
     class DealData(RecordData):
         spec_kind: ClassVar[str] = "unittest.ingest.deal"
-        volatile: ClassVar[frozenset[str]] = frozenset({"views"})
+        digest_exclude: ClassVar[frozenset[str]] = frozenset({"views"})
 
         stage: Optional[str] = None
         views: int = 0
@@ -279,10 +279,11 @@ async def test_a_records_typed_field_changing_is_an_update():
     assert (await ingest_item(record(stage="won", views=999))).status == "unchanged"      # a volatile field never moves it
 
 
-def test_a_message_keeps_exactly_the_digest_it_had():
-    """Only records gain fields in the digest: adding one to every item would re-write the corpus."""
-    from flow_sdk.fs_store.serializer.db import digest_over
-    from flow_sdk.ingest.digest import content_digest
+def test_the_legacy_view_is_exactly_the_digest_old_rows_carry():
+    """Rows written before the payload digest hold the header digest (records add their typed
+    fields, a message only its mark). The gate accepts that view as *unchanged*, so it must stay
+    byte-identical to what was stored — or the switch rewrites (and re-announces) the corpus."""
+    from flow_sdk.fs_store.serializer.db import hash_view
     from flow_sdk.llm_index.core import sha256_bytes
     from flow_sdk.schema.data_spec.source_item_spec import DIGESTED_FIELDS
     from flow_sdk.semantic_lock.targets import canonical_entity_bytes
@@ -290,8 +291,8 @@ def test_a_message_keeps_exactly_the_digest_it_had():
 
     header_only = lambda item: sha256_bytes(canonical_entity_bytes({name: getattr(item, name, None) for name in DIGESTED_FIELDS}))   # noqa: E731
     plain = _item()
-    assert content_digest(plain) == digest_over(plain, DIGESTED_FIELDS) == header_only(plain)
+    assert hash_view(plain.legacy_digest_view()) == header_only(plain)
     message = _item(data=MessageData())
-    assert content_digest(message) == header_only(message)
+    assert hash_view(message.legacy_digest_view()) == header_only(message)
     record = _item(data=RecordData(title="A title"))
-    assert content_digest(record) != header_only(record)
+    assert hash_view(record.legacy_digest_view()) != header_only(record)

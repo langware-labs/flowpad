@@ -74,3 +74,12 @@ async def test_first_git_origin_clone_excludes_env_local(tmp_path, git_remote, l
     (target / ".env.local").write_text("PUBLIC_TEST_VALUE=1\n")
     status = await GitRepo(str(target), local_compute_node).dispatch("status")
     assert ".env.local" not in [f["path"] for f in status.data["files"]], status.data["files"]
+
+
+async def test_first_hub_clone_stays_clean(tmp_path, git_remote):
+    """The rule lives in the clone's info/exclude: a received checkout is not dirtied by it."""
+    git_remote.make_checkout()
+    target = tmp_path / "received"
+    await HubRepoCheckout(root=target, clone_url=git_remote.uri, branch="main", token="").checkout()
+    (target / ".env.local").write_text("PUBLIC_TEST_VALUE=1\n")
+    assert git_cmd(target, "status", "--porcelain") == ""

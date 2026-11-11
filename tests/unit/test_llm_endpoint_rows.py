@@ -18,6 +18,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointKind
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.external_apis.llm.errors import LLMNotInvocable
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -57,7 +58,7 @@ def test_a_named_provider_with_no_hub_id_is_a_local_key_endpoint(env):
     assert endpoint.kind == LLMEndpointKind.API_KEY
     assert endpoint.base_url == "https://openrouter.ai/api"
     assert endpoint.secret_name == "lm_api.openrouter"
-    assert endpoint.models["embedding"] == "openai/text-embedding-3-small"
+    assert endpoint.tiers["embedding"] == "openai/text-embedding-3-small"
     assert endpoint.name == "openrouter key"
 
 
@@ -65,7 +66,7 @@ def test_a_hub_projection_keeps_every_field_the_hub_sent(env):
     """Defaults must never be painted over a value that arrived from somewhere else."""
     endpoint = LLMEndpoint(id="11111111-2222-4333-8444-555555555555", name="team budget")
     assert endpoint.kind == LLMEndpointKind.HUB
-    assert (endpoint.base_url, endpoint.secret_name, endpoint.models) == ("", "", {})
+    assert (endpoint.base_url, endpoint.secret_name, endpoint.tiers) == ("", "", {})
 
 
 def test_an_explicit_kind_always_wins(env):
@@ -75,7 +76,7 @@ def test_an_explicit_kind_always_wins(env):
 def test_an_unknown_provider_is_left_alone_rather_than_guessed(env):
     endpoint = LLMEndpoint(provider="not-a-provider")
     assert endpoint.kind == LLMEndpointKind.API_KEY
-    assert (endpoint.base_url, endpoint.models) == ("", {})
+    assert (endpoint.base_url, endpoint.tiers) == ("", {})
 
 
 @pytest.mark.asyncio
@@ -93,14 +94,47 @@ async def test_the_hub_listing_forces_the_hub_kind_whatever_the_hub_sent(env, mo
 
     row = {"id": "11111111-2222-4333-8444-555555555555", "name": "b", "provider": "openai", "kind": "api_key"}
 
-    async def _fake_get(_type, action=None, **_kw):
+    async def _fake_get(_method, _type, action=None, **_kw):
         return {"data": [row]} if action is None else []
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", _fake_get)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_fake_get))
     settings.reset_cache()
     endpoints = await settings.fetch_hub_llm_endpoints()
     assert [e.kind for e in endpoints] == [LLMEndpointKind.HUB]
 
+
+
+async def test_concurrent_listings_share_one_pair_of_hub_reads(env, monkeypatch):
+    """A WS drop fires several listings at once; they must cost the hub one pair of reads, not one each."""
+    import asyncio
+
+    from flow_sdk.cli.app_config import set_user
+    from flow_sdk.cli.auth.hub_login import set_api_key
+    from flow_sdk.instance_settings import llm_endpoint as settings
+
+    set_api_key("fp-hub-key")
+    set_user({"id": "99999999-2222-4333-8444-555555555555", "email": "box@local.test"})
+    calls: list[str | None] = []
+    gate = asyncio.Event()
+
+    async def _fake_get(_method, _type, action=None, **_kw):
+        calls.append(action)
+        await gate.wait()
+        return {"data": [{"id": "11111111-2222-4333-8444-555555555555", "name": "b"}]} if action is None else []
+
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_fake_get))
+    settings.reset_cache()
+    reads = [asyncio.ensure_future(settings.fetch_hub_llm_endpoints()) for _ in range(3)]
+    await asyncio.sleep(0)
+    gate.set()
+    answers = await asyncio.gather(*reads)
+    assert calls == [None, "catalog"]
+    assert all(len(a) == 1 for a in answers)
+
+    # A change invalidates: the next read goes out again rather than answering from before it.
+    settings.invalidate_endpoint_listing()
+    await settings.fetch_hub_llm_endpoints()
+    assert calls == [None, "catalog", None, "catalog"]
 
 # ── credentials ──────────────────────────────────────────────────────────────
 
@@ -202,7 +236,7 @@ async def test_a_hub_endpoint_calls_the_hub_not_the_vendor(env, monkeypatch):
         id="11111111-2222-4333-8444-555555555555",
         name="team budget",
         provider="openrouter",
-        models={"md": "anthropic/claude-sonnet-4.5"},
+        tiers={"md": "anthropic/claude-sonnet-4.5"},
     )
     assert await endpoint.create_completion("sys", "user") == "hi"
     assert (
@@ -234,7 +268,7 @@ async def test_a_hub_endpoint_embeds_through_the_hub(env, monkeypatch):
 
     endpoint = LLMEndpoint(id="11111111-2222-4333-8444-555555555555", name="team budget", provider="openrouter")
     assert endpoint.kind == LLMEndpointKind.HUB
-    assert endpoint.models == {}
+    assert endpoint.tiers == {}
     vectors, answered = await endpoint.create_embeddings_with_model(["hello", "world"])
     assert vectors == [[0.5, 0.5], [0.5, 0.5]]
     assert answered == "openai/text-embedding-3-small"
@@ -299,7 +333,7 @@ async def test_a_row_survives_a_round_trip_with_its_models(env):
     loaded = await LLMEndpoint.find_by_secret("lm_api.openai")
     assert loaded is not None
     assert loaded.provider == "openai"
-    assert loaded.models["embedding"] == "text-embedding-3-small"
+    assert loaded.tiers["embedding"] == "text-embedding-3-small"
     assert loaded.base_url == "https://api.openai.com"
     assert loaded.id == saved.id
 
@@ -338,11 +372,19 @@ async def test_by_provider_config_changes_one_tier_and_persists(env):
     from flow_sdk.builtin.llm_endpoint import LLMEndpointConfig
 
     plain = await LLMEndpoint.by_provider("openrouter", key="sk-or-test")
-    tuned = await LLMEndpoint.by_provider("openrouter", config=LLMEndpointConfig(models={"sm": "z-ai/glm-4.7-flash"}))
-    assert tuned.id == plain.id
-    loaded = await LLMEndpoint.find_by_secret("lm_api.openrouter")
-    assert loaded.models["sm"] == "z-ai/glm-4.7-flash"
-    assert loaded.models["md"] == plain.models["md"]
+    original_sm = plain.tiers["sm"]
+    try:
+        tuned = await LLMEndpoint.by_provider(
+            "openrouter", config=LLMEndpointConfig(tiers={"sm": "z-ai/glm-4.7-flash"})
+        )
+        assert tuned.id == plain.id
+        loaded = await LLMEndpoint.find_by_secret("lm_api.openrouter")
+        assert loaded.tiers["sm"] == "z-ai/glm-4.7-flash"
+        assert loaded.tiers["md"] == plain.tiers["md"]
+    finally:
+        # The row lives in the shared session DB, and a funded spawn now RUNS endpoint.tiers[size]:
+        # left tuned, later tests on the OpenRouter key would run glm-4.7-flash for ``sm``.
+        await LLMEndpoint.by_provider("openrouter", config=LLMEndpointConfig(tiers={"sm": original_sm}))
 
 
 @pytest.mark.asyncio
@@ -350,3 +392,16 @@ async def test_by_provider_refuses_flowpad(env):
     for key in ("anything", None):
         with pytest.raises(ValueError):
             await LLMEndpoint.by_provider("flowpad", key=key)
+
+
+def test_a_row_saved_with_the_old_models_field_loads_its_sizes_as_tiers() -> None:
+    """Rows written before the rename carry ``models``; they load (and re-save) as ``tiers``. A hub row's
+    ``models`` is a root's catalog (a list) and is dropped, never read as sizes."""
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointConfig
+
+    legacy = LLMEndpoint(id="22222222-2222-4333-8444-555555555555", kind="api_key", models={"sm": "vendor/small"})
+    assert legacy.tiers == {"sm": "vendor/small"}
+    assert "models" not in legacy.model_dump()
+    hub_row = LLMEndpoint(id="33333333-2222-4333-8444-555555555555", models=["vendor/a", "vendor/b"])
+    assert hub_row.tiers == {}
+    assert LLMEndpointConfig(models={"md": "vendor/medium"}).tiers == {"md": "vendor/medium"}

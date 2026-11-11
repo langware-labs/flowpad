@@ -14,7 +14,8 @@ export interface IncomingProjectParams {
   gitOrigin: ProjectOrigin;
   /** Display name for the copy ("… shared <projectName> with you"). */
   projectName: string;
-  senderName: string;
+  /** Who shared it; unset when only the hub row is known, which names no sharer. */
+  senderName?: string;
   /**
    * The SHARED project's id, when this came from a membership grant rather than
    * a template deep link. Present means "materialize this row in place"
@@ -50,7 +51,8 @@ function declinedIds(): string[] {
 }
 
 /** The person ticked "Don't ask me again" on this project's set-up: it is not offered on its
- *  own any more. Their own click (the footer's "Set up") still opens it. */
+ *  own any more, nor when the project is opened. Their own click (the nav bar's glowing key, the
+ *  project list's "new" row) still opens it. */
 export function isSetupDeclined(projectId: string | undefined): boolean {
   return !!projectId && declinedIds().includes(projectId);
 }

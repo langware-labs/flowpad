@@ -9,6 +9,7 @@
  */
 import { expect, test } from '@playwright/test';
 import { dismissSetupModal, gotoShell, openTabViaMenu, requireSandbox, terminalTabChips } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Sandbox — two tabs roundtrip', () => {
   test.beforeEach(async ({ page }) => {
@@ -17,14 +18,14 @@ test.describe('Sandbox — two tabs roundtrip', () => {
   });
 
   test('after opening a second sandbox tab, the first still routes output', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoShell(page);
 
     const initialTabs = await terminalTabChips(page).count();
     await openTabViaMenu(page, 'sandbox');
     await expect
-      .poll(() => terminalTabChips(page).count(), { timeout: 15_000 })
+      .poll(() => terminalTabChips(page).count(), { timeout: adjusted(15_000) })
       .toBeGreaterThan(initialTabs);
     await page.waitForTimeout(5_000); // e2b cold-boot
 
@@ -36,7 +37,7 @@ test.describe('Sandbox — two tabs roundtrip', () => {
 
     await openTabViaMenu(page, 'sandbox');
     await expect
-      .poll(() => terminalTabChips(page).count(), { timeout: 15_000 })
+      .poll(() => terminalTabChips(page).count(), { timeout: adjusted(15_000) })
       .toBeGreaterThan(initialTabs + 1);
     await page.waitForTimeout(5_000);
 

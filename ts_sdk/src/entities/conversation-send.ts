@@ -6,6 +6,7 @@ import {
   Conversation,
   ConversationParticipant,
   createProjectConversation,
+  deleteConversation,
 } from './conversation';
 import { FlowpadDiagnosis } from './flowpad-diagnosis';
 
@@ -18,6 +19,8 @@ export interface ConversationSendPayload {
   files?: File[];
   /** Serialized TypeIds (e.g. ``"markdown-<uuid>"``) for TYPE_ID attachments. */
   assetReferences?: string[];
+  /** A one-shot prompt the receiver approves and runs once on their machine (`SendReplyExtras.callPrompt`). */
+  callPrompt?: string;
   /** Serialized TypeIds to publish as the FlowMessage's *shared* context. On
    *  the existing-conversation path the local backend (handle_add_message)
    *  also merges these onto the parent Conversation and links them back —
@@ -25,7 +28,7 @@ export interface ConversationSendPayload {
   sharedContextEntities?: string[];
   /** Body-bundle transfer policy + per-share opt-ins. Defaults to copy. */
   shareConfig?: {
-    transferMode?: 'copy' | 'git';
+    transferMode?: 'copy' | 'git' | 'both';
     /** When true, the receiver mints a FAVORITE bookmark pointing at the shared
      *  asset when it installs. Default off. */
     createBookmark?: boolean;
@@ -46,12 +49,13 @@ export async function sendToExistingConversation(
     ...(hasAssetRefs ? { assetReferences: payload.assetReferences } : {}),
     ...(hasSharedCtx ? { sharedContextEntities: payload.sharedContextEntities } : {}),
     ...(payload.shareConfig ? { shareConfig: payload.shareConfig } : {}),
+    ...(payload.callPrompt ? { callPrompt: payload.callPrompt } : {}),
   };
   await sendReply(
     { conversationId },
     payload.text,
     payload.files,
-    hasAssetRefs || hasSharedCtx || !!payload.shareConfig ? extras : undefined,
+    Object.keys(extras).length > 0 ? extras : undefined,
   );
 }
 
@@ -88,7 +92,7 @@ export interface ShareAttachmentCheck {
  */
 export async function checkShareAttachments(
   assetReferences: readonly string[],
-  options: { transferMode?: 'copy' | 'git' } = {},
+  options: { transferMode?: 'copy' | 'git' | 'both' } = {},
 ): Promise<ShareAttachmentCheck> {
   const refs = [...new Set(assetReferences)];
   if (refs.length === 0) return { unshippable: [], gitignored: [] };
@@ -119,7 +123,12 @@ export function withoutReferences(
 /** Whether a send still carries anything the backend will accept (text, files or an attachment —
  *  shared context alone is not a message). */
 export function hasSomethingToSend(payload: ConversationSendPayload): boolean {
-  return !!(payload.text.trim() || payload.files?.length || payload.assetReferences?.length);
+  return !!(
+    payload.text.trim() ||
+    payload.files?.length ||
+    payload.assetReferences?.length ||
+    payload.callPrompt?.trim()
+  );
 }
 
 /**
@@ -151,25 +160,11 @@ export async function forwardDiagnosis(
   });
 }
 
-/**
- * Email a diagnosis to the Flowpad team. Calls the backend ``report`` action
- * (``POST /api/v1/graph/report``), which gathers the diagnosis's interesting
- * parts (what happened, the user's own words, who/when/which OS) and relays them
- * to the hub — the hub holds the SendGrid key and sends to diagnosis@langware.ai.
- * Used by the Home-Feed card's and the diagnose modal's "Report issue" button.
- */
-export async function sendDiagnosisEmailReport(diagnosisId: string): Promise<void> {
-  // Null-entity graph service action → POST /api/v1/graph/report.
-  const info = new ActionInfo('report', null, null, 'POST');
-  info.bodyParameters = { diagnosis_id: diagnosisId };
-  await dataManager.callAction<{ diagnosis_id: string }, { sent: boolean }>(info);
-}
-
 export interface CreateAndSendParams {
   /** Required for project-local conversations; for a cross-user bundle it is
    *  the sender's local-only project mapping — pass it whenever one is selected. */
   project_id?: string | null;
-  participants: ConversationParticipant[];
+  members: ConversationParticipant[];
   title?: string;
   /** Serialized TypeIds stamped as the new conversation's shared context at
    *  create time (constructor-lift into ``_shared_context_entities_``). */
@@ -193,7 +188,7 @@ export const hasRemoteParticipant = (ps: ConversationParticipant[]): boolean =>
  * create+share half of ``createAndSendConversation``, exposed for commits
  * that put their content in by another means (e.g. ``forwardMessage``).
  * ``draftRef`` (when provided) preserves the same Conversation id across
- * retries so a transient share() failure doesn't orphan a hub conversation.
+ * retries so a transient invite failure doesn't orphan a hub conversation.
  */
 export async function createConversationForShare(
   params: CreateAndSendParams,
@@ -204,7 +199,7 @@ export async function createConversationForShare(
 ): Promise<CreateAndSendResult> {
   let conversationId: string;
 
-  if (hasRemoteParticipant(params.participants)) {
+  if (hasRemoteParticipant(params.members)) {
     if (opts?.ensureCloudLogin) {
       const gate = await opts.ensureCloudLogin();
       if (!gate.ok) throw new Error(gate.error);
@@ -217,7 +212,7 @@ export async function createConversationForShare(
     // participant has both: it is the path that also works for someone without
     // an account yet.
     const invitees: string[] = [];
-    for (const p of params.participants) {
+    for (const p of params.members) {
       const email = normalizeEmail(p.email) || '';
       if (email.includes('@')) {
         invitees.push(email);
@@ -234,7 +229,7 @@ export async function createConversationForShare(
       opts?.draftRef?.current ??
       new Conversation({
         title: params.title,
-        members: params.participants,
+        members: params.members,
         // Local-only project mapping (the hub body strips project_id) — without
         // it a remote-shared conversation loses its project association and the
         // sender's conversation list can't scope it.
@@ -246,11 +241,15 @@ export async function createConversationForShare(
           : {}),
       } as Partial<Conversation>);
     if (params.title !== undefined) conv.title = params.title;
-    conv.members = params.participants;
+    conv.members = params.members;
     if (opts?.draftRef) opts.draftRef.current = conv;
 
     await conv.save();
-    await conv.share(invitees);
+    // One hub MembershipRequest per invitee — the hub's own call; the desktop answers it too, publishing
+    // the conversation with the first one, so the rest go out together after it.
+    const [first, ...rest] = invitees;
+    await conv.inviteMember(first);
+    await Promise.all(rest.map((invitee) => conv.inviteMember(invitee)));
     conversationId = conv.id;
   } else {
     if (!params.project_id) {
@@ -258,7 +257,7 @@ export async function createConversationForShare(
     }
     const r = await createProjectConversation({
       project_id: params.project_id,
-      participants: params.participants,
+      members: params.members,
       title: params.title,
       // Let the backend derive the owning project from the shared entity
       // (deterministic), with ``project_id`` as the ambient fallback.
@@ -283,9 +282,30 @@ export async function createAndSendConversation(
     draftRef?: { current: Conversation | null };
   },
 ): Promise<CreateAndSendResult> {
+  // A retry resumes the conversation an earlier attempt created (``draftRef``); only a fresh one is ours to undo.
+  const resumed = !!opts?.draftRef?.current;
   const { conversation_id: conversationId } = await createConversationForShare(params, opts);
 
-  await sendToExistingConversation(conversationId, payload);
+  // A conversation may start with just a title — send only when there is content.
+  const hasContent =
+    !!payload.text?.trim() ||
+    !!payload.files?.length ||
+    !!payload.assetReferences?.length ||
+    !!payload.sharedContextEntities?.length ||
+    !!payload.shareConfig;
+  if (hasContent) {
+    try {
+      await sendToExistingConversation(conversationId, payload);
+    } catch (e) {
+      // The first message was refused (e.g. an attachment that cannot ship): a conversation with nothing in it
+      // must not stay behind -- the person gets the error, the recipients get nothing.
+      if (!resumed) {
+        await deleteConversation({ conversation_id: conversationId, mode: 'delete_for_all' }).catch(() => undefined);
+        if (opts?.draftRef) opts.draftRef.current = null;
+      }
+      throw e;
+    }
+  }
 
   if (opts?.draftRef) opts.draftRef.current = null;
   return { conversation_id: conversationId };

@@ -2,13 +2,13 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import * as fs from 'fs';
 
 import { apiBase } from '../_shared/api';
-import { withViewMode } from '../_shared/view-mode';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string, projectId?: string) {
   const scopePath = projectId ? `/project/${projectId}` : '';
-  const res = await request.post(`${API}/api/v1/graph${scopePath}/whiteboard`, { data: { name } });
+  const res = await request.post(`${API}/api/v1/graph${scopePath}/chart`, { data: { name } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
@@ -27,53 +27,48 @@ async function pickProjectId(request: APIRequestContext): Promise<string> {
 }
 
 async function openEditor(page: Page, id: string) {
-  await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
-  await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
+  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
-    timeout: 15_000,
+    timeout: adjusted(15_000),
   });
 }
 
 // Open the whiteboard asset list with the sidebar tree showing whiteboard rows.
 // Two setup facts the .md's "find a whiteboard row" step depends on:
 //   1. Whiteboard is `browseable_by=advanced` (TypeInfo) — it only appears in
-//      the Assets tree in Advanced view mode. The URL carries that mode so the
-//      route loader remains the single writer of view state.
+//      the Assets tree once the developer switch is on (`useTierMode()`). The
+//      assets page carries no view mode (since 2026-10-11 only a session dock
+//      does, docs/viewmodes.md) and always shows Vibe; `setDev` below turns it on.
 //   2. Navigating to `/dock/assets/list/<type>` deliberately does NOT auto-expand
 //      the sidebar root (it avoids a duplicate /search of the right-panel list),
 //      so the whiteboard rows only materialize after its chevron is expanded —
 //      the same expand-if-collapsed pattern the agent asset-picker test uses.
 async function openWhiteboardListExpanded(page: Page, projectId: string, whiteboardId: string) {
-  const scopedList = withViewMode(
-    `/dock/assets/list/whiteboard?scope-mode=project&scope-activeProjectId=${encodeURIComponent(projectId)}`,
-    'advanced',
+  await page.goto(
+    `/dock/assets/list/chart?scope-mode=project&scope-activeProjectId=${encodeURIComponent(projectId)}`,
   );
-  await page.goto(scopedList);
-  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-  await expect
-    .poll(() => page.evaluate(() => document.documentElement.getAttribute('data-view')), { timeout: 10_000 })
-    .toBe('advanced');
-  // Since host tabs (71e9272c6) "Advanced" is a surface, not a tier: the types
-  // that are `browseable_by=advanced` follow the developer switch
-  // (`useTierMode()`), which the URL's `viewMode` no longer turns on. Flip it
-  // through the app's own `window.setDev`, the call the avatar double-click makes.
+  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+  await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe', { timeout: adjusted(10_000) });
+  // Advanced-browseable types follow the developer switch; flip it through the
+  // app's own `window.setDev`, the call the avatar double-click makes.
   await page.evaluate(() => (window as any).setDev(true));
-  const chevron = page.getByTestId('browseable-chevron-asset-type:whiteboard');
-  await expect(chevron).toBeVisible({ timeout: 15_000 });
+  const chevron = page.getByTestId('browseable-chevron-asset-type:chart');
+  await expect(chevron).toBeVisible({ timeout: adjusted(15_000) });
   // The row's delete button is its stable handle, but a row toolbar is
   // `invisible` until the row is hovered (a807f58ee) — so "the row is listed"
   // means the handle is ATTACHED, not visible.
-  const createdRow = page.locator(`[data-testid="browseable-toolbar-delete:whiteboard:${whiteboardId}"]`);
+  const createdRow = page.locator(`[data-testid="browseable-toolbar-delete:chart:${whiteboardId}"]`);
   if ((await createdRow.count()) === 0) {
     await chevron.click();
   }
-  await expect(createdRow).toBeAttached({ timeout: 15_000 });
+  await expect(createdRow).toBeAttached({ timeout: adjusted(15_000) });
   return createdRow;
 }
 
 test.describe('Whiteboard — UI / UX (U1–U4)', () => {
-  test('U1: tree row carries a Palette icon', async ({ page, request }) => {
-    test.setTimeout(60_000);
+  test('U1: tree row carries the ChartNetwork icon', async ({ page, request }) => {
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -89,26 +84,26 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
     );
     const createdRow = await openWhiteboardListExpanded(page, projectId, id);
 
-    // The created whiteboard row's leading icon is a lucide Palette glyph (the
-    // whiteboard TypeInfo icon = 'Palette'). Walk from its delete
+    // The created whiteboard row's leading icon is a lucide ChartNetwork glyph (the
+    // whiteboard chart TypeInfo icon = 'ChartNetwork'). Walk from its delete
     // button up to the treeitem and inspect its non-trash svg.
     const hasPalette = await createdRow.evaluate((delBtn) => {
       let row: Element | null = delBtn ? delBtn.parentElement : null;
       for (let i = 0; i < 10 && row; i++) {
         const svgs = Array.from(row.querySelectorAll('svg')).map((s) => s.getAttribute('class') || '');
-        if (svgs.some((c) => c.includes('lucide-palette'))) return true;
+        if (svgs.some((c) => c.includes('lucide-chart-network'))) return true;
         row = row.parentElement;
       }
       return false;
     });
-    expect(hasPalette, 'whiteboard row has a lucide-palette icon').toBe(true);
+    expect(hasPalette, 'whiteboard row has a lucide-chart-network icon').toBe(true);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('U2: whiteboard list shows whiteboards only', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -132,19 +127,19 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
       const all = Array.from(document.querySelectorAll('[data-testid^="browseable-toolbar-delete:"]')).map((e) =>
         (e.getAttribute('data-testid') || '').split(':')[1],
       );
-      const wb = all.filter((t) => t === 'whiteboard').length;
-      const other = all.filter((t) => t !== 'whiteboard');
+      const wb = all.filter((t) => t === 'chart').length;
+      const other = all.filter((t) => t !== 'chart');
       return { total: all.length, wb, otherTypes: Array.from(new Set(other)) };
     });
     expect(counts.wb, 'at least one whiteboard row present').toBeGreaterThanOrEqual(1);
     expect(counts.otherTypes, `no non-whiteboard rows: ${counts.otherTypes.join(', ')}`).toHaveLength(0);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('U3: save debounce — five rapid updates coalesce into one write', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     // The save goes through axios, which in the browser uses XMLHttpRequest
     // (NOT window.fetch). Hook XHR.open BEFORE the page loads to count board.json
     // write requests (POST). Counting actual requests with a before/after delta
@@ -190,11 +185,11 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
     expect(after - before, `5 rapid updates coalesce into exactly one board.json write (delta=${after - before})`).toBe(1);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('U4: pasted image lives in board.json data.files', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -241,6 +236,6 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
     expect(await page.getByRole('heading', { name: /^Error$/ }).count()).toBe(0);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 });

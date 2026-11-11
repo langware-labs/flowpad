@@ -265,7 +265,7 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
     # credentials they double do.
     signed_in = {"ok": False, "code": "missing_token"}
 
-    async def connection_answer(_provider):
+    async def connection_answer(_provider, _url=None):
         return dict(signed_in)
 
     monkeypatch.setattr(provider_probe, "connection_answer", connection_answer)

@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import React, { useEffect, useState } from 'react';
 import { ActionInfo, GitWorkdir, type FSRef, dataManager } from '@sdk';
 import { parseFrontmatterDoc } from '@sdk/fs/frontmatter-parse';
@@ -134,7 +135,9 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
         <DialogHeader className="shrink-0">
           <DialogTitle className="text-sm font-medium">
             {skillName}/SKILL.md{' '}
-            <span className="text-xs font-normal text-muted-foreground">— improvement vs last version</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              <Trans>— improvement vs last version</Trans>
+            </span>
             {valueNote && (
               <span
                 className="ms-2 text-[11px] font-normal text-emerald-600 dark:text-emerald-400"
@@ -152,12 +155,12 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
           diff={diff ?? ''}
           loading={loading}
           error={error}
-          emptyLabel="No changes to the skill body."
+          emptyLabel={t`No changes to the skill body.`}
         />
 
         <div className="flex shrink-0 items-center justify-end gap-2 border-t pt-3">
           <Button variant="ghost" size="sm" onClick={onClose} disabled={!!busy}>
-            Close
+            <Trans>Close</Trans>
           </Button>
           <Button
             variant="outline"
@@ -172,7 +175,7 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
             ) : (
               <RotateCcw className="me-1 h-3.5 w-3.5" />
             )}
-            Reject
+            <Trans>Reject</Trans>
           </Button>
           <Button
             size="sm"
@@ -185,7 +188,7 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
             ) : (
               <Save className="me-1 h-3.5 w-3.5" />
             )}
-            Save &amp; create version
+            <Trans>Save &amp; create version</Trans>
           </Button>
         </div>
       </DialogContent>

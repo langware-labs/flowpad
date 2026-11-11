@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 /** Extract prompt anchors from annotations for anchor-based PTY alignment. */
 export function getAnchors(annotations: Annotation[]): PtyAnchor[] {
   return annotations
-    .filter(a => a.labels?.includes('prompt:') && typeof a.content === 'string' && a.content && a.created_date)
+    .filter(a => a.subkind === 'prompt' && typeof a.content === 'string' && a.content && a.created_date)
     .map(a => ({ text: (a.content as string).trim().slice(0, 60), time: new Date(a.created_date as unknown as string).toISOString() }))
     .sort((a, b) => a.time.localeCompare(b.time));
 }
@@ -25,8 +25,8 @@ export interface AnnotationElement {
 }
 
 function getAnnotationKind(annotation: Annotation): 'comment' | 'prompt' | 'plan' {
-  if (annotation.labels?.includes('comment:')) return 'comment';
-  if (annotation.labels?.includes('plan:')) return 'plan';
+  if (annotation.subkind === 'comment') return 'comment';
+  if (annotation.subkind === 'plan') return 'plan';
   return 'prompt';
 }
 
@@ -58,9 +58,9 @@ function buildNeedles(searchText: unknown): string[] {
  *
  * Element kinds:
  *   - 'bookmark': Bookmark with bookmark_type === 'terminal_annotation' — positioned by data.line
- *   - 'comment': Annotation with labels.includes('comment:') — positioned by data.line
- *   - 'prompt': Annotation with labels.includes('prompt:') — positioned by text search in xterm buffer
- *   - 'plan': Annotation with labels.includes('plan:') — positioned by text search in xterm buffer
+ *   - 'comment': Annotation with subkind 'comment' — positioned by data.line
+ *   - 'prompt': Annotation with subkind 'prompt' — positioned by text search in xterm buffer
+ *   - 'plan': Annotation with subkind 'plan' — positioned by text search in xterm buffer
  *
  * Positioning strategy:
  *   - bookmark/comment: data.line (exact buffer row stored at user-click time)
@@ -239,7 +239,7 @@ export function useAnnotationGutter(
     async (absoluteLine: number, content: string) => {
       if (!workerSessionId) return;
       const annotation = new Annotation({
-        labels: ['comment:'],
+        subkind: 'comment',
         session_id: workerSessionId,
         data: { line: absoluteLine },
         content,

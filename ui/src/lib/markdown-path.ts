@@ -1,4 +1,4 @@
-import { markdownExtensions } from '@sdk';
+import { documentFileExtensions, markdownExtensions, RecordType } from '@sdk';
 
 /**
  * The ONE markdown-document path predicate. Every surface that decides
@@ -28,4 +28,16 @@ export const MARKDOWN_PATH_RE = /\.(?:md|markdown|mdx|mdo|md\.out)$/i;
 
 export function isMarkdownDocumentPath(path?: string | null): boolean {
   return Boolean(path && markdownPathRe().test(path));
+}
+
+/** A read-only document file (`.docx` / `.txt`) the Documents tree lists beside
+ *  markdown — the `document_file` type, opened in its read-only preview. */
+export function isDocumentFilePath(path?: string | null): boolean {
+  const lower = path?.toLowerCase();
+  return Boolean(lower && documentFileExtensions().some((ext) => lower.endsWith(`.${ext.toLowerCase()}`)));
+}
+
+/** The Documents tree's type for a file: `document_file` or markdown. */
+export function documentsTreeType(path: string): string {
+  return isDocumentFilePath(path) ? RecordType.DOCUMENT_FILE : RecordType.MARKDOWN;
 }

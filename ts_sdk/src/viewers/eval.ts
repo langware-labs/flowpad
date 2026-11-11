@@ -241,8 +241,9 @@ const rowCollection: CollectionViewer = {
     const table = h('table', { class: 'dv-table' }, h('tr', {}, ...['verdict', 'asked', 'right answer', 'answered', 'score'].map((k) => th(ctx, k, meta))));
     // Every row on screen at once; its cells — each drawn by the dataset's own viewers — side by side.
     el.append(h('div', { class: 'dv-scroll' }, table));
+    const at = new Map(rows.map((row, i) => [row, i]));   // `select` names a row by its place in `items`
     await Promise.all(list.map(async (e) => {
-      const tr = h('tr', { class: 'dv-pick', onclick: () => req.on?.('select', e.row_id) }, h('td', {}, pill(ctx, e.verdict)));
+      const tr = h('tr', { class: 'dv-pick', onclick: () => req.on?.('select', at.get(e)) }, h('td', {}, pill(ctx, e.verdict)));
       table.append(tr);
       tr.append(...(await Promise.all([
         lineCell(ctx, input, e.row_input),

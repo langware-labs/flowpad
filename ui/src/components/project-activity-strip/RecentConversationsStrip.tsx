@@ -7,13 +7,12 @@ import {
   Task,
   TypeId,
   User,
-  acceptInvitation,
+  answerInvitation,
   dismissConversation,
   fetchConversations,
   isInvitationGoneError,
   isTypeId,
   conversationRowMessageIds,
-  latestPointer,
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { uploadFlowMessage, type UploadConflict, type UploadFlowMessageResult } from '@sdk/entities/flow-message';
@@ -26,7 +25,11 @@ import { NewConversationDialog } from '@src/components/new-conversation-dialog/N
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { ConversationParticipants } from '@src/components/conversation/ConversationParticipants';
 import { participantIsUser, participantName } from '@src/components/conversation/participant-display';
-import { conversationFacets, compareConversationsByRecency } from '@src/components/conversation/conversation-category';
+import {
+  conversationFacets,
+  compareConversationsByRecency,
+  isDeskTicket,
+} from '@src/components/conversation/conversation-category';
 import {
   type ChannelAttribution,
   SourceChip,
@@ -42,7 +45,7 @@ import { useContext } from '@src/hooks/useContext';
 import { streamInboxConversationsRequest } from '@src/components/stream-inbox-view/channel-owner';
 import { formatTimeAgo } from './project-activity-utils';
 import { attachmentSummary } from '@src/components/conversation/useAttachments';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 
 const VISIBLE_COUNT = 5;
 
@@ -209,7 +212,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   const handleAcceptInvitation = async (invId: string) => {
     setAcceptingId(invId);
     try {
-      await acceptInvitation({ invitation_id: invId });
+      await answerInvitation(invId, 'accept');
       await refetch();
     } catch (e) {
       if (isInvitationGoneError(e)) {
@@ -476,7 +479,7 @@ function ConversationRow({
   // latest message preview but still need the first to detect invitation kind.
   const pointers = conv.conversationMessageIds ?? [];
   const firstPtr = pointers[0];
-  const lastPtr = latestPointer(pointers);
+  const lastPtr = conv.latestMessagePointer;
 
   const firstTypeId = useMemo(() => (firstPtr ? new TypeId(FlowMessage.type, firstPtr.id) : null), [firstPtr?.id]);
   const lastTypeId = useMemo(() => (lastPtr ? new TypeId(FlowMessage.type, lastPtr.id) : null), [lastPtr?.id]);
@@ -506,6 +509,7 @@ function ConversationRow({
       cloudUserId: cloudUser?.id ?? null,
       localUserId: currentUser?.id ?? null,
     },
+    staffView: isDeskTicket(conv) || undefined,
   });
   const isInvitationRow = facets.isInvitation;
 
@@ -641,7 +645,7 @@ function ConversationRow({
           <span>{formatTimeAgo(conv.updated_date)}</span>
           {!isInvitationRow && messageCount > 0 && (
             <span>
-              · {messageCount} msg{messageCount === 1 ? '' : 's'}
+              · <Plural value={messageCount} one="# msg" other="# msgs" />
             </span>
           )}
           {!isInvitationRow && (conv.members?.length ?? 0) > 0 && (

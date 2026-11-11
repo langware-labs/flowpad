@@ -131,12 +131,15 @@ The family is declared (it is the payload shape and the destination); the class 
 the access protocols it can honour the access protocols it can honour
 (`Listable`, `Readable`, `Messaging`, `Verifiable`, `Choosing`,
 `Identified`, `StableHandle`) — a capability is discovered by `isinstance`, never
-declared. A source answers *what is there* and *what changed since a cursor*; it never
+declared. A source class may also offer `ensure_sources()` (a classmethod): on start and login
+`ensure_driver_sources` calls it so the driver makes the sources this login should have (the
+help desk makes one per desk the user staffs). A source answers *what is there* and *what
+changed since a cursor*; it never
 writes an entity, emits an event, or advances a cursor. It imports the public SDK, never
 another asset.
 
-The loader (`flow_sdk/ingest/source_registry.py`) builds each folder into a **source
-type** (`flow_sdk/ingest/sources.py`, `DataDriver`) from the manifest and the class. What
+The loader (`flow_sdk/ingest/driver_registry.py`: `load_driver`, `asset_module`) builds each folder into a **source
+type** (`DataDriver`, `flow_sdk/builtin/data_driver.py`) from the manifest and the class. What
 differs between sources, the source says itself: the credential shape is the manifest's
 `auth` (one resolver, `flow_sdk/ingest/credentials.py`); `build` constructs it over an
 application transport; `message_for` reads a send's arguments; `query` names the one stream it reads; `local_tree_key` / `origin_id_for` place and name reflected files;
@@ -305,13 +308,14 @@ so "does it send" (`DataDriver.sends`) is the family itself.
 `ingest_items` stays the single chokepoint for `SourceItem` writes; reflection is
 a second destination *beside* it rather than a branch inside it.
 
-A record source may also name a **dataset** its records are mirrored into (`mirror:
-{dataset, map, by?}` in `data_source.json`). That is a projection of the records, not a third mode:
-the records still land as `SourceItem`s, and after every `sync.completed` the dataset is made their
-typed mirror (`flow_sdk/datasets/projection.py`, the twin of the stream inbox projection). A row's
-outside-owned fields then write back through the source's own verbs (`create_item`, `update_item`,
-`delete_item`), and what the driver answers is recorded at once. See
-[mirroring a system of record](mirroring-a-system-of-record.md).
+A source can also hold a dataset's ROWS — a dataset names it as its `data_source` (at most one; none =
+the project's data store, `flow.json` `"data_store"`). The driver's family is the source's type: an
+**object store** (`RowFiles` placing a dataset inside it — `flow_storage`, S3, GCS, Drive — or a folder on
+this machine, `gdrive_mount`; `DataDriver.holds_rows`) keeps whole rows as files; a **system of record**
+(a `Mutable` record driver that lists its records, Twenty; `DataDriver.is_system_of_record`) keeps the
+fields the kind marks `truth`, the rest of each row staying in the project's data store; a **message
+channel** holds messages, not rows. A source not set up holds nothing (`NotSetUp`, 503). See
+[dataset stores](dataset-stores.md).
 
 | Mode | Bytes | Notes |
 |---|---|---|
@@ -472,7 +476,7 @@ straight from the row (`fts_content=("body",)`). The row stores the contract's
 value: `origin`, the resource's `CloudOrigin(kind, namespace, key)`, and `data`,
 its typed payload tagged with a `spec_kind` (`ingest.message`,
 `ingest.message.email`, `ingest.feed.item`). Drivers still emit the flat
-envelope; `ingest/legacy_lift.py` is the one rule that lifts it — `kind` is the
+envelope; `ingest/envelope_lift.py` is the one rule that lifts it — `kind` is the
 source's channel, `namespace` is the account the source reads as (the kind
 itself for a source with no account; a driver that builds its own origin joins
 its container, `<account>/<channel>`), `key` is the external id — and the
@@ -481,7 +485,7 @@ identity is the natural key declared once on the type —
 `natural_key=("data_source_id", "origin_kind", "origin_namespace",
 "origin_key")`, the flat copy of the origin a query can reach — resolved by
 `DbSerializer.resolve_many` in one query per page (index
-`ix_entities_source_item_origin_v3`), and gated by `digest_fields` (`ingest/digest.py`: an allowlist of
+the index declared on `SOURCE_ITEM.indexes`), and gated by `digest_fields` (`ingest/digest.py`: an allowlist of
 normalized fields, never `raw`). `upsert` copies only the spec's fields onto
 the row, plus the natural key it resolved by, so `read` and `starred` survive
 re-delivery by not being named. A
@@ -503,17 +507,17 @@ on the spec, not in drivers: `occurred_at` is coerced to aware-UTC ISO, and an
   same source.
 * A source's code runs in the backend process; the sandboxed source host is a later step
   (no asset changes when it lands).
-* The outbound message specs are still named per channel in
-  `flow_sdk/builtin/source_item.py` (`SlackMessageSpec`, …) until the messaging verbs
-  replace them.
+* Resolved: every provider's outbound message spec (`TelegramMessageSpec`, …) lives in its
+  driver's `source.py`, reached via `outbound_spec`; the gate test fails on a
+  `<Driver>MessageSpec` outside an asset folder.
 
 **Key source files:** `flow_sdk/builtin/data_source.py` (the `send`, `reply`, `items`,
-`sync`, `set_enabled`, `remove` actions), `source_item.py`
-(`SourceItemSpec` = the row's header), `data_driver.py` (`DataDriverSpec` = the
-manifest's header), `flow_sdk/ingest/` (`source_registry.py`, `sources.py`,
+`sync`, `set_enabled`, `remove` actions), `source_item.py`,
+`data_driver.py`, `flow_sdk/schema/data_spec/source_item_spec.py` (`SourceItemSpec` = the row's header),
+`data_driver_spec.py` (`DataDriverSpec` = the manifest's header), `flow_sdk/ingest/` (`driver_registry.py`,
 `credentials.py`, `testing.py`, `poller.py`, `sync.py`, `session.py`, `ingestor.py`, `models.py`,
 `reflect.py`, `change_event.py`, `health.py`, `digest.py`, `ingest_on_tag.py`,
-`legacy_lift.py`), `flow_sdk/sources/` (the contract), each data source's asset folder,
+`envelope_lift.py`), `flow_sdk/sources/` (the contract), each data source's asset folder,
 `flow_sdk/cli/commands/source_cmd.py` (`flow source`),
 `flow_sdk/server/routes/data_source_webhook.py`,
 `flow_sdk/server/routes/ingest.py`,

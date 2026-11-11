@@ -5,6 +5,7 @@
  * rest of the agentic-execution UI.
  */
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { Workflow } from 'lucide-react';
 
 import { StatTile } from '@src/components/assets/editor/agent-trace/simple/SimpleSessionReport';
@@ -57,12 +58,15 @@ export function WorkflowRunSummary({ payload, label }: Props) {
   const status = payload.status as string | undefined;
   const modelProvider = payload.model_provider as string | undefined;
   const source = sourceOf(payload.scriptPath as string | undefined);
+  const skill = source?.skill;
 
   return (
     <div className="shrink-0 border-b border-border bg-muted/30 p-3">
       <div className="mb-2 flex min-w-0 items-center gap-2 text-sm">
         <Workflow className="h-4 w-4 shrink-0 text-indigo-500" />
-        <span className="shrink-0 text-muted-foreground">{label} run</span>
+        <span className="shrink-0 text-muted-foreground">
+          <Trans>{label} run</Trans>
+        </span>
         {workflowName && <span className="min-w-0 truncate font-semibold text-foreground">{workflowName}</span>}
         {status && (
           <span
@@ -80,9 +84,15 @@ export function WorkflowRunSummary({ payload, label }: Props) {
           className="mb-2 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground"
           data-testid="wf-run-source"
         >
-          <span className="shrink-0">Source:</span>
+          <span className="shrink-0">
+            <Trans>Source:</Trans>
+          </span>
           <span className="min-w-0 truncate font-medium text-foreground">{source.file}</span>
-          {source.skill && <span className="shrink-0">· skill: {source.skill}</span>}
+          {skill && (
+            <span className="shrink-0">
+              <Trans>· skill: {skill}</Trans>
+            </span>
+          )}
         </div>
       )}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

@@ -6,11 +6,10 @@ invent a token: when the test hands it a code, it performs an actual
 is a value the provider issued, and the triple equality at the end is a claim
 about one string that travelled the whole chain.
 
-One seam is patched — ``hub_http.hub_get``. Both ``hub_oauth._hub_data`` and
-``hub_providers.hub_provider_rows`` import it inside the function body, so
-patching the module attribute covers both. That is deliberately a WIRE-level
-double rather than several behavioural stubs: stubbing `hub_holds_credential`
-and friends would let a routing change pass while the real thing broke.
+Two seams are patched — ``HubProxy.try_call`` and ``HubProxy.call``, both
+answered by the same route table, so ``hub_oauth`` and ``hub_providers`` see one
+hub. That is deliberately a WIRE-level double rather than several behavioural
+stubs: stubbing `hub_holds_credential` and friends would let a routing change pass while the real thing broke.
 """
 
 from __future__ import annotations
@@ -115,7 +114,7 @@ class HubDouble:
         return self.held
 
     # ── the patched transport ─────────────────────────────────────────────
-    async def hub_get(self, entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
+    async def answer(self, entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
         self.calls.append((action or "", sub_path or ""))
         if action == "env-var" and sub_path == "table":
             return self.env_var_table()
@@ -131,18 +130,28 @@ class HubDouble:
             return {"status": "success"} if self.held else {"status": "pending"}
         return None
 
-    async def hub_get_or_raise(self, entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
-        """The raising twin of :meth:`hub_get`, and it MUST be doubled too.
+    async def hub_try_call(self, method, entity_type, *args, **kwargs):
+        """``HubProxy.try_call``: the GETs ``hub_oauth`` / ``hub_providers`` make."""
+        assert method == "GET", f"unexpected hub {method}"
+        return await self.answer(entity_type, *args, **kwargs)
+
+    async def hub_call(self, method, entity_type, *args, **kwargs):
+        """``HubProxy.call``: the raising GETs, through :meth:`answer_or_raise`."""
+        assert method == "GET", f"unexpected hub {method}"
+        return await self.answer_or_raise(entity_type, *args, **kwargs)
+
+    async def answer_or_raise(self, entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
+        """The raising twin of :meth:`answer`, and it MUST be doubled too.
 
         `hub_oauth` reaches the hub through both functions, and patching only
-        `hub_get` left `wait-callback` and `start_auth` on the real transport —
+        `try_call` left `wait-callback` and `start_auth` on the real transport —
         so a test asserting on a local double quietly issued a GET to
         `app.flowpad.ai` and read a 422 about a user id that exists nowhere but
         this file. A double that covers one seam of two is not a double.
         """
         from flow_sdk.cloud_client.transport.hub_http import HubError
 
-        payload = await self.hub_get(entity_type, entity_id, action=action, sub_path=sub_path, **kwargs)
+        payload = await self.answer(entity_type, entity_id, action=action, sub_path=sub_path, **kwargs)
         if payload is None:
             raise HubError(404, f"no double route for {action}/{sub_path}")
         return payload
@@ -167,10 +176,10 @@ def hub(dummy_provider, monkeypatch):
     """
     double = HubDouble(dummy=dummy_provider)
 
-    from flow_sdk.cloud_client.transport import hub_http
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
 
-    monkeypatch.setattr(hub_http, "hub_get", double.hub_get)
-    monkeypatch.setattr(hub_http, "hub_get_or_raise", double.hub_get_or_raise)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(double.hub_try_call))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(double.hub_call))
     monkeypatch.setattr("flow_sdk.cli.auth.hub_login.is_logged_in", lambda: True)
     monkeypatch.setattr("flow_sdk.cli.app_config.get_user", lambda: CLOUD_USER)
     monkeypatch.setattr("flow_sdk.core.oauth.hub_providers._hub_reachable", lambda: True)

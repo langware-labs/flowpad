@@ -180,11 +180,19 @@ def start_detached_process(args: list[str], env: dict | None = None, stderr=None
 
     Returns the Popen so a long-lived parent can poll and reap it.
     """
+    # FLOWPAD-2112: whatever we start detached here (a backend, the monitor, the backend-only
+    # respawn, a browser) is FlowPad infrastructure, never a worker — so it must not inherit the
+    # worker-only FLOWPAD_WORKER signal. Were it to leak (a worker that itself runs `flow start`),
+    # a human in a terminal that backend later spawns would be wrongly gated. The shared
+    # `without_worker_signal` strips it in every env-copying spawn path, not only this one.
+    from flow_sdk.utils.environment import without_worker_signal  # noqa: PLC0415
+
+    proc_env = without_worker_signal(env)
     kwargs: dict = {
         "stdin": subprocess.DEVNULL,
         "stdout": stdout if stdout is not None else subprocess.DEVNULL,
         "stderr": stderr if stderr is not None else subprocess.DEVNULL,
-        "env": env or os.environ.copy(),
+        "env": proc_env,
     }
     if sys.platform == "win32":
         CREATE_NO_WINDOW = 0x08000000
@@ -214,14 +222,9 @@ def check_server_health(port: int, timeout: float = 2.0) -> bool:
     silently destroying agent turns, terminals and pending device logins on
     every cycle.
 
-    The HEADER transport, not the query param: `cookie_gate_middleware` lists it
-    as the one for machine callers, and a secret in a URL lands in access logs.
-
-    Free when ungated -- `get_cookie_gate` answers from a `stat()` of the marker
-    file and never opens the encrypted store, which is what keeps desktop
-    installs (never gated) away from a keychain prompt. Any failure to read it
-    resolves to None, so the check degrades to exactly its old behaviour rather
-    than erroring.
+    The token rides as the gate cookie, added by the opener
+    `cookie_gate.install_gate_opener` installs when this module runs as the
+    monitor; a token that cannot be read means a probe without it.
     """
     import urllib.error
     import urllib.request
@@ -229,16 +232,6 @@ def check_server_health(port: int, timeout: float = 2.0) -> bool:
     url = f"http://127.0.0.1:{port}/health/status"
     try:
         req = urllib.request.Request(url, method="GET")
-        # Lazy: `gate_headers` pulls in starlette on the armed path, and this
-        # supervisor otherwise never needs it and must not pay for it at
-        # startup. It swallows its own failures and yields {} -- the monitor
-        # must survive anything the settings layer does, since being unable to
-        # read the gate is a reason to probe without it, never a reason to stop
-        # supervising the server.
-        from flow_sdk.instance_settings.cookie_gate import gate_headers
-
-        for name, value in gate_headers(url).items():
-            req.add_header(name, value)
         with urllib.request.urlopen(req, timeout=timeout):
             return True
     except urllib.error.HTTPError as e:
@@ -498,6 +491,26 @@ def _kill_server(pid: int) -> bool:
     return killed
 
 
+def latest_server_log_tail(lines: int = 40) -> tuple[Path | None, str]:
+    """The newest backend log (``<logs>/server/*.log``) and its last *lines* lines.
+
+    For a caller that waited on health and got nothing: the backend writes only to
+    this file, so on a cloud box -- where the CLI's own output is what reaches the
+    serial console and the hub -- naming it is what makes a silent boot diagnosable.
+    """
+    try:
+        logs = sorted((_logs_base() / "server").glob("*.log"), key=lambda f: f.stat().st_mtime)
+    except OSError:
+        return None, ""
+    if not logs:
+        return None, ""
+    try:
+        text = logs[-1].read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return logs[-1], ""
+    return logs[-1], "\n".join(text.splitlines()[-lines:])
+
+
 def wait_for_server_health(port: int, timeout: float = 10.0) -> bool:
     """Poll health endpoint every 0.5s until success or timeout."""
     deadline = time.monotonic() + timeout
@@ -607,6 +620,8 @@ def ensure_monitor_singleton(port: int) -> None:
         {
             "port": port,
             "monitor_pid": os.getpid(),
+            # With monitor_pid, identifies THIS monitor (a reused pid has a later create time).
+            "monitor_create_time": psutil.Process(os.getpid()).create_time(),
             "launch_iso_time": datetime.now(timezone.utc).isoformat(),
         }
     )
@@ -859,8 +874,37 @@ def _stop_all_guarded() -> tuple[bool, bool]:
     monitor_killed = False
     server_killed = False
 
+    # FLOWPAD-2112: `flow stop` reaps the backend of the instance FLOW_INSTANCE names. Refuse it
+    # ONLY for a worker whose OWN backend that is (stopping it would take down the FlowPad the
+    # worker runs inside — the incident); a worker targeting a DIFFERENT instance, and a human in
+    # the desktop terminal, are both allowed. "Own backend" = the recorded server_pid is this
+    # process's ancestor (override-proof); the worker signal is FLOWPAD_WORKER (worker-spawn only),
+    # NOT FLOWPAD_EXECUTION_SCOPE (which the desktop terminal carries too).
+    #
+    # We check the recorded MONITOR as well as the server, because the stop below kills every
+    # monitor FIRST (the monitor is an ancestor of the backend, hence of the worker). Between the
+    # monitor spawning a backend and that backend recording its server_pid (up to ~15s; see
+    # get_status), server_pid is absent/stale so runs_under(server_pid) is False — but the monitor
+    # pid is already in the lock sidecar, so checking it closes that window. Both are recorded reads
+    # (no scan); _monitor_pids' full scan still runs only after the gate passes.
+    from flow_sdk.core import port_guard  # noqa: PLC0415
+
+    if port_guard.caller_is_worker() and (
+        port_guard.runs_under(info.get("server_pid"))
+        or port_guard.runs_under(_recorded_monitor_pid(info))
+    ):
+        from flow_sdk.core.connections.service import FlowServiceError  # noqa: PLC0415
+
+        log.warning("stop_all refused: a worker may not stop the backend/monitor it runs inside")
+        raise FlowServiceError(
+            "self_protection",
+            "a worker may not stop the FlowPad backend it runs inside — run `flow stop` from your own terminal",
+        )
+
+    monitor_pids = list(_monitor_pids(info, port))
+
     # Every monitor first, so none of them restarts the server we kill next.
-    for monitor_pid in _monitor_pids(info, port):
+    for monitor_pid in monitor_pids:
         monitor_killed = kill_process(monitor_pid) or monitor_killed
 
     server_pid = info.get("server_pid")
@@ -912,6 +956,9 @@ def get_status() -> dict:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    from flow_sdk.instance_settings.cookie_gate import install_gate_opener
+
+    install_gate_opener()
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9007
     try:
         launch_monitor(port)

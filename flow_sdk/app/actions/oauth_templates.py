@@ -10,12 +10,16 @@ from fastapi.responses import HTMLResponse
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.core.oauth.flows import AuthFlowResult
 
-#: Delivered: the initiating screen already confirmed it, so the window has nothing
-#: to say. It closes itself (a window the app opened) and otherwise stays empty.
+#: Delivered: the app already confirmed it over its socket, so this page only tells the
+#: user they can leave and tries to close itself. window.close() is refused for a tab the
+#: browser opened and redirected through the provider, so the text must be visible —
+#: color-scheme paints light text on a dark canvas, where a bare close() left a black void
+#: (FLOWPAD-2233).
 _CLOSE_ONLY_HTML = """<!doctype html>
-<html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark">
-<title>FlowPad</title></head>
-<body><script>window.close();</script></body></html>
+<meta name="color-scheme" content="light dark">
+<title>FlowPad</title>
+<p style="font:15px/1.5 sans-serif;text-align:center;margin-top:40vh">This window is safe to close. Return to FlowPad to check the connection.</p>
+<script>window.close()</script>
 """
 
 _CONFIRMATION_HTML = """<!doctype html>

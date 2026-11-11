@@ -1,3 +1,5 @@
+import { t } from '@lingui/core/macro';
+import { formatBytes } from '@src/utils/format-bytes';
 import { FSEntry, TypeId, VFSPath, fsStore } from '@sdk';
 import { File, Folder } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -7,6 +9,32 @@ import type { ScopeFilter } from '@src/lib/scope-filter';
 import type { Browseable, BrowseableDragData, BrowseableRoot } from '@src/components/browseable-tree/types';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
+import {
+  onFsFoldersChanged,
+  relFor,
+  withFsOps,
+  type FsOpsCtx,
+  type FsOpsHost,
+} from './fsFileOps';
+import { refreshNode } from '@src/components/browseable-tree/refresh-store';
+
+/** Entities whose Files-tree folders already re-list on a change made in
+ *  another tree (one listener per entity, for the app's lifetime). */
+const _listening = new Set<string>();
+function refreshOnForeignChanges(ctx: FsOpsCtx): void {
+  const key = ctx.typeId.toString();
+  if (_listening.has(key)) return;
+  _listening.add(key);
+  onFsFoldersChanged((paths) => {
+    for (const p of paths) {
+      const rel = relFor(ctx, p);
+      if (rel === null) continue;
+      fsStore.getState().invalidate(ctx.typeId, `/${rel}`, 'browse');
+      refreshNode(fsFolderNodeId(ctx.typeId, rel));
+      refreshNode(fsRootNodeId(ctx.typeId, rel));
+    }
+  });
+}
 
 /**
  * fsFolderRoot — a real-filesystem browseable root.
@@ -45,6 +73,9 @@ export interface FsFolderRootDeps {
   /** When true, file/folder rows carry an `FsDragItem` drag payload so drop
    *  targets (e.g. the Assets dependency rows) can accept them. */
   draggable?: boolean;
+  /** When set, every row gets the file-manager actions (toolbar, right-click,
+   *  keys, drag move/copy, upload) — see `fsFileOps`. */
+  fileOps?: FsOpsHost;
 }
 
 /** One filesystem entry inside a (possibly multi-item) drag. */
@@ -140,6 +171,8 @@ interface FsNodeCtx {
    *  the factory binds the handlers to that folder's rel path (e.g. copy
    *  dropped rows into that exact subfolder). */
   folderDrop?: (rel: string) => FsFolderDrop;
+  /** File-manager actions bound to this root, when the host asked for them. */
+  ops?: FsOpsCtx;
 }
 
 /** The "open this file" pointer for an fs row: the row's VFS identity put
@@ -168,22 +201,50 @@ function dragDataFor(ctx: FsNodeCtx, id: string, rel: string, label: string, isD
   return { kind: 'fs-item', id, label, relPath: normalizeRel(rel), isDir };
 }
 
-function fileNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
+const DATE_TIME = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+/** Hover card for a file row: name, size, created, modified. A component, so it is
+ *  built only when the tooltip opens, not for every listed file. */
+function FileTooltip({ label, entry }: { label: string; entry: FSEntry }) {
+  const when = (secs?: number) => (secs ? DATE_TIME.format(secs * 1000) : undefined);
+  const rows: [string, string | undefined][] = [
+    [t`Size`, entry.size != null ? formatBytes(entry.size) : undefined],
+    [t`Created`, when(entry.created)],
+    [t`Modified`, when(entry.last_modified)],
+  ];
+  return (
+    <div className="space-y-1 text-xs">
+      <div className="break-all font-medium">{label}</div>
+      {rows
+        .filter(([, v]) => v)
+        .map(([k, v]) => (
+          <div key={k} className="flex gap-2">
+            <span className="text-muted-foreground">{k}</span>
+            <span>{v}</span>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function fileNode(ctx: FsNodeCtx, rel: string, label: string, entry?: FSEntry): Browseable {
   const id = `fs-file:${ctx.typeId.toString()}:${normalizeRel(rel)}`;
-  return {
+  const node: Browseable = {
     id,
     kind: 'file',
     label,
     icon: <File className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
     hasChildren: false,
     pointer: (ctx.filePointerFor ?? ctx.pointerFor)(vfsForRel(ctx, rel)),
+    tooltip: entry ? <FileTooltip label={label} entry={entry} /> : undefined,
     dragData: dragDataFor(ctx, id, rel, label, false),
   };
+  return ctx.ops ? withFsOps(node, ctx.ops, { rel: normalizeRel(rel), isDir: false, label }) : node;
 }
 
 function folderNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
   const id = fsFolderNodeId(ctx.typeId, rel);
-  return {
+  const node: Browseable = {
     id,
     kind: 'folder',
     label,
@@ -194,6 +255,7 @@ function folderNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
     dragData: dragDataFor(ctx, id, rel, label, true),
     ...(ctx.folderDrop ? ctx.folderDrop(rel) : {}),
   };
+  return ctx.ops ? withFsOps(node, ctx.ops, { rel: normalizeRel(rel), isDir: true, label }) : node;
 }
 
 /** Public factory: a browseable folder node addressing an absolute compute-node
@@ -254,7 +316,7 @@ async function listChildrenAt(ctx: FsNodeCtx, dirRel: string, opts?: { refresh?:
     if (!childRel) continue;
     const name = basename(childRel) || item.name || childRel;
     if (item.is_dir) dirs.push(folderNode(ctx, childRel, name));
-    else files.push(fileNode(ctx, childRel, name));
+    else files.push(fileNode(ctx, childRel, name, item));
   }
   dirs.sort((a, b) => a.label.localeCompare(b.label));
   files.sort((a, b) => a.label.localeCompare(b.label));
@@ -314,6 +376,18 @@ export function fsFolderRoot(deps: FsFolderRootDeps): BrowseableRoot {
     filePointerFor: deps.filePointerForVfs,
     draggable: deps.draggable ?? false,
   };
+  if (deps.fileOps) {
+    const rootId = fsRootNodeId(typeId, anchor);
+    ctx.ops = {
+      typeId,
+      locatorTypeId,
+      anchor,
+      dirNodeId: (rel) => (normalizeRel(rel) === anchor ? rootId : fsFolderNodeId(typeId, rel)),
+      filePointerFor: ctx.filePointerFor ?? ctx.pointerFor,
+      host: deps.fileOps,
+    };
+    refreshOnForeignChanges(ctx.ops);
+  }
 
   const root: BrowseableRoot = {
     id: fsRootNodeId(typeId, anchor),
@@ -336,5 +410,5 @@ export function fsFolderRoot(deps: FsFolderRootDeps): BrowseableRoot {
       return Promise.resolve(resolveChain(root, ctx, anchor, resource?.entitySubPath ?? null));
     },
   };
-  return root;
+  return ctx.ops ? withFsOps(root, ctx.ops, { rel: anchor, isDir: true, label }, { isTop: true }) : root;
 }

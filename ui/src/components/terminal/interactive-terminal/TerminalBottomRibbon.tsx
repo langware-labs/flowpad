@@ -6,14 +6,14 @@ import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { BookMarked, ChevronDown, FileText, Monitor } from 'lucide-react';
+import { ChevronDown, FileText, Monitor } from 'lucide-react';
 import { DisplayHistoryList } from '@src/pages/flow-page/display-history-button';
 import { latestPerTarget } from '@src/pages/flow-page/display-stack';
-import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { compareArtifactsNewest } from '@src/hooks/use-process-artifacts';
+import { QuickPromptsMenu } from '@src/components/notes/QuickPromptsMenu';
 import { SideTabTooltipContent } from './LastPromptTooltip';
-import { SIDE_TABS, SideTabId, type SideTabId as SideTabIdType } from './side-windows';
+import { SIDE_TABS, SideTabId, sideTabsAt, type SideTabId as SideTabIdType } from './side-windows';
 
 interface TerminalBottomRibbonProps {
   fileCount: number;
@@ -28,30 +28,19 @@ interface TerminalBottomRibbonProps {
   onOpenLastPlan?: () => void;
   /** Deliverables this run REGISTERED (`flow artifact …`), in any order. */
   artifacts?: Artifact[];
-  /** Open an artifact's REFERENCED ASSET by path — never the artifact row. */
-  onOpenArtifact?: (assetRef: string) => void;
+  /** Open an artifact: its referenced asset, or the artifact as an app when it has none. */
+  onOpenArtifact?: (artifact: Artifact) => void;
   /** What this run has shown (`flow show`), oldest first — `display_stack`. */
   shown?: readonly DisplayEntry[];
   /** Open a shown target as its own tab. */
   onOpenShown?: (entry: DisplayEntry) => void;
-  /** Enables the Prompt Library button (prompt → queue needs a process). */
+  /** The run this ribbon belongs to. */
   process?: AgenticProcess | null;
   /** Chat composer rendered as the top tier of the ribbon (Standard/chat only). */
   composer?: React.ReactNode;
+  /** Type a quick prompt into the session and submit it — shows the quick prompts button. */
+  onSendPrompt?: (text: string) => void;
 }
-
-const RIBBON_TABS: SideTabIdType[] = [
-  SideTabId.Context,
-  SideTabId.Git,
-  SideTabId.Prompts,
-  SideTabId.Analysis,
-  SideTabId.SkillsAgents,
-  SideTabId.Files,
-  SideTabId.Dir,
-  // The prompt QUEUE side-tab (previously URL-only) — paired with the
-  // Prompt Library button below so "add to queue" has a visible destination.
-  SideTabId.Queue,
-];
 
 export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   fileCount,
@@ -69,13 +58,12 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   onOpenShown,
   process = null,
   composer,
+  onSendPrompt,
 }) => {
   const { t } = useLingui();
   const isAdvanced = useIsAdvanced();
-  // Skin layer: in Standard view, power-user tabs (flagged advancedOnly on
-  // their SIDE_TABS descriptor) and the Prompt Library button are hidden,
-  // leaving Prompts + Files. See docs/viewmodes.md.
-  const ribbonTabs = isAdvanced ? RIBBON_TABS : RIBBON_TABS.filter((id) => !SIDE_TABS[id].advancedOnly);
+  // Skin layer: Standard view hides advancedOnly tabs. See docs/viewmodes.md.
+  const ribbonTabs = sideTabsAt('ribbon', isAdvanced).map((d) => d.id);
   return (
     <div className="flex flex-col border-t bg-muted/30">
       {/* Top tier: chat composer (Standard/chat only) — one ribbon, not two rows. */}
@@ -85,7 +73,16 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
         {/* Left: worker status LED. The chat⇄terminal toggle that used to live
           here is now the session's own switch (SessionSurfaceSwitch). */}
         <div className="flex items-center gap-2">
-          <span className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
+          {onSendPrompt ? (
+            <QuickPromptsMenu
+              projectId={process?.project_id}
+              lastPromptText={lastPromptText}
+              isActive={isActive}
+              onSend={onSendPrompt}
+            />
+          ) : (
+            <span className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
+          )}
           {hasLastPlan && onOpenLastPlan && (
             <TooltipProvider delayDuration={400}>
               <Tooltip>
@@ -162,27 +159,6 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
                 </Tooltip>
               );
             })}
-            {/* Prompt Library — distinct from the transcript "Prompts" tab:
-              browse the foldered prompt library; click a prompt to enqueue
-              it (docs/prompt-library.md). Pure composition; all behavior
-              lives in PromptLibraryMenu / the generic groups layer. */}
-            {process && isAdvanced && (
-              <PromptLibraryMenu
-                process={process}
-                projectId={process.project_id ?? null}
-                trigger={
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    aria-label={t`Prompt Library`}
-                    title={t`Prompt Library — click a prompt to add it to the queue`}
-                  >
-                    <BookMarked className="h-4 w-4" />
-                  </Button>
-                }
-              />
-            )}
           </TooltipProvider>
         </div>
       </div>
@@ -198,25 +174,20 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
  * Shows the newest registration; when there is more than one, a subtle chevron
  * opens a popover listing all of them newest-first.
  *
- * Clicking opens the artifact's REFERENCED ASSET, never the artifact row. An
- * artifact points at a deliverable — it is not the deliverable — so an artifact
- * with no `asset_ref` (a webapp registered by port, say) has nothing to open
- * and the click is inert rather than routing somewhere wrong.
+ * Clicking opens the artifact's REFERENCED ASSET when it has one; an artifact
+ * with no `asset_ref` (a webapp, say) opens as an app, addressed by the artifact.
  */
 const ARTIFACT_CHIP_CLASSES = 'h-6 text-violet-400 border-violet-400/40 hover:border-violet-400 hover:text-violet-300';
 
 const ArtifactsChip: React.FC<{
   artifacts: Artifact[];
-  onOpen: (assetRef: string) => void;
+  onOpen: (artifact: Artifact) => void;
 }> = ({ artifacts, onOpen }) => {
   const { t } = useLingui();
   const ArtifactIcon = iconForType(Artifact.type);
   const ordered = [...artifacts].sort(compareArtifactsNewest);
   const latest = ordered[0];
   const hasMore = ordered.length > 1;
-  const open = (artifact: Artifact) => {
-    if (artifact.asset_ref) onOpen(artifact.asset_ref);
-  };
   return (
     <TooltipProvider delayDuration={400}>
       <div className="flex items-center">
@@ -225,7 +196,7 @@ const ArtifactsChip: React.FC<{
             <Button
               variant="outline"
               size="sm"
-              onClick={() => open(latest)}
+              onClick={() => onOpen(latest)}
               className={cn(ARTIFACT_CHIP_CLASSES, 'gap-1.5 px-2 text-[11px]', hasMore && 'rounded-e-none border-e-0')}
             >
               <ArtifactIcon className="h-3.5 w-3.5" />
@@ -254,7 +225,7 @@ const ArtifactsChip: React.FC<{
                   <button
                     key={String(artifact.id)}
                     type="button"
-                    onClick={() => open(artifact)}
+                    onClick={() => onOpen(artifact)}
                     className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-start hover:bg-accent"
                   >
                     <ArtifactIcon className="h-3.5 w-3.5 shrink-0 text-violet-500" />

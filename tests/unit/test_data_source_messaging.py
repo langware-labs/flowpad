@@ -206,7 +206,7 @@ class TestReplySpecAsksTheChannel:
     """Building a reply must not mean guessing the addressing rule.
 
     The class IS the rule — `EmailMessageSpec` answers the author,
-    `SlackMessageSpec` answers the channel — so a caller that names the class by
+    a `ChannelMessageSpec` (Slack's) answers the channel — so a caller that names the class by
     hand on a Slack source addresses the reply to the person's user id, which
     Slack delivers as a DM instead of posting it where everyone is reading. The
     reply path was fixed by asking `driver.outbound_spec(source)`; this pins the
@@ -216,12 +216,12 @@ class TestReplySpecAsksTheChannel:
     def test_a_slack_source_addresses_the_channel(self, monkeypatch):
         from types import SimpleNamespace
 
-        from flow_sdk.builtin.source_item import SlackMessageSpec
+        from flow_sdk.builtin.source_item import ChannelMessageSpec
 
         source = DataSource(name=f"Slack {uuid.uuid4().hex[:8]}", provider="slack-test")
         monkeypatch.setattr(
             "flow_sdk.builtin.data_driver.DataDriver.loaded",
-            lambda _p: SimpleNamespace(outbound_spec=lambda _s: SlackMessageSpec),
+            lambda _p: SimpleNamespace(outbound_spec=lambda _s: ChannelMessageSpec),
         )
         item = SimpleNamespace(
             author_external_id="U0123456789",

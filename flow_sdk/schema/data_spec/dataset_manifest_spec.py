@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, ClassVar, Dict, Optional
+from typing import Any, ClassVar, Dict, Optional, Union
 
 from pydantic import ValidationError, model_validator
 
@@ -23,7 +23,7 @@ class DatasetManifestSpec(FrontMatter):
     rows, and writing them back would make the manifest lie after an append.
 
     A malformed ``spec`` ON DISK degrades the SLOT, never the dataset: raising
-    would cost every example row, and an ``orphan_action=DELETE`` sweep would
+    would cost every row, and an ``orphan_action=DELETE`` sweep would
     then reap rows that parsed fine. That is a disk-read policy — the entity
     field itself is strict — so it lives here, at the header read.
     """
@@ -62,5 +62,10 @@ class DatasetManifestSpec(FrontMatter):
     field_spec: Optional[Dict[str, str]] = None
     delimiter: Optional[str] = None
     spec: Optional[ShapeForm] = None
+    #: The data source the rows are in (``agentic-assets/data_source/<name>/``; absent = the project's
+    #: data store), and their folder inside it (default: the dataset's folder name) --
+    #: ``flow_sdk/datasets/stores.py``.
+    data_source: Optional[str] = None
+    path: Optional[str] = None
     #: The free ``data`` section of ``dataset.json`` — the document's second half.
     data: Optional[FreeForm] = None

@@ -62,7 +62,7 @@ async def run_triggers_for_hook(hook, webhook_data: AgentHookData) -> WebhookHan
                 project_id=trigger.project_id,
                 scope_extra=[f"agent_hook:{hook.id}"] if hook.id else None,
             )
-            _log_hook_fire(trigger, hook_data, event_id, session_id)
+            _log_hook_fire(trigger, hook_data, event_id, session_id, execution=result._execution)
 
     emit_hook_received(
         hook.id or "",
@@ -82,7 +82,8 @@ async def run_triggers_for_hook(hook, webhook_data: AgentHookData) -> WebhookHan
     )
 
 
-def _log_hook_fire(trigger, hook_data: HookEventData, event_id: str | None, session_id: str | None) -> None:
+def _log_hook_fire(trigger, hook_data: HookEventData, event_id: str | None, session_id: str | None,
+                   *, execution=None) -> None:
     """One history row per MATCHED hook fire — real fires used to write none.
 
     Only matches: a hook fires on every tool use, and a row per non-match would
@@ -105,6 +106,14 @@ def _log_hook_fire(trigger, hook_data: HookEventData, event_id: str | None, sess
             "cause_data": cap_cause_data({"hook_event": hook_event, "session_id": session_id,
                                           "tool_name": getattr(hook_data, "tool_name", None)}),
             "spec_hash": spec_hash(trigger),
+            **({
+                "id": execution.run_id,
+                "invocation_id": execution.result.invocation_id,
+                "wizard": execution.wizard,
+                "error": execution.error,
+                "duration_ms": execution.duration_ms,
+                "agentic_process_id": execution.process_id,
+            } if execution is not None else {}),
         })
     except Exception:
         logger.debug("hook fire log append failed", exc_info=True)

@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { FieldType, type ConfigSchemaProperty, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
+import { FieldType, type ConfigSchemaProperty, type DataSourceChoice, type DataDriver, type DriverProfile, type SpecConfigField } from '@sdk';
 
 /**
  * The create form's logic, over a manifest the BACKEND supplies.
@@ -70,14 +70,17 @@ export function fieldRules(spec: DataDriver | undefined, key: string): { require
   };
 }
 
-/** A new source's draft for `spec` — its provider, and the fields its `Config` gives a `default`. */
-export function emptyDraft(spec?: DataDriver): SourceDraft {
+/** A new source's draft for `spec` — its provider, and the fields its `Config` gives a `default`. `profile` is
+ *  what the driver said about this way of connecting right now (`Source.profile()`), when the form has it. */
+export function emptyDraft(spec?: DataDriver, profile?: DriverProfile | null): SourceDraft {
   return {
     // The driver's own title, so nothing is required of a person who has nothing to say about
     // the name — an empty box under a red "Name is required." is the form asking for a word it
     // could supply itself.
-    // A driver may name what a new source IS ("Flow WhatsApp agent") better than its title does.
-    name: spec?.default_name || spec?.title || '',
+    // A driver may name what a new source IS ("Flow WhatsApp agent") better than its title does — and one that
+    // names it for THIS person ("Eran's inbox", the same name its Slack app gets) says so in its profile, so
+    // the source and the app are named once, in the driver.
+    name: profile?.default_name || spec?.default_name || spec?.title || '',
     provider: spec?.name ?? '',
     // Empty means "derive from the fields" — `accountKeyFor` owns the default,
     // so exactly one place knows it.
@@ -226,6 +229,7 @@ export function buildConfig(draft: SourceDraft, spec?: DataDriver): Record<strin
     if (!raw) continue;
     if (field.type === FieldType.LINES) config[key] = splitLines(raw);
     else if (field.type === FieldType.CSV) config[key] = splitCsv(raw);
+    else if (field.type === FieldType.BOOL) config[key] = raw === 'true';
     else if (field.type === FieldType.NUMBER) {
       const n = Number(raw);
       if (!Number.isNaN(n)) config[key] = n;

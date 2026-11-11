@@ -246,3 +246,66 @@ async def test_menu_is_read_only_after_a_real_index(tree):
     assert len(await Project.get_all()) == projects_before
     assert len(await Folder.get_all()) == folders_before
     assert await Project.find_by_cwd(str(tree.path("PLAIN"))) is None
+
+
+async def test_scoped_badge_equals_list_equals_inventory(tree):
+    """The sidebar's type badge (asset-stats) and the rows under it (``/search``,
+    ``top_level``) read ONE scope and agree with the files on disk:
+
+    * Project      → the mount's own assets only — a dependency's never inflate it;
+    * Dependencies → the mount plus its whole closure, transitive (A → B → C) and
+      plain folders included — exactly the menu's rolled-up total;
+    * Mine         → none of them: not a dependency Project's rows, and not a plain
+      dependency folder's either (those index as user scope but are P's).
+
+    Mine is checked by absence, not by a number: the session DB is shared, so a
+    sibling test's leftover user rows may be in it.
+    """
+    import httpx
+    from fastapi import FastAPI
+
+    from flow_sdk.fs_store.indexer import index_log
+    from flow_sdk.server.routes.search import router
+    from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope
+
+    app = FastAPI()
+    app.include_router(router)
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+    pid = str(tree.projects["P"].id)
+    cases = {
+        "project": ({"user": "false", "projects": pid}, tree.expected_own("P")),
+        "dependencies": ({"user": "false", "projects": pid, "deps": "true"}, tree.expected_total("P")),
+        "mine": ({"user": "true", "projects": ""}, None),
+    }
+    for name, (wire, expected) in cases.items():
+        stats = await index_log.get_asset_stats(scope=await resolve_project_scope(ScopeFilter.from_query_params(wire)))
+        for type_name in ASSET_TYPES:
+            resp = await client.get(
+                "/api/v1/search",
+                params={"record_type": type_name, "limit": 500, "top_level": "true", "include_system": "true", **wire},
+            )
+            results = resp.json()["data"]["results"]
+            badge = stats.per_type.get(type_name, 0)
+            if expected is None:
+                assert badge == len(results), f"{name}/{type_name}: badge {badge}, list {len(results)}"
+                leaked = [r["asset_ref"] for r in results if str(r.get("asset_ref", "")).startswith(str(tree.base))]
+                assert not leaked, f"{name}/{type_name}: dependency rows in Mine: {leaked}"
+                continue
+            want = expected.get(type_name, 0)
+            assert badge == len(results) == want, f"{name}/{type_name}: badge {badge}, list {len(results)}, on disk {want}"
+
+
+async def test_a_dependency_project_rows_are_its_project_content(tree):
+    """A folder that is itself a Project indexes as THAT project's content
+    (``scope='project'``, its id) through the dependency walk too — not as the
+    user's, which would leak it into Mine and out of every project scope."""
+    from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
+
+    for key in ("A", "B", "C"):
+        rows = await Entity.assets_by_path(
+            PathQueryOptions(search_dirs=[str(tree.path(key))], types=list(ASSET_TYPES), limit=500)
+        )
+        assert rows, key
+        for row in rows:
+            assert (row.scope, row.project_id) == ("project", str(tree.projects[key].id)), (key, row.asset_ref)

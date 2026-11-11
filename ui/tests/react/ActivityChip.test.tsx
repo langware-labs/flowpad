@@ -61,6 +61,8 @@ function spec(over: Partial<ActivityProgressSpec> = {}): ActivityProgressSpec {
 
 async function openPopover() {
   await userEvent.click(screen.getByTestId('pending-actions-chip'));
+  // The panel opens on its overview; the activity rows are under "processes".
+  await userEvent.click(screen.getByRole('tab', { name: 'processes' }));
 }
 
 describe('footer chip — activities', () => {

@@ -42,10 +42,6 @@ const replies = async (convId: string) =>
     .filter((m) => String(m.text ?? '').startsWith('Prompt response'))
     .map((m) => String(m.text));
 const repliesFor = async (convId: string, t: string) => (await replies(convId)).filter((r) => r.includes(t));
-const grantsOnHost = async () =>
-  (await get(`${BOB.backendUrl}/api/v1/graph/contact_permission`)).filter((g) =>
-    ((g.allowed_actions as string[]) ?? []).includes('auto_approve_session'),
-  );
 
 async function until<T>(
   what: string,
@@ -96,8 +92,6 @@ function restart(script: string, who: string) {
 
 test('live session cross-OS: every edge case', async ({ browser }) => {
   test.setTimeout(3_600_000);
-  for (const g of await grantsOnHost())
-    await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission/${g.id}`, { method: 'DELETE' });
   const alice = (await openInstance(browser, ALICE)).page;
   const bob = (await openInstance(browser, BOB)).page;
   const convId = await startConversationViaUi(alice, BOB_EMAIL, `cross-os-${T}`);
@@ -119,14 +113,14 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   await until('declined on the guest', async () => (await latest(ALICE.backendUrl, convId))?.status === 'declined');
   await both(alice, bob, convId, '02-declined');
 
-  // 03 — Approve once + Run (Skip project): per-instance temp folder, no grant
+  // 03 — Approve (this session only) + Run (Skip project): per-instance temp folder
   await gotoConversation(alice, convId);
   await openSession(alice);
   await until('S2 on the host', async () => (await sessionsOn(BOB.backendUrl, convId)).length === 2);
   await gotoConversation(bob, convId);
-  await bob.getByTestId('session-card-approve-once').last().click();
+  await bob.getByTestId('session-card-approve').last().click();
   await expect(bob.getByTestId('live-session-no-project')).toBeVisible({ timeout: 30_000 });
-  await shot(bob, '03-approve-once-picker-host');
+  await shot(bob, '03-approve-picker-host');
   await bob.getByTestId('live-session-no-project').click();
   const s2 = await until('S2 live with a temp folder', async () => {
     const r = await latest(BOB.backendUrl, convId);
@@ -134,7 +128,6 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   });
   console.log('[03] host workdir:', s2.workdir);
   expect(String(s2.workdir)).toMatch(/live-session-scratch/);
-  expect(await grantsOnHost()).toHaveLength(0);
   await until('guest sees S2 live', async () => (await latest(ALICE.backendUrl, convId))?.status === 'idle');
   await both(alice, bob, convId, '03-approved-once-live');
 
@@ -273,7 +266,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   await until('ended on the host', async () => (await latest(BOB.backendUrl, convId))?.status === 'ended');
   await both(alice, bob, convId, '10-host-disconnect-mid-turn');
 
-  // 11 — Approve (remembers the guest) → the GUEST disconnects
+  // 11 — Approve (this session only) → the GUEST disconnects; the chip offers no way to remember the guest
   await gotoConversation(alice, convId);
   await openSession(alice);
   await until('S3 on the host', async () => (await sessionsOn(BOB.backendUrl, convId)).length === 3);
@@ -282,32 +275,22 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   await bob.getByTestId('session-card-approve').last().click();
   await bob.getByTestId('live-session-no-project').click();
   await until('S3 live', async () => (await latest(BOB.backendUrl, convId))?.status === 'idle');
-  const grants = await grantsOnHost();
-  expect(grants).toHaveLength(1);
+  await bob.getByTestId('live-session-permission-chip').last().click();
+  await expect(bob.getByTestId('live-session-permission-detail')).toContainText('approval again next time');
+  await expect(bob.getByText(/auto-approve/i)).toHaveCount(0);
   await until('guest sees S3 live', async () => (await latest(ALICE.backendUrl, convId))?.status === 'idle');
-  await both(alice, bob, convId, '11-approved-remembered');
+  await both(alice, bob, convId, '11-approved-this-session');
   await gotoConversation(alice, convId);
   await alice.getByTestId('session-card-disconnect').last().click();
   await until('S3 ended on the host', async () => (await latest(BOB.backendUrl, convId))?.status === 'ended');
   await both(alice, bob, convId, '11-guest-disconnected');
 
-  // 12 — the remembered guest starts without asking, in the same temp folder
+  // 12 — the same guest's next session waits for the host again
   await gotoConversation(alice, convId);
   await openSession(alice);
-  const s4 = await until(
-    'S4 approved with no host click',
-    async () => {
-      const r = await latest(BOB.backendUrl, convId);
-      return r?.status === 'idle' && (await sessionsOn(BOB.backendUrl, convId)).length === 4 ? r : null;
-    },
-    120_000,
-  );
-  expect(s4.approved_via).toBe('standing_grant');
-  expect(s4.workdir).toBe(s2.workdir);
-  await sendInView(alice, ask('r1'));
-  await until('remembered session answers', async () => (await repliesFor(convId, tok('r1'))).length > 0);
-  await both(alice, bob, convId, '12-remembered-auto-start');
-
-  for (const g of await grantsOnHost())
-    await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission/${g.id}`, { method: 'DELETE' });
+  await until('S4 on the host', async () => (await sessionsOn(BOB.backendUrl, convId)).length === 4);
+  const s4 = await latest(BOB.backendUrl, convId);
+  expect(s4?.status).toBe('pending');
+  expect(s4?.approved_at ?? null).toBeNull();
+  await both(alice, bob, convId, '12-next-session-waits');
 });

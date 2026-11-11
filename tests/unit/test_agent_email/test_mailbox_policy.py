@@ -263,3 +263,39 @@ async def test_an_agent_published_from_another_instance_is_adopted(mail_db, monk
     assert mailbox.address == "ada@agentmail.to"
     assert agent.remote is True
     assert hub.probes == 2, "the second probe is what resolved the ambiguity"
+
+
+# ── the two directions: Receiving and Sending lists ───────────────────────────
+
+
+async def test_receiving_blocked_wins_and_a_domain_entry_admits_its_domain():
+    from flow_sdk.builtin.agent_mailbox import sender_allowed
+
+    allowed, blocked = ["Ami@Langware.ai", "@partner.io"], ["spam@partner.io"]
+    assert sender_allowed(allowed, " ami@langware.AI", blocked)
+    assert sender_allowed(allowed, "anyone@partner.io", blocked), "an @domain entry admits the whole domain"
+    assert not sender_allowed(allowed, "spam@partner.io", blocked), "Blocked wins over an allowed domain"
+    assert not sender_allowed(allowed, "x@partner.io.evil.com", blocked), "a domain matches exactly, not as a suffix"
+    assert not sender_allowed([], "ami@langware.ai"), "an empty Allowed list admits nobody"
+
+
+async def test_the_descriptor_carries_both_directions_and_an_old_hub_reads_open_for_sending():
+    agent = Agent(id=mint_uuid(), name="ada")
+    mailbox = AgentMailbox.from_hub_descriptor(
+        _descriptor(agent, allowed_recipients=["eran@langware.ai"], blocked_senders=["@spam.io"], open_recipients=False),
+        agent_typeid=agent.typeid,
+    )
+    wire = mailbox.descriptor()
+    assert wire["allowed_recipients"] == ["eran@langware.ai"] and wire["open_recipients"] is False
+    assert wire["blocked_senders"] == ["@spam.io"]
+    assert AgentMailbox.from_hub_descriptor(_descriptor(agent), agent_typeid=agent.typeid).open_recipients is True
+
+
+
+async def test_an_html_only_send_gets_its_plain_text_from_the_html():
+    """`flow source send --html-file` alone is a valid email: its plain part is the HTML's text."""
+    from flow_sdk.builtin.data_source import _plain_text_of
+
+    text = _plain_text_of("<style>p{color:red}</style><h2>GTM weekly</h2><p>New visitors 41 &middot; Sign-ups 1</p>")
+    assert text.splitlines()[0].strip() == "GTM weekly"
+    assert "New visitors 41 · Sign-ups 1" in text and "color" not in text

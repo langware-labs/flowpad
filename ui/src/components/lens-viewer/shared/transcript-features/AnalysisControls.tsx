@@ -6,7 +6,7 @@ import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { SideDrawer } from '@src/components/ui/side-drawer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { deriveAnalysisAction } from './analysis-state';
 import { useSessionAnalyses } from './useSessionAnalyses';
 
@@ -50,11 +50,7 @@ export function useAnalysisControls(
 
 export type AnalysisControls = ReturnType<typeof useAnalysisControls>;
 
-export function AnalysisToolbarButtons({
-  controls,
-}: {
-  controls: AnalysisControls;
-}) {
+export function AnalysisToolbarButtons({ controls }: { controls: AnalysisControls }) {
   const { navigation } = useDockNavigation();
   const { action, startAnalysis, setPanelOpen } = controls;
 
@@ -109,7 +105,9 @@ export function AnalysisToolbarButtons({
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="text-xs">
-                  <Trans>The session has new activity since the last analysis — run a fresh one (previous runs are kept)</Trans>
+                  <Trans>
+                    The session has new activity since the last analysis — run a fresh one (previous runs are kept)
+                  </Trans>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -121,7 +119,11 @@ export function AnalysisToolbarButtons({
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">
-                Open the latest analysis timeline ({action.runCount} run{action.runCount === 1 ? '' : 's'} for this session)
+                <Plural
+                  value={action.runCount}
+                  one="Open the latest analysis timeline (# run for this session)"
+                  other="Open the latest analysis timeline (# runs for this session)"
+                />
               </TooltipContent>
             </Tooltip>
             {action.kind === 'open' && (
@@ -145,11 +147,7 @@ export function AnalysisToolbarButtons({
 }
 
 /** Right-side drawer hosting the analysis run (generic execution panel). */
-export function AnalysisSidePanel({
-  controls,
-}: {
-  controls: AnalysisControls;
-}) {
+export function AnalysisSidePanel({ controls }: { controls: AnalysisControls }) {
   const { t } = useLingui();
   const { panelOpen, setPanelOpen, analysisTarget, autoPrompt } = controls;
 

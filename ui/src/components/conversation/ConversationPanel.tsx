@@ -1,5 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ItOperationChip } from './ItOperationChip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Conversation, Task, TypeId } from '@sdk';
@@ -18,10 +19,13 @@ import { ConversationBottomRibbon, type ConversationSideTab } from './Conversati
 import { ConversationContextPanel } from './ConversationContextPanel';
 import { MembersAvatarStack } from './MembersAvatarStack';
 import { ChannelParticipants } from './ChannelParticipants';
+import { TicketHeaderChips } from './TicketHeaderChips';
+import { ConversationMarkChips } from './ChannelMessageExtras';
 import { ProjectChip } from '@src/components/project/ProjectChip';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { ConversationTasksPanel } from './ConversationTasksPanel';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useConversationTasks } from './task-it';
 import { isOpenTask } from '@src/components/task-bar/task-utils';
 
@@ -186,7 +190,9 @@ export function ConversationPanel({
     (id: string | null) =>
       hostThreadNavigate
         ? hostThreadNavigate(id)
-        : dockNavigation.openDock(DockPointer.forConversation(conversationId, { thread: id, agentId: agentId ?? null })),
+        : dockNavigation.openDock(
+            DockPointer.forConversation(conversationId, { thread: id, agentId: agentId ?? null }),
+          ),
     [hostThreadNavigate, dockNavigation, conversationId, agentId],
   );
   // One gate, two subject shapes. Remote provenance always lives on the
@@ -195,7 +201,8 @@ export function ConversationPanel({
   // `OpenProjectComponent` dialog and the same per-machine remote→local
   // mapping table.
   const { data: convEntity } = useEntity<Conversation>(new TypeId(Conversation.type, conversationId));
-  const mappingGate = useProjectMappingGate(task ?? undefined, convEntity ?? undefined);
+  // Mapping a conversation to a local project is the desktop's; the hub page has no local folder.
+  const mappingGate = useProjectMappingGate(task ?? undefined, convEntity ?? undefined, { enabled: !isHubOnly() });
   const ensureMapped = mappingGate.ensureMapped;
   const mappingDialogProps = mappingGate.dialogProps;
 
@@ -347,6 +354,9 @@ export function ConversationPanel({
           {headerLabel !== null && (
             <div className={headerWrapper}>
               <EditableConversationTitle conv={convEntity ?? null} fallback={headerLabel} />
+              <ItOperationChip conv={convEntity ?? null} />
+              <TicketHeaderChips conv={convEntity ?? null} />
+              <ConversationMarkChips marks={convEntity?.marks} />
               <ProjectChip projectId={convEntity?.project_id ?? null} className="me-auto" />
               {convEntity?.isChannel ? (
                 <ChannelParticipants conversation={convEntity} />

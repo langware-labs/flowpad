@@ -8,7 +8,7 @@ on ``running`` forever.
 
 bob (raw HTTP, the GUEST) opens a session over the real hub; alice (this
 process, the HOST) receives it through her real WebSocket bridge and the
-standing-grant gate runs the turn on a worker that cannot run here:
+host approves it and the turn runs on a worker that cannot run here:
 
 * ``unfunded`` — opencode with no LLM source: the spawn is refused up front.
 * ``not_installed`` — codex, funded by an OpenRouter key but absent from this
@@ -31,11 +31,10 @@ import uuid
 import httpx
 import pytest
 
-from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction
 from flow_sdk.builtin.flow_message import AttachmentType
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
 from tests.hub_tests._assignment import assert_auto_assigned
-from tests.hub_tests._guest import guest_login
+from tests.hub_tests._guest import guest_login, host_approves
 
 pytestmark = pytest.mark.timeout(60)  # do not increase timeout without approval
 
@@ -82,9 +81,6 @@ async def test_a_turn_the_host_cannot_run_is_reported_to_the_guest(
     async with httpx.AsyncClient(timeout=5.0) as h:  # alice joined inside share(); only the guest still needs to
         r = await h.post(f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/join", headers=bob.headers, json={})
         assert r.status_code < 300, r.text
-    grant = ContactPermission(contact_user_id=bob.user_id, project_id=None,
-                              allowed_actions=[PermissionAction.AUTO_APPROVE_SESSION.value])
-    await grant.save(notify=False)
     hub_ws_bridge.install()
     assert (await hub_ws_manager.restart(wait_connected=True)).get("hub_ws_connected") is True
 
@@ -98,6 +94,7 @@ async def test_a_turn_the_host_cannot_run_is_reported_to_the_guest(
                       "attachment": [{"attachment_type": AttachmentType.PROMPT.value, "data": "Commit id ?"}]},
             )
             assert r.status_code < 300, r.text
+            await host_approves(sid, within=15)
 
             # Host: the turn must END in ERROR within seconds, not after the transcript timeout.
             deadline, status = time.monotonic() + 30, None
@@ -121,4 +118,3 @@ async def test_a_turn_the_host_cannot_run_is_reported_to_the_guest(
             assert lines, "the guest was never told the turn failed"
     finally:
         await hub_ws_manager.stop()
-        await grant.delete()

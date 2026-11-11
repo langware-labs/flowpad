@@ -194,7 +194,9 @@ class Folder(Entity):
         return ReferencePack(metadata=metadata, origin=origin)
 
     @classmethod
-    async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
+    async def restore_reference(
+        cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None, project_root=None, project_id=None
+    ) -> bool:
         """Mint the receiver-local Folder from the origin — path unset, NO
         clone; the message chip's wizard resolves a local checkout later."""
         if not getattr(origin, "transportable", False):

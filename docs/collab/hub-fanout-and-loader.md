@@ -63,7 +63,7 @@ pre-accept (`conversation.py:282-287`). The sequence is:
 add_message(fm):
   if rank(fm.delivery_status) < rank(SENT): fm.delivery_status = SENT   # :286-287
   reset_create_fields(fm)   # wire attribution is client-controlled      # :298
-  add_child(fm); _recompute_message_count(); update()                   # :299-301
+  add_child(fm); _recompute_message_summary(); update()                 # :299-301
   _fanout_message(fm)                                                   # :302  CONTENT, skip sender
   _fanout_status_update(fm, only_user_id=fm.sender_id)                  # :307  STATUS, sender alone
 ```
@@ -198,15 +198,13 @@ clobber the locally-projected ones (which only `project_pointers_to_entity` may
 write — see [`./conversation-model.md`](./conversation-model.md) §The projection
 guard).
 
-**Anti-spoof `created_by` on insert (`hub_bridge.py:692-710`).** On create,
-`created_by` is set to the hub's `initiated_by`, else `created_by`, else the
-neutral `'system'` sentinel — **NEVER** the local user (`hub_bridge.py:701`),
-which would surface received conversations as "created by me." (This WS path's
-`'system'` fallback is the one that differs from the HTTP accept mirror, which
-keeps `None`; see [`./conversation-model.md`](./conversation-model.md)
-§`created_by`.) Save is `notify=True` so the FE re-renders. On update
-(`hub_bridge.py:716-726`), allowed fields are merged in place and the hub owner
-is adopted when it carries one.
+**One mirror, no renames.** The frame lands through `Conversation.mirror_from_hub`,
+the same path the HTTP accept uses: the hub's `HUB_READ` fields (`members`,
+`initiated_by`, …) are copied under their hub names, a hub `null` never clears a
+local value, and the row is marked `remote`. The hub owner stays in
+`initiated_by` — the local user is **never** stamped as owner, which would
+surface received conversations as "created by me." See
+[`./conversation-model.md`](./conversation-model.md) §`initiated_by`.
 
 ### `_handle_child_op` — the generic child materialization kernel
 
@@ -229,8 +227,8 @@ query-equivalent to the sender's original:
    rows and served only under `expand=blobs`. The live op usually embeds the
    in-memory entity (blobs included); when a blob-declaring type arrives with
    all blob fields empty, the bridge does one follow-up
-   `hub_get(child, expand=blobs)` and merges before materializing
-   (`hub_bridge.py::_handle_child_op`).
+   `HubProxy.try_call("GET", child, params={"expand": "blobs"})` and merges before
+   materializing (`hub_bridge.py::_fill_empty_blobs`).
 
 A child whose parent hasn't materialized yet (a layer-1-gated shared doc, not
 yet installed) saves row-only; the **orphan rebind** pass of the catch-up sync
@@ -298,7 +296,7 @@ Idempotent — returns the local Conversation, creating it if missing. On
 — the same rule the local create path uses; an entity-less cross-user chat stays
 project-less (`None`) by design. It carries the hub `created_by` **verbatim**,
 sets `remote=True`, and reflects the save (`materialize_flow_message.py:88-108`).
-On an **existing** row it only *backfills* participants, title, and the parent
+On an **existing** row it only *backfills* `members`, title, and the parent
 `shared_context_entities` link when those are missing
 (`materialize_flow_message.py:109-136`) — never overwriting a local override.
 The parent backfill is what lets `firstContextOfType('task')` resolve on the

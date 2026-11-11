@@ -9,8 +9,8 @@ description: Test all the HTML the session produced — self-contained .html ass
   pass/fail. Use this whenever the user asks to test, QA, validate, smoke-test,
   check, or "make sure it works" for HTML pages, a website, a web app, a dashboard,
   or a deck they built here — even if they don't say "Playwright". All debug
-  artifacts land in an isolated temp folder; the user's project dirs are never
-  written to unless they ask. Building/scaffolding a web app is the web-app-builder
+  artifacts land in an isolated per-run folder (removed after the report on a
+  sandbox); the user's project dirs are never written to unless they ask. Building/scaffolding a web app is the web-app-builder
   skill's job — this skill only TESTS what already exists.
 tags:
 - testing
@@ -39,11 +39,16 @@ document tells you how to discover targets, bootstrap, run it, and report.
 
 ## Non-negotiable: keep debug artifacts out of the user's dirs
 
-Every artifact — screenshots, `report.json`, `report.md`, the ephemeral Python env
-— goes under **one isolated temp directory** you create per run:
+Every artifact of a run — screenshots, `report.json`, `report.md` — goes under **one
+isolated directory** you create per run. Where depends on the machine: on a Flowpad
+sandbox `/tmp` is RAM (tmpfs) shared with the app under test, so the run goes on disk
+and is removed after the report (step 5); anywhere else it is a temp dir:
 
 ```bash
-OUT="$(mktemp -d "${TMPDIR:-/tmp}/flowpad-web-tester.XXXXXX")"
+WT_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/flowpad-web-tester"
+IN_SANDBOX="$(python3 -c 'from flow_sdk.instance_settings.runtime import RuntimeKind, get_assigned_runtime; print(int(get_assigned_runtime() is RuntimeKind.SANDBOX))' 2>/dev/null | tail -1)"
+if [ "$IN_SANDBOX" = 1 ]; then mkdir -p "$WT_HOME/runs" && OUT="$(mktemp -d "$WT_HOME/runs/run.XXXXXX")"
+else OUT="$(mktemp -d "${TMPDIR:-/tmp}/flowpad-web-tester.XXXXXX")"; fi
 ```
 
 Never write test output, screenshots, a `playwright.config`, a `tests/` folder, or
@@ -69,13 +74,13 @@ find . -type f -name '*.html' \
 Pass each hit as an absolute path: `--target /abs/path/to/page.html`.
 
 **b) Running web apps** — anything with a dev server (a web-app-builder app under
-`assets/apps/<name>`, a vibe app, etc.). Prefer testing the **live** app, not its
+`agentic-assets/webapp/<name>`, a vibe app, etc.). Prefer testing the **live** app, not its
 source files:
 
 - If the dev server is already up, use its URL (web-app-builder frontend is
   `http://localhost:<port>`; the port is whatever the dev server printed / was `flow show`n — never assume 3000).
 - If it isn't running and the user wants it tested, start it per that app's own
-  skill/README (e.g. web-app-builder: `cd assets/apps/<name>/frontend && npm run dev`),
+  skill/README (e.g. web-app-builder: `cd agentic-assets/webapp/<name>/frontend && npm run dev`),
   wait until it answers, then target it. Enumerate its routes (read the app's router
   / `app/` pages) and pass each meaningful route as a URL:
   `--target http://localhost:<port>/ --target http://localhost:<port>/dashboard`.
@@ -87,17 +92,26 @@ invent targets.
 
 Use `uv`'s ephemeral env so nothing is installed into the user's project. The
 Chromium binary lands in the shared Playwright cache (a tool cache, not a user dir),
-so this is a no-op after the first run:
+so this is a no-op after the first run. `--with-deps` also installs the system libraries
+Chromium links against (`libglib`, `libnss3`, `libX11`, …): a Flowpad sandbox is a slim
+image that ships without them, and without them the browser dies at launch with
+`error while loading shared libraries`. Where they are already present it changes nothing:
 
 ```bash
-uv run --with playwright python -m playwright install chromium
+uv run --with playwright python -m playwright install --with-deps chromium
 ```
 
-If `uv` isn't available, fall back to a venv **inside `$OUT`** (still isolated):
+If `uv` isn't available (a Flowpad sandbox ships without it), use the tool's own venv
+at `$WT_HOME/venv` — on disk, outside the user's project, and **reused**: it is created
+and filled once, and every later run finds it ready. Never build it inside `$OUT`: that
+reinstalled ~170MB per run, and on a sandbox put it in RAM next to the app being tested.
 
 ```bash
-python3 -m venv "$OUT/.venv" && "$OUT/.venv/bin/pip" -q install playwright \
-  && "$OUT/.venv/bin/python" -m playwright install chromium
+PY="$WT_HOME/venv/bin/python"
+"$PY" -c "import playwright" 2>/dev/null || {
+  python3 -m venv "$WT_HOME/venv" && "$WT_HOME/venv/bin/pip" -q install playwright
+}
+"$PY" -m playwright install --with-deps chromium
 ```
 
 ## 3. Run the sweep
@@ -109,7 +123,7 @@ uv run --with playwright python \
   --target /abs/path/to/page.html
 ```
 
-(venv fallback: swap the interpreter for `"$OUT/.venv/bin/python"`.) With many
+(venv fallback: swap the interpreter for `"$PY"`.) With many
 targets, write them one-per-line to `$OUT/targets.txt` and pass `--targets-file
 "$OUT/targets.txt"` instead of many `--target` flags.
 
@@ -136,6 +150,19 @@ screenshots and full report. Only copy artifacts into their project if they ask.
 
 If they want the failures **fixed**, that's ordinary editing of their app/pages —
 do it in their project (not in `$OUT`), then re-run the sweep to confirm green.
+
+## 5. Clean up on a sandbox
+
+On a Flowpad sandbox (`IN_SANDBOX=1`), remove the run once you have read its report and
+screenshots — disk there is the user's, and the next run makes its own:
+
+```bash
+[ "$IN_SANDBOX" = 1 ] && rm -rf "$OUT"
+```
+
+Say so in the report instead of pointing at `$OUT`; if the user wants a screenshot kept,
+copy it into their project **before** this step. Keep `$WT_HOME/venv`: it is the reused
+install, not run output. Off a sandbox `$OUT` stays in the temp dir for them to browse.
 
 ## Scope
 

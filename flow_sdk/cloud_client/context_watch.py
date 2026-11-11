@@ -19,9 +19,14 @@ when the last tab drops it.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
+
+# One more try for a watch that failed: a reconnect can land while DNS is still coming back
+# (Ami, 2026-11-07: "/watch 0: [Errno 8]" 10 ms after a 1006 close). Approved by the user as a single retry.
+WATCH_RETRY_SECONDS = 5.0
 
 
 class BrowserContextWatch:
@@ -30,6 +35,8 @@ class BrowserContextWatch:
         self._per_conn: dict[str, set[str]] = {}
         # entity key ("type:id") -> number of local connections currently holding it
         self._refcount: dict[str, int] = {}
+        # keys with a retry already scheduled, so a burst of failures schedules one each
+        self._retrying: set[str] = set()
 
     async def on_context(self, connection_id: str, context: dict) -> None:
         """Reconcile one connection's context snapshot against its prior set.
@@ -145,17 +152,39 @@ class BrowserContextWatch:
             return
         etype, _, eid = key.partition(":")
         try:
-            from flow_sdk.cloud_client.transport.hub_http import hub_post
+            from flow_sdk.cloud_client.hub_proxy import HubProxy
             from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
             et = BuiltinEntityType(etype)
         except Exception:  # noqa: BLE001 — unknown type → nothing to watch
             return
         try:
-            await hub_post(et, {"connection_id": cid}, eid, action=action)
+            # Quiet: a watch is best effort and this swallows its failure -- the one that surfaced was the
+            # unwatch of an agent just deleted ("Target entity not found"), shown as hub errors.
+            await HubProxy.call("POST", et, eid, action, payload={"connection_id": cid}, quiet=True)
             logger.debug("[browser-context-watch] hub %s %s via conn %s", action, key, cid)
         except Exception as e:  # noqa: BLE001
             logger.debug("[browser-context-watch] hub %s failed for %s: %s", action, key, e)
+            if action == "watch" and key not in self._retrying:
+                self._retrying.add(key)
+                asyncio.create_task(self._retry_watch(key))
+
+    async def _retry_watch(self, key: str) -> None:
+        """Send a failed watch once more, if the entity is still held by a connection.
+
+        A single try: if it fails too, the next hub reconnect's ``resync`` re-registers it.
+        ``_hub_call`` itself skips the send when the bridge is not connected.
+        """
+        try:
+            await asyncio.sleep(WATCH_RETRY_SECONDS)
+        finally:
+            self._retrying.discard(key)
+        if key in self._refcount:
+            self._retrying.add(key)  # this try's own failure must not schedule another
+            try:
+                await self._hub_call(key, "watch")
+            finally:
+                self._retrying.discard(key)
 
 
 # Process-wide singleton (one per backend, like ``hub_ws_manager``).

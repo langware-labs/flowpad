@@ -15,6 +15,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { useAllocateAgentMailbox } from '@src/hooks/use-allocate-agent-mailbox';
 import { useContext as useDataContext } from '@src/hooks/useContext';
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { Dialog } from '@src/components/ui/dialog';
@@ -139,6 +140,8 @@ export function DataSourceDialog({
   // asks to add the source — before that the red box reads as a broken dialog, not as guidance.
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A refused save stays in the dialog, beside the button that failed: a toast can land behind it.
+  const [saveError, setSaveError] = useState('');
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Seed the form once per opening, keyed on WHAT is being edited. `specFor`
@@ -211,12 +214,16 @@ export function DataSourceDialog({
   const submit = async () => {
     if (problems.length) return;
     setBusy(true);
+    setSaveError('');
     try {
       if (provisioned) {
         // The one provisioned account today is the agent's mailbox; allocating wires
         // the local source itself.
-        if (await allocateMailbox(new Agent({ id: provisioned }))) {
-          notify.success({ title: t`${spec?.title} is ready` });
+        const owner = await Agent.getById(provisioned);
+        if (!owner) throw new Error(t`This agent is gone`);
+        const allocated = await allocateMailbox(owner);
+        if (allocated) {
+          notify.success({ title: t`${spec?.title} is ready`, message: allocated.mailbox?.address || undefined });
           onOpenChange(false);
         }
         return;
@@ -282,19 +289,23 @@ export function DataSourceDialog({
           open_to_all: draft.open_to_all,
         });
         await source.save(project?.typeId && !ownerAgentId ? [project.typeId] : []);
+        // Sync now rather than on the next heartbeat; a source still in setup has nothing to read yet.
+        if (source.status === 'active') void source.requestPoll().catch(() => {});
         notify.success({ title: t`Added ${source.name}` });
         if (byWizard) {
           setSettingUp(source); // the form gives way to the setup wizard; closing that closes both
           return;
         }
-        if (needsSignIn && source.status !== 'active') {
+        // Any source the backend parked in setup (a sign-in, or a driver with its own check) goes
+        // straight to that setup, rather than closing on "Added" beside a "Setup required" banner.
+        if ((needsSignIn || source.status === 'setup') && source.status !== 'active') {
           setSettingUpSource(source); // the form gives way to its setup: "X is added. It needs one thing…"
           return;
         }
       }
       onOpenChange(false);
     } catch (e) {
-      notify.error({ title: e instanceof Error ? e.message : String(e) });
+      setSaveError(errorMessage(e, String(e)));
     } finally {
       setBusy(false);
     }
@@ -307,7 +318,13 @@ export function DataSourceDialog({
   const renderField = ([key, field]: [string, SpecConfigField]) => {
     const value = draft.fields[key] ?? '';
     const input =
-      field.type === FieldType.LINES ? (
+      field.type === FieldType.BOOL ? (
+        <Switch
+          id={`ds-${key}`}
+          checked={value === 'true'}
+          onCheckedChange={(on) => setField(key, on ? 'true' : 'false')}
+        />
+      ) : field.type === FieldType.LINES ? (
         <Textarea
           id={`ds-${key}`}
           rows={3}
@@ -390,14 +407,17 @@ export function DataSourceDialog({
       <SteppedDialogContent
         ref={contentRef}
         crumbs={crumbs}
+        // The provider grid and the ways-to-connect cards share one fixed height so swapping between them never
+        // jumps; the form is a few fields, and the same height leaves it mostly empty — it takes its own size.
+        className={step === 'form' ? 'h-auto max-h-[85vh]' : undefined}
         description={
           step === 'provider' && beforeSetup ? (
             variant === 'channel' ? (
               <Trans>Where people reach this agent — one number, mailbox or chat per channel.</Trans>
             ) : (
               <Trans>
-                A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the
-                heartbeat.
+                A source is one remote stream — one feed, channel, drive or mailbox. It syncs as soon as it is added,
+                then on the heartbeat.
               </Trans>
             )
           ) : undefined
@@ -427,6 +447,11 @@ export function DataSourceDialog({
             </Button>
           ) : (
             <>
+              {saveError && (
+                <p className="me-auto text-xs text-destructive" role="alert" data-testid="ds-save-error">
+                  {saveError}
+                </p>
+              )}
               <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
                 <Trans>Cancel</Trans>
               </Button>
@@ -507,8 +532,8 @@ export function DataSourceDialog({
             group={group}
             members={groupMembers(specs, group)}
             selected={draft.provider}
-            onPick={(m) => {
-              setDraft(emptyDraft(m));
+            onPick={(m, profile) => {
+              setDraft(emptyDraft(m, profile));
               setStep('form');
             }}
           />
@@ -553,7 +578,9 @@ export function DataSourceDialog({
                       checked={draft.open_to_all}
                       onCheckedChange={(checked) => setDraft((d) => ({ ...d, open_to_all: checked === true }))}
                     />
-                    <Label htmlFor="ds-open-to-all"><Trans>Open to all</Trans></Label>
+                    <Label htmlFor="ds-open-to-all">
+                      <Trans>Open to all</Trans>
+                    </Label>
                   </div>
                 )}
 

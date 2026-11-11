@@ -1,7 +1,7 @@
 """A cloud place, seen from both ends of the wire.
 
-On the cloud machine: the hub hands the box its placement id (``adopt_placement``)
-so the definition's place entries — keyed by that id — apply there.
+On the cloud machine: the hub hands the box its deployment record (``deployment/<id>/adopt``) so the
+box's local deployment of the project carries the hub's id and main agent.
 
 On this computer: a cloud card's verbs (resume, update, its runs) are relayed to
 the hub, which alone can reach the box; and the card says how many published
@@ -17,8 +17,11 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.agent_places import PlaceError, _agent_repo, adopt_placement, behind_count, list_places
+from flow_sdk.builtin.agent_places import PlaceError, _agent_repo, adopt_deployment, behind_count, list_places
 from flow_sdk.builtin.deployment import Deployment, DeploymentActionError
+from flow_sdk.cloud_client.hub_proxy import HubProxy
+from flow_sdk.cloud_client.shared.errors import HubError
+from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
 from tests.unit.agent._seed import seed_agent, seed_project
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
@@ -34,13 +37,20 @@ async def _agent(tmp_path: Path, name: str, **fields) -> Agent:
 async def _cloud_place(agent: Agent, **fields) -> Deployment:
     deployment = Deployment(
         name=f"{agent.name} (e2b)",
-        parent_type_id=str(agent.typeid),
+        parent_type_id=f"project-{agent.project_id}",
+        main_agent_id=str(agent.typeid),
         target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
         **fields,
     )
     await deployment.save()
     return deployment
+
+
+async def adopt_placement(agent: Agent, deployment_id: str, environment: str | None = None) -> Deployment:
+    """What the hub sends a box: its deployment record, the agent as main."""
+    record = {"id": deployment_id, "parent_type_id": f"project-{agent.project_id}", "main_agent_id": str(agent.typeid)}
+    return await adopt_deployment({**record, **({"environment": environment} if environment else {})})
 
 
 @pytest.mark.asyncio
@@ -75,9 +85,10 @@ async def test_one_placement_per_environment_on_a_provider(tmp_path):
     staging = await _cloud_place(agent, environment="staging")
     production = await _cloud_place(agent, environment="production")
 
-    assert (await Deployment.find_existing(str(agent.typeid), "e2b", environment="staging")).id == staging.id
-    assert (await Deployment.find_existing(str(agent.typeid), "e2b", environment="production")).id == production.id
-    assert await Deployment.find_existing(str(agent.typeid), "e2b", environment="qa") is None
+    project = f"project-{agent.project_id}"
+    assert (await Deployment.find_existing(project, "e2b", environment="staging")).id == staging.id
+    assert (await Deployment.find_existing(project, "e2b", environment="production")).id == production.id
+    assert await Deployment.find_existing(project, "e2b", environment="qa") is None
 
 
 class _Hub:
@@ -85,10 +96,22 @@ class _Hub:
         self.calls: list[tuple] = []
         self.configured = configured
 
+    async def call(self, method, etype, eid=None, action=None, sub=None, *, payload=None, **kw):
+        if not self.configured:
+            self.calls.append((method, etype, eid, action) + ((kw.get("params"),) if method == "GET" else ()))
+            raise HubError(0, "no hub configured", kind=HubFailureKind.NOT_CONFIGURED)
+        if method == "GET":
+            return await self.get(etype, eid, action, **kw)
+        return await self.post(etype, payload, eid, action)
+
+    async def try_call(self, method, etype, eid=None, action=None, sub=None, **kw):
+        try:
+            return await self.call(method, etype, eid, action, sub, **kw)
+        except HubError:
+            return None
+
     async def post(self, etype, payload, eid=None, action=None, **_):
         self.calls.append(("POST", etype, eid, action))
-        if not self.configured:
-            return None
         if action in ("pause", "resume"):
             # A lifecycle verb answers with the placement as the hub now holds it.
             from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
@@ -106,8 +129,8 @@ class _Hub:
 @pytest.fixture
 def hub(monkeypatch):
     fake = _Hub()
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake.post)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", fake.get)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake.call))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake.try_call))
     return fake
 
 
@@ -123,6 +146,7 @@ async def test_adopt_placement_rekeys_this_machines_placement_to_the_hub_id(tmp_
     adopted = await adopt_placement(agent, HUB_ID)
 
     assert adopted.id == HUB_ID and adopted.is_local
+    assert (adopted.main_agent_id, adopted.serving) == (str(agent.typeid), True), "a box with a main agent serves it"
     assert await Deployment.get_by_id(minted.id) is None, "one placement, one id — the minted row is gone"
     # Every later lookup converges on the adopted row, so the place entries keyed
     # by the hub id are the ones this machine applies.
@@ -136,7 +160,7 @@ async def test_adopt_placement_rekeys_this_machines_placement_to_the_hub_id(tmp_
 async def test_adopt_placement_refuses_a_bad_or_foreign_id(tmp_path):
     agent = await _agent(tmp_path, "adopt-owner")
     other = await _agent(tmp_path, "adopt-other")
-    foreign = await other.local_deployment()
+    foreign = await other.deploy("local")
     cloud = await _cloud_place(agent)
 
     with pytest.raises(PlaceError):

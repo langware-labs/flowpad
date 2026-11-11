@@ -13,6 +13,7 @@ import { lazyAssets, LazyAsset } from '../lazy';
 
 import { EventEmitter } from 'events';
 import apiClient from '../client';
+import { browserProfileManager, type ProfileChoice } from './browser-profiles';
 import { sdkConfig } from '../config/index';
 import { API_PREFIX } from '../config/SDKConfig';
 import { isHubOnly } from '../utils/hub-runtime';
@@ -117,7 +118,8 @@ export interface CloudStatusData extends DesktopInfoSeed {
  * Lives on its own slot (not on the connection-status slot) — a 4xx/5xx from
  * a hub HTTP call is a request-level failure, not a WebSocket connectivity
  * problem. Surfaced through the warnings system so the user can see + copy
- * the full detail; auto-cleared on explicit dismiss.
+ * the full detail; cleared on explicit dismiss, or when the hub answers that
+ * same request (`hub_client_recovered_msg`). One that never gets an answer stays.
  */
 export interface HubClientErrorInfo {
   method: string;
@@ -308,6 +310,7 @@ class CloudManager extends EventEmitter {
       } as CloudLoginStatusMessage);
     });
     cm.on('on_hub_client_error_msg', (msg: Record<string, unknown>) => this._onHubClientError(msg));
+    cm.on('on_hub_client_recovered_msg', (msg: Record<string, unknown>) => this._onHubClientRecovered(msg));
     // Resync after a local-WS reconnect: connection-status broadcasts that
     // landed while the socket was down would otherwise be lost forever,
     // leaving the avatar stuck on whatever state we saw last.
@@ -510,7 +513,7 @@ class CloudManager extends EventEmitter {
   async login(opts?: {
     popup?: boolean;
     refresh?: 'reload' | 'session';
-    browserProfile?: { browser: string; profile: string };
+    browserProfile?: ProfileChoice;
   }): Promise<CloudLoginResult | void> {
     // Any locally-initiated login attempt — including a click on
     // `SessionTakenOverOverlay`'s own button — dismisses the sticky
@@ -555,7 +558,7 @@ class CloudManager extends EventEmitter {
     try {
       const started = await apiClient.post<{ url?: string; present_in_browser?: boolean }>(
         '/cloud/login',
-        opts?.browserProfile,
+        opts?.browserProfile ?? browserProfileManager.selected ?? undefined,
       );
       if (started?.present_in_browser && started.url) {
         const popup = window.open(started.url, LOGIN_POPUP_NAME, LOGIN_POPUP_FEATURES);
@@ -977,6 +980,15 @@ class CloudManager extends EventEmitter {
     this._lastHubError = { method, path, statusCode, message, ts: Date.now() };
     this.emit('hub_client_error', msg);
     this.emit('last_hub_error_changed', this._lastHubError);
+  }
+
+  private _onHubClientRecovered(msg: Record<string, unknown>) {
+    const method = String(msg.method ?? '');
+    const path = String(msg.path ?? '');
+    this.emit('hub_client_recovered', { method, path });
+    if (this._lastHubError?.method === method && this._lastHubError.path === path) {
+      this.clearLastHubError();
+    }
   }
 
   /** Most recent hub HTTP error, or null if none / dismissed. */

@@ -19,10 +19,12 @@ import type { UseUserApiKeys } from './use-user-api-keys';
 
 interface FlowPadApiKeyPanelProps {
   keys: UseUserApiKeys;
+  /** The key's name when a link asked for one (`?name=`); the FlowPad key otherwise. */
+  keyName?: string;
   className?: string;
 }
 
-export const FlowPadApiKeyPanel: React.FC<FlowPadApiKeyPanelProps> = ({ keys, className }) => {
+export const FlowPadApiKeyPanel: React.FC<FlowPadApiKeyPanelProps> = ({ keys, keyName, className }) => {
   const existing = keys.flowpadKey;
 
   return (
@@ -86,7 +88,7 @@ export const FlowPadApiKeyPanel: React.FC<FlowPadApiKeyPanelProps> = ({ keys, cl
           data-testid="flowpad-api-key-generate"
         >
           <Key className="h-4 w-4" />
-          <Trans>Generate FlowPad API Key</Trans>
+          {keyName ? <Trans>Generate {keyName}</Trans> : <Trans>Generate FlowPad API Key</Trans>}
         </Button>
       )}
     </div>

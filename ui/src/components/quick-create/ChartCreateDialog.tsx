@@ -27,6 +27,12 @@ export const ChartCreateDialog: React.FC<{
   const formats: { value: ChartFormat; label: string; hint: string }[] = [
     { value: 'sequence', label: t`Sequence`, hint: t`who calls whom, step by step — with sub-flows and feedback` },
     { value: 'excalidraw', label: t`Whiteboard (Excalidraw)`, hint: t`a freehand board to draw on` },
+    {
+      value: 'architecture',
+      label: t`Architecture`,
+      hint: t`services, databases and clients in grouped boxes, with numbered steps`,
+    },
+    { value: 'c4', label: t`C4 architecture`, hint: t`systems, containers and components, zoomable level by level` },
     { value: 'mermaid', label: t`Mermaid`, hint: t`any diagram written as mermaid text` },
   ];
 

@@ -1,9 +1,15 @@
 import * as React from 'react';
 import * as PopoverPrimitive from '@radix-ui/react-popover';
 
+import { useIframeDismissibleOpen } from '@src/hooks/use-close-on-iframe-focus';
 import { cn } from '../../lib/utils';
 
-const Popover = PopoverPrimitive.Root;
+/** Closes on a press inside a web app tab's iframe too, which Radix's own
+ *  outside-press dismissal never sees. */
+function Popover(props: React.ComponentProps<typeof PopoverPrimitive.Root>) {
+  const state = useIframeDismissibleOpen(props);
+  return <PopoverPrimitive.Root {...props} {...state} />;
+}
 
 const PopoverTrigger = PopoverPrimitive.Trigger;
 

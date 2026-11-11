@@ -168,7 +168,7 @@ describe('AssetVibeWorkspace', () => {
     expect(opened.viewMode).toBe(ViewMode.Vibe);
     // Flagged as the workspace's REPLACEABLE display: the agent's next show
     // re-points this one row instead of minting a chip per show.
-    expect(opened.isActiveDisplay).toBe(true);
+    expect(opened.hostProcessId).toBeTruthy();
   });
 
   // The second delivery channel (`dataManager.on('on_entity_event')`, which closes

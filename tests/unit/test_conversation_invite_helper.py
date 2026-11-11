@@ -9,7 +9,7 @@ is a hub-owned root). ``discard_invite_conversation`` removes a conversation
 whose invite failed.
 
 Only the network hops are stubbed: ``FlowpadClient.request`` (create, join,
-invite, delete) and ``flow_sdk.utils.hub.hub_post``.
+invite, delete) and ``HubProxy``.
 
 # do not increase timeout without approval
 """
@@ -20,11 +20,13 @@ import json
 from types import SimpleNamespace
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.project import Project
 from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 SHARER = "0a0a0a0a-0000-4000-8000-000000000001"
 
@@ -43,6 +45,8 @@ class _Hub(list):
     body of each."""
 
     bodies: list
+    # ``answer(path, body) -> (status, payload)``; the default answers every hop with empty success.
+    answer = staticmethod(lambda path, body: (200, {"status": "success", "data": {}}))
 
 
 @pytest.fixture()
@@ -53,19 +57,23 @@ def hub(monkeypatch):
     async def fake_request(self, method, path, **kwargs):
         calls.append((method, path))
         calls.bodies.append((path, kwargs.get("json")))
-        return _FakeResponse(200, {"status": "success", "data": {}})
-
-    async def fake_hub_post(entity_type, data, *path_parts, action=None, **_kwargs):
-        calls.append(("HUB_POST", action or "/".join(str(p) for p in path_parts[1:])))
-        return {}
+        return _FakeResponse(*calls.answer(path, kwargs.get("json") or {}))
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
-        lambda *a, **k: SimpleNamespace(api_key="test-key", user={"id": SHARER, "email": "sharer@example.com"}),
+        lambda *a, **k: SimpleNamespace(
+            api_key="test-key", user={"id": SHARER, "email": "sharer@example.com"}, is_expired=lambda *_a: False
+        ),
     )
     monkeypatch.setattr("flow_sdk.cloud_client.client.ApiConfig.from_env", staticmethod(lambda: None))
     monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.request", fake_request)
-    monkeypatch.setattr("flow_sdk.utils.hub.hub_post", fake_hub_post)
+    # The shared hub transport (``HubProxy.send``) answers from the same fake.
+
+    async def fake_send(method, url, **kwargs):
+        fake = await fake_request(None, method, str(url), **kwargs)
+        return httpx.Response(fake.status_code, text=fake.text, request=httpx.Request(method, str(url)))
+
+    monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))
     return calls
 
 
@@ -141,3 +149,73 @@ async def test_discard_deletes_on_the_hub_and_locally(hub):
 
     assert hub[-1][0] == "DELETE"
     assert await Conversation.get_one({"id": conv.id}) is None
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_conversation_default_and_explicit_role_sets(hub):
+    conv = await _conversation()
+    await conv.share(recipients=["default@example.com"])
+    assert _invitations(hub)[-1]["invitation_targets"][0]["roles"] == ["reader", "runner"]
+    await conv.share(recipients=["run@example.com"], invitation={
+        "invitation_targets": [{"typeid": str(conv.typeid), "roles": ["runner"]}]
+    })
+    assert _invitations(hub)[-1]["invitation_targets"][0] == {"typeid": str(conv.typeid), "roles": ["runner"]}
+
+
+def _hub_answering(calls: _Hub, create_data: dict, fail_on: str | None = None):
+    """Re-point the fake hub: the create answers ``create_data``; a ``/members`` body
+    naming ``fail_on`` is refused."""
+
+    def answer(path, body):
+        path = path.rstrip("/")
+        if fail_on and path.endswith("/members") and body.get("recipient_email") == fail_on:
+            return 403, {"detail": "no"}
+        return 200, {"status": "success", "data": create_data if path.endswith("/conversation") else {}}
+
+    calls.answer = answer
+
+
+def _paths(calls: _Hub) -> list[str]:
+    return [p.rstrip("/").rsplit("/", 1)[-1] for _m, p in calls]
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_create_that_stamps_the_owner_needs_no_join(hub):
+    _hub_answering(hub, {"initiated_by": SHARER})
+    conv = await _conversation()
+
+    await conv.share(recipients=["a@example.com", "b@example.com"])
+
+    assert "join" not in _paths(hub)
+    assert sorted(b["recipient_email"] for b in _invitations(hub)) == ["a@example.com", "b@example.com"]
+    assert conv.initiated_by == SHARER
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_hub_that_does_not_stamp_the_owner_still_gets_the_join(hub):
+    _hub_answering(hub, {})
+    conv = await _conversation()
+
+    await conv.share(recipients=["a@example.com"])
+
+    paths = _paths(hub)
+    assert paths.index("join") < paths.index("members")
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_one_refused_invitation_fails_the_share_after_all_were_sent(hub):
+    from flow_sdk.cloud_client.shared.errors import HubError
+
+    _hub_answering(hub, {"initiated_by": SHARER}, fail_on="a@example.com")
+    conv = await _conversation()
+
+    with pytest.raises(HubError):
+        await conv.share(recipients=["a@example.com", "b@example.com"])
+
+    assert len(_invitations(hub)) == 2

@@ -146,7 +146,7 @@ class Capability(Entity):
     # ApiAuthSpec.default_provider.
     api_provider: str | None = APIField(default=None)
     # User overrides for the tier→model mapping, layered over the driver's
-    # ApiAuthSpec.tier_models code defaults: {provider: {name: model_slug}} where
+    # endpoint tiers: {provider: {name: model_slug}}, with 'device' for native login, where
     # name is a tier (sm/md/lg) or a custom option name. Persisted + user-editable;
     # like auth_mode it is NOT in the ensure_seeded reconcile list.
     model_map: dict[str, Any] = APIField(default_factory=dict)
@@ -574,6 +574,9 @@ class Capability(Entity):
         if worker_type is None:
             return None
         result = await get_driver(worker_type).auth_probe()
+        from flow_sdk.builtin.agentic_process.launch_health import CLI_CRASHES  # noqa: PLC0415
+
+        CLI_CRASHES[worker_type] = result.message if (result.details or {}).get("cli_crashed") else ""
         # The mirror saves whatever it changes -- see its docstring.
         await self._mirror_probe_to_login_state(result)
         return result

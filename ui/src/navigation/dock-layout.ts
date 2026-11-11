@@ -49,7 +49,7 @@ export function resolveDockLayout({ dock, isVibe, hasVibeSession }: DockLayoutIn
   const hubMode = dock?.page === PageId.HUB;
   // A `flow show`-pinned preview stays in the Vibe workspace's display pane; only
   // the agent's own pin (`isActiveDisplay`) — a file the USER opened keeps the asset chrome.
-  const isPreviewDisplay = !!dock && !!dock.hostProcessId && dock.isActiveDisplay && isPreviewAssetDock(dock);
+  const isPreviewDisplay = !!dock && !!dock.hostProcessId && isPreviewAssetDock(dock);
   if (dock && !hubMode && isContentAssetDock(dock) && !isPreviewDisplay) {
     // The chat beside an asset is its HOST's session (Discuss → a Vibe host tab with
     // the asset as its child), never the ambient mode. An asset with its own chat

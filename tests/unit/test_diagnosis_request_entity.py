@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from flow_sdk.builtin.diagnosis_request import DiagnosisRequest
 from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.schema.data_spec.diagnosis_request_spec import DiagnosisFundingSpec, DiagnosisRequestOpenSpec
 
 pytestmark = [pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -69,21 +70,21 @@ async def test_only_prompt_shaped_assets_may_be_sent_along():
 async def test_an_uploaded_key_is_reused_only_from_an_endpoint_this_user_created(monkeypatch):
     """Someone else's endpoint with the same name, shared here, must not carry the runner's traffic."""
     from flow_sdk.builtin import diagnosis_request
-    from flow_sdk.cloud_client.transport import hub_http
 
     name = "openrouter key (uploaded for diagnosis requests)"
     listed = [{"id": "theirs", "name": name, "provider": "openrouter", "created_by": "someone-else"}]
     posted = []
 
-    async def hub_get(*_a, **_k):
+    async def fake_try_call(*_a, **_k):
         return listed
 
-    async def hub_post(entity_type, body, entity_id=None, action=None, *_a, **_k):
+    async def hub_call(method, entity_type, entity_id=None, action=None, *_a, **_k):
+        assert method == "POST"
         posted.append((entity_id, action))
         return {"id": "mine"}
 
-    monkeypatch.setattr(hub_http, "hub_get", hub_get)
-    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_try_call))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(hub_call))
     monkeypatch.setattr("flow_sdk.cli.auth.lm_api_keys.get_lm_api", lambda _p: "sk-or-test")
     monkeypatch.setattr("flow_sdk.cli.app_config.get_user", lambda: {"id": "me"})
 
@@ -118,19 +119,19 @@ async def test_a_run_pushed_by_the_hub_posts_one_feed_entry_that_opens_the_reque
 
 async def test_an_edit_sends_the_new_instructions_to_the_hub_and_keeps_the_title_once_a_run_came_back(monkeypatch):
     """The label follows the instructions; the title only while no run has replaced it."""
-    from flow_sdk.cloud_client.transport import hub_http
     from flow_sdk.schema.data_spec.diagnosis_request_spec import DiagnosisRequestEditSpec
 
     put: list[dict] = []
 
-    async def hub_put(entity_type, entity_id, payload, *_a, **_k):
+    async def fake_call(method, entity_type, entity_id=None, *_a, payload=None, **_k):
+        assert method == "PUT"
         put.append(payload)
         return payload
 
     async def pull(self):
         return self
 
-    monkeypatch.setattr(hub_http, "hub_put", hub_put)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     monkeypatch.setattr(DiagnosisRequest, "pull", pull)
 
     fresh = DiagnosisRequest(id="1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f", name="old", title="old", run_count=0)
@@ -153,19 +154,19 @@ async def test_an_edit_sends_the_new_instructions_to_the_hub_and_keeps_the_title
 async def test_an_edit_can_turn_the_runners_questions_on_and_off(monkeypatch):
     """A request opened unasked (the default) can be switched to asking later, and back -- on the
     hub, where the runner reads it, and on this computer's copy."""
-    from flow_sdk.cloud_client.transport import hub_http
     from flow_sdk.schema.data_spec.diagnosis_request_spec import DiagnosisRequestEditSpec
 
     put: list[dict] = []
 
-    async def hub_put(entity_type, entity_id, payload, *_a, **_k):
+    async def fake_call(method, entity_type, entity_id=None, *_a, payload=None, **_k):
+        assert method == "PUT"
         put.append(payload)
         return payload
 
     async def pull(self):
         return self
 
-    monkeypatch.setattr(hub_http, "hub_put", hub_put)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     monkeypatch.setattr(DiagnosisRequest, "pull", pull)
     request = DiagnosisRequest(id="3f405162-7c8d-4e9f-a0b1-2c3d4e5f6071", name="r")
     await request.save()
@@ -185,11 +186,10 @@ async def test_the_sidebar_lists_requests_from_the_hub_newest_run_first(monkeypa
     """A request has no file for the indexer, so it is not default-indexed (that broke the
     indexable-types guard); the Assets sidebar lists it from the hub, like ``llm_endpoint``."""
     from flow_sdk.builtin import diagnosis_request as module
-    from flow_sdk.cloud_client.transport import hub_http
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
-    async def hub_get_or_raise(entity_type, *_a, **_k):
-        assert entity_type == "diagnosis_request"
+    async def fake_call(method, entity_type, *_a, **_k):
+        assert method == "GET" and entity_type == "diagnosis_request"
         return [
             {
                 "id": "a",
@@ -206,7 +206,7 @@ async def test_the_sidebar_lists_requests_from_the_hub_newest_run_first(monkeypa
             },
         ]
 
-    monkeypatch.setattr(hub_http, "hub_get_or_raise", hub_get_or_raise)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     await DiagnosisRequest(id="a1b2c3d4-0000-4000-8000-00000000000b", name="newer", project_id="p1").save()
 
     monkeypatch.setattr("flow_sdk.cli.auth.hub_login.hub_auth_available", lambda: True)
@@ -221,19 +221,19 @@ async def test_the_sidebar_lists_requests_from_the_hub_newest_run_first(monkeypa
 async def test_an_edit_asks_the_hub_for_a_new_window_from_now_and_a_new_run_size(monkeypatch):
     from datetime import UTC, datetime, timedelta
 
-    from flow_sdk.cloud_client.transport import hub_http
     from flow_sdk.schema.data_spec.diagnosis_request_spec import DiagnosisRequestEditSpec
 
     posted: list[tuple] = []
 
-    async def hub_post(entity_type, body, entity_id=None, action=None, *_a, **_k):
-        posted.append((action, body))
+    async def fake_call(method, entity_type, entity_id=None, action=None, *_a, payload=None, **_k):
+        assert method == "POST"
+        posted.append((action, payload))
         return {}
 
     async def pull(self):
         return self
 
-    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     monkeypatch.setattr(DiagnosisRequest, "pull", pull)
     request = DiagnosisRequest(id="40516273-8d9e-4fa0-b1c2-3d4e5f607182", name="r")
 
@@ -249,12 +249,11 @@ async def test_an_edit_asks_the_hub_for_a_new_window_from_now_and_a_new_run_size
 
 async def test_a_signed_out_computer_lists_no_requests_and_does_not_ask_the_hub(monkeypatch):
     from flow_sdk.builtin import diagnosis_request
-    from flow_sdk.cloud_client.transport import hub_http
 
-    async def hub_get_or_raise(*_args, **_kwargs):
+    async def fake_call(*_args, **_kwargs):
         raise AssertionError("a signed-out computer asked the hub for its diagnosis requests")
 
-    monkeypatch.setattr(hub_http, "hub_get_or_raise", hub_get_or_raise)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     monkeypatch.setattr("flow_sdk.cli.auth.hub_login.hub_auth_available", lambda: False)
 
     assert await diagnosis_request.mine() == []

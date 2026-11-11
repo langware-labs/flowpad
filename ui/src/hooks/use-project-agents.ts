@@ -9,6 +9,9 @@ import { useMemo } from 'react';
  *  cheaper than a capped one plus an uncapped one. */
 export const MAX_HOME_AGENTS = 8;
 
+/** Where a project keeps its `Agent` assets, relative to its root. */
+const AGENT_DIR = 'agentic-assets/agent';
+
 /** The half-open `[<dir><sep>, <dir><next>)` pair `Entity.assets_by_path` uses
  *  server-side, where `next` is the codepoint after the separator — so a dir
  *  matches exactly its strict descendants. */
@@ -97,7 +100,14 @@ export function useProjectAgents(project?: Project | null) {
         // created-date — a launcher that reshuffles as agents are added is
         // disorienting.
         query: new QueryFilter({
-          match: new ExpressionNode({ op: '$OR', operands: roots.flatMap(underDir) }),
+          // Only each root's own agent folder: a root is a whole checkout, and a
+          // package checkout can carry other agents deeper down (the bundled
+          // system assistant, build/ copies, worktrees, test fixtures) that are
+          // not the package's to offer.
+          match: new ExpressionNode({
+            op: '$OR',
+            operands: roots.flatMap((root) => underDir(`${root}/${AGENT_DIR}`)),
+          }),
           order_by: { name: 'asc' },
         }),
       });

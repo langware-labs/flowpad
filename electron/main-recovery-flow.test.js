@@ -30,8 +30,8 @@ const EXPOSE = `
 module.exports.__t = {
   handleFatalFailure, runRecoveryUpdate, showRecoveryEntry, installAndStartBackend, waitForBackend, exportDiagnostics,
   setupElectronAutoUpdater, readRecoveryState,
-  primeLaunchCheck: () => { launchDesktopCheck = updateRecovery.boundedCheck(() => getDesktopUpdateVersion(), { log }); },
-  setLaunchDesktopCheck: (p) => { launchDesktopCheck = p; },
+  primeLaunchCheck: () => { launchDesktopCheckRan = true; launchDesktopCheck = updateRecovery.boundedCheck(() => getDesktopUpdateVersion(), { log }); },
+  setLaunchDesktopCheck: (p) => { launchDesktopCheckRan = true; launchDesktopCheck = p; },
   setMainWindow: (w) => { mainWindow = w; },
   setQuitting: (v) => { isQuitting = v; },
   setUvManager: (u) => { uvManager = u; },
@@ -103,6 +103,8 @@ function load(opts = {}) {
     async installLatest() { uv.installs = (uv.installs || 0) + 1; if (opts.installFails) throw opts.installFails(uv.installs); this._flowBin = '/fake/bin/flow'; }
     hadInterruptedInstall() { return false; }
     getInstalledVersionSync() { return opts.engine || '0.2.203'; }
+    installedPairIssue() { return null; }
+    async resolveCompatibleEngineVersion() { return null; }
     _toolVenvDir() { return venv; }
     async _pypiUpdateStatus() { return null; }
     deferPackageVersion() {}
@@ -116,6 +118,7 @@ function load(opts = {}) {
     async repairRuntime(args) { uv.repairs++; uv.lastRepair = args; if (opts.repairOk) return { ok: true, python: 'C:\\r\\python.exe' }; throw Object.assign(new Error('not in this test'), { step: 'download' }); }
     isInstalling() { return false; }
     setFailureSharer() {}
+    backfillEngineOwnership() {}
     openPackageDialogVersion() { return null; }
     async getLatestPypiVersion() { return null; }
     lastLaunch() { return null; }

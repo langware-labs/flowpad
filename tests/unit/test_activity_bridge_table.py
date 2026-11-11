@@ -8,6 +8,8 @@ The conversions that matter are the ones where the two shapes DISAGREE: the old 
 `total=0` means "unknown", and its `done` already includes the skipped.
 """
 
+from dataclasses import replace
+
 import pytest
 
 from flow_sdk.activity import Activity, ActivityState
@@ -185,3 +187,44 @@ def test_a_type_that_reached_its_total_is_finished_while_others_run():
     states = {c.name: c.state for c in act.spec().children}
     assert states["skill"] == ActivityState.COMPLETED
     assert states["markdown"] != ActivityState.COMPLETED
+
+
+def test_a_step_with_no_known_total_ends_done_with_the_job_not_interrupted():
+    """The indexer's cleanup row may never learn a total (no types to sweep). Legacy rows
+    carry no end signal, so the terminal table must close it as done — otherwise the
+    root's done() cuts it off and the receipt says `interrupted`."""
+    act = Activity.get("index")
+    rows = (
+        TypeProgressRow(type_name="markdown", done=3, total=3),
+        TypeProgressRow(type_name="cleanup", done=0, total=0),
+    )
+
+    mirror_table(act, table(rows=rows, done=3, total=3))
+    assert act.spec().children[1].state == ActivityState.RUNNING, "cleanup still at work"
+
+    mirror_table(act, table(rows=rows, done=3, total=3, text=PROGRESS_TEXT_COMPLETE))
+    assert [c.state for c in act.spec().children] == [ActivityState.COMPLETED, ActivityState.COMPLETED]
+
+
+def test_a_row_marked_finished_ends_even_short_of_its_total():
+    """A type whose count fell short (failed files) or never had a total stays running
+    forever unless the producer says it is over; the chip would name it as the step at
+    work and hide the indexer's cleanup behind it."""
+    act = Activity.get("index")
+    short = TypeProgressRow(type_name="markdown", done=1569, total=1578, errors=8)
+    mirror_table(act, table(rows=(short,), done=1569, total=1578))
+    assert act.spec().children[0].state == ActivityState.RUNNING
+
+    mirror_table(act, table(rows=(replace(short, finished=True),), done=1569, total=1578))
+    assert act.spec().children[0].state == ActivityState.COMPLETED
+
+
+def test_a_step_the_table_stops_reporting_is_over():
+    """The scan phase counts types the index table does not carry; once the index
+    tables arrive those scan steps are done, not still running."""
+    act = Activity.get("index")
+    mirror_table(act, table(job_name="scan", rows=(TypeProgressRow(type_name="claude_hook_source", done=9, total=0),)))
+    mirror_table(act, table(rows=(TypeProgressRow(type_name="markdown", done=1, total=5),), done=1, total=5))
+
+    states = {c.name: c.state for c in act.spec().children}
+    assert states == {"claude_hook_source": ActivityState.COMPLETED, "markdown": ActivityState.RUNNING}

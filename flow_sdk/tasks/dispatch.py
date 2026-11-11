@@ -59,13 +59,24 @@ async def dispatch(task) -> Optional[str]:
     creator = await Agent.get_by_id(creator_id) if creator_kind == "agent" else None
     spec = load_subagent(name, await staff_dir(creator) if creator is not None else None)
     if spec is None:
-        await ledger.record(task, ledger.TaskEvent.FAILED, author=ledger.SYSTEM, text=f"No staff member named {name!r}.")
+        await ledger.record(
+            task, ledger.TaskEvent.FAILED, author=ledger.SYSTEM, text=f"No staff member named {name!r}."
+        )
         return None
     process = await _run_for(task, name, spec)
     await ledger.attach_run(task, str(process.typeid))
-    first = ledger.render_event({"task_id": task.id, "event": "created", "author": task.creator, "title": task.title,
-                                 "text": await ledger.brief_of(task)})
-    await give_turn(process, f"{first}\n\nYou own this task (id {task.id}). Begin with `flow task start {task.id}`.", task)
+    first = ledger.render_event(
+        {
+            "task_id": task.id,
+            "event": "created",
+            "author": task.creator,
+            "title": task.title,
+            "text": await ledger.brief_of(task),
+        }
+    )
+    await give_turn(
+        process, f"{first}\n\nYou own this task (id {task.id}). Begin with `flow task start {task.id}`.", task
+    )
     return str(process.typeid)
 
 
@@ -87,8 +98,9 @@ async def give_turn(process, prompt: str, task=None) -> bool:
     task = task or await Task.get_by_id(str((process.context_data or {}).get("task_id") or ""))
     turns = run_turns(process) + 1
     if task is not None and task.budget_turns and turns > task.budget_turns:
-        await ledger.record(task, ledger.TaskEvent.FAILED, author=ledger.SYSTEM,
-                            text=f"Over its turn budget ({task.budget_turns}).")
+        await ledger.record(
+            task, ledger.TaskEvent.FAILED, author=ledger.SYSTEM, text=f"Over its turn budget ({task.budget_turns})."
+        )
         return False
     process.context_data = {**(process.context_data or {}), "task_turns": turns}
     await process.save()
@@ -107,8 +119,13 @@ async def check_budget(task) -> bool:
     spent = float(getattr(process, "total_cost_usd", 0) or 0) if process is not None else 0.0
     if spent <= task.budget_usd:
         return True
-    await ledger.record(task, ledger.TaskEvent.FAILED, author=ledger.SYSTEM, cost_usd=spent,
-                        text=f"Over its budget: ${spent:.2f} of ${task.budget_usd:.2f}.")
+    await ledger.record(
+        task,
+        ledger.TaskEvent.FAILED,
+        author=ledger.SYSTEM,
+        cost_usd=spent,
+        text=f"Over its budget: ${spent:.2f} of ${task.budget_usd:.2f}.",
+    )
     return False
 
 
@@ -125,8 +142,12 @@ async def check_stalls(now: Optional[datetime] = None) -> list[str]:
         if last is None or (last.data or {}).get("task_event") == ledger.TaskEvent.STALLED.value:
             continue
         if when is not None and now - when >= timedelta(seconds=STALL_AFTER_S):
-            await ledger.record(task, ledger.TaskEvent.STALLED, author=ledger.SYSTEM,
-                                text=f"No update for {int((now - when).total_seconds() // 60)} minutes.")
+            await ledger.record(
+                task,
+                ledger.TaskEvent.STALLED,
+                author=ledger.SYSTEM,
+                text=f"No update for {int((now - when).total_seconds() // 60)} minutes.",
+            )
             stalled.append(task.id)
     return stalled
 
@@ -138,7 +159,9 @@ async def _run_for(task, name: str, spec):
 
     creator_kind, creator_id = ref_kind(task.creator or "")
     agent = await Agent.get_by_id(creator_id) if creator_kind == "agent" else None
-    prompt = str(spec.data.get("prompt") or spec.data.get("prompt_text") or getattr(spec, "prompt_text", "") or "").strip()
+    prompt = str(
+        spec.data.get("prompt") or spec.data.get("prompt_text") or getattr(spec, "prompt_text", "") or ""
+    ).strip()
     ownership = (
         f"You own task {task.id}: {task.title}. The task ledger is your only channel — use the "
         "task-management skill (owner.md). You never talk to the person."
@@ -161,8 +184,11 @@ async def _run_for(task, name: str, spec):
     staff = await _staff_agent(agent, name)
     if staff is not None and staff.system_prompt:
         prompt = ""  # the staff agent's own system prompt stands in for the .md file's
-    context_data = {"task_id": task.id, "instructions": "\n\n".join(p for p in (prompt, ownership) if p),
-                    "launched_by_agent": getattr(agent, "name", "") or ""}
+    context_data = {
+        "task_id": task.id,
+        "instructions": "\n\n".join(p for p in (prompt, ownership) if p),
+        "launched_by_agent": getattr(agent, "name", "") or "",
+    }
     if staff is not None:
         # The staff member is a Flowpad agent of the creator's project: it runs as itself — its worker,
         # options, system prompt and MCP servers — through no placement (``create_agentic_process_from_agent``).
@@ -179,6 +205,9 @@ async def _run_for(task, name: str, spec):
     # A task run never runs staff of its own, and always has the task-management skill.
     process.cli_config = {k: v for k, v in (process.cli_config or {}).items() if k != "agents_json"}
     process.load_flowpad_assistant = True
+    from flow_sdk.builtin.agentic_process.assistant_view import including  # noqa: PLC0415
+
+    process.assistant_skills = including(process.assistant_skills, "task-management")
     return await process.save()
 
 
@@ -216,8 +245,9 @@ async def thread_session(task) -> str:
         return fallback
     source = await runtime.open(row)
     key = source.thread(task.id).key  # type: ignore[attr-defined] — a principal channel names its threads
-    thread = await resolve_thread(channel_of(row), key, await owner_of(row), data_source_id=str(row.id),
-                                  title=task.title or key)
+    thread = await resolve_thread(
+        channel_of(row), key, await owner_of(row), data_source_id=str(row.id), title=task.title or key
+    )
     if not thread.conversation_id:
         return fallback
     return str(TypeId(type=EntityType.CONVERSATION.value, id=str(thread.conversation_id)))
@@ -234,4 +264,14 @@ def _aware(value):
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-__all__ = ["MAX_RUNS", "STALL_AFTER_S", "check_budget", "check_stalls", "dispatch", "dispatch_waiting", "give_turn", "live_runs", "thread_session"]
+__all__ = [
+    "MAX_RUNS",
+    "STALL_AFTER_S",
+    "check_budget",
+    "check_stalls",
+    "dispatch",
+    "dispatch_waiting",
+    "give_turn",
+    "live_runs",
+    "thread_session",
+]

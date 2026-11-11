@@ -3,14 +3,28 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/compon
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
 import { useCopied } from '@src/components/ui/copy-button';
-import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
-import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
+import { VersionChip } from '@src/components/version-popover/version-chip';
+import { upgradeOfferVersion } from '@src/components/version-popover/upgrade-offer';
+import {
+  desktopUpdateAction,
+  isNewerVersion,
+  type DesktopUpdateInfo,
+} from '@src/components/version-popover/desktop-update-action';
+import {
+  activationProblem,
+  getUpdateReadyApi,
+  OPEN_VERSION_POPOVER_EVENT,
+  useUpdateReady,
+  type ActivationResult,
+  type OpenVersionPopoverDetail,
+} from '@src/components/update-ready/update-ready';
 import apiClient from '@sdk/client';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
 import { usePreference } from '@src/hooks/use-preference';
 import { instancePreferences, PrefKey } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
+import { RuntimeLabel } from '@src/components/top-nav-bar/RuntimeChip';
 import { useMinimizeOnClose } from '@src/hooks/use-minimize-on-close';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
@@ -23,7 +37,6 @@ import {
   KeyRound,
   Loader2,
   RefreshCw,
-  Stethoscope,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -71,8 +84,17 @@ interface VersionCheckResponse {
 
 interface ElectronAPI {
   getAppVersion?: () => Promise<string>;
-  upgradeFlowpad?: () => Promise<{ success: boolean; error?: string }>;
+  /** `version`: the release the button names — installed exactly (a prepared older one is not used instead). */
+  upgradeFlowpad?: (version?: string) => Promise<{ success: boolean; error?: string }>;
+  /** The newest release THIS desktop runs: a version newer than the installed one, false (none), null (unknown). */
+  getEngineUpgradeTarget?: () => Promise<string | false | null>;
   openExternal?: (url: string) => Promise<boolean>;
+  getDesktopUpdateInfo?: () => Promise<DesktopUpdateInfo>;
+  /** Starts the updater's own download; when it lands, the usual "update ready" prompt asks to restart. */
+  downloadDesktopUpdate?: () => Promise<{ started: boolean; ready?: boolean; version?: string; reason?: string }>;
+  /** Restarts into the downloaded update — also one postponed with "Later". */
+  installDesktopUpdate?: () => Promise<{ started: boolean; reason?: string }>;
+  onDesktopUpdateState?: (callback: (info: DesktopUpdateInfo) => void) => () => void;
 }
 
 interface InstallVersionResponse {
@@ -254,6 +276,10 @@ function CopyableUrlField({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** A one-line command drawn as a button — shared by the copy-only and the runnable command. */
+export const COMMAND_BUTTON_CLASS =
+  'flex w-full items-center justify-between gap-2 rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-[11px] transition-colors hover:bg-muted';
+
 export function CopyableCommand({ command }: { command: string }) {
   const { t } = useLingui();
   const { copied, copy } = useCopied();
@@ -261,7 +287,7 @@ export function CopyableCommand({ command }: { command: string }) {
     <button
       type="button"
       onClick={() => void copy(command).catch(() => undefined)}
-      className="flex w-full items-center justify-between gap-2 rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-[11px] transition-colors hover:bg-muted"
+      className={COMMAND_BUTTON_CLASS}
       title={t`Copy to clipboard`}
     >
       <span className="break-all text-start">{command}</span>
@@ -274,9 +300,9 @@ interface VersionPopoverProps {
   currentVersion: string;
 }
 
-export function VersionPopover({ currentVersion }: VersionPopoverProps) {
+export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverProps) {
   const { navigation } = useDockNavigation();
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const [open, setOpen] = useState(false);
   // Closing the popover genie-minimizes it into the version button.
   const { sourceRef, targetRef, handleOpenChange } = useMinimizeOnClose(setOpen);
@@ -288,12 +314,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const [picking, setPicking] = useState(false);
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
   const [installResult, setInstallResult] = useState<InstallVersionResponse | null>(null);
+  // The server may have restarted onto another version since this page loaded: show what it runs
+  // (`pypi.current` is the running server's own version).
+  const runningVersion = data?.pypi?.current || pageVersion;
+  const pageIsStale = runningVersion !== pageVersion;
   const [restarting, setRestarting] = useState(false);
-  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
-  const [diagReport, setDiagReport] = useState<{
-    diagnosisId: string;
-    conversationId?: string;
-  } | null>(null);
 
   const isDev = useIsDev();
   const context = useContext();
@@ -330,10 +355,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     }
   }, []);
 
+  // Every open asks again: the running version is only true as of the last ask.
   useEffect(() => {
-    if (!open || data || loading) return;
-    void fetchData();
-  }, [open, data, loading, fetchData]);
+    if (open && !loading) void fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per open, not again when the fetch ends
+  }, [open, fetchData]);
 
   useEffect(() => {
     if (!open || !electronApi?.getAppVersion) return;
@@ -351,15 +377,130 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     };
   }, [open, electronApi]);
 
-  const handleUpgrade = useCallback(async () => {
-    if (!electronApi?.upgradeFlowpad) return;
-    setUpgrading(true);
+  // Desktop: the release to offer is the newest one THIS desktop runs — PyPI's newest may need a newer desktop.
+  // undefined until asked; null when the desktop could not tell (PyPI's newest is offered, and checked on click).
+  const [desktopTarget, setDesktopTarget] = useState<string | false | null | undefined>(undefined);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || !electronApi?.getEngineUpgradeTarget) return;
+    let cancelled = false;
+    setUpgradeError(null);
+    electronApi
+      .getEngineUpgradeTarget()
+      .then((v) => {
+        if (!cancelled) setDesktopTarget(v);
+      })
+      .catch(() => {
+        if (!cancelled) setDesktopTarget(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, electronApi]);
+  // Desktop: the updater's own state, refreshed on every open and pushed while a download runs.
+  const [desktopUpdate, setDesktopUpdate] = useState<DesktopUpdateInfo | null>(null);
+  const [desktopUpdateError, setDesktopUpdateError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || !electronApi?.getDesktopUpdateInfo) return;
+    let cancelled = false;
+    setDesktopUpdateError(null);
+    electronApi
+      .getDesktopUpdateInfo()
+      .then((info) => {
+        if (!cancelled) setDesktopUpdate(info);
+      })
+      .catch(() => {
+        /* ignore */
+      });
+    const dispose = electronApi.onDesktopUpdateState?.((info) => {
+      if (!cancelled) setDesktopUpdate(info);
+    });
+    return () => {
+      cancelled = true;
+      dispose?.();
+    };
+  }, [open, electronApi]);
+
+  // Why "Restart" did not apply the update (update-ready.ts) — null when it did.
+  const activationMessage = useCallback(
+    (r: ActivationResult): string | null => {
+      const problem = activationProblem(r);
+      return problem ? i18n._(problem) : null;
+    },
+    [i18n],
+  );
+
+  // One request at a time: a fast double click would otherwise start a second one, refused as "busy".
+  const [desktopRequestPending, setDesktopRequestPending] = useState(false);
+  const handleDesktopUpdate = useCallback(async () => {
+    if (!electronApi?.downloadDesktopUpdate || !electronApi.installDesktopUpdate) return;
+    setDesktopUpdateError(null);
+    setDesktopRequestPending(true);
     try {
-      await electronApi.upgradeFlowpad();
+      const r =
+        desktopUpdate?.state === 'ready'
+          ? await electronApi.installDesktopUpdate()
+          : await electronApi.downloadDesktopUpdate();
+      if (r.started) return;
+      if (r.reason === 'no-update') setDesktopUpdateError(t`This desktop is already the newest version.`);
+      else if (r.reason === 'check-failed')
+        setDesktopUpdateError(t`The update server did not answer. Try again in a few minutes.`);
+      else if (r.reason === 'unsupported') setDesktopUpdateError(t`The desktop update could not be started.`);
+      else setDesktopUpdateError(activationMessage(r));
+    } catch (err) {
+      setDesktopUpdateError(
+        activationMessage({ started: false, error: err instanceof Error ? err.message : String(err) }),
+      );
+    } finally {
+      setDesktopRequestPending(false);
+    }
+  }, [electronApi, desktopUpdate?.state, t, activationMessage]);
+
+  // The ONE ready update set (desktop and/or engine), applied from here or from the "Update Ready" toast; the top
+  // bar's indicator opens this popover for it.
+  const updateReady = useUpdateReady();
+  const [activating, setActivating] = useState(false);
+  const [activateError, setActivateError] = useState<string | null>(null);
+  useEffect(() => {
+    const openIt = (e: Event) => {
+      setOpen(true);
+      const activation = (e as CustomEvent<OpenVersionPopoverDetail | null>).detail?.activation;
+      setActivateError(activation ? activationMessage(activation) : null); // a plain open shows no stale error
+    };
+    window.addEventListener(OPEN_VERSION_POPOVER_EVENT, openIt);
+    return () => window.removeEventListener(OPEN_VERSION_POPOVER_EVENT, openIt);
+  }, [activationMessage]);
+  const handleActivate = useCallback(async () => {
+    const api = getUpdateReadyApi();
+    if (!api?.activateUpdate) return;
+    setActivating(true);
+    setActivateError(null);
+    try {
+      setActivateError(activationMessage(await api.activateUpdate()));
+    } catch (err) {
+      setActivateError(activationMessage({ started: false, error: err instanceof Error ? err.message : String(err) }));
+    } finally {
+      setActivating(false);
+    }
+  }, [activationMessage]);
+
+  const upgradeVersion = upgradeOfferVersion({
+    desktop: Boolean(electronApi?.upgradeFlowpad),
+    desktopTarget,
+    pypiLatest: data?.pypi?.latest,
+  });
+
+  const handleUpgrade = useCallback(async () => {
+    if (!electronApi?.upgradeFlowpad || !upgradeVersion) return;
+    setUpgrading(true);
+    setUpgradeError(null);
+    try {
+      const r = await electronApi.upgradeFlowpad(upgradeVersion);
+      if (r && !r.success) setUpgradeError(r.error ?? t`Install failed.`);
     } finally {
       setUpgrading(false);
     }
-  }, [electronApi]);
+  }, [electronApi, upgradeVersion, t]);
 
   // Wait for the backend to go down and come back healthy, then reload so the
   // (possibly different-version) UI is reloaded fresh. The python monitor restart
@@ -426,34 +567,46 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     // both PyPI rows ended up with a blank date.
     const githubReleases = data?.releases ?? [];
     return {
-      pypiCurrentPublished: findPypiRelease(pypi?.releases, currentVersion),
+      pypiCurrentPublished: findPypiRelease(pypi?.releases, runningVersion),
       pypiLatestPublished: findPypiRelease(pypi?.releases, pypi?.latest),
       electronCurrentRelease: findReleaseByTag(githubReleases, electronVersion),
-      githubUpdateAvailable: Boolean(
-        electronVersion && githubLatest && electronVersion.replace(/^v/i, '') !== githubLatest.tag,
-      ),
+      // Newer, not just different: a test-channel desktop runs ahead of GitHub's latest.
+      githubUpdateAvailable: isNewerVersion(electronVersion, githubLatest?.tag),
     };
-  }, [data?.releases, pypi?.releases, currentVersion, pypi?.latest, electronVersion, githubLatest]);
+  }, [data?.releases, pypi?.releases, runningVersion, pypi?.latest, electronVersion, githubLatest]);
+  const desktopAction = desktopUpdateAction(desktopUpdate, githubUpdateAvailable);
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <button
+        <VersionChip
           ref={targetRef}
-          type="button"
-          className="flex items-center gap-1 rounded-sm px-1.5 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          title={t`Flowpad version`}
-          aria-label={t`Flowpad version`}
+          version={runningVersion}
+          // A desktop with the ready state shows the top bar's "Update ready" instead; a browser tab, and an
+          // older desktop running this UI (no getUpdateReadyInfo), keep the dot.
+          updateAvailable={
+            !getUpdateReadyApi()?.getUpdateReadyInfo && Boolean(pypi?.update_available || githubUpdateAvailable)
+          }
           data-testid="version-popover-trigger"
-        >
-          <span>v{currentVersion}</span>
-          {(pypi?.update_available || githubUpdateAvailable) && (
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-label={t`Update available`} />
-          )}
-        </button>
+        />
       </PopoverTrigger>
       <PopoverContent ref={sourceRef} side="top" align="end" className="w-96 p-3">
         <div className="space-y-3">
+          {pageIsStale && (
+            <div
+              className="flex items-center justify-between gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 px-2 py-1.5 text-xs"
+              data-testid="version-page-stale"
+            >
+              <span>
+                <Trans>
+                  The server now runs v{runningVersion}; this page is still v{pageVersion}.
+                </Trans>
+              </span>
+              <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => window.location.reload()}>
+                <Trans>Reload</Trans>
+              </Button>
+            </div>
+          )}
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -461,7 +614,9 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                 <Trans>Flowpad</Trans>
               </h3>
               <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {mode}
+                {/* What this UI runs on, from the backend — the same label as the nav bar's chip.
+                    `mode` only says whether this is the Electron shell. */}
+                {context?.runtimeKind ? <RuntimeLabel kind={context.runtimeKind} /> : mode}
               </span>
               {isDev && instanceName && (
                 <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -480,6 +635,54 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             </button>
           </div>
+
+          {updateReady?.ready && (
+            <section
+              className="space-y-1.5 rounded-md border border-primary/30 bg-primary/5 p-2"
+              data-testid="version-update-ready"
+            >
+              <h4 className="text-xs font-semibold">
+                <Trans>Update ready</Trans>
+              </h4>
+              <p className="text-[11px] text-muted-foreground">
+                <Trans>Downloaded and checked — ready to install.</Trans>
+              </p>
+              {updateReady.desktop && (
+                <VersionRow label={t`Desktop`} version={`${updateReady.desktop.from} → v${updateReady.desktop.to}`} />
+              )}
+              {updateReady.engine && (
+                <VersionRow
+                  label={t`Engine`}
+                  version={
+                    updateReady.engine.from
+                      ? `${updateReady.engine.from} → v${updateReady.engine.to}`
+                      : updateReady.engine.to
+                  }
+                />
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                {updateReady.restart
+                  ? t`FlowPad restarts to apply it.`
+                  : t`The engine is replaced and the window reloads — FlowPad itself does not restart.`}
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleActivate()}
+                disabled={activating}
+                data-testid="version-update-ready-button"
+                className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+              >
+                {activating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                {updateReady.restart ? t`Update & Restart` : t`Update Engine`}
+              </button>
+            </section>
+          )}
+          {/* Under the section, not in it: an update that is no longer ready has no section, but still says why. */}
+          {activateError && (
+            <p className="text-[10px] text-destructive" data-testid="version-update-ready-error">
+              {activateError}
+            </p>
+          )}
 
           {/* Dev-only: render the local desktop server's hub page for testing/debugging. */}
           {isDev && (
@@ -563,7 +766,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             </div>
             <VersionRow
               label={t`Installed`}
-              version={currentVersion}
+              version={runningVersion}
               date={formatDateWithAge(pypiCurrentPublished?.published_at)}
             />
             <VersionRow
@@ -578,22 +781,23 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                 is version/date/yanked only), and GitHub Releases are desktop
                 tags, so an SDK version never resolves there. The rows that used
                 to try rendered nothing, every time. */}
-            {pypi?.update_available && pypi.latest && (
+            {pypi?.update_available && upgradeVersion && (
               <div className="pt-1">
                 {/* The desktop app upgrades through its own updater; a browser tab asks the backend
                     to install the release and restart (the same install the version picker uses). */}
                 <button
                   type="button"
                   onClick={() =>
-                    void (electronApi?.upgradeFlowpad ? handleUpgrade() : handleInstallVersion(pypi.latest!))
+                    void (electronApi?.upgradeFlowpad ? handleUpgrade() : handleInstallVersion(upgradeVersion))
                   }
                   disabled={upgrading || restarting}
                   data-testid="version-upgrade-button"
                   className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
                 >
                   {upgrading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                  {upgrading ? t`Upgrading…` : t`Upgrade to v${pypi.latest}`}
+                  {upgrading ? t`Upgrading…` : t`Upgrade to v${String(upgradeVersion)}`}
                 </button>
+                {upgradeError && <p className="pt-1 text-[10px] text-destructive">{upgradeError}</p>}
               </div>
             )}
             <button
@@ -614,7 +818,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                 </p>
                 <div className="max-h-48 overflow-y-auto rounded-sm border bg-muted/30 py-0.5">
                   {(pypi?.releases ?? []).map((r) => {
-                    const isCurrent = r.version === currentVersion;
+                    const isCurrent = r.version === runningVersion;
                     const isPending = r.version === pendingVersion;
                     return (
                       <div key={r.version}>
@@ -721,9 +925,42 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               <ReleaseNotes title={`Notes for v${electronVersion}`} release={electronCurrentRelease} />
             )}
             {githubLatest && <ReleaseNotes title={`Notes for v${githubLatest.tag}`} release={githubLatest} />}
-            {mode === 'Desktop' && !githubUpdateAvailable && !data?.github_error && (
+            {/* A downloaded desktop is applied from "Update ready" above — not a second button here. */}
+            {desktopAction && !(desktopAction.kind === 'install' && updateReady?.ready) && (
+              <div className="pt-1">
+                {/* The updater's own download and restart: the same "update ready" prompt follows, and the
+                    engine is updated by the new desktop after the restart. */}
+                <button
+                  type="button"
+                  onClick={() => void handleDesktopUpdate()}
+                  disabled={desktopAction.kind === 'downloading' || desktopUpdate?.busy || desktopRequestPending}
+                  data-testid="desktop-update-button"
+                  className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {desktopAction.kind === 'downloading' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  {desktopAction.kind === 'downloading'
+                    ? t`Downloading… ${String(desktopAction.percent)}%`
+                    : desktopAction.kind === 'install'
+                      ? t`Restart to update to v${String(desktopAction.version)}`
+                      : desktopAction.version
+                        ? t`Update desktop to v${String(desktopAction.version)}`
+                        : t`Update desktop`}
+                </button>
+                {desktopUpdate?.busy && desktopAction.kind !== 'downloading' && (
+                  <p className="pt-1 text-[10px] text-muted-foreground">
+                    <Trans>Another update is in progress.</Trans>
+                  </p>
+                )}
+                {(desktopUpdateError || desktopUpdate?.error) && (
+                  <p className="pt-1 text-[10px] text-destructive">
+                    {desktopUpdateError ?? t`The download failed: ${String(desktopUpdate?.error)}`}
+                  </p>
+                )}
+              </div>
+            )}
+            {mode === 'Desktop' && !desktopAction && !githubUpdateAvailable && !data?.github_error && (
               <p className="text-[10px] text-muted-foreground">
-                <Trans>Auto-updates check hourly.</Trans>
+                <Trans>Desktop updates are checked every 20 minutes.</Trans>
               </p>
             )}
             {githubLatest?.html_url && (
@@ -782,38 +1019,9 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                 <Trans>Harness status</Trans>
               </span>
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="flex-1"
-              onClick={() => {
-                setOpen(false);
-                setDiagnoseOpen(true);
-              }}
-              title={t`Diagnose a Flowpad issue`}
-            >
-              <Stethoscope />
-              <span>
-                <Trans>Diagnose</Trans>
-              </span>
-            </Button>
           </div>
         </div>
       </PopoverContent>
-      <DiagnoseModal
-        open={diagnoseOpen}
-        onClose={() => setDiagnoseOpen(false)}
-        onViewDiagnosis={(d) => {
-          setDiagnoseOpen(false);
-          setDiagReport(d);
-        }}
-      />
-      <DiagnosisReportModal
-        open={!!diagReport}
-        diagnosisId={diagReport?.diagnosisId}
-        conversationId={diagReport?.conversationId}
-        onClose={() => setDiagReport(null)}
-      />
     </Popover>
   );
 }

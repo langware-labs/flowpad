@@ -188,7 +188,7 @@ from flow_sdk.connections import Connection
 from flow_sdk.secrets import SecretStore
 
 agentmail = await DataSource.get("agent mailbox")
-remote = await SecretStore.get("gcp_secret_manager", {"gcp_project": "acme-prod", "prefix": "agentmail-production-"})
+remote = await SecretStore.get("gcp", {"project": "acme-prod", "prefix": "agentmail-production-"})
 
 google = await Connection.get("google")  # remote.connections.names() → ["google"]
 await google.validate_scopes(remote.connections.scopes("google"))
@@ -298,7 +298,7 @@ async with await issues.open() as live:
 Serial. Arrivals come one at a time in order, and each has a reply that goes back the same way.
 
 ```python
-from flow_sdk.blocks import StreamInbox, SlackMessageSpec, workflow
+from flow_sdk.blocks import StreamInbox, workflow
 from flow_sdk.builtin.agent import Agent
 
 async with workflow("channel-helper"):
@@ -308,7 +308,7 @@ async with workflow("channel-helper"):
     async with agent.process_messages():
         async for m in stream_inbox.listen():
             out = await agent.process_message(m)       # session per thread
-            await m.reply(SlackMessageSpec.reply_to(m, body=out.text))
+            await m.reply(await m.reply_spec(body=out.text))   # into the thread
 ```
 
 ## `flow.Agent`
@@ -368,7 +368,7 @@ from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name("researcher")
 here = await agent.run_locally()                # a process on this computer running the agent loop
-again = await agent.run_locally()               # the same deployment — one per agent here
+again = await agent.run_locally()               # the same deployment — one per project here
 assert again.id == here.id and here.serving
 
 chat = await ServiceEndpoint.find_existing(str(here.typeid), "chat")
@@ -610,7 +610,7 @@ A provider key, a budget, or a harness login.
 ```python
 from flow_sdk.builtin.llm_endpoint import LLMEndpoint
 
-llm = LLMEndpoint(provider="openrouter")          # kind=api_key, base_url and models filled in
+llm = LLMEndpoint(provider="openrouter")          # kind=api_key, base_url and tiers filled in
 vectors = await llm.create_embeddings(["a hot day in July", "a cold night in January"])
 answer = await llm.create_completion("You answer in one word.", "Capital of France?")
 ```
@@ -971,15 +971,17 @@ agent = Agent(
     name="researcher",
     model="sm",
     system_prompt="You research; you do not summarize.",
+    project_id=PROJECT,                        # a deployment places a project
 )
 await agent.save()
 
-here = await agent.deploy("local")             # "This computer" — nothing is placed until you ask
+here = await agent.deploy("local")             # the project's ONE local deployment, the agent as main
 again = await agent.deploy("local")
 assert again.id == here.id                     # converges by lookup, never a derived id
 
-assert here.element_type == "agent"            # what it places is its parent — no stored kind
-assert here.identity == "agent"                # a box it runs on logs in as the agent
+assert here.element_type == "project"          # what it places is its parent: the project
+assert here.main_agent_id == str(agent.typeid)
+assert here.identity == "agent"                # a box with a main agent logs in as it
 assert here.target.provider == "local"
 assert here.is_local                           # an id comparison, not a provider test
 ```
@@ -994,7 +996,7 @@ from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name("researcher")
 here = await agent.run_locally()                # a process on this computer running the agent loop
-again = await agent.run_locally()               # the same deployment — one per agent here
+again = await agent.run_locally()               # the same deployment — one per project here
 assert again.id == here.id and here.serving
 
 chat = await ServiceEndpoint.find_existing(str(here.typeid), "chat")

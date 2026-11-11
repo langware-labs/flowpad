@@ -37,6 +37,29 @@ async def _hub_push_after(yields: int, conv_id: str, hub_row: dict) -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_ticket_pushed_to_the_desk_lands_as_a_helpdesk_ticket():
+    """Staff never opened it here: the push alone creates the row, and ``kind`` is what shows
+    the ticket's Pick up / Close controls. It used to be dropped, so the row read ``direct``."""
+    conv_id = mint_uuid()
+    hub_row = {"id": conv_id, "type": "conversation", "kind": "helpdesk", "status": "open", "title": "Ticket stuck"}
+
+    await HubWsBridge()._handle_conversation_op("create", conv_id, hub_row)
+
+    assert (await Conversation.get_one({"id": conv_id})).kind == "helpdesk"
+
+
+@pytest.mark.asyncio
+async def test_a_push_corrects_a_ticket_row_that_reads_direct():
+    conv_id = mint_uuid()
+    await Conversation(id=conv_id, title="Ticket stuck", remote=True).save()  # kind defaults to direct
+    hub_row = {"id": conv_id, "type": "conversation", "kind": "helpdesk", "status": "open", "title": "Ticket stuck"}
+
+    await HubWsBridge()._handle_conversation_op("update", conv_id, hub_row)
+
+    assert (await Conversation.get_one({"id": conv_id})).kind == "helpdesk"
+
+
+@pytest.mark.asyncio
 async def test_the_hubs_push_of_a_ticket_opened_here_keeps_its_title():
     # Where the push lands inside the open is the hub's timing, not ours: cover every turn.
     lost = []

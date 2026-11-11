@@ -31,7 +31,6 @@ from flow_sdk.instance_settings.llm_endpoint import (
     fetch_hub_llm_endpoints,
     get_hub_llm_endpoint,
     hub_llm_endpoint_invoke_url,
-    listing_supersedes_binding,
     set_hub_llm_endpoint,
 )
 from flow_sdk.schema.data_spec.llm_source_spec import (
@@ -147,9 +146,8 @@ async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope())
     user is are STATUS facts (``core.status``) and are read there, not repeated here.
     """
     bound: HubLLMEndpoint | None = get_hub_llm_endpoint()
-    # Warming the listing memo is a READ of the hub (the resolver reads only the memo, so a cold
-    # memo would leave every endpoint out of this answer). Dropping a dead binding is a WRITE and
-    # lives in ``prune_dead_binding``, which only the explicit ``status/refresh`` runs.
+    # Listings report readable budgets. A hub-pushed Runner binding remains usable even
+    # when absent from those lists; the hub authorizes each invocation independently.
     available = await fetch_hub_llm_endpoints(cached_only=not refresh)
     sources, resolved, blocked, notes, endpoints = await _sources_by_kind(scope)
     bound_typeid = bound.endpoint_typeid if bound else ""
@@ -185,29 +183,6 @@ async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope())
 async def _status(*, refresh: bool = False, scope: LLMScope = LLMScope()) -> dict:
     """The funding record, as the wire carries it."""
     return (await funding_status(refresh=refresh, scope=scope)).model_dump(mode="json")
-
-
-async def prune_dead_binding() -> bool:
-    """Drop a binding the hub no longer lists. Returns whether one was dropped.
-
-    ``_endpoint_sources`` already stops OFFERING a dead binding, so routing is correct either
-    way -- but the record reads as "this box was given a budget", and leaving a dead id in
-    place makes every status answer name an endpoint that no longer exists. A PUBLIC binding is
-    exempt: a listing scoped to the caller never contains it, so its absence says nothing.
-
-    A write, so it runs only on an explicit refresh (``core.status.refresh_status``), never on a
-    status read -- and never from ``bind``, which has just been handed an endpoint the listing
-    may not have heard of yet.
-    """
-    bound: HubLLMEndpoint | None = get_hub_llm_endpoint()
-    if bound is None or bound.public:
-        return False
-    available = await fetch_hub_llm_endpoints(cached_only=False)
-    if not listing_supersedes_binding() or any(str(e.typeid) == bound.endpoint_typeid for e in available):
-        return False
-    logger.info(f"[llm-endpoint] dropping binding {bound.endpoint_typeid}: the hub no longer lists it")
-    clear_hub_llm_endpoint()
-    return True
 
 
 async def hub_llm_endpoint_status(project_id: str = "") -> dict:
@@ -246,6 +221,8 @@ async def bind_hub_llm_endpoint(payload: dict) -> dict:
             payload.get("invoke_path"),
             provider=payload.get("provider"),
             name=payload.get("name"),
+            models_allow=payload.get("models_allow"),
+            tiers=payload.get("tiers"),
         )
     except ValueError as exc:
         raise HubEndpointBindError(str(exc), 400) from exc
@@ -422,6 +399,9 @@ async def select_llm_source(payload: dict) -> dict:
                 name=str(payload.get("name") or ""),
                 public=public,
                 hub_origin=str(payload.get("hub_origin") or "") if public else "",
+                # A public budget is unlisted to a signed-out box: the sizes the hub sends with it are
+                # the only ones a spawn will ever see.
+                tiers=payload.get("tiers") if isinstance(payload.get("tiers"), dict) else None,
             )
         cap.auth_mode, cap.api_provider = "api", LMApiProvider.FLOWPAD.value
 
@@ -498,8 +478,9 @@ async def test_hub_llm_endpoint(payload: dict) -> dict:
     Returns the hub's answer verbatim. A REFUSED call is a verdict, not an error, and comes
     back inside the success envelope with ``ok: false``; only a transport/auth failure raises.
     """
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
     endpoint_ref = str(payload.get("endpoint_typeid") or payload.get("id") or "")
     endpoint_id = _endpoint_id(endpoint_ref)
@@ -512,12 +493,14 @@ async def test_hub_llm_endpoint(payload: dict) -> dict:
     _require_hub_login()
 
     try:
-        verdict = await hub_post("llm_endpoint", {}, endpoint_id, "test")
+        model = str(payload.get("model") or "").strip()
+        return await HubProxy.call(
+            "POST", "llm_endpoint", endpoint_id, "test", payload={"model": model} if model else {}
+        )
     except HubError as exc:
+        if exc.kind is HubFailureKind.NOT_CONFIGURED:
+            raise HubEndpointBindError("no hub is configured for this box", 409) from exc
         raise HubEndpointBindError(f"hub refused the test: {exc}", 502) from exc
-    if verdict is None:
-        raise HubEndpointBindError("no hub is configured for this box", 409)
-    return verdict
 
 
 async def _test_public_endpoint(bound: HubLLMEndpoint) -> dict:
@@ -551,19 +534,20 @@ async def chain_hub_llm_endpoint(endpoint_ref: str) -> dict:
     Same reason for living here as ``test``: the hub's ``chain`` action addresses an entity
     this box has no row for.
     """
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
     endpoint_id = _endpoint_id(endpoint_ref)
     _require_hub_login()
 
     try:
-        body = await hub_get("llm_endpoint", endpoint_id, action="chain")
+        body = await HubProxy.call("GET", "llm_endpoint", endpoint_id, action="chain")
     except HubError as exc:
+        if exc.kind is HubFailureKind.NOT_CONFIGURED:
+            raise HubEndpointBindError("no hub is configured for this box", 409) from exc
         raise HubEndpointBindError(f"hub refused the chain read: {exc}", 502) from exc
-    if body is None:
-        raise HubEndpointBindError("no hub is configured for this box", 409)
-    # ``hub_get`` answers the envelope for a type listing and the bare payload for an action;
+    # ``HubProxy.call("GET")`` answers the envelope for a type listing and the bare payload for an action;
     # both shapes are real (see ``fetch_hub_llm_endpoints._rows``), so unwrap defensively.
     data = body.get("data") if isinstance(body, dict) and "data" in body else body
     return data if isinstance(data, dict) else {}

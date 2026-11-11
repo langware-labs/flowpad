@@ -2,8 +2,10 @@
 
 Two pure steps, and the existing runner does the rest:
 
-1. :func:`collect_requirements` reads — never writes — the credentials the project declares and the
-   auth its data sources' drivers name, into :class:`SetupRequirementSpec` values;
+1. :func:`collect_requirements` reads — never writes — what the project's installed ROOTS need (its data
+   sources, agents, dependencies, and the credentials it authored), each requirement carrying its roots, into
+   :class:`SetupRequirementSpec` values. Drivers and shipped templates are the catalog: they say how to ask,
+   never that something is needed;
 2. :func:`compile_setup` turns them into a ``WizardSpec`` plus the ComputeOps it calls, held in
    memory (never a file, never a ``run.json``), for ``run_wizard(resolve_op=…)``.
 
@@ -24,8 +26,9 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional
 
 from flow_sdk.core.flow_command import flow_command
 from flow_sdk.request_context.detached import add_detached_done_callback, create_detached_task
@@ -34,12 +37,19 @@ from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec, ways
 from flow_sdk.schema.data_spec.project_setup_spec import (
     ONE_OF_INPUT,
+    REQUIREMENT_AUTOMATION,
     REQUIREMENT_DEPENDENCY,
     REQUIREMENT_GAP,
     REQUIREMENT_PACK,
     REQUIREMENT_SOURCE,
     REQUIREMENT_WEBAPP,
+    ROOT_AGENT,
+    ROOT_CREDENTIAL,
+    ROOT_DEPENDENCY,
+    ROOT_SOURCE,
+    ROOT_WEBAPP,
     ProjectReadinessSpec,
+    RootRef,
     SetupRequirementSpec,
     SetupVarSpec,
     input_name,
@@ -66,29 +76,50 @@ def _inside(path: str, root: str) -> bool:
     return bool(path and root) and is_path_under(canonical_posix_path(path), canonical_posix_path(root))
 
 
-def _always(why_not: str = "") -> dict:
-    """A requirement's "Skip → Always" fields: allowed unless there is a reason not to."""
-    return {"can_skip_always": not why_not, "why_not_always": why_not}
+_ROOT_WORDS = {ROOT_SOURCE: "data source", ROOT_AGENT: "agent", ROOT_WEBAPP: "web app",
+               ROOT_DEPENDENCY: "dependency", ROOT_CREDENTIAL: "credential"}
 
 
-def always_for(project: "Project", asset_ref: str, *, what: str) -> dict:
-    """Whether "Skip → Always" can remove an asset from ``project`` — only an asset in the project's own folder,
-    so the removal is a change to the project (staged in git) and not to someone else's."""
-    root = str(getattr(project, "fs_storage_mount_path", "") or "")
-    if not asset_ref:
-        return _always(f"{what} has no folder in this project")
-    if not _inside(asset_ref, root):
-        return _always(f"{what} is not this project's own (it lives outside the project folder) — skip it locally")
-    return _always()
+def root_label(root: RootRef) -> str:
+    return f"the {_ROOT_WORDS.get(root.kind, root.kind)} {root.name!r}"
+
+
+def _not_ours(root: RootRef, mount: str) -> str:
+    """Why Always may not uninstall ``root``; ``""`` when it is an asset in the project's own folder."""
+    if not root.asset_ref:
+        return f"{root_label(root)} is not declared in this project — skip it locally"
+    if not _inside(root.asset_ref, mount):
+        return f"{root_label(root)} is not this project's own (it lives outside the project folder) — skip it locally"
+    return ""
+
+
+def skip_always_of(project: "Project", roots: list[RootRef]) -> dict:
+    """"Skip → Always" uninstalls a requirement's roots — allowed iff every one is an asset in the project's own
+    folder, so the removal is a change to the project (staged in git) and not to someone else's."""
+    mount = str(getattr(project, "fs_storage_mount_path", "") or "")
+    why = next((reason for root in roots if (reason := _not_ours(root, mount))),
+               "" if roots else "nothing installed in this project needs it — skip it locally")
+    return {"can_skip_always": not why, "why_not_always": why, "roots": list(roots)}
+
+
+def _union(items: Iterable[Any], key: Callable[[Any], Any] = lambda item: item) -> list[Any]:
+    """``items`` once each, first seen first — scopes, names, roots (by ``key``)."""
+    seen: dict[Any, Any] = {}
+    for item in items:
+        seen.setdefault(key(item), item)
+    return list(seen.values())
+
+
+def _by_typeid(root: RootRef) -> str:
+    return root.typeid
 
 
 # ── 1. collect ────────────────────────────────────────────────────────────────
 
 
-async def project_sources(project: "Project") -> list["DataSource"]:
-    """The data sources that are the project's: its own rows, and the source assets under its folder
+async def _project_assets(entity: Any, project: "Project") -> list[Any]:
+    """The rows of ``entity`` that are the project's: its own (``project_id``), and the assets under its folder
     (an agent's source lands in the agent's project folder). Queried by both keys, never scanned."""
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.project import assets_under_roots  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import asset_refs_under  # noqa: PLC0415
@@ -98,20 +129,100 @@ async def project_sources(project: "Project") -> list["DataSource"]:
     if root:
         keys += [ExpressionNode(op=QueryOp.LIKE, operands=["asset_ref", p]) for p in asset_refs_under(root)]
     match = keys[0] if len(keys) == 1 else ExpressionNode(op=QueryOp.OR, operands=keys)
-    rows = await DataSource.get_all(QueryFilter(match=match))
+    rows = await entity.get_all(QueryFilter(match=match))
     under = {str(r.id) for r in assets_under_roots(rows, [root])} if root else set()
     return [r for r in rows if str(r.project_id or "") == str(project.id) or str(r.id) in under]
 
 
-def _pack_always(project: "Project", row: "CredentialStatusRowSpec", used_by: list[str]) -> dict:
-    """"Skip → Always" removes a credential's declaration from the project — never a user one (every project
-    reads it) and never an oauth one a source still acts through (the need would come straight back)."""
-    if row.scope != "project":
-        return _always("declared for all your projects (user scope): change it from Credentials")
-    sources = [who for who in used_by if who != PROJECT]
-    if row.kind == "oauth" and sources:
-        return _always(f"needed by {', '.join(sources)} — remove {'it' if len(sources) == 1 else 'them'} first")
-    return always_for(project, row.asset_ref, what=f"the credential {row.name!r}")
+async def project_sources(project: "Project") -> list["DataSource"]:
+    """The data sources that are the project's (``_project_assets``)."""
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+    return await _project_assets(DataSource, project)
+
+
+async def project_agents(project: "Project") -> list[Any]:
+    """The agents that are the project's — found by the same rule as its sources."""
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+    return await _project_assets(Agent, project)
+
+
+def _root(record: Any, kind: str) -> RootRef:
+    name = getattr(record, "name", "") or getattr(record, "provider", "") or record.id
+    return RootRef(typeid=str(record.typeid), kind=kind, name=str(name), asset_ref=str(getattr(record, "asset_ref", "") or ""))
+
+
+@dataclass
+class _Connection:
+    """A provider the roots act through: the union of the scopes they need, and who needs it."""
+
+    scopes: list[str] = field(default_factory=list)
+    roots: list[RootRef] = field(default_factory=list)
+
+
+@dataclass
+class _Needs:
+    """What the project's roots need, before any credential row is looked at: credentials by name, connections
+    by provider, what nothing declares (gaps) — and the sources walked, for whoever reads on."""
+
+    packs: dict[str, list[RootRef]] = field(default_factory=dict)
+    oauth: dict[str, _Connection] = field(default_factory=dict)
+    gaps: list[SetupRequirementSpec] = field(default_factory=list)
+    sources: list[Any] = field(default_factory=list)
+    #: Dependencies Flowpad cloned that are behind their remote — updates waiting, never a to-do.
+    updates: int = 0
+
+    def needs_credential(self, spec: Any) -> bool:
+        """Whether a root still needs the credential row ``spec`` — what keeps a derived row alive."""
+        if spec.is_oauth:
+            return str(spec.provider or "").lower() in self.oauth
+        return str(spec.name) in self.packs
+
+
+async def _needs_of_roots(project: "Project", known: Any = None) -> _Needs:
+    """The one walk from installed roots to needs: each data source (from its driver, ``builtin/readiness.py``),
+    then what each of the project's agents authored. A driver or template alone needs nothing. ``known``:
+    ``(credentials in scope, shipped templates)`` already read by the caller."""
+    from flow_sdk.builtin.readiness import connection_of, requirements_of_source  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.requirement_spec import (  # noqa: PLC0415
+        REQUIREMENT_CREDENTIAL,
+        REQUIREMENT_VARIABLE,
+        RequirementSpec,
+    )
+
+    needs = _Needs()
+
+    def need(req: "RequirementSpec", root: RootRef) -> Optional[str]:
+        """Fold one requirement into the plan; the variable name when nothing declares it."""
+        if grant := connection_of(req):
+            provider, scopes = grant
+            conn = needs.oauth.setdefault(str(provider).lower(), _Connection())
+            conn.scopes = _union([*conn.scopes, *scopes])
+            conn.roots = _union([*conn.roots, root], _by_typeid)
+        elif req.kind == REQUIREMENT_CREDENTIAL:
+            needs.packs[req.name] = _union([*needs.packs.get(req.name, []), root], _by_typeid)
+        elif req.kind == REQUIREMENT_VARIABLE:
+            return req.name
+        return None  # an API key is the credential's to provide; IAM is a deployment's grant
+
+    needs.sources = await project_sources(project)
+    derived = await asyncio.gather(*(requirements_of_source(s, project, known=known) for s in needs.sources))
+    for source, reqs in zip(needs.sources, derived):
+        root = _root(source, ROOT_SOURCE)
+        unclaimed = [name for req in reqs if (name := need(req, root))]
+        if unclaimed:
+            needs.gaps.append(SetupRequirementSpec(
+                kind=REQUIREMENT_GAP, name=root.name, used_by=[root.name], roots=[root],
+                note=f"needs {', '.join(unclaimed)}, and no credential declares it — add one with `setup` instructions",
+            ))
+    for agent in await project_agents(project):
+        root = _root(agent, ROOT_AGENT)
+        for req in agent.requirements or []:
+            if not req.derived and (name := need(req, root)):
+                needs.gaps.append(SetupRequirementSpec(kind=REQUIREMENT_GAP, name=name, used_by=[root.name], roots=[root],
+                                                       note=f"{root.name} needs {name}, and no credential declares it"))
+    return needs
 
 
 def _why(credential: "CredentialStatusRowSpec | Credential") -> dict[str, str]:
@@ -128,16 +239,21 @@ def _setup_var(env_var: str, var: Any, *, login: str, present: bool = False) -> 
     )
 
 
-def _from_row(row: "CredentialStatusRowSpec", used_by: list[str], project: "Project") -> SetupRequirementSpec:
-    always = _pack_always(project, row, used_by)
+def _names(roots: list[RootRef]) -> list[str]:
+    """``used_by`` as it reads: each root's name — ``project`` for a credential the project authored itself."""
+    return _union(PROJECT if r.kind == ROOT_CREDENTIAL else r.name for r in roots)
+
+
+def _from_row(row: "CredentialStatusRowSpec", roots: list[RootRef], project: "Project") -> SetupRequirementSpec:
+    always = skip_always_of(project, roots)
     if row.kind == "oauth":
         note = {"needs_reauth": "the grant went stale: connect again",
                 "partial": f"connected without {', '.join(row.missing_scopes)}: connect again to grant them"}
         return SetupRequirementSpec(
             kind=REQUIREMENT_PACK, credential_kind="oauth", name=row.name, title=row.title, typeid=row.typeid,
             provider=row.provider, scopes=list(row.scopes), help_url=row.help_url, **_why(row),
-            satisfied=row.state == "connected", used_by=used_by, note=note.get(row.state, ""),
-            skipped=row.setup_skipped, **always,
+            satisfied=row.state == "connected", used_by=_names(roots), note=note.get(row.state, ""),
+            skipped=row.setup_skipped, has_test=row.has_test, test_result=row.test_result, **always,
         )
     # Required when any value is MUST or ONE_OF, and then only those are asked (a ONE_OF group as one choice);
     # a credential of OPTIONAL values alone is listed as optional, with those.
@@ -147,9 +263,9 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str], project: "Proj
         help_url=row.help_url, setup_timeout_seconds=row.setup_timeout_seconds, **_why(row),
         vars=[_setup_var(v.env_var, v, login=v.login, present=v.present) for v in (must or row.vars)],
         setup_choice=row.setup_choice, ways=dict(row.ways),
-        satisfied=row.state == "connected", used_by=used_by, required=bool(must),
+        satisfied=row.state == "connected", used_by=_names(roots), required=bool(must),
         note="" if row.setup.strip() else "no setup instructions: AI Assist unavailable",
-        skipped=row.setup_skipped, **always,
+        skipped=row.setup_skipped, has_test=row.has_test, test_result=row.test_result, **always,
     )
 
 
@@ -160,115 +276,132 @@ def _project_skip_key(req: SetupRequirementSpec) -> str:
     return req.name if req.kind == REQUIREMENT_DEPENDENCY else f"credential:{req.name}"
 
 
-def _from_template(template: "Credential", used_by: list[str], skips: Optional[dict] = None) -> SetupRequirementSpec:
+def _from_template(template: "Credential", roots: list[RootRef], project: "Project",
+                   skips: Optional[dict] = None) -> SetupRequirementSpec:
+    """A need no row of the project holds yet: the shipped template says how to ask for it; the roots are why."""
     required = {name for name, var in (template.vars or {}).items() if var.is_must or var.is_one_of}
     setup = str(getattr(template, "setup", "") or "")
     req = SetupRequirementSpec(
         typeid=str(template.typeid), required=bool(required),
-        why_not_always="a shipped template, not in this project yet: skip it locally",
         kind=REQUIREMENT_PACK, name=str(template.name), title=template.title or str(template.name),
         setup=setup, setup_timeout_seconds=getattr(template, "setup_timeout_seconds", None),
-        help_url=template.help_url or "", declared=False, **_why(template), satisfied=False, used_by=used_by,
+        help_url=template.help_url or "", declared=False, **_why(template), satisfied=False, used_by=_names(roots),
         vars=[
             _setup_var(name, var, login=var.login_command)
             for name, var in (template.vars or {}).items() if name in required
         ],
         ways=dict(getattr(template, "ways", None) or {}),
         note="" if setup.strip() else "no setup instructions: AI Assist unavailable",
+        **skip_always_of(project, roots),
     )
     return req.model_copy(update={"skipped": (skips or {}).get(_project_skip_key(req))})
 
 
-async def collect_requirements(project: "Project", deployment_id: str = "") -> list[SetupRequirementSpec]:
-    """Everything ``project`` needs a person (or an agent) to provide, in the order to do it:
-    connections first, then credentials, then what cannot be set up here. Read-only."""
-    from flow_sdk.builtin import credential_service  # noqa: PLC0415
-    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
-    from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
-    from flow_sdk.builtin.readiness import (
-        connection_of,  # noqa: PLC0415
-        requirements_of_source,  # noqa: PLC0415
-    )
-    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.requirement_spec import (  # noqa: PLC0415
-        REQUIREMENT_CREDENTIAL,
-        REQUIREMENT_VARIABLE,
-        RequirementSpec,
+async def _undeclared_connections(project: "Project", wanted: dict[str, _Connection], templates: dict[str, Any],
+                                  skips: dict) -> list[SetupRequirementSpec]:
+    """The connections the roots act through that no project row holds yet. Nothing is written here: the setup
+    step (``requirement_step``) or the source's create declares the row; until then the template (or the
+    provider alone) says what to connect, and the grants — read once for all of them — say which are connected."""
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    from flow_sdk.builtin.credential_service import _provider_title  # noqa: PLC0415
+    from flow_sdk.builtin.credential_status import _grant_key, oauth_states  # noqa: PLC0415
+
+    if not wanted:
+        return []
+    asked = {}
+    for provider, conn in wanted.items():
+        template = templates.get(provider)
+        template = template if template is not None and template.is_oauth else None
+        asked[provider] = (template, _union([*(getattr(template, "scopes", None) or []), *conn.scopes]))
+    grants = await oauth_states([SimpleNamespace(is_oauth=True, provider=p, scopes=sc)  # type: ignore[misc]
+                                 for p, (_, sc) in asked.items()])
+    out = []
+    for provider, (template, scopes) in sorted(asked.items()):
+        roots = wanted[provider].roots
+        req = SetupRequirementSpec(
+            kind=REQUIREMENT_PACK, credential_kind="oauth", name=str(template.name) if template else provider,
+            provider=provider, scopes=scopes, declared=False,
+            title=(template.title if template else "") or await _provider_title(provider),
+            typeid=str(template.typeid) if template else str(project.typeid),
+            help_url=str(getattr(template, "help_url", "") or ""),
+            satisfied=grants.get(_grant_key(provider, scopes), ("missing", []))[0] == "connected",
+            used_by=_names(roots), **skip_always_of(project, roots),
+        )
+        out.append(req.model_copy(update={"skipped": skips.get(_project_skip_key(req))}))
+    return out
+
+
+def is_derived(row: Any) -> bool:
+    """A credential a root installed (``derived``), not one the project authored. An oauth row always is: only a
+    source or a setup step ever declares one (rows from before the marker carry none)."""
+    return bool(getattr(row, "derived", False)) or row.kind == "oauth" or str(row.kind) == "oauth"
+
+
+def _undeclared_for_agents(
+    name: str, roots: list[RootRef], rows: dict[str, "CredentialStatusRowSpec"]
+) -> Optional[SetupRequirementSpec]:
+    """An agent requires credential ``name`` (``REQUIREMENT_CREDENTIAL``) and the project does not declare it:
+    an issue — its deployments get only what the project declares. A row in the user's own scope does not count.
+    None when declared, or when nothing declares it at all (that gap is said once, by the caller)."""
+    agents = [root for root in roots if root.kind == ROOT_AGENT]
+    row = rows.get(name)
+    if not agents or row is None or row.scope == "project":
+        return None
+    return SetupRequirementSpec(
+        kind=REQUIREMENT_GAP, name=name, used_by=_names(agents), roots=agents,
+        note=f"{', '.join(_names(agents))} requires {name}; this project does not declare it, "
+             "so its machines start without it",
     )
 
-    status = await credentials_status(project, deployment_id)
+
+async def _collect(project: "Project", deployment_id: str = "") -> tuple[list[SetupRequirementSpec], _Needs]:
+    from flow_sdk.builtin import credential_service  # noqa: PLC0415
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope  # noqa: PLC0415
+    from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
+
+    pairs, shipped = await asyncio.gather(credentials_in_scope(project), credential_service.shipped_templates())
+    status = await credentials_status(project, deployment_id, pairs=pairs)
     rows: dict[str, "CredentialStatusRowSpec"] = {}
     for row in status.credentials:  # user first, then project: the project's own wins
         rows[row.name] = row
-    templates = await credential_service.shipped_templates()
+    needs = await _needs_of_roots(project, known=(pairs, shipped))
+    packs = needs.packs
+    # A credential the project authored is its own root; a derived one is needed through its roots alone.
+    for row in status.credentials:
+        if row.scope == "project" and not is_derived(row):
+            own = RootRef(typeid=row.typeid, kind=ROOT_CREDENTIAL, name=row.name, asset_ref=row.asset_ref)
+            packs[row.name] = _union([own, *packs.get(row.name, [])], _by_typeid)
 
-    oauth: dict[str, dict[str, list[str]]] = {}
-    packs: dict[str, list[str]] = {row.name: [PROJECT] for row in status.credentials if row.scope == "project"}
-    gaps: list[SetupRequirementSpec] = []
-
-    def need(req: "RequirementSpec", who: str) -> Optional[str]:
-        """Fold one requirement into the plan; the variable name when nothing declares it."""
-        if grant := connection_of(req):
-            provider, scopes = grant
-            entry = oauth.setdefault(provider, {"scopes": [], "used_by": []})
-            entry["scopes"] += [s for s in scopes if s not in entry["scopes"]]
-            if who not in entry["used_by"]:
-                entry["used_by"].append(who)
-        elif req.kind == REQUIREMENT_CREDENTIAL:
-            if who not in packs.setdefault(req.name, []):
-                packs[req.name].append(who)
-        elif req.kind == REQUIREMENT_VARIABLE:
-            return req.name
-        return None  # an API key is the credential's to provide; IAM is a deployment's grant
-
-    # The same derivation an agent's requirements come from (``builtin/readiness.py``), per source;
-    # then what each of the project's agents authored.
-    for source in await project_sources(project):
-        who = str(source.name or source.provider)
-        unclaimed = [name for req in await requirements_of_source(source, project) if (name := need(req, who))]
-        if unclaimed:
-            gaps.append(SetupRequirementSpec(
-                kind=REQUIREMENT_GAP, name=who, used_by=[who],
-                note=f"needs {', '.join(unclaimed)}, and no credential declares it — add one with `setup` instructions",
-            ))
-    for agent in await Agent.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["project_id", str(project.id)]))):
-        who = str(agent.name or agent.id)
-        for req in agent.requirements or []:
-            if not req.derived and (name := need(req, who)):
-                gaps.append(SetupRequirementSpec(kind=REQUIREMENT_GAP, name=name, used_by=[who],
-                                                 note=f"{who} needs {name}, and no credential declares it"))
-
-    # A connection a source acts through IS a credential (``kind: oauth``): the project declares it — with the
-    # union of the scopes its requesters need — so it is an indexed asset with a row, like any other.
-    # Declared once (a source's create declares it too): only a provider no project row covers yet is written.
-    changed = False
-    for provider, entry in sorted(oauth.items()):
-        held = next((r for r in rows.values() if r.kind == "oauth" and r.scope == "project"
-                     and r.provider == provider.lower() and set(entry["scopes"]) <= set(r.scopes)), None)
-        if held is not None:
-            name = held.name
-        else:
-            spec, declared = await credential_service.declare_oauth(project, provider, entry["scopes"])
-            name, changed = str(spec.name), changed or declared
-        for who in entry["used_by"]:
-            if who not in packs.setdefault(name, []):
-                packs[name].append(who)
-    if changed:  # read again: the declarations are rows now
-        status = await credentials_status(project, deployment_id)
-        for row in status.credentials:
-            rows[row.name] = row
-
-    out: list[SetupRequirementSpec] = []
-    by_template = {str(t.name): t for t in templates}
+    templates = {str(t.name): t for t in shipped}
     skips = getattr(project, "setup_skipped", None) or {}
-    for name, used_by in packs.items():
+    undeclared: dict[str, _Connection] = {}
+    narrow: dict[str, list[str]] = {}  # a held row whose scopes do not cover what its roots need yet
+    for provider, conn in sorted(needs.oauth.items()):
+        held = next((r for r in rows.values() if r.kind == "oauth" and r.scope == "project" and r.provider == provider),
+                    None)
+        if held is None:
+            undeclared[provider] = conn
+            continue
+        packs[held.name] = _union([*packs.get(held.name, []), *conn.roots], _by_typeid)
+        if wider := [sc for sc in conn.scopes if sc not in held.scopes]:
+            narrow[held.name] = wider
+
+    out = await _undeclared_connections(project, undeclared, templates, skips)
+    for name, roots in packs.items():
+        if gap := _undeclared_for_agents(name, roots, rows):
+            out.append(gap)
         if name in rows:
-            out.append(_from_row(rows[name], used_by, project))
-        elif name in by_template:
-            out.append(_from_template(by_template[name], used_by, skips))
+            req = _from_row(rows[name], roots, project)
+            if wider := narrow.get(name):  # the setup step widens the row (``requirement_step``) before connecting
+                req = req.model_copy(update={"scopes": [*req.scopes, *wider], "satisfied": False,
+                                             "note": f"needs {', '.join(wider)} too: connect again to grant them"})
+            out.append(req)
+        elif name in templates:
+            out.append(_from_template(templates[name], roots, project, skips))
         else:
             out.append(SetupRequirementSpec(
-                kind=REQUIREMENT_GAP, name=name, used_by=used_by,
+                kind=REQUIREMENT_GAP, name=name, used_by=_names(roots), roots=roots,
                 note=f"names the credential {name!r}, which is neither declared nor shipped as a template",
             ))
     # Connections before typed values, as before: a grant is one click, and a source needs it to verify at all.
@@ -277,17 +410,32 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
     # A dependency has no row of its own here (flow.json declares it), so the project carries its skip mark.
     from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
 
+    mount = str(getattr(project, "fs_storage_mount_path", "") or "")
     dependencies = []
     for dep in await project.dependencies():
+        needs.updates += dep.behind > 0
         if dep.state not in ("missing", "unreachable", "not_found"):
             continue
         key = project_dependencies.requirement_key(dep)
+        # Declared in this project's flow.json — unless it came in through another dependency (``via``).
+        root = RootRef(typeid=str(project.typeid), kind=ROOT_DEPENDENCY, name=key,
+                       asset_ref=str(Path(mount) / "flow.json") if mount and dep.via is None else "")
         dependencies.append(SetupRequirementSpec(
             kind=REQUIREMENT_DEPENDENCY, name=key, title=dep.label or dep.source, typeid=str(project.typeid),
             satisfied=False, used_by=[PROJECT], note=dep.reason or dep.state, required=dep.required,
-            skipped=skips.get(key), can_skip_always=dep.via is None,
+            skipped=skips.get(key), **skip_always_of(project, [root]),
         ))
-    return dependencies + out + gaps
+    return dependencies + out + needs.gaps, needs
+
+
+async def collect_requirements(project: "Project", deployment_id: str = "") -> list[SetupRequirementSpec]:
+    """Everything ``project`` needs a person (or an agent) to provide, in the order to do it:
+    connections first, then credentials, then what cannot be set up here. Read-only: nothing is declared.
+
+    A need comes from a ROOT — an installed data source, agent, dependency, or a credential the project
+    authored itself — and is derived again on every read, so it never outlives its root. A credential row a
+    root installed (``derived``) is a need only while a root still needs it."""
+    return (await _collect(project, deployment_id))[0]
 
 
 # ── 2. compile ────────────────────────────────────────────────────────────────
@@ -331,13 +479,16 @@ def _way_choice(way: str, members: list[SetupVarSpec], offer: Optional[Credentia
 
 def compile_setup(
     project_id: str, requirements: list[SetupRequirementSpec], *, ai: bool = True, deployment_id: str = "",
-    connect_here: bool = True,
+    connect_here: bool = True, vaults: tuple[str, ...] = (),
 ) -> tuple[WizardSpec, dict[str, ComputeOpSpec]]:
     """The wizard for ``requirements``, and the ops it calls by name. Every step continues on failure:
     one credential nobody can provide must not stop the next one. ``deployment_id``: store and check
     each value where that deployment keeps it (default: this computer). ``connect_here=False``: a
     connection step only CHECKS — the screen that started the run signs the person in itself (its own
-    Connect button, in their browser), so the run never opens a second one on the backend's machine."""
+    Connect button, in their browser), so the run never opens a second one on the backend's machine.
+    ``vaults``: the project vaults the credential's variables point into — its values are FETCHED from them
+    first (``flow secrets fetch``), and a question is asked only for what they could not give (this computer
+    only). A fetch a vault refuses ends with code ``denied``: the screen offers Request access."""
     target = ("--deployment", deployment_id) if deployment_id else ()
     where = f"deployment {deployment_id}" if deployment_id else "development"
     ops: dict[str, ComputeOpSpec] = {}
@@ -359,7 +510,8 @@ def compile_setup(
         elif req.is_oauth:
             provider = req.provider or req.name
             scopes = [arg for s in req.scopes for arg in ("--scope", s)]
-            checked_here = {"requirement_step": f"connection:{provider}"}
+            # The scopes ride along: a sign-in that cannot do what its requesters need is not set up yet.
+            checked_here = {"requirement_step": f"connection:{provider}::{','.join(req.scopes)}"}
             add({
                 "name": f"connect-{provider}", "label": f"Connect {req.title or provider}",
                 "description": f"{provider} is connected and its grant covers what {', '.join(req.used_by)} need.",
@@ -375,6 +527,14 @@ def compile_setup(
             assist = AI_AGENT if ai and req.setup.strip() else ""
             check = _cli("credentials", "check", req.name, "--project", project_id, *target)
             # The ONE_OF ways, asked FIRST as one choice; a way of several values is one choice with a field each.
+            if vaults and not deployment_id and any(v.kind is not CredentialVarKind.CLI for v in req.missing):
+                # The team's copy first: a full fetch satisfies the check, so every question below skips.
+                add({
+                    "name": f"fetch-{req.name}", "label": f"{req.title or req.name}: fetch from {', '.join(vaults)}",
+                    "description": f"{req.name}'s values are fetched from vault {', '.join(vaults)} into {where}.",
+                    "subkind": "cli", "exe_data": _cli("secrets", "fetch", req.name, "--project", project_id),
+                    "completion_check": check,
+                })
             one_of = {v.env_var: v for v in req.missing if v.is_one_of}
             # A sign-in with no command for this OS is not a way here.
             offered = {way: [one_of[m] for m in members] for way, members in ways(one_of).items()
@@ -438,7 +598,7 @@ def unsatisfied(req: SetupRequirementSpec) -> bool:
         return req.satisfied is False
     if req.kind == REQUIREMENT_PACK:
         return bool(req.missing)
-    if req.kind in (REQUIREMENT_DEPENDENCY, REQUIREMENT_SOURCE, REQUIREMENT_WEBAPP):
+    if req.kind in (REQUIREMENT_DEPENDENCY, REQUIREMENT_SOURCE, REQUIREMENT_WEBAPP, REQUIREMENT_AUTOMATION):
         return req.satisfied is False
     return False
 
@@ -454,17 +614,33 @@ def to_do(req: SetupRequirementSpec) -> bool:
     return req.required and req.skipped is None and unsatisfied(req)
 
 
-async def readiness_of(project: "Project", deployment_id: str = "") -> ProjectReadinessSpec:
-    """What the footer warning reads: ready, or what is left and what nobody can set up here."""
-    requirements = await collect_requirements(project, deployment_id)
-    if not deployment_id:  # what runs HERE: a source in setup, a web app that does not answer
-        requirements += _beyond_credentials(await _running_here(project), requirements)
+async def readiness_of(project: "Project", deployment_id: str = "", *,
+                       include_ready: bool = False) -> ProjectReadinessSpec:
+    """What the footer warning reads: ready, or what is left and what nobody can set up here.
+
+    ``include_ready`` (the Project setup page) also lists what is set up (``set_up``) and names each step's
+    tree node (``node``, the ``root`` that runs it alone) — work the footer's poll does not pay for."""
+    requirements, needs = await _collect(project, deployment_id)
+    if not deployment_id:  # what runs HERE: a source in setup, a web app that does not answer (and, asked, what does)
+        running, automations = await asyncio.gather(
+            _running_here(project, needs.sources, include_ready=include_ready),
+            _automations_here(project, include_ready=include_ready))
+        requirements += _beyond_credentials(running, requirements) + automations
+    if include_ready:
+        from flow_sdk.core.setup.derive import requirement_node_id  # noqa: PLC0415 — derive imports this module
+
+        # A gap and an automation have no tree node: nobody can run a gap, and an automation is a choice.
+        requirements = [r if r.kind in (REQUIREMENT_GAP, REQUIREMENT_AUTOMATION)
+                        else r.model_copy(update={"node": requirement_node_id(r)}) for r in requirements]
     left = [r for r in requirements if to_do(r)]
     return ProjectReadinessSpec(
-        project_id=str(project.id), ready=not left, to_do=left,
+        project_id=str(project.id), ready=not left, to_do=left, updates=needs.updates,
         optional=[r for r in requirements if not r.required and r.skipped is None and unsatisfied(r)],
         skipped=[r for r in requirements if r.skipped is not None and r.kind != REQUIREMENT_GAP],
         gaps=[r for r in requirements if r.kind == REQUIREMENT_GAP],
+        set_up=[r for r in requirements
+                if r.skipped is None and r.kind != REQUIREMENT_GAP and r.satisfied and not unsatisfied(r)]
+        if include_ready else [],
     )
 
 
@@ -473,36 +649,114 @@ def _beyond_credentials(running: list[SetupRequirementSpec],
     """One row per need: a source still in setup because a credential (or connection) it uses is not set up is
     that credential's row ("Used by: <source>"), not a second row of its own. A source shows only when it owes
     something beyond what is listed."""
-    owed_by = {who for req in listed if req.kind == REQUIREMENT_PACK and unsatisfied(req) for who in req.used_by}
-    return [r for r in running if not (r.kind == REQUIREMENT_SOURCE and r.name in owed_by)]
+    owed_by = {root.typeid for req in listed if req.kind == REQUIREMENT_PACK and unsatisfied(req) for root in req.roots}
+    return [r for r in running if not (r.kind == REQUIREMENT_SOURCE and r.typeid in owed_by)]
 
 
-async def _running_here(project: "Project") -> list[SetupRequirementSpec]:
+async def _running_here(project: "Project", sources: Optional[list] = None, *,
+                        include_ready: bool = False) -> list[SetupRequirementSpec]:
     """What values cannot show: each source still in setup, each web app whose server does not answer.
+    ``include_ready`` adds the ones that are fine too (``satisfied=True``) — the setup page lists them as Ready.
 
     Both are read, never probed hard — the row's status, one loopback request per app — so the
     "Setup required" button stays as cheap as the credential check it sits beside."""
     from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
-    from flow_sdk.builtin.webapp_setup import step  # noqa: PLC0415
-
     out = [
-        SetupRequirementSpec(kind=REQUIREMENT_SOURCE, name=str(source.name or source.provider), satisfied=False,
+        SetupRequirementSpec(kind=REQUIREMENT_SOURCE, name=str(source.name or source.provider),
+                             satisfied=source.status != SourceStatus.SETUP.value,
                              typeid=str(source.typeid), used_by=[PROJECT],
-                             note=str(source.setup_detail or "not set up yet"), skipped=source.setup_skipped,
-                             **always_for(project, str(source.asset_ref or ""), what=f"the data source {source.name!r}"))
-        for source in await project_sources(project)
-        if source.status == SourceStatus.SETUP.value
+                             note=str(source.setup_detail or "not set up yet")
+                             if source.status == SourceStatus.SETUP.value else "",
+                             skipped=source.setup_skipped,
+                             **skip_always_of(project, [_root(source, ROOT_SOURCE)]))
+        for source in (sources if sources is not None else await project_sources(project))
+        if include_ready or source.status == SourceStatus.SETUP.value
     ]
+    from flow_sdk.core.webapp import readiness, record  # noqa: PLC0415
+
     apps = [app for app in await WebApp.get_all({"match": {"project_id": str(project.id)}}) if app.asset_ref]
-    answers = await asyncio.gather(*(step(str(app.id), "start", check=True) for app in apps))
+    # The app's record says whether it is up here (``core/webapp/readiness.quick``: its pids and health, no
+    # process table) — the one rule, as cheap as the credential check beside it.
+    records = [record.read(str(app.id), str(project.id)) for app in apps]
+    answers = list(await asyncio.gather(*(readiness.quick(app, rec) for app, rec in zip(apps, records))))
+    # Not up by its record (never brought up here, or its server died): one full check each, side by side, and an
+    # app found up — started by hand, or before this backend — is adopted into its record, so the next poll is the
+    # cheap one again.
+    unsure = [i for i, ok in enumerate(answers) if not ok]
+    verdicts = await asyncio.gather(*(readiness.ready(apps[i]) for i in unsure))
+    for i, verdict in zip(unsure, verdicts):
+        app = apps[i]
+        if not verdict.ok:
+            records[i] = records[i].model_copy(update={"detail": verdict.detail or records[i].detail})
+            continue
+        from flow_sdk.builtin.webapp_setup import _record_up  # noqa: PLC0415
+
+        try:
+            await _record_up(str(app.id), app, str(project.id), verdict)
+        except Exception as exc:  # noqa: BLE001 — adopting is a convenience; the verdict stands
+            logger.debug("adopting %s into its record failed: %s", app.name, exc)
+        records[i], answers[i] = record.read(str(app.id)), True
     out += [
-        SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name=str(app.name), satisfied=False, used_by=[PROJECT],
-                             note=answer.detail, typeid=str(app.typeid), skipped=app.setup_skipped,
-                             **always_for(project, str(app.asset_ref or ""), what=f"the web app {app.name!r}"))
-        for app, answer in zip(apps, answers) if not answer.ok
+        SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name=str(app.name), satisfied=bool(ok), used_by=[PROJECT],
+                             note=(rec.detail or f"{app.name} is not running") if not ok else "up",
+                             typeid=str(app.typeid), skipped=app.setup_skipped,
+                             **skip_always_of(project, [_root(app, ROOT_WEBAPP)]))
+        for app, rec, ok in zip(apps, records, answers) if include_ready or not ok
     ]
     return out
+
+
+async def _automations_here(project: "Project", *, include_ready: bool = False) -> list[SetupRequirementSpec]:
+    """The automations the project RECOMMENDS, as setup rows to decide with Enable / Disable (``decide_automation``):
+    one row per package (the agent or wizard whose folder holds them; on or off together), and one row per rule
+    that has no parent. A row is left while any of its rules is undecided here (``Trigger.decided``);
+    ``include_ready`` lists the decided ones as set up too. Flowpad's own, rules made here (no file) and ones the
+    project does not recommend are never rows."""
+    from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
+
+    rules = [rule for rule in await Trigger.get_all({"match": {"project_id": str(project.id)}})
+             if rule.asset_ref and rule.recommended and not rule.is_builtin]
+    by_parent: dict[str, list] = {}
+    for rule in rules:
+        by_parent.setdefault(str(rule.parent_type_id or ""), []).append(rule)
+    rows = [_automation_row(rule) for rule in by_parent.pop("", [])]
+    rows += await asyncio.gather(*(_automation_group_row(p, group) for p, group in by_parent.items()))
+    return [row for row in rows if include_ready or not row.satisfied]
+
+
+def _automation_row(rule: Any) -> SetupRequirementSpec:
+    return SetupRequirementSpec(kind=REQUIREMENT_AUTOMATION, name=str(rule.name), title=str(rule.name),
+                                typeid=str(rule.typeid), used_by=[PROJECT], satisfied=bool(rule.decided),
+                                needed_for=str(rule.description or ""),
+                                note="" if not rule.decided else ("on here" if rule.enabled else "off here"))
+
+
+async def _automation_group_row(parent_typeid: str, rules: list) -> SetupRequirementSpec:
+    """One setup step for a package (a parent's automations): its name and description; on/off together."""
+    from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
+
+    parent = await Trigger.get_by_typeid(parent_typeid)
+    decided = all(rule.decided for rule in rules)
+    note = "" if not decided else ("on here" if all(rule.enabled for rule in rules) else "off here")
+    name = str(getattr(parent, "name", "") or parent_typeid)
+    return SetupRequirementSpec(kind=REQUIREMENT_AUTOMATION, name=name, title=name, typeid=parent_typeid,
+                                used_by=[PROJECT], satisfied=decided, note=note,
+                                needed_for=str(getattr(parent, "description", "") or ""))
+
+
+async def decide_automation(project: "Project", typeid: str, on: bool) -> None:
+    """Turn the project's automations on or off HERE — the setup window's Enable / Disable. ``typeid`` is one
+    rule with no package, or a package (its parent): every rule of it, together."""
+    from flow_sdk.builtin.trigger import Trigger, set_package_on, set_trigger_on  # noqa: PLC0415
+
+    rule = await Trigger.get_by_typeid(typeid)
+    if isinstance(rule, Trigger):
+        if str(rule.project_id or "") != str(project.id):
+            raise SkipRefused("That automation is not part of this project.")
+        await set_trigger_on(rule, on)
+    elif not await set_package_on(typeid, on, project_id=str(project.id)):
+        raise SkipRefused("That automation is not part of this project.")
 
 
 def setup_run_address(project_id: str, root: str = "") -> str:
@@ -514,7 +768,7 @@ def setup_run_address(project_id: str, root: str = "") -> str:
 
 async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tree: Any = None,
                       load_after: bool = True, providers: Any = None, dependency_approval: bool = True,
-                      ancestors: tuple[str, ...] = (), connect_here: bool = True) -> str:
+                      ancestors: tuple[str, ...] = (), connect_here: bool = True, load_only: bool = False) -> str:
     """Start the project's setup in the background and return its address at once.
 
     The setup is the project's TREE (``core/setup/derive.ProjectTree``): every dependency, connection,
@@ -524,6 +778,9 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
     (``ask_person`` → the open tab), not a terminal. A run already going for the same root is joined,
     never doubled. ``tree``: a resolver pair (``resolve_node`` / ``resolve_op``) built already — a load
     (``core/setup/load``) hands in the one-node tree it checked, so the project is not derived twice.
+
+    Raises ``FirstRunPending`` until first-run setup has ended all green (``core/wizard/first_run``) —
+    unless ``load_only``: a load starting what is already set up, which is not setup.
     """
     from flow_sdk.core.setup import execute_setup  # noqa: PLC0415
     from flow_sdk.core.setup.derive import ProjectTree  # noqa: PLC0415
@@ -533,9 +790,16 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
     key = (pid, root)
     running = _RUNS.get(key)
     if running is None or running.done():
+        if not load_only:
+            from flow_sdk.core.wizard.first_run import require_first_run  # noqa: PLC0415
+
+            await require_first_run()
         tree = tree or await ProjectTree(project, ai=ai, connect_here=connect_here).load()
         control = _CONTROLS[key] = SetupControl()
         mount = str(getattr(project, "fs_storage_mount_path", "") or "")
+        # The project is in scope whatever the run is rooted at: a run of one declared node (a dependency a
+        # handling runs) names apps within THIS project, never the first of that name anywhere.
+        scope = {"project": pid}
 
         async def run_setup():
             # The run's shell: what the setup does not answer itself runs here, one start per run.
@@ -566,7 +830,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
             async with SharedShell() as base:
                 result = await execute_setup(
                     root or tree.root, resolve_node=tree.resolve_node, resolve_op=tree.resolve_op,
-                    subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
+                    subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None, inputs=scope,
                     shell=functools.partial(_setup_shell, inner=base),
                     # A person pressed Set up on THIS project: every node in it is theirs to run.
                     approved=True, control=control,
@@ -576,11 +840,10 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                     # The setup's own verdict stays the answer when it fell short.
                     from flow_sdk.core.setup.load import LoadTree  # noqa: PLC0415
 
-                    # The load a setup run ends with keeps the fixer: this run is the person's "make it work".
-                    operational = LoadTree(tree, fix=True)
+                    operational = LoadTree(tree)
                     loaded = await execute_setup(
                         root or tree.root, resolve_node=operational.resolve_node, resolve_op=operational.resolve_op,
-                        subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
+                        subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None, inputs=scope,
                         shell=functools.partial(_setup_shell, inner=base), approved=True, control=control,
                         # Its "done" (a source has nothing to load) must never stand in for a setup that fell
                         # short: the run's record stays the setup's own verdict.
@@ -597,6 +860,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
         add_detached_done_callback(task, _log_failure)
         add_detached_done_callback(task, functools.partial(_release_control, key, control))
         add_detached_done_callback(task, functools.partial(_forget_load, pid, root))
+        add_detached_done_callback(task, functools.partial(_status_after_run, pid))
         _RUNS[key] = task
     return setup_run_address(pid, root)
 
@@ -633,7 +897,14 @@ async def requirement_step(project_id: str, which: str, *, check: bool) -> tuple
         from flow_sdk.builtin.data_source import connection_need  # noqa: PLC0415
 
         need = await connection_need(provider)
-        return (True, "Connected") if need is None else (False, need.detail)
+        if need is not None:
+            return False, need.detail
+        from flow_sdk.core.oauth.provider_registry import grant_gap, missing_granted  # noqa: PLC0415
+
+        # Checked against what the provider GRANTED, when that is known: a read-only grant cannot write back.
+        if missing := await missing_granted(provider, [s for s in scopes.split(",") if s]):
+            return False, grant_gap(missing)
+        return True, "Connected"
     if kind != "credential":
         return False, f"unknown requirement step {which!r}"
     try:
@@ -642,14 +913,15 @@ async def requirement_step(project_id: str, which: str, *, check: bool) -> tuple
         project = None
     if project is None:
         return False, f"no project {project_id}"
+    wanted = [s for s in scopes.split(",") if s]
     pairs = await credentials_in_scope(project)
-    held = any(spec.is_oauth and str(spec.provider or "").lower() == provider for spec, _ in pairs)
-    if held:
+    held = next((spec for spec, _ in pairs if spec.is_oauth and str(spec.provider or "").lower() == provider), None)
+    if held is not None and set(wanted) <= set(held.scopes or []):
         return True, "In this project"
     if check:
-        return False, "Not in this project yet"
-    await credential_service.declare_oauth(project, provider, [s for s in scopes.split(",") if s])
-    return True, "Added from the catalog"
+        return False, "Not in this project yet" if held is None else "In this project, without every scope it needs"
+    await credential_service.declare_oauth(project, provider, wanted)
+    return True, "Added from the catalog" if held is None else "Widened to what the project needs"
 
 
 def _own_check(command: str) -> Optional[tuple[str, str, str]]:
@@ -674,6 +946,11 @@ def _own_check(command: str) -> Optional[tuple[str, str, str]]:
     return argv[5], given.get("--project", ""), given.get("--deployment", "")
 
 
+def setup_shell_answers(command: str) -> bool:
+    """``command`` is a check the setup's shell answers in this process — its detail is a reason."""
+    return _own_check(command) is not None
+
+
 async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, extra_env: Optional[dict] = None,
                        platform: str = "", stop: Optional[asyncio.Event] = None, on_output=None,
                        on_spawn=None, fresh: bool = False, inner=None):
@@ -696,7 +973,7 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
         return await (inner or run_shell)(command, timeout_seconds=timeout_seconds, workdir=workdir,
                                           extra_env=extra_env, platform=platform, stop=stop,
                                           on_output=on_output, on_spawn=on_spawn, fresh=fresh)
-    from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
+    from flow_sdk.builtin.credential_status import credentials_status, why_not_ready  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode  # noqa: PLC0415
 
@@ -708,8 +985,9 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
     row = next((r for r in rows if r.get("scope") == "project"), rows[0] if rows else None)
     ready = row is not None and row.get("state") == "connected"
     said = json.dumps({"name": name, "declared": row is not None, "ready": ready})
+    # Why it is not ready rides as the answer's detail: a step's check says it in its own words.
     return CliResult.of_process(command, 0 if ready else int(ExitCode.NOT_YET), said,
-                                duration_s=time.monotonic() - started)
+                                duration_s=time.monotonic() - started, detail=why_not_ready(row))
 
 
 def _release_control(key: tuple[str, str], control: Any, _task: "asyncio.Task") -> None:
@@ -723,6 +1001,14 @@ def _forget_load(project_id: str, root: str, _task: "asyncio.Task") -> None:
     from flow_sdk.core.setup.load import forget  # noqa: PLC0415
 
     forget(project_id, root)
+
+
+def _status_after_run(project_id: str, _task: "asyncio.Task") -> None:
+    """A run of the project ended: what it set up (a sign-in among them) is read again."""
+    from flow_sdk.builtin.credential_status import forget_signins  # noqa: PLC0415
+
+    forget_signins()
+    _status_changed(project_id)
 
 
 def _log_failure(task: "asyncio.Task") -> None:
@@ -774,8 +1060,9 @@ async def requirement_of(project: "Project", typeid: str, name: str = "") -> Set
     """The requirement ``typeid`` (a dependency: the project's typeid and its ``name``) as the project's setup
     lists it — what a skip may act on, and nothing else."""
     def match(reqs: list[SetupRequirementSpec]) -> Optional[SetupRequirementSpec]:
-        return next((r for r in reqs if r.typeid == typeid and (r.kind != REQUIREMENT_DEPENDENCY or r.name == name)),
-                    None)
+        # The typeid names it — save the ones that share one: a dependency (the project's) and a connection no
+        # template ships (the project's too), told apart by name.
+        return next((r for r in reqs if r.typeid == typeid and (not name or r.name == name)), None)
 
     # The running ones (a live probe per web app) only when the declared ones do not name it.
     if (req := match(await collect_requirements(project)) or match(await _running_here(project))) is not None:
@@ -783,9 +1070,10 @@ async def requirement_of(project: "Project", typeid: str, name: str = "") -> Set
     raise SkipRefused(f"{name or typeid} is not something this project's setup lists")
 
 
-def _undeclared(req: SetupRequirementSpec) -> bool:
-    """A shipped credential template this project does not declare yet: its record is not the project's."""
-    return req.kind == REQUIREMENT_PACK and not req.declared
+def _marks_project(req: SetupRequirementSpec) -> bool:
+    """A local skip kept in the project's own map: a dependency (flow.json is its record) and a need no row of the
+    project holds yet (its template is every project's)."""
+    return req.kind == REQUIREMENT_DEPENDENCY or (req.kind == REQUIREMENT_PACK and not req.declared)
 
 
 async def _record_of(req: SetupRequirementSpec):
@@ -805,9 +1093,9 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
 
     * ``local`` — a mark on its own record, on this machine (``core/setup/skip_mark``): it stops counting and its
       tree node settles SKIPPED. Undone by :func:`unskip_requirement`.
-    * ``always`` — the requirement stops existing: its asset leaves the project (a dependency leaves flow.json)
-      and the removal is STAGED in git for the person to commit. Only a project's own asset
-      (``can_skip_always``)."""
+    * ``always`` — the requirement stops existing: its ROOTS are uninstalled (a source, an agent, a credential the
+      project authored; a dependency leaves flow.json), with every credential they installed, and the removal is
+      STAGED in git for the person to commit. Only when every root is the project's own (``can_skip_always``)."""
     import time  # noqa: PLC0415
 
     from flow_sdk.core.setup.derive import skip_detail  # noqa: PLC0415
@@ -818,17 +1106,37 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
     if scope == SKIP_ALWAYS:
         if not req.can_skip_always:
             raise SkipRefused(req.why_not_always or f"{req.name} cannot be removed from this project")
-        await _remove_from_project(project, req)
+        await _uninstall(project, req.roots)
         _skip_live(project, req, "removed from the project")
+        _status_changed(str(project.id))
         return
     if scope != SKIP_LOCAL:
         raise SkipRefused(f"skip {scope!r}? it is {SKIP_LOCAL!r} or {SKIP_ALWAYS!r}")
     mark = SetupSkipSpec(at=time.time(), by=by, note=note.strip())
-    if req.kind == REQUIREMENT_DEPENDENCY or _undeclared(req):
+    if _marks_project(req):
         await write_setup_skip(project, {**(project.setup_skipped or {}), _project_skip_key(req): mark})
     else:
         await write_setup_skip(await _record_of(req), mark)
     _skip_live(project, req, skip_detail(mark))
+    _status_changed(str(project.id))
+
+
+async def skip_asking(run: str, step: str, *, by: str = "") -> bool:
+    """A setup question's own Skip: skip, on this machine, the ``step`` of setup run ``run`` that asked — the same
+    local skip its row offers (undone from the setup list), so the run goes on without it. ``False`` when no
+    setup run of that address is going."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.core.setup.derive import requirement_node_id  # noqa: PLC0415
+
+    pid = next((pid for pid, root in _CONTROLS if setup_run_address(pid, root) == run), None)
+    if pid is None:
+        return False
+    project = await Project.get_one({"id": pid})
+    req = next((r for r in await collect_requirements(project) if requirement_node_id(r) == step), None)
+    if req is None:
+        raise SkipRefused("the step asking is not one this project's setup lists")
+    await skip_requirement(project, req.typeid, name=req.name, by=by)
+    return True
 
 
 def _skip_live(project: "Project", req: SetupRequirementSpec, detail: str) -> None:
@@ -846,37 +1154,75 @@ async def unskip_requirement(project: "Project", typeid: str, *, name: str = "")
     from flow_sdk.core.setup.skip_mark import write_setup_skip  # noqa: PLC0415
 
     req = await requirement_of(project, typeid, name)
-    if req.kind == REQUIREMENT_DEPENDENCY or _undeclared(req):
+    if _marks_project(req):
         key = _project_skip_key(req)
         await write_setup_skip(project, {k: v for k, v in (project.setup_skipped or {}).items() if k != key})
     else:
         await write_setup_skip(await _record_of(req), None)
+    _status_changed(str(project.id))
 
 
-async def _remove_from_project(project: "Project", req: SetupRequirementSpec) -> None:
-    """"Skip → Always": the asset leaves the project folder and the index, each through its own delete, and git
-    stages the removal."""
-    from flow_sdk.assets.asset import Asset  # noqa: PLC0415
+def _status_changed(project_id: str) -> None:
+    """What this project's setup status reads changed: its stored answer is refreshed (``core/project_status``)."""
+    from flow_sdk.core.project_status import SETUP, mark_stale  # noqa: PLC0415
+
+    mark_stale(project_id, [SETUP])
+
+
+async def _delete_credential_staged(mount: Path, record: Any) -> None:
+    """A credential goes with its values and this machine's store pins, the way it is always deleted; staged."""
     from flow_sdk.builtin.credential_service import delete_credential  # noqa: PLC0415
 
-    root = Path(str(project.fs_storage_mount_path or ""))
-    if req.kind == REQUIREMENT_DEPENDENCY:
-        await project.remove_dependency(req.name)
-        await _stage(root, root / "flow.json")
-        return
-    record = await _record_of(req)
+    if not (await delete_credential(str(record.typeid))).removed:
+        raise SkipRefused(f"{record.name}'s values could not all be removed — delete it from Credentials")
+    await _stage(mount, Path(str(record.asset_ref or "")))
+
+
+async def _delete_source(mount: Path, record: Any) -> None:
+    await type(record).delete_by_id(str(record.id))  # its own path: children, row, folder
+    await _stage(mount, Path(str(record.asset_ref or "")))
+
+
+async def _delete_folder_asset(mount: Path, record: Any) -> None:
+    from flow_sdk.assets.asset import Asset  # noqa: PLC0415
+
     folder = Path(str(record.asset_ref or ""))
-    if req.kind == REQUIREMENT_PACK:
-        # Its values and this machine's store pins go with it, the way a credential is always deleted.
-        if not (await delete_credential(req.typeid)).removed:
-            raise SkipRefused(f"{req.name}'s values could not all be removed — delete it from Credentials")
-    elif req.kind == REQUIREMENT_SOURCE:
-        await type(record).delete_by_id(str(record.id))  # its own path: children, row, folder
-    else:
-        if folder.exists():
-            Asset.from_path(str(folder)).remove()
-        await record.delete()
-    await _stage(root, folder)
+    if folder.exists():
+        Asset.from_path(str(folder)).remove()
+    await record.delete()
+    await _stage(mount, folder)
+
+
+#: How each kind of root is uninstalled — through its own delete, then staged.
+_UNINSTALL = {ROOT_CREDENTIAL: _delete_credential_staged, ROOT_SOURCE: _delete_source,
+              ROOT_AGENT: _delete_folder_asset, ROOT_WEBAPP: _delete_folder_asset}
+
+
+async def _uninstall(project: "Project", roots: list[RootRef]) -> None:
+    """"Skip → Always": each root leaves the project folder and the index through its own delete, then every
+    derived credential no remaining root needs; git stages each removal."""
+    from flow_sdk.core import Entity  # noqa: PLC0415
+
+    mount = Path(str(project.fs_storage_mount_path or ""))
+    for root in roots:
+        if root.kind == ROOT_DEPENDENCY:
+            await project.remove_dependency(root.name)
+            await _stage(mount, mount / "flow.json")
+        elif (record := await Entity.get_by_typeid(root.typeid)) is not None:
+            await _UNINSTALL[root.kind](mount, record)
+    await _drop_orphans(project)
+
+
+async def _drop_orphans(project: "Project") -> None:
+    """The project's derived credentials no installed root needs any more — deleted, values and all, staged."""
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope  # noqa: PLC0415
+
+    mount = Path(str(project.fs_storage_mount_path or ""))
+    pairs = await credentials_in_scope(project)
+    needs = await _needs_of_roots(project, known=(pairs, None))
+    for spec, _ in pairs:
+        if spec.scope == "project" and is_derived(spec) and not needs.needs_credential(spec):
+            await _delete_credential_staged(mount, spec)
 
 
 async def _stage(root: Path, path: Path) -> None:

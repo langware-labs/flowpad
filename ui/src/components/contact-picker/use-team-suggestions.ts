@@ -26,16 +26,16 @@ interface KnownTeam {
 }
 
 /**
- * The teams to offer: the hub teams (`remote`) this desk knows the user is in.
- * A desk-only team has no hub roster to expand, so it is not offered — the
- * query already asks for `remote` rows only; this keeps the rule for any rows
- * handed in directly. Whether
+ * The teams to offer: the hub teams this desk knows the user is in — every
+ * team but a desk-only one (`remote === false`), which has no hub roster to
+ * expand. On the hub itself rows carry no `remote`: every one is a hub team.
+ * The query asks the same; this keeps the rule for any rows handed in directly. Whether
  * the user may list a team's members is not checked here; a team whose member
  * list the hub refuses contributes nobody at send time and is reported as skipped.
  */
 export function knownTeams(teams: KnownTeam[]): TeamSuggestion[] {
   return teams
-    .filter((t): t is KnownTeam & { id: string } => !!t.id && t.remote === true)
+    .filter((t): t is KnownTeam & { id: string } => !!t.id && t.remote !== false)
     .map((t) => ({ id: t.id, name: (t.name ?? '').trim() || t.id }));
 }
 
@@ -51,7 +51,7 @@ export function filterTeams<T extends TeamSuggestion>(teams: T[], query: string)
  * wire (`teams` is ids only); the backend grants the team as one principal at
  * `PROJECT_DEFAULT_INVITE_ROLE` (`flow_sdk/builtin/project.py`), which this mirrors.
  */
-export const TEAM_INVITE_ROLE = 'member';
+export const TEAM_INVITE_ROLE = 'reader';
 
 /**
  * A picked team as a participant: ONE entry keyed `team-<id>`, never its
@@ -65,7 +65,7 @@ export function teamParticipant(team: TeamSuggestion): ConversationParticipant {
     name: team.name,
     user_id: null,
     email: null,
-    role: TEAM_INVITE_ROLE,
+    roles: [TEAM_INVITE_ROLE],
   };
 }
 
@@ -95,14 +95,18 @@ export function teamTypeIdOf(p: ConversationParticipant): TypeId | null {
   }
 }
 
+/** The hub teams: every team but a desk-only one. */
+const HUB_TEAMS = new QueryRequest({
+  type: Team.type,
+  query: { match: { op: '$NE', operands: ['remote', false] } },
+});
+
 /**
  * The teams the sharer can pick (`knownTeams`). Nothing is read while `enabled`
  * is false, so surfaces that do not offer teams never ask.
  */
 export function useTeamSuggestions(enabled: boolean): { teams: TeamSuggestion[] } {
-  // Hub teams only — filtered by the local query, not after the fact.
-  const request = useMemo(() => new QueryRequest({ type: Team.type, query: { remote: true } }), []);
-  const { data: rows } = useEntitiesQuery<AnyEntity>(request, { enabled });
+  const { data: rows } = useEntitiesQuery<AnyEntity>(HUB_TEAMS, { enabled });
   const teams = useMemo(() => (enabled ? knownTeams((rows ?? []) as KnownTeam[]) : []), [enabled, rows]);
   return { teams };
 }

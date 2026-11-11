@@ -28,11 +28,26 @@ Three pieces, and all three are needed:
 Declare ``projected_fields`` and ``projection_writer`` on the subclass; the
 latter names the function that IS allowed to write, and appears in the error a
 developer will read.
+
+``derived_fields`` / ``derived_writer`` declare the SAME kind of fact one step
+softer: a field computed by exactly one deriver (``Dataset`` counts, a ``Tab``'s
+target) whose direct writers have not all been moved yet. A direct assignment
+WARNS while ``REFUSE_DERIVED_WRITES`` is off, and raises like a projection once
+it is on; inbound bodies drop them the same way; a save does NOT preserve them
+(the deriver writes the whole truth each time). Every other persisted field is
+authored or identity — the default, undeclared. ``derived_field_names`` is what
+the policy test reads.
 """
 from __future__ import annotations
 
 from contextlib import contextmanager
 from typing import ClassVar, FrozenSet, Iterator
+
+from flow_sdk import service_log
+
+#: Warn mode (False): a direct write to a ``derived_fields`` member logs and
+#: proceeds. Refuse mode (True): it raises, exactly like a projection.
+REFUSE_DERIVED_WRITES = False
 
 #: Held privately here so a caller cannot pass it accidentally. The sentinel is
 #: not the security boundary — it is a speed bump that makes the sanctioned
@@ -47,17 +62,32 @@ class ProjectedFields:
     projected_fields: ClassVar[FrozenSet[str]] = frozenset()
     #: What a developer should call instead, named in the refusal message.
     projection_writer: ClassVar[str] = "the projection writer"
+    #: Fields computed by ONE deriver; a direct write warns (or refuses, see
+    #: ``REFUSE_DERIVED_WRITES``).
+    derived_fields: ClassVar[FrozenSet[str]] = frozenset()
+    #: The one function that computes ``derived_fields``.
+    derived_writer: ClassVar[str] = ""
 
     def __setattr__(self, key, value):
         if (
-            key in self.projected_fields
-            and not self.__dict__.get("_allow_projection_write", False)
-        ):
-            raise AttributeError(
-                f"{type(self).__name__}.{key} is a projection — write via "
-                f"{self.projection_writer}, not directly"
-            )
+            key in self.projected_fields or key in self.derived_fields
+        ) and not self.__dict__.get("_allow_projection_write", False):
+            if key in self.projected_fields:
+                raise AttributeError(
+                    f"{type(self).__name__}.{key} is a projection — write via "
+                    f"{self.projection_writer}, not directly"
+                )
+            msg = f"{type(self).__name__}.{key} is derived — write via {self.derived_writer}, not directly"
+            if REFUSE_DERIVED_WRITES:
+                raise AttributeError(msg)
+            service_log.warn(msg)
         return super().__setattr__(key, value)
+
+    def _write_derived(self, **values) -> None:
+        """The deriver's write: every ``derived_fields`` value it computed, guard open."""
+        with self._projection_write():
+            for key, value in values.items():
+                setattr(self, key, value)
 
     def apply_field_updates(self, fields: dict):
         """Drop projection fields from inbound PUT/PATCH bodies.
@@ -66,7 +96,8 @@ class ProjectedFields:
         refusing would break generic graph CRUD for every such save.
         """
         if fields:
-            fields = {k: v for k, v in fields.items() if k not in self.projected_fields}
+            dropped = self.projected_fields | self.derived_fields
+            fields = {k: v for k, v in fields.items() if k not in dropped}
         return super().apply_field_updates(fields)
 
     @contextmanager
@@ -106,6 +137,11 @@ class ProjectedFields:
         if not current_data:
             return ()
         return tuple(f for f in self.projected_fields if f not in written)
+
+
+def derived_field_names(cls) -> FrozenSet[str]:
+    """Every field ``cls`` declares derived — projected or derived, one answer."""
+    return frozenset(getattr(cls, "projected_fields", ())) | frozenset(getattr(cls, "derived_fields", ()))
 
 
 #: Re-exported for the sanctioned writers. One object, not one per module.

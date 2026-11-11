@@ -9,10 +9,12 @@ import asyncio
 import errno
 import json
 import logging
-import os
 import mimetypes
+import os
 import re
+import tempfile
 import urllib.parse
+import zipfile
 from contextlib import AsyncExitStack
 from io import BytesIO
 from pathlib import Path, PurePosixPath
@@ -237,8 +239,8 @@ async def push_entity_files_to_hub(entity) -> int:
     try:
         from pathlib import Path
 
+        from flow_sdk.cloud_client.hub_proxy import HubProxy
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-        from flow_sdk.utils.hub import hub_upload_entity_file
 
         et = BuiltinEntityType(entity.get_type())
     except Exception as e:  # noqa: BLE001
@@ -266,7 +268,10 @@ async def push_entity_files_to_hub(entity) -> int:
             if source is None or not source.is_file() or not canonical_main:
                 return 0
             try:
-                await hub_upload_entity_file(et, entity.id, canonical_main, source.read_bytes())
+                await HubProxy.upload(
+                    et, entity.id, "fs", "upload",
+                    files={"uploaded_file": (canonical_main, source.read_bytes(), "application/octet-stream")},
+                )  # fmt: skip
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"share: file push failed for {entity.typeid}/{canonical_main}: {e}")
                 return 0
@@ -319,7 +324,9 @@ async def push_entity_files_to_hub(entity) -> int:
             if is_under(local, ignored):
                 continue  # kept out of git, so it stays on this machine (see _push_folder_to_hub)
             content = local.read_bytes()
-            await hub_upload_entity_file(et, entity.id, name, content)
+            await HubProxy.upload(
+                et, entity.id, "fs", "upload", files={"uploaded_file": (name, content, "application/octet-stream")}
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"share: file push failed for {entity.typeid}/{name}: {e}")
             continue
@@ -332,8 +339,8 @@ async def _push_folder_to_hub(et, entity, root: Path, *, skip_top: set[str] = fr
     paths. ``skip_top`` names files at the folder root to leave out."""
     import asyncio  # noqa: PLC0415
 
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
-    from flow_sdk.utils.hub import hub_upload_entity_file  # noqa: PLC0415
 
     # Nobody picked these files one by one, so what git excludes (often private: a data source's local
     # copy, an env file) stays on this machine. A person's own share asks first (``share_has_gitignored``).
@@ -351,7 +358,10 @@ async def _push_folder_to_hub(et, entity, root: Path, *, skip_top: set[str] = fr
             continue
         sub_path = "upload" if parent == "." else f"upload/{parent}"
         try:
-            await hub_upload_entity_file(et, entity.id, rel.name, source.read_bytes(), sub_path=sub_path)
+            await HubProxy.upload(
+                et, entity.id, "fs", sub_path,
+                files={"uploaded_file": (rel.name, source.read_bytes(), "application/octet-stream")},
+            )  # fmt: skip
         except Exception as e:  # noqa: BLE001
             logger.warning(f"share: file push failed for {entity.typeid}/{rel.as_posix()}: {e}")
             continue
@@ -380,9 +390,10 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
     try:
 
         from flow_sdk.builtin.flow_message import BODY_FILENAME
+        from flow_sdk.cloud_client.hub_proxy import HubProxy
+        from flow_sdk.cloud_client.transport.hub_http import hub_base_url
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
-        from flow_sdk.utils.hub import hub_base_url, hub_get
     except Exception:
         return False
     if not hub_base_url():
@@ -406,7 +417,7 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
         return False
     if entity is None or not getattr(entity, "remote", False):
         return False
-    bytes_ = await hub_get(et, str(typeid.id), "fs", f"download/{vfs_path}", raw=True)
+    bytes_ = await HubProxy.try_call("GET", et, str(typeid.id), "fs", f"download/{vfs_path}", raw=True)
     if not bytes_:
         return False
     await storage.upload(BytesIO(bytes_), vfs_path)
@@ -509,7 +520,8 @@ async def extract_preview(request_info: RequestInfo, fs_info: EntityFSReqInfo) -
     The folder lives in this instance's temp preview area (``archive.preview_root``)
     — disposable, re-extracted after the OS wipes it. Nothing is written beside
     the zip. Local storage only: the answer is a path on this machine."""
-    from flow_sdk.utils.archive import UnsafeArchiveError, extract_preview as _extract  # noqa: PLC0415
+    from flow_sdk.utils.archive import UnsafeArchiveError  # noqa: PLC0415
+    from flow_sdk.utils.archive import extract_preview as _extract
 
     if request_info.method != "post":
         return ApiFailResponse(message="extract_preview requires POST")
@@ -1099,9 +1111,61 @@ async def resolve_symlink(request_info: RequestInfo, fs_info: EntityFSReqInfo) -
     return ApiFailResponse(message="Symlink support not available in this version")
 
 
-async def download_zip(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
-    """Download directory as zip (not implemented in this version)"""
-    return ApiFailResponse(message="Zip download not available in this version")
+def _zip_folder(folder: Path) -> "tempfile.SpooledTemporaryFile[bytes]":
+    """Zip ``folder`` (paths inside the archive start at the folder's own name).
+    Spools to disk past 32 MB so a big folder doesn't sit in memory."""
+    out = tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024)
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+        base = folder.parent
+        for root, dirs, files in os.walk(folder):
+            dirs.sort()
+            if not files and not dirs:
+                zf.writestr(str(Path(root).relative_to(base)) + "/", "")
+            for name in sorted(files):
+                full = Path(root) / name
+                if full.is_symlink() and not full.exists():
+                    continue
+                zf.write(full, full.relative_to(base))
+    out.seek(0)
+    return out
+
+
+async def download_zip(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> StreamingResponse | ApiFailResponse:
+    """Download a directory as a zip archive named after it."""
+    from flow_sdk.actions.fs.asset_versioning import _real_path
+
+    if request_info.method != "get" or not fs_info.vpath.typeid:
+        return ApiFailResponse(message="Zip download requires GET and a target", status_code=400)
+    try:
+        storage = await _get_storage_for_entity(request_info)
+        real_path = _real_path(storage, fs_info.vpath.abs_vfspath)
+        if real_path is None:
+            return ApiFailResponse(message="Storage does not support zip download", status_code=501)
+        folder = Path(real_path)
+        if not folder.resolve().is_relative_to(Path(storage.mount_path).resolve()):
+            return _permission_denied_response(fs_info.vpath.entity_sub_path)
+        if not folder.is_dir():
+            return ApiFailResponse(message="Folder not found", status_code=404)
+        archive = await asyncio.to_thread(_zip_folder, folder)
+
+        async def chunks() -> AsyncIterator[bytes]:
+            try:
+                while chunk := await asyncio.to_thread(archive.read, 1024 * 1024):
+                    yield chunk
+            finally:
+                archive.close()
+
+        name = f"{folder.name or 'folder'}.zip"
+        return StreamingResponse(
+            content=chunks(),
+            media_type="application/zip",
+            headers={"Content-Disposition": make_content_disposition(name, inline=False)},
+        )
+    except Exception as e:
+        if _is_permission_denied_error(e):
+            return _permission_denied_response(fs_info.vpath.entity_sub_path)
+        logger.error(f"Zip download error: {e}")
+        return ApiFailResponse(message=f"Zip download failed: {e}")
 
 
 async def upload_zip(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:

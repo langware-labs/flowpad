@@ -9,7 +9,12 @@
 import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import type { HttpMethod } from '../models/ApiUrl';
-import { LLMEndpoint, type LLMEndpointFilters, type LLMEndpointLimits } from '../entities/llm-endpoint';
+import {
+  LLMEndpoint,
+  type LLMEndpointFilters,
+  type LLMEndpointLimits,
+  type LLMModelSize,
+} from '../entities/llm-endpoint';
 
 const TYPE = 'llm_endpoint';
 
@@ -42,6 +47,14 @@ export interface LLMEndpointModel {
   root_id: string;
 }
 
+/** What one provider declares as its small, medium and large model (hub `ClientDefaults.tiers`). */
+export interface LLMProviderSizes {
+  provider: string;
+  sm: string;
+  md: string;
+  lg: string;
+}
+
 export type LLMBreakerState = 'closed' | 'open';
 
 export interface LLMChainRemaining {
@@ -52,11 +65,20 @@ export interface LLMChainRemaining {
   resets_at: number | null;
 }
 
+/**
+ * One hop of a chain report. A hop the caller may not `read` is narrowed by the hub: the entry's
+ * direct source keeps only `id`, `source_kind`, `scope_name` and `is_root` (every other field is
+ * absent), and a deeper one is left out of `hops`, `paths` and `missing_sources` altogether.
+ */
 export interface LLMChainHop {
   id: string;
   name: string;
   provider: string | null;
   is_root: boolean;
+  /** What this hop is on the scope ladder: `global` | `organization` | `team` | `user`. */
+  source_kind?: string | null;
+  /** The team or organization whose pool this hop is — who allocated the budget below it. */
+  scope_name?: string | null;
   has_credential: boolean;
   enabled: boolean;
   breaker: { state: LLMBreakerState; open_until: number | null };
@@ -72,6 +94,15 @@ export interface LLMChain {
   paths: string[][];
   missing_sources: string[];
   sticky_root_for_me: string | null;
+  /** Per size: the model a caller of the entry gets, the hop that set it (`inherited` when that
+   *  hop is not readable to the caller), and why there is none. */
+  effective_tiers?: Record<LLMModelSize, LLMChainTier>;
+}
+
+export interface LLMChainTier {
+  model: string | null;
+  set_by: string | null;
+  reason: string;
 }
 
 export type LLMUsageGranularity = 'hour' | 'day';
@@ -155,11 +186,9 @@ export interface LLMAllowanceHistoryRow {
 export function hubAction(name: string, type: string, id: string | null, method: HttpMethod, subpath?: string) {
   const info = new ActionInfo(name, type, id, method);
   if (subpath) info.subpath = subpath;
-  // Hub-owned — reflect, or the desk (no handler for these) falls through to a
-  // generic entity read and answers 200 with the ENTITY. Id-less actions
-  // (`catalog`, `token_plan/me`) cannot reflect — `should_reflect_to_hub` needs
-  // a target entity — and are served by the desk's own proxy action instead.
-  info.hubReflect = id !== null;
+  // Hub-owned — the local server forwards it to the hub verbatim, with or without an id
+  // (`catalog`, `token_plan/me` included).
+  info.hubReflect = true;
   return info;
 }
 
@@ -170,7 +199,7 @@ function action(name: string, id: string, method: HttpMethod, subpath?: string):
 export class LlmEndpointsService {
   /**
    * Endpoints the caller may USE without holding a role edge — the hub's `catalog`
-   * (entities stamped `authenticated_role`, e.g. the seeded global root). They come
+   * (entities stamped `authenticated_roles`, e.g. the seeded global root). They come
    * without a permission expansion, so `readOnly`/`canDelete` are unknown and the
    * screens treat them as read-only.
    */
@@ -216,6 +245,15 @@ export class LlmEndpointsService {
     return dataManager.callAction<undefined, LLMEndpointModel[]>(action('models', id, 'GET'));
   }
 
+  /**
+   * The three sizes every provider declares for itself, one row per provider. Static: the same for every
+   * endpoint, so `id` only addresses the call. A screen that offers "this family's sizes" reads them here
+   * rather than keeping a copy.
+   */
+  listProviderSizes(id: string): Promise<LLMProviderSizes[]> {
+    return dataManager.callAction<undefined, LLMProviderSizes[]>(action('provider-sizes', id, 'GET'));
+  }
+
   getChain(id: string): Promise<LLMChain> {
     return dataManager.callAction<undefined, LLMChain>(action('chain', id, 'GET'));
   }
@@ -238,6 +276,13 @@ export class LlmEndpointsService {
   ): Promise<LLMEndpoint> {
     const info = action('allocate', parentId, 'POST');
     info.bodyParameters = { ...body };
+    return dataManager.callAction<undefined, LLMEndpoint>(info);
+  }
+
+  /** Change only the endpoint's name (the hub's `rename`): open to the budget's holder, who may not `update`. */
+  rename(id: string, name: string): Promise<LLMEndpoint> {
+    const info = action('rename', id, 'POST');
+    info.bodyParameters = { name };
     return dataManager.callAction<undefined, LLMEndpoint>(info);
   }
 

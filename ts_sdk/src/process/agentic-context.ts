@@ -56,6 +56,9 @@ export interface AgenticContext {
   /** Project ID to associate the process with (for project-scoped queries) */
   projectId?: string;
 
+  /** No project: run in the instance's chat scratch folder (backend picks it). */
+  scratch?: boolean;
+
   /** Session ID to resume - worker will continue this session */
   resumeSessionId?: string;
 
@@ -164,6 +167,7 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     max_thinking_tokens: ctx.maxThinkingTokens ?? 1024,
     permission_mode: ctx.permissionMode ?? 'bypassPermissions',
     project_id: ctx.projectId,
+    ...(ctx.scratch ? { scratch: true } : {}),
     resume_session_id: ctx.resumeSessionId,
     fork_session: ctx.forkSession,
     agents_json: ctx.agentsJson,

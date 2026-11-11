@@ -45,7 +45,7 @@ describe('TerminalBottomRibbon — artifacts chip', () => {
     expect(screen.queryByLabelText('Choose an artifact to open')).toBeNull();
   });
 
-  it('opens the REFERENCED ASSET on click, never the artifact row', async () => {
+  it('hands the clicked artifact to the opener, which opens its referenced asset', async () => {
     const onOpenArtifact = vi.fn();
     render(
       <TerminalBottomRibbon
@@ -57,7 +57,7 @@ describe('TerminalBottomRibbon — artifacts chip', () => {
 
     await userEvent.click(screen.getByText('report.md'));
 
-    expect(onOpenArtifact).toHaveBeenCalledWith('/repo/report.md');
+    expect(onOpenArtifact).toHaveBeenCalledWith(expect.objectContaining({ asset_ref: '/repo/report.md' }));
   });
 
   it('shows the newest by created_date, not the list tail', () => {
@@ -92,7 +92,7 @@ describe('TerminalBottomRibbon — artifacts chip', () => {
     await userEvent.click(screen.getByLabelText('Choose an artifact to open'));
     await userEvent.click(screen.getByText('older.md'));
 
-    expect(onOpenArtifact).toHaveBeenCalledWith('/repo/older.md');
+    expect(onOpenArtifact).toHaveBeenCalledWith(expect.objectContaining({ asset_ref: '/repo/older.md' }));
   });
 
   it('shows no select affordance for a single artifact', () => {
@@ -107,7 +107,7 @@ describe('TerminalBottomRibbon — artifacts chip', () => {
     expect(screen.queryByLabelText('Choose an artifact to open')).toBeNull();
   });
 
-  it('does not call the opener for an artifact with no referenced asset', async () => {
+  it('hands an artifact with no referenced asset to the opener too (it opens as an app)', async () => {
     const onOpenArtifact = vi.fn();
     render(
       <TerminalBottomRibbon
@@ -119,6 +119,6 @@ describe('TerminalBottomRibbon — artifacts chip', () => {
 
     await userEvent.click(screen.getByText('webapp'));
 
-    expect(onOpenArtifact).not.toHaveBeenCalled();
+    expect(onOpenArtifact).toHaveBeenCalledWith(expect.objectContaining({ name: 'webapp' }));
   });
 });

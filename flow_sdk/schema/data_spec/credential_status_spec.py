@@ -16,7 +16,20 @@ from flow_sdk.schema.data_spec.credential_contract import (
     CredentialVarKind,
     Requirement,
 )
+from flow_sdk.schema.data_spec.secret_vault_spec import SecretRefSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
+
+
+class CredentialTestResultSpec(DataSpec):
+    """The last run of a credential's ``test`` on this machine — value-free."""
+
+    #: ``ok`` (the provider took the values) / ``invalid`` (it refused them) / ``error`` (the test itself
+    #: could not run: no command for this OS, a timeout, a missing tool).
+    state: str
+    #: Why, in a person's words, every value scrubbed out; empty when ``ok``.
+    detail: str = ""
+    #: When it ran (ISO 8601, UTC).
+    at: str = ""
 
 
 class CredentialWaySpec(DataSpec):
@@ -46,6 +59,8 @@ class CredentialVarStatusSpec(DataSpec):
     #: The store this deployment keeps the variable in: ``env`` / ``vault`` / a remote store type —
     #: ``cli`` for a sign-in a command-line tool holds, ``connection`` for an oauth grant.
     store: str = "env"
+    #: Where a teammate's copy lives: ``{vault, key}`` in one of the project's vaults, or None.
+    secret_ref: Optional[SecretRefSpec] = None
     #: A value exists in that store (cli: its check passed on this computer; oauth: the grant is held and
     #: covers ``scopes``).
     present: bool = False
@@ -62,6 +77,9 @@ class CredentialVarStatusSpec(DataSpec):
     #: ``missing`` (no value anywhere), ``wrong-store`` (a value in the other local store) or
     #: ``unreachable`` (a remote store that could not be asked).
     warning: Optional[str] = None
+    #: cli: why the sign-in check failed on this computer, in a person's words ("signed in, but the sign-in
+    #: expired — sign in again: Reauthentication is needed"). Empty while signed in or never checked.
+    why: str = ""
     #: The typeid of the project credential overriding this user one, if any.
     shadowed_by: Optional[str] = None
     #: ONE_OF: the way this variable belongs to (``CredentialVarSpec.way``); empty = its own name.
@@ -173,6 +191,8 @@ class CredentialStatusRowSpec(DataSpec):
     setup_skipped: Optional[SetupSkipSpec] = None
     #: Where its folder is on this machine — what "Skip → Always" would remove.
     asset_ref: str = ""
+    #: A root installed it (``CredentialSpec.derived``); else the project authored it.
+    derived: bool = False
     #: The ONE_OF way set up here (``Credential.chosen``); ``""`` when none is chosen yet.
     setup_choice: str = ""
     #: How each ONE_OF way of several variables is offered (``CredentialSpec.ways``).
@@ -181,6 +201,10 @@ class CredentialStatusRowSpec(DataSpec):
     #: a grant missing scopes), ``needs_reauth`` (oauth: the grant went stale) or ``missing``.
     state: str
     vars: list[CredentialVarStatusSpec] = []
+    #: The credential declares a ``test`` (the Test button runs it; without one it asks an agent to write it).
+    has_test: bool = False
+    #: The last test run here; ``None`` = never tested on this machine.
+    test_result: Optional[CredentialTestResultSpec] = None
 
     @property
     def missing(self) -> list[str]:
@@ -249,6 +273,9 @@ class CredentialsStatusSpec(DataSpec):
     vault_enabled: bool = False
     credentials: list[CredentialStatusRowSpec] = []
     files: list[ScopeFileStatusSpec] = []
+    #: The project's vault names (``secret_vaults`` in ``project_manifest.json``) — where a teammate's
+    #: values are fetched from. Empty: the project has none (or no project).
+    secret_vaults: list[str] = []
 
 
 class StoreForgottenSpec(DataSpec):
@@ -256,7 +283,7 @@ class StoreForgottenSpec(DataSpec):
 
     model_config = ConfigDict(frozen=True)
 
-    #: The store type: ``env_file`` / ``vault`` / ``gcp_secret_manager`` / ...
+    #: The store type: ``env_file`` / ``vault`` / ``gcp`` / ...
     type: str
     #: Where it is: a file path, a vault prefix, a secret project.
     where: str

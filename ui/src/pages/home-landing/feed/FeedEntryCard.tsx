@@ -33,23 +33,11 @@ interface FeedEntryCardProps {
   busy: boolean;
   error?: string;
   onDismiss: (entry: FeedEntry) => void;
-  /** "Report issue" — email the diagnosis to the Flowpad team. */
-  onReportIssue: (entry: FeedEntry, suggest: MessageSuggest) => void;
-  /** The issue report for this entry was already sent (session-scoped). */
-  reported?: boolean;
   /** "Forward" — post the report into the chosen conversation. */
   onForwardMessageSuggest: (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => void;
 }
 
-export function FeedEntryCard({
-  entry,
-  busy,
-  error,
-  onDismiss,
-  onReportIssue,
-  reported,
-  onForwardMessageSuggest,
-}: FeedEntryCardProps) {
+export function FeedEntryCard({ entry, busy, error, onDismiss, onForwardMessageSuggest }: FeedEntryCardProps) {
   const feedData = useMemo(() => FeedData.fromEntry(entry), [entry]);
   const targetTypeId = feedData.targetTypeId;
   // ``watch:false`` — the parent (``HomeFeedColumn``) batch-hydrates every
@@ -105,8 +93,6 @@ export function FeedEntryCard({
         error={error}
         feedData={feedData}
         onDismiss={onDismiss}
-        onReportIssue={onReportIssue}
-        reported={reported}
         onForward={onForwardMessageSuggest}
       />
     );
@@ -251,9 +237,6 @@ interface MessageSuggestFeedEntryCardProps {
   error?: string;
   feedData: FeedData;
   onDismiss: (entry: FeedEntry) => void;
-  onReportIssue: (entry: FeedEntry, suggest: MessageSuggest) => void;
-  /** The issue report for this entry was already sent (session-scoped). */
-  reported?: boolean;
   onForward: (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => void;
 }
 
@@ -264,8 +247,6 @@ function MessageSuggestFeedEntryCard({
   error,
   feedData,
   onDismiss,
-  onReportIssue,
-  reported,
   onForward,
 }: MessageSuggestFeedEntryCardProps) {
   const { t } = useLingui();
@@ -377,20 +358,17 @@ function MessageSuggestFeedEntryCard({
         />
       ) : (
         <>
-          {/* View opens the diagnosis popup, right-most on the Report/Forward row.
-              Report/Forward never dismiss the card (only the frame's eye-off does). */}
+          {/* View opens the diagnosis popup, right-most on the Ask for help / Forward row.
+              They never dismiss the card (only the frame's eye-off does). */}
           {isDiagnosis && suggest.conversation_id ? (
             <DiagnosisActionButtons
               suggestedConversationId={suggest.conversation_id}
               busy={busy}
               error={error}
               showDismiss={false}
-              canReport={!!suggest.diagnosis_id}
-              reported={reported}
               diagnosisId={suggest.diagnosis_id ?? undefined}
               diagnosisTitle={title}
               onDismiss={() => onDismiss(entry)}
-              onReportIssue={() => onReportIssue(entry, suggest)}
               onForward={(conversationId) => onForward(entry, suggest, conversationId)}
               trailing={viewButton}
             />
@@ -618,6 +596,10 @@ function UsageReportFeedEntryCard({ entry, report, busy, feedData, onDismiss }: 
   const { navigation } = useDockNavigation();
   const day = report.period_start ? report.period_start.slice(0, 10) : '';
   const headline = report.period_kind === 'day' ? t`Yesterday` : t`Last ${report.period_kind}`;
+  const cost = report.total_cost_usd.toFixed(2);
+  const sessions = report.session_count;
+  const duration = formatDuration(report.total_duration_ms);
+  const prompts = report.prompt_count;
 
   return (
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
@@ -627,11 +609,13 @@ function UsageReportFeedEntryCard({ entry, report, busy, feedData, onDismiss }: 
         onClick={() => navigation.openDock(report.editorDockPointer)}
       >
         <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
-          {headline} usage{day ? ` · ${day}` : ''}
+          <Trans>{headline} usage</Trans>
+          {day ? ` · ${day}` : ''}
         </p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          ${report.total_cost_usd.toFixed(2)} · {report.session_count} sessions ·{' '}
-          {formatDuration(report.total_duration_ms)} active · {report.prompt_count} prompts
+          <Trans>
+            ${cost} · {sessions} sessions · {duration} active · {prompts} prompts
+          </Trans>
         </p>
       </button>
     </FeedEntryFrame>

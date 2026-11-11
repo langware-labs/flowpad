@@ -20,11 +20,16 @@ from typing import Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.builtin.conversation import Conversation, conversation_row_lock
-from flow_sdk.builtin.flow_message import FlowMessage, derive_session_fields, session_snapshot_from_header
+from flow_sdk.builtin.flow_message import (
+    FlowMessage,
+    FlowMessageKind,
+    derive_help_request_kind,
+    derive_it_reply,
+    derive_session_fields,
+    session_snapshot_from_header,
+)
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.discovery.notify import send_resource_sync
-from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.operations.conversation import (
     append_message_pointer,
     default_jsonl_path,
@@ -44,7 +49,7 @@ async def ensure_conversation_entity(
     project_id: Optional[str] = None,
     remote_project_id: Optional[str] = None,
     remote_project_name: Optional[str] = None,
-    participants: Optional[list] = None,
+    members: Optional[list] = None,
     title: Optional[str] = None,
     someone_typeid: Optional[str] = None,
     created_by: Optional[str] = None,
@@ -95,8 +100,8 @@ async def ensure_conversation_entity(
                 payload["remote_project_id"] = remote_project_id
             if remote_project_name:
                 payload["remote_project_name"] = remote_project_name
-            if participants:
-                payload["members"] = list(participants)  # roster cache field (wire key is ``participants``)
+            if members:
+                payload["members"] = list(members)
             if title_clean:
                 payload["title"] = title_clean
             if parent_typeid is not None:
@@ -124,10 +129,10 @@ async def ensure_conversation_entity(
                 # stamp it, so the stream inbox filter finds it without the backfill.
                 conv.owner = owner
                 dirty = True
-            if participants and not (conv.members or []):
+            if members and not (conv.members or []):
                 # Backfill the roster from the bundle so the reply-recipient
                 # resolver can find the other party's email.
-                conv.members = list(participants)
+                conv.members = list(members)
                 dirty = True
             if title_clean and not (conv.title or "").strip():
                 # Backfill title on first receive — keep an existing local override.
@@ -184,31 +189,6 @@ async def _adopt_header_session_snapshot(fm: "FlowMessage", someone_typeid: str)
         logger.warning("[session] header snapshot adopt failed for fm=%s: %s", fm.id, e)
 
 
-async def mirror_referenced_projects(fm: "FlowMessage", someone_typeid: str | None) -> None:
-    """Backward compatibility (FLOWPAD-2199; remove in FLOWPAD-2200): mirror from
-    the hub each ``project-<id>`` a received message references but this box
-    lacks — an old sender's invite chip and the email set-up link both need the
-    local row. Best-effort: a hub refusal or outage leaves no row."""
-    from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
-
-    project_prefix = f"{BuiltinEntityType.PROJECT.value}-"
-    for att in fm.attachment or []:
-        if att.attachment_type != AttachmentType.TYPE_ID or not (att.data or "").startswith(project_prefix):
-            continue
-        try:
-            tid = TypeId(att.data)
-        except (ValueError, TypeError):
-            continue
-        if not tid.id or await Project.get_one({"id": tid.id}) is not None:
-            continue
-        try:
-            await Project.hydrate_from_hub(tid.id, someone_typeid)
-        except Exception as e:  # noqa: BLE001 — never block a message's arrival
-            logger.info("[materialize_fm] referenced project %s not mirrored: %s", tid.id, e)
-
-
 async def materialize_flow_message(
     payload: dict,
     conversation_id: str,
@@ -218,20 +198,19 @@ async def materialize_flow_message(
     notify: bool = True,
     emit_live_create: bool = False,
     remote: bool = False,
-) -> FlowMessage:
+) -> Optional[FlowMessage]:
     """Create or upsert a FlowMessage, append its pointer to the conversation,
     project ``message_ids`` / ``message_count``, and (optionally) notify.
 
-    Sequence (ordering is load-bearing — FM CREATE must precede Conversation
-    UPDATE so the UI has the FM row to render when it refetches the
-    conversation):
+    Sequence (ordering is load-bearing — the FM row must exist before the
+    Conversation update goes out, so the UI has it to render when it refetches):
 
     1. Save the FlowMessage record (notify=False).
     2. Append a typed Pointer to the canonical ``conversation.jsonl``.
     3. ``ConversationRecord.sync_to_db`` projects ``message_ids`` /
        ``message_count`` onto the Conversation entity.
-    4. If ``notify``: dispatch ``flow_message`` CREATE then ``conversation``
-       UPDATE.
+    4. If ``notify``: re-read the Conversation and ``notify_updated()`` it (the
+       in-process entity event the UI's ``useEntity`` hooks re-render on).
 
     ``payload`` is anything ``FlowMessage.model_validate`` accepts; ``id`` may
     be omitted (allocated) or pre-populated (idempotent upsert when the same
@@ -244,6 +223,16 @@ async def materialize_flow_message(
     Local-origin producers (e.g. draft send) leave it ``False``; those paths
     flip ``remote`` themselves after a successful hub push.
     """
+    if FlowMessageKind.hub_only(str(payload.get("kind") or "")):
+        # A hub-only kind (a sealed value, its ack) is read from the hub, never kept as a local row. A frame that
+        # arrived without its kind may have left one already: drop it now that the kind is known.
+        stray = await FlowMessage.get_one({"id": payload.get("id")}) if payload.get("id") else None
+        if stray is not None:
+            try:
+                await stray.delete()
+            except Exception:  # noqa: BLE001 — the next sync tries again
+                logger.debug("hub-only stray row %s not removed yet", payload.get("id"), exc_info=True)
+        return None
     payload = dict(payload)  # don't mutate caller's dict
     payload.setdefault("conversation_id", conversation_id)
 
@@ -269,6 +258,8 @@ async def materialize_flow_message(
             # Refill live-session fields the hub may have stripped (unknown-
             # field drop) from the authoritative attachment carrier.
             derive_session_fields(fm)
+            derive_help_request_kind(fm)
+            derive_it_reply(fm, payload)
             # Pure reflection: preserve the hub's created_by/updated_by/dates
             # verbatim, never the local sync user.
             with remote_reflection():
@@ -296,13 +287,14 @@ async def materialize_flow_message(
         # drop) from the authoritative attachment carrier. Covers every arrival
         # path — hub WS, bundle unpack, catch-up sync — in this one chokepoint.
         derive_session_fields(fm)
+        derive_help_request_kind(fm)
+        derive_it_reply(fm, payload)
         # Save with notify=False — the CREATE is emitted explicitly below. Remote
         # rows reflect (preserve hub attribution); local rows stamp normally.
         with remote_reflection() if remote else nullcontext():
             fm = await fm.save(someone_typeid, notify=False)
         if remote:
             await _adopt_header_session_snapshot(fm, someone_typeid)
-            await mirror_referenced_projects(fm, someone_typeid)
 
     # Emit the explicit local CREATE that drives entity-event subscribers
     # (TS SDK ``conv.on('message')``).
@@ -404,36 +396,7 @@ async def materialize_flow_message(
 
     if notify:
         try:
-            task_id_for_sync = parent_id if parent_type == RecordType.TASK else fm.id
-            # These are sniffer-channel NOTIFICATIONS that materialization
-            # happened — not entity-reflection instructions. The real entity
-            # events already fired: handle_entity_op for the FM CREATE above,
-            # and conv.notify_updated() below. Sent as CRUD ops (CREATE/UPDATE)
-            # they reached the webhook receiver's _reflect_entity, which tried
-            # to *construct* a FlowMessage from this event-shaped payload —
-            # which carries no entity fields — and failed with "text Field
-            # required". EVENT routes to the event handler / sniffer instead,
-            # which is all this channel was ever for.
-            send_resource_sync(
-                type="flow_message",
-                id=fm.id,
-                operation=SyncOperation.EVENT,
-                data={
-                    "event_name": "flow_message_materialized",
-                    "event_data": {"flow_message_id": fm.id, "task_id": task_id_for_sync},
-                },
-            )
-            send_resource_sync(
-                type="conversation",
-                id=conv.id,
-                operation=SyncOperation.EVENT,
-                data={
-                    "event_name": "conversation_updated",
-                    "event_data": {"task_id": task_id_for_sync, "conversation_id": conv.id},
-                },
-            )
-            # Entity-event channel — required for React useEntity hooks to
-            # re-render. send_resource_sync only fires the sniffer channel.
+            # Entity-event channel: what makes React useEntity hooks re-render.
             conv_fresh = await Conversation.get_one({"id": conv.id})
             if conv_fresh:
                 await conv_fresh.notify_updated()

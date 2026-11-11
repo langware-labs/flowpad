@@ -19,6 +19,7 @@ import httpx
 import pytest
 
 from tests.hub_tests._assignment import assert_auto_assigned
+from tests.hub_tests.conftest import _delete_entity
 from tests.hub_tests.test_members_basic_operations import _alice_and_bob
 
 
@@ -44,11 +45,11 @@ async def _create_membership_entity(hub_base_url: str, token: str, etype: str, n
     return ent_id
 
 
-async def _invite(hub_base_url: str, token: str, etype: str, ent_id: str, email: str, role: str = "member"):
+async def _invite(hub_base_url: str, token: str, etype: str, ent_id: str, email: str, roles: tuple[str, ...] = ("reader",)):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     body = {
         "recipient_email": email,
-        "invitation_targets": [{"typeid": f"{etype}-{ent_id}", "role": role}],
+        "invitation_targets": [{"typeid": f"{etype}-{ent_id}", "roles": list(roles)}],
     }
     async with httpx.AsyncClient(timeout=5.0) as h:
         r = await h.post(
@@ -94,7 +95,7 @@ async def test_login_returns_organization_and_role(hub_base_url, hub_login_paylo
     # a user has several — a test-only artifact of repeated runs).
     org = data.get("organization")
     assert isinstance(org, dict) and org.get("id"), f"login did not embed an organization: {data.keys()}"
-    assert data.get("organization_role"), "login did not embed organization_role"
+    assert data.get("organization_roles"), "login did not embed organization_roles"
 
 
 def _alice_password() -> str:
@@ -117,7 +118,7 @@ async def test_org_invitation_auto_assigns_member(hub_base_url, hub_login_payloa
     org_id = await _create_membership_entity(
         hub_base_url, alice_token, "organization", f"invite-org-{int(time.time())}"
     )
-    await _invite(hub_base_url, alice_token, "organization", org_id, bob_email, role="member")
+    await _invite(hub_base_url, alice_token, "organization", org_id, bob_email)
 
     await assert_auto_assigned(
         hub_base_url,
@@ -136,7 +137,7 @@ async def test_org_invitation_auto_assigns_member(hub_base_url, hub_login_payloa
     members = r.json().get("data") or []
     by_id = {m.get("user_id"): m for m in members if isinstance(m, dict)}
     assert bob_id in by_id, f"bob not in org members after assignment: {members}"
-    assert by_id[bob_id].get("role"), "bob has no role on the organization"
+    assert by_id[bob_id].get("roles"), "bob has no role on the organization"
 
 
 # do not increase timeout without approval
@@ -151,7 +152,14 @@ async def test_team_invitation_auto_assigns_member(hub_base_url, hub_login_paylo
     bob_email = actors["bob_email"]
 
     team_id = await _create_membership_entity(hub_base_url, alice_token, "team", f"invite-team-{int(time.time())}")
-    await _invite(hub_base_url, alice_token, "team", team_id, bob_email, role="member")
+    try:
+        await _assert_team_invite_assigns(hub_base_url, alice_token, bob_token, bob_id, bob_email, team_id)
+    finally:
+        _delete_entity(hub_base_url, "team", team_id, [alice_token])
+
+
+async def _assert_team_invite_assigns(hub_base_url, alice_token, bob_token, bob_id, bob_email, team_id):
+    await _invite(hub_base_url, alice_token, "team", team_id, bob_email)
 
     await assert_auto_assigned(
         hub_base_url,

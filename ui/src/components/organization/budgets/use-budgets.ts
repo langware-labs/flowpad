@@ -37,9 +37,18 @@ export function useOrgBudgets(orgId: string | null | undefined) {
     enabled: !!orgId,
     staleTime: 15_000,
     refetchOnWindowFocus: true,
-    // A non-admin gets a flat refusal from the hub; retrying it just repeats the 401.
-    retry: false,
+    // A non-admin gets a flat refusal from the hub; retrying it just repeats the 401. A 409 is the
+    // desktop's "not linked to the hub yet" answer — true for a moment right after an org is
+    // created, before its local mirror is marked remote — so that one is worth a few retries.
+    retry: (count, error) => statusOf(error) === 409 && count < 4,
+    retryDelay: 1000,
   });
+}
+
+/** The HTTP status a failed budgets read carried, when it carried one. */
+function statusOf(error: unknown): number | null {
+  const status = (error as { response?: { status?: unknown } } | null)?.response?.status;
+  return typeof status === 'number' ? status : null;
 }
 
 export function useTeamBudgets(teamId: string | null | undefined) {
@@ -91,6 +100,17 @@ export function useSetPayingProvider() {
   return useMutation({
     mutationFn: ({ orgId, provider, baseUrl }: { orgId: string; provider: string; baseUrl?: string }) =>
       budgetsService.setPayingProvider(orgId, { provider, base_url: baseUrl }),
+    onSuccess: () => invalidate(),
+  });
+}
+
+/** Move the org's own root to another provider in place; the tree below it stays. The caller sets the new
+ *  key afterwards with `llmEndpointsService.setCredential` on the returned `endpoint_id`. */
+export function useSwitchPayingProvider() {
+  const invalidate = useInvalidateBudgets();
+  return useMutation({
+    mutationFn: ({ orgId, provider, baseUrl }: { orgId: string; provider: string; baseUrl?: string }) =>
+      budgetsService.switchPayingProvider(orgId, { provider, base_url: baseUrl }),
     onSuccess: () => invalidate(),
   });
 }

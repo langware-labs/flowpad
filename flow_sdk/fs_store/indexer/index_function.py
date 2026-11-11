@@ -12,7 +12,7 @@ import inspect
 import logging
 import time
 from collections.abc import Collection
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -25,12 +25,16 @@ from flow_sdk.fs_store.asset_occurrences import (
 )
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.gitignore import FlowIgnore
 from flow_sdk.fs_store.indexer.progress_table import (
     PROGRESS_TEXT_COMPLETE,
+    SWEEP_ROW_NAME,
+    ErrorSample,
     IndexProgressTable,
     TypeProgressRow,
 )
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
+from flow_sdk.schema.data_spec.activity_spec import MAX_ERROR_SAMPLE
 from flow_sdk.fs_store.path_owners import PathOwnerIndex
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.server.search_filters import PROJECT_LIKE_SCOPES, SCOPED_RECORD_TYPES, ScopeFilter
@@ -71,13 +75,18 @@ class _ProgressEmitter:
         self._total_fn = total_fn
         self._last_emit_at = 0.0
         self.current: "RecordType | None" = None
+        # A last row for work after the per-type pass (SWEEP_ROW_NAME).
+        self.tail: TypeProgressRow | None = None
 
     def table(self, text: str | None = None) -> IndexProgressTable:
         rows = self._rows_fn()
         current = self.current
+        # Once the tail runs the per-type pass is over: say so on each row, even
+        # one whose count fell short (failed files) or never had a total.
+        shown = rows if self.tail is None else [replace(r, finished=True) for r in rows] + [self.tail]
         return IndexProgressTable(
             job_name=self._job_name,
-            rows=tuple(rows),
+            rows=tuple(shown),
             current=(str(current) if current is not None and current not in _PROGRESS_HIDDEN_TYPES else None),
             done=sum(r.done for r in rows),
             total=self._total_fn(rows),
@@ -522,10 +531,16 @@ def _source_gone_orphans(
     exists. The declaration is read from the row, else from the record home's
     metadata.json. A record that declares no source isn't file-backed → never
     orphan. A source under an UNREACHABLE root (an unmounted volume) is not
-    gone either — absence there is not deletion. Stat-per-candidate — callers
-    run this off-loop via ``asyncio.to_thread``.
+    gone either — absence there is not deletion. A source a ``.flowignore``
+    now excludes IS gone: it leaves the index as a deleted file does.
+    Stat-per-candidate — callers run this off-loop via ``asyncio.to_thread``.
     """
     from flow_sdk.fs_store.path_utils import source_gone  # noqa: PLC0415
+
+    flowignore = FlowIgnore()
+
+    def gone(source: str) -> bool:
+        return source_gone(source) or (Path(source).is_absolute() and flowignore.excludes(source))
 
     def _declared_source(eid: str) -> str:
         row = db_rows.get(eid)
@@ -537,7 +552,7 @@ def _source_gone_orphans(
         eid
         for eid in candidates
         # An unreachable root is not a deletion — see ``source_gone``.
-        if source_gone(_declared_source(eid))
+        if gone(_declared_source(eid))
     }
 
 
@@ -763,6 +778,7 @@ class FSIndexer:
             rt: {
                 "indexed": 0,
                 "errors": 0,
+                "error_samples": [],
                 "duration_ms": 0.0,
                 "skipped": 0,
                 # Files parsed this run. ``indexed`` counts RECORDS, and one file can
@@ -796,6 +812,7 @@ class FSIndexer:
                         total=total,
                         errors=int(acc["errors"]),
                         skipped=int(acc["skipped"]),
+                        error_samples=tuple(acc["error_samples"]),
                     )
                 )
             rows.sort(key=lambda r: -r.total)
@@ -939,6 +956,15 @@ class FSIndexer:
             await _commit_batch()
             await yield_to_waiting_writers()
 
+        # Why a ref's identity probe failed, by path — the probe runs in a thread and
+        # returns ref_id=None; the loop below turns that into a counted, NAMED error.
+        probe_errors: dict[str, str] = {}
+
+        def _note_error(acc: dict[str, Any], ref: FSRef, message: str, code: str) -> None:
+            acc["errors"] += 1
+            if len(acc["error_samples"]) < MAX_ERROR_SAMPLE:
+                acc["error_samples"].append(ErrorSample(ref=str(ref._path), message=message, code=code))
+
         def _probe_chunk(
             items: list[tuple[FSRef, Any]],
         ) -> list[tuple[FSRef, Any, str | None, FSRecord | None, bool, str]]:
@@ -969,6 +995,7 @@ class FSIndexer:
                         ref.record_type,
                         e,
                     )
+                    probe_errors[str(ref._path)] = str(e)
                     ref_id = None
                     probe = None
                     fresh = False
@@ -1047,7 +1074,11 @@ class FSIndexer:
                 ",".join(item.duplicate_paths),
             )
 
-        async with _db_session() as _idx_session:
+        from flow_sdk.wiki.run_scope import link_scope  # noqa: PLC0415
+
+        # Links resolve from per-run memory: a database read per link would sit
+        # inside the batch's writer lock (see flow_sdk/wiki/run_scope.py).
+        async with _db_session() as _idx_session, link_scope():
             for ref, info, ref_id, probe, fresh, canon_path in all_probed:
                 await _hand_over_if_waited_on()
                 progress.current = ref.record_type
@@ -1071,7 +1102,7 @@ class FSIndexer:
                     continue
 
                 if ref_id is None or probe is None:
-                    acc["errors"] += 1
+                    _note_error(acc, ref, probe_errors.pop(str(ref._path), "could not resolve identity"), "index.identity")
                     acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
                     await progress.emit()
                     continue
@@ -1177,8 +1208,8 @@ class FSIndexer:
                     # only after the row commits — defer to the post-commit
                     # stamp below so a crash before commit leaves no sentinel.
                     _pending_hashes.append(probe)
-                except Exception:
-                    acc["errors"] += 1
+                except Exception as e:
+                    _note_error(acc, ref, str(e), "index.parse")
                     # Make failures observable, but cap the full traceback to
                     # the first few per type so a pathological tree (thousands
                     # of unparseable files) can't flood the log; the one-line
@@ -1238,12 +1269,15 @@ class FSIndexer:
         # create) until the whole index finishes. Duplicate/orphan removals
         # still open their own short writer sessions through the driver.
         #
-        # Phase marker before the (potentially long) orphan sweep: without
-        # it the last loop snapshot (done==total, no text) is what watchers
-        # and refresh-time activity-status replay see for the whole sweep —
-        # a stalled-looking 100% bar. Any non-complete text works; the
-        # activity stays alive until the terminal emit below.
-        await progress.emit(text="sweeping", force=True)
+        # The cleanup sweep gets its own row; without it the table reads
+        # finished (every type at done==total) while the sweep still runs.
+        # Total is unknown until the types are resolved below.
+        async def _sweep_progress(done: int, total: int) -> None:
+            progress.tail = TypeProgressRow(type_name=SWEEP_ROW_NAME, done=done, total=total)
+            await progress.emit(force=True)
+
+        progress.current = None
+        await _sweep_progress(0, 0)
 
         # ----- Superseded-identity sweep -----
         # A re-keying leaves residue no other pass can reach. When a type's
@@ -1306,39 +1340,15 @@ class FSIndexer:
             )
 
         # ----- Orphan handling -----
-        # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
-        # ~/.claude/skills/<name>/SKILL.md) does not exist. The orphan
-        # condition is independent of which materializations remain — DB
-        # row only, fs_record dir only, or both. We detect by looking at
-        # BOTH known materializations and asking the same question for each:
-        # was this id seen during the scan (meaning Layer 1 still exists)?
+        # DEFINITION: a record is orphan iff its own source file is deleted
+        # (``source_gone``). Candidates are the ids this walk did not see, across
+        # both materializations (DB rows and record homes on disk); each one is then
+        # stat-checked, so a record outside the walked roots is never removed.
+        # ``opts.scope_filter`` narrows which orphans are reported and acted on.
         #
-        #   orphan_ids = (records_dir_ids | db_row_ids) - seen_ids
-        #
-        # ``opts.scope_filter`` is applied on top: orphan-ness is determined
-        # globally (so a cross-scope reference still rescues a record), but
-        # only orphans whose (scope, project_id) match the filter are
-        # reported and acted on. The callers wiring this on top MUST walk
-        # every source — the all-projects root set (USER_HOME + one
-        # REAL_PROJECT_CWD per project), NOT default_roots() — so
-        # ``seen_ids`` is global; otherwise records under a project tree
-        # that wasn't walked would falsely appear orphan. (See the
-        # ``orphan_action != INDEX`` branch in fs_records_actions.index.)
-        #
-        # SAFETY GUARD: a destructive orphan_action with a narrowed walk
-        # (custom roots) and no scope_filter would silently wipe records
-        # referenced from outside the walked subtree. Refuse — fall back
-        # to INDEX (non-destructive) and emit a warning. The caller's
-        # ScopeFilter-aware wrapper is responsible for either widening the
-        # walk to global or supplying a scope_filter.
+        # A candidate is acted on only once ``_source_gone_orphans`` confirms its own
+        # file is deleted, so a narrowed walk cannot remove a record it did not visit.
         effective_orphan_action = opts.orphan_action
-        if effective_orphan_action != OrphanAction.INDEX and opts.roots is not None and opts.scope_filter is None:
-            logging.warning(
-                "Refusing destructive orphan_action=%s on narrowed walk without a scope_filter: "
-                "cross-scope references would be misclassified as orphan. Falling back to INDEX.",
-                effective_orphan_action,
-            )
-            effective_orphan_action = OrphanAction.INDEX
         orphan_records: dict[RecordType, list[str]] = {}
         orphan_sources: dict[RecordType, dict[str, dict[str, bool]]] = {}
         # Disk walks (records-root iterdir, per-type dir enumeration) run
@@ -1361,7 +1371,9 @@ class FSIndexer:
             for type_name in orphan_filter_types:
                 db_rows_per_type[type_name] = await driver.list_entity_sources_by_type(type_name)
 
-        for type_name in orphan_filter_types:
+        sweep_total = len(orphan_filter_types)
+        for swept, type_name in enumerate(orphan_filter_types):
+            await _sweep_progress(swept, sweep_total)
             try:
                 rt = RecordType(type_name)
             except ValueError:
@@ -1435,6 +1447,8 @@ class FSIndexer:
 
             acc["orphans_db_removed"] = db_removed
             acc["orphans_disk_removed"] = disk_removed
+
+        await _sweep_progress(sweep_total, sweep_total)
 
         # Build per-type result for the IndexResult return value.
         per_type: dict[RecordType, PerTypeIndexResult] = {}
@@ -1664,6 +1678,18 @@ class FSIndexer:
         # are accumulated inside the chunk and awaited on the main loop after
         # the chunk returns.
         functions = self._functions
+        # A path a .flowignore excludes is never indexed, whatever walker found it: many
+        # walkers list files themselves (a folder's markdown, a memory dir's glob), so the
+        # walk's own pruning cannot be the only gate.
+        flowignore = FlowIgnore()
+
+        def kept(children: list[FSRef]) -> list[FSRef]:
+            return [
+                child for child in children
+                if not flowignore.excludes(child.path, True if child.record_type is RecordType.FOLDER else None)
+            ]
+
+        stack[:] = kept(stack)
 
         # Type-gate the dispatcher: when opts.types is set, build the closure
         # of output types whose walk transitively produces a requested type
@@ -1715,7 +1741,7 @@ class FSIndexer:
                     if _is_async_walker(fn):
                         pending.append((node, fn))
                     else:
-                        children = fn([node], opts)
+                        children = kept(fn([node], opts))
                         stack.extend(reversed(children))
                 if opts.limit is not None and len(visited) >= opts.limit:
                     hit_limit = True
@@ -1730,7 +1756,7 @@ class FSIndexer:
             )
             # Drain any async walkers seen inside the chunk on the main loop.
             for node, fn in pending:
-                children = await fn([node], opts)
+                children = kept(await fn([node], opts))
                 stack.extend(reversed(children))
             await progress.emit()
             if hit_limit:

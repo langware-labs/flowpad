@@ -24,7 +24,6 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
 )
 from flow_sdk.transcript_analyzer import AgentTranscriptFile
 from flow_sdk.transcript_analyzer._helpers import extract_text
-from flow_sdk.transcript_analyzer.entries import AssistantMessageEntry
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 from flow_sdk.transcript_analyzer.resolver import (
     TranscriptNotFoundError,

@@ -1,9 +1,10 @@
 import { toast as sonnerToast } from 'sonner';
-import { getDev } from '@src/contexts/view-mode-context';
 import type { NotificationData, NotificationInput, NotificationLevel } from './types';
+import { detailFromRecentCall, errorDetailFrom } from './error-detail';
 import { useAlertStore } from './alerts-store';
 import { useBadgeStore } from './store';
 import { renderToast } from './NotificationOutlet';
+import { useToastStackStore } from './toast-stack-store';
 import { settleAsk } from './pending-asks';
 import { useCenterStore } from './center-store';
 
@@ -22,7 +23,7 @@ import { useCenterStore } from './center-store';
  * `category` present → persistent sidebar badge (store). Absent → transient toast.
  *
  * ALERTS (`warning` / `error`) are special: they always go to the alert log
- * behind the footer warnings popover, and they only pop as a toast in Dev mode.
+ * behind the footer warnings popover; they never pop as a toast.
  * Users were drowning in them; developers still want them in their face.
  *
  * `forceToast` opts a SINGLE alert back into toasting in every mode. Reserve it
@@ -56,9 +57,40 @@ export function isAlertLevel(level: NotificationLevel): boolean {
   return level === 'warning' || level === 'error';
 }
 
+/** The toasts `ingest.ts` raises for a refused hub request (not the outage/sign-in states). */
+const HUB_BROADCAST_IDS = ['cloud-request-rejected', 'cloud-access-denied', 'cloud-not-found'];
+
+/** True for a backend answer built from a hub failure (`HubError.envelope_data` stamps `hub_failure`). */
+function carriesHubFailure(error: unknown): boolean {
+  const data = (error as { response?: { data?: { data?: { hub_failure?: unknown } } } } | null)?.response?.data?.data;
+  return typeof data?.hub_failure === 'string';
+}
+
 function dispatch(input: NotificationInput): string {
   const id = input.id ?? `${input.level}:${djb2(input.title)}`;
-  const data: NotificationData = { ...input, id, timestamp: Date.now() };
+  const { error, ...rest } = input;
+  const now = Date.now();
+  // A repeat of an alert still in the log keeps its first time and counts up — the details
+  // popup says "since … · N times" instead of only the latest.
+  const prev = isAlertLevel(input.level) ? useAlertStore.getState().alerts.find((a) => a.id === id) : undefined;
+  const data: NotificationData = {
+    ...rest,
+    id,
+    detail:
+      rest.detail ??
+      (isAlertLevel(input.level)
+        ? (errorDetailFrom(error) ?? detailFromRecentCall(input.title, input.message))
+        : undefined),
+    firstAt: prev?.firstAt ?? prev?.timestamp ?? now,
+    count: (prev?.count ?? 1) + (prev ? 1 : 0),
+    timestamp: now,
+  };
+
+  // A caller explaining a failed hub call in its own words replaces the hub's generic broadcast for
+  // that same call ("Cloud request rejected"): one failure, one toast. The broadcast stays in the log.
+  if (isAlertLevel(input.level) && carriesHubFailure(error)) {
+    for (const broadcast of HUB_BROADCAST_IDS) closeShown(broadcast);
+  }
 
   // Persistent badge → sidebar feed; not a toast.
   if (data.category) {
@@ -72,14 +104,13 @@ function dispatch(input: NotificationInput): string {
     return id;
   }
 
-  // Alerts are logged for the footer warnings popover in every mode, and are
-  // toasted only with Dev on. The explicit dismiss on suppression matters: an alert
+  // Alerts are logged for the footer warnings popover and never toasted (unless `forceToast`). The explicit dismiss on suppression matters: an alert
   // commonly REPLACES a sticky `notify.busy` toast under the same id (see
   // AssetManagerPopover), so silently skipping the emit would leave that
   // spinner running forever.
   if (isAlertLevel(data.level) && !data.transient) {
     useAlertStore.getState().push(data);
-    if (!data.forceToast && !getDev()) {
+    if (data.logOnly || !data.forceToast) {
       sonnerToast.dismiss(id);
       return id;
     }
@@ -97,8 +128,13 @@ function dispatch(input: NotificationInput): string {
     id,
     duration: ms === null ? Infinity : ms,
     // However the toast goes — its ×, a swipe, a timer — a question in it is answered "no answer".
-    onDismiss: () => settleAsk(id),
+    onDismiss: () => {
+      useToastStackStore.getState().remove(id);
+      settleAsk(id);
+    },
+    onAutoClose: () => useToastStackStore.getState().remove(id),
   });
+  useToastStackStore.getState().add(id);
   return id;
 }
 

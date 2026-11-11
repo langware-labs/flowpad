@@ -15,9 +15,8 @@ import { ProjectNameTitle } from '@src/components/project-home/ProjectNameTitle'
 import { ShareContextFolderButton } from '@src/components/assets/ShareContextFolderButton';
 import { useDependencyForRel } from '@src/hooks/use-dependency-for-rel';
 import { useIsAdvanced } from '@src/components/view-mode';
-import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
-import { getDescriptor } from '@src/components/quick-create';
+import { getDescriptor, NewOfTypeDialog } from '@src/components/quick-create';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { assetTargetLookup, opensThroughLookup } from '@src/navigation/record-type-nav';
@@ -303,11 +302,9 @@ export function AssetsPage() {
     const path = proj.fs_storage_mount_path;
     showDeleteAssetModal({
       name,
-      description:
-        'This permanently deletes the project and everything in it — all indexed ' +
-        'records and their children, and the project folder on disk' +
-        (path ? ` (${path})` : '') +
-        '. This cannot be undone.',
+      description: path
+        ? t`This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk (${path}). This cannot be undone.`
+        : t`This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone.`,
       checkbox: {
         label: t`Delete chats`,
         description: t`Keeping chat history can make this project reappear when projects are scanned.`,
@@ -643,7 +640,7 @@ export function AssetsPage() {
                 />
                 <div className="min-h-0 flex-1">
                   <AssetListView
-                    recordType="markdown"
+                    recordType={`${RecordType.MARKDOWN},${RecordType.DOCUMENT_FILE}`}
                     onNew={creatableTypes.has('markdown') ? () => handleNew('markdown') : undefined}
                     refreshKey={refreshKey}
                     onRowClick={hasEditor('markdown') ? handleRowClick : undefined}
@@ -691,7 +688,11 @@ export function AssetsPage() {
               </div>
             </div>
           ) : isProjectHomeMode ? (
-            <ProjectHome spawnProjectId={scopeProjectId} />
+            <ProjectHome
+              spawnProjectId={scopeProjectId}
+              setupPage={effectivePointer === (AssetMode.PROJECT_SETUP as string)}
+              deploymentsPage={effectivePointer === (AssetMode.PROJECT_DEPLOYMENTS as string)}
+            />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               <Trans>Select a type to browse</Trans>
@@ -700,14 +701,12 @@ export function AssetsPage() {
         </div>
       </div>
 
-      <InputDialog
+      <NewOfTypeDialog
+        type={newTypeTarget}
         open={newTypeDialogOpen}
         onOpenChange={setNewTypeDialogOpen}
-        title={`New ${newTypeTarget ?? ''}`}
-        description={`Enter a name for the new ${newTypeTarget ?? 'item'}.`}
-        placeholder={t`Name`}
-        confirmLabel={t`Create`}
-        onConfirm={(name) => void handleNewConfirm(name)}
+        projectId={scopeProjectId ?? null}
+        onConfirmName={(name) => void handleNewConfirm(name)}
       />
     </div>
   );

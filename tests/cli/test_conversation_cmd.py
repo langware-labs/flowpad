@@ -42,12 +42,13 @@ def conv_server():
     default test port. Daemon thread — torn down with the process.
     """
     from flow_sdk.server.app import start_server
+    from tests.adjustable_timeout import adjusted
 
     port = _free_port()
     threading.Thread(target=start_server, args=(port,), daemon=True).start()
     base = f"http://127.0.0.1:{port}"
     # Readiness: poll the bootstrap endpoint until the server answers.
-    deadline = time.time() + 15
+    deadline = time.time() + adjusted(15)
     while time.time() < deadline:
         try:
             if requests.get(f"{base}/api/v1/graph/bootstrap", timeout=2).status_code == 200:
@@ -72,7 +73,7 @@ def conv_cli(conv_server, monkeypatch):
     project_id = next(p for p in projects if p.get("uname") == "local")["id"]
     created = requests.post(
         f"{base}/api/v1/graph/conversation-create",
-        json={"project_id": project_id, "participants": [{"email": "frank@example.com", "name": "Frank"}]},
+        json={"project_id": project_id, "members": [{"email": "frank@example.com", "name": "Frank"}]},
         timeout=10,
     )
     conv_id = created.json()["data"]["conversation_id"]
@@ -107,7 +108,7 @@ def test_list_reports_the_conversation(conv_cli):
     ids = [c["id"] for c in payload["conversations"]]
     assert conv_cli.conv_id in ids
     row = next(c for c in payload["conversations"] if c["id"] == conv_cli.conv_id)
-    assert any((p.get("name") == "Frank") for p in row["participants"])
+    assert any((p.get("name") == "Frank") for p in row["members"])
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -120,6 +121,24 @@ def test_send_lands_message_and_is_pending_when_logged_out(conv_cli):
     summary = conv_cli.summary_text()
     assert "hello from cli" in summary
     assert "Messages: 1" in summary
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_send_prompt_rides_inline_and_saves_nothing_to_the_library(conv_cli):
+    """`send --prompt` must not mint a library Prompt: each one writes a file under the
+    project's agentic-assets/prompt/, private chat text one `git add` from a push."""
+    def prompt_ids():
+        rows = requests.get(f"{conv_cli.base}/api/v1/graph/prompt", timeout=10).json().get("data") or []
+        return {r["id"] for r in rows}
+
+    before = prompt_ids()
+    payload = conv_cli.ok_payload(conv_cli.invoke(
+        ["conversation", "send", conv_cli.conv_id, "please run this", "--prompt", "echo hi from cli"]
+    ))
+    inline = [a["data"] for a in payload["attachment"] if a.get("attachment_type") == "prompt"]
+    assert inline == ["echo hi from cli"]
+    assert not [a for a in payload["attachment"] if str(a.get("data", "")).startswith("prompt-")]
+    assert prompt_ids() == before
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -152,6 +171,32 @@ def test_attach_entity_references_existing_entity(conv_cli):
     )
     type_ids = [a["data"] for a in payload["attachment"] if a.get("attachment_type") == "type_id"]
     assert target in type_ids
+
+
+def _create_prompt(conv_cli, text, **extra):
+    r = requests.post(f"{conv_cli.base}/api/v1/graph/prompt",
+                      json={"name": text[:20], "text": text, **extra}, timeout=10)
+    return r.json()["data"]["id"]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_attach_refuses_a_prompt_created_just_to_send_it(conv_cli):
+    """A prompt minted moments before the send is a project file made only to ride the
+    message: the send is refused and points at `send --prompt`."""
+    pid = _create_prompt(conv_cli, "run this fresh thing")
+    result = conv_cli.invoke(["conversation", "attach", conv_cli.conv_id, f"prompt-{pid}", "run it"])
+    assert result.exit_code != 0
+    assert "--prompt" in result.output
+    assert "Messages: 0" in conv_cli.summary_text() or "run it" not in conv_cli.summary_text()
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_attach_shares_a_prompt_the_user_already_uses(conv_cli):
+    pid = _create_prompt(conv_cli, "a library prompt in use", use_count=3)
+    payload = conv_cli.ok_payload(
+        conv_cli.invoke(["conversation", "attach", conv_cli.conv_id, f"prompt-{pid}", "try mine"])
+    )
+    assert f"prompt-{pid}" in [a["data"] for a in payload["attachment"]]
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -283,3 +328,159 @@ def test_show_unknown_thread_fails(conv_cli):
     result = conv_cli.invoke(["conversation", "show", conv_cli.conv_id, "--thread", "6f1c2b0e-7a51-4c3e-9d0e-2b8f4a1c9e77"])
     assert result.exit_code != 0
     assert "no thread" in result.output
+
+
+# ── flow contacts + flow conversation new ─────────────────────────────────────
+
+
+@pytest.fixture
+def contacts(conv_cli, monkeypatch):
+    """Two rows for one person (roster: hub id only; another: hub id + email), plus a namesake."""
+    from flow_sdk.cli.commands import contacts_cmd
+
+    monkeypatch.setattr(contacts_cmd, "discover_port", lambda: conv_cli_port(conv_cli))
+    monkeypatch.setattr(contacts_cmd, "_me", lambda port: None)
+    tag = str(time.time_ns())
+    rows = [
+        {"name": f"Gadi {tag}", "user_id": f"hub-gadi-{tag}"},
+        {"name": f"Gadi {tag}", "email": f"gadi-{tag}@example.com", "user_id": f"hub-gadi-{tag}"},
+        {"name": f"Nir {tag}", "email": f"nir-{tag}@example.com", "user_id": f"hub-nir-{tag}"},
+        {"name": f"Nir {tag}", "email": f"nir2-{tag}@example.com", "user_id": f"hub-nir2-{tag}"},
+    ]
+    for r in rows:
+        assert requests.post(f"{conv_cli.base}/api/v1/graph/user", json=r, timeout=10).ok
+    return tag
+
+
+def conv_cli_port(conv_cli) -> int:
+    return int(conv_cli.base.rsplit(":", 1)[1])
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_contacts_find_merges_one_persons_rows(conv_cli, contacts):
+    payload = conv_cli.ok_payload(conv_cli.invoke(["contacts", "find", f"gadi {contacts}"]))
+    assert payload["total"] == 1
+    assert payload["contacts"][0]["email"] == f"gadi-{contacts}@example.com"
+    assert payload["contacts"][0]["user_id"] == f"hub-gadi-{contacts}"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_contacts_find_nobody_is_not_found(conv_cli, contacts):
+    result = conv_cli.invoke(["contacts", "find", f"nobody-{contacts}"])
+    assert result.exit_code == 4
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_new_refuses_an_ambiguous_name_before_creating(conv_cli, contacts, monkeypatch):
+    monkeypatch.setattr(conversation_cmd, "_post_json", _no_auth_wrapper(conversation_cmd._post_json))
+    result = conv_cli.invoke(["conversation", "new", f"Nir {contacts}", "hi"])
+    assert result.exit_code == 2 and "AMBIGUOUS" in result.output
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_new_refuses_when_signed_out(conv_cli, contacts, monkeypatch):
+    real = conversation_cmd._post_json
+    monkeypatch.setattr(conversation_cmd, "_post_json",
+                        lambda url, payload, **kw: {"auth_required": True} if url.endswith("conversation-list")
+                        else pytest.fail(f"posted {url} while signed out"))
+    result = conv_cli.invoke(["conversation", "new", f"gadi-{contacts}@example.com", "hi"])
+    assert result.exit_code == 7 and "AUTH_REQUIRED" in result.output
+    assert real  # untouched
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_new_creates_with_the_contact_and_reports_the_id_when_invite_fails(conv_cli, contacts, monkeypatch):
+    """No hub in the test server, so the invite fails: the conversation must exist,
+    carry the contact as member, and the error must name its id for a retry."""
+    monkeypatch.setattr(conversation_cmd, "_post_json", _no_auth_wrapper(conversation_cmd._post_json))
+    result = conv_cli.invoke(["conversation", "new", f"gadi {contacts}", "hello"])
+    assert result.exit_code == 7 and "SHARE_FAILED" in result.output, result.output
+    cid = result.output.split("conversation ", 1)[1].split(" was created", 1)[0]
+    conv = requests.get(f"{conv_cli.base}/api/v1/graph/conversation/{cid}", timeout=10).json()["data"]
+    assert [m.get("email") for m in conv["members"]] == [f"gadi-{contacts}@example.com"]
+
+
+def _no_auth_wrapper(real):
+    """The test server is signed out; pretend the listing says signed in."""
+    def wrapped(url, payload, **kw):
+        data = real(url, payload, **kw)
+        return {**data, "auth_required": False} if url.endswith("conversation-list") else data
+    return wrapped
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_new_takes_an_email_nobody_knows_yet(conv_cli, contacts, monkeypatch):
+    """Not in the address book: the email itself is the member and the invitee."""
+    monkeypatch.setattr(conversation_cmd, "_post_json", _no_auth_wrapper(conversation_cmd._post_json))
+    stranger = f"stranger-{contacts}@example.com"
+    result = conv_cli.invoke(["conversation", "new", stranger, "hello"])
+    assert "SHARE_FAILED" in result.output and stranger in result.output, result.output
+    cid = result.output.split("conversation ", 1)[1].split(" was created", 1)[0]
+    conv = requests.get(f"{conv_cli.base}/api/v1/graph/conversation/{cid}", timeout=10).json()["data"]
+    assert [m.get("email") for m in conv["members"]] == [stranger]
+
+
+@pytest.fixture
+def signed_in(monkeypatch):
+    monkeypatch.setattr(conversation_cmd, "_signed_in", lambda: True)
+
+
+def _conversation_with_a_host(conv_cli, host_user_id: str) -> str:
+    """A conversation whose other member has a hub user id -- someone who can host a live session."""
+    created = requests.post(
+        f"{conv_cli.base}/api/v1/graph/conversation-create",
+        json={
+            "project_id": conv_cli.project_id,
+            "members": [{"email": f"{host_user_id}@example.com", "name": "Bob Example", "user_id": host_user_id}],
+        },
+        timeout=10,
+    )
+    return created.json()["data"]["conversation_id"]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_live_session_asks_the_host_and_a_rerun_answers_the_same_session(conv_cli, signed_in):
+    cid = _conversation_with_a_host(conv_cli, "host-cli-live")
+    first = conv_cli.ok_payload(conv_cli.invoke(["conversation", "live-session", f"conversation-{cid}"]))
+    assert first["status"] == "pending" and first["host_user_id"] == "host-cli-live", first
+    assert first["reply_policy"] == "auto" and first["session_id"]
+    again = conv_cli.ok_payload(conv_cli.invoke(["conversation", "live-session", cid]))
+    assert again["session_id"] == first["session_id"]
+    row = requests.get(f"{conv_cli.base}/api/v1/graph/remote_worker_session/{first['session_id']}", timeout=10)
+    assert row.json()["data"]["conversation_id"] == cid
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_live_session_passes_the_review_policy(conv_cli, signed_in):
+    cid = _conversation_with_a_host(conv_cli, "host-cli-review")
+    result = conv_cli.invoke(["conversation", "live-session", cid, "--reply-policy", "review"])
+    assert conv_cli.ok_payload(result)["reply_policy"] == "review"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_live_session_refuses_when_signed_out(conv_cli):
+    cid = _conversation_with_a_host(conv_cli, "host-cli-signed-out")
+    result = conv_cli.invoke(["conversation", "live-session", cid])
+    assert result.exit_code == 7 and "AUTH_REQUIRED" in result.output, result.output
+    rows = requests.get(f"{conv_cli.base}/api/v1/graph/remote_worker_session", timeout=10).json()["data"]
+    assert not [r for r in rows if r.get("conversation_id") == cid]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_live_session_refuses_an_unknown_reply_policy(conv_cli):
+    result = conv_cli.invoke(["conversation", "live-session", conv_cli.conv_id, "--reply-policy", "later"])
+    assert result.exit_code == 2 and "reply-policy" in result.output
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_live_session_needs_someone_else_to_host_it(conv_cli, signed_in):
+    result = conv_cli.invoke(["conversation", "live-session", conv_cli.conv_id])
+    assert result.exit_code == 7 and "other participant" in result.output, result.output
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_send_into_a_session_refuses_text_without_a_prompt(conv_cli):
+    before = conv_cli.summary_text()
+    result = conv_cli.invoke(["conversation", "send", conv_cli.conv_id, "run this", "--session", "any-session"])
+    assert result.exit_code == 2 and "--prompt" in result.output, result.output
+    assert conv_cli.summary_text() == before

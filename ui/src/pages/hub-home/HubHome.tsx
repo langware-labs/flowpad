@@ -1,11 +1,13 @@
+import { SEGMENTED_BUTTON, SEGMENTED_GROUP } from '@src/components/ui/segmented';
 import {
   type ComputeNode,
   CredentialsSubview,
+  type NodeAgent,
+  TypeId,
   dataContext,
   ExecutionEnvironmentStatus,
   PageId,
   ViewType,
-  WorldViewProjection,
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -14,7 +16,8 @@ import { credentialsPointer } from '@src/components/credentials-view/credentials
 import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
-import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
+import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import {
   useSandboxes,
   isLaunched,
@@ -25,33 +28,38 @@ import {
 import { StepList } from '@src/components/ui/step-list';
 import { NewSandboxDialog } from './NewSandboxDialog';
 import { LaunchSandboxDialog } from './LaunchSandboxDialog';
+import { ConnectMachineDialog } from './ConnectMachineDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
-import { TokenPlanCard } from '@src/components/token-plan/TokenPlanCard';
-import { HUB_HOME_CARD } from './card-style';
-import { openInbound } from '@src/components/inbound/inbound-pointer';
-import { SharedProjectsBanner, sharedProjectsToOpen } from './SharedProjectsBanner';
+import { HubItemsSection } from './HubItemsSection';
+import { hubProjectAssetDock } from '@src/lib/hub-page-url';
+import { FirstAgentCard } from './first-agent/FirstAgentCard';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
+import { Checkbox } from '@src/components/ui/checkbox';
+import { type BulkAction, BULK_ACTIONS, bulkActionCopy, bulkTargets, canUpgrade } from './machines-bulk';
+import { isDisconnected, isOperable } from './machine-status';
 import { MembershipInvitations } from '@src/components/stream-inbox-view/MembershipInvitations';
 import {
   ArrowUpCircle,
-  Building2,
-  Globe,
   KeyRound,
   Laptop,
   Loader2,
   LogOut,
   Monitor,
+  Plug,
+  Plus,
   ShieldCheck,
   Trash2,
   UserPlus,
-  Webhook,
+  X,
+  Bot,
 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { consumeInboundParams } from '@src/navigation/inbound-link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { isSignedInAsMe } from './signed-in-as-me';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
 
@@ -63,6 +71,7 @@ const STATUS_STYLE: Record<ExecutionEnvironmentStatus, { dot: string; card: stri
   [ExecutionEnvironmentStatus.NOT_FOUND]: { dot: 'bg-muted-foreground/40', card: 'border-border opacity-60' },
   [ExecutionEnvironmentStatus.ERROR]: { dot: 'bg-destructive', card: 'border-destructive/40 bg-destructive/5' },
   [ExecutionEnvironmentStatus.NEW]: { dot: 'bg-muted-foreground/40', card: 'border-border' },
+  [ExecutionEnvironmentStatus.DISCONNECTED]: { dot: 'bg-muted-foreground/40', card: 'border-border' },
 };
 
 /**
@@ -82,18 +91,6 @@ function CardGlyph({ node }: { node: ComputeNode }) {
 /** Border/background tint for a sandbox card, by live status. */
 function statusCardClass(status?: ExecutionEnvironmentStatus): string {
   return (status && STATUS_STYLE[status]?.card) || 'border-border';
-}
-
-/**
- * Did the status probe come back saying the machine cannot be reached?
- *
- * `ERROR` is the one status that means "there is a box and it did not answer" —
- * the same state the card labels "Unreachable". Absent details are NOT this: a
- * probe still in flight is unknown, not failed, and treating it as failed would
- * blank the card's actions on every render before the first poll lands.
- */
-function isUnreachable(info?: SandboxDetails): boolean {
-  return info?.status === ExecutionEnvironmentStatus.ERROR;
 }
 
 /** "12m", "1h 5m" — minutes granularity, clamped at 0. */
@@ -117,7 +114,8 @@ function fmtSize(cpu?: number, memMb?: number): string | null {
  * does not wake a paused machine to ask. Before this you could only learn whose
  * session a shared box was running by opening the share dialog.
  */
-function SandboxStatus({
+/** A machine's state the way the Machines card says it (also the shared-machine page). */
+export function SandboxStatus({
   info,
   now,
   launched = true,
@@ -181,23 +179,77 @@ function SandboxStatus({
     [ExecutionEnvironmentStatus.NOT_FOUND]: t`Not found`,
     [ExecutionEnvironmentStatus.ERROR]: t`Unreachable`,
     [ExecutionEnvironmentStatus.NEW]: t`New`,
+    [ExecutionEnvironmentStatus.DISCONNECTED]: t`Disconnected`,
   };
+  const startedAt = info.started_at ? new Date(info.started_at).getTime() : null;
   const parts: string[] = [];
   if (status === ExecutionEnvironmentStatus.READY) {
-    if (info.started_at) parts.push(`${fmtDur(now - new Date(info.started_at).getTime())} used`);
     if (info.end_at) parts.push(`pauses in ${fmtDur(new Date(info.end_at).getTime() - now)}`);
   }
   const size = fmtSize(info.cpu_count, info.memory_mb);
   if (size) parts.push(size);
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="flex min-w-0 items-center gap-1.5 ps-7 text-[11px] text-muted-foreground" title={status}>
+      <span
+        className="flex min-w-0 items-center gap-1.5 ps-7 text-[11px] text-muted-foreground"
+        title={info.status_msg || status}
+      >
         <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_STYLE[status]?.dot ?? 'bg-muted-foreground/40'}`} />
-        <span className="shrink-0">{labels[status] ?? status}</span>
+        <span className="shrink-0" data-testid="sandbox-status-label">
+          {labels[status] ?? status}
+        </span>
         {parts.length > 0 && <span className="truncate text-muted-foreground/70">· {parts.join(' · ')}</span>}
       </span>
+      {startedAt !== null && (
+        <span className="truncate ps-7 text-[11px] text-muted-foreground/70" data-testid="sandbox-started">
+          {t`started ${new Date(startedAt).toLocaleString()}`}
+          {status === ExecutionEnvironmentStatus.READY && ` · ${t`running ${fmtDur(now - startedAt)}`}`}
+        </span>
+      )}
       {login}
     </div>
+  );
+}
+
+/** The agents placed on this machine, one icon each; a click opens that agent in its project's editor. */
+function NodeAgents({ node }: { node: ComputeNode }) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  const [agents, setAgents] = useState<NodeAgent[]>([]);
+  // Keyed by the machine's id: the card's node object is rebuilt on every list refresh.
+  const nodeRef = useRef(node);
+  nodeRef.current = node;
+  useEffect(() => {
+    let live = true;
+    nodeRef.current
+      .agents()
+      .then((rows) => live && rows.length > 0 && setAgents(rows))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [node.id]);
+  if (agents.length === 0) return null;
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-1 ps-7" data-testid="machine-agents">
+      {agents.map((a) => (
+        <Tooltip key={a.deployment_typeid}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              disabled={!a.project_id}
+              onClick={() => navigation.openDock(hubProjectAssetDock(a.project_id, new TypeId(a.typeid)))}
+              className="flex max-w-[12rem] items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] hover:bg-muted"
+              data-testid={`machine-agent-${a.typeid}`}
+            >
+              <Bot className="h-3 w-3 shrink-0" />
+              <span className="truncate">{a.name || t`Agent`}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{t`Open the agent`}</TooltipContent>
+        </Tooltip>
+      ))}
+    </span>
   );
 }
 
@@ -228,6 +280,40 @@ function LoginLine({ loggedInUser, autoLogin }: { loggedInUser?: string | null; 
   );
 }
 
+const BULK_ICON: Record<BulkAction, typeof Trash2> = { upgrade: ArrowUpCircle, signout: LogOut, delete: Trash2 };
+
+/** The one confirm every bulk action goes through: what will run, and how many are skipped. */
+function BulkActionConfirm({
+  action,
+  targets,
+  skipped,
+  onClose,
+  onConfirm,
+}: {
+  action: BulkAction;
+  targets: ComputeNode[];
+  skipped: number;
+  onClose: () => void;
+  onConfirm: (nodes: ComputeNode[]) => void;
+}) {
+  const copy = bulkActionCopy(action);
+  const destructive = action === 'delete';
+  return (
+    <BulkConfirmDialog
+      open
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+      title={copy.title(targets.length)}
+      intro={skipped > 0 ? `${copy.intro} ${copy.skipped(skipped)}` : copy.intro}
+      buckets={[{ label: copy.will, count: targets.length, tone: destructive ? 'destructive' : 'default' }]}
+      confirmLabel={copy.confirm}
+      variant={destructive ? 'destructive' : 'default'}
+      onConfirm={() => onConfirm(targets)}
+    />
+  );
+}
+
 /**
  * HubHome — the hub page's landing. Mirrors the desktop app HOME (`HomeLanding`)
  * look (centered greeting + a hero band + cards) but uses ONLY hub-served data
@@ -236,7 +322,9 @@ function LoginLine({ loggedInUser, autoLogin }: { loggedInUser?: string | null; 
  *
  * URL: /dock/hub/home  (page=hub, viewType=home → routed here by ContentPanel).
  */
-export function HubHome() {
+/** `machines` renders only the Machines page (/dock/hub/machines); the default is the home. */
+export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
+  const showMachines = view === 'machines';
   const { t } = useLingui();
   const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
@@ -258,7 +346,6 @@ export function HubHome() {
   // (dataContext.project), so the highlighted card and the footer always agree.
   const { project: currentProject } = useContext();
   const { projects } = useProjects({ priority: 'demand' });
-  const sharedProjects = useMemo(() => sharedProjectsToOpen(projects, currentUser?.id), [projects, currentUser?.id]);
   const {
     sandboxes,
     createSandbox,
@@ -269,14 +356,15 @@ export function HubHome() {
     openSandbox,
     renameSandbox,
     deleteSandbox,
-    deletingId,
+    deletingIds,
     logoutSandbox,
-    loggingOutId,
+    loggingOutIds,
     upgradeSandbox,
-    upgradingId,
+    upgradingIds,
+    runBulkAction,
     details,
     refetch,
-  } = useSandboxes();
+  } = useSandboxes({ pollMachines: showMachines });
   // Absent on older hubs that don't advertise the flag yet — treat as enabled.
   const sandboxesEnabled = dataContext.bootstrapInfo?.sandboxes_enabled !== false;
   // `sandboxes_enabled` says the hub can provision CLOUD sandboxes. A machine a
@@ -290,6 +378,38 @@ export function HubHome() {
   // Deleting a project. Held as the whole entity, not an id, so the confirm can
   // name what it is about to destroy.
 
+  // Active hides machines the provider no longer has (Not found).
+  const firstAgentRef = useRef<HTMLDivElement>(null);
+  const [wizardActive, setWizardActive] = useState(false);
+  const [machineFilter, setMachineFilter] = useState<'active' | 'all'>('active');
+  const activeSandboxes = sandboxes.filter((d) => details[d.id]?.status !== ExecutionEnvironmentStatus.NOT_FOUND);
+  const shownSandboxes = machineFilter === 'all' ? sandboxes : activeSandboxes;
+
+  // Multi-select. Only cards on screen count: `selectedNodes` is derived from
+  // what is shown, so a filter change can never send a hidden card to a bulk action.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const selectedNodes = shownSandboxes.filter((d) => selectedIds.has(d.id));
+  const selecting = selectedNodes.length > 0;
+  const allSelected = selectedNodes.length === shownSandboxes.length;
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const clearSelection = () => setSelectedIds(new Set());
+  useEffect(() => {
+    if (!selecting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') clearSelection();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selecting]);
+  const targets = bulkTargets(selectedNodes, details, currentUser?.email, cardEnabled);
+  // The bulk action whose confirm is open, or null.
+  const [bulkAction, setBulkAction] = useState<BulkAction | null>(null);
   // Inline rename: single-click a sandbox name to edit it.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
@@ -314,6 +434,8 @@ export function HubHome() {
   // auto-login can only be chosen before the box signs anyone in. Opening an
   // already-launched box stays one click — it asks nothing and starts nothing.
   const [launching, setLaunching] = useState<ComputeNode | null>(null);
+  // The disconnected machine whose Connect instructions are open, or null.
+  const [connecting, setConnecting] = useState<ComputeNode | null>(null);
   // The sandbox whose upgrade confirm is open, or null. Asks first because the
   // upgrade STOPS the app inside the box: anyone working in it — the owner in
   // another tab, or someone they shared it with — is interrupted for as long as
@@ -331,6 +453,7 @@ export function HubHome() {
   }, [pendingInviteCount, refetch]);
   // `flow connect` device-code approval: null = closed, '' = open blank, 'XXXX-XXXX' = prefilled.
   const [addMachineCode, setAddMachineCode] = useState<string | null>(null);
+  const [addMachineOpen, setAddMachineOpen] = useState(false);
   // "create a sandbox" / "add a machine" (smart navigation): the same dialogs the buttons open.
   useUiActionRequest(['new-sandbox-hub', 'add-machine-hub'], (id) =>
     id === 'new-sandbox-hub' ? setNewSandbox({}) : setAddMachineCode(''),
@@ -348,98 +471,46 @@ export function HubHome() {
   // another one's interpolation, and the fallback needs translating too.
   const upgradeTargetName = upgrading?.name || t`this sandbox`;
 
-  const openWorldView = (projection: WorldViewProjection) =>
-    navigation.openPage(PageId.HUB, ViewType.WORLDVIEW, projection);
-
-  // People & teams is a plain screen, not a projection of the graph.
-  const openOrganization = () => navigation.openPage(PageId.HUB, ViewType.ORGANIZATION);
-
   return (
     <div className="flex h-full flex-col overflow-auto">
       <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-10 sm:py-14">
-        {/* Hero — greeting, same typographic treatment as HomeLanding */}
-        <div className="flex flex-col items-center gap-3 text-center">
-          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            <Trans>
-              Hey{' '}
-              <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-                {firstName}
-              </span>
-            </Trans>
-          </h1>
-          <p className="text-lg text-muted-foreground">
-            <Trans>Explore your organization and everything you can reach.</Trans>
-          </p>
-        </div>
+        {!showMachines && (
+          <>
+            {/* Greeting — small, left-aligned; the counters live in the tabs below. */}
+            <div className="flex flex-col items-start text-left">
+              <h1 className="text-xl font-bold tracking-tight">
+                <Trans>
+                  Hey{' '}
+                  <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                    {firstName}
+                  </span>
+                </Trans>
+              </h1>
+            </div>
 
-        {/* Projects other people gave you — the way from here to FlowPad. */}
-        <SharedProjectsBanner projects={sharedProjects} />
+            {/* First agent: describe → its own sandbox + a channel → it answers. */}
+            <div ref={firstAgentRef} className="w-full">
+              <FirstAgentCard onActiveChange={setWizardActive} />
+            </div>
 
-        {/* Primary cards — WorldView projections + the token plan glance */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <button
-            type="button"
-            onClick={() => openWorldView(WorldViewProjection.WORLD)}
-            data-testid="hub-home-world"
-            className={HUB_HOME_CARD}
-          >
-            <Globe className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />
-            <span className="text-base font-semibold">
-              <Trans>Your world</Trans>
-            </span>
-            <span className="text-sm text-muted-foreground">
-              <Trans>Everything you can reach, as a live graph.</Trans>
-            </span>
-          </button>
+            {/* Once the first-agent wizard is started it stands alone on the page. */}
+            {!wizardActive && (
+              <>
+                {/* Projects — the Vibe home's project strip, reused as-is (ProjectActionsRow). */}
+                <ProjectActionsRow className="w-full self-start" />
 
-          <button
-            type="button"
-            onClick={() => openOrganization()}
-            data-testid="hub-home-organization"
-            className={HUB_HOME_CARD}
-          >
-            <Building2 className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />
-            <span className="text-base font-semibold">
-              <Trans>Organization</Trans>
-            </span>
-            <span className="text-sm text-muted-foreground">
-              <Trans>Teams and people across your org.</Trans>
-            </span>
-          </button>
+                {/* The counters as tabs over the items they count. */}
+                <HubItemsSection
+                  onCreate={() => firstAgentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                />
+              </>
+            )}
+          </>
+        )}
 
-          <button
-            type="button"
-            onClick={() => openInbound(navigation)}
-            data-testid="hub-home-inbound"
-            className={HUB_HOME_CARD}
-          >
-            <Webhook className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />
-            <span className="text-base font-semibold">
-              <Trans>Inbound</Trans>
-            </span>
-            <span className="text-sm text-muted-foreground">
-              <Trans>Numbers and bots that message you, and where each message goes.</Trans>
-            </span>
-          </button>
-
-          <TokenPlanCard />
-        </div>
-
-        {/* Projects — real hub data (graph/project). Always rendered, zero
-            projects included: the hub has projects and a current project like
-            the desktop does, so "get me into a project" must be reachable from
-            an empty hub home too. The actions are project home's tiles, one
-            shared component with the Vibe hero (see ProjectActionsRow). */}
-        <div className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            <Trans>Projects</Trans>
-          </h2>
-          <ProjectActionsRow variant="tiles" />
-          {/* No project grid here on purpose: the current project is in the address
-              bar and the footer, and a long list only buries the sandboxes below. */}
-        </div>
-
-        {/* Pending invitations.
+        {showMachines && (
+          <>
+            {/* Pending invitations.
             Lives here because the hub page has no Stream Inbox: `renderHubBody`
             (content-panel.tsx) has no ViewType.STREAM_INBOX case, so `StreamInboxView` — and
             with it the usual home for `MembershipInvitations` — never renders
@@ -447,170 +518,285 @@ export function HubHome() {
             to appear. Above Sandboxes deliberately: a sandbox share is the
             invitation this page will mostly receive, and accepting one changes
             the list directly below it. Renders nothing when there are none. */}
-        <MembershipInvitations recipientEmail={currentUser?.email ?? null} onPendingCount={setPendingInviteCount} />
-        {pendingInviteCount > 0 && (
-          <p className="-mt-2 text-xs text-muted-foreground">
-            <Trans>Accepting adds it to your Sandboxes below.</Trans>
-          </p>
-        )}
-
-        {/* Sandboxes — cloud FlowPad instances running in E2B (ComputeNode flavor=workspace) */}
-        <div className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            <Trans>Sandboxes</Trans>
-          </h2>
-          {/* New sandbox — same DesktopTile shape the Projects section uses. */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DesktopTile
-                Icon={Monitor}
-                label={creating ? t`Creating…` : t`New Sandbox`}
-                loading={creating}
-                disabled={!canCreateSandbox}
-                onClick={() => setNewSandbox({})}
-                data-testid="new-sandbox-button"
-              />
-            </TooltipTrigger>
-            {!canCreateSandbox && (
-              <TooltipContent>
-                {!sandboxesEnabled ? (
-                  // `sandboxes_enabled` is the hub reporting it holds no sandbox
-                  // provider credential — an operator's missing config, not a
-                  // transient outage and nothing the viewer can retry. Say that,
-                  // so nobody burns time re-clicking a tile that cannot work.
-                  <Trans>This hub isn't configured to run sandboxes</Trans>
-                ) : (
-                  <Trans>Sign in to create sandboxes</Trans>
-                )}
-              </TooltipContent>
+            <MembershipInvitations show="pending" recipientEmail={currentUser?.email ?? null} onPendingCount={setPendingInviteCount} />
+            {pendingInviteCount > 0 && (
+              <p className="-mt-2 text-xs text-muted-foreground">
+                <Trans>Accepting adds it to your Sandboxes below.</Trans>
+              </p>
             )}
-          </Tooltip>
-          {/* Add machine — approve a `flow connect` code from your own computer/server. */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DesktopTile
-                Icon={Laptop}
-                label={t`Add Machine`}
-                disabled={!currentUser}
-                onClick={() => setAddMachineCode('')}
-                data-testid="add-machine-button"
-              />
-            </TooltipTrigger>
-            <TooltipContent>
-              {currentUser ? (
-                <Trans>Run `flow connect` on a machine and enter its code here</Trans>
-              ) : (
-                <Trans>Sign in to add machines</Trans>
-              )}
-            </TooltipContent>
-          </Tooltip>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {sandboxes.map((d) => (
-              <div
-                key={d.id}
-                data-testid="sandbox-card"
-                data-node-id={d.id}
-                data-provider-id={d.node_provider_id}
-                data-status={details[d.id]?.status}
-                title={cardEnabled(d) ? undefined : t`Sandbox unavailable`}
-                className={`group flex flex-col gap-1.5 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
-                  details[d.id]?.status,
-                )} ${cardEnabled(d) ? '' : 'opacity-60'}`}
-              >
-                <div className="flex items-center gap-3">
-                  <CardGlyph node={d} />
-                  {editingId === d.id ? (
-                    <input
-                      autoFocus
-                      value={draftName}
-                      onChange={(e) => setDraftName(e.target.value)}
-                      onBlur={() => {
-                        void renameSandbox(d, draftName);
-                        setEditingId(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') e.currentTarget.blur();
-                        else if (e.key === 'Escape') setEditingId(null);
-                      }}
-                      data-testid="sandbox-name-input"
-                      className="min-w-0 flex-1 border-b border-border bg-transparent text-sm outline-none"
-                    />
-                  ) : (
+            {/* Machines — the full screen behind a machine card's deep link; Home lists them in its Machines tab. */}
+            <div className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium text-muted-foreground">
+                <Trans>Machines</Trans>
+              </h2>
+              <DesktopTile
+                Icon={Plus}
+                label={creating ? t`Creating…` : t`Add machine`}
+                loading={creating}
+                onClick={() => setAddMachineOpen(true)}
+                data-testid="add-machine-open"
+              />
+              <Dialog open={addMachineOpen} onOpenChange={setAddMachineOpen}>
+                <DialogContent className="max-w-2xl" data-testid="add-machine-dialog">
+                  <DialogHeader>
+                    <DialogTitle>
+                      <Trans>Add machine</Trans>
+                    </DialogTitle>
+                    <DialogDescription>
+                      <Trans>Start a cloud sandbox, or connect a computer you own.</Trans>
+                    </DialogDescription>
+                  </DialogHeader>
+                  <TileSection title={<Trans>Machine type</Trans>}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DesktopTile
+                          Icon={Monitor}
+                          label={t`Sandbox`}
+                          disabled={!canCreateSandbox}
+                          onClick={() => {
+                            setAddMachineOpen(false);
+                            setNewSandbox({});
+                          }}
+                          data-testid="new-sandbox-button"
+                        />
+                      </TooltipTrigger>
+                      {!canCreateSandbox && (
+                        <TooltipContent>
+                          {!sandboxesEnabled ? (
+                            // An operator's missing provider config, not something the viewer can retry.
+                            <Trans>This hub isn't configured to run sandboxes</Trans>
+                          ) : (
+                            <Trans>Sign in to create sandboxes</Trans>
+                          )}
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DesktopTile
+                          Icon={Laptop}
+                          label={t`Machine`}
+                          disabled={!currentUser}
+                          onClick={() => {
+                            setAddMachineOpen(false);
+                            setAddMachineCode('');
+                          }}
+                          data-testid="add-machine-button"
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {currentUser ? (
+                          <Trans>Run `flow connect` on a machine and enter its code here</Trans>
+                        ) : (
+                          <Trans>Sign in to add machines</Trans>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TileSection>
+                </DialogContent>
+              </Dialog>
+
+              {selecting ? (
+                <div
+                  className="flex min-h-9 flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-1"
+                  data-testid="machines-selection-bar"
+                >
+                  <Checkbox
+                    checked={allSelected ? true : 'indeterminate'}
+                    onCheckedChange={() =>
+                      setSelectedIds(allSelected ? new Set() : new Set(shownSandboxes.map((d) => d.id)))
+                    }
+                    aria-label={t`Select all machines`}
+                    data-testid="machines-select-all"
+                  />
+                  <span className="text-sm font-medium" data-testid="machines-selection-count">
+                    {t`${selectedNodes.length} selected`}
+                  </span>
+                  {BULK_ACTIONS.map((action) => {
+                    const Icon = BULK_ICON[action];
+                    return (
+                      <Button
+                        key={action}
+                        size="sm"
+                        variant="secondary"
+                        className={`h-7 px-2.5 text-xs ${action === 'delete' ? 'text-destructive' : ''}`}
+                        disabled={!targets[action].length}
+                        onClick={() => setBulkAction(action)}
+                        data-testid={`machines-bulk-${action}`}
+                      >
+                        <Icon className="me-1.5 h-3 w-3" />
+                        {bulkActionCopy(action).button(targets[action].length)}
+                      </Button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={clearSelection}
+                    aria-label={t`Clear selection`}
+                    className="ms-auto text-muted-foreground hover:text-foreground"
+                    data-testid="machines-selection-clear"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div role="radiogroup" className={`${SEGMENTED_GROUP} h-9 w-fit`} data-testid="machine-filter">
+                  {(['active', 'all'] as const).map((f) => (
                     <button
+                      key={f}
                       type="button"
-                      onClick={() => {
-                        setDraftName(d.name || '');
-                        setEditingId(d.id);
-                      }}
-                      disabled={!cardEnabled(d)}
-                      className="min-w-0 flex-1 truncate text-start text-sm hover:underline disabled:pointer-events-none"
-                      title={cardEnabled(d) ? t`Click to rename` : undefined}
-                      data-testid="sandbox-name"
+                      role="radio"
+                      aria-checked={machineFilter === f}
+                      onClick={() => setMachineFilter(f)}
+                      className={`${SEGMENTED_BUTTON} h-7 w-auto px-4 text-sm ${machineFilter === f ? 'bg-primary font-medium text-primary-foreground' : 'text-foreground/80 hover:bg-accent hover:text-foreground'}`}
+                      data-testid={`machine-filter-${f}`}
                     >
-                      {d.name || t`Sandbox`}
+                      {f === 'active' ? t`Active` : t`All`}{' '}
+                      <span className="ms-1.5 opacity-70">
+                        ({f === 'all' ? sandboxes.length : activeSandboxes.length})
+                      </span>
                     </button>
-                  )}
-                  {/* A labelled button, and visible WITHOUT hovering.
+                  ))}
+                </div>
+              )}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {shownSandboxes.map((d) => (
+                  <div
+                    key={d.id}
+                    data-testid="sandbox-card"
+                    data-node-id={d.id}
+                    data-provider-id={d.node_provider_id}
+                    data-status={details[d.id]?.status}
+                    data-selected={selectedIds.has(d.id) || undefined}
+                    title={cardEnabled(d) ? undefined : t`Sandbox unavailable`}
+                    // Ctrl/⌘-click anywhere on the card toggles it, like a file list.
+                    onClickCapture={(e) => {
+                      if (!(e.metaKey || e.ctrlKey)) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleSelected(d.id);
+                    }}
+                    className={`group flex flex-col gap-1.5 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
+                      details[d.id]?.status,
+                    )} ${cardEnabled(d) ? '' : 'opacity-60'} ${selectedIds.has(d.id) ? 'ring-2 ring-primary' : ''}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        checked={selectedIds.has(d.id)}
+                        onCheckedChange={() => toggleSelected(d.id)}
+                        aria-label={t`Select ${d.name || 'machine'}`}
+                        data-testid="sandbox-card-select"
+                        className={`transition-opacity ${selecting ? 'opacity-100' : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100'}`}
+                      />
+                      <CardGlyph node={d} />
+                      {editingId === d.id ? (
+                        <input
+                          autoFocus
+                          value={draftName}
+                          onChange={(e) => setDraftName(e.target.value)}
+                          onBlur={() => {
+                            void renameSandbox(d, draftName);
+                            setEditingId(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.currentTarget.blur();
+                            else if (e.key === 'Escape') setEditingId(null);
+                          }}
+                          data-testid="sandbox-name-input"
+                          className="min-w-0 flex-1 border-b border-border bg-transparent text-sm outline-none"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftName(d.name || '');
+                            setEditingId(d.id);
+                          }}
+                          disabled={!cardEnabled(d)}
+                          className="min-w-0 flex-1 truncate text-start text-sm font-semibold hover:underline disabled:pointer-events-none"
+                          title={d.name || t`Sandbox`}
+                          data-testid="sandbox-name"
+                        >
+                          {d.name || t`Sandbox`}
+                        </button>
+                      )}
+                    </div>
+                    {/* Actions get their own line under the title, so a long name
+                    is not squeezed to a few letters by the buttons. */}
+                    <div className="flex items-center gap-3">
+                      {/* A labelled button, and visible WITHOUT hovering.
                       Opening is the one thing you come to this card to do, and
                       as a hover-only icon it was both undiscoverable and
                       indistinguishable from the share/secrets/delete icons
                       beside it. Those stay as hover icons — they are the rarer,
                       more destructive actions. */}
-                  {/* Two different acts behind one slot. A box that was never
+                      {/* Two different acts behind one slot. A box that was never
                       launched has no VM to open — the hub answers "this machine
                       has not been set up yet" — so offering "Open" would be a
                       button that 409s. Launch asks first; Open does not. */}
-                  {/* And nothing at all while the probe says the box is
+                      {/* And nothing at all while the probe says the box is
                       unreachable: there is a VM, so "Launch" is the wrong offer,
                       but opening it can only fail. The status line beside it
                       already says "Unreachable"; a button that reliably errors
                       would just be a second way to learn that. The slot comes
                       back on its own when the next poll finds the box. */}
-                  {isLaunched(d)
-                    ? !isUnreachable(details[d.id]) && (
+                      {isLaunched(d)
+                        ? isOperable(details[d.id]) && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => openSandbox(d)}
+                              disabled={!cardEnabled(d)}
+                              aria-label={t`Open sandbox`}
+                              data-testid="sandbox-open"
+                              className="h-7 shrink-0 px-2.5 text-xs"
+                            >
+                              <Trans>Open</Trans>
+                            </Button>
+                          )
+                        : null}
+                      {/* A connected machine's own shells: each click spins out one more
+                      terminal session on it (the same path as the terminal strip). */}
+                      {isDisconnected(details[d.id]) && (
+                        <Button
+                          size="sm"
+                          onClick={() => setConnecting(d)}
+                          aria-label={t`Connect this machine`}
+                          data-testid="machine-connect"
+                          className="h-7 shrink-0 px-2.5 text-xs"
+                        >
+                          <Plug className="me-1.5 h-3 w-3" />
+                          <Trans>Connect</Trans>
+                        </Button>
+                      )}
+                      {isUserMachine(d) && isOperable(details[d.id]) && (
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() => openSandbox(d)}
+                          onClick={() => void navigation.openNewShell({ computeNode: d })}
                           disabled={!cardEnabled(d)}
-                          aria-label={t`Open sandbox`}
-                          data-testid="sandbox-open"
+                          aria-label={t`Open a terminal on this machine`}
+                          data-testid="machine-terminal"
                           className="h-7 shrink-0 px-2.5 text-xs"
                         >
-                          <Trans>Open</Trans>
+                          <Trans>Terminal</Trans>
                         </Button>
-                      )
-                    : null}
-                  {/* A connected machine's own shells: each click spins out one more
-                      terminal session on it (the same path as the terminal strip). */}
-                  {isUserMachine(d) && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => void navigation.openNewShell({ computeNode: d })}
-                      disabled={!cardEnabled(d)}
-                      aria-label={t`Open a terminal on this machine`}
-                      data-testid="machine-terminal"
-                      className="h-7 shrink-0 px-2.5 text-xs"
-                    >
-                      <Trans>Terminal</Trans>
-                    </Button>
-                  )}
-                  {isLaunched(d) ? null : (
-                    <Button
-                      size="sm"
-                      onClick={() => setLaunching(d)}
-                      disabled={!cardEnabled(d) || launchingId === d.id}
-                      aria-label={t`Launch sandbox`}
-                      data-testid="sandbox-launch"
-                      className="h-7 shrink-0 px-2.5 text-xs"
-                    >
-                      {launchingId === d.id && <Loader2 className="me-1.5 h-3 w-3 animate-spin" />}
-                      <Trans>Launch</Trans>
-                    </Button>
-                  )}
-                  {/* Upgrade the FlowPad app INSIDE the box — `flow stop`,
+                      )}
+                      {isLaunched(d) ? null : (
+                        <Button
+                          size="sm"
+                          onClick={() => setLaunching(d)}
+                          disabled={!cardEnabled(d) || launchingId === d.id}
+                          aria-label={t`Launch sandbox`}
+                          data-testid="sandbox-launch"
+                          className="h-7 shrink-0 px-2.5 text-xs"
+                        >
+                          {launchingId === d.id && <Loader2 className="me-1.5 h-3 w-3 animate-spin" />}
+                          <Trans>Launch</Trans>
+                        </Button>
+                      )}
+                      {/* Upgrade the FlowPad app INSIDE the box — `flow stop`,
                       `flow upgrade`, start — so a fleet is kept current without
                       anyone opening a terminal on the machines.
 
@@ -620,55 +806,55 @@ export function HubHome() {
                       hover-only, unlike the icons after it: this is how a box
                       gets a fix, and an upgrade nobody can find is an upgrade
                       nobody runs. */}
-                  {isLaunched(d) && !isUnreachable(details[d.id]) && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={() => setUpgrading(d)}
-                          disabled={!cardEnabled(d) || upgradingId === d.id}
-                          aria-label={t`Upgrade FlowPad on this sandbox`}
-                          data-testid="sandbox-upgrade"
-                          className="shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-                        >
-                          {upgradingId === d.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <ArrowUpCircle className="h-4 w-4" />
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {upgradingId === d.id ? (
-                          <Trans>Upgrading — this takes a minute or two</Trans>
-                        ) : (
-                          <Trans>Upgrade FlowPad on this sandbox</Trans>
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setSharing(d)}
-                    disabled={!cardEnabled(d) || !currentUser}
-                    aria-label={t`Share sandbox`}
-                    data-testid="sandbox-share"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
-                  >
-                    <UserPlus className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditingLogin(d)}
-                    disabled={!cardEnabled(d) || !currentUser}
-                    aria-label={t`Login access`}
-                    title={t`Who may log in to this sandbox`}
-                    data-testid="sandbox-login-access"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
-                  >
-                    <ShieldCheck className="h-4 w-4" />
-                  </button>
-                  {/* Sign THIS box out — shown only when the box is running the
+                      {canUpgrade(d, details[d.id]) && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={() => setUpgrading(d)}
+                              disabled={!cardEnabled(d) || upgradingIds.has(d.id)}
+                              aria-label={t`Upgrade FlowPad on this sandbox`}
+                              data-testid="sandbox-upgrade"
+                              className="shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                            >
+                              {upgradingIds.has(d.id) ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <ArrowUpCircle className="h-4 w-4" />
+                              )}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {upgradingIds.has(d.id) ? (
+                              <Trans>Upgrading — this takes a minute or two</Trans>
+                            ) : (
+                              <Trans>Upgrade FlowPad on this sandbox</Trans>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSharing(d)}
+                        disabled={!cardEnabled(d) || !currentUser}
+                        aria-label={t`Share sandbox`}
+                        data-testid="sandbox-share"
+                        className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                      >
+                        <UserPlus className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingLogin(d)}
+                        disabled={!cardEnabled(d) || !currentUser}
+                        aria-label={t`Login access`}
+                        title={t`Who may log in to this sandbox`}
+                        data-testid="sandbox-login-access"
+                        className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                      >
+                        <ShieldCheck className="h-4 w-4" />
+                      </button>
+                      {/* Sign THIS box out — shown only when the box is running the
                       session of the person looking at the page.
 
                       The condition is the point. A box holds one cloud session,
@@ -681,64 +867,67 @@ export function HubHome() {
 
                       This does NOT sign the viewer out of the hub page: the
                       credentials being cleared live on the box's disk. */}
-                  {isSignedInAsMe(d, currentUser?.email) && (
-                    <button
-                      type="button"
-                      onClick={() => void logoutSandbox(d)}
-                      disabled={loggingOutId === d.id || !cardEnabled(d)}
-                      aria-label={t`Sign this sandbox out`}
-                      title={t`Sign out of this sandbox (you stay signed in here)`}
-                      data-testid="sandbox-logout"
-                      className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
-                    >
-                      {loggingOutId === d.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <LogOut className="h-4 w-4" />
+                      {isSignedInAsMe(d, currentUser?.email) && (
+                        <button
+                          type="button"
+                          onClick={() => void logoutSandbox(d)}
+                          disabled={loggingOutIds.has(d.id) || !cardEnabled(d)}
+                          aria-label={t`Sign this sandbox out`}
+                          title={t`Sign out of this sandbox (you stay signed in here)`}
+                          data-testid="sandbox-logout"
+                          className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                        >
+                          {loggingOutIds.has(d.id) ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <LogOut className="h-4 w-4" />
+                          )}
+                        </button>
                       )}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={openSandboxSecrets}
-                    disabled={!cardEnabled(d)}
-                    aria-label={t`Machine secrets`}
-                    data-testid="sandbox-secrets"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-                  >
-                    <KeyRound className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void deleteSandbox(d)}
-                    disabled={deletingId === d.id || !cardEnabled(d)}
-                    aria-label={t`Delete sandbox`}
-                    data-testid="sandbox-delete"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
-                  >
-                    {deletingId === d.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
-                <SandboxStatus
-                  info={details[d.id]}
-                  now={now}
-                  launched={isLaunched(d)}
-                  launching={launchingId === d.id}
-                  loggedInUser={d.logged_in_user}
-                  autoLogin={d.auto_login}
-                />
+                      <button
+                        type="button"
+                        onClick={openSandboxSecrets}
+                        disabled={!cardEnabled(d)}
+                        aria-label={t`Machine secrets`}
+                        data-testid="sandbox-secrets"
+                        className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                      >
+                        <KeyRound className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteSandbox(d)}
+                        disabled={deletingIds.has(d.id) || !cardEnabled(d)}
+                        aria-label={t`Delete sandbox`}
+                        data-testid="sandbox-delete"
+                        className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                      >
+                        {deletingIds.has(d.id) ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                    <SandboxStatus
+                      info={details[d.id]}
+                      now={now}
+                      launched={isLaunched(d)}
+                      launching={launchingId === d.id}
+                      loggedInUser={d.logged_in_user}
+                      autoLogin={d.auto_login}
+                    />
+                    <NodeAgents node={d} />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          {/* Progress used to render HERE, behind a dialog that had already
+              {/* Progress used to render HERE, behind a dialog that had already
               closed. It now lives inside NewSandboxDialog, which stays open for
               the whole create — so there is nothing left to show on the page. */}
-        </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* New-sandbox modal: name + optional git repo (with the connect-GitHub gate). */}
@@ -778,6 +967,13 @@ export function HubHome() {
         onLaunch={launchSandbox}
         onOpen={openSandbox}
         steps={steps}
+      />
+
+      <ConnectMachineDialog
+        where={connecting ? details[connecting.id]?.hostname || connecting.name || '' : null}
+        onOpenChange={(o) => {
+          if (!o) setConnecting(null);
+        }}
       />
 
       {/* Share / hand over a sandbox. `isOwner` is a UI courtesy only — the hub
@@ -829,6 +1025,20 @@ export function HubHome() {
           if (node) void upgradeSandbox(node);
         }}
       />
+
+      {/* One confirm for every bulk action: what will run, and how many are skipped. */}
+      {bulkAction && (
+        <BulkActionConfirm
+          action={bulkAction}
+          targets={targets[bulkAction]}
+          skipped={selectedNodes.length - targets[bulkAction].length}
+          onClose={() => setBulkAction(null)}
+          onConfirm={(nodes) => {
+            clearSelection();
+            void runBulkAction(bulkAction, nodes);
+          }}
+        />
+      )}
 
       {/* Deleting a project is not undoable and it is shared — the people it was
           shared with lose it too — so it asks first, unlike the sandbox rows. */}

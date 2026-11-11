@@ -1,0 +1,18 @@
+{
+  "name": "app",
+  "title": "App",
+  "description": "One FastAPI server with a SQLite database that serves its own pages (static/) and its API (/api). `setup.py` creates the Python environment.",
+  "build": ".",
+  "mounts": [
+    {
+      "audience": "app",
+      "serving": {
+        "type": "proxy",
+        "start_cmd": ".venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port {port}",
+        "health": "/api/health",
+        "install_cmd": "python3 setup.py",
+        "install_check": ".venv"
+      }
+    }
+  ]
+}

@@ -21,6 +21,9 @@ import pytest
 os.environ["TESTING"] = "true"
 # A running agent deployment is a loop process the app starts; a test that needs one starts it itself.
 os.environ["AGENT_RUN_DEPLOYMENTS"] = "false"
+# The local cookie-gate token is created on the first request a backend serves; left on, the first
+# in-process request would arm every later API test. Gate tests opt back in (`local_gate` fixture).
+os.environ["FLOWPAD_COOKIE_GATE"] = "off"
 
 
 # -----------------------------------------------------------------------------
@@ -291,7 +294,25 @@ def pytest_addoption(parser):
     )
 
 
+def _apply_adjustable_timeout(config, items) -> None:
+    """Add ADJUSTABLE_TIMEOUT to every test's timeout: its own ``@pytest.mark.timeout`` if it has one, else the global
+    ``--timeout``. Public API only - the adjusted value goes on as a closer marker, the committed values stay untouched."""
+    from tests.adjustable_timeout import ADJUSTABLE_TIMEOUT, adjusted
+
+    if not ADJUSTABLE_TIMEOUT:
+        return
+    global_timeout = config.getoption("timeout", default=None)
+    for item in items:
+        marker = item.get_closest_marker("timeout")
+        base = marker.args[0] if marker is not None and marker.args else (marker.kwargs.get("timeout") if marker else global_timeout)
+        if not base:  # 0 / None: the test has no limit, leave it so
+            continue
+        kwargs = {k: v for k, v in (marker.kwargs if marker else {}).items() if k != "timeout"}
+        item.add_marker(pytest.mark.timeout(adjusted(float(base)), **kwargs), append=False)
+
+
 def pytest_collection_modifyitems(config, items):
+    _apply_adjustable_timeout(config, items)
     pytest_asyncio_tests = (item for item in items if is_async_test(item))
     session_scope_marker = pytest.mark.asyncio(loop_scope="session")
     for async_test in pytest_asyncio_tests:
@@ -564,6 +585,19 @@ def isolated_records_root(tmp_path, monkeypatch):
 # for the per-instance Fernet key, and calls enable_secrets() so the consent
 # gate is open. Yields the active InstanceSettings.
 #
+@pytest.fixture
+def local_gate(tmp_path, monkeypatch):
+    """The local cookie-gate token turned on: off switch cleared, token file under
+    tmp_path. Yields the token file's path (not yet created)."""
+    import flow_sdk.server.middleware.cookie_gate_middleware as gate
+    from flow_sdk.instance_settings import cookie_gate
+
+    path = tmp_path / "instance" / ".cookie_gate"
+    monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
+    monkeypatch.setattr(cookie_gate, "_token_path", lambda: path)
+    yield path
+
+
 # Replaces the per-file ``memory_keyring`` fixtures that patched
 # ``credentials_mod.keyring`` — that import is gone in Phase C.
 # ----------------------------------------------------------------------

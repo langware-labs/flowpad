@@ -161,7 +161,7 @@ def main() -> int:
         for pack in registry.packs
         if not pack.is_bundle
         for spec in pack.icons
-        for key in (spec.kind, *spec.aliases)
+        for key in (spec.kind, f"{pack.kind}.{spec.kind}", *spec.aliases)
     }
 
     wanted, unknown = {}, []

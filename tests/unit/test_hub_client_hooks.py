@@ -83,6 +83,14 @@ async def test_pre_expired_credentials_short_circuit_without_network(memory_keyr
     assert any("auth_expired_msg" in message for message in capture_broadcast)
 
 
+_CORE = ("status_code", "method", "path", "message")
+
+
+def _core(report: dict) -> dict:
+    """The fields a report always had; the debug context (body, url, caller…) is checked on its own."""
+    return {k: report[k] for k in _CORE}
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status_code", [401, 402, 424])
 async def test_auth_failure_status_keeps_credentials_and_reports_warning(
@@ -137,7 +145,7 @@ async def test_auth_failure_status_keeps_credentials_and_reports_warning(
     assert is_logged_in()
     assert not any("auth_expired_msg" in message for message in capture_broadcast)
     # Full detail forwarded to the warning surface.
-    assert reports == [
+    assert [_core(r) for r in reports] == [
         {
             "status_code": status_code,
             "method": "GET",
@@ -200,7 +208,7 @@ async def test_500_reports_error_without_clearing_credentials(monkeypatch, memor
 
     assert load_credentials().api_key == "token-1"
     assert is_logged_in()
-    assert reports == [
+    assert [_core(r) for r in reports] == [
         {
             "status_code": 500,
             "method": "GET",
@@ -260,3 +268,100 @@ async def test_an_anonymous_request_sends_no_login_and_a_lapsed_one_does_not_sto
     assert resp.status_code == 401
     assert "Authorization" not in seen[0].headers
     assert load_credentials() is not None and is_logged_in(), "an answer to no credential says nothing about ours"
+
+
+@pytest.mark.asyncio
+async def test_a_hub_answer_clears_the_error_of_the_same_request_only(monkeypatch, memory_keyring):
+    """A request that failed and then got an answer clears its error; others keep theirs."""
+    import flow_sdk.cloud_client.client_hooks as hooks
+    from flow_sdk.cloud_client.error_reporter import _HubErrorReporter
+
+    messages = []
+
+    async def broadcast(message):
+        messages.append(message)
+
+    monkeypatch.setattr(hooks, "hub_error_reporter", _HubErrorReporter(broadcast_func=broadcast))
+    answers = {"/api/v1/flaky": [502, 200], "/api/v1/down": [502, 502], "/api/v1/fine": [200]}
+
+    async def handler(request: httpx.Request):
+        return httpx.Response(answers[request.url.path].pop(0), json={"data": {}}, request=request)
+
+    save_credentials(UserHubCredentials(api_key="token-1", user={"id": "u1"}))
+    set_user({"id": "u1"})
+    client = FlowpadClient(ApiConfig(api_base_url="https://hub.test/api/v1"), transport=httpx.MockTransport(handler))
+
+    async with client:
+        for path in ("/flaky", "/down", "/flaky", "/down", "/fine"):
+            try:
+                await client.get(path)
+            except ValueError:
+                pass
+
+    recovered = [m.path for m in messages if m.message_type == "hub_client_recovered_msg"]
+    assert recovered == ["/api/v1/flaky"], "only the request the hub went on to answer is cleared"
+
+
+@pytest.mark.asyncio
+async def test_a_forwarded_small_json_error_reports_the_hubs_answer_and_still_relays_it(monkeypatch):
+    from flow_sdk.cloud_client import client_hooks as hooks
+    from flow_sdk.cloud_client.caller import as_caller
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+
+    reports = []
+
+    class Reporter:
+        async def report(self, **kwargs):
+            reports.append(kwargs)
+
+        async def recovered(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(hooks, "hub_error_reporter", Reporter())
+    body = {"status": "FAIL", "message": "filter.status: not a valid value", "data": {"error_code": "validation"}}
+
+    async def handler(request: httpx.Request):
+        return httpx.Response(422, json=body, headers={"x-request-id": "req-1"}, request=request)
+
+    # Secrets in the query never reach the report.
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), event_hooks={"response": [hooks._on_response]}
+    ) as c:
+        req = c.build_request(
+            "GET",
+            "https://hub.test/api/v1/graph/issue?filter=open&api_key=s3cr3tvalue",
+            extensions={hooks.PASSTHROUGH_EXTENSION: True},
+        )
+        with as_caller("help desk"):
+            resp = await c.send(req, stream=True)
+        relayed = HubProxy.relay(resp)
+
+    [r] = reports
+    assert r["message"] == "filter.status: not a valid value"
+    d = r["detail"]
+    assert (d["response"]["errorCode"], d["response"]["requestId"], d["request"]["caller"]) == (
+        "validation",
+        "req-1",
+        "help desk",
+    )
+    assert d["request"]["url"] == "https://hub.test/api/v1/graph/issue?filter=open&api_key=[redacted]"
+    assert r["path"] == "/api/v1/graph/issue?filter=open&api_key=[redacted]"
+    assert b"not a valid value" in relayed.body, "the caller still gets the hub's full answer"
+
+
+@pytest.mark.asyncio
+async def test_a_401_to_a_call_that_carried_no_login_keeps_ours(memory_keyring, capture_broadcast):
+    """A call that reached the hub bare (``unwatch`` / ``mailbox`` of a deleted agent, 2026-11-02) got
+    ``unauthenticated`` back, and the box wiped a login that never went out with it."""
+    from flow_sdk.cloud_client.client_hooks import _on_response
+
+    save_credentials(UserHubCredentials(api_key="live-token", expires_at=time.time() + 3600, user={"id": "u1"}))
+    set_user({"id": "u1"})
+    bare = httpx.Request("POST", "https://hub.test/api/v1/graph/agent/a1/unwatch")
+    await _on_response(httpx.Response(401, json={"status": "FAIL", "data": {"error_code": "unauthenticated"}}, request=bare))
+    assert load_credentials().api_key == "live-token" and is_logged_in()
+
+    sent = httpx.Request("GET", "https://hub.test/api/v1/me", headers={"Authorization": "Bearer live-token"})
+    await _on_response(httpx.Response(401, json={"status": "FAIL", "data": {"error_code": "unauthenticated"}}, request=sent))
+    assert load_credentials() is None, "the login that went out and was refused is dead"

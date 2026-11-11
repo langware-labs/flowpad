@@ -1,5 +1,5 @@
-import { ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@sdk';
-import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
+import { config, ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@sdk';
+import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
 import { isDeepLinkAction } from '@src/navigation/inbound-link';
 import { workspaceEntryDock } from './workspace-scope';
@@ -10,7 +10,7 @@ import { registerLoadRedirect, runLoadRedirects } from './load-redirects';
 import '@src/journey/journey-load-redirect';
 import '@src/agents/agent-auto-launch-redirect'; // after journeys: first redirect wins
 import '@src/project-home-page/project-home-page-redirect'; // the Home button's `?homePage=open` target
-import { endLaunch, forgetLastPlace, lastPlaceRestoreRedirect } from '@src/tabs/last-tab-restore';
+import { endLaunch, forgetLastPlace, isSafeStart, lastPlaceRestoreRedirect } from '@src/tabs/last-tab-restore';
 
 // Last, from this module's body — after the side-effect imports above have run —
 // so every redirect the user or the app asked for on this load outranks it.
@@ -47,35 +47,39 @@ export async function loadHomePage(args: LoaderArgs) {
   await initSdk(params);
   t.time('initSdk');
 
+  const url = new URL(args.request.url);
+
   // Hub page has no desktop home. When the served backend serves only the hub
   // (no `desk`), the index route lands on the hub home instead of HomeLanding.
+  // Only the login callback's marker comes along, for App to read after this
+  // redirect. GA4 receives this page's URL, and the rest of a root query can carry
+  // the visitor's details: Auth0's verification link lands here with its own.
   if (isHubOnly()) {
+    const marker = [config.SIGNUP_QUERY_PARAM, config.LOGIN_QUERY_PARAM].find((name) => url.searchParams.has(name));
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect('/dock/hub/home');
+    throw redirect(`/dock/hub/home${marker ? `?${marker}` : ''}`);
   }
 
-  const url = new URL(args.request.url);
   const dock = DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`);
 
   const workspaceEntry = await workspaceEntryDock(dock);
   if (workspaceEntry) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(workspaceEntry.toUrl(url.pathname));
+    throw redirect(workspaceEntry.toUrl(url.pathname));
   }
 
   // The home has no view mode — it is the one open screen. An address that still
   // carries one (an old bookmark, a history entry from before) is canonicalized
   // to the plain home, so no entry can show a second home.
   //
-  // `replace`, NOT `redirect`: a redirect on the INITIAL document load pushes,
-  // which would leave the stale URL sitting behind home as an entry that re-runs
-  // this loader and redirects forward again — a Back step that does nothing.
+  // The plain home takes the stale URL's place (I7), so no entry re-runs this
+  // loader and redirects forward again.
   //
   // FIRST, before any awaited work: this throw discards the rest of the pass and
   // the router re-runs the whole matched loader tree on the canonical URL.
   if (url.searchParams.has(VIEW_MODE_PARAM)) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(dock.toUrl(url.pathname));
+    throw redirect(dock.toUrl(url.pathname));
   }
 
   await ensureComputeNodeLoaded();
@@ -92,6 +96,15 @@ export async function loadHomePage(args: LoaderArgs) {
   if (!isDeepLinkAction(url.searchParams.get('action'))) {
     await adoptScopeProject(dock);
     t.time('adoptScope');
+  }
+
+  // A clean start after the desktop recovered a hung window: Home only. The last place is the page
+  // that hung, and a launch redirect (an agent auto-launch) could be it too.
+  if (isSafeStart(url)) {
+    endLaunch();
+    forgetLastPlace();
+    t.done(1.2);
+    return;
   }
 
   // Feature load-redirects (journey auto-launch et al) — done here, at load

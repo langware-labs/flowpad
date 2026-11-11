@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Project, TypeId, WebApp, type ProjectLoadResult } from '@sdk';
 import { claimAskRun, openQuestionOf } from '@src/components/ask/ask-claims';
 import { errorStatus } from '@src/lib/error-message';
+import { FIRST_RUN_BLOCK, firstRunFirst } from '@src/components/setup-incomplete/first-run-gate';
 import { SETUP_POLL_MS } from './use-setup-run';
 
 /** The `asset` a Load names for a web app: the one spelling of its typeid, or '' for no app. */
@@ -10,34 +11,6 @@ export const webappAsset = (webappId?: string | null) => (webappId ? new TypeId(
 
 export const projectLoadKey = (projectId: string, display = '', asset = '') =>
   ['project-load', projectId, display, asset] as const;
-
-/** Apps this tab last saw loaded and answering — the validate phase's verdict, held for the tab's session
- *  (a reload included: a query's cache would drop it, and the open would wait on a check). Only a hint:
- *  every open still checks it behind the app. */
-const VALID_LOADS = 'flowpad.valid-loads';
-const validLoads = new Set<string>(readValidLoads());
-function readValidLoads(): string[] {
-  try {
-    const kept: unknown = JSON.parse(sessionStorage.getItem(VALID_LOADS) ?? '[]');
-    return Array.isArray(kept) ? kept.filter((one): one is string => typeof one === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-export const validLoad = {
-  key: (projectId: string, asset = '', display = '') => `${projectId}|${asset}|${display}`,
-  has: (key: string) => validLoads.has(key),
-  set: (key: string, up: boolean) => {
-    if (up === validLoads.has(key)) return;
-    if (up) validLoads.add(key);
-    else validLoads.delete(key);
-    try {
-      sessionStorage.setItem(VALID_LOADS, JSON.stringify([...validLoads]));
-    } catch {
-      // Storage refused (a private window): the verdict lives in this page alone.
-    }
-  },
-};
 
 /**
  * Projection of the backend lifecycle. Polling only refreshes progress; it never retries Load.
@@ -65,6 +38,8 @@ export function useProjectLoad(
     // A seeded verdict is whatever the opener last heard, not what the backend holds now: read it once
     // on mount instead of trusting the seed for the app's five-minute default.
     staleTime: 0,
+    // Progress of a setup run on screen (the project gate, the load dialog). An app's own lifecycle is pushed
+    // on its `WebApp` row and never read through here.
     refetchInterval: (q) => (q.state.data?.state === 'running' ? SETUP_POLL_MS : false),
     // A run finishes whether or not this window is in front: a hidden window that stopped asking kept
     // showing "Preparing…" over a run that had long failed.
@@ -100,12 +75,20 @@ export function useProjectLoad(
       setMissing(false);
       try {
         await client.cancelQueries({ queryKey: projectLoadKey(projectId, display, asset) });
-        const next = await Project.load(projectId, {
-          approved,
-          ...(asset ? { asset } : {}),
-          ...(display ? { display } : {}),
-        });
-        client.setQueriesData({ queryKey: ['project-load', projectId] }, next);
+        const ask = () =>
+          Project.load(projectId, {
+            approved,
+            ...(asset ? { asset } : {}),
+            ...(display ? { display } : {}),
+          });
+        let next = await ask();
+        // First-run setup comes first: held for it, the wizard, then this load again — once. A setup about
+        // to be asked for waits on the wizard too (the backend lets it through once the wizard was closed).
+        if (next.blocked === FIRST_RUN_BLOCK) {
+          if (await firstRunFirst()) next = await ask();
+        } else if (next.state === 'setup_required') await firstRunFirst();
+        // Only THIS (project, display, asset): a load of one app is not the answer for another app's gate.
+        client.setQueryData(projectLoadKey(projectId, display, asset), next);
         await client.invalidateQueries({ queryKey: ['project-load-tree', projectId] });
         return next;
       } catch (e) {

@@ -129,7 +129,7 @@ def _start_failure_response(reason, worker_type: str, fallback: ApiFailResponse)
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
         worker_capability_kind,
     )
-    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth, launch_refusal
     from flow_sdk.core.capabilities.registry import get_capability_registry
 
     exc = reason if isinstance(reason, BaseException) else RuntimeError(str(reason))
@@ -139,10 +139,13 @@ def _start_failure_response(reason, worker_type: str, fallback: ApiFailResponse)
     # The capability spec is the SSOT for what a harness is *called*; the worker
     # type (``claude_code``) is an internal token and reads like one in a toast.
     name = get_capability_registry().get(worker_capability_kind(worker_type)).spec.name
-    return ApiFailResponse(
-        message=f"{name} is not available on this machine.",
-        status_code=400,
-    )
+    return launch_refusal(f"{name} is not available on this machine.", verdict.wire(evidence=str(exc)))
+
+
+def _refuse(code, worker_type: str, message: str, facts=None) -> ApiFailResponse:
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, code_for_refusal, launch_refusal
+
+    return launch_refusal(message, LaunchError.of(code_for_refusal(code), message, worker_type).wire("preflight", evidence=message, facts=facts))
 
 
 class ScanActionsMixin:
@@ -516,6 +519,9 @@ class ScanActionsMixin:
             # is what makes launch-via-queue deterministic; a post-start enqueue
             # would race the boot and fall back to the stdin path.
             launch_prompt = body.get("launch_prompt")
+            # Optional tab title chosen by the launcher (e.g. a conversation's
+            # title). Pinned like a user rename so auto-naming never replaces it.
+            launch_title = str(body.get("title") or "").strip()
             result_data = body.get("result")
 
             context_data = dict(context_raw)
@@ -528,6 +534,11 @@ class ScanActionsMixin:
             context_data.update(launch_surface_fields(context_data.pop(LAUNCH_SURFACE_KEY, None)))
             workdir = context_data.pop("workdir", None)
             project_id = context_data.pop("project_id", None)
+            # A chat with no project (`scratch`): run in the instance's chat scratch folder.
+            if context_data.pop("scratch", False) and not workdir and not project_id:
+                from flow_sdk.builtin.remote_worker_session import chat_scratch_workdir  # noqa: PLC0415
+
+                workdir = str(chat_scratch_workdir())
             # VFS path of the attached entity (trigger, markdown, …); stored on the process for the runs drawer / chat panel queries.
             target_typeid_str = context_data.pop("target_typeid_str", None)
             # Dock view the chat belongs to — the Flowpad Assistant keeps one chat per context.
@@ -614,10 +625,7 @@ class ScanActionsMixin:
                 # The capability spec's name, not the internal ``claude_code``
                 # token — this string is shown to the user verbatim.
                 harness_name = get_capability_registry().get(worker_capability_kind(worker_type.value)).spec.name
-                return ApiFailResponse(
-                    message=f"{harness_name} is not installed on this machine.",
-                    status_code=400,
-                )
+                return _refuse("not_installed", worker_type.value, f"{harness_name} is not installed on this machine.")
 
             # And the same gate for the OTHER thing a spawn needs: something to
             # run on. Installed is not enough — a harness with no eligible
@@ -657,6 +665,11 @@ class ScanActionsMixin:
             # refusing it -- funding never presumes a login works.
             await check_unchecked_login(worker_type.value)
             funding = await llm_picker_view(worker_type.value, LLMScope(project_id=project_id or ""))
+            if getattr(funding, "blocked_code", "") == "budget_not_ready":  # signed in, budget list never fetched: fetch once
+                from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints  # noqa: PLC0415
+
+                await fetch_hub_llm_endpoints()
+                funding = await llm_picker_view(worker_type.value, LLMScope(project_id=project_id or ""))
             toplog.log(
                 "agentic_process.load",
                 "createProcess preflight done (is_installed + llm_picker_view) ms=%.0f",
@@ -679,9 +692,11 @@ class ScanActionsMixin:
                 # Capabilities, which can only offer to install a harness they
                 # already have.
                 reason = funding.blocked or "no source is configured"
-                return ApiFailResponse(
-                    message=f"{worker_type.value} has no usable LLM source: {reason}",
-                    status_code=400,
+                rejected = next((c for c in funding.offers if c.source.reason_code == "key_rejected"), None)
+                facts = {"provider": rejected.endpoint.provider, "key_hint": rejected.source.detail} if rejected else {}
+                facts["source_name"] = reason.partition("requires endpoint ")[2]
+                return _refuse(getattr(funding, "blocked_code", ""), worker_type.value,
+                               f"{worker_type.value} has no usable LLM source: {reason}", facts=facts,
                 )
 
             model = context_data.pop("model", None) or None
@@ -815,6 +830,11 @@ class ScanActionsMixin:
                 if tids:
                     process.add_shared_context_entities(*tids)
             await process.save(owner)
+            if launch_title:
+                try:
+                    await process.rename(launch_title)
+                except Exception:
+                    logging.exception(f"createProcess: failed to set title for {process.id}")
             toplog.log(
                 "agentic_process.load",
                 "createProcess row saved process=%s ms=%.0f",

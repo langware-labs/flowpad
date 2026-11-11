@@ -1,12 +1,9 @@
 /**
- * A warm open of an already-open file tab still tells the backend about a NEW
- * host edge.
+ * An already-open file opened INSIDE a workspace becomes that workspace's own tab.
  *
- * Discuss puts the file on screen under its chat: the same file tab, now with
- * `?host=agentic_process-<id>`. The warm path ("same key, already opened → just
- * set up the content") asks the backend for nothing, so the file used to stay a
- * top-level tab until a cold reload re-parented it. The loader now treats a host
- * edge the row does not carry as stale, like a re-pointed active display.
+ * Discuss puts the file on screen under its chat (`?host=agentic_process-<id>`). That is a
+ * tab of the workspace — its own row, keyed `<file>|@<host>` — so the top-level file tab stays
+ * where it is and the workspace gets a child under its host tab.
  */
 import { Tab, TabLifecycleState, tabManager } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -25,10 +22,10 @@ afterEach(() => {
 });
 
 describe('warm file tab, new host edge', () => {
-  it('re-parents the open file under the host instead of the cheap warm path', async () => {
+  it('mints a workspace tab under the host, leaving the top-level file tab alone', async () => {
     const plain = DockPointer.forFile('/w/p/plan.md');
     const hosted = plain.withHost(HOST);
-    expect(hosted.tabHash).toBe(plain.tabHash);
+    expect(hosted.tabHash).toBe(`${plain.tabHash}|@${HOST}`);
 
     const hostTab = new Tab({
       id: HOST_TAB,
@@ -40,7 +37,7 @@ describe('warm file tab, new host edge', () => {
     const fileRow = new Tab({ id: FILE_TAB, pointer: plain.toJSON() ?? '', name: 'plan.md', visible: true, parent_tab_id: null });
     tabManager.adoptGlobal([hostTab, fileRow]);
     // The file tab was opened before: the warm path would apply.
-    tabManager.lifecycle.set(hosted.tabHash ?? '', TabLifecycleState.Opened, { tabId: FILE_TAB });
+    tabManager.lifecycle.set(plain.tabHash ?? '', TabLifecycleState.Opened, { tabId: FILE_TAB });
 
     const adopted = new Tab({ ...fileRow, parent_tab_id: HOST_TAB });
     vi.spyOn(Tab, 'listAll').mockResolvedValue([hostTab, adopted]);

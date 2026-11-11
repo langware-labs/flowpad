@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Download, Forward, MoreVertical, Pencil, Reply, SmilePlus, Star, Trash2, Zap } from 'lucide-react';
+import { Download, Forward, MoreVertical, Pencil, SmilePlus, Star, Trash2, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AgenticProcess, Conversation, TypeId, type ICloudOrigin } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -8,7 +8,7 @@ import { useFavorites } from '@src/hooks/use-favorites';
 import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { InputDialog } from '@src/components/ui/input-dialog';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,16 +34,15 @@ interface MessageActionsMenuProps {
   /** The channel this message caches (`null` for a Flowpad-native message). */
   origin?: ICloudOrigin | null;
   forwarded?: boolean;
-  onReply?: () => void;
-  replyInThread?: boolean;
   onReact?: (emoji: string) => void;
-  onForward?: () => void;
   /** Present only while the message is not a task yet; an opened task keeps its chips below the body. */
   onTaskIt?: () => void;
   /** Start a rule on messages like this one (docs/snippets/stream-inbox-automations.md). */
   onAutomate?: () => void;
   onEditName?: () => void;
   onDelete?: () => void;
+  /** The delete only drops Flowpad's copy: the message stays on the channel it was sent on. */
+  deleteLocalCopyOnly?: boolean;
   /** Start a worker on this message — the header's launch bar, message-pinned prompt. */
   onLaunchWorker?: (worker: WorkerType) => void;
 }
@@ -80,10 +79,10 @@ export function MessageActionsMenu(props: MessageActionsMenuProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   // Controlled: the worker icons are plain buttons, so a launch closes the menu itself.
   const [menuOpen, setMenuOpen] = useState(false);
-  const { flowMessageId, conversationId, onReply, onReact, onForward, onTaskIt, onAutomate, onEditName, onDelete, onLaunchWorker } =
+  const { flowMessageId, conversationId, onReact, onTaskIt, onAutomate, onEditName, onDelete, onLaunchWorker } =
     props;
   // A draft bubble (no stored message) with no handlers has nothing to offer.
-  if (!flowMessageId && !(onReply || onReact || onForward || onTaskIt || onAutomate || onEditName || onDelete)) return null;
+  if (!flowMessageId && !(onReact || onTaskIt || onAutomate || onEditName || onDelete)) return null;
 
   return (
     <>
@@ -140,14 +139,12 @@ function MessageMenuItems({
   messageText,
   origin,
   forwarded,
-  onReply,
-  replyInThread,
   onReact,
-  onForward,
   onTaskIt,
   onAutomate,
   onEditName,
   onDelete,
+  deleteLocalCopyOnly,
   onOpenPicker,
   onOpenNote,
   onLaunchWorker,
@@ -158,8 +155,8 @@ function MessageMenuItems({
   const favorited = flowMessageId ? !!isFavorited('flow_message', flowMessageId) : false;
   const showNote = !!flowMessageId && !!worker && isAdvanced;
   const WorkerIcon = workerIcon(worker?.worker_type ?? undefined);
-  const conversing = !!(onReply || onReact);
-  const sharing = !!(onForward || onTaskIt || onAutomate || flowMessageId);
+  const conversing = !!onReact;
+  const sharing = !!(onTaskIt || onAutomate || flowMessageId);
   const managing = !!(onEditName || onDelete);
 
   return (
@@ -178,12 +175,6 @@ function MessageMenuItems({
           <DropdownMenuSeparator />
         </>
       )}
-      {onReply && (
-        <DropdownMenuItem onSelect={onReply} data-testid="message-reply">
-          <Reply className={ITEM_ICON} />
-          {replyInThread ? <Trans>Reply in thread</Trans> : <Trans>Reply</Trans>}
-        </DropdownMenuItem>
-      )}
       {onReact && (
         <DropdownMenuItem onSelect={onOpenPicker} data-testid="message-react">
           <SmilePlus className={ITEM_ICON} />
@@ -191,12 +182,6 @@ function MessageMenuItems({
         </DropdownMenuItem>
       )}
       {conversing && sharing && <DropdownMenuSeparator />}
-      {onForward && (
-        <DropdownMenuItem onSelect={onForward} data-testid="message-forward">
-          <Forward className={`${ITEM_ICON} rtl:-scale-x-100`} />
-          <Trans>Forward</Trans>
-        </DropdownMenuItem>
-      )}
       {onTaskIt && (
         <DropdownMenuItem onSelect={onTaskIt} title={taskItHint()} data-testid="message-task-it">
           <TaskItIcon className={ITEM_ICON} />
@@ -236,7 +221,7 @@ function MessageMenuItems({
       )}
       {onLaunchWorker && (
         <div className="px-2 py-1">
-          <WorkerToolbar onLaunch={onLaunchWorker} testIdPrefix="message" />
+          <ContextWorkerToolbar onLaunch={onLaunchWorker} testIdPrefix="message" />
         </div>
       )}
       {managing && (conversing || sharing) && <DropdownMenuSeparator />}
@@ -249,8 +234,7 @@ function MessageMenuItems({
       {onDelete && (
         <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive" data-testid="message-delete">
           <Trash2 className="h-3.5 w-3.5" />
-          {/* A channel's message lives on the channel: only Flowpad's copy can go. */}
-          {origin ? <Trans>Remove from Flowpad</Trans> : <Trans>Delete message</Trans>}
+          {deleteLocalCopyOnly ? <Trans>Remove from Flowpad</Trans> : <Trans>Delete message</Trans>}
         </DropdownMenuItem>
       )}
     </>

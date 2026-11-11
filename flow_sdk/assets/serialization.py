@@ -144,8 +144,15 @@ def _field_adapter(cls: type, name: str) -> TypeAdapter:
     return TypeAdapter(cls.model_fields[name].rebuild_annotation())
 
 
+def _held(obj: Any, name: str, default: Any = None) -> Any:
+    """What the FILE holds for one field: the entity's value, or what the entity says the file gets
+    (its ``file_value``) when part of the field is private to this machine."""
+    file_value = getattr(obj, "file_value", None)
+    return file_value(name) if callable(file_value) and hasattr(obj, name) else getattr(obj, name, default)
+
+
 def _field_value(obj: Any, name: str) -> Any:
-    value = getattr(obj, name)
+    value = _held(obj, name)
     # Hydrated rows can already hold their serialized scalar (e.g. an enum's
     # string value). Only structured/custom values need annotation serialization.
     return value if value is None or isinstance(value, (str, int, float, bool)) else _field_adapter(type(obj), name).dump_python(value)
@@ -224,6 +231,55 @@ def render_asset(obj: Any, info: Any) -> Optional[str]:
     return _render_frontmatter(_frontmatter(obj, info)) + tail
 
 
+def _field_named(spec: Any, key: str) -> Any:
+    """The spec field a file key holds -- by name or by alias -- or None."""
+    field = spec.model_fields.get(key)
+    if field is not None:
+        return field
+    return next((f for f in spec.model_fields.values() if f.alias == key), None)
+
+
+def value_fits_field(spec: Any, key: str, value: Any) -> bool:
+    """Does ``value`` validate as the spec field the file key ``key`` holds? An unknown key fits (it is kept)."""
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    field = _field_named(spec, key)
+    if field is None:
+        return True
+    try:
+        TypeAdapter(field.rebuild_annotation()).validate_python(value)
+    except ValidationError:
+        return False
+    return True
+
+
+def validate_best_effort(spec: Any, data: dict[str, Any], *, where: Any = None) -> Any:
+    """``spec.model_validate(data)``, but one bad OPTIONAL field never costs the whole record.
+
+    A field whose value does not validate is left out of what loads -- it reads as its default -- and is
+    logged; the file is not touched, so the value is still there for a person or a later version to fix
+    (and ``_patch_entity_main`` will not remove it on a save). A bad REQUIRED field, or a model-level
+    error, still rejects the record: that file is not this type's asset."""
+    import logging  # noqa: PLC0415
+
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    data = dict(data)
+    while True:
+        try:
+            return spec.model_validate(data)
+        except ValidationError as exc:
+            bad = {str(e["loc"][0]) if e.get("loc") else "" for e in exc.errors()}
+            fields = {key: _field_named(spec, key) for key in bad}
+            if not bad or any(key not in data or f is None or f.is_required() for key, f in fields.items()):
+                raise
+            for key in bad:
+                logging.getLogger(__name__).warning(
+                    "%s: field %r of %s does not validate and is left out of the load (the file keeps it): %r",
+                    where, key, spec.__name__, data.pop(key),
+                )
+
+
 def read_main(info: Any, root: Path, *, field_data: dict | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     """``(entity kwargs, raw header)`` — the raw header is what the rows
     layout reads its knobs from."""
@@ -269,7 +325,8 @@ def read_main(info: Any, root: Path, *, field_data: dict | None = None) -> tuple
     # The marker fields are EXCLUDED: they were read above, and the spec's
     # own default ("") must not overwrite the body/section just read.
     authored = header_raw if "name" in spec.model_fields else {k: v for k, v in header_raw.items() if k != "name"}
-    data.update(spec.model_validate({**authored, **(field_data or {})}).model_dump(exclude_none=True, exclude=lay.marker_fields))
+    validated = validate_best_effort(spec, {**authored, **(field_data or {})}, where=root)
+    data.update(validated.model_dump(exclude_none=True, exclude=lay.marker_fields))
     if info.name_from_path:
         data["name"] = header_raw.get("name") or (root.name if root.is_dir() else root.stem)
     return data, header_raw
@@ -305,8 +362,10 @@ def read_asset_data_with_header(path: Path, info: Any, *, identity: str | None =
         from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, DataLayoutEnum
         from flow_sdk.schema.data_spec.layout import coerce_dataset_enum, dataset_layout_for
         rows_layout = coerce_dataset_enum(header.get(info.rows_layout_field), DataLayoutEnum, DataLayoutEnum.CSV)
+        from flow_sdk.datasets.stores import rows_root_of
+
         data[info.rows_field] = dataset_layout_for(rows_layout).read(
-            layout.root, DEFAULT_DATASET_SPEC.row_type(), dataset_id=resolved_id,
+            rows_root_of(layout.root, header, resolved_id or ""), DEFAULT_DATASET_SPEC.row_type(), dataset_id=resolved_id,
             field_spec=header.get("field_spec") or {}, delimiter=header.get("delimiter") or ",",
         )
     if info.derive_fields_fn is not None:
@@ -443,9 +502,11 @@ def _patch_entity_main(obj: Any, info: Any, main: Path) -> None:
     from pydantic_core import to_jsonable_python  # noqa: PLC0415
 
     def _back_to_default(key: str) -> bool:
-        held = getattr(obj, field_of[key], _NOT_ON_OBJ)
+        held = _held(obj, field_of[key], _NOT_ON_OBJ)
         if held is None:
-            return True
+            # Unset because the file's value did not validate (``validate_best_effort``), not because the
+            # entity cleared it: the bad value is kept for a person to fix, never silently removed.
+            return value_fits_field(info.asset_spec, key, current[key])
         if held is _NOT_ON_OBJ:
             return False
         value = to_jsonable_python(held)
@@ -554,12 +615,32 @@ def _write_fields(obj: Any, info: Any, root: Path) -> None:
         elif kind is FieldKind.ROWS and info is not None and info.rows_layout_field:
             from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
+            from flow_sdk.datasets.stores import resolve, rows_root  # noqa: PLC0415
+
             source = getattr(obj, "asset_ref", None)
+            dataset_id = str(getattr(obj, "id", "") or "")
+            # the same rule ``rows_root_of`` reads them back by, for the folder written to
+            held = resolve(root, getattr(obj, "data_source", None), getattr(obj, "path", None))
             dataset_layout_for(getattr(obj, info.rows_layout_field)).write(
-                root, value or [], dataset_id=str(getattr(obj, "id", "") or ""),
+                rows_root(root, held, dataset_id), value or [], dataset_id=str(getattr(obj, "id", "") or ""),
                 field_spec=getattr(obj, "field_spec", None) or {}, delimiter=getattr(obj, "delimiter", None) or ",",
                 source=Path(source) if source else None,
             )
+
+
+def write_header_field(info: Any, root: Path, name: str, value: Any) -> bool:
+    """Set ONE header key of a stored markdown asset, leaving its body and other keys alone.
+
+    For a header fact the entity owns on a type whose file it does not re-render
+    (``owns_main_ref`` False): a doc's or a skill's ``tags``. Answers whether a file was written.
+    """
+    main = _main_doc(info, root)
+    if main is None or main.suffix.casefold() != ".md" or not main.is_file():
+        return False
+    from flow_sdk.assets.document import write_document  # noqa: PLC0415
+
+    write_document(main, fields={name: value})
+    return True
 
 
 def write_asset_tree(obj: Any, info: Any, root: Path, *, force: bool = False) -> str:

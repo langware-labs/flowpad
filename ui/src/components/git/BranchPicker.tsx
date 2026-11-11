@@ -23,7 +23,7 @@ interface BranchPickerProps {
   onBack: () => void;
 }
 
-/** Move the default branch to the top of the list (mirrors GitHubConnectionDialog.sortBranches).
+/** Move the default branch to the top of the list.
  *  Everything below it stays in the backend's order, which is most-recently-changed first. */
 function pinDefault(branches: BranchSummary[], defaultName: string): BranchSummary[] {
   const i = branches.findIndex((b) => b.name === defaultName);
@@ -45,6 +45,8 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
     const matched = q ? base.filter((b) => b.name.toLowerCase().includes(q)) : base;
     return pinDefault(matched, repo.default_branch);
   }, [branches, query, repo.default_branch]);
+
+  const errorMessage = error?.message ?? t`unknown error`;
 
   return (
     <div className="flex flex-col gap-2">
@@ -76,7 +78,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
           </div>
         ) : isError ? (
           <div className="px-3 py-4 text-xs text-destructive">
-            Failed to load branches: {error?.message ?? 'unknown error'}
+            <Trans>Failed to load branches: {errorMessage}</Trans>
           </div>
         ) : list.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">

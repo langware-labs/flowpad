@@ -5,6 +5,8 @@ as long as it runs, so without a phase line per step the gate would read a slow
 migration as a hung boot. The order of the declarations IS the contract.
 """
 
+import os
+
 import pytest
 import typer
 
@@ -42,3 +44,25 @@ def test_a_failed_migration_ends_the_report_before_refusing_to_start(phases, mon
     with pytest.raises(typer.Exit):
         flow_cli._start_service_guarded(9007)
     assert phases == ["migration", "<stop>"]
+
+
+def test_a_server_not_ready_in_time_prints_where_its_log_is_and_its_tail(phases, monkeypatch, tmp_path, capsys):
+    """On a cloud box the CLI's own output is the only log that leaves the machine (journal → serial
+    console, and the hub's restart command output). The server writes only to its own file, so a
+    server that never answered left nothing to diagnose from. The CLI names that file and its tail."""
+    server_dir = tmp_path / "server"
+    server_dir.mkdir()
+    (server_dir / "old.log").write_text("stale boot\n")
+    newest = server_dir / "new.log"
+    newest.write_text("".join(f"line {i}\n" for i in range(100)) + "Traceback: boom\n")
+    os.utime(server_dir / "old.log", (1, 1))
+    monkeypatch.setattr(launch, "_logs_base", lambda: tmp_path)
+    monkeypatch.setattr(launch, "wait_for_server_health", lambda _port, timeout: False)
+
+    flow_cli._start_service_guarded(9007)
+
+    err = capsys.readouterr().err
+    assert str(newest) in err
+    assert "Traceback: boom" in err
+    assert "line 99" in err and "line 10\n" not in err  # a bounded tail, not the whole file
+    assert "stale boot" not in err

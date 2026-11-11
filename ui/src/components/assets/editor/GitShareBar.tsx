@@ -1,11 +1,12 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ArrowUpCircle, GitBranch, Loader2, Send } from 'lucide-react';
+import { ArrowUpCircle, GitBranch, Loader2 } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { ActionInfo, dataManager, isGitOrigin, type AnyEntity, type FSOriginField } from '@sdk';
+import { ActionInfo, dataManager, isGitOrigin, type AnyEntity, type FSOriginField, type ReceivePlan } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
+import { notifyShareConflict } from '@src/lib/git-outcome';
+import { ApplyPrompt } from '@src/components/conversation/asset-review/SharedOpenPanel';
 import { notify } from '@src/notifications';
-import { useLocalUser } from '@src/components/conversation/useLocalUser';
 
 /** `git_share_status` (flow_sdk/app/actions/git_share_drift_action.py). */
 interface GitShareStatus {
@@ -16,7 +17,7 @@ interface GitShareStatus {
   edited?: boolean;
 }
 
-/** A received git share pins a commit on its origin; nothing else has one. */
+/** A received git share names the commit it was shared at on its origin; nothing else has one. */
 export function isGitShare(entity: AnyEntity | null): boolean {
   const origin = (entity as { origin?: FSOriginField | null } | null)?.origin;
   return isGitOrigin(origin) && !!origin.head_commit;
@@ -41,17 +42,30 @@ export function GitShareFrame({ entity, children }: { entity: AnyEntity | null; 
   );
 }
 
+/** `git_share_update`'s answer: the plan to confirm, or what the update came to. */
+interface GitShareUpdate {
+  updated?: boolean;
+  code?: string | null;
+  needs?: 'apply';
+  plan?: ReceivePlan;
+  message?: string;
+  operation?: string;
+  branch?: string | null;
+  workdir?: string;
+}
+
 /**
- * The version a received git share is at, and what can happen next: take the
- * sender's newer version (only commits touching this asset count), or send
- * your own edits back on a `share/<you>/<asset>` branch. Never overwrites an
- * edited copy — the backend refuses that, and the Update button is not offered.
+ * The version a received git share is at, and the sender's newer one when the
+ * shared branch moved on (only commits touching this asset, and not yet on your
+ * branch, count). Update asks first: it shows the plan — a pull on the shared
+ * branch, or a cherry-pick of the asset's commits — and runs it on a yes. Your
+ * own edits stay yours; a clash is left for Resolve, never overwritten.
  */
 export function GitShareBar({ entity }: { entity: AnyEntity }) {
   const { t } = useLingui();
-  const { localUser } = useLocalUser();
   const [status, setStatus] = useState<GitShareStatus | null>(null);
-  const [busy, setBusy] = useState<'update' | 'send' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [plan, setPlan] = useState<ReceivePlan | null>(null);
   const [nonce, setNonce] = useState(0);
   const { type, id } = entity.typeId;
 
@@ -67,40 +81,29 @@ export function GitShareBar({ entity }: { entity: AnyEntity }) {
     };
   }, [type, id, nonce]);
 
-  const run = useCallback(
-    async (which: 'update' | 'send') => {
-      // One table instead of four branches: the action, its body, and what it says.
-      const op = {
-        update: {
-          action: 'git_share_update',
-          body: undefined,
-          done: 'updated',
-          ok: t`Updated to the latest version`,
-          fail: t`Not updated`,
-        },
-        send: {
-          action: 'git_share_send_back',
-          body: { sender: localUser?.name ?? 'receiver' },
-          done: 'sent',
-          ok: t`Your edits were sent back`,
-          fail: t`Not sent`,
-        },
-      }[which];
-      setBusy(which);
+  const update = useCallback(
+    async (apply: boolean) => {
+      setBusy(true);
       try {
-        const action = new ActionInfo(op.action, type, String(id), 'POST');
-        if (op.body) action.bodyParameters = op.body;
-        const res = await dataManager.callAction<unknown, Record<string, unknown>>(action);
-        if (res?.[op.done]) notify.success({ title: op.ok, message: (res.branch as string | undefined) ?? undefined });
-        else notify.error({ title: op.fail, message: (res?.code as string | undefined) ?? undefined });
+        const action = new ActionInfo('git_share_update', type, String(id), 'POST');
+        action.bodyParameters = { apply };
+        const res = await dataManager.callAction<unknown, GitShareUpdate>(action);
+        if (res?.needs === 'apply' && res.plan) {
+          setPlan(res.plan);
+          return; // only a question: nothing changed, the status stands
+        }
+        setPlan(null);
+        setNonce((n) => n + 1);
+        if (res?.updated) notify.success({ title: t`Updated to the latest version` });
+        else if (res?.code === 'conflict' && res.workdir) notifyShareConflict({ ...res, workdir: res.workdir });
+        else notify.error({ title: t`Not updated`, message: res?.message ?? res?.code ?? undefined });
       } catch (e) {
         notify.error({ title: t`Git share failed`, message: errorMessage(e, t`Git share failed`) });
       } finally {
-        setBusy(null);
-        setNonce((n) => n + 1);
+        setBusy(false);
       }
     },
-    [type, id, t, localUser?.name],
+    [type, id, t],
   );
 
   if (!status?.shared || !status.commit) return null;
@@ -111,29 +114,20 @@ export function GitShareBar({ entity }: { entity: AnyEntity }) {
       <span className="font-mono" title={t`The version that was shared with you`}>
         {status.commit.slice(0, 12)}
       </span>
-      {!!status.behind && !status.edited && (
+      {!!status.behind && !plan && (
         <Button
           size="sm"
           variant="outline"
-          disabled={!!busy}
-          onClick={() => void run('update')}
+          disabled={busy}
+          onClick={() => void update(false)}
           data-testid="git-share-update"
         >
-          {busy === 'update' ? spinner : <ArrowUpCircle className="h-3.5 w-3.5" />}
+          {busy ? spinner : <ArrowUpCircle className="h-3.5 w-3.5" />}
           <Trans>Update ({status.behind} newer)</Trans>
         </Button>
       )}
-      {status.edited && (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!!busy}
-          onClick={() => void run('send')}
-          data-testid="git-share-send-back"
-        >
-          {busy === 'send' ? spinner : <Send className="h-3.5 w-3.5" />}
-          <Trans>Send my edits back</Trans>
-        </Button>
+      {plan && (
+        <ApplyPrompt plan={plan} busy={busy} onConfirm={() => void update(true)} onCancel={() => setPlan(null)} />
       )}
     </div>
   );

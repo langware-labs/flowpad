@@ -96,9 +96,11 @@ VALID: dict[str, dict] = {
         "permissions": {},
     },
     # a poll interval below 60s is refused
-    # a source's mirror names a dataset and a map whose key path is also a field
-    "data_source": {"poll_interval_seconds": 300,
-                    "mirror": {"dataset": "tasks", "map": {"key": "external_id", "input": {"crm_id": "external_id"}}, "by": "crm"}},
+    # the file carries an owner only when it is an agent (a user owner is a fact of one machine)
+    "data_source": {"poll_interval_seconds": 300, "owner": "agent-70cae8f6-cd2d-4b2c-81ff-f37b5a2ecc83"},
+    # a named `data_source` must be a data source asset of the dataset's project, which this bare
+    # folder has none of -- so the rows go to the project's data store (no source, no path)
+    "dataset": {"data_source": None, "path": None},
     # `location_type` is a closed enum, and entity-only (not in the spec)
     "micro_app": {"location_type": "Asset"},
     # only a publishable type may appear in an entry; the schema is THIS build's;

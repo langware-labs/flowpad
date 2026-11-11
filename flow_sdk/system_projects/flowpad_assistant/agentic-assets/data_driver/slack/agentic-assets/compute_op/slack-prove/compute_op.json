@@ -1,0 +1,26 @@
+{
+  "type": "compute_op",
+  "id": "adedfa0c-ef27-49e0-b91f-1a1933a210c4",
+  "name": "slack-prove",
+  "label": "Live delivery",
+  "description": "Flowpad cloud takes your app's proof: from now on it checks your app's signature and delivers every event here.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" public-webhook",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" public-webhook",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE public-webhook; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 300,
+    "source_step": "public-webhook"
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" public-webhook --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" public-webhook --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE public-webhook --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30,
+    "source_step": "public-webhook"
+  }
+}

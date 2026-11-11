@@ -511,7 +511,19 @@ function HarnessRow({
   const pill = pillForHarness(record, funding, kind, left);
 
   const identity = [h?.account.identity, h?.account.plan].filter(Boolean).join(' · ');
-  const small = [identity, pill.note ? i18n._(pill.note) : ''].filter(Boolean).join(' · ') || undefined;
+  // Signed out while something else pays: a small Sign in button says it AND fixes it.
+  const small = pill.note ? (
+    <button
+      type="button"
+      onClick={() => exits.toSignIn(kind)}
+      data-testid={`harness-row-${worker}-signin`}
+      className="rounded border border-border/70 px-1.5 py-0.5 text-[11px] text-foreground/80 hover:bg-muted"
+    >
+      <Trans>Sign in</Trans>
+    </button>
+  ) : (
+    identity || undefined
+  );
 
   // The pill names the action; this row only knows where each one goes.
   const onAction = () => {

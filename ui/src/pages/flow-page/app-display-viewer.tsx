@@ -1,26 +1,25 @@
-import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
-import { webappAsset } from '@src/components/project-setup/use-project-load';
-import { PROVIDER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
 import { useCallback, useEffect, useRef } from 'react';
-import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
+import { reloadOnNewEpoch, type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
-import { WebappSetupGate } from '@src/components/webapp-display/WebappSetupGate';
-import { AppStatusLine } from '@src/components/webapp-display/AppStatusLine';
-import { WebappDisplayToolbar } from '@src/components/display-toolbar';
+import { AppLifecyclePanel } from '@src/components/webapp-display/AppLifecyclePanel';
+import { useAppLifecycle } from '@src/components/webapp-display/useAppLifecycle';
 import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { APP_RUNTIME_PARAM, type AppRuntime } from '@src/navigation/app-dock';
+import { type AppRuntime } from '@src/navigation/app-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
-import { buildDockPointer } from '@src/components/conversation/EntityChip';
-import { useEntity } from '@sdk/react/hooks';
-import { Trans } from '@lingui/react/macro';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { isTypeId, TypeId, WebApp } from '@sdk';
+import { Loader2 } from 'lucide-react';
 import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
 import { isHubRelayed } from '@src/lib/hub-relayed';
 import { Button } from '@src/components/ui/button';
+import { ExternalLink, Pencil } from 'lucide-react';
+import { AppInfoPopover } from '@src/components/webapp-display/AppInfoPopover';
+import { CopyButton } from '@src/components/ui/copy-button';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -56,24 +55,12 @@ export interface AppDisplayViewerProps {
   /** The host's content epoch — a re-show of the same app, or the agent's turn
    *  end. A change reloads the frame; see `reloadOnNewEpoch`. */
   reloadKey?: number;
-}
-
-/**
- * The epoch each frame was last shown at, by `src`.
- *
- * The host re-keys its body to signal "something changed behind the same
- * address", which REMOUNTS this viewer — but the iframe registry parks frames by
- * `src` and hands the same document back, so a remount alone reloads nothing, and
- * component state cannot tell a new epoch from a tab coming back into view. Held
- * per `src` here: a new epoch reloads, the same epoch does not.
- */
-const shownAtEpoch = new Map<string, number>();
-
-function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => void): void {
-  if (!src || epoch === undefined) return;
-  const seen = shownAtEpoch.get(src);
-  shownAtEpoch.set(src, epoch);
-  if (seen !== undefined && seen !== epoch) reload();
+  /** Pooled (`AppPool`): whether a slot shows this view right now. A view kept for its tab while
+   *  another is on screen is `false`; coming back re-checks the app's files. Defaults to true. */
+  active?: boolean;
+  /** Pooled: told the frame's `src` whenever it changes, so the pool can free the frame when its
+   *  tab closes. */
+  onFrameSrc?: (src: string) => void;
 }
 
 /** The served folder's version the frame was loaded at, by `src` (see `content_version` on the server). */
@@ -136,24 +123,44 @@ export function AppDisplayViewer({
   runtime,
   options,
   reloadKey,
+  active = true,
+  onFrameSrc,
 }: AppDisplayViewerProps) {
   const { currentDock, navigation } = useDockNavigation();
   const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
-  const { data: definition, notFound } = useEntity<WebApp>(microAppId ? new TypeId(WebApp.type, microAppId) : null);
+  const { t } = useLingui();
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
   // (keyed on `src`) does not remount.
-  const appDisplay = useAppDisplay({ artifactId, microAppId, endpointId, route, options: options ?? {} }, runtime ?? null);
+  const appDisplay = useAppDisplay(
+    { artifactId, microAppId, endpointId, route, options: options ?? {} },
+    runtime ?? null,
+  );
+
+  // The webapp asset behind what is shown — named by the address, or by the route serving it. Its lifecycle
+  // record decides whether the frame is on screen; opening it asks the backend to make it work, once.
+  const webappId = microAppId ?? appDisplay.endpoint?.webapp_id ?? appDisplay.idleDev?.webapp_id ?? null;
+  // Files served as they are need nothing brought up, wherever they live (a mock in $TMPDIR).
+  const servedFiles = appDisplay.endpoint?.backend?.type === 'static';
+  const lifecycle = useAppLifecycle(appDisplay.loading ? null : webappId, {
+    display: currentDock?.hostProcessId ?? '',
+    autoUp: active && !servedFiles,
+  });
+  const definition = microAppId ? lifecycle.app : null;
 
   useEffect(() => {
     reloadOnNewEpoch(appDisplay.src, reloadKey, () => frameRef.current?.refresh());
   }, [appDisplay.src, reloadKey]);
 
   useEffect(() => {
-    void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
-  }, [appDisplay.src]);
+    if (active) void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
+  }, [appDisplay.src, active]);
+
+  useEffect(() => {
+    if (appDisplay.src) onFrameSrc?.(appDisplay.src);
+  }, [appDisplay.src, onFrameSrc]);
 
   // An app the hub relays cannot run in this frame (`hub-relayed.ts`): it is offered in a tab of its own.
   const relayed = isHubRelayed(appDisplay.src);
@@ -195,20 +202,11 @@ export function AppDisplayViewer({
     return () => window.removeEventListener('message', onGuest);
   }, [pushSkin, appDisplay.src, navigation, project?.id]);
 
-  // URL-carried, so the choice survives a reload and the Back button — it used to
-  // be component state and vanished on both.
-  const setRuntime = (next: string) => {
-    if (currentDock) navigation.openDock(currentDock.withOption(APP_RUNTIME_PARAM, next));
-  };
-
-  // A web app ASSET whose dev server does not answer is set up, not reported missing: its node of the
-  // project's setup tree runs with the live tree on screen, and the app takes over once it answers.
-  // Only once its endpoints answered: an app not looked up yet is not down, and setting it up would run
-  // a setup for an app (a built-in editor, say) that is no node of this project's tree.
+  // Nothing is known until the endpoints serving the app answered: an app not looked up yet is not down.
   if (appDisplay.loading) return null;
   // The app itself is not on this machine (removed, or a link from another one): there is nothing to
-  // set up or wait for, and saying "opening" forever would be a lie.
-  if (microAppId && notFound && !appDisplay.src) {
+  // bring up or wait for, and saying "opening" forever would be a lie.
+  if (microAppId && lifecycle.notFound && !appDisplay.src) {
     return (
       <div
         role="alert"
@@ -219,35 +217,57 @@ export function AppDisplayViewer({
       </div>
     );
   }
-  const setupWebapp = appDisplay.idleDev?.webapp_id ?? (!appDisplay.src ? microAppId : null);
-  const setupProject = appDisplay.idleDev?.project_id ?? definition?.project_id ?? project?.id ?? '';
-  if (!appDisplay.src && setupWebapp && setupProject) {
-    return <WebappSetupGate projectId={setupProject} webappId={setupWebapp} />;
+  if (!appDisplay.src && webappId) {
+    // Not served yet: the record says what the backend is doing; up but not re-read yet, a moment's status.
+    return lifecycle.showable ? (
+      <div className="flex h-full items-center justify-center" data-testid="app-opening">
+        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+      </div>
+    ) : (
+      <AppLifecyclePanel lifecycle={lifecycle} />
+    );
   }
 
   if (!appDisplay.src) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-        This app has no running dev server and no built output yet.
+        <Trans>This app has no running dev server and no built output yet.</Trans>
       </div>
     );
   }
 
   const display = (
     <div className="flex h-full flex-col">
-      <WebappDisplayToolbar
-        host={appDisplay.src}
-        // A dev server is loaded at its own address, which is worth showing; a
-        // served build's address is this backend's own path.
-        address={appDisplay.runtime === 'dev' ? directHost(appDisplay.src) : ''}
-        runtime={appDisplay.runtime}
-        runtimes={appDisplay.available}
-        onRuntimeChange={setRuntime}
-        onRefresh={() => frameRef.current?.refresh()}
-      />
-      {definition?.project_id && definition.name ? (
-        <AppStatusLine projectId={definition.project_id} app={definition.name} />
-      ) : null}
+      {/* The app's address and what is known about it, then the button to edit it. */}
+      <div className="flex items-center gap-2 border-b px-3 py-1" data-testid="webapp-header">
+        <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" data-testid="webapp-address" title={appDisplay.src}>
+          {appDisplay.src}
+        </span>
+        <CopyButton value={appDisplay.src} testId="webapp-address-copy" />
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7 shrink-0"
+          data-testid="webapp-open-browser"
+          title={t`Open in browser`}
+          onClick={() => openExternal(appDisplay.src)}
+        >
+          <ExternalLink className="size-4" />
+        </Button>
+        <AppInfoPopover display={appDisplay} lifecycle={lifecycle} />
+        {definition ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="ms-auto h-7 shrink-0"
+            data-testid="webapp-edit"
+            onClick={() => navigation.openDock(DockPointer.forAssetEditorByTypeId(WebApp.type, definition.typeId))}
+          >
+            <Pencil className="size-3.5" />
+            <Trans>Edit app</Trans>
+          </Button>
+        ) : null}
+      </div>
       {relayed ? (
         <div
           data-testid="app-opens-in-tab"
@@ -261,45 +281,22 @@ export function AppDisplayViewer({
           </Button>
         </div>
       ) : (
-      <div className="min-h-0 flex-1">
-        <WebappDisplay
-          // Keyed by src so a runtime switch REMOUNTS the wrapper. Changing src in
-          // place leaves both the outgoing and incoming frames parked at opacity-0:
-          // the iframe registry activates a container on mount, and an in-place src
-          // change retires the old one without ever activating the new one.
-          key={appDisplay.src}
-          ref={frameRef}
-          endpoint={appDisplay.endpoint}
-          testId="vibe-app-frame"
-          src={appDisplay.src}
-          // The repair run attaches to the webapp definition when there is one.
-          targetTypeId={microAppId ? `micro_app-${microAppId}` : null}
-        />
-      </div>
+        <div className="min-h-0 flex-1">
+          <WebappDisplay
+            // Keyed by src so a runtime switch REMOUNTS the wrapper. Changing src in
+            // place leaves both the outgoing and incoming frames parked at opacity-0:
+            // the iframe registry activates a container on mount, and an in-place src
+            // change retires the old one without ever activating the new one.
+            key={appDisplay.src}
+            ref={frameRef}
+            endpoint={appDisplay.endpoint}
+            testId="vibe-app-frame"
+            src={appDisplay.src}
+            lifecycle={webappId && !servedFiles ? lifecycle : null}
+          />
+        </div>
       )}
     </div>
   );
-  // Direct app opens have no dependency URL. Their endpoint, not ambient consumer context, owns Load.
-  const provider = appDisplay.endpoint?.project_id ?? definition?.project_id;
-  return provider && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.isActiveDisplay
-    ? (
-      <ProjectLoadGate
-        key={provider}
-        projectId={provider}
-        // An artifact-addressed app is judged on the webapp serving it, not the whole project.
-        asset={webappAsset(microAppId ?? appDisplay.endpoint?.webapp_id)}
-      >
-        {display}
-      </ProjectLoadGate>
-    )
-    : display;
-}
-
-/** `host:port` of a direct address, for the toolbar label. */
-function directHost(src: string): string {
-  try {
-    return new URL(src).host;
-  } catch {
-    return '';
-  }
+  return display;
 }

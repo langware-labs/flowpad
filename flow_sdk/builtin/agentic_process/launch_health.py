@@ -58,6 +58,37 @@ class LaunchErrorCode(StrEnum):
     CANCELLED = "cancelled"
     TIMEOUT = "timeout"
     UNKNOWN = "unknown"
+    FOLDER_NOT_TRUSTED = "folder_not_trusted"
+    FIRST_RUN_SETUP = "first_run_setup"
+    BYPASS_WARNING = "bypass_warning"
+    SIGNED_OUT = "signed_out"  # NOT_AUTHENTICATED is its legacy alias
+    KEY_REJECTED = "key_rejected"
+    BUDGET_NOT_READY = "budget_not_ready"
+    CLI_CRASHED = "cli_crashed"
+    PINNED_SOURCE_UNAVAILABLE = "pinned_source_unavailable"
+
+
+#: code → (health, card fix); unlisted codes read as unknown. Then LLMSourceRefusal → code (else signed_out).
+CODE_TABLE = {c: ("transient_error" if f in ("wait", "retry") else "config_error", f) for c, f in (
+    ("folder_not_trusted", "trust_folder"), ("first_run_setup", "finish_setup"), ("bypass_warning", "accept_bypass"),
+    ("signed_out", "connect"), ("not_authenticated", "connect"), ("key_rejected", "replace_key"), ("budget_not_ready", "wait"),
+    ("not_installed", "install"), ("cli_crashed", "reinstall"), ("pinned_source_unavailable", "ask_owner"),
+    ("model_unavailable", "ask_owner"), ("unknown", "retry"))}
+SERVER_FIXES = ("trust_folder", "finish_setup", "accept_bypass")  # done by the driver's apply_launch_fix
+BLOCKING_CODES = {code for code, (_, fix) in CODE_TABLE.items() if fix in SERVER_FIXES}  # prompts on screen
+CLI_CRASHES: dict[str, str] = {}  # worker_type → stderr of a CLI the last login probe saw crash
+
+
+def code_for_refusal(refusal: str | None) -> "LaunchErrorCode":
+    code = "pinned_source_unavailable" if refusal == "pinned_elsewhere" else str(refusal or "")
+    return LaunchErrorCode(code if code in CODE_TABLE and code != "unknown" else "signed_out")
+
+
+def launch_refusal(message: str, failure: dict):  # legacy message + data.launch_failure; 400 needs a person, 503 waits
+    from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+
+    status = 400 if failure.get("health") == "config_error" else 503
+    return ApiFailResponse(message=message, data={"launch_failure": failure}, status_code=status)
 
 
 class LaunchError(Exception):
@@ -73,6 +104,17 @@ class LaunchError(Exception):
 
     def __repr__(self) -> str:  # pragma: no cover — diagnostics only
         return f"LaunchError({self.health}, {self.code}, {self.detail!r})"
+
+    @classmethod
+    def of(cls, code: LaunchErrorCode | str, detail: str = "", worker_type: str = "") -> "LaunchError":
+        return cls(LaunchHealth(CODE_TABLE.get(code, CODE_TABLE["unknown"])[0]), LaunchErrorCode(code), detail, worker_type)
+
+    def wire(self, phase: str = "spawn", *, evidence: str = "", facts: dict | None = None) -> dict:
+        from flow_sdk.schema.data_spec.launch_failure_spec import LaunchFailureSpec  # noqa: PLC0415
+
+        return LaunchFailureSpec(code=self.code, health=self.health, worker_type=self.worker_type, phase=phase,
+                                 detail=self.detail, evidence=evidence.strip()[-2048:], fix=CODE_TABLE.get(self.code, CODE_TABLE["unknown"])[1],
+                                 facts={k: v for k, v in (facts or {}).items() if v}).model_dump(mode="json")
 
     @classmethod
     def config(cls, code: LaunchErrorCode, detail: str = "", worker_type: str = "") -> "LaunchError":
@@ -129,6 +171,10 @@ class LaunchError(Exception):
         same reason as ``ingest.health.classify``."""
         if isinstance(exc, LaunchError):
             return exc
+        if isinstance(code := getattr(exc, "code", None), LaunchErrorCode):  # the raiser named its verdict
+            return cls.of(code, str(exc), worker_type)
+        if type(exc.__cause__).__name__ == "LLMSourceError":  # a spawn refused for funding
+            return cls.classify(exc.__cause__, worker_type)
         name = type(exc).__name__
         text = str(exc)
         lowered = text.lower()
@@ -142,7 +188,12 @@ class LaunchError(Exception):
             return cls.config(LaunchErrorCode.NOT_INSTALLED, text, worker_type)
         if "command not found" in lowered:
             return cls.config(LaunchErrorCode.NOT_INSTALLED, text, worker_type)
-        return cls.transient(LaunchErrorCode.UNKNOWN, f"{name}: {text}", worker_type)
+        if name == "LLMSourceError":  # the top refusal names the card; a rejected key outranks it
+            codes = [getattr(src, "reason_code", "") for src in getattr(exc, "sources", [])]
+            refusal = "budget_not_ready" if getattr(exc, "budget_not_ready", False) else (
+                "key_rejected" if "key_rejected" in codes else next((c for c in codes if c), ""))
+            return cls.of(code_for_refusal(refusal), text, worker_type)
+        return cls.transient(LaunchErrorCode.UNKNOWN, text or name, worker_type)
 
 
 async def ensure_launchable(worker_type: Optional[str] = None) -> Optional[LaunchError]:

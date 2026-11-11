@@ -8,6 +8,7 @@ import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { apiContext } from '../_shared/api';
 import { createVibeFixture, destroyVibeFixture, openVibe, type VibeFixture } from '../vibe/_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const SCREEN = '/dock/data-sources';
 const stamp = `${Date.now()}`.slice(-6);
@@ -114,13 +115,13 @@ test('2. connect: an rss source over the dialog, pointed at the loopback feed', 
 
 test('3. streaming: items land on the heartbeat', async () => {
   // The heartbeat is ≤60 s after poll_now (test 2, ~10 s ago); sample, never hurry.
-  const filter = encodeURIComponent(JSON.stringify({ data_source_id: sourceId }));
+  const filter = encodeURIComponent(JSON.stringify({ match: { data_source_id: sourceId }, limit: 10 }));
   await expect(async () => {
     const api = await apiContext();
-    const rows = ((await (await api.get(`/api/v1/graph/source_item?filter=${filter}&limit=10`)).json()).data ?? []) as unknown[];
+    const rows = ((await (await api.get(`/api/v1/graph/source_item?filter=${filter}`)).json()).data ?? []) as unknown[];
     await api.dispose();
     expect(rows.length).toBeGreaterThanOrEqual(2);
-  }).toPass({ timeout: 55_000, intervals: [5_000] });
+  }).toPass({ timeout: adjusted(55_000), intervals: [5_000] });
 });
 
 function editorFrame(page: Page) {
@@ -158,31 +159,38 @@ test('5. define + annotate: a dataset bound to the source, one labelled example'
   await frame.getByTestId('spec-editor-dataset-name').fill(`labels ${stamp}`);
   await frame.getByTestId('spec-editor-shape-field-0').fill('sentiment');
   await frame.getByTestId('spec-editor-dataset-create').click();
-  await expect(frame.getByTestId('spec-editor-dataset-counts')).toHaveText(/0 examples · 0 labelled/);
+  await expect(frame.getByTestId('spec-editor-dataset-counts')).toHaveText(/\(0 rows · 0 labelled\)/);
 
   const firstPromote = frame.locator('[data-testid^="spec-editor-promote-"]').first();
   await firstPromote.click();
   await frame.getByTestId('spec-editor-label-sentiment').fill('positive');
   await frame.getByTestId('spec-editor-annotate-save').click();
   await expect(frame.getByTestId('spec-editor-annotated')).toHaveText(/labelled \(1 total\)/);
-  // Singular: one example is "1 example". The count is copy the person reads, so
+  // Singular: one row is "1 row". The count is copy the person reads, so
   // it agrees with itself rather than being mechanically pluralised.
-  await expect(frame.getByTestId('spec-editor-dataset-counts')).toHaveText(/1 example · 1 labelled/);
+  await expect(frame.getByTestId('spec-editor-dataset-counts')).toHaveText(/\(1 row · 1 labelled\)/);
 
   const api = await apiContext();
   const rows = ((await (await api.get(`/api/v1/graph/dataset?filter=${encodeURIComponent(JSON.stringify({ source_id: sourceId }))}`)).json()).data ?? []) as {
-    id: string; num_examples: number; num_annotated: number; asset_ref: string; spec: unknown;
+    id: string; num_rows: number; num_annotated: number; asset_ref: string; spec: unknown;
   }[];
   await api.dispose();
   expect(rows).toHaveLength(1);
   datasetId = rows[0].id;
   datasetFolder = rows[0].asset_ref;
-  expect(rows[0].num_examples).toBe(1);
+  expect(rows[0].num_rows).toBe(1);
   expect(rows[0].num_annotated).toBe(1);
-  expect(rows[0].spec).toEqual({ examples: [{ input: 'ingest.source_item', output: { sentiment: 'string' } }] });
-  for (const rel of ['input/item.json', 'ground_truth/label.json', 'example.json']) {
-    expect(existsSync(path.join(datasetFolder, 'examples', '0001', rel)), rel).toBeTruthy();
-  }
+  expect(rows[0].spec).toEqual({ rows: [{ input: 'ingest.source_item', output: { sentiment: 'string' } }] });
+  // The promoted row reads back typed: the item as its input, the label as its gold.
+  const rowsApi = await apiContext();
+  const stored = (await (await rowsApi.get(`/api/v1/graph/dataset/${datasetId}/rows`)).json()).data as {
+    rows: { input: { body?: string }; ground_truth: { sentiment: string } }[]; problems: unknown[];
+  };
+  await rowsApi.dispose();
+  expect(stored.problems).toEqual([]);
+  expect(stored.rows).toHaveLength(1);
+  expect(stored.rows[0].ground_truth).toEqual({ sentiment: 'positive' });
+  expect(stored.rows[0].input.body).toBeTruthy();
 });
 
 test('6. the agent surface: the persona rides the session and the pane shows the editor', async ({ page }) => {

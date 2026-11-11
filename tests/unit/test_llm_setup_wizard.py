@@ -187,7 +187,10 @@ async def _person(replies: dict[str, str], asked: list[str]) -> None:
                 if not any(item.op in replies for item in question.items):
                     continue
                 asked.extend(item.op for item in question.items)
-                ask.answer(question.id, ask.answer_items(question.items, lambda item: {} if replies.get(item.op) == "yes" else None))
+                ask.answer(
+                    question.id,
+                    ask.answer_items(question.items, lambda item: {} if replies.get(item.op) == "yes" else None),
+                )
                 continue
             reply = replies.get(question.op_name)
             if reply is None:
@@ -365,10 +368,14 @@ async def test_a_test_backend_can_switch_first_run_setup_off(monkeypatch):
     assert resolved == [trigger], "unset: the trigger runs as it does on a real install"
 
 
-@pytest.mark.parametrize(("assigned", "shown"), [(None, True), ("sandbox", False), ("agent", False)])
-async def test_the_popup_is_for_a_persons_own_machine_not_a_box_the_hub_launched(monkeypatch, assigned, shown):
-    """On a desktop someone is watching, the popup waits for their Start. A sandbox or an agent's
-    box comes with its tools: there the setup runs itself and is never put on screen."""
+@pytest.mark.parametrize(
+    ("assigned", "funded", "shown"),
+    [(None, False, True), (None, True, False), ("sandbox", False, False), ("agent", False, False)],
+)
+async def test_the_popup_is_for_a_persons_own_machine_not_a_box_the_hub_launched(monkeypatch, assigned, funded, shown):
+    """On an unfunded desktop someone is watching, the popup waits for their Start. A sandbox or an
+    agent's box comes with its tools, and a desktop that already has an LLM source needs nothing from
+    the person: there the setup runs itself and is never put on screen -- funded means silent."""
     from types import SimpleNamespace
 
     from flow_sdk.core.compute import llm_source
@@ -380,8 +387,11 @@ async def test_the_popup_is_for_a_persons_own_machine_not_a_box_the_hub_launched
 
     calls = []
 
+    async def check(check_only=False):
+        return SimpleNamespace(ok=False)  # something is missing, so there is a reason to show it
+
     async def wizard_for(_trigger):
-        return SimpleNamespace(popup=True)
+        return SimpleNamespace(popup=True, run=check)
 
     async def navigate(_wizard):
         calls.append("popup")
@@ -392,6 +402,11 @@ async def test_the_popup_is_for_a_persons_own_machine_not_a_box_the_hub_launched
 
     monkeypatch.setattr(builtin_triggers, "_wizard_for", wizard_for)
     monkeypatch.setattr(llm_source, "person_is_watching", lambda: True)
+
+    async def is_funded(project_id=""):
+        return funded
+
+    monkeypatch.setattr(llm_source, "llm_source_funded", is_funded)
     monkeypatch.setattr(start, "navigate_to_wizard", navigate)
     monkeypatch.setattr(start, "start_wizard", run)
     monkeypatch.setattr(runtime, "get_assigned_runtime", lambda: RuntimeKind(assigned) if assigned else None)

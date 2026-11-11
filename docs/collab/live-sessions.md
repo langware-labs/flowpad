@@ -38,11 +38,25 @@ collaborator's machine, and it is a session.
 3. **Follow-up prompts never render in the main thread** — only in the session
    view (`/dock/live_session/<id>`).
 4. **Replies never render in the main thread** either, including review drafts.
+5. **A plain prompt is a prompt request** (amended 2026-11-04). A prompt sent when
+   the conversation has no open LIVE session opens a session with
+   `prompt_limit = 1`. It is shown as `Prompt request · <other side>` under the
+   sender's message (text + prompt stay visible): the host answers **Run & Update
+   <guest>** (`reply_policy=auto`, then approve) / **Run** (`review`: the answer stays
+   a host draft) / **Decline**; while it runs the guest has Open / Cancel; when done
+   the guest sees the update under the row. The host counts answered turns in
+   `prompts_used` and, once the limit is reached and the reply has gone out, ends
+   the session (`end("ended")`, as Disconnect) — approving one prompt never leaves
+   the machine open to the next. A prompt request is never joined
+   (`open_for_conversation` returns live sessions only); the live-session button
+   opens `prompt_limit = None` — no limit, unchanged.
 
 Session settings live on the session, proposed on the first prompt and editable
 in the session view: `reply_policy` = `auto` (default) | `review`. Consent is
-per session, plus an optional standing grant (`ContactPermission` with the single
-action `auto_approve_session`, project-scoped or global).
+per session and only by the host's own click: nothing from another machine
+ever starts approved, and approving one session remembers nothing for the next
+(the standing grant, `ContactPermission`, was removed 2026-11-10 after a
+contact's prompts ran on a host 2 s after arrival with no click).
 
 ## The model (normative)
 
@@ -51,20 +65,22 @@ action `auto_approve_session`, project-scoped or global).
 | `starting_message_id` | guest at send; host fill-only | the main-thread prompt that opened the session |
 | `reply_policy` | guest proposes via the start marker; host authoritative | `auto` sends replies; `review` saves a host draft inside the session |
 | `status` | host authoritative | `DRAFT → PENDING → IDLE ⇄ RUNNING → ENDED / DECLINED`; `ERROR` returns to IDLE on the next turn |
-| `approved_at`, `approved_via` | host | `manual` or `standing_grant` |
+| `approved_at`, `approved_via` | host | `manual` — the host clicked Approve (the only way) |
+| `prompt_limit` | guest proposes via the start marker; host fill-only | `1` = prompt request; `None` = live session (no limit) |
+| `prompts_used` | host authoritative | answered turns; a failed turn does not count |
 | `host_process_id`, `project_id` | host, never shipped | host-local, excluded from `SNAPSHOT_FIELDS` |
 
 **Wire contract (hub-optional, unchanged):** session state rides the
 `remote_worker_session-<id>` TYPE_ID carrier attachment on every session
 message; the starting prompt's carrier carries
-`prompt_preview = {"session_start": {"reply_policy": …}}`; lifecycle lines
+`prompt_preview = {"session_start": {"reply_policy": …, "prompt_limit": 1}}` (`prompt_limit` only on a prompt request); lifecycle lines
 carry `{"live_session_event": …}`. The hub stores and fans out; it never
 inspects or approves. The host backend is the trust boundary.
 
-**The one inbound gate** (`decide_inbound_prompt(status, standing_grant)`):
+**The one inbound gate** (`decide_inbound_prompt(status)`):
 terminal → ignore; IDLE/RUNNING/ERROR →
-run; PENDING/DRAFT/none → run with a standing grant (approve, `approved_via=standing_grant`,
-redrive queued turns), else park at PENDING. The session is resolved-or-minted
+run; PENDING/DRAFT/none → park at PENDING until the host approves (the approve
+action redrives the queued turns). PENDING never moves straight to RUNNING. The session is resolved-or-minted
 BEFORE the gate; an unstamped prompt finds its session by
 `starting_message_id == fm.id`, else joins the conversation's open session
 (natural-key lookups, never a deterministic id).

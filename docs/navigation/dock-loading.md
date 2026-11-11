@@ -92,6 +92,25 @@ Nothing after it → the checkpoint IS the screen, no replay at all.
   or a headless chat (it holds no terminal, and remounting a long chat is the
   redraw this invariant exists to prevent). There is no cap and no eviction by
   age: every running agent and every shell keeps its mounted terminal.
+- **I7 — a redirect takes the place of the URL being loaded, and only that URL.**
+  Loaders just `redirect()`; the router's `dataStrategy`
+  (`redirectHistoryStrategy`, `ui/src/routes/loaders/redirect-history.ts`) decides,
+  once per load, whether every redirect replaces. React Router writes history only
+  after the loaders finish and fixes a redirect's push/replace from the redirect
+  alone, never from the navigation that caused it, so no choice made inside a
+  loader is right in both cases:
+
+  | URL reached by | in history yet? | `replace()` | `redirect()` |
+  |---|---|---|---|
+  | a click (`openDock`, a push) | no | erases the page the click came from | right |
+  | `replaceDock` (a replace) | no | right | right (the navigation's replace is kept) |
+  | cold load, reload, Back/Forward | yes | right | leaves the URL as a Back step that bounces forward |
+
+  The strategy replaces when the address bar already shows the URL being loaded
+  (path + search) and otherwise strips the replace flag. Importing `replace` from
+  `react-router` in `ui/src` is a lint error. (Loaders used to hand-pick
+  `replace()`: following a link in a markdown doc to an unscoped file erased the
+  doc from Back, 2026-10-24.)
 
 ## Where each invariant is tested
 
@@ -100,6 +119,7 @@ Nothing after it → the checkpoint IS the screen, no replay at all.
 | I1, I2, I4 | `ui/tests/unit/dock-loader/dock-loader-matrix.test.ts` — the real `loadAgentApp` over every URL family in `tests/fixtures/dock_address_contract.json` plus a row for every `ViewType` the fixture lacks (a coverage guard fails on a new view type without a row), with every `apiClient` request recorded by `ui/tests/utils/dock-loader-harness.ts` |
 | I2 (step 2) | `ui/tests/unit/dock-loader/canonicalize.test.ts` |
 | I5 | `ui/tests/unit/dock-loader/dock-layout.test.ts` |
+| I7 | `ui/tests/unit/dock-loader/loader-redirect.test.ts` — a real `createBrowserRouter` with `redirectHistoryStrategy` on jsdom history, for a loader using `redirect()` and one using `replace()`: a click that redirects is one new entry and Back returns to where it was clicked, a replacing navigation stays a replace, a cold load that redirects leaves no extra entry |
 | I6 | `ui/tests/unit/terminal-survives-layout-swap.test.tsx`, `ui/tests/unit/terminal_tab_switch_keeps_xterm_mounted.test.tsx`, `ui/tests/unit/terminal-pool-switch-moves-nothing.test.tsx` (a switch moves no pool node; a layout change moves the stack whole; parking is full size), `ui/tests/unit/terminal-pool-releases-ended-agent.test.tsx` (an ended agent's panel goes once its tab is not shown and comes back cold; a running agent, a plain shell and a headless chat stay), `ui/tests/unit/terminal-pool-forgets-dropped-panel-scroll.test.ts` (a panel that leaves the pool takes its scroll offsets with it) |
 | All, in a browser | `ui/tests/manual_regression/navigation/` — `every_place_renders` (real entities, every mode), `terminal_round_trips` (a live terminal → every kind of place → back) and `chat_round_trips` (a long chat keeps its node and scroll position across a tab switch and a layout change) |
 | Speed | `ui/tests/manual_regression/navigation/tab_switch_perf.md.ts` — budgets on a production build (below), including leaving and returning to a long chat |

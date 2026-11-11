@@ -146,12 +146,28 @@ async def test_the_exchange_lands_only_on_the_apps_own_paths(client, upstream):
             assert traded.headers["location"] == "/", hostile
 
 
-async def test_without_a_grant_a_browser_is_sent_to_the_hubs_open_and_code_gets_a_401(client, upstream, monkeypatch):
+async def test_the_app_door_is_public_a_visitor_is_served_and_named_to_nobody(client, upstream):
+    """The ``app`` door is a placement's public face: what someone built here opens for anyone with the
+    link, with no hub round trip — a hub that never adopted the row (a sandbox's own placement) would
+    otherwise refuse everyone, the owner included."""
+    await _proxy(upstream)
+    async with _door() as door:
+        navigation = await door.get("/echo?a=1", headers={"accept": "text/html"})
+        xhr = await door.get("/shop/echo")
+    assert navigation.status_code == 200, navigation.text
+    assert (navigation.json()["path"], navigation.json()["query"]) == ("/echo", "a=1")
+    assert "x-flowpad-user" not in {k for k, _ in navigation.json()["headers"]}, "a visitor is nobody to the app"
+    assert xhr.status_code == 200 and xhr.json()["path"] == "/echo"
+
+
+async def test_without_a_grant_the_admin_door_sends_a_browser_to_the_hubs_open_and_code_gets_a_401(
+    client, upstream, monkeypatch
+):
     from flow_sdk.cloud_client.transport import hub_http
 
     monkeypatch.setattr(hub_http, "hub_base_url", lambda: "https://hub.example")
-    endpoint = await _proxy(upstream)
-    async with _door() as door:
+    endpoint = await _proxy(upstream, "admin")
+    async with _door("admin") as door:
         navigation = await door.get("/orders?page=2", headers={"accept": "text/html"})
         xhr = await door.get("/echo")
         post = await door.post("/echo", headers={"accept": "text/html"})
@@ -167,15 +183,16 @@ async def test_without_a_hub_or_a_row_there_is_nowhere_to_send_anyone(client, up
     from flow_sdk.cloud_client.transport import hub_http
 
     monkeypatch.setattr(hub_http, "hub_base_url", lambda: None)
-    await _proxy(upstream)
-    async with _door() as door:
+    await _proxy(upstream, "admin")
+    async with _door("admin") as door:
         no_hub = await door.get("/", headers={"accept": "text/html"})
     assert no_hub.status_code == 401
-    for row in await ServiceEndpoint.get_all({"match": {"subkind": "admin"}}):
-        await row.delete()
-    async with _door("admin") as door:
-        nothing = await door.get("/", headers={"accept": "text/html"})
-    assert nothing.status_code == 404
+    for audience in ("admin", "app"):
+        for row in await ServiceEndpoint.get_all({"match": {"subkind": audience}}):
+            await row.delete()
+        async with _door(audience) as door:
+            nothing = await door.get("/", headers={"accept": "text/html"})
+        assert nothing.status_code == 404, audience
 
 
 async def test_the_reserved_path_is_never_the_apps(client, upstream):
@@ -186,14 +203,14 @@ async def test_the_reserved_path_is_never_the_apps(client, upstream):
     assert resp.status_code == 404
 
 
-async def test_a_revoked_grant_is_refused_at_the_door(client, upstream):
-    endpoint = await _proxy(upstream)
-    async with _door() as door:
-        cookie = await _entered(door, endpoint)
+async def test_a_revoked_grant_is_refused_at_the_admin_door(client, upstream):
+    endpoint = await _proxy(upstream, "admin")
+    async with _door("admin") as door:
+        cookie = await _entered(door, endpoint, "admin")
         assert (await door.get("/echo", cookies={COOKIE: cookie})).status_code == 200
         grants.revoke("user-alice", [endpoint.id])
         assert (await door.get("/echo", cookies={COOKIE: cookie})).status_code == 401
-        others = await _entered(door, endpoint, caller="user-bob")
+        others = await _entered(door, endpoint, "admin", caller="user-bob")
         assert (await door.get("/echo", cookies={COOKIE: others})).status_code == 200
         grants.revoke(None, [endpoint.id])
         assert (await door.get("/echo", cookies={COOKIE: others})).status_code == 401
@@ -219,3 +236,20 @@ async def test_on_an_unarmed_box_the_door_mints_nothing(client, upstream):
         async with _door() as door:
             traded = await door.get("/auth/gate", params={"ticket": _ticket(endpoint), "next": "/"})
     assert traded.status_code == 403
+
+
+async def test_an_apps_absolute_paths_reach_the_app_that_asked_for_them(client, upstream):
+    """An app served under a mount still asks for ABSOLUTE paths (``/_next/…`` bundles, ``fetch('/api/…')``).
+    The door places them under the app that asked: the page's ``Referer``, else the route the browser opened last."""
+    await _proxy(
+        upstream, backend={"type": "routed", "routes": {"shop": {"backend": {"type": "proxy", "port": upstream.port}}}}
+    )
+    async with _door() as door:
+        orphan = await door.get("/echo")
+        assert orphan.status_code == 404, "an absolute path from nowhere names no app"
+        asked = await door.get("/echo?from=page", headers={"referer": "https://door.test/shop/"})
+        assert asked.status_code == 200 and (asked.json()["path"], asked.json()["query"]) == ("/echo", "from=page")
+        page = await door.get("/shop/echo", headers={"accept": "text/html"})
+        assert page.status_code == 200
+        remembered = await door.get("/echo", cookies={"__flowpad_route": page.cookies["__flowpad_route"]})
+        assert remembered.status_code == 200 and remembered.json()["path"] == "/echo"

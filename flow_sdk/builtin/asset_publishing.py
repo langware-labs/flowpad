@@ -12,7 +12,6 @@ only remote is the hub, reached with the user's hub token.
 from __future__ import annotations
 
 import asyncio
-
 from pathlib import Path, PurePosixPath
 
 from flow_sdk.assets.git_publish import (
@@ -77,7 +76,8 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
     from flow_sdk.assets.project_manifest import rel_path_for  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import HubError, hub_post  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
     from flow_sdk.core.entity.entity_model import _SUPPRESS_STORE  # noqa: PLC0415
     from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin  # noqa: PLC0415
 
@@ -119,11 +119,9 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
         raise AssetPublishError(AssetPublishCode.HUB_PUBLISH_FAILED, "Cloud login required")
 
     try:
-        repo = await hub_post("project", {}, project.id, action="hosted_repo")
+        repo = await HubProxy.call("POST", "project", project.id, "hosted_repo", payload={})
     except HubError as exc:
-        raise AssetPublishError(
-            AssetPublishCode.HUB_PUBLISH_FAILED, "The hub has no repository for this project"
-        ) from exc
+        raise AssetPublishError.from_hub(exc, "The hub could not open this project's repository") from exc
     if not repo or not repo.get("clone_url"):
         raise AssetPublishError(AssetPublishCode.HUB_PUBLISH_FAILED, "The hub has no repository for this project")
 
@@ -134,9 +132,13 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
     last_tree = await asyncio.to_thread(last_synced_tree, repo_id, rel_path) or (
         previous.tree if previous is not None and previous.rel_path == rel_path else None
     )
+    from flow_sdk.cloud_client.transport.hub_http import hub_graph_url  # noqa: PLC0415
+
     mirror = HubRepoMirror(
         root=mirror_root(repo_id),
-        clone_url=repo["clone_url"],
+        # This desktop's own hub URL, as ``publish_files_to_hub`` uses: the hub's ``clone_url``
+        # carries ITS external host, which a box behind a proxy (Docker) cannot reach.
+        clone_url=hub_graph_url("git_repo", repo_id, "git"),
         branch=repo.get("default_branch") or "main",
         token=token,
     )
@@ -152,20 +154,20 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
 
     payload = publish_asset_payload(project.id, entity.get_type(), entity.id, rel_path)
     try:
-        hub_result = await hub_post("project", payload, action="publish_asset")
+        hub_result = await HubProxy.call("POST", "project", action="publish_asset", payload=payload)
     except HubError as exc:
-        raise AssetPublishError(
-            AssetPublishCode.HUB_PUBLISH_FAILED,
-            "The asset reached the project repository, but the hub could not register it",
-            data={"rel_path": rel_path, "tree": synced.tree},
+        raise AssetPublishError.from_hub(
+            exc, "The hub refused to register this asset", data={"rel_path": rel_path, "tree": synced.tree}
         ) from exc
     hub_result = hub_result or {}
 
     origin = HubRepoOrigin(
         repo=repo["repo"],
         rel_path=rel_path,
-        head_commit=str(hub_result.get("head_commit") or synced.head_commit or ""),
-        tree=str(hub_result.get("tree") or synced.tree),
+        head_commit=str(synced.head_commit or hub_result.get("head_commit") or ""),
+        # What THIS desk synced, not the hub repo's head when the hub answered: a publish that finishes
+        # late would otherwise record a newer hub edit as "already seen" and hide the next asset_conflict.
+        tree=str(synced.tree or hub_result.get("tree") or ""),
     )
     await asyncio.to_thread(
         remember_sync,

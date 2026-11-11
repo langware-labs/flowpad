@@ -1,11 +1,13 @@
+import base64
 import json
 import logging
+import re
 import traceback
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, field_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.flowpad_types.enums import ExpansionType
@@ -50,8 +52,39 @@ class ExpressionNode(BaseModel):
 
 
 OrderType = Dict[str, Literal["asc", "desc"]]
-#: The keys of a filter beside `match` (`QueryFilter.parse`).
-_FILTER_WORDS = frozenset({"limit", "offset", "order_by", "expand"})
+#: The keys of a filter beside `match` (`QueryFilter.parse`; ``PAGING_KEYS`` on the hub too).
+PAGING_KEYS = _FILTER_WORDS = frozenset({"limit", "offset", "after", "order_by", "expand"})
+# A plain field name, as on the hub; the desktop also sorts on dotted JSON paths (``input.created``), each
+# segment a plain name.
+_FIELD_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
+
+
+def order_terms(order_by, paged: bool = False) -> list[tuple[str, bool]]:
+    """``(field, descending)`` terms for ``order_by`` — the hub's rule: a page with no order is newest first
+    (``created_date DESC``), and whenever there is an order the ``id`` settles every tie so equal keys never
+    shuffle rows between pages."""
+    if isinstance(order_by, (dict, str)):
+        order_by = [order_by]
+    terms: list[tuple[str, bool]] = []
+    for spec in order_by or []:
+        if isinstance(spec, str):
+            spec = {spec.lstrip("-"): "desc" if spec.startswith("-") else "asc"}
+        if isinstance(spec, dict):
+            for field, direction in spec.items():
+                terms.append((field, str(direction).lower() == "desc"))
+    if paged and not terms:
+        terms = [("created_date", True)]
+    if terms and not any(field == "id" for field, _ in terms):
+        terms.append(("id", False))
+    return terms
+
+
+def sort_in_order(rows: list, order_by, paged: bool = False) -> list:
+    """``rows`` in the order the database would answer them (``order_terms``): nulls last ascending and
+    first descending, as on the hub. For lists a database cannot order — a merge of two reads."""
+    for field, descending in reversed(order_terms(order_by, paged)):
+        rows.sort(key=lambda r, f=field: (getattr(r, f, None) is None, getattr(r, f, None)), reverse=descending)
+    return rows
 
 
 class QueryFilter(BaseModel):
@@ -60,9 +93,32 @@ class QueryFilter(BaseModel):
     type: str | None = None
     match: ExpressionNode | None = None
     order_by: Optional[OrderType | List[OrderType]] = None
-    limit: Optional[int] = None
-    offset: Optional[int] = None
+    limit: Optional[int] = Field(None, ge=1)
+    offset: Optional[int] = Field(None, ge=0)
+    #: A page's ``next_cursor``: continue right after that page's last row, in the same order.
+    after: Optional[str] = None
     expand: Optional[List[str]] = None
+    # Set by a driver's ``get_all``: how many stored rows the page consumed, unreadable ones included, so a
+    # caller paging on can count them into its next offset. Not part of the filter's JSON.
+    _rows_read: Optional[int] = PrivateAttr(default=None)
+
+    @property
+    def rows_read(self) -> Optional[int]:
+        return self._rows_read
+
+    @rows_read.setter
+    def rows_read(self, value: Optional[int]) -> None:
+        self._rows_read = value
+
+    @field_validator("order_by")
+    @classmethod
+    def _order_by_fields_are_identifiers(cls, value):
+        # ORDER BY keys cannot be bound parameters, so a key that is not a plain field name is refused here.
+        for spec in value if isinstance(value, list) else [value] if value else []:
+            for field in spec:
+                if not _FIELD_NAME_RE.match(field):
+                    raise ValueError(f"order_by: not a field name: {field!r}")
+        return value
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -169,3 +225,47 @@ class QueryFilter(BaseModel):
         except Exception as e:
             logging.error(f"Unexpected error: {filter_json=} {entity_type=} {traceback.format_exc()}")
             raise ValueError(f"An unexpected error occurred: {e}")
+
+
+def page_order(order_by: Any) -> List[tuple[str, str]]:
+    """A paged list's full order as ``[(field, "asc"|"desc")]``: the asked order (newest first when none),
+    always ending in the id so no two rows tie (``order_terms`` with ``paged``, the hub's ``page_order``)."""
+    return [(field, "desc" if descending else "asc") for field, descending in order_terms(order_by, paged=True)]
+
+
+def _field_value(row: Dict[str, Any], field: str) -> Any:
+    """``row``'s value at ``field``, a dotted path walking nested maps (``input.created``)."""
+    value: Any = row
+    for segment in field.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(segment)
+    return value
+
+
+def encode_cursor(order: List[tuple[str, str]], row: Dict[str, Any]) -> Optional[str]:
+    """``next_cursor`` for a page ending at ``row`` (its wire fields); None when a sort value is missing —
+    a null has no place to continue from, so the caller pages by offset."""
+    values = [_field_value(row, field) for field, _ in order]
+    if any(value is None for value in values):
+        return None
+    raw = json.dumps({"order": order, "values": values}, separators=(",", ":"), default=str)
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def keyset_after(order: List[tuple[str, str]], cursor: str) -> ExpressionNode:
+    """The rows after ``cursor`` in ``order``: (a > x) OR (a = x AND b > y) ..., each term in its direction."""
+    try:
+        decoded = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        cursor_order = [tuple(term) for term in decoded["order"]]
+        values = decoded["values"]
+    except Exception as e:  # noqa: BLE001 -- any malformed cursor is the caller's error
+        raise ValueError(f"after: not a cursor this server issued ({e})")
+    if cursor_order != [tuple(term) for term in order] or not isinstance(values, list) or len(values) != len(order):
+        raise ValueError("after: the cursor was issued for a different order_by")
+    branches = []
+    for i, (field, direction) in enumerate(order):
+        step = ExpressionNode(op=QueryOp.LT if direction == "desc" else QueryOp.GT, operands=[field, values[i]])
+        ties = [ExpressionNode(op=QueryOp.EQ, operands=[f, values[j]]) for j, (f, _) in enumerate(order[:i])]
+        branches.append(ExpressionNode(op=QueryOp.AND, operands=[*ties, step]) if ties else step)
+    return branches[0] if len(branches) == 1 else ExpressionNode(op=QueryOp.OR, operands=branches)

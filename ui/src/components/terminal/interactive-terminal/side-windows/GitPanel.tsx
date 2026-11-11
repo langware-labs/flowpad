@@ -1,16 +1,20 @@
 import { i18n } from '@lingui/core';
 import { msg, t } from '@lingui/core/macro';
-import { AgenticProcess, GitWorkdir, type GitRevision, type GitStatus, type GitStatusFile } from '@sdk';
+import { AgenticProcess, GitWorkdir, shellQuote, type GitRevision, type GitStatus, type GitStatusFile } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useGitPush } from '@src/hooks/use-git-push';
 import {
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   Check,
   Copy,
   Eye,
+  ExternalLink,
   FileMinus,
   FilePen,
   FilePlus,
+  GitCommitHorizontal,
   GitBranch,
   type LucideIcon,
   PlusSquare,
@@ -30,7 +34,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { GitPushIcon } from '@src/components/status-bar/GitPushIcon';
 import { GitFileDiffModal } from './GitFileDiffModal';
 import type { MessageDescriptor } from '@lingui/core';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
 import type { WorkerType } from '@src/components/workers/worker-types';
 import { notify } from '@src/notifications';
 
@@ -81,13 +85,13 @@ function dirname(p: string): string {
 type GitMode = 'standard' | 'advanced';
 
 interface GitAction {
-  key: 'diff' | 'discard' | 'stage' | 'unstage' | 'copyPath';
+  key: 'diff' | 'open' | 'discard' | 'stage' | 'unstage' | 'commit' | 'copyPath';
   label: string;
   tooltip: string;
   icon: LucideIcon;
   destructive?: boolean;
   // POST sub-path for backend mutations; absent for client-only actions.
-  subpath?: 'discard-file' | 'stage-file' | 'unstage-file';
+  subpath?: 'discard-file' | 'stage-file' | 'unstage-file' | 'commit-file';
 }
 
 // Per-status copy/icon for the state-aware discard action. `default` covers
@@ -142,8 +146,14 @@ function actionsFor(file: GitStatusFile, mode: GitMode, readOnly = false): GitAc
     tooltip: t`View the changes in this file`,
     icon: Eye,
   };
+  // Open the file itself in its editor; a removed file has nothing on disk.
+  const open: GitAction | null =
+    file.status === 'D'
+      ? null
+      : { key: 'open', label: t`Open`, tooltip: t`Open this file in its editor`, icon: ExternalLink };
+  const lead = open ? [view, open] : [view];
 
-  if (readOnly) return [view];
+  if (readOnly) return lead;
 
   // The state-aware "undo" action — same backend op (discard-file), but its
   // label/tooltip/icon read differently per status so it always says what it
@@ -162,8 +172,16 @@ function actionsFor(file: GitStatusFile, mode: GitMode, readOnly = false): GitAc
     subpath: 'discard-file',
   };
 
+  const commit: GitAction = {
+    key: 'commit',
+    label: t`Commit`,
+    tooltip: t`Commit just this file (no push)`,
+    icon: GitCommitHorizontal,
+    subpath: 'commit-file',
+  };
+
   if (mode === 'standard') {
-    return [view, undo];
+    return [...lead, commit, undo];
   }
 
   // Advanced — add stage/unstage and copy-path. Staged-ness is computed by the
@@ -191,8 +209,11 @@ function actionsFor(file: GitStatusFile, mode: GitMode, readOnly = false): GitAc
     tooltip: t`Copy path: ${file.path}`,
     icon: Copy,
   };
-  return [view, stageAction, undo, copyPath];
+  return [...lead, stageAction, commit, undo, copyPath];
 }
+
+/** Busy/error key for the panel-wide "Commit all" (never a real row path). */
+const ALL_FILES = '\0all';
 
 /** Path the backend operates on — renames display as "old → new"; act on new. */
 function rawPath(path: string): string {
@@ -248,31 +269,42 @@ const HeaderChip: React.FC<{ title?: string; testId?: string; className?: string
 // A commit hash reviews that commit; none reviews the uncommitted changes.
 // ---------------------------------------------------------------------------
 
-function reviewPrompt(commit?: string): string {
+function reviewPrompt(commit?: string, file?: string): string {
+  if (file)
+    return commit
+      ? `Review the changes to ${file} in commit ${commit} (git show ${commit} -- ${shellQuote(file)}).`
+      : `Review the uncommitted changes to ${file} (git diff HEAD -- ${shellQuote(file)}).`;
   return commit
     ? `Review the changes in commit ${commit} (git show ${commit}).`
     : 'Review the uncommitted changes in this repo, staged and unstaged (git diff HEAD).';
 }
 
-const ReviewInWorker: React.FC<{ workdir: string; commit?: string; testIdPrefix: string }> = ({
+const ReviewInWorker: React.FC<{ workdir: string; commit?: string; file?: string; testIdPrefix: string }> = ({
   workdir,
   commit,
+  file,
   testIdPrefix,
 }) => {
   const onLaunched = React.useContext(ReviewLaunchedContext);
   const launch = useCallback(
     async (workerType: WorkerType) => {
       try {
-        await AgenticProcess.launch({ workerType, workdir, launchPrompt: reviewPrompt(commit), enableAssistant: true });
+        await AgenticProcess.launch({
+          workerType,
+          workdir,
+          launchPrompt: reviewPrompt(commit, file),
+          enableAssistant: true,
+        });
         onLaunched?.();
       } catch (err) {
         console.error('[GitPanel] review launch failed', err);
         notify.error({ title: t`Failed to start session` });
       }
     },
-    [workdir, commit, onLaunched],
+    [workdir, commit, file, onLaunched],
   );
-  return <WorkerToolbar onLaunch={launch} testIdPrefix={testIdPrefix} />;
+  // Standard shape on every git surface: the last-used worker, the rest behind the chevron.
+  return <ContextWorkerToolbar onLaunch={launch} mode="lastOpened" testIdPrefix={testIdPrefix} />;
 };
 
 // ---------------------------------------------------------------------------
@@ -355,6 +387,11 @@ const UnpushedCommitsBadge: React.FC<{
 export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPushed, onReviewLaunched }) => {
   const [data, setData] = useState<GitStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  // Row order within each bucket: by added or removed lines; null = git's order.
+  const [sort, setSort] = useState<{ by: 'insertions' | 'deletions'; dir: 'desc' | 'asc' } | null>(null);
+  // Click cycles that column: descending → ascending → off.
+  const toggleSort = (by: 'insertions' | 'deletions') =>
+    setSort((s) => (s?.by !== by ? { by, dir: 'desc' } : s.dir === 'desc' ? { by, dir: 'asc' } : null));
   const [initing, setIniting] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const { currentDock, navigation } = useDockNavigation();
@@ -425,38 +462,53 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
     onPushed?.();
   });
 
-  // Run a per-file mutation (discard / stage / unstage), then refresh the list.
-  const runFileOp = useCallback(
-    async (file: GitStatusFile, subpath: NonNullable<GitAction['subpath']>) => {
+  // Run one repo mutation keyed by a row path (or ALL_FILES), then refresh the
+  // list and the outer status — a commit or discard moves the footer counts too.
+  const runOp = useCallback(
+    async (key: string, op: () => Promise<{ ok?: boolean; message?: string } | undefined>) => {
       setConfirmingKey(null);
-      setBusyPath(file.path);
+      setBusyPath(key);
       setRowError(null);
       try {
-        const ops = {
-          'discard-file': () => git.discardFile(rawPath(file.path), file.status),
-          'stage-file': () => git.stageFile(rawPath(file.path)),
-          'unstage-file': () => git.unstageFile(rawPath(file.path)),
-        } as const;
-        const result = await ops[subpath]();
+        const result = await op();
         if (!mountedRef.current) return;
         if (result && result.ok === false) {
-          setRowError({ path: file.path, message: result.message || 'Operation failed' });
+          setRowError({ path: key, message: result.message || 'Operation failed' });
         } else {
           void fetchStatus();
+          onPushed?.();
         }
       } catch (e) {
-        if (mountedRef.current) setRowError({ path: file.path, message: String(e) });
+        if (mountedRef.current) setRowError({ path: key, message: String(e) });
       } finally {
         if (mountedRef.current) setBusyPath(null);
       }
     },
-    [git, fetchStatus],
+    [fetchStatus, onPushed],
+  );
+
+  const runFileOp = useCallback(
+    (file: GitStatusFile, subpath: NonNullable<GitAction['subpath']>) => {
+      const path = rawPath(file.path);
+      const ops = {
+        'discard-file': () => git.discardFile(path, file.status),
+        'stage-file': () => git.stageFile(path),
+        'unstage-file': () => git.unstageFile(path),
+        'commit-file': () => git.commitFile(path),
+      } as const;
+      return runOp(file.path, ops[subpath]);
+    },
+    [git, runOp],
   );
 
   const handleAction = useCallback(
     (file: GitStatusFile, action: GitAction) => {
       if (action.key === 'diff') {
         selectFile(file);
+        return;
+      }
+      if (action.key === 'open') {
+        navigation.openFile(`${workdir.replace(/\/+$/, '')}/${rawPath(file.path)}`);
         return;
       }
       if (action.key === 'copyPath') {
@@ -471,7 +523,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
       }
       void runFileOp(file, action.subpath);
     },
-    [runFileOp, selectFile],
+    [runFileOp, selectFile, navigation, workdir],
   );
 
   useEffect(() => {
@@ -562,6 +614,12 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
               </div>
               {/* Action toolbar — revealed on hover */}
               <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                <ReviewInWorker
+                  workdir={workdir}
+                  commit={revision}
+                  file={rawPath(f.path)}
+                  testIdPrefix={`git-review-file-${i}`}
+                />
                 {actions.map((a) => (
                   <IconBtn
                     key={a.key}
@@ -596,8 +654,12 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
   const buckets = BUCKETS.map((b) => ({
     ...b,
     label: i18n._(b.label),
-    files: data?.files.filter((f) => bucketOf(f.status) === b.key) ?? [],
+    files: (data?.files.filter((f) => bucketOf(f.status) === b.key) ?? []).sort((x, y) =>
+      sort ? ((x[sort.by] ?? 0) - (y[sort.by] ?? 0)) * (sort.dir === 'asc' ? 1 : -1) : 0,
+    ),
   }));
+  const SortArrow = ({ by }: { by: 'insertions' | 'deletions' }) =>
+    sort?.by === by ? sort.dir === 'desc' ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" /> : null;
 
   // Line totals across every file, so the chips answer "how big is this
   // change" and not just "how many files". Binary files carry null counts and
@@ -818,12 +880,26 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 <Trans>Lines</Trans>
               </span>
-              <span className="font-semibold text-green-500" data-testid="git-panel-sloc-added">
+              <button
+                type="button"
+                className="flex items-center gap-0.5 font-semibold text-green-500 hover:underline"
+                onClick={() => toggleSort('insertions')}
+                title={t`Sort by added lines`}
+                data-testid="git-panel-sloc-added"
+              >
                 +{sloc.added}
-              </span>
-              <span className="font-semibold text-red-500" data-testid="git-panel-sloc-removed">
+                <SortArrow by="insertions" />
+              </button>
+              <button
+                type="button"
+                className="flex items-center gap-0.5 font-semibold text-red-500 hover:underline"
+                onClick={() => toggleSort('deletions')}
+                title={t`Sort by removed lines`}
+                data-testid="git-panel-sloc-removed"
+              >
                 -{sloc.removed}
-              </span>
+                <SortArrow by="deletions" />
+              </button>
               <span
                 className={`font-semibold ${net > 0 ? 'text-green-500' : net < 0 ? 'text-red-500' : 'text-muted-foreground'}`}
                 data-testid="git-panel-sloc-net"
@@ -834,6 +910,25 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                   <Trans>net</Trans>
                 </span>
               </span>
+              {!revision && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto h-6 gap-1 px-2 text-[11px]"
+                  onClick={() => void runOp(ALL_FILES, () => git.commitAll())}
+                  disabled={busyPath === ALL_FILES}
+                  title={t`Commit all changes (no push)`}
+                  data-testid="git-panel-commit-all"
+                >
+                  <GitCommitHorizontal className="h-3.5 w-3.5" />
+                  <Trans>Commit all</Trans>
+                </Button>
+              )}
+              {rowError?.path === ALL_FILES && (
+                <span role="alert" className="text-destructive">
+                  {rowError.message}
+                </span>
+              )}
             </div>
           )}
 

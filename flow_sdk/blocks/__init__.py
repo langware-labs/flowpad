@@ -35,7 +35,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, AsyncIterator, Callable, Sequence
 
-from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SlackMessageSpec, TelegramMessageSpec
+from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
@@ -63,8 +63,6 @@ __all__ = [
     "PromptResult",
     "listen",
     "pages",
-    "SlackMessageSpec",
-    "TelegramMessageSpec",
     "workflow",
 ]
 
@@ -573,7 +571,7 @@ class StreamInbox:
                         except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
                             logger.exception("blocks: projection failed for %s", item.id)
                         sender = str(item.author_external_id or "").strip().lower()
-                        if own or (
+                        if item.is_echo(source) or (
                             self.senders and sender not in self.senders
                         ):
                             # Acked now while nothing in this page has been handed over — an ack is an

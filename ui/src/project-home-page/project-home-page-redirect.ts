@@ -1,49 +1,22 @@
-import { Agent, AgenticProcess, dataContext, isHubOnly, Project, TypeId, type ProjectHomePage } from '@sdk';
-import { replace } from 'react-router';
+import { Agent, dataContext, isHubOnly, Project, TypeId, type ProjectHomePage } from '@sdk';
+import { redirect } from 'react-router';
 
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { isAppType } from '@src/navigation/app-dock';
 import { projectScope } from '@src/lib/scope-filter';
-import { rememberedViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { ambientLoadProjectId, registerLoadRedirect } from '@src/routes/loaders/load-redirects';
-import { prepareAgentSession } from '@src/components/agents/use-agent-launcher';
-import { lastVibeChatQuery, pickLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
+import { agentSessionDock } from '@src/components/agents/use-agent-launcher';
 import { PROVIDER_PROJECT_PARAM, HOME_AGENT_PARAM } from './dependency-home';
-import { HOME_PAGE_OPEN, HOME_PAGE_PARAM, rememberProjectHomePage } from './home-page-state';
+import { HOME_PAGE_OPEN, HOME_PAGE_PARAM } from './home-page-state';
 
 /** Registration IS the switch: `false` takes the resolver out of the chain entirely. */
 export const PROJECT_HOME_PAGE_ENABLED = true;
 
-/**
- * Where an AGENT home page lands: its last chat in this project — the
- * last-chat query narrowed to the agent (`lastVibeChatQuery`) — else a new
- * session, opened with the same pre-turn stack `useAgentLauncher` gives one
- * (auto prompt queued, vibe embedded, turn 1 started). A resumed chat already
- * had its turn 1, so nothing is re-sent.
- * Resuming is the point: Home is clicked again and again, and minting a
- * session per click would leave an empty conversation behind each time.
- */
+/** An AGENT home page lands where opening the agent does (`agentSessionDock`); null when the agent is gone. */
 async function agentHomePageDock(agentTypeId: string, projectId: string): Promise<DockPointer | null> {
-  const last = pickLastVibeChat(
-    await AgenticProcess.query<AgenticProcess>(lastVibeChatQuery(projectId, agentTypeId)),
-  );
-  const processId = last?.id ?? (await mintHomeChat(agentTypeId, projectId));
-  if (!processId) return null;
-  // A resumed chat keeps the mode it was last shown in — landing never switches
-  // a session. A minted one, and one with no memory, is Vibe.
-  return DockPointer.forSession(processId).withViewMode(rememberedViewMode(last) ?? ViewMode.Vibe);
-}
-
-/** A new session for the agent in this project, with its pre-turn stack; null when the agent is gone. */
-async function mintHomeChat(agentTypeId: string, projectId: string): Promise<string | null> {
   const agent = await Agent.getById<Agent>(new TypeId(agentTypeId).id);
-  if (!agent) return null;
-  const processId = (await agent.use(projectId, true)).process_id;
-  await prepareAgentSession(processId).catch((e) =>
-    console.warn('[project-home-page] pre-turn setup failed; opening the session anyway', e),
-  );
-  return processId;
+  return agent ? agentSessionDock(agent, projectId) : null;
 }
 
 /**
@@ -58,15 +31,18 @@ export async function homePageDock(data: ProjectHomePage, projectId: string): Pr
   if (data.type === Agent.type) {
     // Never launch an agent while its provider is still waiting for setup approval.
     if (data.lifecycle && data.lifecycle.state !== 'ready') {
-      return dockForDisplayTarget({ kind: 'entity', typeid: data.asset, type: data.type })
-        ?.withScopeFilter(projectScope(projectId))
-        .withOption(PROVIDER_PROJECT_PARAM, data.lifecycle.project_id)
-        .withOption(HOME_AGENT_PARAM, data.asset) ?? null;
+      return (
+        dockForDisplayTarget({ kind: 'entity', typeid: data.asset, type: data.type })
+          ?.withScopeFilter(projectScope(projectId))
+          .withOption(PROVIDER_PROJECT_PARAM, data.lifecycle.project_id)
+          .withOption(HOME_AGENT_PARAM, data.asset) ?? null
+      );
     }
     return agentHomePageDock(data.asset, projectId);
   }
   if (isAppType(data.type)) {
-    return DockPointer.forAppEntity(new TypeId(data.asset)).withScopeFilter(projectScope(projectId))
+    return DockPointer.forAppEntity(new TypeId(data.asset))
+      .withScopeFilter(projectScope(projectId))
       .withOption(PROVIDER_PROJECT_PARAM, data.lifecycle?.project_id || projectId);
   }
   return dockForDisplayTarget({ kind: 'entity', typeid: data.asset, type: data.type });
@@ -80,8 +56,8 @@ export async function homePageDock(data: ProjectHomePage, projectId: string): Pr
  * the first. Two kinds of navigation ask:
  *  - LAUNCHING a project: opening a folder or clone, picking a project,
  *    setting up a shared one, switching to one.
- *  - The Home button (`goHome({ homePage: true })`), and closing a project's
- *    LAST tab (the strip lands where Home would).
+ *  - Closing a project's LAST tab, and finishing a wizard
+ *    (`goHome({ homePage: true })`). The Home button does NOT — it is Flowpad's home.
  * Everything else that lands on the project page — its own "Open project home"
  * button, its tab — does not ask, so the project page (where the home page is
  * configured) stays reachable. Safe to
@@ -89,9 +65,9 @@ export async function homePageDock(data: ProjectHomePage, projectId: string): Pr
  * one per visit.
  *
  * Same contract as the other load redirects: never blocks the load (any
- * failure means the default home) and lands as real URL state. `replace`, not
- * `redirect`: the `?homePage=open` location must not stay behind the session,
- * or Back would re-run this loader and bounce straight forward again.
+ * failure means the default home) and lands as real URL state. The redirect
+ * takes the place of the `?homePage=open` URL (I7), so Back never re-runs this
+ * loader and bounces forward.
  */
 export async function projectHomePageRedirect(request: Request): Promise<Response | null> {
   if (isHubOnly()) return null;
@@ -121,8 +97,7 @@ export async function projectHomePageRedirect(request: Request): Promise<Respons
   }
   if (!dock) return null;
 
-  rememberProjectHomePage(projectId, dock);
-  return replace(dock.toUrl());
+  return redirect(dock.toUrl());
 }
 
 // Imported by the home loader; the resolver list is shared, so it runs on root

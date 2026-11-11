@@ -43,6 +43,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
     user_turn_count as _user_turn_count,
+    session_covers_stream,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.status import copilot_tail_status
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker import (
@@ -132,7 +133,15 @@ class CopilotDriver:
     # status only on the main composer screen, never on folder trust. It is a
     # stronger readiness signal than the generic prompt glyph (the trust
     # choice list has its own glyph).
-    pty_composer_ready_pattern = re.compile(r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used")
+    # Copilot CLI 1.0.105 no longer shows that status on an idle composer (it
+    # appears only once a turn runs); its composer footer reads
+    # "Interactive \u00b7 Allow All \u00b7 / commands \u00b7 ? help" instead (cut after
+    # "/ commands" at 80 columns), and the trust dialog's footer
+    # ("\u2191/\u2193 to navigate \u00b7 enter to select") matches neither.
+    launch_screen = None
+    pty_composer_ready_pattern = re.compile(
+        r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used|\u00b7[ \t\u00a0]*/ commands"
+    )
     # A PTY launch drops the prompt (copilot reads it from stdin); prompt() types it.
     pty_launch_drops_prompt = True
     pins_resume_cwd = False  # no transcript-cwd pinning, no fork
@@ -182,6 +191,8 @@ class CopilotDriver:
         assets: "AssetDir",
         process_id: str,
         events: Sequence["HookEventType"],
+        *,
+        app_launch: bool = False,
     ) -> ProcessHookRuntime:
         normalized = normalize_process_hook_events(events, provider=self.name)
         if not is_valid_entity_id(process_id):
@@ -392,19 +403,18 @@ class CopilotDriver:
         ``user.message`` event, so the tee carries both halves of every
         headless turn.
 
-        So: prefer the tee whenever it covers at least as many user turns as
-        the session record — it is then complete AND ahead. A process that ran
-        turns on the other transport (PTY writes no tee) makes the session
-        record strictly longer, and it wins, so mixed-transport history is
-        never truncated. This is a durability comparison, not a wait: no clock,
-        sleep, timeout or polling budget is involved.
+        Prefer native history once it contains every streamed message: it
+        additionally carries cumulative token usage in session.shutdown.
+        Until then the durable tee wins; more native user turns still wins
+        for mixed-transport history. No waiting or polling is involved.
         """
         session = self._session_descriptor(process)
         local = self._process_local_descriptor(process)
         if session is None:
             return local
         if local is not None and _user_turn_count(local.path) >= _user_turn_count(session.path):
-            return local
+            if not session_covers_stream(session.path, local.path):
+                return local
         return session
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
@@ -451,10 +461,10 @@ class CopilotDriver:
         """
         return assets_dir / ".github" / "skills"
 
-    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str]) -> bool:
+    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str], own: Sequence[str] = ()) -> bool:
         from flow_sdk.assets.process_projection import link_mounted_skills
 
-        return link_mounted_skills(assets_dir, add_dirs, native_mount=".github/skills")
+        return link_mounted_skills(assets_dir, add_dirs, native_mount=".github/skills", own=own)
 
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         path = copilot_transcript_path_for_process(process.id)

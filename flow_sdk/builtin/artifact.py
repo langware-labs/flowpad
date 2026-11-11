@@ -200,7 +200,9 @@ class Artifact(Entity):
         )
 
     @classmethod
-    async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
+    async def restore_reference(
+        cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None, project_root=None, project_id=None
+    ) -> bool:
         """Persist the received declaration and GitOrigin only. The checkout
         stays unresolved until the receiver opens the artifact and the git
         setup wizard provides a local path."""
@@ -223,12 +225,14 @@ class Artifact(Entity):
                 return True  # the same version again: nothing to do
             # The same shared asset at a newer commit is a new VERSION of it: re-open below.
         if _is_single_file(origin):
-            # A single shared file (an .html page) opens straight away, at the
-            # exact commit it was shared at — no setup wizard has anything to do.
+            # A single shared file (an .html page) opens straight away in the
+            # receiver's checkout, once it holds the shared version.
             from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
             from flow_sdk.fs_store.origin.fs_origin import safe_join  # noqa: PLC0415
 
-            root, project_id = await get_origin_driver(origin.kind).materialize_pinned(origin)
+            root, project_id = await get_origin_driver(origin.kind).receive(
+                origin, preferred_root=project_root, preferred_project_id=project_id
+            )
             file = safe_join(root, origin.rel_path)
             if file is None or not file.is_file():
                 raise FileNotFoundError(f"shared file not found: {root / origin.rel_path}")

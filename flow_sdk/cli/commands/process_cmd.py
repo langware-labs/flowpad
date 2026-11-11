@@ -28,16 +28,19 @@ the selected harness runs when its CLI is installed, else the builtin
 ``deepagents`` worker, which ships with the wheel — so a box with only
 flow_sdk installed answers with no flags at all.
 
+``flow process schedule "<prompt>" --at <ISO time> | --in <2h>``
+
+Set a one-time callback into THIS session: at that time the session is started if it is stopped
+and, once idle, receives the prompt. ``flow process schedules`` lists the ones still waiting;
+``flow process unschedule <id>`` removes one.
+
 ``flow process`` is the home for future lifecycle siblings (``stop``,
 ``status``).
 """
 
 from __future__ import annotations
 
-import contextlib
 import logging
-import tempfile
-import uuid
 from typing import Optional
 
 import requests
@@ -61,6 +64,18 @@ from flow_sdk.cli.commands._common import (
     fail as _fail,
 )
 from flow_sdk.cli.commands._common import (
+    delete_graph_json as _delete_graph_json,
+)
+from flow_sdk.cli.commands._common import (
+    get_graph_json as _get_graph_json,
+)
+from flow_sdk.cli.commands._common import (
+    graph_url as _graph_url,
+)
+from flow_sdk.cli.commands._common import (
+    post_graph_json as _post_graph_json,
+)
+from flow_sdk.cli.commands._common import (
     local_post as _local_post,
 )
 from flow_sdk.cli.commands._common import (
@@ -69,7 +84,7 @@ from flow_sdk.cli.commands._common import (
 from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
 )
-from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+from flow_sdk.core.headless_turn import HeadlessTurnRequest, headless_turn
 
 process_app = typer.Typer(
     name="process",
@@ -136,17 +151,13 @@ def restart_process(
     )
 
 
-#: A backend for this instance is already running. ``start`` writes the process row in-process,
-#: and a second writer beside a live server is the SQLite contention ``flow llm`` routes around.
-EXIT_INSTANCE_RUNNING = int(ExitCode.REFUSED)
-
-
 @process_app.command(
     "start",
     help=(
-        "Run one headless turn here and stream the agent's messages: no server, no login. "
-        "Funded by whatever this box resolves — e.g. a public hub endpoint bound with "
-        "`flow llm user use <endpoint-id>`. Exit code is the turn's (0 = answered)."
+        "Run one headless turn and stream the agent's messages. Runs inside the instance's backend "
+        "when one is up, else here with no server. Funded by whatever this box resolves — e.g. a "
+        "public hub endpoint bound with `flow llm user use <endpoint-id>`. Exit code is the turn's "
+        "(0 = answered)."
     ),
 )
 def start_process(
@@ -165,14 +176,15 @@ def start_process(
     workdir: Annotated[
         Optional[str], typer.Option("--workdir", help="Where the agent works. Default: a fresh temp directory.")
     ] = None,
+    llm: Annotated[
+        Optional[str],
+        typer.Option(
+            "--llm",
+            help="Source that funds this run only: a `flow llm list` number, endpoint id or name prefix. "
+            "Pins the process, never the box default.",
+        ),
+    ] = None,
 ) -> None:
-    if _discover_port(required=False) is not None:
-        _fail(
-            EXIT_INSTANCE_RUNNING,
-            "INSTANCE_RUNNING",
-            "A Flowpad backend is running for this instance; `flow process start` runs without one. "
-            "Stop it, or point FLOW_INSTANCE at an instance that is not running.",
-        )
     worker_type = None
     if worker:
         from flow_sdk.flowpad_types.vendors import vendor_or_none  # noqa: PLC0415
@@ -181,58 +193,144 @@ def start_process(
         if vendor is None:
             _fail(EXIT_INVALID_ARG, "UNKNOWN_WORKER", f"No worker named {worker!r}.")
         worker_type = vendor.worker_type
+    endpoint_typeid = None
+    if llm:
+        from flow_sdk.cli.commands.llm_cmd import _pick, _rows, _status  # noqa: PLC0415
+
+        endpoint_typeid = _pick(_rows(_status()), llm).typeid
+    port = _discover_port(required=False)
+    request = HeadlessTurnRequest(prompt=prompt, worker=worker_type, model=model, workdir=workdir, llm=endpoint_typeid)
+    if port is not None:
+        raise typer.Exit(_run_on_server(port, request))
     # ERROR too: a turn that fails says why through its own verdict, so the log would only repeat it.
     quiet_logs(logging.ERROR)
-    raise typer.Exit(run_async(_run_start(prompt, worker_type=worker_type, model=model, workdir=workdir)))
+    raise typer.Exit(run_async(_run_start(request)))
 
 
-async def _run_start(
-    prompt: str,
-    *,
-    worker_type: Optional[str] = None,
-    model: Optional[str] = None,
-    workdir: Optional[str] = None,
-) -> int:
-    """One turn, streamed: the process id and tool steps to stderr, the agent's messages to
-    stdout. No ``worker_type`` takes the builtin-process rule — the selected harness when
-    installed, else the bootstrap worker (``deepagents``, shipped in the wheel)."""
-    from flow_sdk.builtin.agent_serve import Turn, TurnEngine  # noqa: PLC0415
-    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
-    from flow_sdk.core.capabilities.registry import resolve_builtin_worker_type  # noqa: PLC0415
+_IN_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def _run_time(at: Optional[str], in_: Optional[str]) -> str:
+    """``--at`` / ``--in`` as one ISO time with its offset (a bare ``--at`` is this machine's local time)."""
+    from datetime import datetime, timedelta  # noqa: PLC0415
+
+    if bool(at) == bool(in_):
+        _fail(EXIT_INVALID_ARG, "BAD_TIME", "Give exactly one of --at <ISO time> or --in <30m|2h|3d>.")
+    try:
+        if in_:
+            when = datetime.now().astimezone() + timedelta(seconds=float(in_[:-1]) * _IN_UNITS[in_[-1].lower()])
+        else:
+            when = datetime.fromisoformat(at).astimezone()
+    except (ValueError, KeyError, IndexError):
+        _fail(EXIT_INVALID_ARG, "BAD_TIME", f"Cannot read the time {at or in_!r}. Use --at 2026-01-31T09:00 or --in 2h.")
+    return when.isoformat(timespec="seconds")
+
+
+def _action_failed(status_code: int, body: dict) -> None:
+    _fail(EXIT_ACTION_FAILED, str(body.get("error_code") or "ACTION_FAILED"),
+          str(body.get("message") or body.get("error") or f"HTTP {status_code}"))
+
+
+@process_app.command(
+    "schedule",
+    help=(
+        "Set a one-time callback into this session: at the given time it is started if stopped and, "
+        "once idle, receives PROMPT. Write PROMPT so it stands on its own — it is read later, cold."
+    ),
+)
+def schedule_prompt(
+    prompt: Annotated[str, typer.Argument(help="What the session should do or check at that time.")],
+    at: Annotated[Optional[str], typer.Option("--at", help="When, ISO: 2026-01-31T09:00 (local time unless it has an offset).")] = None,
+    in_: Annotated[Optional[str], typer.Option("--in", help="How long from now: 30m, 2h, 3d.")] = None,
+    process: Annotated[Optional[str], typer.Option("--process", "-p", help="Defaults to the current session.")] = None,
+) -> None:
+    process_id = _resolve_process_id(process)
+    when = _run_time(at, in_)
+    data = _post_graph_json(
+        _graph_url(_discover_port(), "trigger"),
+        {
+            "name": " ".join(prompt.split())[:60],
+            "trigger_type": "schedule",
+            "sched_trigger_type": "date",
+            "expr": when,
+            "actions": [{"action_type": "prompt_process", "target_type_id": f"agentic_process-{process_id}",
+                         "prompt": prompt}],
+        },
+        on_error=_action_failed,
+    )
+    _ok({"trigger_id": data.get("id"), "at": when, "process_id": process_id})
+
+
+@process_app.command("schedules", help="The callbacks this session has waiting.")
+def list_scheduled(
+    process: Annotated[Optional[str], typer.Option("--process", "-p", help="Defaults to the current session.")] = None,
+) -> None:
+    process_id = _resolve_process_id(process)
+    url = _graph_url(_discover_port(), f"agentic_process/{process_id}/scheduled-prompts")
+    _ok({"process_id": process_id, "scheduled": _get_graph_json(url, on_error=_action_failed)})
+
+
+@process_app.command("unschedule", help="Remove a callback by its trigger id.")
+def unschedule_prompt(trigger_id: Annotated[str, typer.Argument(help="The trigger id `schedule` printed.")]) -> None:
+    _delete_graph_json(_graph_url(_discover_port(), f"trigger/{trigger_id}"), on_error=_action_failed)
+    _ok({"trigger_id": trigger_id, "removed": True})
+
+
+class _Printer:
+    """Prints a turn's events as ``flow process start`` always has -- the process id and tool steps on
+    stderr, the agent's words on stdout -- and keeps the turn's exit code: 1 until a ``done`` arrives."""
+
+    def __init__(self) -> None:
+        self.exit_code: int | None = None
+
+    def feed(self, event: dict) -> None:
+        kind = event.get("kind")
+        if kind == "process":
+            safe_echo(f"running agentic process {event.get('id')}…", err=True)
+        elif kind == "tool":
+            safe_echo(f"· {event.get('name')}", err=True)
+        elif kind == "text":
+            safe_echo(event.get("text") or "")
+        elif kind == "done":
+            if event.get("text"):
+                safe_echo(event["text"])
+            if not event.get("ok"):
+                safe_echo(event.get("detail") or "The turn did not finish.", err=True)
+            self.exit_code = int(event.get("exit_code") or 0)
+
+    def result(self) -> int:
+        if self.exit_code is None:
+            safe_echo("The turn ended before it reported a result.", err=True)
+            return 1
+        return self.exit_code
+
+
+def _run_on_server(port: int, request: HeadlessTurnRequest) -> int:
+    """The turn, run by the live backend (one SQLite writer) and streamed back as NDJSON."""
+    import json  # noqa: PLC0415
+
+    url = f"http://127.0.0.1:{port}/api/v1/agentic_process/headless-turn"
+    try:
+        resp = _local_post(url, json=request.model_dump(), stream=True, timeout=(10, None))
+    except requests.exceptions.RequestException as e:
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
+        return 1
+    if resp.status_code != 200:
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
+        return 1
+    printer = _Printer()
+    for line in resp.iter_lines(decode_unicode=True):
+        if line:
+            printer.feed(json.loads(line))
+    return printer.result()
+
+
+async def _run_start(request: HeadlessTurnRequest) -> int:
+    """One turn in THIS process (no backend up), printed as it streams."""
     from flow_sdk.migrations.runner import _bootstrap_local  # noqa: PLC0415
 
     await _bootstrap_local()
-    cli_config: dict = {"permission_mode": "bypassPermissions"}
-    if model:
-        cli_config["model"] = model
-    ap = await AgenticProcess(
-        worker_type=worker_type or await resolve_builtin_worker_type(),
-        workdir=workdir or tempfile.mkdtemp(prefix="flow-process-"),
-        cli_config=cli_config,
-        pty_mode=False,
-        visible=False,
-        load_flowpad_assistant=False,
-    ).save()
-    safe_echo(f"running agentic process {ap.typeid}…", err=True)
-    answer = None
-    said = False
-    try:
-        turn = Turn(session=str(ap.typeid), key=str(uuid.uuid4()), body=prompt)
-        async for event in TurnEngine().run_stream(turn, process=ap):
-            if event.kind == "text":
-                safe_echo(event.text)
-                said = True
-            elif event.kind == "tool":
-                safe_echo(f"· {event.name}", err=True)
-            elif event.kind == "done":
-                answer = event.answer
-                # A reply written after the stream saw the turn end (codex writes its last message
-                # as the session closes) is still the answer: the engine re-reads the transcript.
-                if not said and answer.text:
-                    safe_echo(answer.text)
-    finally:
-        with contextlib.suppress(Exception):
-            await ap.exit()
-    if not answer.ok:
-        safe_echo(answer.detail or "The turn did not finish.", err=True)
-    return int(answer.exit_code)
+    printer = _Printer()
+    async for event in headless_turn(request):
+        printer.feed(event)
+    return printer.result()

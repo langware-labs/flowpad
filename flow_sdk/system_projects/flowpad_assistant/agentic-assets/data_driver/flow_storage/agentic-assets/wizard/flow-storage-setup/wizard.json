@@ -1,0 +1,21 @@
+{
+  "name": "flow-storage-setup",
+  "description": "Keep this project's data on the Flowpad hub: a data store is made for the project and its datasets keep their rows there.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Database",
+  "steps": [
+    {
+      "id": "create",
+      "label": "Create the data store",
+      "kind": "compute",
+      "ref": "flow-storage-create"
+    },
+    {
+      "id": "verify",
+      "label": "Check",
+      "kind": "compute",
+      "ref": "flow-storage-verify"
+    }
+  ]
+}

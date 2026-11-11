@@ -2,7 +2,8 @@ import { dependencyHomeDock } from '@src/project-home-page/dependency-home';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openProjectLoad } from '@src/components/project-setup/project-load-store';
 import React, { useCallback, useState } from 'react';
-import { Download, Loader2, Package, RefreshCw, Trash2 } from 'lucide-react';
+import { Download, Loader2, Package, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { EditDependencyDialog } from './EditDependencyDialog';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import type { DependencyState, Project } from '@sdk';
 import { Button } from '@src/components/ui/button';
@@ -25,9 +26,10 @@ interface ProjectDependenciesCardProps {
 export const ProjectDependenciesCard: React.FC<ProjectDependenciesCardProps> = ({ project }) => {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const { dependencies, warnings, install, remove, resolve } = useProjectDependencies(project);
+  const { dependencies, warnings, update, install, remove, resolve } = useProjectDependencies(project);
   // The row whose action is running (`<name>` for install/remove, '*' for a resolve).
   const [busy, setBusy] = useState<string | null>(null);
+  const [editing, setEditing] = useState<DependencyState | null>(null);
 
   const run = useCallback(async (key: string, action: () => Promise<unknown>, failure: string) => {
     setBusy(key);
@@ -172,6 +174,20 @@ export const ProjectDependenciesCard: React.FC<ProjectDependenciesCardProps> = (
                   <Trans>Install</Trans>
                 </Button>
               )}
+              {own(dep) && !dep.local && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  disabled={busy !== null}
+                  aria-label={t`Edit package`}
+                  title={t`Edit package`}
+                  onClick={() => setEditing(dep)}
+                  data-testid="dependency-edit"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              )}
               {own(dep) && (
                 <Button
                   variant="ghost"
@@ -190,6 +206,14 @@ export const ProjectDependenciesCard: React.FC<ProjectDependenciesCardProps> = (
           );
         })}
       </ul>
+      {editing && (
+        <EditDependencyDialog
+          key={editing.name}
+          dependency={editing}
+          onClose={() => setEditing(null)}
+          onSave={(patch) => update(editing.name, patch)}
+        />
+      )}
     </div>
   );
 };

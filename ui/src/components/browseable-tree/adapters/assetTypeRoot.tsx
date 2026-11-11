@@ -230,8 +230,13 @@ export function buildAssetChild(
       showBusyIndicator: false,
     });
   }
+  const typeId = resultTypeId(result);
   const node: Browseable = {
-    id: assetNodeId(typeName, result.asset_ref),
+    // A row-only entity (no file — e.g. a system trigger) has no asset path; its
+    // typeid names it instead, or every such row would share `asset:<type>:` and
+    // collapse into one under the de-dup below.
+    id: assetNodeId(typeName, result.asset_ref || typeId?.toString() || result.record_id),
+    entity: typeId ? { type: typeId.type, id: typeId.id } : undefined,
     kind: 'asset',
     label,
     icon: <EntityIcon type={typeName} remote={result.remote} density="compact" className="h-3.5 w-3.5 flex-shrink-0" />,

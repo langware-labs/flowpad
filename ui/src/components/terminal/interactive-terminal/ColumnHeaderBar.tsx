@@ -168,13 +168,13 @@ function HideButton({ label, onClick }: { label: string; onClick: () => void }) 
         <button
           className="inline-flex items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
           onClick={onClick}
-          aria-label={`Hide ${label}`}
+          aria-label={t`Hide ${label}`}
         >
           <EyeOff className="h-3 w-3" />
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="text-xs">
-        Hide {label}
+        {t`Hide ${label}`}
       </TooltipContent>
     </Tooltip>
   );

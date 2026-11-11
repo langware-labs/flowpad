@@ -1,0 +1,8 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "label": {"shape": "string", "description": "The control as the reviewer sees it: the button text, the tab name, the icon's tooltip."},
+    "does":  {"shape": "string", "description": "What clicking it does in the product being mocked."},
+    "next":  {"shape": "?string", "description": "The step it leads to in this mock (the control gets data-next). Absent: the control is not part of this mock (it gets data-dead)."}
+  }
+}

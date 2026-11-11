@@ -8,6 +8,7 @@ from flow_sdk.assets.catalog import AssetSource, add_source_dir
 async def process_asset_sources(process):
     """Select scope folders; discovery belongs to AssetFolder."""
     from flow_sdk.instance_settings import get_instance_settings
+
     pairs, seen = [], set()
     settings = get_instance_settings()
     add_source_dir(pairs, seen, settings.user_home, AssetSource.USER_DIR)
@@ -18,20 +19,26 @@ async def process_asset_sources(process):
             add_source_dir(pairs, seen, process.workdir, AssetSource.PROJECT_DIR)
         else:
             from flow_sdk.builtin.project import Project
+
             project = await Project.get_by_id(process.project_id)
             if project:
                 add_source_dir(pairs, seen, project.fs_storage_mount_path, AssetSource.PROJECT_DIR)
                 for path in project.include_dirs or []:
                     add_source_dir(pairs, seen, path, AssetSource.CONTEXT_DIR)
     add_source_dir(pairs, seen, process.workdir, AssetSource.WORKDIR)
+    from flow_sdk.builtin.agentic_process.assistant_view import assistant_mount, is_assistant_view
     from flow_sdk.config import flowpad_assistant_canonical_root
+
     assistant_root = flowpad_assistant_canonical_root()
     assistant_key = str(Path(assistant_root).expanduser().resolve()) if assistant_root else None
     for path in process.additional_dirs or []:
-        # A live worker's launch snapshot folds the assistant root into its
-        # --add-dir list; it is still the assistant, not a folder the user added.
-        is_assistant = assistant_key is not None and str(Path(path).expanduser().resolve()) == assistant_key
+        # A live worker's launch snapshot folds the assistant (its root, or a view
+        # of some of its skills) into its --add-dir list; it is still the
+        # assistant, not a folder the user added.
+        is_assistant = is_assistant_view(path) or (
+            assistant_key is not None and str(Path(path).expanduser().resolve()) == assistant_key
+        )
         add_source_dir(pairs, seen, path, AssetSource.SYSTEM if is_assistant else AssetSource.ADDITIONAL_DIR)
     if process.assistant_enabled:
-        add_source_dir(pairs, seen, assistant_root, AssetSource.SYSTEM)
+        add_source_dir(pairs, seen, str(assistant_mount(process.assistant_skills)), AssetSource.SYSTEM)
     return pairs

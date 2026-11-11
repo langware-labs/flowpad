@@ -113,6 +113,20 @@ def test_a_meta_user_entry_does_not_end_the_turn():
     assert reply == "thinking about tools\n\nfinal answer", reply
 
 
+def test_last_only_returns_just_the_final_message():
+    """A reply that reaches a customer is the turn's last message, not the progress lines before it."""
+    entries = [
+        _user("u1", "question"),
+        _assistant("a1", "I am checking the schema"),
+        _user("u2", "tool result", is_meta=True),
+        _assistant("a2", "final answer"),
+        _assistant("a3", "   "),
+    ]
+
+    assert _last_turn_assistant_text(entries, last_only=True) == "final answer"
+    assert _last_turn_assistant_text(entries) == "I am checking the schema\n\nfinal answer"
+
+
 def test_a_repeated_id_counts_once_with_the_last_write_winning():
     """A streamed chunk and its finalized snapshot share an id — one line, and
     the finalized text is the one that survives."""
@@ -271,3 +285,23 @@ def test_an_unparsed_error_body_is_kept_whole():
 
 def test_other_lines_are_no_retry():
     assert _api_retry_notice({"type": "assistant", "timestamp": "2026-10-18T16:54:50.163Z"}, since="") == ""
+
+
+def test_a_turn_that_ends_on_an_action_has_no_final_message():
+    """The agent wrote a progress line, then ran a command and stopped: nothing is the reply."""
+    from flow_sdk.transcript_analyzer.entries import ToolUseEntry
+
+    entries = [
+        _user("u1", "question"),
+        _assistant("a1", "I am adding the diagnosis to the private conversation"),
+        _entry(
+            ToolUseEntry,
+            id="t1",
+            tool_use_id="tu1",
+            tool_name="Bash",
+            tool_input={"command": "flow conversation send x"},
+        ),
+    ]
+
+    assert _last_turn_assistant_text(entries, last_only=True) == ""
+    assert "adding the diagnosis" in _last_turn_assistant_text(entries)

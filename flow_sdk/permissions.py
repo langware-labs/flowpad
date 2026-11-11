@@ -25,8 +25,10 @@ def declared() -> dict[str, PermissionMappingSpec]:
     """Every permission a loaded driver or store declares. Two declarers of one permission must agree on
     how it is granted; the first wins and a disagreement is logged (an asset bug, not a runtime failure)."""
     from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+    from flow_sdk.secrets.managers import load_managers  # noqa: PLC0415
     from flow_sdk.secrets.store import _TYPES  # noqa: PLC0415
 
+    load_managers()  # a store registers when its asset's store.py is imported
     sources = [(f"driver {name}", (driver.manifest.permissions if driver.manifest else {})) for name, driver in DRIVERS.items()]
     sources += [(f"store {name}", cls.permissions) for name, cls in sorted(_TYPES.items())]
     out: dict[str, PermissionMappingSpec] = {}
@@ -70,16 +72,27 @@ def _driver_permissions(name: str) -> dict:
 def needs_of_driver(name: str, *, writes: bool = True) -> list[PermissionNeedSpec]:
     """What a data source of driver ``name`` needs to be allowed to do. ``writes=False`` (a read-only
     source) leaves out what only writing back needs."""
-    return [PermissionNeedSpec(permission=kind, why=m.why) for kind, m in _driver_permissions(name).items() if writes or not m.writes]
+    return [PermissionNeedSpec(permission=kind, why=m.why) for kind, m in _driver_permissions(name).items()
+            if not m.rows and (writes or not m.writes)]
 
 
-def write_scopes_of_driver(name: str) -> dict[str, list[str]]:
-    """``{connection provider: scopes}`` a source of driver ``name`` needs only to write back."""
+def _oauth_scopes_of_driver(name: str, wanted) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     for kind, m in _driver_permissions(name).items():
-        if m.writes and m.mechanism == "oauth":
+        if wanted(m) and m.mechanism == "oauth":
             out.setdefault(m.connector or kind.split(".")[1], []).extend(m.oauth_scopes)
     return out
 
 
-__all__ = ["declared", "kinds_under", "mapping", "needs_of_driver", "oauth_grant", "write_scopes_of_driver"]
+def row_scopes_of_driver(name: str) -> dict[str, list[str]]:
+    """``{connection provider: scopes}`` that keeping a dataset's rows in a store of driver ``name``
+    needs: what writing there takes (``writes`` or ``rows`` permissions)."""
+    return _oauth_scopes_of_driver(name, lambda m: m.writes or m.rows)
+
+
+def write_scopes_of_driver(name: str) -> dict[str, list[str]]:
+    """``{connection provider: scopes}`` a source of driver ``name`` needs only to write back."""
+    return _oauth_scopes_of_driver(name, lambda m: m.writes)
+
+
+__all__ = ["declared", "kinds_under", "mapping", "needs_of_driver", "oauth_grant", "row_scopes_of_driver", "write_scopes_of_driver"]

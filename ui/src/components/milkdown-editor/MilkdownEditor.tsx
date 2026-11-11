@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Editor, rootCtx, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx } from '@milkdown/core';
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx, remarkStringifyOptionsCtx } from '@milkdown/core';
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react';
 import {
   commonmark,
@@ -15,8 +15,9 @@ import {
 } from '@milkdown/preset-commonmark';
 import { gfm, insertTableCommand } from '@milkdown/preset-gfm';
 import { tableBlock } from '@milkdown/components/table-block';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { MarkdownFindBar, isFindShortcut } from './MarkdownFindBar';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
 import { prism, prismConfig } from '@milkdown/plugin-prism';
 import { emoji } from '@milkdown/plugin-emoji';
@@ -39,18 +40,21 @@ import {
   Link as LinkIcon, Check, X, Pencil, Unlink,
   ChevronsRight, ChevronsLeft, Languages,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Table as TableIcon,
+  Table as TableIcon, WandSparkles,
 } from 'lucide-react';
 
 import './milkdown.css';
 import './plugins/fence-render/fence-render.css';
 import { configureRefractor } from './plugins/prism-languages';
 import { fenceRenderPlugins, fenceHostServicesCtx, type FenceHostServices } from './plugins/fence-render';
+import { changeMarksKey, changeMarksPlugin, type ChangeMark } from './plugins/change-marks';
+import { commentSlot, commentWidgetsKey, commentWidgetsPlugin, type CommentAnchorMark } from './plugins/comment-widgets';
 // Concrete fence renderers self-register on import. Listed here, at the
 // composition point, rather than inside the plugin — the same direction
 // `AssetsPage` imports its column modules, and it keeps `fence-render/` free of
 // any dependency on the renderers built on top of it.
 import './plugins/fence-render/renderers/mermaid';
+import { sourceBullet, tightLists } from './plugins/list-spread';
 import './plugins/fence-render/renderers/interface';
 import './plugins/fence-render/renderers/breadcrumb';
 import {
@@ -170,6 +174,25 @@ function isEditingKey(event: KeyboardEvent): boolean {
  */
 export type MilkdownEditorMode = 'view' | 'review' | 'editor';
 
+/** A "change this" request on a selection: what was selected and what to do with it. */
+export interface RequestedChange {
+  quote: string;
+  from: number;
+  to: number;
+  instruction: string;
+}
+
+export interface RequestChangeOpts {
+  /** "Change now": queue it and run the queue at once. */
+  runNow?: boolean;
+}
+
+/** Comments drawn in the doc: where each one sits, and its card. */
+export interface CommentLayer {
+  marks: readonly CommentAnchorMark[];
+  renderCard: (id: string) => ReactNode;
+}
+
 interface MilkdownEditorProps {
   content: string;
   onChange?: (content: string) => void;
@@ -179,6 +202,16 @@ interface MilkdownEditorProps {
   editorMode?: MilkdownEditorMode;
   plugins?: MilkdownPlugin[];
   onLinkClick?: (href: string) => void;
+  /**
+   * Shows the "Change this…" wand on the selection toolbar. The editor asks for
+   * the instruction itself and hands back the selected text, its range and the
+   * instruction — the host queues it (it is never applied here).
+   */
+  onRequestChange?: (change: RequestedChange, opts?: RequestChangeOpts) => void;
+  /** Queued change requests to mark on the text (highlight + numbered pin). */
+  changeMarks?: readonly ChangeMark[];
+  /** The doc's comment threads, each drawn as a card after the passage it quotes. */
+  commentLayer?: CommentLayer;
   /**
    * Optional outer ref that mirrors the internal editor instance. Lets host
    * components (e.g. the wiki toolbar) issue ProseMirror transactions like
@@ -772,11 +805,13 @@ function SelectionToolbar({
   activeState,
   onRequestLink,
   onEditIntent,
+  onRequestChange,
 }: {
   rect: SelectionRect | null;
   activeState: ActiveState;
   onRequestLink: () => void;
   onEditIntent: () => void;
+  onRequestChange?: () => void;
 }) {
   const { t } = useLingui();
   if (!rect) return null;
@@ -806,13 +841,107 @@ function SelectionToolbar({
         onRequestLink={onRequestLink}
         onEditIntent={onEditIntent}
       />
+      {onRequestChange && (
+        <>
+          <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
+          <FormatButton
+            title={t`Change this…`}
+            icon={<WandSparkles className="h-3.5 w-3.5 text-primary" />}
+            testId="selection-toolbar-change"
+            onMouseDown={(e) => { e.preventDefault(); onRequestChange(); }}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+interface ChangeBoxState {
+  rect: SelectionRect;
+  quote: string;
+  from: number;
+  to: number;
+}
+
+/**
+ * The instruction box the wand opens under the selection. It only queues:
+ * Enter (or "Change now") queues it and runs the queue; "Add to changes" only
+ * queues it. Esc cancels.
+ */
+function ChangeBox({
+  state,
+  onAdd,
+  onClose,
+}: {
+  state: ChangeBoxState;
+  onAdd: (instruction: string, runNow: boolean) => void;
+  onClose: () => void;
+}) {
+  const { t } = useLingui();
+  const [text, setText] = useState('');
+  const submit = (runNow: boolean) => {
+    const instruction = text.trim();
+    if (instruction) onAdd(instruction, runNow);
+  };
+  const BOX_WIDTH = 420;
+  const left = Math.max(8 + BOX_WIDTH / 2, state.rect.left + state.rect.width / 2);
+  return (
+    <div
+      role="dialog"
+      aria-label={t`Change this`}
+      data-testid="change-this-box"
+      style={{ position: 'fixed', top: state.rect.top + 28, left, transform: 'translateX(-50%)', zIndex: 50, width: BOX_WIDTH }}
+      className="flex flex-col gap-2 rounded-md border border-border bg-popover p-2 shadow-md"
+    >
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <WandSparkles className="h-3.5 w-3.5 text-primary" aria-hidden />
+        {t`Change this…`}
+      </div>
+      <textarea
+        autoFocus
+        rows={2}
+        value={text}
+        data-testid="change-this-input"
+        placeholder={t`What should change here?`}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+          else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(true); }
+        }}
+        className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      <div className="flex items-center justify-between">
+        <div className="ms-auto flex items-center gap-1">
+          <button type="button" onClick={onClose} className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted">
+            {t`Cancel`}
+          </button>
+          <button
+            type="button"
+            data-testid="change-this-add"
+            disabled={!text.trim()}
+            onClick={() => submit(false)}
+            className="rounded-md border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+          >
+            {t`Add to changes`}
+          </button>
+          <button
+            type="button"
+            data-testid="change-this-now"
+            disabled={!text.trim()}
+            onClick={() => submit(true)}
+            className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+          >
+            {t`Change now ↵`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
 
 // ── Editor inner ──────────────────────────────────────────────────────────────
 
-function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
+function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef, changeMarks, commentLayer }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const { navigation, currentDock } = useDockNavigation();
 
@@ -912,6 +1041,7 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
         .config((ctx) => {
           ctx.set(rootCtx, root);
           ctx.set(defaultValueCtx, initialContentRef.current);
+          ctx.update(remarkStringifyOptionsCtx, (prev) => tightLists(prev, sourceBullet(initialContentRef.current)));
           // Read-only modes disable editing but keep the DOM interactive
           // (anchors remain clickable, hover events still fire).
           // Register the grammars refractor's common bundle lacks. Must be
@@ -933,6 +1063,10 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
           const lctx = ctx.get(listenerCtx);
           if (onChange) {
             lctx.markdownUpdated((_, markdown) => {
+              // Not an edit: the `trailing` plugin appends an empty paragraph on mount, which
+              // serializes as one more newline. Emitting it made every opened document dirty, so
+              // the next save of any field rewrote (and git auto-committed) an untouched body.
+              if (markdown.trimEnd() === lastEmittedRef.current.trimEnd()) return;
               // Track Milkdown's emit verbatim for change detection vs
               // displayContent (also markdown-link form). Reverse the
               // transform only on the way out to onChange.
@@ -985,7 +1119,11 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
         // Renderable code fences (```mermaid → diagram) with a Render | Code
         // tab strip. Render-only: no schema, parser or serializer changes, so
         // fence markdown round-trips byte-identically.
-        .use(fenceRenderPlugins);
+        .use(fenceRenderPlugins)
+        // Queued "change this" requests: highlight + numbered pin, display only.
+        .use(changeMarksPlugin)
+        // The doc's comment threads: highlight + a card slot after the block, display only.
+        .use(commentWidgetsPlugin);
 
       // Register extra plugins (e.g. plan-note mark)
       if (plugins) {
@@ -1004,6 +1142,34 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
       setEditor(get() ?? null);
     }
   }, [get]);
+
+  // Hand the queued change requests to the change-marks plugin whenever they
+  // change, and once the editor instance is ready.
+  const [instanceLoading, getInstance] = useInstance();
+  useEffect(() => {
+    if (instanceLoading) return;
+    try {
+      getInstance().action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        view.dispatch(view.state.tr.setMeta(changeMarksKey, changeMarks ?? []).setMeta('addToHistory', false));
+      });
+    } catch {
+      // view not mounted yet — the next render with the instance retries
+    }
+  }, [instanceLoading, getInstance, changeMarks]);
+
+  const commentMarks = commentLayer?.marks;
+  useEffect(() => {
+    if (instanceLoading) return;
+    try {
+      getInstance().action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        view.dispatch(view.state.tr.setMeta(commentWidgetsKey, commentMarks ?? []).setMeta('addToHistory', false));
+      });
+    } catch {
+      // view not mounted yet — the next render with the instance retries
+    }
+  }, [instanceLoading, getInstance, commentMarks]);
 
   // One-shot caret restoration: when the editor instance becomes available and
   // an `initialLine` was supplied at mount, place the caret at the start of the
@@ -1131,17 +1297,30 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
   );
 }
 
-export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight, toolbarPortalTarget, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
+export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'editor', plugins, onLinkClick, onRequestChange, changeMarks, commentLayer, editorRef: externalEditorRef, toolbarRight, toolbarPortalTarget, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
   const [linkPopup, setLinkPopup] = useState<LinkPopupState | null>(null);
+  const [changeBox, setChangeBox] = useState<ChangeBoxState | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const internalEditorRef = useRef<Editor | null>(null);
   const editorRef = externalEditorRef ?? internalEditorRef;
   const markEditIntent = useCallback(() => onUserEdit?.(), [onUserEdit]);
 
   useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }, []);
+  const [findOpen, setFindOpen] = useState(false);
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  const handleFindKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!isFindShortcut(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setFindOpen(true);
+  }, []);
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    scrollEl?.querySelector<HTMLElement>('.ProseMirror')?.focus({ preventScroll: true });
+  }, [scrollEl]);
 
   // Clear any open link popup when switching into view mode.
   useEffect(() => {
@@ -1327,6 +1506,51 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
     if (next) setLinkPopup(next);
   }, []);
 
+  // Wand clicked — capture the selection now; the box keeps it while focus moves to the input.
+  const handleRequestChange = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    let next: ChangeBoxState | null = null;
+    try {
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const rect = computeSelectionRect(view);
+        const { from, to, empty } = view.state.selection;
+        if (empty || !rect) return;
+        const quote = view.state.doc.textBetween(from, to, '\n').trim();
+        if (quote) next = { rect, quote, from, to };
+      });
+    } catch {
+      return;
+    }
+    if (next) setChangeBox(next);
+  }, [editorRef]);
+
+  // Box closed (added or cancelled): put the caret after the selection, so the
+  // stale selection toolbar does not linger over text that no longer looks selected.
+  const closeChangeBox = useCallback(() => {
+    const box = changeBox;
+    setChangeBox(null);
+    const editor = editorRef.current;
+    if (!box || !editor) return;
+    try {
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const pos = Math.min(box.to, view.state.doc.content.size);
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)));
+        view.focus();
+      });
+    } catch {
+      // the doc changed under the box — nothing to restore
+    }
+  }, [changeBox, editorRef]);
+
+  const handleAddChange = useCallback((instruction: string, runNow: boolean) => {
+    const box = changeBox;
+    closeChangeBox();
+    if (box) onRequestChange?.({ quote: box.quote, from: box.from, to: box.to, instruction }, { runNow });
+  }, [changeBox, closeChangeBox, onRequestChange]);
+
   const formattingToolbar = (
     <MilkdownToolbar
       activeState={activeState}
@@ -1339,27 +1563,34 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
 
   return (
     <MilkdownProvider>
-      <div className="flex h-full flex-col overflow-hidden">
+      <div className="relative flex h-full flex-col overflow-hidden outline-none" tabIndex={-1} onKeyDownCapture={handleFindKey}>
         {!isReadOnly && toolbarPortalTarget === undefined && formattingToolbar}
+        {findOpen && <MarkdownFindBar root={scrollEl} onClose={closeFind} />}
         <div
+          ref={setScrollEl}
           className="min-h-0 flex-1 overflow-auto"
           onMouseOver={handleMouseOver}
           onMouseLeave={scheduleHide}
           onClickCapture={handleContainerClick}
         >
-          <MilkdownEditorInner content={content} onChange={onChange} onUserEdit={onUserEdit} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} />
+          <MilkdownEditorInner content={content} onChange={onChange} onUserEdit={onUserEdit} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} changeMarks={changeMarks} commentLayer={commentLayer} />
         </div>
       </div>
       {!isReadOnly && toolbarPortalTarget
         ? createPortal(formattingToolbar, toolbarPortalTarget)
         : null}
-      {!isReadOnly && !linkPopup && (
+      {commentLayer?.marks.map((m) => createPortal(commentLayer.renderCard(m.id), commentSlot(m.id), m.id))}
+      {!isReadOnly && !linkPopup && !changeBox && (
         <SelectionToolbar
           rect={selectionRect}
           activeState={activeState}
           onRequestLink={handleRequestLink}
           onEditIntent={markEditIntent}
+          onRequestChange={onRequestChange ? handleRequestChange : undefined}
         />
+      )}
+      {changeBox && !isReadOnly && (
+        <ChangeBox state={changeBox} onAdd={handleAddChange} onClose={closeChangeBox} />
       )}
       {linkPopup && (
         <LinkPopup

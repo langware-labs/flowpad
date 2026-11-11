@@ -64,4 +64,5 @@ flow conversation show <conversation>                         # lists the thread
 flow conversation show <conversation> --thread <thread-or-message-id>
 flow conversation send <conversation> "On it" --reply-to <message-id>      # Flowpad's own chat
 flow conversation reply <conversation> "On it" --reply-to <message-id>     # a data source channel
+flow contacts find gadi && flow conversation new gadi@langware.ai "Hi"     # no conversation yet: start one
 ```

@@ -88,7 +88,7 @@ flow record search   # ← preferred whenever a text query suffices; only drop t
 
 # When you genuinely need an exact field list, the graph GET's filter is JSON:
 #   filter={"match":{"status":"running"}}
-curl -sG "http://127.0.0.1:$PORT/api/v1/graph/agentic_process" \
+curl -sG -H "X-Cookie-Gate: $(flow auth get-cookie-gate)" "http://127.0.0.1:$PORT/api/v1/graph/agentic_process" \
   --data-urlencode 'limit=10' \
   --data-urlencode 'filter={"match":{"status":"running"}}'
 ```

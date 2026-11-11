@@ -1,4 +1,14 @@
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@src/components/ui/alert-dialog';
+import { Trans } from '@lingui/react/macro';
+import type { ReactNode } from 'react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@src/components/ui/alert-dialog';
 import { AlertDialogFooter } from '@src/components/ui/alert-dialog';
 
 interface ConfirmDialogProps {
@@ -23,6 +33,8 @@ interface ConfirmDialogProps {
    */
   entity?: { remote?: boolean } | null;
   testId?: string;
+  /** Extra content between the description and the buttons (a command, a checkbox). */
+  children?: ReactNode;
 }
 
 export function ConfirmDialog({
@@ -37,6 +49,7 @@ export function ConfirmDialog({
   onCancel,
   entity,
   testId,
+  children,
 }: ConfirmDialogProps) {
   const handleConfirm = () => {
     onConfirm();
@@ -56,14 +69,18 @@ export function ConfirmDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
           {entity?.remote && (
             <AlertDialogDescription className="font-medium text-destructive">
-              This is a cloud resource — it will be destroyed in the cloud, not just here.
+              <Trans>This is a cloud resource — it will be destroyed in the cloud, not just here.</Trans>
             </AlertDialogDescription>
           )}
         </AlertDialogHeader>
+        {children}
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={handleCancel}>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel onClick={handleCancel} data-testid={testId && `${testId}-cancel`}>
+            {cancelLabel}
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={handleConfirm}
+            data-testid={testId && `${testId}-confirm`}
             className={
               variant === 'destructive' ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : ''
             }

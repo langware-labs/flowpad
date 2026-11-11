@@ -24,7 +24,7 @@ describe('remote share stamps project_id on the new conversation', () => {
     const draftRef = { current: null as Conversation | null };
     const params: CreateAndSendParams = {
       project_id: 'proj-123',
-      participants: [
+      members: [
         { email: 'recipient@example.com', role: 'member', status: 'pending' } as ConversationParticipant,
       ],
       title: 'Shared doc',

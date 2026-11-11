@@ -33,15 +33,14 @@ driver's own report is empty.
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+from flow_sdk.sources.values.subject import normalize_subject
 from flow_sdk.stream_inbox._locks import loop_lock, new_registry, single_flight
 from flow_sdk.utils.serialization import iso_to_utc
 
@@ -193,45 +192,20 @@ def _follow_ending(conversation, item) -> bool:
     return False
 
 
+def _follow_marks(conversation, item, source) -> bool:
+    """The conversation wears the chips its newest message names (``MessageData.conversation_marks``);
+    a message that names none (``None``) leaves them. Answers whether anything changed (the caller saves)."""
+    named = getattr(_payload_of(item, source), "conversation_marks", None)
+    if named is None or (marks := list(named)) == list(conversation.marks or ()):
+        return False
+    conversation.marks = marks
+    return True
+
+
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
 #: sync is a few hundred; this bounds the work per `sync.completed` without a
 #: cursor, because the next sync's sweep picks up whatever is left.
 RECONCILE_BATCH = 500
-
-#: Reply/forward prefixes stripped when a provider gives us no native thread
-#: handle and the subject is all we have. Deliberately multi-lingual: a
-#: two-entry English list silently forks every non-English thread. Applied
-#: repeatedly to a fixed point, so `Re: Fwd: RE:` collapses.
-_SUBJECT_PREFIX = re.compile(
-    r"^\s*(?:re|rif|aw|antw|sv|vs|vb|res|enc|tr|fwd?|wg|encaminhada|回复|答复|转发)\s*(?:\[\d+\])?\s*:\s*",
-    re.IGNORECASE,
-)
-#: Bracketed list/banner tags: `[team]`, `[EXTERNAL]`.
-_SUBJECT_TAG = re.compile(r"^\s*\[[^\]]{1,40}\]\s*")
-
-
-def normalize_subject(subject: str) -> str:
-    """A subject reduced to its threading key.
-
-    The FALLBACK thread key — used only when the provider offers nothing
-    better. Every channel worth supporting ships a native handle (Gmail
-    ``threadId``, Slack ``thread_ts``, a Jira issue key) and the driver should
-    put it in ``SourceItem.thread_key``; this is what happens when it can't.
-
-    Known and accepted failure modes, documented so nobody rediscovers them as
-    bugs: two unrelated ``Re: hello`` threads IN ONE MAILBOX collapse into one, and
-    editing a subject mid-thread forks it. Both are why the native handle wins when
-    it exists; the thread key is also scoped by channel, owner and the source that
-    read it, so the collapse never crosses accounts.
-    """
-    text = (subject or "").strip()
-    while True:
-        stripped = _SUBJECT_TAG.sub("", _SUBJECT_PREFIX.sub("", text))
-        if stripped == text:
-            break
-        text = stripped
-    return " ".join(text.split()).casefold()
-
 
 def thread_key_for(item, subject: str) -> str:
     """The item's grouping key: the driver's handle, else the subject."""
@@ -287,7 +261,10 @@ def channel_of(source) -> str:
     ``"agent"``), but stable, which is what identity needs. Configure
     ``channel`` on the source to fix the badge and the thread key together.
     """
-    return (getattr(source, "channel", "") or getattr(source, "provider", "") or "").strip()
+    from flow_sdk.builtin.data_source import channel_from_driver  # noqa: PLC0415
+
+    stamped = (getattr(source, "channel", "") or "").strip()
+    return stamped or channel_from_driver(source) or (getattr(source, "provider", "") or "").strip()
 
 
 async def conversation_of(item, *, source=None) -> Optional[str]:
@@ -349,6 +326,12 @@ async def project_source_item(
         logger.debug("[stream-inbox] item %s has no DataSource — skipped", item.id)
         return None
 
+    if not (source.channel or "").strip():
+        # The channel names the thread: load the driver, so ``channel_of`` answers what every other
+        # process answers instead of the provider fallback (one email, two threads otherwise).
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        await DataDriver.find(source.provider or "")
     channel = channel_of(source)
     subject = item.name or ""
     key = thread_key_for(item, subject)
@@ -384,6 +367,8 @@ async def project_source_item(
     # A born-`flowpad` conversation (a help desk ticket) takes the source's channel here;
     # a source channel is never overwritten (`Conversation.adopt_channel`).
     changed = conversation.adopt_channel(channel, str(source.id), str(getattr(source, "provider", "") or ""))
+    if _adopt_kind(source, conversation):
+        changed = True
     if await _follow_subject(source, thread, conversation, subject):
         changed = True
     from flow_sdk.builtin.data_source import answered_by  # noqa: PLC0415
@@ -396,6 +381,8 @@ async def project_source_item(
     if stamp_conversation(conversation, item, ours=ours):
         changed = True
     if _follow_ending(conversation, item):
+        changed = True
+    if _follow_marks(conversation, item, source):
         changed = True
     if changed:
         await conversation.save(notify=False)
@@ -426,6 +413,27 @@ async def project_source_item(
         conversation_id, sender, sender_name, existing_fm,
         notify=notify, recount=recount, announce=announce, item_changed=item_changed,
     )
+
+
+def _adopt_kind(source, conversation) -> bool:
+    """Give the conversation the kind the source's threads are (``conversation_kind``), so a help-desk
+    ticket that only ever arrived through its source is still a ticket. A ticket is the hub's own
+    conversation (its id is the hub's), so it is marked ``remote`` too: left as a local row it reads as
+    written on this machine, the viewer is taken for the person who asked, and a staff member is offered
+    no pickup. Answers whether it changed."""
+    from flow_sdk.builtin.conversation import ConversationKind  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    driver = DataDriver.loaded(str(getattr(source, "provider", "") or ""))
+    kind = getattr(driver.cls, "conversation_kind", None) if driver is not None else None
+    if not kind:
+        return False
+    changed = conversation.kind != kind
+    conversation.kind = kind
+    if kind == ConversationKind.HELPDESK.value and not conversation.remote:
+        conversation.remote = True
+        changed = True
+    return changed
 
 
 async def _follow_subject(source, thread, conversation, subject: str) -> bool:
@@ -508,14 +516,14 @@ def _origins(item, source, channel: str, key: str):
 
 def _origin_of(item, source):
     """The row's origin — lifted on read for a row the cutover migration has not reached."""
-    from flow_sdk.ingest.legacy_lift import origin_of  # noqa: PLC0415
+    from flow_sdk.ingest.envelope_lift import origin_of  # noqa: PLC0415
 
     return getattr(item, "origin", None) or origin_of(source, item)
 
 
 def _payload_of(item, source):
     """The row's typed payload — lifted on read for a row the cutover migration has not reached."""
-    from flow_sdk.ingest.legacy_lift import data_of  # noqa: PLC0415
+    from flow_sdk.ingest.envelope_lift import data_of  # noqa: PLC0415
 
     return getattr(item, "data", None) or data_of(source, item, _origin_of(item, source))
 

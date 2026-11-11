@@ -6,6 +6,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { REPO_ROOT, apiContext, apiOrigin, configuredFileEnv } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const INSTANCE = process.env.FLOW_INSTANCE || '';
 const CHANNELS = ['whatsapp', 'telegram'] as const;
@@ -45,7 +46,7 @@ async function graph<T = Record<string, unknown>>(method: 'get' | 'post' | 'dele
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-  test.setTimeout(120_000);
+  test.setTimeout(adjusted(120_000));
   api = await apiContext();
   const users = await graph<Array<{ id: string; uname?: string }>>('get', '/graph/user');
   localUserId = users.find((u) => u.uname === 'local')?.id ?? '';
@@ -139,11 +140,7 @@ CHANNELS.forEach((channel, i) => {
     await expect(row).toBeVisible();
     await row.click();
     await expect(page.getByText(`is it bad ${nonce}?`)).toBeVisible();
-    // A thread shows its newest message; the photo is the one before it. Both were delivered on one
-    // thread, so the stack is always there — but only once both messages have hydrated: until then the
-    // feed lays them out flat and folds them a beat later. An instant `isVisible()` probe raced that
-    // fold, skipped the click, and the photo then folded away under the next assertion.
-    await page.getByRole('button', { name: /earlier in this thread/ }).click();
+    // A channel thread renders flat: the photo and the reply both sit in the feed.
 
     // The picture itself, decoded — its bytes were copied while the provider's session was open.
     // (WhatsApp names no photo, so the bubble is found by its caption — the message's words.)

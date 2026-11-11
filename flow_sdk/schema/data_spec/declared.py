@@ -40,10 +40,13 @@ from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, RowSpec
 from flow_sdk.schema.data_spec.spec import (
     ENUM_PREFIX,
     KIND_UNION,
+    LIST_CLOSE,
+    LIST_OPEN,
     OPTIONAL_MARK,
     DataSpec,
     _compile,
     _field_def,
+    _list_string,
     _normalize_form,
 )
 from flow_sdk.schema.types import EntityType
@@ -176,8 +179,16 @@ def subkind_of(folder: Path) -> Optional[str]:
 # ── building ─────────────────────────────────────────────────────────────────
 
 
+def _wrap(form: str) -> tuple[str, str, str]:
+    """``(prefix, name, suffix)`` of a string form: ``?`` and an optional list's ``[ ]`` around the name."""
+    mark = OPTIONAL_MARK if form.startswith(OPTIONAL_MARK) else ""
+    inner = form[len(mark) :]
+    element = _list_string(inner)
+    return (mark + LIST_OPEN, element, LIST_CLOSE) if element is not None else (mark, inner, "")
+
+
 def _bare(form: str) -> str:
-    return form[len(OPTIONAL_MARK) :] if form.startswith(OPTIONAL_MARK) else form
+    return _wrap(form)[1]
 
 
 def kinds_named(form: Any) -> list[str]:
@@ -207,14 +218,14 @@ def _qualify(form: Any, ns: str, own: str = "") -> Any:
     if not ns:
         return form
     if isinstance(form, str):
-        mark = OPTIONAL_MARK if form.startswith(OPTIONAL_MARK) else ""
-        if _bare(form).startswith(ENUM_PREFIX):
+        head, bare, tail = _wrap(form)
+        if bare.startswith(ENUM_PREFIX):
             return form
         names = []
-        for name in _bare(form).split(KIND_UNION):
+        for name in bare.split(KIND_UNION):
             q = qualified(name, ns)
             names.append(q if q == own or q in _PENDING or q in _OWNER else name)
-        return mark + KIND_UNION.join(names)
+        return head + KIND_UNION.join(names) + tail
     if isinstance(form, list):
         return [_qualify(item, ns, own) for item in form]
     if isinstance(form, dict):
@@ -290,11 +301,13 @@ def _build(folder: Path) -> Optional[type]:
     record = doc.resolved_subkind == "record"
     raw = {name: f.shape for name, f in (doc.fields or {}).items()} if record else dict(doc.rows or {})
     forms = {name: _qualify(_normalize_form(form), read.ns, tag) for name, form in raw.items()}
-    # What this record INCLUDES: other records' fields, rules and owners, as if written here. Each is
+    # What this record INCLUDES: other records' fields, rules and truth, as if written here. Each is
     # built first; a field named on both sides is refused (an include never silently overrides).
     included: list[tuple[str, type]] = []
     inherited: dict[str, tuple[Any, str]] = {}   # field -> (form, description)
-    owners: dict[str, str] = {name: f.owned_by for name, f in (doc.fields or {}).items() if f.owned_by} if record else {}
+    from flow_sdk.datasets.truth import entry  # noqa: PLC0415
+
+    truths: dict[str, Any] = {name: entry(name, f.truth) for name, f in (doc.fields or {}).items() if f.truth is not None} if record else {}
     rules = list(doc.rules or ())
     for name in (doc.include or ()) if record else ():
         kind = _qualify(name, read.ns, tag)
@@ -310,7 +323,7 @@ def _build(folder: Path) -> Optional[type]:
             if field_name in forms or field_name in inherited:
                 raise DeclareError(f"field {field_name!r} is defined here and by the included {name!r}: keep one")
             inherited[field_name] = (form, base.model_fields[field_name].description or "")
-        owners.update(getattr(base, "__owned__", None) or {})
+        truths.update(getattr(base, "__truth__", None) or {})
         rules = list(getattr(base, "__rules__", None) or ()) + rules
     described = {name: (f.description or None) for name, f in (doc.fields or {}).items()} if record else {}
     described.update({name: (text or None) for name, (_, text) in inherited.items()})
@@ -354,8 +367,8 @@ def _build(folder: Path) -> Optional[type]:
                 __authoring__=(ClassVar[Any], forms),
                 # Rules across rows (``flow_sdk.datasets.rules``), their paths checked below.
                 __rules__=(ClassVar[Any], tuple(rules)),
-                # Fields that are a copy of an outside system's: {field: owner} (``owned_by``).
-                __owned__=(ClassVar[Any], dict(owners)),
+                # Fields a system of record holds: {field: path / link} (``datasets.truth``).
+                __truth__=(ClassVar[Any], dict(truths)),
                 **members,
             )
         for rule in rules:

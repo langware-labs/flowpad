@@ -69,7 +69,10 @@ def _get_report_urls() -> list[str]:
 
 def _post_detached(url: str, data: bytes, log_context: str, wait: bool) -> None:
     """POST via a detached child interpreter (survives parent exit). Blocking."""
-    from flow_sdk.instance_settings.cookie_gate import gate_headers  # noqa: PLC0415
+    from urllib.parse import urlsplit  # noqa: PLC0415
+
+    from flow_sdk.instance_settings import cookie_gate  # noqa: PLC0415
+    from flow_sdk.utils.networking import is_loopback  # noqa: PLC0415
 
     # A gated instance (a cloud box) refuses a notification without its secret, and a refused notification
     # is a turn the app never runs. The header rides the child's environment, never its command line.
@@ -81,7 +84,8 @@ def _post_detached(url: str, data: bytes, log_context: str, wait: bool) -> None:
         "urllib.request.urlopen(req, timeout=10)"
     )
     try:
-        kwargs = {"env": {**os.environ, "FLOW_NOTIFY_HEADERS": json.dumps(gate_headers(url))}}
+        gate = cookie_gate.get_header() if is_loopback(urlsplit(url).hostname) else None
+        kwargs = {"env": {**os.environ, "FLOW_NOTIFY_HEADERS": json.dumps(dict([gate] if gate else []))}}
         if not wait:
             if sys.platform == "win32":
                 CREATE_NO_WINDOW = 0x08000000
@@ -317,7 +321,9 @@ def send_entity_sync(
         True if notification was queued, False if Flowpad not running.
     """
     entity_type = data.get("type", "unknown")
-    entity_id = data.get("id", str(uuid.uuid4()))
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+
+    entity_id = data.get("id") or mint_uuid()
     return send_resource_sync(
         type=entity_type,
         id=entity_id,

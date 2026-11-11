@@ -3,6 +3,68 @@ import { lingui } from '@lingui/vite-plugin';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import { SHARED_DEDUPE, sdkVersion, sharedAliases } from './vite.shared';
+import crypto from 'crypto';
+import type { Plugin } from 'vite';
+
+// HUB_LOGIN=1: sign this dev server in to the remote hub (PROXY_TARGET) the way the desktop does -- the hub's own
+// OAuth (PKCE, loopback redirect). The browser's /api/v1/login is answered here; the session token lives only in
+// this process's memory and rides every proxied request as a bearer. Nothing is written to disk.
+const hubSession: { token?: string } = {};
+function hubLoginPlugin(target: string): Plugin {
+  const pending = new Map<string, { verifier: string; next: string }>();
+  return {
+    name: 'flowpad-hub-login',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const url = new URL(req.url || '/', `http://${req.headers.host}`);
+        const redirectUri = `http://${req.headers.host}/__hub_login/callback`;
+        if (url.pathname === '/api/v1/login') {
+          const verifier = crypto.randomBytes(32).toString('base64url');
+          const state = crypto.randomBytes(16).toString('base64url');
+          pending.set(state, { verifier, next: url.searchParams.get('target_path') || '/dock/hub/home' });
+          const q = new URLSearchParams({
+            client_id: 'flowpad-desktop',
+            response_type: 'code',
+            redirect_uri: redirectUri,
+            state,
+            code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'),
+            code_challenge_method: 'S256',
+          });
+          res.writeHead(302, { location: `${target}/api/v1/oauth/authorize?${q}` });
+          return res.end();
+        }
+        if (url.pathname === '/__hub_login/callback') {
+          const got = pending.get(url.searchParams.get('state') || '');
+          pending.delete(url.searchParams.get('state') || '');
+          if (!got || !url.searchParams.get('code')) {
+            res.writeHead(400, { 'content-type': 'text/plain' });
+            return res.end(`hub login failed: ${url.searchParams.get('error_description') || 'bad state'}`);
+          }
+          const r = await fetch(`${target}/api/v1/oauth/token`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'authorization_code',
+              code: url.searchParams.get('code')!,
+              redirect_uri: redirectUri,
+              client_id: 'flowpad-desktop',
+              code_verifier: got.verifier,
+            }),
+          });
+          const body = (await r.json().catch(() => ({}))) as { access_token?: string };
+          if (!r.ok || !body.access_token) {
+            res.writeHead(502, { 'content-type': 'text/plain' });
+            return res.end(`hub token exchange failed (${r.status})`);
+          }
+          hubSession.token = body.access_token;
+          res.writeHead(302, { location: got.next });
+          return res.end();
+        }
+        next();
+      });
+    },
+  };
+}
 
 const envDir = path.resolve(__dirname, '..');
 
@@ -26,11 +88,15 @@ export default defineConfig(({ mode }) => {
       __CHECK_REFRESH_TOKEN__: JSON.stringify(env.VITE_CHECK_REFRESH_TOKEN === 'true'),
       __UI_VERSION__: JSON.stringify(sdkVersion(envDir)),
     },
+    // VITE_CACHE_DIR: a dev server's own optimized-deps cache, so another server's `--force` restart on this
+    // shared checkout cannot delete the chunks this one is serving.
+    ...(env.VITE_CACHE_DIR ? { cacheDir: env.VITE_CACHE_DIR } : {}),
     build: {
       sourcemap: true,
       outDir: 'dist',
     },
     plugins: [
+      ...(env.HUB_LOGIN === '1' && env.PROXY_TARGET ? [hubLoginPlugin(env.PROXY_TARGET.replace(/\/$/, ''))] : []),
       react({
         tsDecorators: true,
         // Lingui macro transform. `@lingui/core/macro` (t, msg, plural…) and
@@ -79,6 +145,8 @@ export default defineConfig(({ mode }) => {
         allow: [
           path.resolve(__dirname, './'),
           path.resolve(__dirname, '../ts_sdk'),
+          // Vendor marks the landing pages bundle (they render on the hub, which serves no icon packs).
+          path.resolve(__dirname, '../flow_sdk/server/icons/brands/assets'),
           path.resolve(env.HOME || '~', 'pty_sync/src/pty-sync'),
         ],
       },
@@ -111,26 +179,63 @@ export default defineConfig(({ mode }) => {
       // this dev server has none of those and serves neither path itself. Unproxied, `/login.html` fell through to
       // the SPA and looped exactly as above; so they go to the hub too.
       proxy: (() => {
-        const target = env.VITE_API_URL || `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`;
-        return {
-          // Derived from the same value so the two can never skew: http -> ws,
-          // https -> wss.
-          '/api/v1/connect/ws': {
-            target: target.replace(/^http/, 'ws'),
-            ws: true,
-            changeOrigin: true,
+        // PROXY_TARGET: where /api goes when it is not __API_URL__ itself -- set VITE_API_URL to this dev server
+        // and PROXY_TARGET to a desktop (e.g. the signed-in prod desktop on 9007) so the browser stays same-origin.
+        const target = env.PROXY_TARGET || env.VITE_API_URL || `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`;
+        // FLOWPAD_GATE_TOKEN: the target desktop's cookie-gate token, presented on every proxied call.
+        const gate = env.FLOWPAD_GATE_TOKEN ? { 'X-Cookie-Gate': env.FLOWPAD_GATE_TOKEN } : undefined;
+        // PROD_READ_ONLY=1: refuse every write, so a dev UI pointed at real data can only look.
+        const readOnly = env.PROD_READ_ONLY === '1';
+        // PROD_WRITE_ALLOW=<regex>: the writes a read-only proxy still lets through (one validation's actions only).
+        const writeAllow = env.PROD_WRITE_ALLOW ? new RegExp(env.PROD_WRITE_ALLOW) : null;
+        const guard = (o: Record<string, unknown>) => ({
+          ...o,
+          ...(gate ? { headers: gate } : {}),
+          configure: (proxy: import('vite').HttpProxy.Server) => {
+            const bearer = (p: import('http').ClientRequest) => {
+              if (hubSession.token) p.setHeader('Authorization', `Bearer ${hubSession.token}`);
+            };
+            proxy.on('proxyReq', bearer);
+            proxy.on('proxyReqWs', bearer);
           },
-          // changeOrigin rewrites Host, which a remote hub behind a vhost
-          // requires and a localhost one does not mind.
-          '/api': {
-            target,
-            changeOrigin: true,
-          },
-          '/login.html': { target, changeOrigin: true },
-          '/signup.html': { target, changeOrigin: true },
-          '/assets': { target, changeOrigin: true },
-          '/sdk': { target, changeOrigin: true },
-        };
+          ...(readOnly
+            ? {
+                bypass: (req: { method?: string }, res: import('http').ServerResponse | undefined) => {
+                  if (['GET', 'HEAD', 'OPTIONS'].includes((req.method || 'GET').toUpperCase())) return undefined;
+                  // Signing in and out is not a data write: let the auth steps through.
+                  const url = (req as { url?: string }).url || '';
+                  if (writeAllow?.test(url)) return undefined;
+                  if (/^\/api\/v1\/(login|logout|auth|token|oauth)/.test(url)) {
+                    return undefined;
+                  }
+                  res?.writeHead(403, { 'content-type': 'application/json' });
+                  res?.end(JSON.stringify({ status: 'FAIL', message: 'read-only dev proxy (PROD_READ_ONLY=1)' }));
+                  return false;
+                },
+              }
+            : {}),
+        });
+        return Object.fromEntries(
+          Object.entries({
+            // Derived from the same value so the two can never skew: http -> ws,
+            // https -> wss.
+            '/api/v1/connect/ws': {
+              target: target.replace(/^http/, 'ws'),
+              ws: true,
+              changeOrigin: true,
+            },
+            // changeOrigin rewrites Host, which a remote hub behind a vhost
+            // requires and a localhost one does not mind.
+            '/api': {
+              target,
+              changeOrigin: true,
+            },
+            '/login.html': { target, changeOrigin: true },
+            '/signup.html': { target, changeOrigin: true },
+            '/assets': { target, changeOrigin: true },
+            '/sdk': { target, changeOrigin: true },
+          }).map(([k, v]) => [k, guard(v as Record<string, unknown>)]),
+        );
       })(),
     },
     optimizeDeps: {

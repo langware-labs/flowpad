@@ -1,7 +1,9 @@
+import { ROLE_ORDER } from '@sdk';
 import { t } from '@lingui/core/macro';
 import {
   ActionInfo,
   ComputeNode,
+  type ComputeNodeSize,
   ComputeProviderType,
   dataContext,
   dataManager,
@@ -21,6 +23,8 @@ import {
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
 import { type ContentInstallSpec, installProjectLandingUrl } from '@src/lib/content-install';
 import { errorMessage } from '@src/lib/error-message';
+import { type BulkResult, runLimited } from '@src/lib/run-limited';
+import { type BulkAction, bulkActionCopy, bulkSummary } from '@src/pages/hub-home/machines-bulk';
 import { notify } from '@src/notifications';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -198,6 +202,9 @@ function hubEntityJson(node: ComputeNode, patch: Record<string, unknown> = {}): 
   return { ...node.toJSON(), node_provider: readProvider(node) ?? defaultSandboxProvider(), ...patch };
 }
 
+/** How often a connected machine's card re-reads its status (it can connect or drop at any time). */
+export const MACHINE_STATUS_POLL_MS = 5_000;
+
 /**
  * The absolute URL that opens a sandbox's workspace app: `compute_node/<id>/open/system`.
  *
@@ -272,10 +279,10 @@ export interface LoginAccess {
 }
 
 /** The roles that mean anything on a machine, highest first (the hub's `LOGIN_ROLE_CHOICES`). */
-export const LOGIN_ROLE_CHOICES = ['owner', 'full-access', 'admin', 'editor', 'reader'] as const;
+export const LOGIN_ROLE_CHOICES = ROLE_ORDER.filter(role => role !== 'owner_by_api');
 
 /** What the hub gives a new box: admin and everything above it. */
-export const DEFAULT_LOGIN_ACCESS: LoginAccess = { allowLogin: true, roles: ['owner', 'full-access', 'admin'] };
+export const DEFAULT_LOGIN_ACCESS: LoginAccess = { allowLogin: true, roles: ['owner', 'admin'] };
 
 /** A box's current login access, the hub default where it has never been set. */
 export function loginAccessOf(node: ComputeNode): LoginAccess {
@@ -465,7 +472,45 @@ async function provisionSandboxProject(
 
 const NO_NODES: ComputeNode[] = [];
 
-export function useSandboxes() {
+/**
+ * One `ops/status` read per box, shared by every mounted `useSandboxes`.
+ *
+ * Hub home alone mounts the hook several times (the page, its counters, each
+ * project-actions row). Each instance used to probe every box on mount, so one
+ * page load with 27 boxes cost ~270 hub calls — each an awaited provider
+ * lookup. Now a read in flight is joined, and an answer younger than
+ * {@link STATUS_FRESH_MS} is reused; the machine poll passes `force`.
+ */
+const STATUS_FRESH_MS = 30_000;
+const sharedStatus = new Map<string, { at: number; read: Promise<SandboxDetails> }>();
+
+async function probeStatus(node: ComputeNode): Promise<SandboxDetails> {
+  try {
+    return (await node.status()) ?? { status: ExecutionEnvironmentStatus.ERROR };
+  } catch {
+    return { status: ExecutionEnvironmentStatus.ERROR };
+  }
+}
+
+/** Exported for tests: the shared read the hook instances go through. */
+export function readSandboxStatus(node: ComputeNode, force = false): Promise<SandboxDetails> {
+  const hit = sharedStatus.get(node.id);
+  if (hit && !force && Date.now() - hit.at < STATUS_FRESH_MS) return hit.read;
+  const read = probeStatus(node);
+  sharedStatus.set(node.id, { at: Date.now(), read });
+  return read;
+}
+
+function seedSandboxStatus(id: string, value: SandboxDetails): void {
+  sharedStatus.set(id, { at: Date.now(), read: Promise.resolve(value) });
+}
+
+/** Test hook: forget every shared status read. */
+export function resetSandboxStatusCache(): void {
+  sharedStatus.clear();
+}
+
+export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean } = {}) {
   const { user } = useAuth();
 
   const sandboxesRequest = useMemo(
@@ -490,13 +535,19 @@ export function useSandboxes() {
   const detailsRef = useRef(details);
   detailsRef.current = details;
 
-  const probeDetails = useCallback(async (node: ComputeNode): Promise<SandboxDetails> => {
-    try {
-      const res = await node.status();
-      return res ?? { status: ExecutionEnvironmentStatus.ERROR };
-    } catch {
-      return { status: ExecutionEnvironmentStatus.ERROR };
-    }
+  // Probe these boxes and merge the answers; an unchanged status keeps the same
+  // object, so a poll that learns nothing re-renders nothing.
+  const probeInto = useCallback(async (nodes: ComputeNode[], force = false) => {
+    const entries = await Promise.all(nodes.map(async (d) => [d.id, await readSandboxStatus(d, force)] as const));
+    setDetails((prev) => {
+      const changed = entries.filter(([id, next]) => {
+        const cur = prev[id];
+        return (
+          !cur || cur.status !== next.status || cur.status_msg !== next.status_msg || cur.hostname !== next.hostname
+        );
+      });
+      return changed.length ? { ...prev, ...Object.fromEntries(changed) } : prev;
+    });
   }, []);
 
   // Probe only machines we haven't seen yet, and forget ones that vanished —
@@ -511,11 +562,25 @@ export function useSandboxes() {
     // id to ask about, so the answer would be an error — painting a card red for
     // a machine that is simply not built yet.
     const fresh = sandboxes.filter((d) => isLaunched(d) && !(d.id in detailsRef.current));
-    if (!fresh.length) return;
-    void Promise.all(fresh.map(async (d) => [d.id, await probeDetails(d)] as const)).then((entries) =>
-      setDetails((prev) => ({ ...prev, ...Object.fromEntries(entries) })),
-    );
-  }, [sandboxes, probeDetails]);
+    if (fresh.length) void probeInto(fresh);
+  }, [sandboxes, probeInto]);
+
+  // A connected machine comes and goes on its own (`flow connect` started or
+  // stopped on it), so the screen showing its card (opt-in: `pollMachines`)
+  // re-reads its status. Only while the tab is visible, one probe at a time.
+  const userMachines = useMemo(() => sandboxes.filter((d) => isLaunched(d) && isUserMachine(d)), [sandboxes]);
+  useEffect(() => {
+    if (!pollMachines || !userMachines.length) return;
+    let inFlight = false;
+    const id = setInterval(() => {
+      if (inFlight || document.visibilityState !== 'visible') return;
+      inFlight = true;
+      void probeInto(userMachines, true).finally(() => {
+        inFlight = false;
+      });
+    }, MACHINE_STATUS_POLL_MS);
+    return () => clearInterval(id);
+  }, [pollMachines, userMachines, probeInto]);
 
   // ---- create / launch ----
   const [steps, setSteps] = useState<Step[]>(() => plannedSteps());
@@ -541,7 +606,11 @@ export function useSandboxes() {
    * open with the error visible.
    */
   const createSandbox = useCallback(
-    async (opts?: { name?: string; sandboxProject?: SandboxSetup }): Promise<ComputeNode | null> => {
+    async (opts?: {
+      name?: string;
+      size?: ComputeNodeSize;
+      sandboxProject?: SandboxSetup;
+    }): Promise<ComputeNode | null> => {
       // One create at a time per hook instance: a double-clicked button must not
       // leave two boxes the user then has to find and delete.
       if (creatingRef.current) return null;
@@ -559,6 +628,7 @@ export function useSandboxes() {
       try {
         const draft = new ComputeNode({
           name: opts?.name?.trim() || nextSandboxName(sandboxesRef.current),
+          ...(opts?.size ? { node_size: opts.size } : {}),
           node_config: {
             flavor: WORKSPACE_FLAVOR,
             ...(sandboxProject ? { [PENDING_SETUP_KEY]: sandboxProject } : {}),
@@ -673,6 +743,7 @@ export function useSandboxes() {
 
         // The just-launched sandbox is up — seed its status so the list effect
         // doesn't re-probe it.
+        seedSandboxStatus(node.id, { status: ExecutionEnvironmentStatus.READY });
         setDetails((s) => ({ ...s, [node.id]: { status: ExecutionEnvironmentStatus.READY } }));
         // Best-effort, and deliberately AFTER the box is usable. The refetch only
         // refreshes the list on the page behind; letting it reject here would
@@ -780,15 +851,16 @@ export function useSandboxes() {
   }, []);
 
   // ---- delete / terminate ----
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Per-action sets of busy ids, so a bulk run spins every card it is working on.
+  const [deletingIds, markDeleting] = useIdSet();
 
-  // Sign a box out of the cloud. Separate state from `deletingId` so the two
+  // Sign a box out of the cloud. Separate state from `deletingIds` so the two
   // spinners cannot be mistaken for each other on the same card.
-  const [loggingOutId, setLoggingOutId] = useState<string | null>(null);
+  const [loggingOutIds, markLoggingOut] = useIdSet();
 
-  const logoutSandbox = useCallback(
+  const signOutOne = useCallback(
     async (node: ComputeNode) => {
-      setLoggingOutId(node.id);
+      markLoggingOut(node.id, true);
       try {
         await node.signOut();
         // Clear the cached field HERE, on the entity, because a refetch cannot:
@@ -801,6 +873,17 @@ export function useSandboxes() {
         // raises unless the box confirmed the sign-out, so reaching this line
         // means the hub already cleared its own copy.
         node.logged_in_user = null;
+      } finally {
+        markLoggingOut(node.id, false);
+      }
+    },
+    [markLoggingOut],
+  );
+
+  const logoutSandbox = useCallback(
+    async (node: ComputeNode) => {
+      try {
+        await signOutOne(node);
         // Still refetch: it is what re-renders the list (a new array ref) and it
         // is the honest source for everything the sign-out may have changed.
         await refetch();
@@ -810,16 +893,26 @@ export function useSandboxes() {
           title: t`Could not sign the sandbox out`,
           message: errorMessage(err, 'The sandbox did not confirm the sign-out.'),
         });
-      } finally {
-        setLoggingOutId(null);
       }
     },
-    [refetch],
+    [refetch, signOutOne],
   );
 
   // Upgrading the app INSIDE a box. Its own state again, for the same reason:
   // three spinners on one card must not be able to mean each other.
-  const [upgradingId, setUpgradingId] = useState<string | null>(null);
+  const [upgradingIds, markUpgrading] = useIdSet();
+
+  const upgradeOne = useCallback(
+    async (node: ComputeNode) => {
+      markUpgrading(node.id, true);
+      try {
+        return await node.upgradeApp();
+      } finally {
+        markUpgrading(node.id, false);
+      }
+    },
+    [markUpgrading],
+  );
 
   /**
    * Upgrade the FlowPad app running inside a box, without signing in to it.
@@ -837,9 +930,8 @@ export function useSandboxes() {
    */
   const upgradeSandbox = useCallback(
     async (node: ComputeNode) => {
-      setUpgradingId(node.id);
       try {
-        const result = await node.upgradeApp();
+        const result = await upgradeOne(node);
         notify.success({
           id: 'sandbox-upgrade',
           title: t`Sandbox upgraded`,
@@ -856,16 +948,14 @@ export function useSandboxes() {
           title: t`Could not upgrade the sandbox`,
           message: errorMessage(err, 'The sandbox did not confirm the upgrade.'),
         });
-      } finally {
-        setUpgradingId(null);
       }
     },
-    [refetch],
+    [refetch, upgradeOne],
   );
 
-  const deleteSandbox = useCallback(
+  const deleteOne = useCallback(
     async (node: ComputeNode) => {
-      setDeletingId(node.id);
+      markDeleting(node.id, true);
       try {
         // Shutdown BEFORE delete: it kills the sandbox and revokes the auto-login
         // key (needs the user session). DELETE alone would orphan a live sandbox.
@@ -875,12 +965,42 @@ export function useSandboxes() {
           // A node that never finished setup has no sandbox to shut down; delete anyway.
         }
         await dataManager.delete(new TypeId(ComputeNode.type, node.id));
-        await refetch();
       } finally {
-        setDeletingId(null);
+        markDeleting(node.id, false);
       }
     },
-    [refetch],
+    [markDeleting],
+  );
+
+  const deleteSandbox = useCallback(
+    async (node: ComputeNode) => {
+      await deleteOne(node);
+      await refetch();
+    },
+    [deleteOne, refetch],
+  );
+
+  /**
+   * Run one action on many machines, at most 4 at a time, then refetch once and
+   * report the whole run in one notification. Never throws.
+   */
+  const runBulkAction = useCallback(
+    async (action: BulkAction, nodes: ComputeNode[]): Promise<BulkResult<ComputeNode>> => {
+      const one = { upgrade: upgradeOne, signout: signOutOne, delete: deleteOne }[action];
+      const result = await runLimited(nodes, one);
+      try {
+        await refetch();
+      } catch {
+        // The list is stale until the next poll; the outcome below still stands.
+      }
+      const copy = bulkActionCopy(action);
+      const message = bulkSummary(copy.done(result.ok.length, nodes.length), result);
+      const id = `sandbox-bulk-${action}`;
+      if (result.failed.length) notify.error({ id, title: copy.failed, message });
+      else notify.success({ id, title: message });
+      return result;
+    },
+    [refetch, upgradeOne, signOutOne, deleteOne],
   );
 
   /**
@@ -934,11 +1054,28 @@ export function useSandboxes() {
     openSandbox,
     renameSandbox,
     deleteSandbox,
-    deletingId,
+    /** Ids being deleted / signed out / upgraded right now. Sets, so a bulk run spins every card it touches. */
+    deletingIds,
     logoutSandbox,
-    loggingOutId,
+    loggingOutIds,
     upgradeSandbox,
-    upgradingId,
+    upgradingIds,
+    runBulkAction,
     details,
   };
+}
+
+/** A set of ids held in state, with an add/remove that never loses a concurrent update. */
+function useIdSet(): [ReadonlySet<string>, (id: string, on: boolean) => void] {
+  const [ids, setIds] = useState<ReadonlySet<string>>(() => new Set());
+  const mark = useCallback((id: string, on: boolean) => {
+    setIds((prev) => {
+      if (prev.has(id) === on) return prev;
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+  return [ids, mark];
 }

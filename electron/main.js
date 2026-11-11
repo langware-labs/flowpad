@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor, session, desktopCapturer, systemPreferences } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { describeStartupFailure, summarizeOutput } = require('./startup-error');
 const { buildSupportZip, redact } = require('./support-bundle');
@@ -6,9 +6,14 @@ const { uploadSupportBundle } = require('./support-upload');
 const { redactUrl, installLogRedaction } = require('./log-redact');
 const { offerMoveToApplications } = require('./app-location');
 const { showFailureDialog } = require('./failure-dialog');
+const { createRendererWatchdog } = require('./renderer-watchdog');
+const screenCapture = require('./screen-capture');
+const { bounded, collectFailureReport, writeFailureReport } = require('./hang-report');
 const { decideOffer, engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder } = require('./update-plan');
 const updateTest = require('./update-test');
+const updateSchedule = require('./update-schedule');
 const { createRestartApplier } = require('./update-restart');
+const cookieGate = require('./cookie-gate');
 // electron-updater's own token type (its dependency); not re-exported by electron-updater.
 const { CancellationToken } = require('builder-util-runtime');
 const path = require('path');
@@ -35,12 +40,26 @@ const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
 const upgradeCommand = () => UvManager.upgradeCommand(uvManager && uvManager.repairedRuntimePython ? uvManager.repairedRuntimePython() : undefined);
 const DIAGNOSE_COMMAND = 'flow diagnose';
 const { isNewer } = require('./semver');
+const { isInstallableVersion } = require('./engine-compat');
 
 const isMac = process.platform === 'darwin';
 
 // Register flowpad:// as a custom protocol so the OS routes deep links here.
 // Must be called before app.whenReady().
 app.setAsDefaultProtocolClient('flowpad');
+
+// Lets the hang watchdog read a busy renderer's JS call stack for its report (hang-report.js);
+// pages opt in with the Document-Policy header added in `createWindow`.
+app.commandLine.appendSwitch('enable-features', 'DocumentPolicyIncludeJSCallStacksInCrashReports');
+
+// A dev run is started from the repo (`npm run dev:electron`) against a backend the
+// developer already has running: it does NOT own the machine's flowpad install, and must
+// not start, stop or upgrade it — nor share its userData: the single-instance lock below
+// is keyed by that folder, so a dev shell beside the installed app would quit at once.
+const isDev = process.env.MINIHUB_DEV === 'true';
+if (isDev) {
+  app.setPath('userData', `${app.getPath('userData')}-dev`);
+}
 
 // Enforce single-instance so Windows/Linux deep links reach the running app
 // via the 'second-instance' event rather than spawning a second process.
@@ -77,12 +96,25 @@ function generateTimestampedFilename() {
   return `${day}${mon}${year}_${hh}_${mm}_${ss}.log`;
 }
 
+/**
+ * The `.log` files in `dir` with their mtimes. A file that vanishes between the listing and its stat is skipped:
+ * the backend prunes its own old logs as it starts (launch.py cleanup_old_logs) while waitForBackend lists the
+ * same directory, and a throw here ended the wait — seen on the VM, where it failed the restore after a failed
+ * upgrade with ENOENT on a log the new backend had just deleted.
+ */
+function listLogFiles(dir) {
+  if (!fs.existsSync(dir)) return [];
+  const files = [];
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.log')) continue;
+    const full = path.join(dir, f);
+    try { files.push({ name: f, path: full, mtime: fs.statSync(full).mtimeMs }); } catch { /* gone since the listing */ }
+  }
+  return files;
+}
+
 function cleanupOldLogs(dir, maxAgeDays = 7) {
-  if (!fs.existsSync(dir)) return;
-  const files = fs.readdirSync(dir)
-    .filter(f => f.endsWith('.log'))
-    .map(f => ({ name: f, path: path.join(dir, f), mtime: fs.statSync(path.join(dir, f)).mtimeMs }))
-    .sort((a, b) => a.mtime - b.mtime);
+  const files = listLogFiles(dir).sort((a, b) => a.mtime - b.mtime);
   if (files.length <= 1) return;
   const cutoff = Date.now() - maxAgeDays * 86400000;
   for (const f of files.slice(0, -1)) {  // never delete the newest
@@ -93,11 +125,7 @@ function cleanupOldLogs(dir, maxAgeDays = 7) {
 }
 
 function getNewestLogFile(dir) {
-  if (!fs.existsSync(dir)) return null;
-  const files = fs.readdirSync(dir)
-    .filter(f => f.endsWith('.log'))
-    .map(f => ({ name: f, path: path.join(dir, f), mtime: fs.statSync(path.join(dir, f)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime);
+  const files = listLogFiles(dir).sort((a, b) => b.mtime - a.mtime);
   return files.length > 0 ? files[0] : null;
 }
 
@@ -115,19 +143,34 @@ log.info('Flowpad starting...');
 // Electron desktop wrapper auto-update.
 // ----------------------------------------------------------------------------
 
-// Set when a desktop download was started after the user DEFERRED ("Later") —
-// suppresses the restart prompt so the update just applies silently on the next
-// app quit/restart (autoInstallOnAppQuit). Reset once consumed.
+// Set for a download that must not announce itself when it lands (an adopted update, or one we restart into
+// ourselves): no "Update Ready" toast then — the 90-minute reminder and the top bar's indicator offer it, and
+// autoInstallOnAppQuit applies it on the next quit. Reset once consumed.
 let suppressDesktopRestartPrompt = false;
 
 // "Restart now": stop the backend, then hand over to the installer; if the updater reports it
 // could not restart, undo `isQuitting` and tell the user (see update-restart.js).
 const restartApplier = createRestartApplier({
-  uvManager: { stop: () => (uvManager ? uvManager.stop() : Promise.resolve()) },
+  uvManager: {
+    stop: () => (uvManager ? uvManager.stop() : Promise.resolve()),
+    // The prepare's uv and the bytecode compile: the restart's quit skips before-quit's uvManager.close().
+    cancelBackgroundWork: (why) => { if (uvManager) uvManager.cancelBackgroundWork(why); },
+  },
   // (update-test.js: in the update-cycle harness the relaunch is skipped so the harness can keep the new build's output)
   autoUpdater: { quitAndInstall: (silent, forceRun) => autoUpdater.quitAndInstall(silent, updateTest.forceRunAfter(forceRun)) },
   setQuitting: (v) => { isQuitting = v; },
   hideWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide(); },
+  // The window stays up and says what is happening until the quit takes it (before-quit leaves it alone
+  // while isQuitting is set): an update never looks like FlowPad vanished.
+  showInstalling: async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error('no window');
+    // Only over the running app: its failure path brings it back (onFailure). A pre-start caller (the
+    // recovery panel, the desktop-first install) owns its own screen — replacing it would leave the
+    // window on "Installing" with nothing to restore it when the install does not start.
+    if (!backendReady) throw new Error('the app is not up yet: its own screen stays');
+    await mainWindow.loadFile(path.join(__dirname, 'loading.html'));
+    sendStatus('Installing the update — FlowPad will reopen by itself');
+  },
   showWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } },
   // The silent installer runs with no window of ours for ~30s, then the new desktop installs the engine: say so.
   notifyInstalling: () => {
@@ -149,6 +192,20 @@ const restartApplier = createRestartApplier({
       share: (text) => shareDiagnostics(text, 'could not restart to apply an update'),
       log,
     });
+    // The app stays: apply() stopped the backend and the window shows "Installing" — start the backend
+    // again and bring the app back. Pre-start flows (backendReady false) continue on their own.
+    // Not brought back (it logs why): the error panel, as the engine-update path does (onUnrecovered) —
+    // never "restoring Flowpad" with no way out.
+    if (uvManager && backendReady) {
+      void uvManager._recoverRunningBackendAfterFailedUpgrade(mainWindow, { waitForBackend, backendUrl: BACKEND_URL, sendStatus })
+        .then((restored) => {
+          if (restored === false && mainWindow && !mainWindow.isDestroyed()) {
+            return showStartupErrorPanel(describeStartupFailure(new Error('FlowPad could not be started again after the update could not be applied')), { retryable: false });
+          }
+          return undefined;
+        })
+        .catch((e) => log.warn(`[update-restart] bringing the app back failed: ${e && e.message}`));
+    }
   },
   log,
 });
@@ -167,7 +224,7 @@ function setupElectronAutoUpdater() {
 
   if (process.windowsStore) {
     // Microsoft Store build: the Store delivers desktop updates (and electron-updater
-    // does not support AppX). The hourly PyPI package check below still runs.
+    // does not support AppX). The scheduled PyPI package check below still runs.
     log.info('[electron-updater] skipped: Microsoft Store build');
   } else {
     autoUpdater.logger = log;
@@ -177,9 +234,8 @@ function setupElectronAutoUpdater() {
       autoUpdater.updateConfigPath = process.env.FLOWPAD_UPDATE_CONFIG;
       updateTest.event('feed-config', { path: process.env.FLOWPAD_UPDATE_CONFIG });
     }
-    // Manual control: we CHECK (no download) at pre-start so a desktop update can
-    // be offered together with a backend update in ONE dialog, and only download
-    // once the user opts in. Download is triggered explicitly via downloadUpdate().
+    // Manual control: we CHECK (no download) first so the engine that rides a desktop update is known
+    // before its download starts (offerDesktopUpdate). Download is triggered explicitly via downloadUpdate().
     autoUpdater.autoDownload = false;
     // A deferred ("Later") desktop download still applies on the next quit/restart
     // without nagging — that's exactly autoInstallOnAppQuit (default true; set
@@ -197,6 +253,8 @@ function setupElectronAutoUpdater() {
     });
     autoUpdater.on('download-progress', (p) => {
       log.info(`[electron-updater] download ${Math.round(p.percent)}% (${p.transferred}/${p.total})`);
+      desktopDownloadPercent = Math.round(p.percent);
+      pushDesktopUpdateState({ progressOnly: true });
     });
     autoUpdater.on('error', (err) => {
       log.error('[electron-updater] error:', err);
@@ -204,75 +262,256 @@ function setupElectronAutoUpdater() {
       restartApplier.failed(err);
     });
 
-    // Fires only after an explicit downloadUpdate() completes. Restarting to
-    // apply is the one unavoidable step of a desktop self-update, so prompt for it.
-    autoUpdater.on('update-downloaded', async (info) => {
+    // Fires only after an explicit downloadUpdate() completes. Restarting to apply is the one step of a
+    // desktop self-update that needs the user: the "Update Ready" toast offers it (announceUpdateReady).
+    autoUpdater.on('update-downloaded', (info) => {
       log.info(`[electron-updater] update downloaded: ${info.version}`);
       desktopDownloadedVersion = info.version;
+      pushDesktopUpdateState();
       if (suppressDesktopRestartPrompt) {
-        // The user said "Later" at launch: no prompt now. The reminder offers it every 90 minutes
-        // (shown right away only if a reminder already came due while the download was running), and
-        // autoInstallOnAppQuit applies it if the app is closed first.
+        // No toast now: the reminder offers it every 90 minutes (right away only if a reminder came due while
+        // the download ran), and autoInstallOnAppQuit applies it if the app is closed first.
         suppressDesktopRestartPrompt = false;
         deferredDesktopVersion = info.version;
         log.info('[electron-updater] deferred — the reminder will offer it; it also installs on the next quit');
+        readyReminder.start();
         readyReminder.notifyReady();
         return;
       }
-      await showDesktopReadyPrompt(info.version);
+      announceUpdateReady();
     });
 
   }
 
-  // Long-lived sessions: re-check periodically (UPDATE_CHECK_INTERVAL_MS).
-  // Desktop: if a newer build appears, download it in the background (the
-  // update-downloaded handler then prompts to restart). Package (PyPI): offer
-  // the upgrade dialog — the launch-time checks only run at launch, so without
-  // this a user who keeps the app open across a backend release never hears
-  // about it. Launch-time is handled by the pre-start flow, not here.
-  setInterval(async () => {
-    const desktopLatest = await getDesktopUpdateVersion();
-    if (desktopLatest) {
-      // A newer release than the one on screen / being downloaded: close that
-      // prompt (as "Later") or cancel that download, so the user only ever sees
-      // one prompt, for the latest version.
-      if (desktopRestartPromptOpen && desktopPromptVersion && isNewer(desktopPromptVersion, desktopLatest)) {
-        log.info(`[electron-updater] ${desktopLatest} supersedes the open prompt for ${desktopPromptVersion}`);
-        desktopPromptAbort.abort();
-        await desktopPromptClosed;
+  // (offeredDesktopVersion stays session-only: cross-restart dedupe is the persisted
+  //  lastOfferedDesktopVersion watermark, read through decideDesktopAction.)
+
+  // A crash between atomicWrite's tmp and rename leaves a uniquely-named orphan no later write
+  // touches: sweep them once per launch.
+  try {
+    const userData = app.getPath('userData');
+    for (const f of fs.readdirSync(userData)) {
+      // Only OTHER processes' OLD orphans: never a tmp this process may be mid-writing, and never
+      // one younger than a minute — an atomic write finishes in milliseconds, so age, not pid
+      // reuse, is what makes a tmp provably dead (a fixed age check, not a wait or a retry).
+      const m = /^(?:update-schedule|pending-engine)\.json\.(\d+)\..+\.tmp$/.exec(f);
+      if (m && Number(m[1]) !== process.pid) {
+        const full = path.join(userData, f);
+        try {
+          if (Date.now() - fs.statSync(full).mtimeMs > 60 * 1000) fs.rmSync(full, { force: true });
+        } catch { /* best effort */ }
       }
+    }
+  } catch { /* best effort */ }
+
+  // Long-lived sessions: re-check periodically. The tick is cheap and only ASKS update-schedule.js
+  // whether a check is DUE — hourly for an @langware.ai account, daily otherwise, anchored to the
+  // persisted last check so a restart does not reset it (FLOWPAD-2308). The update-cycle harness
+  // interval bypasses the schedule: that interval IS the cadence under test. Launch-time is
+  // handled by the pre-start flow, not here.
+  const harnessTickMs = updateTest.checkIntervalMs();
+  const tick = setInterval(() => {
+    runScheduledUpdateCheck({ bypassSchedule: !!harnessTickMs })
+      .catch((err) => log.warn(`[update] scheduled pass failed: ${err.message}`)); // a sync throw must not become an unhandled rejection
+  }, harnessTickMs || updateSchedule.SCHEDULER_TICK_MS);
+  if (typeof tick.unref === 'function') tick.unref();
+  watchAccountChanges();
+}
+
+// One automatic pass at a time: a tick that lands while the previous one still awaits the feed or
+// a dialog does nothing ("prevent duplicate or concurrent update checks").
+let autoCheckInFlight = false;
+
+/**
+ * One periodic pass over BOTH channels, behind the schedule. Desktop: a newer build is downloaded
+ * once (persisted offer dedupe), or re-downloaded from cache when it was adopted before.
+ * Package (PyPI): the background prepare and its "Update Ready" — without this a user who keeps the app
+ * open across a backend release never hears about it.
+ */
+async function runScheduledUpdateCheck({ bypassSchedule = false, launchDesktop = null } = {}) {
+  if (autoCheckInFlight) {
+    // `launchDesktop`: the launch's background look found a newer desktop while a pass runs — owe it
+    // (the follow-up works from the answer it recorded).
+    if (launchDesktop) followUpDesktop = true;
+    return;
+  }
+  armAccountWatch(); // a watch that died (or never armed on a fresh install) is back within one tick
+  const state = scheduleStore.read(); // one read per pass; the record* writers re-read at their write
+  // Pass shape: 'scheduled' hits the feed and runs both halves; 'engine-retry' is the ENGINE
+  // channel's own backoff (its failure must not drag the desktop feed along); 'follow-up' finishes
+  // a half blocked by an offer/download, from the cached answer, and never records failures —
+  // otherwise every 5-minute tick would inflate a streak the backoff never paced.
+  let pass = 'scheduled';
+  let feedBackoffOnly = false; // due only to retry the failing FEED: the engine keeps its own cadence
+  if (launchDesktop) {
+    pass = 'desktop'; // already answered by the launch's background look: handled like the periodic one
+  } else if (!bypassSchedule) {
+    const check = updateSchedule.shouldAutoCheck({ state, intervalMs: currentIntervalMs(), now: Date.now() });
+    if (check.due) {
+      feedBackoffOnly = check.reason === 'backoff';
+      followUpRetries = 0; // a fresh interval starts a fresh retry streak
+      log.info(`[update] periodic check due (${check.reason})`);
+    } else if (followUpDesktop || followUpPackage) {
+      // Follow-up outranks the engine retry: a stuck engine (held behind a pending desktop) stays
+      // "due" tick after tick, and the blocked DESKTOP work is exactly what unblocks it.
+      pass = 'follow-up';
+    } else if (updateSchedule.engineRetryDue({ state, now: Date.now() })) {
+      pass = 'engine-retry'; // paced by its backoff, so it never starves the 20-minute desktop look below
+      log.info('[update] engine check retry due (engine backoff)');
+    } else if (updateSchedule.desktopCheckDue({ state, now: Date.now() })) {
+      pass = 'desktop'; // the 20-minute look at the desktop feed, for every account (the engine half does not run)
+      log.info('[update] desktop check due (every 20 minutes)');
+    } else {
+      return;
+    }
+  }
+  autoCheckInFlight = true;
+  const desktopWasBlocked = followUpDesktop;
+  const packageWasBlocked = followUpPackage;
+  if (pass !== 'engine-retry' && pass !== 'desktop') followUpDesktop = false; // an engine-retry never runs the desktop half: its debt is kept
+  followUpPackage = false;
+  try {
+    const last = state.lastResult || {};
+    // A follow-up works from the cached answer — guarded against a stale 'available' naming a
+    // version the running app already is (a scheduled pass always gets a fresh answer instead).
+    const cached = (pass === 'follow-up' && desktopWasBlocked && last.state === 'available'
+      && last.version && isNewer(app.getVersion(), last.version)) ? last.version : null;
+    const desktopLatest = pass === 'scheduled' ? await getDesktopUpdateVersion()
+      : pass === 'desktop' ? (launchDesktop || await getDesktopUpdateVersion({ desktopOnly: true })) : cached;
+    if (desktopLatest) {
+      // A newer release than the one being downloaded: cancel that download, so only the latest is offered.
       if (desktopDownloadInFlight && desktopDownloadVersion && isNewer(desktopDownloadVersion, desktopLatest)) {
         log.info(`[electron-updater] ${desktopLatest} supersedes the download of ${desktopDownloadVersion}`);
         desktopDownloadToken.cancel();
         await desktopDownloadDone;
       }
-      if (desktopLatest !== offeredDesktopVersion) {
-        // A release we have not offered yet: same screen as at launch (desktop only, or desktop + engine).
-        // Not while a download is running, the restart prompt is up, or another update dialog is open.
-        if (!desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
-          await offerDesktopUpdate(desktopLatest);
+      const action = updateSchedule.decideDesktopAction({
+        state: scheduleStore.read(), // fresh: the awaits above may have recorded an offer/adoption meanwhile
+        version: desktopLatest, isNewer,
+        deferredVersion: deferredDesktopVersion, offeredThisSession: offeredDesktopVersion,
+      });
+      if (action === 'announce') {
+        // This exact version already being offered or on its way is NOT a debt — re-arming follow-up
+        // for it would spin a pass every tick (starving the engine retry) for nothing.
+        const alreadyHandling = (offerInProgress && desktopLatest === offerVersion)
+          || (desktopDownloadInFlight && desktopLatest === desktopDownloadVersion);
+        if (alreadyHandling) {
+          // nothing owed
+        // Not while another offer or a download runs. The offer is LAUNCHED, not awaited.
+        } else if (!offerInProgress && !desktopDownloadInFlight && !packageUpdateInFlight) {
+          startOffer(desktopLatest)
+            // The streak resets when the offer SUCCEEDS — never at launch, where a deterministically
+            // failing offer would reset itself every tick and the retry cap would never bite.
+            .then(() => { followUpRetries = 0; })
+            .catch((err) => {
+              log.warn(`[update] offer failed: ${err.message}`);
+              rearmFollowUp({ desktop: true }); // retried from the cache on a near tick, capped
+            })
+            // The engine debt is armed ONCE, when the offer settles — not every tick under it.
+            .finally(() => { followUpPackage = true; });
+          return;
+        } else {
+          followUpDesktop = true; // a DIFFERENT offer/download runs: retried on a near tick, not in a day
         }
-      } else if (!desktopDownloadInFlight && !desktopRestartPromptOpen && desktopLatest !== deferredDesktopVersion) {
-        // Offered already and the prompt was postponed: re-emit it from the cached download.
-        // (Skipped for a version the user deferred — the 90-minute reminder handles that one.)
-        downloadDesktopUpdateInBackground({ version: desktopLatest });
+      } else if (action === 'resume' && desktopDownloadedVersion !== desktopLatest && !desktopDownloadInFlight) {
+        // Announced this session (the user may have said "Update now") and the download was lost:
+        // continue it — no deferral, no reminder, nothing the user did not ask for. The watermark
+        // is still spent on landing, exactly like the original desktop-only announcement.
+        downloadDesktopUpdateInBackground({ version: desktopLatest, onDownloaded: recordOfferedWhenDownloaded(desktopLatest) });
+      } else if ((action === 'adopt' || action === 'redownload') && !desktopDownloadInFlight) {
+        adoptDesktopUpdateSilently(desktopLatest, action);
       }
     }
-    await checkPackageUpdateInBackground();
-  }, updateTest.checkIntervalMs() || UPDATE_CHECK_INTERVAL_MS);
+    // The engine half runs on scheduled passes (but not ones due only to the FEED's backoff — the
+    // engine is not what failed), on its own retry, and on a follow-up that owes it.
+    if ((pass === 'scheduled' && !feedBackoffOnly) || pass === 'engine-retry' || packageWasBlocked) {
+      const pkg = await checkPackageUpdateInBackground({ desktopJustChecked: pass === 'scheduled' }); // that pass just looked at the feed
+      if (pkg === 'blocked') followUpPackage = true;
+      // 'offer-open': the offer's .finally re-arms the engine debt once, when it settles.
+      // 'held': nothing owed — the hold lifts only via a restart, which re-checks the engine; an
+      // engine-RETRY that was held is paced forward so engineRetryDue stops firing every tick.
+      else if (pkg === 'held' && pass === 'engine-retry') scheduleStore.write(updateSchedule.recordEngineAttempt(scheduleStore.read(), { at: Date.now() }));
+      // The engine channel keeps its own streak (recordEngineFailure/engineRetryDue): a PyPI error
+      // retries on the engine backoff without sending the desktop feed back to the network — and a
+      // follow-up pass never records, it only finishes what a dialog blocked.
+      else if (pkg === 'failed' && pass !== 'follow-up') scheduleStore.write(updateSchedule.recordEngineFailure(scheduleStore.read(), { at: Date.now() }));
+      else if (pkg === 'ran' && (Number(scheduleStore.read().engineFailureCount) || 0) > 0) scheduleStore.write(updateSchedule.recordEngineSuccess(scheduleStore.read()));
+    }
+    followUpRetries = 0; // the pass completed without throwing
+  } catch (err) {
+    log.warn(`[update] periodic check failed: ${err.message}`);
+    // The debt this pass was carrying was not paid: give it back so a near tick retries it, capped.
+    rearmFollowUp({ desktop: desktopWasBlocked && pass !== 'engine-retry', pkg: packageWasBlocked });
+  } finally {
+    autoCheckInFlight = false;
+  }
 }
 
-// How often a long-running session re-checks both update channels.
-const UPDATE_CHECK_INTERVAL_MS = 20 * 60 * 1000;
+// A pass left work behind a transient blocker (a running offer or download): the next
+// tick finishes that half from the cached answer instead of waiting out the whole interval. One debt
+// flag per half — an engine-retry pass must not erase the desktop's, and vice versa.
+let followUpDesktop = false;
+let followUpPackage = false;
 
-// True while the desktop "update ready" dialog is on screen (the package
-// check waits for it) / while a package check, its dialog or its upgrade is in
-// progress (desktop restart prompt waits for it). One update dialog at a time.
-let desktopRestartPromptOpen = false;
+// A deterministic error must not retry a debt every 5 minutes forever: after this many consecutive
+// FAILED passes the debt is dropped (logged) and the next regular interval starts clean. This CAPS
+// existing retries; any pass that completes resets the streak.
+const MAX_FOLLOW_UP_RETRIES = 3;
+let followUpRetries = 0;
+function rearmFollowUp({ desktop = false, pkg = false } = {}) {
+  if (++followUpRetries > MAX_FOLLOW_UP_RETRIES) {
+    log.warn(`[update] follow-up gave up after ${MAX_FOLLOW_UP_RETRIES} failed passes; waiting for the next interval`);
+    return;
+  }
+  if (desktop) followUpDesktop = true;
+  if (pkg) followUpPackage = true;
+}
+
+// ONE offer at a time, without freezing the scheduler under it: a tick LAUNCHES the offer and moves on.
+// `offerInProgress` is set synchronously — it closes the async gap while the offer asks PyPI which
+// engine rides along (the popover's desktop button waits for it too: desktopUpdateBusy).
+let offerInProgress = false;
+let offerVersion = null;      // the version being offered
+
+/** The desktop-only announcement is spent only when its download LANDS (see offerDesktopUpdate). */
+function recordOfferedWhenDownloaded(version) {
+  return () => scheduleStore.write(updateSchedule.recordOffered(scheduleStore.read(), { version }));
+}
+
+/**
+ * Launch an offer, from any path: `offerInProgress` is set SYNCHRONOUSLY. Every offer must go through
+ * here — a bare offerDesktopUpdate() call is invisible to alreadyHandling, and re-creates the phantom
+ * follow-up loop.
+ */
+function startOffer(version) {
+  offerInProgress = true;
+  offerVersion = version;
+  return offerDesktopUpdate(version).finally(() => { offerInProgress = false; offerVersion = null; });
+}
+
+/**
+ * Take a desktop update WITHOUT announcing it (decideDesktopAction said 'adopt' or 'redownload') —
+ * the version was announced before a restart, or the feed regressed to an older (still
+ * newer-than-running) release after a pull. Deferred, exactly as if the user had said "Later":
+ * the download runs, applies on the next quit (autoInstallOnAppQuit), and the 90-minute reminder
+ * offers the restart — so a held engine always has a way forward. A fresh adoption is persisted
+ * (recordAdopted); a 'redownload' only resumes one recorded before.
+ */
+function adoptDesktopUpdateSilently(version, action) {
+  log.info(`[electron-updater] ${version} ${action === 'redownload'
+    ? 'was adopted before; resuming its download' : 'is not announceable (offered before, or a feed regression); downloading without a prompt'}`);
+  offeredDesktopVersion = version;
+  pendingDesktopVersion = version;
+  deferredDesktopVersion = version;
+  if (action === 'adopt') scheduleStore.write(updateSchedule.recordAdopted(scheduleStore.read(), { version }));
+  downloadDesktopUpdateInBackground({ promptOnReady: false, version });
+  readyReminder.start();
+}
+
+// True while a package check, its prepare or the upgrade it starts is in progress.
 let packageUpdateInFlight = false;
-let packageCheckDone = Promise.resolve(); // settles when the in-flight package check ends
-// Desktop version the user answered "Later" to (restart prompt or launch
-// dialog) — never re-offered this session; it installs on the next quit.
+// Desktop version already announced as ready (or adopted without a toast) — never re-offered this
+// session; it installs on the next quit.
 let deferredDesktopVersion = null;
 // A downloadUpdate() is running: a periodic tick must not start another one
 // (electron-updater would coalesce it, but the call resets the suppress flag).
@@ -280,20 +519,16 @@ let desktopDownloadInFlight = false;
 let desktopDownloadVersion = null;        // version being downloaded
 let desktopDownloadToken = null;          // CancellationToken of that download
 let desktopDownloadDone = Promise.resolve();
-// The restart prompt on screen: which version, how to close it, when it closed.
-let desktopPromptVersion = null;
-let desktopPromptAbort = null;
-let desktopPromptClosed = Promise.resolve();
 
 /**
- * Package (PyPI) update check + upgrade, behind the one-dialog-at-a-time
- * mutex. Periodic ticks compare against PyPI so a newer release is offered as
- * soon as it exists; the post-boot launch check passes compareWithPypi=false to
- * keep deferring to the cloud policy verdict. Skipped in dev (would reinstall
- * under a live dev backend), while a previous check/upgrade is still running,
- * and while the desktop restart prompt is open.
+ * Package (PyPI) update check: a newer release is prepared in the background (downloaded, staged and
+ * checked while the running engine serves) and then announced as ready (announceUpdateReady) — it is
+ * installed only when the user asks (update-activate). Periodic ticks compare against PyPI so a newer
+ * release is prepared as soon as it exists; the post-boot launch check passes compareWithPypi=false to
+ * keep deferring to the cloud policy verdict. Skipped in dev (would reinstall under a live dev
+ * backend) and while a previous check is still running.
  */
-async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 'periodic' } = {}) {
+async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 'periodic', desktopJustChecked = false } = {}) {
   if (isDev) return;
   if (!uvManager || !mainWindow || mainWindow.isDestroyed()) return;
   if (!uvManager.getInstalledFlowBin()) {
@@ -302,36 +537,27 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
     log.info(`[uv] ${label} package check skipped: flowpad is not installed`);
     return;
   }
-  if (engineChangeAllowed(`${label} package check`) !== 'allow') {
+  if (await engineChangeAllowedAfterRecheck(`${label} package check`, { desktopJustChecked }) !== 'allow') {
     // A newer desktop is on its way — or we could not tell whether one is. The engine is updated BY the new
     // desktop (it may need a Python pin, or a start contract, that only the new desktop knows) — an old desktop
     // upgrading it first is what left users stuck. So: no separate engine dialog until the desktop is current.
     log.info(`[uv] ${label} package check skipped: the desktop is updated first`);
-    return;
+    return 'held'; // the desktop goes first; a hold only lifts via a restart, which re-checks the engine itself
   }
   if (packageUpdateInFlight) {
-    // A package dialog is on screen: if PyPI now has something newer than what it
-    // offers, close it (as "Later") and fall through to offer the newer version.
-    const shown = uvManager.openPackageDialogVersion();
-    const latest = shown && compareWithPypi ? await uvManager.getLatestPypiVersion() : null;
-    if (latest && isNewer(shown, latest)) {
-      log.info(`[uv] ${latest} supersedes the open package dialog for ${shown}`);
-      uvManager.supersedePackageDialog();
-      await packageCheckDone;
-    } else {
-      log.info(`[uv] ${label} package check skipped: previous check/upgrade still running`);
-      return;
-    }
-  }
-  if (desktopRestartPromptOpen) {
-    log.info(`[uv] ${label} package check skipped: desktop restart prompt is open`);
-    return;
+    log.info(`[uv] ${label} package check skipped: previous check/upgrade still running`);
+    // A running OFFER re-arms the engine debt itself when it settles — re-arming here would spin a
+    // follow-up every tick under it. Anything else is an ordinary transient block.
+    return offerInProgress ? 'offer-open' : 'blocked';
   }
   packageUpdateInFlight = true;
-  let done;
-  packageCheckDone = new Promise((r) => { done = r; });
   try {
     log.info(`[uv] ${label} package check`);
+    // uv-manager swallows PyPI failures into null answers ("no update"), so a thrown error almost
+    // never reaches us — its failure counter is how THIS window reports an unreachable PyPI.
+    // Before/after comparison, not a shared flag: a concurrent lookup elsewhere cannot mask (only
+    // at worst duplicate) a failure that happened during this check.
+    const lookupFailuresBefore = uvManager.pypiLookupFailures || 0;
     await uvManager.checkForUpdatesInBackground(mainWindow, {
       onUnrecovered: (err) => showStartupErrorPanel(describeStartupFailure(err), { retryable: false }),
       sendStatus,
@@ -339,12 +565,16 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
       backendUrl: BACKEND_URL,
       cloudUrl: FLOWPAD_CLOUD_URL,
       compareWithPypi,
+      // Asked again after the background prepare: a desktop found meanwhile goes first.
+      engineChangeAllowed: async () => (await engineChangeAllowedAfterRecheck(`${label} package check, after the prepare`)) === 'allow',
+      onReady: () => announceUpdateReady(), // prepared and checked: the "Update Ready" toast, not a dialog
     });
+    return (uvManager.pypiLookupFailures || 0) > lookupFailuresBefore ? 'failed' : 'ran';
   } catch (err) {
     log.warn(`[uv] ${label} package check failed: ${err.message}`);
+    return 'failed'; // the scheduler starts the ENGINE backoff — a transient PyPI failure is not a day's wait
   } finally {
     packageUpdateInFlight = false;
-    done();
   }
 }
 
@@ -354,12 +584,12 @@ let pendingDesktopVersion = null;
 let offeredDesktopVersion = null;
 // The desktop version that finished downloading and waits for a restart.
 let desktopDownloadedVersion = null;
-// The restart prompt was held back because the backend was still starting.
-let desktopRestartPromptPostponed = false;
+// The "Update Ready" toast was held back because the app was still starting (it lives in the app's UI).
+let updateReadyPostponed = false;
 function offerPostponedRestartPrompt() {
-  if (!desktopRestartPromptPostponed || !desktopDownloadedVersion) return;
-  desktopRestartPromptPostponed = false;
-  showDesktopReadyPrompt(desktopDownloadedVersion).catch((err) => log.warn(`[electron-updater] restart prompt failed: ${err.message}`));
+  if (!updateReadyPostponed) return;
+  updateReadyPostponed = false;
+  announceUpdateReady();
 }
 
 // The engine version offered together with a desktop update, saved for the NEW desktop to install (update-plan.js).
@@ -369,130 +599,255 @@ function pendingEnginePath() {
 const pendingEngineStore = {
   read() { try { return JSON.parse(fs.readFileSync(pendingEnginePath(), 'utf8')); } catch { return null; } },
   write(state) {
-    try { fs.writeFileSync(pendingEnginePath(), JSON.stringify(state), 'utf8'); } catch (err) { log.warn(`[update] could not save the pending engine version: ${err.message}`); }
+    try { atomicWrite(pendingEnginePath(), JSON.stringify(state)); } catch (err) { log.warn(`[update] could not save the pending engine version: ${err.message}`); }
   },
   clear() { try { fs.rmSync(pendingEnginePath(), { force: true }); } catch { /* best effort */ } },
 };
 
+// FLOWPAD-2308: the persisted check schedule — when the last check happened and what it answered,
+// the failure streak, the last version announced. update-schedule.js owns the shape and every decision.
+function schedulePath() { return path.join(app.getPath('userData'), updateSchedule.SCHEDULE_FILE); }
+const scheduleStore = {
+  read() { return updateSchedule.readScheduleState((p) => fs.readFileSync(p, 'utf8'), schedulePath()); },
+  write(state) {
+    try { updateSchedule.writeScheduleState((p, text) => atomicWrite(p, text), schedulePath(), state); }
+    catch (err) { log.warn(`[update] could not save the update schedule: ${err.message}`); }
+  },
+};
+// tmp + rename, the same pattern as the backend's app_config writes: a crash mid-write leaves the
+// previous file, never a truncated one. The tmp name is unique (overlapping writers must not race
+// on one name), and a failed rename does not leave it behind.
+function atomicWrite(p, text) {
+  const tmp = `${p}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, text, 'utf8');
+    try {
+      fs.renameSync(tmp, p);
+    } catch (err) {
+      // Only a lock held by another process (Windows anti-virus / indexer) is worth the in-place
+      // overwrite — the pre-PR behavior. Anything else (ENOSPC, EROFS…) would fail the overwrite
+      // too, and half-writing the target is exactly what this function exists to prevent.
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) throw err;
+      fs.writeFileSync(p, text, 'utf8');
+    }
+  } finally {
+    try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+  }
+}
+
+// The account the schedule follows: the hub-validated email the backend writes to the instance's
+// config.json on login/logout/switch. Locally editable, but editing it only changes this machine's
+// own check cadence.
+const currentAccountEmail = () => updateSchedule.readAccountEmail((p) => fs.readFileSync(p, 'utf8'), path.join(INSTANCE_DIR, 'config.json'));
+const currentIntervalMs = () => updateSchedule.intervalForEmail(currentAccountEmail());
+
+/**
+ * Login, logout and an account switch rewrite config.json (atomically, via os.replace — so the
+ * DIRECTORY is watched; a watch on the file itself dies with the first replace). An interval-class
+ * change re-evaluates the schedule right away; a missed event only waits for the next tick, which
+ * re-reads the email anyway.
+ */
+// The watch callback, kept reachable at module level: tests drive it directly, because the OS's
+// event delivery (fs.watch arming is itself async) is the one part that cannot be awaited deterministically.
+let accountWatchEvent = null;
+// In the update-cycle harness the debounce is zero so tests never wait on the wall clock.
+const ACCOUNT_DEBOUNCE_MS = updateTest.isEnabled() ? 0 : 500;
+let accountWatchInstalled = false;
+function watchAccountChanges() {
+  if (accountWatchInstalled) return; // a re-install would orphan the previous handler's live debounce
+  accountWatchInstalled = true;
+  let wasInternal = updateSchedule.isInternalEmail(currentAccountEmail());
+  let debounce = null;
+  accountWatchEvent = (filename) => {
+    if (filename && filename !== 'config.json') return;
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      const internal = updateSchedule.isInternalEmail(currentAccountEmail());
+      if (internal === wasInternal) return;
+      wasInternal = internal;
+      log.info(`[update] account change: update checks now run ${internal ? 'hourly' : 'daily'}`);
+      runScheduledUpdateCheck({ bypassSchedule: !!updateTest.checkIntervalMs() }) // the harness interval bypasses the schedule here too
+        .catch((err) => log.warn(`[update] account-change pass failed: ${err.message}`));
+    }, ACCOUNT_DEBOUNCE_MS);
+    if (typeof debounce.unref === 'function') debounce.unref();
+  };
+  armAccountWatch();
+}
+
+// The live fs.watch handle, re-armed by every tick when it is down: on a fresh install the instance
+// dir may not exist yet, and on Windows deleting the watched dir raises an async 'error' that —
+// without a listener — would CRASH the main process. A dead watch is back within one tick; the
+// per-tick email re-read keeps the schedule correct meanwhile.
+let accountWatcher = null;
+function armAccountWatch() {
+  if (accountWatcher || !accountWatchEvent) return;
+  try {
+    fs.mkdirSync(INSTANCE_DIR, { recursive: true });
+    const watcher = fs.watch(INSTANCE_DIR, (eventType, filename) => accountWatchEvent(filename));
+    watcher.on('error', (err) => {
+      log.warn(`[update] account watch stopped (${err.message}); re-armed on the next tick`);
+      try { watcher.close(); } catch { /* already dead */ }
+      if (accountWatcher === watcher) accountWatcher = null;
+    });
+    if (typeof watcher.unref === 'function') watcher.unref(); // never keeps the app alive
+    accountWatcher = watcher;
+  } catch (err) {
+    accountWatcher = null;
+    log.warn(`[update] not watching for account changes (${err.message}); re-armed on the next tick`);
+  }
+}
+
 // "Update ready — restart now?" offered again every 90 minutes to a user who said Later (update-plan.js).
+// "Update Ready" offered again every 90 minutes while an update stays ready (update-plan.js).
 const readyReminder = createReadyReminder({
-  isReady: () => !!desktopDownloadedVersion && !desktopRestartPromptOpen && !packageUpdateInFlight && !restartApplier.busy
-    && !!mainWindow && !mainWindow.isDestroyed() && !(uvManager && uvManager.isInstalling()),
-  show: () => { showDesktopReadyPrompt(desktopDownloadedVersion).catch((err) => log.warn(`[electron-updater] reminder failed: ${err.message}`)); },
+  isReady: () => updateReadyState().ready && updateToastCanShow(),
+  show: () => announceUpdateReady({ reminder: true }),
 });
 
 /**
- * The "FlowPad update ready — Restart now / Later" prompt. One at a time; a newer release closes it (as "Later").
- * "Restart now" is also the user's agreement to install the saved engine version once the new desktop is up.
+ * What is downloaded, prepared and checked, ready to apply — ONE state for both channels, which the "Update
+ * Ready" toast, the top bar's indicator and the version popover all show:
+ *   desktop (+ the engine saved to ride it): the new desktop is downloaded; applying it restarts FlowPad and the
+ *     new desktop installs the engine (update-plan.js).
+ *   engine only: a release prepared in the background for THIS desktop (uvManager.preparedEngine), while no
+ *     newer desktop goes first; applying it swaps the engine offline and reloads the window, Electron keeps running.
  */
-async function showDesktopReadyPrompt(version) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    log.warn('[electron-updater] mainWindow missing; will install on quit');
-    return;
+function updateReadyState() {
+  const installedEngine = (uvManager && uvManager.getInstalledVersionSync()) || null;
+  const desktopTo = desktopDownloadedVersion && isNewer(app.getVersion(), desktopDownloadedVersion) ? desktopDownloadedVersion : null;
+  if (desktopTo) {
+    const saved = pendingEngineStore.read();
+    const engineTo = saved && saved.desktopVersion === desktopTo ? saved.engineVersion : null;
+    return {
+      ready: true, restart: true,
+      desktop: { from: app.getVersion(), to: desktopTo },
+      engine: engineTo && (!installedEngine || isNewer(installedEngine, engineTo)) ? { from: installedEngine, to: engineTo } : null,
+    };
   }
-  if (desktopRestartPromptOpen || restartApplier.busy) return;
-  if (!backendReady && !startupFailed) {
-    // Still booting: "Restart now" would kill the half-started backend (an error screen) and read as an
-    // instant update. Offered once the backend is up (offerPostponedRestartPrompt).
-    desktopRestartPromptPostponed = true;
-    log.info('[electron-updater] restart prompt postponed: FlowPad is still starting');
-    return;
+  const prepared = uvManager && engineChangeAllowedNow() ? uvManager.preparedEngine() : null;
+  if (prepared && (!installedEngine || isNewer(installedEngine, prepared.version))) {
+    return { ready: true, restart: false, desktop: null, engine: { from: installedEngine, to: prepared.version } };
   }
-  if (packageUpdateInFlight || (uvManager && uvManager.isInstalling())) {
-    // Another update dialog (or an install) is up right now: do not stack a second one. The periodic check
-    // re-emits this from the cached download; quitting meanwhile still installs it (autoInstallOnAppQuit).
-    log.info('[electron-updater] restart prompt postponed: another update is in progress');
-    return;
-  }
-  // One prompt per version, and never two at once: the prompt is abortable so a newer release found by a
-  // later tick closes this one (as "Later") and shows its own. `desktopPromptClosed` lets that tick wait.
-  desktopRestartPromptOpen = true;
-  desktopPromptVersion = version;
-  desktopPromptAbort = new AbortController();
-  let closePrompt;
-  desktopPromptClosed = new Promise((r) => { closePrompt = r; });
-  const saved = pendingEngineStore.read();
-  const engineLine = saved && saved.engineVersion
-    ? `\nThe FlowPad engine will be updated to ${saved.engineVersion} right after the restart.`
-    : '';
-  let result;
-  try {
-    const scripted = updateTest.answerFor('restart', { version, savedEngine: (saved && saved.engineVersion) || null });
-    result = scripted !== null ? { response: scripted } : await dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      buttons: ['Restart now', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'FlowPad update ready',
-      message: `FlowPad ${version} is ready to install.`,
-      detail: `Restart FlowPad now to apply the update.${engineLine}`,
-      signal: desktopPromptAbort.signal,
-    });
-  } finally {
-    desktopRestartPromptOpen = false;
-    desktopPromptVersion = null;
-    closePrompt();
-  }
-  if (result.response === 0) {
-    log.info('[electron-updater] user accepted, quitting to install');
+  return { ready: false, restart: false, desktop: null, engine: null };
+}
+const readyKey = (s) => (s.ready ? `${(s.desktop && s.desktop.to) || ''}|${(s.engine && s.engine.to) || ''}` : null);
+
+/** The toast lives in the app's UI: not while it is starting, applying an update, or installing. */
+function updateToastCanShow() {
+  return backendReady && !restartApplier.busy && !activationInFlight && !!mainWindow && !mainWindow.isDestroyed()
+    && !(uvManager && uvManager.isInstalling());
+}
+
+/** Tell the UI what is ready (the indicator and the popover); a reminder ends once nothing is pending. */
+function pushUpdateReadyState() {
+  const state = updateReadyState();
+  if (!state.ready) {
     readyReminder.stop();
-    markPendingEngineConsented(pendingEngineStore); // agreeing to restart = agreeing to the saved engine version
-    // Stops the backend first, then quitAndInstall(silent, relaunch): the NSIS build is not one-click
-    // (oneClick:false), so the default would open the Setup wizard and wait.
-    await restartApplier.apply();
-  } else if (desktopPromptAbort.signal.aborted) {
-    log.info(`[electron-updater] prompt for ${version} closed: superseded by a newer release`);
-  } else {
-    deferredDesktopVersion = version;
-    readyReminder.start();
-    log.info('[electron-updater] user deferred the restart; will ask again in 90 minutes and install on the next quit');
+    pendingToast = false;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-ready-state', state);
+  return state;
+}
+
+/**
+ * An update became ready (or a reminder came due): ONE non-blocking "Update Ready" toast for the whole set —
+ * Restart / Later, gone after 30 seconds — and the 90-minute reminder while it stays pending. The same ready
+ * set is toasted once; only the reminder repeats it. Nothing here waits for the user: Restart is update-activate.
+ */
+let announcedReadyKey = null;
+// A toast asked for and not yet taken by the UI (update-ready-take-toast): the renderer may still be mounting when
+// it is sent, so it takes it on mount too — once, whichever comes first.
+let pendingToast = false;
+function announceUpdateReady({ reminder = false } = {}) {
+  const state = pushUpdateReadyState();
+  const key = readyKey(state);
+  if (!key) return;
+  if (state.desktop) deferredDesktopVersion = state.desktop.to; // told: not offered again this session
+  readyReminder.start(); // idempotent: a running reminder keeps its schedule
+  if (!reminder && key === announcedReadyKey) return; // the same ready set again (a later check): no second toast
+  if (!updateToastCanShow()) {
+    // Still starting: offered once the app is up (offerPostponedRestartPrompt). Busy applying: the reminder retries.
+    if (!backendReady) updateReadyPostponed = true;
+    log.info('[update] "Update Ready" postponed: FlowPad is not ready for it yet');
+    return;
+  }
+  announcedReadyKey = key;
+  // The toast blocks nothing: a harness run shows it too unless it scripted the answer.
+  const scripted = !updateTest.isScripted('restart') ? null : updateTest.answerFor('restart', { version: state.desktop && state.desktop.to, savedEngine: state.engine && state.engine.to });
+  if (scripted === 0) { void activateUpdate('update-test'); return; }
+  log.info(`[update] update ready (${state.desktop ? `desktop ${state.desktop.to}` : ''}${state.desktop && state.engine ? ' + ' : ''}${state.engine ? `engine ${state.engine.to}` : ''})${scripted !== null ? ' — scripted Later' : ' — "Update Ready" shown'}; reminded every 90 minutes while pending`);
+  if (scripted === null) {
+    pendingToast = true;
+    mainWindow.webContents.send('update-ready-toast', state);
   }
 }
 
 /**
- * A newer desktop build was found. Desktop only: download it and ask to restart when ready. Desktop + engine:
- * ONE screen. The engine version on offer is saved and the desktop is downloaded in the background — the engine is
- * NOT touched now; the new desktop installs exactly that version after the restart (update-plan.js).
- *   "Update now" → ask to restart as soon as the download is done.   "Later" → ask every 90 minutes.
+ * "Restart" (the toast, the indicator's popover): apply the ready set through the existing paths — a desktop
+ * update is the old prompt's "Restart now" (consent to the saved engine, restartApplier); an engine-only one is
+ * the version popover's upgrade (offline swap, server restarted, window reloaded — Electron keeps running). One
+ * activation at a time.
+ */
+let activationInFlight = false;
+async function activateUpdate(source) {
+  if (activationInFlight || restartApplier.busy) return { started: false, reason: 'busy' };
+  const state = updateReadyState();
+  if (!state.ready) return { started: false, reason: 'not-ready' };
+  // A background check or prepare still running: its prepare could replace (or clear) the engine being applied.
+  if (packageUpdateInFlight || (uvManager && uvManager.isInstalling())) return { started: false, reason: 'busy' };
+  activationInFlight = true;
+  try {
+    if (state.desktop) {
+      log.info(`[update] applying desktop ${state.desktop.to}${state.engine ? ` + engine ${state.engine.to}` : ''} (${source}): restarting`);
+      readyReminder.stop();
+      markPendingEngineConsented(pendingEngineStore); // agreeing to restart = agreeing to the saved engine version
+      // Stops the backend first, then quitAndInstall(silent, relaunch): the NSIS build is not one-click
+      // (oneClick:false), so the default would open the Setup wizard and wait.
+      return { started: (await restartApplier.apply()) !== false };
+    }
+    log.info(`[update] applying engine ${state.engine.to} (${source}): the desktop keeps running`);
+    const result = await upgradeEngine(state.engine.to);
+    pushUpdateReadyState();
+    return { started: true, ...result };
+  } finally {
+    activationInFlight = false;
+  }
+}
+
+/**
+ * A newer desktop build was found: download it in the background — never a question before it is ready. With a
+ * newer engine too, that engine version is saved for the NEW desktop (it installs it after the restart,
+ * update-plan.js) and prepared during the download; the running engine is NOT touched now. Once the download lands,
+ * "Update Ready" offers the restart (announceUpdateReady). The persisted "offered" watermark is spent only when the
+ * download LANDS — a failed or interrupted one leaves the version announceable.
  */
 async function offerDesktopUpdate(desktopLatest) {
-  offeredDesktopVersion = desktopLatest;
+  offeredDesktopVersion = desktopLatest; // session dedupe is immediate; the persisted watermark waits for the download
   pendingDesktopVersion = desktopLatest;
-  const engineStatus = uvManager ? await uvManager._pypiUpdateStatus() : null;
-  if (decideOffer({ desktopLatest, engineStatus }) !== 'both') {
-    downloadDesktopUpdateInBackground({ version: desktopLatest }); // desktop only: download, then the restart prompt
-    return 'desktop';
-  }
-  savePendingEngine(pendingEngineStore, { engineVersion: engineStatus.latestVersion, desktopVersion: desktopLatest });
-  uvManager.deferPackageVersion(engineStatus.latestVersion); // no separate engine dialog for this version
-  packageUpdateInFlight = true; // one update dialog at a time
-  let response;
+  let engineStatus = null;
+  let engineStatusUnknown = false;
+  const lookupFailuresBefore = (uvManager && uvManager.pypiLookupFailures) || 0;
   try {
-    response = updateTest.answerFor('both', {
-      desktop: app.getVersion(), desktopLatest, engine: engineStatus.currentVersion || null, engineLatest: engineStatus.latestVersion,
-    });
-    if (response === null) ({ response } = await dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Updates available',
-      message: 'New versions of FlowPad are available.',
-      detail:
-        `Desktop app: ${app.getVersion()} → ${desktopLatest}\n` +
-        `FlowPad engine: ${engineStatus.currentVersion || 'unknown'} → ${engineStatus.latestVersion}\n\n` +
-        'The update downloads in the background. The engine is updated right after FlowPad restarts.',
-      buttons: ['Update now', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-    }));
-  } finally {
-    packageUpdateInFlight = false;
+    engineStatus = uvManager ? await uvManager._pypiUpdateStatus() : null;
+  } catch (err) {
+    // resolveCompatibleEngineVersion inside the status can throw: fall back to the desktop-only
+    // offer — the desktop update must not be lost to an engine-status hiccup.
+    engineStatusUnknown = true;
+    log.warn(`[update] engine status unavailable for the offer: ${err.message}`);
   }
-  if (response === 0) {
-    downloadDesktopUpdateInBackground({ version: desktopLatest }); // prompt to restart as soon as it is ready
-  } else {
-    downloadDesktopUpdateInBackground({ promptOnReady: false, version: desktopLatest });
-    readyReminder.start(); // first reminder in 90 minutes
+  if (uvManager && (uvManager.pypiLookupFailures || 0) > lookupFailuresBefore) engineStatusUnknown = true;
+  const both = decideOffer({ desktopLatest, engineStatus }) === 'both';
+  if (both) {
+    savePendingEngine(pendingEngineStore, { engineVersion: engineStatus.latestVersion, desktopVersion: desktopLatest });
+    uvManager.deferPackageVersion(engineStatus.latestVersion); // no separate engine offer for this version
+  } else if (!engineStatusUnknown) {
+    // An engine version saved alongside an earlier offer must not ride this desktop — but only when we KNOW
+    // there is no engine to offer; an unanswered PyPI is not a withdrawal.
+    pendingEngineStore.clear();
   }
-  return 'both';
+  log.info(`[update] desktop ${desktopLatest}${both ? ` + engine ${engineStatus.latestVersion}` : ''} offered: downloading in the background ("Update Ready" once it is)`);
+  downloadDesktopUpdateInBackground({ version: desktopLatest, onDownloaded: recordOfferedWhenDownloaded(desktopLatest) });
+  return both ? 'both' : 'desktop';
 }
 
 /**
@@ -501,25 +856,54 @@ async function offerDesktopUpdate(desktopLatest) {
  * downloading (autoDownload is false), so it's safe to await before boot to
  * decide whether to fold the desktop update into the pre-start prompt.
  */
-async function getDesktopUpdateVersion() {
-  if (!app.isPackaged || process.windowsStore) return setDesktopStatus({ state: 'unsupported' }).version;
+async function getDesktopUpdateVersion({ desktopOnly = false } = {}) {
+  // desktopOnly: the extra launch/20-minute look at the desktop feed (DESKTOP_INTERVAL_MS). It neither anchors the
+  // shared cadence nor starts the backoff, and a failure keeps the last answer instead of 'unknown' (which
+  // would hold the engine on a hiccup of a check the schedule did not even ask for).
+  const record = desktopOnly ? recordDesktopOnlyCheck : recordCheck;
+  if (!app.isPackaged || process.windowsStore) return record({ state: 'unsupported' }).version;
   try {
     const result = await autoUpdater.checkForUpdates();
-    if (!result) return setDesktopStatus({ state: 'unsupported' }).version; // the updater is inactive
+    if (!result) return record({ state: 'unsupported' }).version; // the updater is inactive
     const latest = result.updateInfo && result.updateInfo.version;
-    if (!latest) return setDesktopStatus({ state: 'unknown', reason: 'the update feed returned no version' }).version;
-    return setDesktopStatus(isNewer(app.getVersion(), latest) ? { state: 'available', version: latest } : { state: 'current' }).version;
+    if (!latest) return record({ state: 'unknown', reason: 'the update feed returned no version' }).version;
+    return record(isNewer(app.getVersion(), latest) ? { state: 'available', version: latest } : { state: 'current' }).version;
   } catch (err) {
     log.warn(`[electron-updater] desktop update check failed: ${err.message}`);
-    return setDesktopStatus({ state: 'unknown', reason: `update check failed: ${err.message}` }).version;
+    return record({ state: 'unknown', reason: `update check failed: ${err.message}` }).version;
   }
+}
+
+function recordDesktopOnlyCheck(status) {
+  scheduleStore.write(updateSchedule.recordDesktopCheck(scheduleStore.read(), { at: Date.now(), result: status }));
+  if (status.state === 'unknown') return desktopStatus; // keep the last answer
+  return setDesktopStatus(status);
+}
+
+/**
+ * setDesktopStatus + feed the schedule: every check — launch, periodic or recovery — anchors the
+ * cadence; a failed one starts the backoff instead (FLOWPAD-2308).
+ */
+function recordCheck(status) {
+  // A failed check never replaces a newer desktop already known: it is still out there, and the engine still waits for
+  // it (the persisted lastResult is kept the same way by recordFailure).
+  const keepKnown = status.state === 'unknown' && desktopStatus.state === 'available'
+    && desktopStatus.version && isNewer(app.getVersion(), desktopStatus.version);
+  const answered = keepKnown ? { ...status } : setDesktopStatus(status);
+  if (keepKnown) log.info(`[update] the desktop check failed (${status.reason || 'no answer'}) — keeping the known desktop ${desktopStatus.version}`);
+  scheduleStore.write(answered.state === 'unknown'
+    ? updateSchedule.recordFailure(scheduleStore.read(), { at: Date.now() })
+    : updateSchedule.recordSuccess(scheduleStore.read(), { result: answered, at: Date.now() }));
+  return answered;
 }
 
 // What the last desktop update check found — the input of engineChangePolicy (update-plan.js). 'unknown' until a
 // check answers: a check that failed or is still running is NOT "no newer desktop".
 let desktopStatus = { state: 'unknown', reason: 'not checked yet' };
+let lastDesktopAnswer = null; // the last status the feed actually answered (current / available / unsupported)
 function setDesktopStatus(status) {
   desktopStatus = { version: null, ...status };
+  if (desktopStatus.state !== 'unknown') lastDesktopAnswer = desktopStatus;
   updateTest.event('desktop-check', { running: app.getVersion(), ...desktopStatus });
   return desktopStatus;
 }
@@ -528,10 +912,10 @@ function setDesktopStatus(status) {
  * May the RUNNING desktop change the engine now? 'allow' | 'hold' | 'desktop-first' (update-plan.js). Anything that
  * upgrades the engine asks here, and says why it was held.
  */
-function engineChangeAllowed(context, { mustInstall = false } = {}) {
+function engineChangeAllowed(context, { mustInstall = false, quiet = false } = {}) {
   const desktop = pendingDesktopVersion ? { state: 'available', version: pendingDesktopVersion } : desktopStatus;
   const policy = engineChangePolicy({ desktop, mustInstall });
-  if (policy !== 'allow') {
+  if (policy !== 'allow' && !quiet) {
     const why = desktop.state === 'available'
       ? `desktop ${desktop.version} is pending`
       : `desktop update status is ${desktop.state}${desktop.reason ? ` (${desktop.reason})` : ''}`;
@@ -542,36 +926,164 @@ function engineChangeAllowed(context, { mustInstall = false } = {}) {
 }
 
 /**
+ * engineChangeAllowed, but a hold that rests only on an unanswered desktop check ('unknown': a GitHub 504, a dropped
+ * or switched network) looks at the feed again first — the desktop-only check, bounded like the launch check. No
+ * answer is no newer desktop either, and the next scheduled look can be hours away (the failure backoff): seen on a
+ * 0.2.59 desktop, the newest, whose engine upgrade was held for over an hour by one ERR_NETWORK_CHANGED. Used where
+ * an engine change would otherwise wait on that old failure: the popover's Upgrade, the post-boot and engine-retry
+ * checks, the postponed prepare. A pass that has just looked at the feed passes `desktopJustChecked` — no second look.
+ */
+async function engineChangeAllowedAfterRecheck(context, { desktopJustChecked = false } = {}) {
+  let policy = engineChangeAllowed(context);
+  const onlyUnanswered = () => policy !== 'allow' && !pendingDesktopVersion && desktopStatus.state === 'unknown';
+  if (!onlyUnanswered()) return policy;
+  if (!desktopJustChecked) {
+    log.info(`[update] ${context}: the desktop update status is unknown (${desktopStatus.reason || 'no answer'}) — checking the feed again`);
+    await updateRecovery.boundedCheck(() => getDesktopUpdateVersion({ desktopOnly: true }), { ms: updateTest.checkBoundMs() });
+    policy = engineChangeAllowed(`${context}, after checking the feed again`);
+    if (!onlyUnanswered()) return policy;
+  }
+  // The feed still does not answer (a GitHub outage, a proxy that blocks it). Desktop-first stays whenever a newer
+  // desktop is KNOWN — from this session or the last answer kept on disk. Otherwise the engine is not held hostage to
+  // the feed: it is checked against THIS desktop's compatibility contract instead — every path from here resolves and
+  // asserts the release fail-closed (resolveCompatibleEngineVersion / _assertCandidateCompatible: unreadable or missing
+  // metadata is refused), stages and checks it before asking, and verifies the installed pair (rollback) after.
+  const known = lastKnownNewerDesktop();
+  if (known) {
+    log.info(`[update] ${context}: the desktop feed does not answer, and desktop ${known} was found before — the engine waits for it`);
+    return policy;
+  }
+  log.info(`[update] ${context}: the desktop feed does not answer and no newer desktop is known — the engine is checked against this desktop's compatibility contract instead`);
+  updateTest.event('engine-change', { context, policy: 'allow', reason: 'desktop feed unavailable: compatibility-checked fallback' });
+  return 'allow';
+}
+
+/**
+ * engineChangeAllowedAfterRecheck's verdict without the network (what is ready to offer is decided often): allowed,
+ * or held only because the feed has not answered and no newer desktop is known — the compatibility-checked fallback.
+ */
+function engineChangeAllowedNow() {
+  if (engineChangeAllowed('update ready state', { quiet: true }) === 'allow') return true;
+  return !pendingDesktopVersion && desktopStatus.state === 'unknown' && !lastKnownNewerDesktop();
+}
+
+/** A newer desktop known before the feed stopped answering: this session's last answer, or the one kept on disk. */
+function lastKnownNewerDesktop() {
+  const newer = (r) => (r && r.state === 'available' && r.version && isNewer(app.getVersion(), r.version) ? r.version : null);
+  return newer(lastDesktopAnswer) || newer((scheduleStore.read() || {}).lastResult);
+}
+
+/**
  * Start downloading the desktop update in the background. Requires a prior
  * getDesktopUpdateVersion() / checkForUpdates() that found an update.
  *
- * promptOnReady=true  → the `update-downloaded` handler offers "Restart now".
- * promptOnReady=false → deferred: no prompt; it applies on the next quit/restart
- *                       (autoInstallOnAppQuit), so the user isn't nagged.
+ * promptOnReady=true  → the `update-downloaded` handler shows "Update Ready" (announceUpdateReady).
+ * promptOnReady=false → deferred: no toast now; the 90-minute reminder offers it, and it applies on
+ *                       the next quit/restart (autoInstallOnAppQuit).
  */
-function downloadDesktopUpdateInBackground({ promptOnReady = true, version = null } = {}) {
+function downloadDesktopUpdateInBackground({ promptOnReady = true, version = null, onDownloaded = null } = {}) {
   if (desktopDownloadInFlight) {
     log.info('[electron-updater] download already in progress; not restarting it');
     return;
   }
   desktopDownloadInFlight = true;
   desktopDownloadVersion = version;
+  if (desktopDownloadedVersion) {
+    // electron-updater removes the installer it downloaded before: it is no longer there to apply.
+    log.info(`[electron-updater] ${desktopDownloadedVersion} is no longer ready: downloading ${version || 'a newer build'}`);
+    desktopDownloadedVersion = null;
+    pushUpdateReadyState();
+  }
   desktopDownloadToken = new CancellationToken();
+  desktopDownloadPercent = 0;
+  desktopDownloadError = null;
   suppressDesktopRestartPrompt = !promptOnReady;
   desktopDownloadDone = autoUpdater
     .downloadUpdate(desktopDownloadToken)
+    .then(() => { if (onDownloaded) onDownloaded(); })
     .catch((err) => {
       if (desktopDownloadToken && desktopDownloadToken.cancelled) {
         log.info(`[electron-updater] download of ${version || 'update'} cancelled (superseded)`);
       } else {
         log.error('[electron-updater] download failed:', err);
+        desktopDownloadError = (err && err.message) || String(err);
       }
     })
     .finally(() => {
       desktopDownloadInFlight = false;
       desktopDownloadVersion = null;
       desktopDownloadToken = null;
+      pushDesktopUpdateState();
     });
+  pushDesktopUpdateState();
+  prepareEngineForDesktop(version);
+}
+
+// The version popover's desktop row (desktop-update-* IPC): what it can offer, and its progress, pushed on
+// every change. The popover only STARTS what the updater already does — the same download, the same
+// "Update Ready", the same restart — so an update taken from there behaves exactly like one offered.
+let desktopDownloadPercent = null;
+let desktopDownloadError = null;
+function desktopUpdateBusy() {
+  return restartApplier.busy || offerInProgress || packageUpdateInFlight || activationInFlight || !!(uvManager && uvManager.isInstalling());
+}
+function desktopUpdateInfo() {
+  const known = desktopStatus.state === 'available' ? desktopStatus.version : null;
+  const version = desktopDownloadedVersion || desktopDownloadVersion || pendingDesktopVersion || known;
+  return {
+    supported: app.isPackaged && !process.windowsStore,
+    version: version && isNewer(app.getVersion(), version) ? version : null,
+    state: desktopDownloadedVersion ? 'ready' : desktopDownloadInFlight ? 'downloading' : 'idle',
+    percent: desktopDownloadInFlight ? desktopDownloadPercent : null,
+    error: desktopDownloadError,
+    busy: desktopUpdateBusy(),
+  };
+}
+function pushDesktopUpdateState({ progressOnly = false } = {}) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('desktop-update-state', desktopUpdateInfo());
+  if (!progressOnly) pushUpdateReadyState(); // progress does not change what is ready
+}
+
+/**
+ * The engine a just-updated desktop installs: the newest release it accepts (compat contract, both
+ * directions) when newer than the installed one; `agreed` (saved with the update) when PyPI cannot answer.
+ */
+async function engineForUpdatedDesktop(installed, agreed) {
+  let picked = null;
+  try { picked = await uvManager.resolveCompatibleEngineVersion(); } catch (err) {
+    log.warn(`[update] no compatible engine for desktop ${app.getVersion()}: ${String(err.message).split('\n')[0]}`);
+    return null; // PyPI answered and nothing fits: the pair repair below decides
+  }
+  const target = (picked && picked.version) || agreed;
+  return target && (!installed || isNewer(installed, target)) ? target : null;
+}
+
+/**
+ * "Later" to the recovery's engine question at launch: it is not repeated this session, so nothing else would
+ * download it. Prepare it now, with the engine up, and offer it as "Update Ready" once it is (a short offline
+ * swap). Not while a newer desktop is pending: its own engine is prepared with its download.
+ */
+async function prepareDeferredEngineUpdate() {
+  if (!uvManager || !uvManager.deferredPackageVersion()) return;
+  if (await engineChangeAllowedAfterRecheck('preparing the postponed engine update') !== 'allow') return;
+  return uvManager.prepareEngine()
+    .then((rec) => { if (rec) { log.info(`[update] the postponed engine update ${rec.version} is prepared`); announceUpdateReady(); } })
+    .catch((err) => log.info(`[update] the postponed engine update was not prepared (the upgrade downloads it): ${String((err && err.message) || err).split('\n')[0]}`));
+}
+
+/**
+ * While the desktop update downloads, the engine saved to ride along with it (pending-engine.json) is
+ * downloaded, staged and checked too — for the NEW desktop — so after the restart that desktop installs
+ * it offline in seconds instead of downloading it with the app down. Nothing is asked or changed: a
+ * failed, cancelled (the quit into the update) or unfinished prepare only means the new desktop
+ * downloads the engine, as before.
+ */
+function prepareEngineForDesktop(desktopVersion) {
+  const saved = pendingEngineStore.read();
+  if (!uvManager || !desktopVersion || !saved || saved.desktopVersion !== desktopVersion || !saved.engineVersion) return;
+  uvManager.prepareEngine({ version: saved.engineVersion, desktopVersion })
+    .then((rec) => { if (rec) log.info(`[update] engine ${rec.version} is prepared for desktop ${desktopVersion}`); })
+    .catch((err) => log.info(`[update] the engine for desktop ${desktopVersion} was not prepared (it downloads after the restart): ${String((err && err.message) || err).split('\n')[0]}`));
 }
 
 /**
@@ -587,7 +1099,7 @@ async function updateDesktopBeforeEngineInstall(reason) {
   updateTest.event('desktop-first-install', { reason, from: app.getVersion(), to: version });
   log.info(`[update] ${reason}: desktop ${app.getVersion()} → ${version} first, the engine is installed after the restart`);
   sendStatus('Updating Flowpad');
-  // We restart ourselves: a download that finishes meanwhile must not open the "Restart now?" prompt.
+  // We restart ourselves: a download that finishes meanwhile must not show "Update Ready".
   downloadDesktopUpdateInBackground({ promptOnReady: false, version });
   suppressDesktopRestartPrompt = true;
   await desktopDownloadDone;
@@ -632,10 +1144,6 @@ function writeDesktopVersion(version) {
 }
 
 // Configuration
-// A dev run is started from the repo (`npm run dev:electron`) against a backend
-// the developer already has running: it does NOT own the machine's flowpad
-// install, and must not start, stop or upgrade it.
-const isDev = process.env.MINIHUB_DEV === 'true';
 // Fixed for a packaged app; in dev it can point at a repo-run backend (e.g. the
 // `oss` instance on 9008). One const feeds the start URL, the `get-backend-url`
 // IPC and the open-externally guard, so they can never disagree.
@@ -764,6 +1272,12 @@ let startupFailed = false;
 // "quit FlowPad", before it "stop the startup" (quit-gate.js).
 let backendReady = false;
 
+// The engine answered: a later repair has a working engine to put back (uv-manager.js).
+function noteEngineHealthy() {
+  if (uvManager && typeof uvManager.markEngineHealthy === 'function') uvManager.markEngineHealthy();
+}
+
+
 // ── FLOWPAD-2231: fatal-failure handling, recovery update, startup journal ─────────────────────
 // The journal (startup-watchdog.js) records which phase this launch reached so the next launch can
 // tell a crash from a clean end; the guard keeps two `flow start`s from ever running at once; the
@@ -771,7 +1285,76 @@ let backendReady = false;
 // what the failure panel offers (update-recovery.js). All state files live in userData / the instance dir.
 let journal = null;
 const startGuard = createStartGuard({ log });
+// Armed in startApp — scheduled: a recent 'current' answer is reused instead of the network
+// (update-schedule.planLaunchCheck), so a restart does not reset the check interval. The recovery
+// paths call forcedLaunchDesktopCheck(): their "Update FlowPad" offer is the way out of a broken
+// install and never depends on the schedule.
 let launchDesktopCheck = Promise.resolve(null);
+let launchDesktopCheckRan = false;
+function boundedDesktopCheck() {
+  launchDesktopCheckRan = true;
+  return updateRecovery.boundedCheck(() => getDesktopUpdateVersion(), { log, ms: updateTest.checkBoundMs() });
+}
+/**
+ * The scheduled launch check: the real one when due or useful, the seeded persisted answer otherwise.
+ * The seed can be up to one interval old. That is safe for the ENGINE gate (engineChangeAllowed):
+ * the gate only orders updates (desktop first when one is pending) — the hard guarantee that no
+ * engine lands that this desktop cannot run is the compat contract, enforced on every install by
+ * uv-manager's resolveCompatibleEngineVersion / _assertCandidateCompatible.
+ */
+function startLaunchDesktopCheck() {
+  const plan = updateTest.isEnabled()
+    ? { run: true, reason: 'update-test' } // the update-cycle harness drives the cadence itself
+    : updateSchedule.planLaunchCheck({ state: scheduleStore.read(), intervalMs: currentIntervalMs(), now: Date.now() });
+  if (plan.run) return boundedDesktopCheck();
+  // Not due for the shared cadence: the start goes on from the persisted answer at once (an offline or
+  // slow feed must not hold the launch), and the desktop feed is still looked at, every launch — in the
+  // background. A newer desktop it finds goes down the same road as the periodic look's.
+  log.info(`[update] launch check not due (${plan.reason})${plan.seed ? '; reusing the last answer' : ''} — the desktop feed is checked in the background`);
+  if (plan.seed) setDesktopStatus(plan.seed);
+  const look = getDesktopUpdateVersion({ desktopOnly: true });
+  look
+    .then((version) => offerDesktopFoundAtLaunch(version))
+    .catch((err) => log.warn(`[update] background desktop check failed: ${err.message}`));
+  // What the engine offer waits for after the start (postBootUpdates) — never the start itself. Bounded like
+  // the launch check: `{ version }` once the feed answered, null when it failed or gave up.
+  launchDesktopLook = updateRecovery.boundedCheck(() => look.then((version) => ({ version })), { ms: updateTest.checkBoundMs() });
+  return Promise.resolve(null);
+}
+// The launch's background look at the desktop feed, when the launch check went to the background (not due).
+let launchDesktopLook = null;
+// A start of this session failed (the error panel was shown): its Retry must not skip the pre-start engine prompt.
+let startFailedThisSession = false;
+// The pre-start engine question was moved to postBootUpdates (which then asks it with the PyPI comparison).
+let engineOfferDeferredToBoot = false;
+/**
+ * May the pre-start engine question wait until FlowPad is up (postBootUpdates)? Only when the last start got
+ * there: an engine that does not boot never reaches postBootUpdates, and a fix on PyPI is its way out — so
+ * after a start that failed (this session's, or the previous run's) the question is asked pre-start, as before.
+ */
+function engineOfferCanWaitForBoot() {
+  if (startFailedThisSession) return false;
+  const previous = journal ? journal.previous() : null;
+  return !previous || (Array.isArray(previous.history) && previous.history.some((h) => h && h.phase === 'backend-healthy'));
+}
+// A newer desktop the launch's background look found before the app was up: offered once it is (the
+// post-boot hook), never in the middle of the start — the pre-start flow knows nothing of this look.
+let desktopFoundAtLaunch = null;
+async function offerDesktopFoundAtLaunch(version) {
+  if (!version) return undefined;
+  if (!backendReady) {
+    desktopFoundAtLaunch = version;
+    log.info(`[update] desktop ${version} found while FlowPad starts — offered once it is up`);
+    return undefined;
+  }
+  desktopFoundAtLaunch = null;
+  return runScheduledUpdateCheck({ launchDesktop: version });
+}
+/** The recovery panels' check: runs for real if the scheduled one was skipped. */
+function forcedLaunchDesktopCheck() {
+  if (!launchDesktopCheckRan) launchDesktopCheck = boundedDesktopCheck();
+  return launchDesktopCheck;
+}
 function markPhase(phase, extra) { if (journal) journal.mark(phase, extra); }
 function recoveryStatePath() { return path.join(app.getPath('userData'), updateRecovery.RECOVERY_FILE); }
 function readRecoveryState() { return updateRecovery.readRecoveryState((p) => fs.readFileSync(p, 'utf8'), recoveryStatePath()); }
@@ -967,6 +1550,15 @@ require('electron-context-menu')({
   showSearchWithGoogle: false, // sends the selection to an external search
 });
 
+ipcMain.on('focus-window', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  // macOS keeps another app in front of a focused window; the person asked for this one.
+  if (process.platform === 'darwin') app.focus({ steal: true });
+});
+
 ipcMain.on('set-menu-visible', (_event, visible) => {
   const next = !!visible;
   if (next === menuVisible) return;
@@ -1015,7 +1607,94 @@ function navStateFor(win) {
   }
 }
 
+// ---- Hung renderer: detect, then restart the window clean (renderer-watchdog.js) ----
+// A busy renderer main thread (a render loop froze the app on 2026-10-23) stops the page's heartbeat.
+// Recovery kills that renderer and opens Home with `?safeStart=1`: the UI then neither restores the
+// last tab nor runs launch redirects, and the window's history is cleared — the page that hung must
+// not come back by itself.
+const SAFE_START_URL = `${BACKEND_URL}/?safeStart=1`;
+let recoveringFromHang = false;
+const rendererWatchdog = createRendererWatchdog({
+  onScreen: () => !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized(),
+  probe: (ms) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return Promise.resolve(true);
+    return bounded(() => mainWindow.webContents.executeJavaScript('1', true).then(() => true, () => false), ms, false);
+  },
+  onHang: async ({ silentMs, source }) => {
+    const url = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.getURL() : '';
+    log.error(`[hang] renderer hung (${source}, silent ${Math.round(silentMs / 1000)}s) url=${redactUrl(url)} — restarting the window clean`);
+    await recordRendererFailure('hang', { source, silentMs }); // before the kill: the stack lives in the hung renderer
+    cleanRestartWindow({ hung: true, url });
+  },
+});
+
+const RENDERER_FAILURES_DIR = path.join(MAIN_DESKTOP_LOG_DIR, 'renderer-failures');
+/** One JSON report per hang / crash, for later analysis (hang-report.js). Never throws. */
+async function recordRendererFailure(kind, detail) {
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const report = await collectFailureReport({
+      kind, detail, webContents: mainWindow.webContents, app, redactUrl,
+      backendHealth: async () => {
+        const t0 = Date.now();
+        const res = await fetch(`${BACKEND_URL}/api/v1/health`);
+        return { status: res.status, ms: Date.now() - t0 };
+      },
+    });
+    const file = writeFailureReport(RENDERER_FAILURES_DIR, report);
+    log.error(`[hang] ${kind} report ${file || '(could not be written)'}${typeof report.jsCallStack === 'string' ? ` — top of stack: ${report.jsCallStack.split('\n').slice(0, 3).join(' | ')}` : ''}`);
+  } catch (err) {
+    log.warn(`[hang] ${kind} report failed: ${err.message}`);
+  }
+}
+ipcMain.on('renderer-heartbeat', () => rendererWatchdog.beat());
+
+/** Load the clean start; `hung` also kills the stuck renderer first and tells the user which page was dropped. */
+function cleanRestartWindow({ hung, url: hungUrl }) {
+  if (isQuitting || !mainWindow || mainWindow.isDestroyed()) return;
+  rendererWatchdog.disarm();
+  recoveringFromHang = true;
+  const wc = mainWindow.webContents;
+  wc.once('did-finish-load', () => {
+    recoveringFromHang = false;
+    try { wc.navigationHistory.clear(); } catch (err) { log.info(`[hang] could not clear history: ${err.message}`); }
+    log.info(`[hang] clean restart done (${hung ? 'renderer hung' : 'renderer crashed'}) ${navStateFor(mainWindow)}`);
+    rendererWatchdog.arm();
+    if (hung) {
+      dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        message: 'Flowpad stopped responding and was restarted.',
+        detail: `The page that stopped responding was not reopened:\n${redactUrl(hungUrl || '(unknown)')}`,
+        buttons: ['OK'],
+      }).catch(() => {});
+    }
+  });
+  if (!hung) { wc.loadURL(SAFE_START_URL); return; }
+  // A hung renderer cannot run an unload, and a load issued while it is still alive is dropped: kill it,
+  // and load once Electron reports it gone (a fresh renderer process serves the load).
+  const loadWhenGone = () => {
+    log.info('[hang] renderer gone — loading the clean start');
+    // Out of the gone callback: a load issued inside it races the dead process's teardown.
+    setTimeout(() => wc.loadURL(SAFE_START_URL).then(
+      () => log.info('[hang] clean start loaded'),
+      (err) => log.error(`[hang] clean start load failed: ${err.message}`),
+    ), 100);
+  };
+  wc.once('render-process-gone', loadWhenGone);
+  try {
+    wc.forcefullyCrashRenderer();
+  } catch (err) {
+    wc.removeListener('render-process-gone', loadWhenGone);
+    log.warn(`[hang] crash renderer failed: ${err.message} — loading the clean start in place`);
+    wc.loadURL(SAFE_START_URL);
+  }
+}
+
 function createWindow() {
+  // Screen recording (the top bar's Record button): without this the renderer's
+  // `getDisplayMedia` is refused. Installed on the default session every window shares.
+  screenCapture.installScreenCapture(session.defaultSession, desktopCapturer, log);
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -1137,10 +1816,23 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // Opt the app's own pages in to JS call stacks in hang reports (see the enable-features switch).
+  mainWindow.webContents.session.webRequest.onHeadersReceived({ urls: [`${BACKEND_ORIGIN}/*`] }, (details, callback) => {
+    if (details.resourceType !== 'mainFrame') return callback({});
+    callback({ responseHeaders: { ...details.responseHeaders, 'Document-Policy': ['include-js-call-stacks-in-crash-reports'] } });
+  });
+
+  // Chromium's own hang monitor: the page stopped answering input.
+  mainWindow.on('unresponsive', () => {
+    log.warn(`[hang] window unresponsive url=${redactUrl(mainWindow.webContents.getURL())}`);
+    rendererWatchdog.hang('unresponsive');
+  });
+
   // A crashed or failed renderer is a blank window: say so, with a way to reach us, then reload.
   mainWindow.webContents.on('render-process-gone', (_e, details) => {
     log.error(`[renderer] process gone: ${details && details.reason} (exit ${details && details.exitCode})`);
-    if (isQuitting || (details && details.reason === 'clean-exit')) return;
+    if (isQuitting || recoveringFromHang || (details && details.reason === 'clean-exit')) return;
+    void recordRendererFailure('crash', { reason: details && details.reason, exitCode: details && details.exitCode });
     showFailureDialog({
       dialog,
       parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
@@ -1149,7 +1841,8 @@ function createWindow() {
       detail: `Reason: ${(details && details.reason) || 'unknown'}. Flowpad will reload the window.`,
       share: (text) => shareDiagnostics(text, 'window crashed'),
       log,
-    }).then(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload(); });
+      // Not reload(): the page that crashed would come straight back. A clean start opens Home.
+    }).then(() => cleanRestartWindow({ hung: false }));
   });
   mainWindow.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
     if (!isMainFrame || code === -3 /* aborted by a newer navigation */ || !isBackendUrl(url)) return;
@@ -1262,7 +1955,8 @@ async function waitForBackend({
   const result = await runBackendGate({
     probeHealth: async () => {
       try {
-        const response = await fetch(`${BACKEND_URL}/health/status`);
+        // Re-read each probe: a gated engine writes its token on the first request it serves.
+        const response = await fetch(`${BACKEND_URL}/health/status`, { headers: cookieGate.gateHeaders() });
         return response.ok;
       } catch {
         return false; // Backend not ready yet
@@ -1309,6 +2003,12 @@ async function waitForBackend({
     result.policyBlock = policyBlock(); // Electron's own reading of the log, to check the two agree
   }
   if (result.ready) {
+    // The one place the gate cookie goes in: the backend has written its token by now, and every
+    // window shares the default session, so every load after this carries it. A failure still
+    // loads the UI (the backend answers 403).
+    await cookieGate.injectCookie(session.defaultSession, BACKEND_URL).catch((err) => {
+      log.warn(`[cookie-gate] could not set the cookie: ${err && err.message}`);
+    });
     log.info(`Backend is ready! (${result.elapsedSec}s, ${result.checks} checks${result.extended ? ', extended on reported progress' : ''})`);
   } else if (result.reason === 'policy-blocked') {
     log.error(`Backend blocked by Windows application control after ${result.elapsedSec}s: ${policyBlockMatch.line} (${policyBlockMatch.path})`);
@@ -1344,6 +2044,7 @@ function installProgress(label) {
 // installAndStartBackend). Falls back to the native dialog only if the loading
 // window is already gone; returns whether the panel was rendered.
 async function showStartupErrorPanel(detail, { retryable = false, policyBlocked = false, repairable = false, extras = null } = {}) {
+  startFailedThisSession = true; // the panel's Retry asks the engine question pre-start again (see the pre-start flow)
   const payload = {
     detail,
     retryable,
@@ -1443,10 +2144,11 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord, retr
     const blockedModule = record ? record.module : (match && match.module);
     const moduleRepairable = !blockedModule || isInterpreterModule(blockedModule);
     const repairable = process.platform === 'win32' && !!uvManager && fatalFailure.isRepairableKind(kind) && moduleRepairable && canAttemptRepair(state, versions);
-    // The desktop update as a way out: the launch-time check already ran (bounded, no backend needed);
-    // offered once per target version and failure fingerprint, never as a downgrade.
+    // The desktop update as a way out: bounded, no backend needed; forced — a launch check the
+    // schedule skipped is run now, the failure panel never trusts a stale answer. Offered once per
+    // target version and failure fingerprint, never as a downgrade.
     const fingerprintKey = failureFingerprintKey(record);
-    const latest = await launchDesktopCheck;
+    const latest = await forcedLaunchDesktopCheck();
     const plan = updateRecovery.planRecoveryUpdate({ state: readRecoveryState(), appVersion: app.getVersion(), latestVersion: latest, fingerprint: fingerprintKey, isNewer });
     const updateVersion = plan.action === 'offer' ? plan.version : null;
 
@@ -1614,7 +2316,7 @@ async function runRecoveryUpdate({ version, fingerprint }) {
 async function showRecoveryEntry(why) {
   let extraDetail = '';
   for (;;) {
-    const latest = await launchDesktopCheck;
+    const latest = await forcedLaunchDesktopCheck(); // a skipped launch check is run for real: recovery never trusts a stale answer
     const fingerprintKey = `recovery|${app.getVersion()}`;
     const plan = updateRecovery.planRecoveryUpdate({ state: readRecoveryState(), appVersion: app.getVersion(), latestVersion: latest, fingerprint: fingerprintKey, isNewer });
     const updateVersion = plan.action === 'offer' ? plan.version : null;
@@ -1660,21 +2362,46 @@ async function installStep(fn) {
   }
 }
 
+/**
+ * The installed engine needs a newer desktop than this one, and the update feed did not offer one: ask before
+ * moving the engine backward. Resolves true to switch, false to keep the installed engine (Esc = keep).
+ */
+async function confirmEngineSwitch(issue, picked) {
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'FlowPad needs an update',
+    message: `The installed FlowPad engine (${issue.engineVersion}) needs a newer FlowPad Desktop than this one (${app.getVersion()}).`,
+    detail:
+      `${issue.reasons.join('\n')}\n\n` +
+      `Updating the desktop app is the best fix. Or FlowPad can switch to engine ${picked.version}, which works with this ` +
+      'desktop. That is a downgrade: the newer engine may have changed files the older one cannot read.',
+    buttons: [`Switch to engine ${picked.version}`, 'Keep the current engine'],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  return response === 0;
+}
+
 // `quiet`: the caller (the repair panel's Retry) shows its own panel for a failure — no second panel from here.
 async function installAndStartBackend({ quiet = false } = {}) {
   let backendJustUpgraded = false;
   let firstInstall = false;
   // Install and start backend via uv + flow CLI
-  uvManager = new UvManager(log, { stateDir: FLOW_HOME });
+  uvManager = new UvManager(log, { stateDir: FLOW_HOME, appVersion: app.getVersion() });
   uvManager.setFailureSharer((text) => shareDiagnostics(text, 'could not finish updating'));
+  uvManager.backfillEngineOwnership();
 
-  // Did the user just upgrade to a new desktop build? Logged for diagnostics.
-  // The engine version saved for this desktop (if any) is installed below.
+  // Did the user just upgrade to a new desktop build? Then the engine follows it (below). Only a NEWER build is
+  // an upgrade: an older installer run by hand changes no engine by itself — the installed-pair check below
+  // still repairs a pair the contract forbids, and asks before moving the engine backward.
   const lastDesktopVersion = readLastDesktopVersion();
-  const desktopUpgraded =
+  const desktopChanged =
     app.isPackaged && lastDesktopVersion && lastDesktopVersion !== app.getVersion();
+  const desktopUpgraded = desktopChanged && isNewer(lastDesktopVersion, app.getVersion());
   if (desktopUpgraded) {
     log.info(`[update] desktop upgraded ${lastDesktopVersion} → ${app.getVersion()}`);
+  } else if (desktopChanged) {
+    log.info(`[update] desktop downgraded ${lastDesktopVersion} → ${app.getVersion()}: the engine is not changed automatically (the installed pair is checked)`);
   }
 
   try {
@@ -1718,26 +2445,34 @@ async function installAndStartBackend({ quiet = false } = {}) {
 
       // ── The desktop was just updated: install the engine version that was saved for it ──
       // When the update was offered (desktop + engine) the engine version X was saved, and the user agreed
-      // by choosing "Restart now". Install exactly X now, with THIS desktop (its Python pin, its start
-      // contract). No agreement (the app was closed after "Later")? Then the normal engine dialog below
-      // asks. See update-plan.js. A failure keeps the current engine; the normal dialog offers it again.
+      // by choosing "Restart" on "Update Ready". Install exactly X now, with THIS desktop (its Python pin, its
+      // start contract). See update-plan.js. A failure keeps the current engine; the normal check offers it again.
+      const savedEngine = pendingEngineStore.read();
       const enginePlan = planAfterDesktopUpdate({
-        state: pendingEngineStore.read(),
+        state: savedEngine,
         appVersion: app.getVersion(),
         installedEngine: uvManager.getInstalledVersionSync(flowBin),
         isNewer,
       });
       if (enginePlan.clear) pendingEngineStore.clear();
-      if (enginePlan.action === 'install') {
-        log.info(`[update] installing the engine version agreed before the restart: ${enginePlan.version}`);
-        updateTest.event('agreed-engine-install', { version: enginePlan.version, desktop: app.getVersion() });
-        sendStatus(`Updating the FlowPad engine to ${enginePlan.version}`);
+      // The desktop leads and the engine follows its dependencies: after ANY desktop update — "Restart now",
+      // or installed on quit after "Later" — the newest engine this desktop accepts is installed, without a
+      // question (offline when it was prepared with the desktop download). PyPI unreachable: the version
+      // saved with this update, if there is one; otherwise the normal engine check below.
+      const savedForThis = savedEngine && savedEngine.desktopVersion === app.getVersion() ? savedEngine.engineVersion : null;
+      const engineTarget = desktopUpgraded
+        ? await engineForUpdatedDesktop(uvManager.getInstalledVersionSync(flowBin), savedForThis)
+        : (enginePlan.action === 'install' ? enginePlan.version : null);
+      if (engineTarget) {
+        log.info(`[update] desktop ${app.getVersion()}: installing engine ${engineTarget}${enginePlan.action === 'install' ? ' (agreed before the restart)' : ' (follows the desktop update)'}`);
+        updateTest.event('agreed-engine-install', { version: engineTarget, desktop: app.getVersion(), agreed: enginePlan.action === 'install' });
+        sendStatus(`Updating the FlowPad engine to ${engineTarget}`);
         try {
-          await uvManager.upgrade({ version: enginePlan.version, onProgress: installProgress('Updating the FlowPad engine') });
+          await uvManager.upgrade({ version: engineTarget, onProgress: installProgress('Updating the FlowPad engine') });
           activeBin = uvManager.getInstalledFlowBin() || flowBin;
           backendJustUpgraded = true;
         } catch (upgradeErr) {
-          log.warn(`[uv] installing the agreed engine ${enginePlan.version} failed, starting the current engine: ${upgradeErr.message}`);
+          log.warn(`[uv] installing engine ${engineTarget} after the desktop update failed, starting the current engine: ${upgradeErr.message}`);
         }
       }
 
@@ -1753,13 +2488,32 @@ async function installAndStartBackend({ quiet = false } = {}) {
       if (isQuitting) return { ok: false };
 
       if (desktopLatest) {
-        await offerDesktopUpdate(desktopLatest);
+        // One decision ladder with the periodic tick (update-schedule.decideDesktopAction); at this
+        // point in startup nothing can be deferred, offered, downloading or on screen yet, so no
+        // local blockers and never 'resume'/'ignore' — only announce, adopt or redownload.
+        const action = updateSchedule.decideDesktopAction({
+          state: scheduleStore.read(), version: desktopLatest, isNewer,
+          deferredVersion: deferredDesktopVersion, offeredThisSession: offeredDesktopVersion,
+        });
+        if (action === 'announce') await startOffer(desktopLatest); // through the one-window guard, like the tick's offers
+        else if (action !== 'ignore') adoptDesktopUpdateSilently(desktopLatest, action);
+      } else if (launchDesktopLook && engineOfferCanWaitForBoot()) {
+        // The launch check went to the background (not due): asking about the engine here would ask before the
+        // desktop feed answers — and a newer desktop goes first. The engine is offered once FlowPad is up, after
+        // that answer (postBootUpdates); the start does not wait for the feed. Not after a failed start: an
+        // engine that does not boot never gets there.
+        engineOfferDeferredToBoot = true;
+        log.info('[update] the engine is offered once FlowPad is up: the desktop feed is still being checked (the desktop goes first)');
+      } else if (uvManager.getInstalledVersionSync(flowBin) && engineOfferCanWaitForBoot()) {
+        // A working engine: an optional update never holds the start. It is prepared once FlowPad is up and
+        // offered as "Update Ready" (postBootUpdates, with the pre-start's comparison: any newer release on PyPI).
+        engineOfferDeferredToBoot = true;
+        log.info('[update] the engine is checked once FlowPad is up: an optional update does not hold the start');
       } else if (engineChangeAllowed('pre-start engine prompt') === 'allow') {
-        // No desktop update (and the check did answer) → the standalone engine prompt handles the "newer on
-        // PyPI" case (and no-ops otherwise). Reads the installed version from `_version.py`, so it works even
-        // when the install is broken or the cloud is unreachable. `beforeBackendStart` makes the call return
-        // right after the upgrade — the normal start path below boots the upgraded backend, avoiding a
-        // double start.
+        // Recovery only: the last start failed (a fix on PyPI is its way out — it never reaches postBootUpdates),
+        // or the installed engine cannot even say its version (a broken install). The standalone prompt offers the
+        // install before the start. It decides without the cloud or the CLI, so it works offline-from-cloud too. `beforeBackendStart` makes the call return right after the upgrade — the normal start path below
+        // boots the upgraded backend, avoiding a double start.
         const upgradedPreStart = await uvManager.checkForUpdatesInBackground(mainWindow, {
           sendStatus,
           waitForBackend,
@@ -1770,6 +2524,41 @@ async function installAndStartBackend({ quiet = false } = {}) {
         if (upgradedPreStart) {
           activeBin = uvManager.getInstalledFlowBin() || activeBin;
           backendJustUpgraded = true;
+        }
+      }
+
+      // ── Installed-pair compatibility (engine-compat.js) ────────────────
+      // A desktop downgrade, or an engine moved by hand (`uv tool install flowpad==X`), can leave
+      // a pair the contract forbids. The repair installs the newest compatible release, under the
+      // same gate every other engine change obeys -- and it has a DIRECTION:
+      //   - the ENGINE is the old side (below the desktop's floor): upgrading it is the safe fix, done silently;
+      //   - the DESKTOP is the old side (the engine demands a newer desktop): the repair moves the engine
+      //     BACKWARD, and a newer engine may already have written state an older one cannot read -- ask first.
+      //     (When the desktop feed knows a newer desktop, engineChangeAllowed() holds and the desktop update
+      //     offer above is the fix; this question is for a feed that says "current" while the engine disagrees.)
+      // When the repair is unavailable or declined (held for a pending desktop update, offline, "Keep"), start
+      // what is installed and warn -- a running old pair beats a bricked app, and the next launch retries.
+      const pairIssue = uvManager.installedPairIssue(activeBin);
+      if (pairIssue) {
+        log.warn(`[compat] installed desktop/engine pair is incompatible: ${pairIssue.reasons.join('; ')}`);
+        if (engineChangeAllowed('repairing an incompatible engine') === 'allow') {
+          try {
+            const picked = await uvManager.resolveCompatibleEngineVersion();
+            if (picked && picked.version !== pairIssue.engineVersion) {
+              const go = pairIssue.desktopTooOld ? await confirmEngineSwitch(pairIssue, picked) : true;
+              if (isQuitting) return { ok: false };
+              if (go) {
+                sendStatus('Installing a compatible FlowPad engine');
+                await uvManager.upgrade({ version: picked.version, onProgress: installProgress('Installing a compatible FlowPad engine') });
+                activeBin = uvManager.getInstalledFlowBin() || activeBin;
+                backendJustUpgraded = true;
+              } else {
+                log.warn(`[compat] the user kept engine ${pairIssue.engineVersion}, which needs a newer desktop than ${app.getVersion()}`);
+              }
+            }
+          } catch (compatErr) {
+            log.warn(`[compat] could not repair the incompatible pair, starting the installed engine: ${compatErr.message}`);
+          }
         }
       }
 
@@ -1908,12 +2697,14 @@ async function startApp() {
     if (r.installed) log.info(`[update-recovery] running ${app.getVersion()} after the recovery update from ${r.installed.fromVersion} (${r.installed.at})`);
   }
 
-  // Kick off the desktop wrapper update check immediately at launch — runs in
-  // parallel with backend startup and is a no-op when the app isn't packaged.
+  // Kick off the desktop wrapper update check at launch — runs in parallel with backend startup
+  // and is a no-op when the app isn't packaged. Scheduled (FLOWPAD-2308): when a recent check
+  // answered 'current', the persisted answer is reused and the network is not touched.
   setupElectronAutoUpdater();
   // The check itself, started now, bounded, and independent of the backend: a backend that cannot start
-  // must not hide the way out, and the failure panel must not wait on a slow or absent network for it.
-  launchDesktopCheck = updateRecovery.boundedCheck(() => getDesktopUpdateVersion(), { log, ms: updateTest.checkBoundMs() });
+  // must not hide the way out, and the failure panel must not wait on a slow or absent network for it
+  // (the recovery paths force the real check if the schedule skipped it here).
+  launchDesktopCheck = startLaunchDesktopCheck();
 
   createWindow();
 
@@ -1999,6 +2790,7 @@ async function startApp() {
         });
         if (!recovered) return;
         backendReady = true;
+        noteEngineHealthy();
         break;
       }
       if (result.fatalRecord) {
@@ -2007,6 +2799,7 @@ async function startApp() {
         const recovered = await handleFatalFailure({ match: rec.match, record: result.fatalRecord });
         if (!recovered) return;
         backendReady = true;
+        noteEngineHealthy();
         break;
       }
       await waitForRetryRequest();
@@ -2027,15 +2820,26 @@ async function startApp() {
   // (PyPI fetch + bytecode warm-up + AV scan on Windows), so widen the
   // window when we know we just ran uv install/upgrade.
   // (Skipped when the fatal-record path above already brought the backend up.)
-  const backendWait = backendReady ? { ready: true, reason: 'healthy', elapsedSec: 0 } : await (async () => {
+  let backendWait = backendReady ? { ready: true, reason: 'healthy', elapsedSec: 0 } : await (async () => {
     sendStatus('Waiting for server');
     const waitOpts = backendJustUpgraded ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined;
     return waitForBackend(waitOpts);
   })();
   if (backendWaitAborted(backendWait)) return;
+  // An engine this launch just installed (the one following a desktop update, an agreed or pre-start upgrade, a pair
+  // repair) did not come up: put back the engine it replaced and start that, once — never a failure panel over an
+  // engine that worked a minute ago.
+  if (!backendWait.ready && uvManager && uvManager.hasUnconfirmedActivation()) {
+    const restored = await restorePreviousEngineAndStart(backendWait.reason);
+    if (restored) backendWait = restored;
+    if (backendWaitAborted(backendWait)) return;
+  }
   backendReady = backendWait.ready;
   if (backendWait.ready) {
+    noteEngineHealthy();
     updateTest.event('engine-ready', { desktop: app.getVersion(), engine: (uvManager && uvManager.getInstalledVersionSync()) || null });
+    if (uvManager) void uvManager.compileBytecodeInBackground(); // after a prepared (bytecode-less) upgrade; else a no-op
+    void prepareDeferredEngineUpdate().catch((err) => log.info(`[update] the postponed engine update was not prepared: ${err && err.message}`));
   }
 
   if (!backendWait.ready && (backendWait.reason === 'policy-blocked' || backendWait.reason === 'fatal-failure')) {
@@ -2050,6 +2854,7 @@ async function startApp() {
     const repaired = await handleFatalFailure({ match: rec.match, record: rec.record });
     if (!repaired) return;
     backendReady = true;
+    noteEngineHealthy();
   } else if (!backendWait.ready) {
     // Try to gather diagnostics for the error dialog
     const timeoutSec = backendWait.elapsedSec;
@@ -2130,7 +2935,10 @@ async function startApp() {
       log.info(`[nav] could not clear startup history: ${err.message}`);
     }
   });
-  mainWindow.webContents.once('did-finish-load', () => offerPostponedRestartPrompt()); // the app is on screen: a held-back "Restart now" can show
+  mainWindow.webContents.once('did-finish-load', () => {
+    offerPostponedRestartPrompt(); // the app is on screen: a held-back "Restart now" can show
+    rendererWatchdog.arm(); // the app UI is up: from now on, silence means hung
+  });
   mainWindow.loadURL(startUrl);
 
   // Open DevTools in development
@@ -2145,10 +2953,27 @@ async function startApp() {
     log.info('Development mode: skipping background update check');
     return;
   }
-  // Through the same mutex as the periodic check, so this dialog cannot stack
-  // with a desktop "update ready" prompt (a desktop download may already be
-  // running from the pre-start flow).
-  checkPackageUpdateInBackground({ compareWithPypi: false, label: 'post-boot' });
+  void postBootUpdates().catch((err) => log.warn(`[update] the post-boot update checks failed: ${err.message}`));
+}
+
+/**
+ * The launch's updates once FlowPad is up, in order and one screen at a time (the same mutexes as the periodic
+ * check, so nothing stacks with a desktop "update ready" prompt). A desktop the launch's background look found
+ * goes first — with a newer engine, in the same one offer — and the engine is offered alone only after the look
+ * answered that there is no newer desktop, or gave up (bounded: a slow or offline feed defers the engine offer by
+ * at most that bound; a desktop it finds later still goes first). Nothing here holds the app: the backend is up
+ * and the UI loads meanwhile.
+ */
+async function postBootUpdates() {
+  const look = launchDesktopLook;
+  if (look && !(await look)) {
+    log.info('[update] the desktop feed did not answer in time: the engine check goes on (a desktop found later still goes first)');
+  }
+  // A desktop the launch's background look found while the app started (the engine follows it).
+  if (desktopFoundAtLaunch) await offerDesktopFoundAtLaunch(desktopFoundAtLaunch);
+  // When the engine question was asked pre-start, the cloud policy decides here; when it moved here, it is asked
+  // with the pre-start's comparison (any newer release on PyPI).
+  await checkPackageUpdateInBackground({ compareWithPypi: engineOfferDeferredToBoot, label: 'post-boot' });
 }
 // Anything that escapes to the top level must reach the user with "Send Report" — an unhandled rejection in
 // startApp used to leave the loading splash up forever, and an uncaught exception only got Electron's stock box.
@@ -2225,6 +3050,7 @@ app.on('before-quit', (event) => {
     return;
   }
   isQuitting = true;
+  rendererWatchdog.stop();
   markPhase('clean-exit');
 
   log.info('Quitting — stopping backend...');
@@ -2291,6 +3117,15 @@ ipcMain.handle('capture-region', async (event, rawRegion) => {
 
   const image = await win.webContents.capturePage(rect);
   return image.toDataURL();
+});
+
+// Screen recording: the macOS grant the top bar's Record button depends on, and the
+// settings pane to send the person to when it was refused (the app cannot re-prompt).
+ipcMain.handle('screen-capture-status', () => screenCapture.screenCaptureStatus(systemPreferences, process.platform));
+ipcMain.handle('open-screen-recording-settings', async () => {
+  if (process.platform !== 'darwin') return false;
+  await require('electron').shell.openExternal(screenCapture.SCREEN_RECORDING_SETTINGS_URL);
+  return true;
 });
 
 // Quit from the startup-timeout recovery panel's "Quit" button.
@@ -2619,17 +3454,95 @@ function supportFailureRecordText() {
   try { return `\n\nserver-failure.json:\n${fs.readFileSync(fatalFailure.failureRecordPath(INSTANCE_DIR), 'utf8')}`; } catch { return ''; }
 }
 
-ipcMain.handle('upgrade-flowpad', async () => {
-  if (!uvManager) return { success: false, error: 'No uv manager' };
-  // Desktop first: refuse before touching the running server or the window.
-  if (engineChangeAllowed('upgrade-flowpad IPC') !== 'allow') {
-    return { success: false, desktopUpdatePending: true, error: 'A newer FlowPad desktop must be installed first; the engine is updated after it.' };
+// `version`: the release the version popover names on its button ("Upgrade to vX") — installed exactly, so a
+// release prepared earlier is used only when it IS that one (a newer release since, or a prepared one yanked
+// since, is downloaded instead). Anything that is not a plain version string is ignored (the newest compatible).
+// The release the version popover offers on the desktop: the newest one THIS desktop runs (PyPI's newest may need
+// a newer desktop). A version when it is newer than the installed engine; false when nothing newer runs here;
+// null when it cannot be decided (PyPI unreachable) — the popover then falls back to PyPI's newest, which the
+// upgrade below checks before touching anything.
+ipcMain.handle('engine-upgrade-target', async () => {
+  if (!uvManager) return null;
+  try {
+    const picked = await uvManager.resolveCompatibleEngineVersion();
+    if (!picked) return null;
+    const installed = uvManager.getInstalledVersionSync();
+    return !installed || isNewer(installed, picked.version) ? picked.version : false;
+  } catch (err) {
+    log.info(`[update] no engine release for the version popover: ${String((err && err.message) || err).split('\n')[0]}`);
+    return false; // PyPI answered and nothing is compatible with this desktop
   }
-  const guarded = await startGuard.run('upgrade-flowpad', () => upgradeFlowpadAndRestart());
-  return guarded.skipped ? { success: false, error: 'the backend is already being started' } : guarded.result;
 });
 
-async function upgradeFlowpadAndRestart() {
+ipcMain.handle('desktop-update-info', () => desktopUpdateInfo());
+
+// "Update desktop" in the version popover: the download the offer's "Update now" starts — it opens the
+// "update ready" prompt when done (Restart now / Later), and the engine follows the new desktop after the restart.
+ipcMain.handle('desktop-update-download', async () => {
+  if (!app.isPackaged || process.windowsStore) return { started: false, reason: 'unsupported' };
+  if (desktopDownloadedVersion) return { started: true, ready: true, version: desktopDownloadedVersion };
+  if (desktopDownloadInFlight) return { started: true, version: desktopDownloadVersion };
+  if (desktopUpdateBusy()) return { started: false, reason: 'busy' };
+  // electron-updater downloads what its last check found: look at the feed now (the popover's GitHub row may be
+  // ahead of the last check).
+  const version = await getDesktopUpdateVersion({ desktopOnly: true });
+  if (!version) return { started: false, reason: desktopStatus.state === 'unknown' ? 'check-failed' : 'no-update' };
+  if (desktopDownloadInFlight) return { started: true, version: desktopDownloadVersion };
+  if (desktopUpdateBusy()) return { started: false, reason: 'busy' };
+  log.info(`[electron-updater] ${version}: download started from the version popover`);
+  offeredDesktopVersion = version;
+  pendingDesktopVersion = version;
+  downloadDesktopUpdateInBackground({ version, onDownloaded: recordOfferedWhenDownloaded(version) });
+  return { started: true, version };
+});
+
+// "Restart to update" in the version popover: the "Restart now" of the update-ready prompt — also for an update
+// postponed there with "Later", so it never has to wait for the next quit or reminder.
+ipcMain.handle('desktop-update-install', async () => {
+  if (!desktopDownloadedVersion) return { started: false, reason: 'not-downloaded' };
+  if (desktopUpdateBusy()) return { started: false, reason: 'busy' };
+  return activateUpdate('the version popover');
+});
+
+// The one ready update set (updateReadyState), and "Restart" — from the "Update Ready" toast or the top bar's indicator.
+ipcMain.handle('update-ready-info', () => updateReadyState());
+ipcMain.handle('update-activate', () => activateUpdate('Update Ready'));
+ipcMain.handle('update-ready-take-toast', () => {
+  const state = updateReadyState();
+  const take = pendingToast && state.ready;
+  pendingToast = false;
+  return take ? state : null;
+});
+
+ipcMain.handle('upgrade-flowpad', async (_event, version) => upgradeEngine(version));
+
+/** The engine upgrade the version popover (and an engine-only "Update Ready") runs: checked, then swapped. */
+async function upgradeEngine(version) {
+  if (!uvManager) return { success: false, error: 'No uv manager' };
+  const target = isInstallableVersion(version) ? version : null;
+  // Desktop first: refuse before touching the running server or the window.
+  // An old failed desktop check is looked at again first: the user is asking NOW (engineChangeAllowedAfterRecheck).
+  const policy = await engineChangeAllowedAfterRecheck('upgrade-flowpad IPC');
+  if (policy !== 'allow') {
+    // Only a newer desktop (pending or known) refuses here: a feed that does not answer falls back to the
+    // compatibility-checked path inside engineChangeAllowedAfterRecheck.
+    return { success: false, desktopUpdatePending: true, error: 'A newer FlowPad desktop must be installed first; the engine is updated after it.' };
+  }
+  if (target) {
+    // Before the server is touched: a release this desktop cannot run is refused here, with the app untouched.
+    try {
+      await uvManager._assertCandidateCompatible(target);
+    } catch (err) {
+      log.warn(`[update] upgrade to ${target} refused: ${String((err && err.message) || err).split('\n')[0]}`);
+      return { success: false, error: err.message };
+    }
+  }
+  const guarded = await startGuard.run('upgrade-flowpad', () => upgradeFlowpadAndRestart(target));
+  return guarded.skipped ? { success: false, error: 'the backend is already being started' } : guarded.result;
+}
+
+async function upgradeFlowpadAndRestart(version = null) {
+  let serverStopped = false;
   try {
     // Show loading screen
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -2638,27 +3551,81 @@ async function upgradeFlowpadAndRestart() {
     }
 
     sendStatus('Stopping server');
+    serverStopped = true;
     await uvManager._flowStop();
     await uvManager._killPort(9007);
     uvManager.isShuttingDown = false;
     uvManager._backendProcess = null;
 
-    await uvManager.upgrade({ onProgress: installProgress('Upgrading Flowpad') });
+    await uvManager.upgrade({ version, onProgress: installProgress('Upgrading Flowpad') });
 
     sendStatus('Starting server');
     await uvManager.start();
 
     sendStatus('Waiting for server');
-    const { ready } = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
+    let { ready } = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
+    // Installed, but it does not come up: the engine that worked goes back, and the app runs on it again.
+    let restoredPrevious = false;
+    if (!ready && uvManager.hasUnconfirmedActivation()) {
+      const wait = await restorePreviousEngineAndStart('did not become healthy');
+      restoredPrevious = !!(wait && wait.ready);
+      ready = restoredPrevious;
+    }
 
     if (ready && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL(BACKEND_URL);
     }
+    if (ready) {
+      noteEngineHealthy();
+      void uvManager.compileBytecodeInBackground(); // after a prepared (bytecode-less) upgrade; else a no-op
+    }
+    if (!ready) showUpgradeFailurePanel(new Error('the upgraded FlowPad engine did not become healthy'));
 
-    return { success: ready };
+    return restoredPrevious
+      ? { success: false, restoredPrevious: true, error: 'The new FlowPad engine did not start, so the previous one was restored.' }
+      : { success: ready };
   } catch (err) {
+    // The server is down and the upgrade failed (the install rolled back what it could): bring the running
+    // version back, as the engine dialog's upgrade does — never the loading screen with no backend.
+    if (serverStopped) {
+      const restored = await uvManager._recoverRunningBackendAfterFailedUpgrade(mainWindow, { waitForBackend, backendUrl: BACKEND_URL, sendStatus })
+        .catch(() => false);
+      if (!restored) showUpgradeFailurePanel(err);
+    }
     return { success: false, error: err.message };
   }
+}
+
+/**
+ * The launch's freshly installed engine did not come up (`reason`): stop it, put back the engine it replaced
+ * (UvManager.restorePreviousEngine — the cache first) and wait for THAT one. The new wait's result, or null when
+ * nothing could be put back (then the caller's own failure handling runs on the original result).
+ */
+async function restorePreviousEngineAndStart(reason) {
+  try {
+    sendStatus('Restoring the previous FlowPad engine');
+    try { await uvManager.stop(); } catch (err) { log.warn(`[update] stopping the new engine failed: ${err.message}`); }
+    uvManager.isShuttingDown = false;
+    const restored = await uvManager.restorePreviousEngine({
+      why: `did not start (${reason})`,
+      onProgress: installProgress('Restoring the previous FlowPad engine'),
+    });
+    if (!restored) return null;
+    sendStatus('Starting flowpad');
+    await uvManager.start();
+    sendStatus('Waiting for server');
+    return await waitForBackend();
+  } catch (err) {
+    log.warn(`[update] restoring the previous engine failed: ${err.message}`);
+    return null;
+  }
+}
+
+/** The popover's upgrade left no working backend: the error panel (its Quit / commands), not a stuck splash. */
+function showUpgradeFailurePanel(err) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  void showStartupErrorPanel(describeStartupFailure(err), { retryable: false })
+    .catch((e) => log.warn(`[update] showing the upgrade failure panel failed: ${e && e.message}`));
 }
 
 /**
@@ -2716,12 +3683,13 @@ ipcMain.handle('secrets:provision-sod-key', async (_event, existingValue) => {
 ipcMain.handle('open-external', async (_, url) => {
   const { shell } = require('electron');
   log.info(`[open-external] requested: ${redactUrl(url)}`);
-  // Only allow http/https URLs for security
-  if (typeof url === 'string' && /^https?:\/\//.test(url)) {
+  // Only allow http/https URLs for security — and mailto:, which hands a draft to the mail app
+  // (a page's "send by email"); no other scheme reaches the system.
+  if (typeof url === 'string' && /^(https?:\/\/|mailto:)/.test(url)) {
     await shell.openExternal(url);
     return true;
   }
-  log.warn(`[open-external] blocked non-http URL: ${redactUrl(url)}`);
+  log.warn(`[open-external] blocked URL: ${redactUrl(url)}`);
   return false;
 });
 

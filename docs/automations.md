@@ -17,9 +17,13 @@ The screen was the Events dock until 2026-10-05.
 | `/dock/automations/runs` (`?status=failed&trigger=&run=`) | Runs | Every fire: why it ran, what it did, what broke; "Run again with this event". |
 | `/dock/automations/bus` (`?tag=&target=`) | Event bus | Experts. Every event type, how often it happened, who listens, what they do; live stream; pattern sandbox; send a test event. |
 
-Simple first: presets, a picker, a prompt. Advanced is one click inside each
-block (cron, time zone, event pattern) and at the bottom of the page (run once
-ever, storm guard, the fields as JSON, an agent rule's code). The grammar is
+Simple first: a SAVED automation opens as three lines — When · Where · Then, each the backend's own
+sentence (`useAutomationWords`), each unfolding to its form (`Block` with a `summary`); a new one opens
+unfolded. Presets, a picker, a prompt. A schedule's time zone is not an "Advanced" field: a chip by
+the time shows only when the zone is not this computer's, and one searchable list sets it — under
+the calendar for "Once" (`blocks/TimeZonePicker.tsx`). The rest of Advanced is one click inside an
+event or file block (the pattern) and at the bottom of the page (run once ever, storm guard, the
+fields as JSON, an agent rule's code). The grammar is
 `ui/src/components/automations/automations-pointer.ts`; `events`, `triggers`,
 `cron` (→ the list) and `signals` (→ the bus) are retired ids
 (`ts_sdk/src/utils/ui/retired-views.ts`, `flow_sdk/core/dock_address.py`).
@@ -42,7 +46,37 @@ a request itself (`ui/tests/unit/triggers-view-url.test.ts` fails if one does).
 | `bus_map`, `match_pattern` | `automations/bus_map.py`, `tags/bus.explain_subscription_match` | the bus map; the sandbox |
 | `create`, `{id}/update`, `{id}/delete` | `automations/spec_file.py` for file-defined rows | — |
 
-## The gate and the wizard (stream inbox automations)
+## Execution is a wizard
+
+The backend compiles the existing automation declaration into a `WizardSpec`
+(`automations/compiler.py`) and calls the ordinary wizard runner
+(`automations/execution.py`). It does not create a Wizard entity or rewrite the
+automation's file. The automation screens, SDK methods and trigger fields keep
+their existing forms.
+
+The trigger handles delivery: subscription or schedule, enabled state, execution
+location, cycle prevention and storm protection. The compiled wizard calls
+ComputeOps for confirmation, subject preparation, the decision, acceptance,
+GraphWorkflow activation and the work. Legacy `actions` and schedule `instruction`
+are calls in that same sequence; legacy actions still continue after an action
+fails, and launch-only actions still return admission rather than waiting for
+their child to finish. A `then` keeps its awaited wizard behavior.
+
+Acceptance stays after confirmation and decision, before effects: a declined
+event spends no counter or `fire_once`; an accepted event spends them before
+running its work, even if that work fails. The TAG invocation keeps its existing
+per-trigger lock across those steps. Test runs omit confirmation and accounting,
+while still evaluating the message decision. Decision previews run the decision
+sequence without acceptance, effects or automation history; cached preview
+answers remain cached. Check validates the same compiled definition without importing
+executable blocks. The automation run ID is the wizard invocation ID.
+
+Overlapping Wizard invocations are recorded as skipped and do not accept a
+second fire. Execution exceptions produce terminal failed history with the
+completed-step outline. Public history keeps outlines and invocation IDs,
+not private prepared payloads or a new per-operation receipt store.
+
+## The gate and the work (stream inbox automations)
 
 An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbox-automations.md`):
 
@@ -50,11 +84,11 @@ An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbo
   API and what each answer must be. A string in the file is the sentence a person typed, worded
   into one yes/no question by the event's **subject** (`automations/decision_subjects.py` — the
   stream inbox answers for `source_item` targets with a `stream_inbox.message.state`). The gate
-  runs in the TAG fire path after every cheap check and **before the counter**: a "no" writes a
+  runs as a step in the compiled wizard after every cheap check and **before acceptance**: a "no" writes a
   `tag_declined` row (`reason_code` `decision_no` / `decision_unavailable`) and spends nothing —
   no counter, no `fire_once`, no `trigger.fired`. Every ask emits `trigger.decided`.
 - **`then`** is a wizard (`trigger.then`: a `ref`, inline `steps` + `ops`, or the `run_agent` /
-  `run_script` sugar) run by `automations/then.py` through the ordinary wizard runner with the
+  `run_script` sugar) composed by `automations/then.py` and called from the compiled wizard with the
   fire's scope: the subject's state under its key (`MESSAGE`), the `LaunchContext` the agent step
   stamps (the session keyed to the conversation, the message as a chip, what the rule decided
   under `context_data["automation"]`), the envelope under `EVENT`. The state is in scope only
@@ -78,6 +112,9 @@ An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbo
   `trigger.json` (a schedule file may still carry it inside `schedule`). Only the machine that place
   runs on arms the rule — an event rule or a file rule checked into a shared project then fires once,
   not once per clone. Empty: every machine that indexes it.
+- **A process of your own fires a rule through the relay.** A project's server or a
+  `run_script` posts `user_app.<anything>` to `POST /api/v1/tags/relay`, and a rule on
+  `"tag": {"on": "user_app.<family>.*"}` catches it (`docs/tags.md`, "Another process's events").
 - **The run a test started is one call away.** `run_once` answers `run_id` (`RunOnceStarted`);
   `Trigger.run(run_id)` — `GET trigger/run?id=`, TypeScript `Trigger.run(started.run_id)` — answers
   `status: "running"` while it works and its history row after. No status file, no polling of `runs`.
@@ -95,7 +132,55 @@ An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbo
   Check reports a missing Decision API under its own area, `decider`: the rule is fine, the machine
   is not ready.
 
+`Trigger.invoke` uses the same wizard execution path for callable hooks. The
+removed `ActivationRule` engine is not restored: testing that unsupported legacy
+rule-folder form returns the existing configuration-refusal response (422).
+
+## On, off and recommended
+
+**On/off belongs to the machine, never to the file.** A rule's switch is its row's `enabled` (with
+`decided`), both PRIVATE and guarded like a projection: only `set_trigger_on` (`builtin/trigger.py`)
+writes them, the row alone, so no re-index, `git pull` or edit to `trigger.json` can move a person's choice.
+`trigger.json` says only `recommended` (default `true`; a legacy `enabled` key is read as it).
+
+| The rule | Starts |
+|---|---|
+| made here (the rules API, a schedule added here, a seed) | on |
+| indexed from a file — it came with a project | off, undecided: it does not run |
+| Flowpad's own (`is_builtin`) | as its seed or file says — except one its file ships off (`recommended: false`, e.g. the Daily usage summary): off, and its switch is the person's (`Trigger.switchable`) |
+| on a machine the hub runs only for a deployed agent (`RuntimeKind.AGENT`) | on when recommended — the deploy was its owner's choice |
+
+A recommended undecided rule is a row of the project's setup (`automation` requirement, `project_setup.
+_automations_here`): the setup window lists it under "Recommended automations" with **Enable / Disable**
+(`POST project/<id>/setup-automation {typeid, on}`), and the "Setup required" button counts it. The
+Automations screen's switch writes the same machine-local value.
+
+## A callback into a session
+
+A session can set a one-time rule that calls back into ITSELF: `flow process schedule "<prompt>" --at
+<ISO time> | --in 2h` (`schedules` lists the waiting ones, `unschedule <id>` removes one). It is an
+ordinary `date` schedule made through `POST /graph/trigger` with one `prompt_process` action
+(`ActionType.PROMPT_PROCESS`: `target_type_id` is the session, `prompt` what it is asked). Row-only — a
+session id is one machine's, so no `trigger.json` can say it.
+
+- **Linked both ways.** `Trigger.link_process` cross-links the rule and the session with the generic
+  `cross_link_entities`; the session's toolbar shows the rule as a chip, and `pending_callbacks(process)`
+  reads the waiting ones back through that link. The screen says it as "run process <name> with prompt"
+  (`ThenPart` kind `run_process`): the name is the session's chip, "prompt" opens the text. At most `MAX_PENDING_CALLBACKS` wait per session.
+- **The fire** (`PromptProcessActionHandler` → `AgenticProcess.deliver_when_idle`): the session's closed
+  tab comes back (unselected), the prompt goes on its prompt queue — injected at the next idle edge —
+  and a stopped terminal session is started, taking the queue head as its launch prompt. No wait loop.
+  The session reads one line: `This is trigger <id> callback: <prompt> (… check it is still relevant …)`.
+- **Gone with the session.** Deleting a session deletes its waiting callbacks (`drop_callbacks`); a
+  fired one stays, as every spent one-shot does.
+
 ## Rules that are easy to break
+
+- **A one-shot whose time passed still runs, once.** The scheduler drops a run more than 60s late and a
+  `date` schedule has no next one, so a rule whose time fell while the app was closed or the machine
+  asleep would never run. `Trigger._register_schedule_job` runs an overdue, never-fired one-shot when it
+  is armed (boot, re-index, turning it on), and the scheduler's missed-run listener re-arms it. `_FIRING`
+  keeps a re-arm during the fire from starting it twice.
 
 - **Run once now** runs even when the automation is off and spends nothing a real
   fire spends: no counter bump (a once-only rule stays unspent), no storm budget,

@@ -36,7 +36,7 @@ import {
   type WorkspaceReady,
   IComputeNode,
 } from './compute-node-types';
-import type { MachineStatus, ProcessInfo } from './machine-status';
+import type { ComputeNodeSize, MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError, type ServiceRuntimeDescriptor } from './service-control';
 import { Shell } from '../shell';
 import type { NodeHealth } from '../service-endpoint';
@@ -90,6 +90,15 @@ export function vfsToOsPath(vfsPath: string, root: string): string {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ComputeNode extends EntityMerge<IComputeNode> {}
 
+/** One agent placed on a machine, as `compute_node/<id>/agents` answers it. */
+export interface NodeAgent {
+  typeid: string;
+  name: string;
+  deployment_typeid: string;
+  /** The project holding the agent, to open it there; blank when unknown. */
+  project_id: string;
+}
+
 /**
  * ComputeNode entity class.
  * Manages sandboxed execution environments for running commands and processes.
@@ -101,6 +110,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   node_provider_type?: ComputeProviderType;
   node_provider_id?: string;
   node_config?: Record<string, unknown>;
+  node_size?: ComputeNodeSize;
   fs_storage_mount_path?: string | null;
   home_dir?: string | null;
   auto_login?: boolean;
@@ -130,6 +140,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     this.node_provider_type = entity.node_provider_type;
     this.node_provider_id = entity.node_provider_id;
     this.node_config = entity.node_config;
+    this.node_size = entity.node_size;
     this.fs_storage_mount_path = entity.fs_storage_mount_path ?? undefined;
     this.home_dir = entity.home_dir ?? undefined;
     // Declaring these as class fields is NOT enough to carry them. Under the
@@ -213,6 +224,8 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
        * {@link AgenticProcess.openTab}.
        */
       launchPrompt?: string;
+      /** Tab title for the new process, pinned like a user rename. */
+      title?: string;
     },
   ): Promise<import('../../process/agentic-process').AgenticProcess> {
     const { serializeAgenticContext } = await import('../../process/agentic-context');
@@ -232,6 +245,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
       ...(options?.visible !== undefined ? { visible: options.visible } : {}),
       ...(options?.pty_mode !== undefined ? { pty_mode: options.pty_mode } : {}),
       ...(options?.launchPrompt ? { launch_prompt: options.launchPrompt } : {}),
+      ...(options?.title?.trim() ? { title: options.title.trim() } : {}),
       // This action spawns the PTY server-side for a visible process, so the
       // theme has to ride the CREATE — the later `open` only reattaches.
       ...(hostTerminalTheme() ? { theme: hostTerminalTheme() } : {}),
@@ -412,10 +426,21 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * `op` mirrors the hub's command names verbatim (`compute_node_tools.py` and
    * the `ops` dispatch table), so the pair greps as a pair.
    */
+  /** A machine someone shared with you, read from the hub when this box holds no copy of it yet
+   *  (a share granted on the hub at invite time never passed through this box). */
+  static async fetchShared(id: string): Promise<ComputeNode | null> {
+    const action = new ActionInfo('', ComputeNode.type, id, 'GET');
+    action.hubReflect = true;
+    const data = await dataManager.callAction<undefined, Partial<IComputeNode>>(action).catch(() => null);
+    return data?.id ? new ComputeNode({ ...data, remote: true }) : null;
+  }
+
   private async ops<T>(op: string, body?: Record<string, unknown>): Promise<T> {
     const action = new ActionInfo('ops', ComputeNode.type, this.id, 'POST');
     action.subpath = [op];
     if (body) action.bodyParameters = body;
+    // A machine someone shared with you lives on the hub: its ops are the hub's to answer.
+    action.hubReflect = this.remote === true;
     return dataManager.callAction<Record<string, unknown> | undefined, T>(action);
   }
 
@@ -472,6 +497,14 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * Normalized server-side into one shape across providers, so this type is no
    * longer the union of one provider's fields with another's.
    */
+  /** The agents placed on this machine (`compute_node/<id>/agents`), for its card. Hub-owned, so reflected. */
+  async agents(): Promise<NodeAgent[]> {
+    const info = new ActionInfo('agents', this.getType(), this.id, 'GET');
+    info.hubReflect = true;
+    const data = await dataManager.callAction<unknown, { agents?: NodeAgent[] }>(info);
+    return data?.agents ?? [];
+  }
+
   async status(): Promise<NodeStatus> {
     return this.ops<NodeStatus>('status');
   }

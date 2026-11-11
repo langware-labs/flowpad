@@ -79,4 +79,17 @@ describe('AskModal guide box', () => {
     await screen.findByTestId('ask-modal-prompt');
     expect(screen.getByTestId('ask-modal').className).toContain('z-[60]');
   });
+
+  it("draws the detail as markdown — a step's link is a link, not its raw URL spilling out of the dialog", async () => {
+    h.get.mockResolvedValue({
+      ...CONFIRM,
+      detail: '**[Create your Slack app](https://slack.test/apps?manifest_json=1)** then **Continue**.',
+    });
+    render(<AskModalRoot />);
+    openAskModal('q-1');
+
+    const detail = await screen.findByTestId('ask-modal-detail');
+    await waitFor(() => expect(detail.querySelector('a')?.textContent).toBe('Create your Slack app'));
+    expect(detail.textContent).not.toContain('**');
+  });
 });

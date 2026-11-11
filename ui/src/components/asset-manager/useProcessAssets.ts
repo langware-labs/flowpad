@@ -34,7 +34,8 @@ export function useProcessAssets(
    *  instead of the active one (e.g. a drill-down into `@flowpad_assistant`).
    *  `types` narrows the staging scan to those entity types (server-side);
    *  omit it for the default set. */
-  options?: { enabled?: boolean; projectId?: string; types?: readonly string[] },
+  /** `query` narrows the staging scan on the server, BEFORE it is cut at the limit. */
+  options?: { enabled?: boolean; projectId?: string; types?: readonly string[]; query?: string },
 ): UseProcessAssetsResult {
   const enabled = options?.enabled !== false;
   const explicitProjectId = options?.projectId;
@@ -42,6 +43,7 @@ export function useProcessAssets(
   // `['skill']` would otherwise rebuild `refresh` every render, and the layout
   // effect below would re-fetch on each one.
   const typesKey = options?.types?.join(',') ?? '';
+  const query = options?.query?.trim() ?? '';
 
   const [descriptors, setDescriptors] = useState<AssetDescriptor[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(enabled);
@@ -81,6 +83,7 @@ export function useProcessAssets(
         const result = await Project.getAssetsById(projectId, {
           limit: STAGING_ASSET_LIMIT,
           ...(typesKey ? { types: typesKey.split(',') } : {}),
+          ...(query ? { query } : {}),
         });
         if (tickRef.current === tick) {
           setDescriptors(result.assets);
@@ -97,7 +100,7 @@ export function useProcessAssets(
     } finally {
       if (tickRef.current === tick) setIsLoading(false);
     }
-  }, [process, enabled, explicitProjectId, typesKey]);
+  }, [process, enabled, explicitProjectId, typesKey, query]);
 
   // Re-fetch when the process identity changes (or the hook becomes enabled).
   // Layout effect, not a passive one: `refresh` sets isLoading synchronously

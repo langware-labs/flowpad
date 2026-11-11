@@ -21,7 +21,7 @@ from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.driver_runtime import DRIVERS
 from flow_sdk.ingest.ingestor import ingest_item
-from flow_sdk.ingest.legacy_lift import envelope_of
+from flow_sdk.ingest.envelope_lift import envelope_of
 from flow_sdk.schema.data_spec.channel_spec import ActionSpec
 from flow_sdk.sources import Acting
 from flow_sdk.sources.http import next_link, paginate
@@ -67,13 +67,13 @@ async def _source() -> DataSource:
 
 async def _land(
     src: DataSource, key: str, *, at: datetime | None = None, ends: bool = False, mark: MessageMarkSpec | None = None, outcomes: list | None = None,
-    text: str | None = None, item_changed: bool = False,
+    text: str | None = None, item_changed: bool = False, chips: tuple[MessageMarkSpec, ...] | None = None,
 ) -> SourceItem:
     """One message from Dana in thread ``pr-7``, ingested and projected — no sync round."""
     origin = lambda k: CloudOrigin(kind=PROVIDER, namespace=src.account_key, key=k)  # noqa: E731
     data = MessageData(
         text=text or key, sender=UserProfile(origin=origin(DANA), address=DANA), conversation=origin("pr-7"),
-        sent_at=at or datetime.now(timezone.utc), ends_conversation=ends, mark=mark,
+        sent_at=at or datetime.now(timezone.utc), ends_conversation=ends, mark=mark, conversation_marks=chips,
     )
     outcome = await ingest_item(envelope_of(MessageItem(origin=origin(key), data=data), data_source_id=str(src.id), provider=PROVIDER))
     if outcomes is not None:
@@ -136,8 +136,8 @@ async def test_an_action_the_channel_does_not_have_or_not_in_this_state_fails_an
         on_ended = await _post(str(chat.id), {"action": "approve"})
         gone = await _post(str(uuid.uuid4()), {"action": "approve"})
     # A refusal is a 4xx carrying the channel's words — a 500 reaches the person without them.
-    assert (unknown.status_code, unknown.message) == (422, "no action merge on this channel")
-    assert (on_ended.status_code, on_ended.message) == (422, "this action is not available on an ended conversation")
+    assert (unknown.status_code, unknown.message) == (422, "Data source error: no action merge on this channel")
+    assert (on_ended.status_code, on_ended.message) == (422, "Data source error: this action is not available on an ended conversation")
     assert gone.status_code == 404 and "no conversation" in gone.message
     assert script.acted == []
 
@@ -159,6 +159,25 @@ async def test_an_ending_message_ends_the_conversation_and_a_later_one_reopens_i
     assert merged.model_dump(mode="json")["ended_at"], "ended_at reaches the local wire"
     assert backfill.ended_at is not None, "a message older than the end does not reopen it"
     assert reopened.ended_at is None
+
+
+async def test_a_message_s_conversation_marks_become_the_conversation_s_chips_and_none_keeps_them():
+    repo = MessageMarkSpec(key="repo:octo/deps", label="deps")
+    bot = MessageMarkSpec(key="dependabot", label="Dependabot")
+    with scripted_provider(PROVIDER, projected=True):
+        src = await _source()
+        chat = await _chat(src)
+        read = lambda: Conversation.get_one({"id": str(chat.id)})  # noqa: E731
+        await _land(src, "opened", chips=(repo, bot))
+        chipped = await read()
+        await _land(src, "echo")
+        kept = await read()
+        await _land(src, "moved", chips=(repo,))
+        replaced = await read()
+    assert [m.label for m in chipped.marks] == ["deps", "Dependabot"]
+    assert chipped.model_dump(mode="json")["marks"][1]["key"] == "dependabot", "marks reach the local wire"
+    assert [m.label for m in kept.marks] == ["deps", "Dependabot"], "a message naming none keeps them"
+    assert [m.label for m in replaced.marks] == ["deps"]
 
 
 @contextmanager

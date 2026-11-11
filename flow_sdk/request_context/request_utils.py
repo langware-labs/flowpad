@@ -8,13 +8,12 @@ from flow_sdk.api.api_types.identifier import (
     is_valid_key,
     is_valid_named_id,
     is_valid_prop_id,
-    is_valid_uuid4,
+    is_valid_uuid,
     parse_named_id,
     parse_prop_id,
 )
-from flow_sdk.api.api_types.identifier import is_valid_uuid
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.type_id import TypeId
 
 
 def make_pairs(array: list):

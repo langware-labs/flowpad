@@ -305,6 +305,17 @@ export interface MarkdownDoc {
 /**
  * Interface for AgenticProcess entity data
  */
+/** Wire value of `agent.launch_failure` (LaunchFailureSpec). */
+export interface LaunchFailureValue {
+  code: string;
+  phase?: string;
+  fix?: string;
+  worker_type?: string | null;
+  detail?: string;
+  evidence?: string;
+  facts?: { folder?: string; provider?: string; key_hint?: string; source_name?: string };
+}
+
 export interface IAgenticProcess extends IEntity {
   instruction_content?: string;
   asset_ref?: string;
@@ -360,6 +371,9 @@ export interface IAgenticProcess extends IEntity {
   /** Backend-computed driver capability: this worker supports CLI plan mode
    *  (`--permission-mode plan`). Drives the headless-chat plan toggle. */
   supports_plan_mode?: boolean;
+  /** Backend-computed driver capability: a command can run in this session's own shell mode
+   *  (`runShellCommand`, Claude Code's `!`). */
+  supports_shell_command?: boolean;
   /** tabbed / tab_order / last_active_at come from IEntity (base-Entity fields). */
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
@@ -406,8 +420,8 @@ export interface IAgenticProcess extends IEntity {
    * Cleared only by start() on its success path.
    */
   restart_required?: boolean;
-  /** Launch-config fields behind `restart_required`; empty when none. */
-  restart_changed_fields?: string[];
+  /** Per-field value preview at start (`loaded`) vs now (`current`) behind `restart_required`; empty when none. */
+  restart_changes?: { field: string; loaded: string; current: string; summary?: string }[];
   /**
    * Reason the last worker launch failed to start (the worker exited within
    * the backend's instant-exit window). Non-null LATCHES the process out of
@@ -417,6 +431,8 @@ export interface IAgenticProcess extends IEntity {
    * (`start({ retry: true })`) or a launch that survives the window.
    */
   start_failure?: string | null;
+  /** Typed form of `start_failure` (set/cleared with it); also set while blocked on a launch prompt. */
+  launch_failure?: LaunchFailureValue | null;
   /**
    * MD5 of the worker-relevant snapshot captured at the last successful start().
    * Compared against the current snapshot on every save() to detect drift.
@@ -540,6 +556,11 @@ function isTeardownError(err: unknown): boolean {
   return err instanceof TypeError && isNetworkErrorMessage(err.message);
 }
 
+/** Headless sessions stream the transcript as JSON; a PTY has no such stream. */
+function headlessOutput(ptyMode: boolean): { outputFormat?: 'stream-json' } {
+  return ptyMode ? {} : { outputFormat: 'stream-json' };
+}
+
 // Deliberately no `implements IAgenticProcess`: that interface is the WIRE
 // shape, and this class stores the four `*_folder` fields hydrated (`FSRef`,
 // parsed from the wire's `FSRefJson`). Every other member is still checked
@@ -548,6 +569,14 @@ function isTeardownError(err: unknown): boolean {
 export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Entity type for AgenticProcess */
   static type: string = 'agentic_process';
+
+  /**
+   * Transport for a launch that names none. The app sets it to the transport of
+   * the mode the new session opens in, so its surface never switches it: a PTY
+   * opened into a chat or vibe view is switched to headless at once, and that
+   * kill drops the launch prompt. Without an app (tests, scripts) it is a PTY.
+   */
+  static defaultPtyMode: () => boolean = () => true;
 
   /**
    * Spawn a visible AgenticProcess tab and (optionally) send an initial
@@ -577,10 +606,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.openTab] No local compute node');
     const proj = project ?? dataContext.project;
-    // Transport intent: default PTY (today's behaviour). `ptyMode:false` →
+    // Transport intent: `defaultPtyMode` unless stated. `ptyMode:false` →
     // headless launch: `visible:false` so the backend skips the PTY auto-start;
     // the seeded first prompt drains headlessly server-side.
-    const ptyMode = opts?.ptyMode !== false;
+    const ptyMode = opts?.ptyMode ?? AgenticProcess.defaultPtyMode();
     // Seed the prompt onto the queue via createProcess (`launchPrompt`), which
     // enqueues it server-side BEFORE the visible auto-start. The worker then
     // boots with the queued head as its launch instruction — deterministic,
@@ -592,6 +621,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
         workdir: proj?.fs_storage_mount_path ?? undefined,
         ...(proj?.id ? { projectId: proj.id } : {}),
         workerType,
+        ...headlessOutput(ptyMode),
       },
       { visible: ptyMode, pty_mode: ptyMode, watchProcess: false, ...(prompt ? { launchPrompt: prompt } : {}) },
     );
@@ -626,8 +656,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     /** Host of the asset being opened; defaults to the active compute node. */
     computeNode?: ComputeNode;
     projectId?: string | null;
+    /** No project: run in the instance's temp folder (backend picks it). */
+    scratch?: boolean;
     /** First prompt — placed on the queue, popped as the launch instruction. */
     launchPrompt?: string;
+    /** Tab title — pinned, so the worker's auto-naming never replaces it. */
+    title?: string;
     /** Mount the Flowpad Assistant skills/agents for this worker. */
     enableAssistant?: boolean;
     /** String TypeIds stamped onto the process's `shared_context_entities`. */
@@ -639,28 +673,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
      *  `useProcessesForTarget` find this process later (e.g. the analyzer for a
      *  received transcript, keyed `claude_session/<sessionId>`). */
     target?: string;
-    /** Transport intent: true → interactive PTY (default), false → headless
-     *  JSON-stream (no PTY/xterm). */
+    /** Transport intent: true → interactive PTY, false → headless JSON-stream
+     *  (no PTY/xterm). Omitted → {@link AgenticProcess.defaultPtyMode}. */
     ptyMode?: boolean;
   }): Promise<AgenticProcess> {
     const computeNode = opts.computeNode ?? dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.launch] No local compute node');
-    const ptyMode = opts.ptyMode !== false;
+    const ptyMode = opts.ptyMode ?? AgenticProcess.defaultPtyMode();
     const process = await computeNode.createProcess(
       {
         workdir: opts.workdir,
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
+        ...(opts.scratch ? { scratch: true } : {}),
         ...(opts.workerType ? { workerType: opts.workerType } : {}),
         ...(opts.enableAssistant ? { loadFlowpadAssistant: true } : {}),
         ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),
         ...(opts.processType ? { processType: opts.processType } : {}),
         ...(opts.target ? { targetVfsPath: opts.target } : {}),
+        ...headlessOutput(ptyMode),
       },
       {
         visible: ptyMode,
         pty_mode: ptyMode,
         watchProcess: false,
         ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}),
+        ...(opts.title ? { title: opts.title } : {}),
       },
     );
     process.openTerminalDock();
@@ -1093,6 +1130,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * it at all. Null once answered; computed on every process payload.
    */
   pending_user_input?: { tool_use_id: string; tool_name: string; input: Record<string, unknown> } | null;
+  /** The worker's `/goal` was judged met (newest goal check in its transcript). */
+  goal_met?: boolean;
 
   get workerStatus(): WorkerStatus | undefined {
     return this._workerStatus;
@@ -1135,6 +1174,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Backend-computed driver capability (claude only, for now). */
   supports_plan_mode?: boolean;
 
+  /** Backend-computed: a command can run in this session's own shell mode (`runShellCommand`). */
+  supports_shell_command?: boolean;
+
   /** Tab-strip membership (base-Entity field; see IEntity.tabbed). */
   tabbed?: boolean;
 
@@ -1169,8 +1211,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    */
   restart_required: boolean = false;
 
-  /** Launch-config fields behind `restart_required` (backend save-hook). */
-  restart_changed_fields: string[] = [];
+  /** Per-field value preview at start (`loaded`) vs now (`current`) (backend save-hook). */
+  restart_changes: { field: string; loaded: string; current: string; summary?: string }[] = [];
 
   /**
    * Reason the last worker launch failed to start (instant-exit latch).
@@ -1178,6 +1220,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * explicit user retry — `start({ retry: true })` — never automatically.
    */
   start_failure: string | null = null;
+
+  launch_failure: LaunchFailureValue | null = null;
 
   /**
    * MD5 of the worker-relevant snapshot captured at the last successful start().
@@ -1713,6 +1757,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     // selects headless.
     this.pty_mode = entity.pty_mode ?? true;
     this.supports_plan_mode = entity.supports_plan_mode ?? false;
+    this.supports_shell_command = entity.supports_shell_command ?? false;
     this.tabbed = entity.tabbed ?? entity.visible ?? false;
     this.tab_order = entity.tab_order ?? 0;
     this.last_active_at = entity.last_active_at ?? null;
@@ -2303,9 +2348,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     //    same `isReadyForInput` gate the UI toggle uses, so it can't 409). READY
     //    also ignores the STALE pre-switch BUSY/terminal state right after
     //    switchMode — the resume hasn't booted yet.
-    //  - headless: no persistent worker, so a submit always enqueues / boots a
-    //    per-turn worker — it's always ready to accept the next turn.
-    const ready = () => !this.pty_mode || isReadyForInput(this);
+    //  - headless: no persistent worker, so the gate is only that no turn holds
+    //    the slot (`isBusy`, the wire `busy`) — the same predicate the backend's
+    //    switch-mode / restart 409 keys on, so a switch right after this resolves
+    //    is not refused as "a turn is in flight".
+    const ready = () => (this.pty_mode ? isReadyForInput(this) : !isBusy(this));
     const deadline = Date.now() + timeout;
     for (;;) {
       if (ready()) return;
@@ -2819,6 +2866,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * forget — observe output on the stream. `options` is reserved for per-turn
    * flags (e.g. permission mode); accepted now so the signature is stable.
    */
+  /** Server-side launch fix, then relaunch — not for headless (`relaunched: false`). */
+  async resolveLaunchFailure(fix: string): Promise<{ relaunched?: boolean } | null> {
+    const actionInfo = new ActionInfo('resolve_launch_failure', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { fix };
+    return dataManager.callAction<{ fix: string }, { relaunched?: boolean } | null>(actionInfo);
+  }
+
   async submit(instruction?: string, options?: { permissionMode?: PermissionMode }): Promise<void> {
     const actionInfo = new ActionInfo('submit', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = {
@@ -2852,6 +2906,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * subprocess via ``cancelPrompt``. Lets both the chat pane and the floating
    * assistant share one "stop generating" handler.
    */
+  /**
+   * Run `command` in this session's own shell mode (Claude Code's `! cmd`), as if the user
+   * typed it: it runs in the session's shell and its output joins the conversation. Only when
+   * `supports_shell_command`.
+   */
+  async runShellCommand(command: string): Promise<void> {
+    const actionInfo = new ActionInfo('run-shell-command', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { command };
+    await dataManager.callAction<{ command: string }, { status: string }>(actionInfo);
+  }
+
   async interruptTurn(): Promise<void> {
     // Keys on the TRANSPORT (`pty_mode`), never tab-visibility: a hidden live
     // PTY (`visible=false, pty_mode=true`) is still a PTY, and routing it to
@@ -3151,6 +3216,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     // guard, so removing the short-circuit here costs nothing on tab-switch
     // performance and removes the empty-shell-after-refresh failure mode
     // (the cached ``status === RUNNING`` could outlive the actual worker).
+    // restart() can leave this object evicted (a stopped, hidden row is retired);
+    // re-register before the request so the launch broadcast still reaches it.
+    if (!dataManager.getByTypeIdFromCache(this.typeId)) dataManager.register_new_entity(this.typeId, this);
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     // Sampled per launch, not per caller: the CLI reads the theme at startup, so
     // a mid-session toggle recolors the next worker, never the running one.

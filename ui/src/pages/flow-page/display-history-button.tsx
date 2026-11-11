@@ -4,6 +4,9 @@ import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import type { IconComp } from '@src/components/graph-view/icons/IconWithBadge';
+import { isCustomIconName, lucideByName } from '@src/lib/lucide-by-name';
+import { VIEWER_REGISTRY, type ViewType } from '@src/types/ViewType';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { displayFilePath, latestPerTarget } from './display-stack';
 import { FileText, FolderOpen, Globe, History } from 'lucide-react';
@@ -19,15 +22,18 @@ function entryLabel(entry: DisplayEntry): string {
   return entry.typeid || entry.type || 'display';
 }
 
-/** Per-entry glyph: the backend TypeInfo icon for a shown entity, else a
- *  kind-based fallback (file / globe). */
+/** The glyph for a shown target: a globe for an app, the backend TypeInfo icon
+ *  for an entity, a screen's viewer icon, else a document. */
+export function displayEntryIcon(entry: DisplayEntry): IconComp {
+  if (entry.kind === 'app') return Globe;
+  if (entry.type) return iconForType(entry.type);
+  const viewIcon = entry.view_type && VIEWER_REGISTRY[entry.view_type as ViewType]?.iconName;
+  return (viewIcon && isCustomIconName(viewIcon) && lucideByName(viewIcon)) || FileText;
+}
+
 function EntryIcon({ entry }: { entry: DisplayEntry }) {
-  if (entry.kind === 'app') return <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
-  if (entry.type) {
-    const Icon = iconForType(entry.type);
-    return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
-  }
-  return <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
+  const Icon = displayEntryIcon(entry);
+  return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
 }
 
 /**

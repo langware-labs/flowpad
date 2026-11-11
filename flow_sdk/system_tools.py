@@ -360,16 +360,16 @@ def ensure_db() -> bool:
 
 def _write_db_corruption_error(db_path: Path) -> None:
     """Write a record_error FSRecord recording the DB corruption incident."""
-    import uuid as _uuid  # noqa: PLC0415
     from datetime import datetime, timezone  # noqa: PLC0415
 
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
     try:
         rec = FSRecord(
             type=RecordType.RECORD_ERROR,
-            id=str(_uuid.uuid4()),
+            id=mint_uuid(),
             trigger="ensure_db",
             error_type="DatabaseCorruption",
             error_message=(

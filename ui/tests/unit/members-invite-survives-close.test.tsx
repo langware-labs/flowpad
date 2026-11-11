@@ -15,9 +15,9 @@ vi.mock('@sdk/react/hooks', () => ({
 vi.mock('@src/hooks/use-members', () => ({
   useMembers: () => ({
     members: [
-      { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: myRole },
-      { user_id: 'dana-id', email: 'dana@example.com', name: 'Dana', role: 'member' },
-      { user_id: 'ari-id', email: 'ari@example.com', name: 'Ari', role: 'admin' },
+      { user_id: 'me-id', email: 'me@example.com', name: 'Me', roles: [myRole] },
+      { user_id: 'dana-id', email: 'dana@example.com', name: 'Dana', roles: ['reader'] },
+      { user_id: 'ari-id', email: 'ari@example.com', name: 'Ari', roles: ['admin'] },
     ],
     addMembers,
     removeMember: vi.fn(),
@@ -37,7 +37,6 @@ vi.mock('@src/components/login-required-dialog', () => ({ ActionType: { MEMBERS:
 vi.mock('@src/components/conversation/useLocalUser', () => ({
   useLocalUser: () => ({ localUser: { id: 'me-id', email: 'me@example.com' } }),
 }));
-vi.mock('@src/components/conversation/ContactPermissionsDialog', () => ({ ContactPermissionsDialog: () => null }));
 
 // The address book (contact store). Bob Stone is known only by hub id — the
 // hub doesn't disclose other people's emails to a non-admin.

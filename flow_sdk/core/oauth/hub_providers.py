@@ -76,7 +76,7 @@ def _row_from_hub(item: dict[str, Any]) -> EnvVar | None:
     from flow_sdk.core.oauth.provider_registry import OAuthFlowKind  # noqa: PLC0415
 
     expires_at = item.get("expires_at")
-    return provider_env_var(
+    row = provider_env_var(
         name,
         display_name,
         ref_name,
@@ -91,6 +91,11 @@ def _row_from_hub(item: dict[str, Any]) -> EnvVar | None:
         expires_at=int(expires_at) if isinstance(expires_at, (int, float)) else None,
         needs_reauth=bool(item.get("needs_reauth")),
     )
+    groups = item.get("oauth_groups")
+    # A hub that predates scope groups sends none: the provider is one group, as before.
+    if isinstance(groups, list):
+        row.oauth_groups = [g for g in groups if isinstance(g, dict) and g.get("name") and g.get("credentials_name")]
+    return row
 
 
 #: The hub's provider catalogue, cached per cloud user for the life of the
@@ -109,11 +114,14 @@ def _row_from_hub(item: dict[str, Any]) -> EnvVar | None:
 #: is a deploy, and paying a round trip a minute to notice one is not a trade.
 _PROVIDER_TTL_SECONDS = 600.0
 _PROVIDER_CACHE: dict[str, tuple[float, EntityEnvVars]] = {}
+#: The providers (hub names) the hub HOLDS a token for, per user -- read from the same table fetch.
+_HUB_HELD: dict[str, frozenset[str]] = {}
 
 
 def invalidate_hub_providers() -> None:
     """Drop the cached catalogue. Called after a completed OAuth flow."""
     _PROVIDER_CACHE.clear()
+    _HUB_HELD.clear()
 
 
 def _serve_stale(user_id: str, stale: EntityEnvVars | None) -> EntityEnvVars:
@@ -151,9 +159,9 @@ async def hub_provider_rows() -> EntityEnvVars:
     stale = cached[1] if cached is not None else None
 
     try:
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        payload = await hub_get(BuiltinEntityType.USER, user_id, action="env-var", sub_path="table")
+        payload = await HubProxy.try_call("GET", BuiltinEntityType.USER, user_id, "env-var", "table")
     except Exception as e:  # noqa: BLE001
         logger.debug("[oauth] hub provider fetch failed: %s", e)
         return _serve_stale(user_id, stale)
@@ -165,18 +173,27 @@ async def hub_provider_rows() -> EntityEnvVars:
     if not isinstance(values, list):
         return _serve_stale(user_id, stale)
 
-    rows = []
+    rows, held = [], set()
     for item in values:
         if not isinstance(item, dict):
             continue
         if str(item.get("var_type") or "") != EnvVarType.OAUTH_PROVIDER_ID.value:
             continue
+        if str(item.get("var_status") or "").upper() == "AVAILABLE" and item.get("name"):
+            held.add(str(item["name"]).strip().lower())
         row = _row_from_hub(item)
         if row is not None:
             rows.append(row)
     table = EntityEnvVars(values=rows)
+    _HUB_HELD[user_id] = frozenset(held)
     _PROVIDER_CACHE[user_id] = (time.monotonic(), table)
     return table
+
+
+def hub_held_providers() -> frozenset[str]:
+    """The providers (by their hub name) the hub holds a token for, as of the last ``hub_provider_rows``."""
+    user_id = _cloud_user_id()
+    return _HUB_HELD.get(user_id, frozenset()) if user_id else frozenset()
 
 
 def union_providers(local: EntityEnvVars, hub: EntityEnvVars) -> EntityEnvVars:

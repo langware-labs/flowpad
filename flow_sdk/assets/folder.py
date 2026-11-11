@@ -14,7 +14,7 @@ from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.materialize import remove_path
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR, mount_matches
 from flow_sdk.assets.scanning import AssetCandidate, AssetScanIssue, AssetScanResult, is_in_doc_dir
-from flow_sdk.fs_store.gitignore import is_ignored, load_gitignore_stack, push_gitignore
+from flow_sdk.fs_store.gitignore import FlowIgnore, is_ignored, load_gitignore_stack, push_gitignore
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -37,7 +37,7 @@ def remove_asset_files(type_name: str, asset_ref: str | None) -> None:
 
     info = SchemaRegistry.get(type_name)
     path = Path(asset_ref) if asset_ref else None
-    if path is None or info is None or not info.owns_main_ref:
+    if path is None or info is None or not (info.owns_main_ref or info.deletes_files):
         return
     if isinstance(info.shape, File):
         owned = path.is_file() and path.suffix.lower() in info.shape.exts
@@ -103,8 +103,14 @@ def _is_project_root(directory: Path) -> bool:
     itself holds the shipped system project's source under
     ``flow_sdk/system_projects/``, whose compute ops are not the checkout's.
     The scanned root itself is never a child, so its own assets are kept.
+    A folder this user cannot look into is not a project root: the walk then
+    reports it as unreadable instead of the scan failing on its EACCES.
     """
-    return (directory / AGENTIC_ASSETS_DIR).is_dir()
+    try:
+        is_root = (directory / AGENTIC_ASSETS_DIR).is_dir()
+    except PermissionError:
+        is_root = False
+    return is_root
 
 
 class AssetFolder(DataSpec):
@@ -171,10 +177,12 @@ class AssetFolder(DataSpec):
         expanded_roots: set[Path] = set()
         # Same skip policy as every other tree walker (the indexer, the
         # markdown walk): the hardcoded vendor/build denylist plus the scanned
-        # root's `.gitignore` stack. A recursive PROJECT_DIR scan of a checkout
+        # root's `.gitignore` / `.flowignore` stack. A recursive PROJECT_DIR scan of a checkout
         # otherwise descends `ui/node_modules` and classifies tens of thousands
         # of entries — `get-assets` on a live worker took minutes for it.
         ignore_stack = load_gitignore_stack(self.path)
+        # .flowignore is asked per path, so a jump straight into a declared mount still obeys it.
+        flow = FlowIgnore()
 
         def issue(path: Path, message: str) -> None:
             if path not in failed:
@@ -192,27 +200,33 @@ class AssetFolder(DataSpec):
                     asset = None
                     # A remaining carrier in a declared folder is evidence of
                     # an incomplete asset, unlike an ordinary empty directory.
-                    if candidate.is_dir():
-                        for name in SchemaRegistry.get_all_types():
-                            info = SchemaRegistry.get(name)
-                            if info is None or not isinstance(info.shape, Folder) or not info.shape.main:
-                                continue
-                            body = candidate / info.shape.main
-                            if body.exists() or name not in SchemaRegistry.main_file_owners(body):
-                                continue
-                            carrier = info.carrier.locate(info.layout_of(candidate))
-                            if carrier == body:
-                                continue
-                            try:
-                                has_identity = not isinstance(info.carrier.read(carrier), Absent)
-                            except (OSError, ValueError) as error:
-                                issue(candidate, str(error))
-                                break
-                            if has_identity:
-                                if _remove_husk(candidate):
+                    # A folder this user cannot look into (a root-owned dir in the home,
+                    # e.g. docker's data root) holds no asset we could read: skip it
+                    # rather than fail the whole scan on its EACCES.
+                    try:
+                        if candidate.is_dir():
+                            for name in SchemaRegistry.get_all_types():
+                                info = SchemaRegistry.get(name)
+                                if info is None or not isinstance(info.shape, Folder) or not info.shape.main:
+                                    continue
+                                body = candidate / info.shape.main
+                                if body.exists() or name not in SchemaRegistry.main_file_owners(body):
+                                    continue
+                                carrier = info.carrier.locate(info.layout_of(candidate))
+                                if carrier == body:
+                                    continue
+                                try:
+                                    has_identity = not isinstance(info.carrier.read(carrier), Absent)
+                                except (OSError, ValueError) as error:
+                                    issue(candidate, str(error))
                                     break
-                                issue(candidate, f"Missing asset main document: {info.shape.main}")
-                                break
+                                if has_identity:
+                                    if _remove_husk(candidate):
+                                        break
+                                    issue(candidate, f"Missing asset main document: {info.shape.main}")
+                                    break
+                    except PermissionError as error:
+                        log.info("asset scan: skipping unreadable folder %s: %s", candidate, error)
                 except (OSError, ValueError) as error:
                     issue(candidate, str(error))
                     asset = None
@@ -247,7 +261,7 @@ class AssetFolder(DataSpec):
                 for child in entries:
                     if child.name.startswith("."):
                         continue
-                    if is_ignored(child, child.is_dir(), ignore_stack, self.path):
+                    if is_ignored(child, child.is_dir(), ignore_stack, self.path, flow):
                         continue
                     asset = collect(child, allowed)
                     if asset is not None and isinstance(asset.info.shape, Folder):

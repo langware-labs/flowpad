@@ -35,7 +35,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AlertCircle, FileSearch, Menu, PackageSearch, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { i18n } from '@lingui/core';
-import { Trans } from '@lingui/react/macro';
+import { Plural, Trans } from '@lingui/react/macro';
 
 const LS_KEY = 'flowpad-search-filters';
 
@@ -217,10 +217,14 @@ export function SearchView() {
         </h1>
         {results.length > 0 && !isLoading && (
           <Badge variant="secondary" className="text-xs">
-            {results.length} result{results.length !== 1 ? 's' : ''}
+            <Plural value={results.length} one="# result" other="# results" />
           </Badge>
         )}
-        {latencyMs != null && !isLoading && <span className="text-xs text-muted-foreground">⚡ {latencyMs} ms</span>}
+        {latencyMs != null && !isLoading && (
+          <span className="text-xs text-muted-foreground">
+            ⚡ <Trans>{latencyMs} ms</Trans>
+          </span>
+        )}
         {scanInfo?.total_indexed != null && (
           <span className="text-xs text-muted-foreground">
             {scanInfo.total_indexed.toLocaleString()} <Trans>indexed</Trans>

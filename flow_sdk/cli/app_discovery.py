@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
+
+from flow_sdk.core.dev_server import static_dev_cmd
 
 EXCLUDED_DIRS = {
     ".git",
@@ -89,6 +90,8 @@ def discover_webapps(root: str | Path, query: str = "", max_depth: int = 6) -> l
     package_roots: set[Path] = set()
 
     for package_json in _iter_files(root_path, "package.json", max_depth=max_depth):
+        if _inside_a_declared_app(package_json.parent):
+            continue
         candidate = _candidate_from_package(package_json, root_path, query_terms)
         if candidate is not None:
             candidates.append(candidate)
@@ -96,7 +99,7 @@ def discover_webapps(root: str | Path, query: str = "", max_depth: int = 6) -> l
 
     for index_html in _iter_files(root_path, "index.html", max_depth=max_depth):
         static_root = index_html.parent.resolve()
-        if _inside_any(static_root, package_roots):
+        if _inside_any(static_root, package_roots) or _inside_a_declared_app(static_root):
             continue
         candidate = _candidate_from_static(index_html, root_path, query_terms)
         if candidate is not None:
@@ -188,9 +191,9 @@ def _candidate_from_static(index_html: Path, root: Path, query_terms: set[str]) 
         name=name,
         path=str(app_dir),
         kind="static",
-        # sys.executable, not "python3": the flow CLI is itself Python, so this always
-        # names a real interpreter. `python3` is a dangling Store alias on stock Windows.
-        start_cmd=f'"{sys.executable}" -m http.server {{port}}',
+        # The folder live with Flowpad's /sdk and /api beside it — never a bare file server, on which
+        # the page's SDK is a 404. sys.executable: the flow CLI's own interpreter, which has flow_sdk.
+        start_cmd=static_dev_cmd(),
         port=None,
         health="/",
         score=score,
@@ -310,6 +313,16 @@ def _path_depth(root: Path, path: Path) -> int:
     if not _is_relative_to(path, root):
         return len(path.parts)
     return len(path.relative_to(root).parts)
+
+
+def _inside_a_declared_app(path: Path) -> bool:
+    """Whether ``path`` is, or is below, a folder with a ``webapp.json``.
+
+    Such a folder IS an app — it says how it is served, and its own ``static/`` or ``frontend/`` is a
+    part of it, not another app. Offering that part on its own starts a bare server that cannot run the
+    app's API (a static server answers 501 to every POST) and registers it as an app beside the real one.
+    """
+    return any((folder / "webapp.json").is_file() for folder in (path.resolve(), *path.resolve().parents))
 
 
 def _inside_any(path: Path, roots: Iterable[Path]) -> bool:

@@ -1,8 +1,10 @@
 /**
  * The attached channels of ONE owner — the local user's stream inbox or an agent's —
- * on the stream inbox's header line, as a row of round marks with a status dot
- * (presence-row pattern): green dot = listening, dashed ring = paused, "!" =
- * a person must act (`ATTENTION[kind].mark`). ONE mark per channel kind (provider + channel, the identity a
+ * as a row of round marks with a status dot; the host decides which line it sits on
+ * (presence-row pattern): green check = listening, dashed ring = paused. A source a person must act
+ * on (`needsPerson`) is NOT a mark: those are counted in one yellow chip before the marks, which
+ * lists them (`ChannelWarningsChip`) — never in both places.
+ * ONE mark per channel kind (provider + channel, the identity a
  * glyph draws): several sources of one kind share a mark that carries their
  * count, and hovering it lists just those sources with their switches.
  * Clicking a mark FILTERS the list to that kind; while a filter is on, the
@@ -16,7 +18,7 @@
  * delete — the settings-list pattern. On/off is the ONE pause/resume verb
  * (`useSourceToggle`); the marks themselves never toggle.
  *
- * One component, two mounts, no knowledge of which owner it serves. Its rows
+ * One component, several mounts, no knowledge of which owner it serves. Its rows
  * are exactly `DataSource.find_owned(owner)` ∩ MessageSource — the same
  * `sources` query the Data Sources screen and the row chip already share —
  * keyed on the spec's `sends`, not the row's `channel`, so a just-attached
@@ -26,9 +28,9 @@
  * featured ones (`channelOffers`): the greyed glyph with a "+", which opens the add dialog on
  * that channel. It is the absence of a source, not a state of one, so it never filters.
  */
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Agent, DataSource, type DataDriver, TypeId, User } from '@sdk';
-import { Plus, RefreshCw, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Check, Plus, RefreshCw, SlidersHorizontal, Trash2, TriangleAlert, X } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useContext } from '@src/hooks/useContext';
@@ -47,6 +49,7 @@ import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import {
   type ChannelOffer,
   channelOffers,
+  isListedChannel,
   isMessageDriverSpec,
   sourcesQuery,
   useSourceSpecs,
@@ -57,15 +60,16 @@ import { useSourceToggle } from '@src/components/data-sources/use-source-toggle'
 import { CallControls } from '@src/components/voice/CallControls';
 import {
   ATTENTION,
-  type AttentionReason,
-  type ChannelMark,
   attentionReason,
+  markOf,
+  needsPerson,
   attentionHeadline,
   attentionText,
 } from '@src/components/data-sources/source-attention';
 import { openSourceSetup } from '@src/components/setup-wizard/source-setup-store';
 import { useSourcePull } from '@src/components/data-sources/source-parts';
-import { channelKeyOf, ownerOf } from './channel-owner';
+import { AUTOMATIONS_CHANNEL, channelKeyOf, DIAGNOSIS_CHANNEL, FLOWPAD_CHANNEL, ownerOf } from './channel-owner';
+import flowpadIcon from '@src/assets/flowpad-icon.png';
 
 const EMPTY: DataSource[] = [];
 const NO_OFFERS: ChannelOffer[] = [];
@@ -87,7 +91,7 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
     () =>
       ownerKey
         ? sources
-            .filter((s) => (ownerOf(s) ?? localKey) === ownerKey && isMessageDriverSpec(specFor(s.provider)))
+            .filter((s) => (ownerOf(s) ?? localKey) === ownerKey && isListedChannel(s, specFor(s.provider)))
             .sort((a, b) => (a.name || a.provider).localeCompare(b.name || b.provider))
         : EMPTY,
     [sources, specFor, ownerKey, localKey],
@@ -97,25 +101,40 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
     () => (ownerKey ? channelOffers(specs, rows, forAgent) : NO_OFFERS),
     [specs, rows, ownerKey, forAgent],
   );
+  const builtInOffered = useBuiltInEmailOffered(forAgent && offers.some((o) => o.spec.provisioned) ? owner : null);
   // Until both lists land, `rows` is empty for want of data, not for want of channels.
-  return { rows, specFor, offers, loading: specsLoading || sourcesLoading };
+  return { rows, specFor, offers, builtInOffered, loading: specsLoading || sourcesLoading };
+}
+
+/** Whether the hub can give this agent a provisioned channel (its built-in email): asked once, when one is on offer.
+ *  `true` until the hub says otherwise — an unreachable hub is not a "no". */
+function useBuiltInEmailOffered(agent: TypeId | null | undefined): boolean {
+  const [offered, setOffered] = useState(true);
+  const id = agent?.id;
+  useEffect(() => {
+    if (!id) return;
+    let live = true;
+    Agent.getById(id)
+      .then((found) => found?.mailboxState())
+      .then((state) => live && state && setOffered(state.offered !== false))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [id]);
+  return offered;
 }
 
 type SpecFor = (provider: string) => DataDriver | undefined;
-/** How the mark draws a source, from the one classifier: lit unless its kind says otherwise. */
-const markOf = (reason: AttentionReason | null): ChannelMark => (reason ? ATTENTION[reason.kind].mark : 'on');
 
-/** Sources of one channel kind, sharing a mark. Its state is the best of its
- *  members' — one listening source lights the mark; parked beats paused — and
- *  `attention` counts the members a person must act on, so the "!" is never
- *  hidden by a listening sibling: a lit mark can still wear it. */
+/** Sources of one channel kind, sharing a mark: lit when any of them listens, dashed when all are
+ *  paused. A source a person must act on is never among them — it is in the warnings chip. */
 interface ChannelGroup {
   key: string;
   provider: string;
   channel: string;
   sources: DataSource[];
-  state: ChannelMark;
-  attention: number;
+  state: 'on' | 'off';
 }
 export function groupChannels(rows: DataSource[]): ChannelGroup[] {
   const groups = new Map<string, DataSource[]>();
@@ -126,10 +145,8 @@ export function groupChannels(rows: DataSource[]): ChannelGroup[] {
   }
   return [...groups.entries()]
     .map(([key, sources]) => {
-      const states = sources.map((s) => markOf(attentionReason(s)));
-      const state: ChannelMark = states.includes('on') ? 'on' : states.includes('parked') ? 'parked' : 'off';
-      const attention = states.filter((st) => st === 'parked').length;
-      return { key, provider: sources[0].provider, channel: sources[0].channel, sources, state, attention };
+      const state = sources.some((s) => markOf(attentionReason(s)) === 'on') ? ('on' as const) : ('off' as const);
+      return { key, provider: sources[0].provider, channel: sources[0].channel, sources, state };
     })
     .sort((a, b) => a.key.localeCompare(b.key));
 }
@@ -142,19 +159,29 @@ interface Props {
   specFor: SpecFor;
   /** Channels still to connect, drawn after the attached ones (`useAttachedChannels().offers`). */
   offers?: ChannelOffer[];
-  /** Channel keys (`channelKeyOf`) the list is narrowed to; empty = everything. */
-  selected: ReadonlySet<string>;
-  onSelectedChange: (next: Set<string>) => void;
+  /** Whether the hub can give an agent its built-in email (`useAttachedChannels().builtInOffered`). */
+  builtInOffered?: boolean;
+  /** Channel keys (`channelKeyOf`) the list is narrowed to; empty = everything. Absent with
+   *  `onSelectedChange` where there is no list to narrow (the agent page). */
+  selected?: ReadonlySet<string>;
+  onSelectedChange?: (next: Set<string>) => void;
+  /** Where there is no list to narrow, a mark press goes here with the channel's key instead of
+   *  toggling the filter — the caller opens the owner's stream inbox on that channel. */
+  onMarkPress?: (key: string) => void;
   className?: string;
 }
+
+const NO_SELECTION: ReadonlySet<string> = new Set();
 
 export function AttachedChannelsBar({
   owner,
   rows,
   specFor,
   offers = NO_OFFERS,
-  selected,
+  builtInOffered = true,
+  selected = NO_SELECTION,
   onSelectedChange,
+  onMarkPress,
   className,
 }: Props) {
   const { t } = useLingui();
@@ -163,14 +190,40 @@ export function AttachedChannelsBar({
   const [adding, setAdding] = useState<{ initial?: DataDriver } | null>(null);
   const { deleting, setDeleting, remove, confirm } = useSourceDelete();
   const filtering = selected.size > 0;
-  const groups = useMemo(() => groupChannels(rows), [rows]);
+  // A source a person must act on is counted in the chip; the marks are the rest.
+  const { flagged, groups } = useMemo(() => {
+    const flagged = rows.filter(needsPerson);
+    return { flagged, groups: groupChannels(rows.filter((s) => !flagged.includes(s))) };
+  }, [rows]);
+  const attachedProviders = useMemo(() => new Set(rows.map((r) => r.provider)), [rows]);
 
+  // Every mark is lit (shown) by default; a press dims it (filtered out) or lights it again.
+  // `selected` holds the lit ones while filtering — empty means all lit. The last lit mark stays lit.
+  const allKeys = [
+    ...(owner.type !== Agent.type ? [FLOWPAD_CHANNEL] : []),
+    ...groups.map((g) => g.key),
+    ...(owner.type !== Agent.type ? [DIAGNOSIS_CHANNEL, AUTOMATIONS_CHANNEL] : []),
+  ];
+  const lit = (key: string) => !filtering || selected.has(key);
   const pick = (key: string) => {
-    const next = new Set(selected);
+    if (onMarkPress) return onMarkPress(key);
+    const next = new Set(filtering ? selected : allKeys);
     if (next.has(key)) next.delete(key);
     else next.add(key);
-    onSelectedChange(next);
+    if (next.size === 0) return;
+    onSelectedChange?.(allKeys.every((k) => next.has(k)) ? new Set() : next);
   };
+
+  const seeAll = (
+    <button
+      type="button"
+      className="w-full border-t border-border/60 px-3 py-2 text-start text-xs text-primary hover:bg-accent"
+      onClick={() => navigation.openTab(ViewType.DATA_SOURCES)}
+      data-testid="attached-channels-see-all"
+    >
+      {t`See all sources`}
+    </button>
+  );
 
   return (
     <div
@@ -181,19 +234,55 @@ export function AttachedChannelsBar({
       role="toolbar"
       aria-label={t`Attached channels`}
     >
+      {flagged.length > 0 && (
+        <ChannelWarningsChip sources={flagged} specFor={specFor} onDelete={setDeleting} footer={seeAll} />
+      )}
+      {owner.type !== Agent.type && (
+        <BuiltInMark
+          channel={FLOWPAD_CHANNEL}
+          label={t`Flowpad — standard messages`}
+          glyph={<img src={flowpadIcon} alt="" className="size-[17px] rounded-sm" />}
+          pressed={lit(FLOWPAD_CHANNEL)}
+          onClick={() => pick(FLOWPAD_CHANNEL)}
+        />
+      )}
       {groups.map((group) => (
         <ChannelMark
           key={group.key}
           group={group}
           spec={specFor(group.provider)}
           filtering={filtering}
-          pressed={selected.has(group.key)}
+          pressed={lit(group.key)}
           onClick={() => pick(group.key)}
           onDelete={setDeleting}
         />
       ))}
+      {/* A person's own StreamInbox also narrows to Diagnosis: Diagnose & fix and the help desk it may go to. */}
+      {owner.type !== Agent.type && (
+        <BuiltInMark
+          channel={DIAGNOSIS_CHANNEL}
+          label={t`Diagnosis — diagnoses and the help desk`}
+          glyph={<DiagnosisGlyph />}
+          pressed={lit(DIAGNOSIS_CHANNEL)}
+          onClick={() => pick(DIAGNOSIS_CHANNEL)}
+        />
+      )}
+      {owner.type !== Agent.type && (
+        <BuiltInMark
+          channel={AUTOMATIONS_CHANNEL}
+          label={t`Automations — what your automations report`}
+          glyph={<AutomationsGlyph />}
+          pressed={lit(AUTOMATIONS_CHANNEL)}
+          onClick={() => pick(AUTOMATIONS_CHANNEL)}
+        />
+      )}
       {offers.map((offer) => (
-        <ChannelOfferMark key={offer.key} offer={offer} onConnect={() => setAdding({ initial: offer.spec })} />
+        <ChannelOfferMark
+          key={offer.key}
+          offer={offer}
+          unavailable={!!offer.spec.provisioned && !builtInOffered}
+          onConnect={() => setAdding({ initial: offer.spec })}
+        />
       ))}
       <CallControls rows={rows} specFor={specFor} />
       {filtering ? (
@@ -202,7 +291,7 @@ export function AttachedChannelsBar({
           variant="ghost"
           size="icon"
           className={cn(CONTROL, 'bg-foreground text-background hover:bg-foreground/85 hover:text-background')}
-          onClick={() => onSelectedChange(new Set())}
+          onClick={() => onSelectedChange?.(new Set())}
           aria-label={t`Show all channels`}
           data-testid="attached-channels-clear"
         >
@@ -241,20 +330,18 @@ export function AttachedChannelsBar({
             sources={rows}
             specFor={specFor}
             onDelete={setDeleting}
-            footer={
-              <button
-                type="button"
-                className="w-full border-t border-border/60 px-3 py-2 text-start text-xs text-primary hover:bg-accent"
-                onClick={() => navigation.openTab(ViewType.DATA_SOURCES)}
-                data-testid="attached-channels-see-all"
-              >
-                {t`See all sources`}
-              </button>
-            }
+            footer={seeAll}
           />
         </PopoverContent>
       </Popover>
-      {adding && <AddChannelDialog owner={owner} initial={adding.initial} onClose={() => setAdding(null)} />}
+      {adding && (
+        <AddChannelDialog
+          owner={owner}
+          initial={adding.initial}
+          attached={attachedProviders}
+          onClose={() => setAdding(null)}
+        />
+      )}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(next) => !next && setDeleting(null)}
@@ -275,17 +362,118 @@ const MARK_GREYED = '[&>:first-child]:opacity-45 [&>:first-child]:grayscale';
 const MARK_BADGE = 'absolute -bottom-0.5 -end-0.5 rounded-full border-2 border-background';
 const MARK_HOVER = { openDelay: 150, closeDelay: 120 };
 
-/** The add dialog as the channel line opens it: message drivers only, on `initial` when a channel was picked. */
-function AddChannelDialog({ owner, initial, onClose }: { owner: TypeId; initial?: DataDriver; onClose: () => void }) {
+/** Every source a person must act on, as ONE chip with their count; opening it lists them with the
+ *  same rows the details popover shows (the reason is the control that recovers it). */
+function ChannelWarningsChip({
+  sources,
+  specFor,
+  onDelete,
+  footer,
+}: {
+  sources: DataSource[];
+  specFor: SpecFor;
+  onDelete: (source: DataSource) => void;
+  footer: ReactNode;
+}) {
+  const { t } = useLingui();
+  const count = sources.length;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border-[1.5px] border-yellow-500/60 bg-background px-2.5 text-xs font-semibold tabular-nums text-yellow-600 transition-colors hover:border-yellow-500 dark:text-yellow-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={t`${count} channels need attention`}
+          title={t`${count} channels need attention`}
+          data-testid="channel-warnings-chip"
+        >
+          <TriangleAlert className="size-4" />
+          {count}
+        </button>
+      </PopoverTrigger>
+      {/* `onFocusOutside` is refused for the same reason as the details popover below. */}
+      <PopoverContent align="end" className="w-72 p-0" onFocusOutside={(e) => e.preventDefault()}>
+        <ChannelList
+          title={t`Needs attention · ${count}`}
+          sources={sources}
+          specFor={specFor}
+          onDelete={onDelete}
+          footer={footer}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** The add dialog as the channel line opens it: message drivers not already attached, on `initial` when a channel was picked. */
+function AddChannelDialog({
+  owner,
+  initial,
+  attached,
+  onClose,
+}: {
+  owner: TypeId;
+  initial?: DataDriver;
+  attached?: ReadonlySet<string>;
+  onClose: () => void;
+}) {
+  const only = useCallback(
+    (spec: DataDriver) => isMessageDriverSpec(spec) && !(spec.name && attached?.has(spec.name)),
+    [attached],
+  );
   return (
     <DataSourceDialog
       open
       onOpenChange={(next) => !next && onClose()}
       owner={owner}
-      only={isMessageDriverSpec}
+      only={only}
       initial={initial}
       variant="channel"
     />
+  );
+}
+
+function DiagnosisGlyph() {
+  const { Base } = sourceGlyphs({ icon_name: 'Stethoscope' }, DIAGNOSIS_CHANNEL);
+  return <Base className="size-[17px]" />;
+}
+
+function AutomationsGlyph() {
+  const { Base } = sourceGlyphs({ icon_name: 'Zap' }, AUTOMATIONS_CHANNEL);
+  return <Base className="size-[17px]" />;
+}
+
+/** A mark for a channel no data source delivers (Flowpad, Diagnosis): no listening state — it only
+ *  narrows the list to the conversations that carry that channel. */
+export function BuiltInMark({
+  channel,
+  label,
+  glyph,
+  pressed,
+  onClick,
+  badge,
+}: {
+  channel: string;
+  label: string;
+  glyph: ReactNode;
+  pressed: boolean;
+  onClick: () => void;
+  badge?: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={pressed}
+      aria-label={label}
+      title={label}
+      className={cn(MARK, 'border-border bg-background', !pressed && MARK_GREYED)}
+      data-testid="attached-channel"
+      data-provider={channel}
+    >
+      {glyph}
+      {badge}
+    </button>
   );
 }
 
@@ -311,13 +499,12 @@ function ChannelMark({
   const { t } = useLingui();
   // The channel's mark, badged with whose way it is (Flow's), as on the data source rows.
   const { Base, Badge } = sourceGlyphs(spec, group.channel);
-  const { state, attention } = group;
+  const { state } = group;
   const count = group.sources.length;
   const title = spec?.title || group.provider;
   // Inline, not a helper taking `t`: the lingui macro only compiles a `t` it can
-  // see come from `useLingui()`. A member that needs a person names the mark
-  // "needs attention" even while a sibling listens.
-  const stateLabel = attention > 0 ? t`needs attention` : state === 'on' ? t`listening` : t`paused`;
+  // see come from `useLingui()`.
+  const stateLabel = state === 'on' ? t`listening` : t`paused`;
   return (
     <HoverCard {...MARK_HOVER}>
       <HoverCardTrigger asChild>
@@ -330,27 +517,21 @@ function ChannelMark({
             MARK,
             'bg-background',
             state === 'off' ? 'border-dashed border-border' : 'border-border',
-            pressed && 'border-primary ring-1 ring-primary',
-            ((filtering && !pressed) || state === 'off') && MARK_GREYED,
+            (!pressed || state === 'off') && MARK_GREYED,
           )}
           data-testid="attached-channel"
           data-provider={group.provider}
           data-count={count}
           data-state={state}
-          data-attention={attention}
         >
           {/* The badge sits top-right here: bottom-right is the listening dot's. */}
           <IconWithBadge Base={Base} Badge={Badge} className="size-[17px]" badgeClassName="-top-1 bottom-auto" />
-          {state === 'on' && attention === 0 && <span className={cn(MARK_BADGE, 'size-2.5 bg-emerald-500')} />}
-          {attention > 0 && (
+          {state === 'on' && (
             <span
-              className={cn(
-                MARK_BADGE,
-                'grid size-3.5 place-items-center bg-amber-500 text-[9px] font-bold leading-none text-white',
-              )}
-              data-testid="attached-channel-attention"
+              className={cn(MARK_BADGE, 'grid size-3.5 place-items-center bg-emerald-500 text-white')}
+              data-testid="attached-channel-on"
             >
-              !
+              <Check className="size-2" strokeWidth={4} />
             </span>
           )}
           {count > 1 && (
@@ -377,7 +558,16 @@ function ChannelMark({
 
 /** A channel still to connect: the greyed glyph with a "+" where an attached mark carries its
  *  status dot. Pressing it opens the add dialog on that channel; hovering says what it is for. */
-function ChannelOfferMark({ offer, onConnect }: { offer: ChannelOffer; onConnect: () => void }) {
+function ChannelOfferMark({
+  offer,
+  onConnect,
+  unavailable = false,
+}: {
+  offer: ChannelOffer;
+  onConnect: () => void;
+  /** The hub does not offer this channel: shown, disabled, with why — never a failed click. */
+  unavailable?: boolean;
+}) {
   const { t } = useLingui();
   const Glyph = lucideByName(offer.iconName);
   const { label } = offer;
@@ -386,27 +576,43 @@ function ChannelOfferMark({ offer, onConnect }: { offer: ChannelOffer; onConnect
       <HoverCardTrigger asChild>
         <button
           type="button"
-          onClick={onConnect}
-          aria-label={t`Connect ${label}`}
+          onClick={unavailable ? undefined : onConnect}
+          aria-disabled={unavailable || undefined}
+          aria-label={unavailable ? t`${label} is off on this hub` : t`Connect ${label}`}
           className={cn(
             MARK,
             MARK_GREYED,
-            'border-transparent bg-muted/50 hover:[&>:first-child]:opacity-100 hover:[&>:first-child]:grayscale-0',
+            'border-transparent bg-muted/50',
+            unavailable
+              ? 'cursor-not-allowed opacity-40'
+              : 'hover:[&>:first-child]:opacity-100 hover:[&>:first-child]:grayscale-0',
           )}
           data-testid="channel-offer"
           data-channel={offer.key}
+          data-unavailable={unavailable || undefined}
         >
           <Glyph className="size-[17px]" />
-          <span className={cn(MARK_BADGE, 'grid size-3.5 place-items-center bg-muted-foreground text-background')}>
-            <Plus className="size-2.5" strokeWidth={3} />
-          </span>
+          {!unavailable && (
+            <span className={cn(MARK_BADGE, 'grid size-3.5 place-items-center bg-muted-foreground text-background')}>
+              <Plus className="size-2.5" strokeWidth={3} />
+            </span>
+          )}
         </button>
       </HoverCardTrigger>
-      <HoverCardContent align="start" className="w-64 space-y-2 p-3 text-[13px]">
-        <div>{t`Get your ${label} messages here, and answer them from Flowpad.`}</div>
-        <Button size="sm" onClick={onConnect} data-testid="channel-offer-connect">
-          {t`Connect ${label}`}
-        </Button>
+      <HoverCardContent align="start" className="w-64 space-y-2 p-3 text-[13px]" data-testid="channel-offer-card">
+        {unavailable ? (
+          <>
+            <div className="font-medium">{t`${label} is off on this hub`}</div>
+            <div className="text-muted-foreground">{t`Whoever runs the hub can turn it on. Gmail works here meanwhile.`}</div>
+          </>
+        ) : (
+          <>
+            <div>{t`Get your ${label} messages here, and answer them from Flowpad.`}</div>
+            <Button size="sm" onClick={onConnect} data-testid="channel-offer-connect">
+              {t`Connect ${label}`}
+            </Button>
+          </>
+        )}
       </HoverCardContent>
     </HoverCard>
   );

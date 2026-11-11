@@ -71,7 +71,7 @@ describe('ProjectAgentsStrip agent actions', () => {
     const agent = h.agents[0];
 
     await user.click(screen.getByTestId('project-agent-tile'));
-    expect(h.launch).toHaveBeenCalledWith(agent, PROJECT_ID);
+    expect(h.launch).toHaveBeenCalledWith(agent, PROJECT_ID, { fresh: false });
     expect(h.openDock).not.toHaveBeenCalled();
 
     await user.click(screen.getByTestId('project-agent-edit'));
@@ -88,7 +88,7 @@ describe('ProjectAgentsStrip agent actions', () => {
     expect(use).toHaveTextContent('Use agent');
 
     await user.click(use);
-    expect(h.launch).toHaveBeenCalledWith(h.agents[0], PROJECT_ID);
+    expect(h.launch).toHaveBeenCalledWith(h.agents[0], PROJECT_ID, { fresh: false });
     expect(h.openDock).not.toHaveBeenCalled();
   });
 

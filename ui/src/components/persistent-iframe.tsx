@@ -4,6 +4,10 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 interface PersistentIframeProps {
   src: string;
   cacheKey?: number;
+  /** What the guest may do. Read once, when the frame is created: an app's own posture by default. */
+  sandbox?: string;
+  /** Which browser features the guest may ask for (camera, clipboard, …). Read once, like `sandbox`. */
+  allow?: string;
   className?: string;
   testId?: string;
   onLoad?: () => void;
@@ -30,6 +34,22 @@ type IframeOwner = symbol;
 // fade-out still plays before it flips.
 const PARKED_CLASS = 'absolute invisible opacity-0 pointer-events-none transition-[opacity,visibility] duration-200';
 const SHOWN_CLASS = 'absolute visible opacity-100 pointer-events-auto transition-[opacity,visibility] duration-200';
+
+// A served app runs on its own origin with full browser powers.
+const APP_SANDBOX =
+  'allow-scripts allow-same-origin allow-forms allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-popups-to-escape-sandbox allow-popups allow-downloads allow-storage-access-by-user-activation';
+const APP_ALLOW =
+  'accelerometer; autoplay; camera; encrypted-media; fullscreen; geolocation; gyroscope; microphone; midi; clipboard-read; clipboard-write; payment; usb; xr-spatial-tracking; screen-wake-lock; magnetometer; gamepad; picture-in-picture; display-capture';
+
+/** The highest z-index among an element's ancestors: the level its top stacking context paints at. */
+function stackLevelOf(el: HTMLElement): string {
+  let level = 0;
+  for (let e: HTMLElement | null = el; e; e = e.parentElement) {
+    const z = parseInt(getComputedStyle(e).zIndex, 10);
+    if (!Number.isNaN(z)) level = Math.max(level, z);
+  }
+  return level ? String(level) : '';
+}
 
 // Global iframe registry that keeps iframes in fixed DOM locations
 class IframeRegistry {
@@ -111,6 +131,8 @@ class IframeRegistry {
       onLoad?: () => void;
       onError?: (error: Error) => void;
       testId?: string;
+      sandbox?: string;
+      allow?: string;
     },
   ): { iframe: HTMLIFrameElement; container: HTMLDivElement } {
     const key = src;
@@ -127,10 +149,9 @@ class IframeRegistry {
       const iframe = document.createElement('iframe');
       iframe.className = 'w-full h-full border-0';
       if (config.testId) iframe.dataset.testid = config.testId;
-      iframe.sandbox =
-        'allow-scripts allow-same-origin allow-forms allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-popups-to-escape-sandbox allow-popups allow-downloads allow-storage-access-by-user-activation';
-      iframe.allow =
-        'accelerometer; autoplay; camera; encrypted-media; fullscreen; geolocation; gyroscope; microphone; midi; clipboard-read; clipboard-write; payment; usb; xr-spatial-tracking; screen-wake-lock; magnetometer; gamepad; picture-in-picture; display-capture';
+      iframe.setAttribute('sandbox', config.sandbox ?? APP_SANDBOX);
+      const allow = config.allow ?? APP_ALLOW;
+      if (allow) iframe.allow = allow;
 
       // Set initial loading state
       this.loadingStates.set(key, true);
@@ -213,6 +234,10 @@ class IframeRegistry {
 
       // Position iframe over the target
       this.updateIframePosition(src, targetElement);
+
+      // The frame lives in a body-level portal, so it must take the stacking level of the
+      // slot it covers — inside a dialog (z-50) it would otherwise paint under the dialog.
+      if (container.parentElement) container.parentElement.style.zIndex = stackLevelOf(targetElement);
 
       // Show iframe
       container.className = SHOWN_CLASS;
@@ -354,8 +379,36 @@ class IframeRegistry {
 
 const registry = IframeRegistry.getInstance();
 
+/**
+ * The epoch each frame was last shown at, by `src`.
+ *
+ * The host re-keys its body to signal "something changed behind the same
+ * address", which REMOUNTS this viewer — but the iframe registry parks frames by
+ * `src` and hands the same document back, so a remount alone reloads nothing, and
+ * component state cannot tell a new epoch from a tab coming back into view. Held
+ * per `src` here: a new epoch reloads, the same epoch does not.
+ */
+const shownAtEpoch = new Map<string, number>();
+
+export function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => void): void {
+  if (!src || epoch === undefined) return;
+  const seen = shownAtEpoch.get(src);
+  shownAtEpoch.set(src, epoch);
+  if (seen !== undefined && seen !== epoch) reload();
+}
+
+/**
+ * Free the frame kept for `src` — its guest document, its load state and its epoch. For the owner
+ * of a view's lifetime (the app pool, when the view's tab closes); a display that merely unmounts
+ * parks its frame instead.
+ */
+export function releaseFrame(src: string): void {
+  registry.cleanup(src);
+  shownAtEpoch.delete(src);
+}
+
 const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProps>(
-  ({ src, cacheKey, testId, onLoad, onError }, ref) => {
+  ({ src, cacheKey, sandbox, allow, testId, onLoad, onError }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const ownerRef = useRef<IframeOwner>(Symbol('persistent-iframe-owner'));
     const [, forceUpdate] = useState({});
@@ -369,8 +422,8 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     // a status that is always 0 -- measured identical whether the dev server was
     // alive or refusing connections. It therefore reported "available"
     // unconditionally, and its `catch` for connection-refused was unreachable.
-    // Availability is decided by `useWebappDiagnostics`, which asks the endpoint's
-    // machine to probe its port directly. This component is purely the
+    // Availability is decided by the app's lifecycle record (`useAppLifecycle`), which the backend keeps
+    // from its own probes. This component is purely the
     // mechanism: it mounts a frame and reports load state.
     const refreshIframe = useCallback(() => {
       registry.refresh(src);
@@ -394,8 +447,6 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     // Get current iframe states
     const isIframeLoading = registry.getLoadingState(src);
     const isIframeError = registry.getErrorState(src);
-
-
 
     const showIframe = useCallback(() => {
       if (containerRef.current && !isIframeError) {
@@ -421,10 +472,12 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
           triggerUpdate();
         },
         testId,
+        sandbox,
+        allow,
       };
 
       registry.getOrCreateIframe(src, config);
-    }, [src, onLoad, onError, testId, triggerUpdate]);
+    }, [src, onLoad, onError, testId, sandbox, allow, triggerUpdate]);
 
     // Auto-show iframe when ready and container is available
     useEffect(() => {

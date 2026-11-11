@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetMode, WIKI_FRAGMENT_PARAM } from '@src/navigation/asset-doc-types';
@@ -37,7 +38,7 @@ export function HubAssetsPage() {
   if (!pointer || pointer.mode !== AssetMode.WIKI) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Invalid Hub asset URL
+        <Trans>Invalid Hub asset URL</Trans>
       </div>
     );
   }

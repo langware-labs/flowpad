@@ -16,7 +16,7 @@ vi.mock('@sdk', async (importOriginal) => {
 });
 vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => false }));
 
-import { hubEndpointTypeIds, useHubRemaining } from '@src/components/llm-sources/use-hub-remaining';
+import { hubEndpointTypeIds, sponsorOf, useHubRemaining } from '@src/components/llm-sources/use-hub-remaining';
 
 const HUB_ID = '00000000-0000-4000-8000-000000000003';
 const HUB = `llm_endpoint-${HUB_ID}`;
@@ -40,7 +40,10 @@ describe('useHubRemaining', () => {
 
   it('in-use scope reads only what a harness is spending, not every endpoint on offer', () => {
     const OTHER = '00000000-0000-4000-8000-000000000009';
-    const more = { ...funding, available: [...funding.available, { id: OTHER, name: 'idle', kind: 'hub' }] } as LLMFundingStatus;
+    const more = {
+      ...funding,
+      available: [...funding.available, { id: OTHER, name: 'idle', kind: 'hub' }],
+    } as LLMFundingStatus;
     expect(hubEndpointTypeIds(more, 'all')).toEqual([HUB, `llm_endpoint-${OTHER}`]);
     expect(hubEndpointTypeIds(more, 'in-use')).toEqual([HUB]);
   });
@@ -51,8 +54,15 @@ describe('useHubRemaining', () => {
       dim: '',
       hops: [
         {
-          id: HUB_ID, name: 'x', provider: 'openrouter', is_root: true, has_credential: true, enabled: true,
-          breaker: { state: 'closed', open_until: null }, limits: {}, effective_filters: {},
+          id: HUB_ID,
+          name: 'x',
+          provider: 'openrouter',
+          is_root: true,
+          has_credential: true,
+          enabled: true,
+          breaker: { state: 'closed', open_until: null },
+          limits: {},
+          effective_filters: {},
           remaining: { cost_usd_total: { limit: 3, used: 0.42, remaining: 2.58, window: 'total', resets_at: null } },
         },
       ],
@@ -62,5 +72,27 @@ describe('useHubRemaining', () => {
     expect(result.current[HUB]?.key).toBe('cost_usd_total');
     expect(h.getChain).toHaveBeenCalledTimes(1);
     expect(h.getChain).toHaveBeenCalledWith(HUB_ID);
+  });
+});
+
+describe('sponsorOf', () => {
+  it('names the organization and team whose pools sit on the primary path', () => {
+    const chain = {
+      paths: [['me', 'team', 'org', 'root']],
+      hops: [
+        { id: 'me', source_kind: 'user', scope_name: null },
+        { id: 'team', source_kind: 'team', scope_name: 'Dev' },
+        { id: 'org', source_kind: 'organization', scope_name: 'Langware' },
+        { id: 'root', source_kind: 'global', scope_name: null },
+      ],
+    } as unknown as LLMChain;
+    expect(sponsorOf(chain)).toEqual({ organization: 'Langware', team: 'Dev' });
+  });
+
+  it('is empty for a personal or unread chain', () => {
+    expect(sponsorOf(undefined)).toEqual({});
+    expect(sponsorOf({ paths: [['me']], hops: [{ id: 'me', source_kind: 'user' }] } as unknown as LLMChain)).toEqual(
+      {},
+    );
   });
 });

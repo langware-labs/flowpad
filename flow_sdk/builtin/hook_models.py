@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
-from pydantic import BaseModel
+from pydantic import BaseModel, PrivateAttr
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.builtin.change_event import ChangeEvent
@@ -94,6 +94,8 @@ class ExecutedAction(BaseModel):
     trigger_name: str
     action_type: ActionType
     counter: int
+    # Keep invocation evidence out of the existing hook wire response.
+    _execution: Any = PrivateAttr(default=None)
 
 
 
@@ -427,7 +429,7 @@ class RunAgentActionHandler(TriggerActionHandler):
         # refusal, checked here before `launch` — which would refuse too, but only
         # after announcing a run: every tick of a schedule on a switched-off place
         # would emit `agent.run.requested` / `failed`.
-        if not agent.enabled_on(deployment.id):
+        if not agent.enabled:
             return PromptResult.refused(
                 f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: agent {agent.name!r} is disabled "
                 f"on place {deployment.id}."
@@ -478,12 +480,49 @@ async def _finish_agent_run(process: Any) -> None:
         _log.exception("RUN_AGENT: could not finish run %s", getattr(process, "id", "?"))
 
 
+def callback_text(trigger_id: str, prompt: str) -> str:
+    """What a session reads when a trigger it set calls it back, as one line."""
+    return (
+        f"This is trigger {trigger_id} callback: {' '.join(prompt.split())} "
+        "(You set this earlier in this session. Before acting, check it is still relevant and still "
+        "makes sense; if it is not, say so in one line and do nothing else.)"
+    )
+
+
+class PromptProcessActionHandler(TriggerActionHandler):
+    """Handler for PROMPT_PROCESS — call back into the session that set the trigger.
+
+    The session is the action's ``target_type_id``. It is started when stopped and gets the
+    prompt once idle (``AgenticProcess.deliver_when_idle``); the answer is admission, like
+    every launch-only action. A session that no longer exists is NOT_FOUND — a failed run.
+    """
+
+    async def execute(
+        self,
+        trigger: Any,
+        action: Optional["TriggerAction"] = None,
+        changes: Optional[list["ChangeEvent"]] = None,
+    ) -> Any:
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
+        prompt = str(getattr(action, "prompt", "") or "").strip()
+        if not prompt:
+            raise ValueError(f"PROMPT_PROCESS on {getattr(trigger, 'name', '?')!r} has no prompt")
+        process = await trigger.target_process()
+        if process is None:
+            return PromptResult.not_found("The session this was set from no longer exists.")
+        return await process.deliver_when_idle(
+            callback_text(str(getattr(trigger, "id", "") or ""), prompt), source="trigger"
+        )
+
+
 _ACTION_HANDLERS: dict[ActionType, TriggerActionHandler] = {
     ActionType.NOP: NopActionHandler(),
     ActionType.NOTIFY_ENTITY: NotifyEntityActionHandler(),
     ActionType.RUN_SCRIPT: RunScriptActionHandler(),
     ActionType.CALLBACK: CallbackActionHandler(),
     ActionType.RUN_AGENT: RunAgentActionHandler(),
+    ActionType.PROMPT_PROCESS: PromptProcessActionHandler(),
 }
 
 

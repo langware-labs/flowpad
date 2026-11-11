@@ -38,6 +38,8 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
   const cursorIndex = journal?.indexIn(graph) ?? -1;
   const doneIds = journal?.doneNodeIds() ?? NO_DONE_IDS;
   const complete = !!journal?.isComplete;
+  const stepCount = graph.length;
+  const stepsLeft = journal?.steps_left ?? 0;
 
   const show = () => {
     clearJourneyDismissed();
@@ -61,9 +63,9 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight">{journey.name}</h1>
           <p className="text-sm text-muted-foreground" data-testid="journey-viewer-status">
-            {graph.length} steps
-            {journal ? ` · ${STATUS_LABEL[journal.status ?? ''] ?? journal.status}` : ' · not started'}
-            {journal && !complete ? ` · ${journal.steps_left ?? 0} left` : ''}
+            <Trans>{stepCount} steps</Trans>
+            {journal ? ` · ${STATUS_LABEL[journal.status ?? ''] ?? journal.status}` : ` · ${t`not started`}`}
+            {journal && !complete ? ` · ${t`${stepsLeft} left`}` : ''}
           </p>
         </div>
       </header>
@@ -181,36 +183,42 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
             </p>
           ) : (
             <ul className="divide-y divide-border">
-              {history.map((h) => (
-                <li key={h.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                  <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="w-24 shrink-0 font-medium">{STATUS_LABEL[h.status ?? ''] ?? h.status}</span>
-                  <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                    {h.entries?.length ?? 0} of {h.total_steps ?? graph.length} done
-                    {h.cursor ? ` · at ${h.cursor}` : ''}
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busy || h.isActive}
-                    title={t`Resume this run`}
-                    onClick={() =>
-                      run(
-                        () => Journey.resume(h.id),
-                        () => {
-                          setHistory(null);
-                          show();
-                        },
-                      )
-                    }
-                    className="h-7 px-2 text-xs"
-                    data-testid="journey-history-resume"
-                  >
-                    {h.isActive ? <Trans>Current</Trans> : <Trans>Resume</Trans>}
-                  </Button>
-                </li>
-              ))}
+              {history.map((h) => {
+                const doneCount = h.entries?.length ?? 0;
+                const totalSteps = h.total_steps ?? graph.length;
+                return (
+                  <li key={h.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                    <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="w-24 shrink-0 font-medium">{STATUS_LABEL[h.status ?? ''] ?? h.status}</span>
+                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                      <Trans>
+                        {doneCount} of {totalSteps} done
+                      </Trans>
+                      {h.cursor ? ` · at ${h.cursor}` : ''}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy || h.isActive}
+                      title={t`Resume this run`}
+                      onClick={() =>
+                        run(
+                          () => Journey.resume(h.id),
+                          () => {
+                            setHistory(null);
+                            show();
+                          },
+                        )
+                      }
+                      className="h-7 px-2 text-xs"
+                      data-testid="journey-history-resume"
+                    >
+                      {h.isActive ? <Trans>Current</Trans> : <Trans>Resume</Trans>}
+                    </Button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

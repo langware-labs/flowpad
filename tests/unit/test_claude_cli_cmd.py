@@ -105,8 +105,9 @@ def test_model_tier_persists_raw_and_emits_resolved_model():
     assert cmd.to_json()["model"] == "sm"
 
     argv, _env = cmd.to_spawn_args()
-    assert argv[argv.index("--model") + 1] == "claude-haiku-5-5"
-    assert "--model claude-haiku-5-5" in cmd.to_shell_string()
+    # The claude CLI's own size word: its installed version picks the model (no ids in code).
+    assert argv[argv.index("--model") + 1] == "haiku"
+    assert "--model haiku" in cmd.to_shell_string()
 
 
 def test_no_model():
@@ -324,3 +325,24 @@ def test_an_agents_disallowed_tools_become_its_workers():
 
     agent = Agent(name="careful", worker_type="claude", disallowed_tools=DENY)
     assert agent.to_agent_options().disallowed_tools == DENY
+
+
+def test_claude_trusts_reads_workspace_trust_for_the_folder_itself(tmp_path):
+    """Claude exits on --worktree in an untrusted folder ("Workspace trust not yet accepted"); the launch
+    checks this first and starts Claude plainly there, so its own trust prompt shows."""
+    import json
+
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude.trust import claude_trusts
+    from flow_sdk.instance_settings import get_instance_settings
+
+    folder = tmp_path / "repo"
+    (folder / "sub").mkdir(parents=True)
+    settings = get_instance_settings().user_home / ".claude.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(json.dumps({"projects": {}}))
+    assert not claude_trusts(str(folder))
+    settings.write_text(json.dumps({"projects": {str(folder.resolve()): {"hasTrustDialogAccepted": True}}}))
+    assert claude_trusts(str(folder))
+    # A trusted folder above does not count: Claude refused --worktree with ``/`` trusted.
+    settings.write_text(json.dumps({"projects": {"/": {"hasTrustDialogAccepted": True}}}))
+    assert not claude_trusts(str(folder / "sub"))

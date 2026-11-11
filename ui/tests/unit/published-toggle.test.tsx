@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { TooltipProvider } from '@src/components/ui/tooltip';
 import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -63,7 +64,7 @@ describe('PublishedToggle', () => {
   it('publishes through the entity action and reflects the adopted row', async () => {
     const e = entity();
     const onChanged = vi.fn();
-    const { rerender } = render(<PublishedToggle entity={e as any} onChanged={onChanged} />);
+    const { rerender } = render(<TooltipProvider delayDuration={0}><PublishedToggle entity={e as any} onChanged={onChanged} /></TooltipProvider>);
     expect(screen.getByTestId('published-toggle')).toHaveAttribute('data-state', 'unpublished');
 
     await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
@@ -72,14 +73,14 @@ describe('PublishedToggle', () => {
     expect(onChanged).toHaveBeenCalledWith(e);
     expect(mocks.success).toHaveBeenCalled();
     // The prop-passed entity was mutated by the (mocked) adoption; a re-render shows it.
-    rerender(<PublishedToggle entity={e as any} onChanged={onChanged} />);
+    rerender(<TooltipProvider delayDuration={0}><PublishedToggle entity={e as any} onChanged={onChanged} /></TooltipProvider>);
     expect(screen.getByTestId('published-toggle')).toHaveAttribute('data-state', 'published');
     expect(screen.getByRole('button', { name: 'Published' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('unpublishes a published asset', async () => {
     const e = entity({ published: true });
-    render(<PublishedToggle entity={e as any} />);
+    render(<TooltipProvider delayDuration={0}><PublishedToggle entity={e as any} /></TooltipProvider>);
     await userEvent.click(screen.getByRole('button', { name: 'Published' }));
     await waitFor(() => expect(e.setPublished).toHaveBeenCalledWith(false, PROJECT_ID));
   });
@@ -87,7 +88,7 @@ describe('PublishedToggle', () => {
   it('shows the backend refusal and leaves the state alone', async () => {
     const e = entity();
     e.setPublished.mockRejectedValue(new Error('only assets inside the project folder can be published'));
-    render(<PublishedToggle entity={e as any} />);
+    render(<TooltipProvider delayDuration={0}><PublishedToggle entity={e as any} /></TooltipProvider>);
     await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
     await waitFor(() => expect(mocks.error).toHaveBeenCalled());
     expect(mocks.error.mock.calls[0][0].message).toMatch(/inside the project folder/);
@@ -96,28 +97,29 @@ describe('PublishedToggle', () => {
 
   it('renders nothing on the hub runtime', () => {
     mocks.hubOnly = true;
-    render(<PublishedToggle entity={entity() as any} />);
+    render(<TooltipProvider delayDuration={0}><PublishedToggle entity={entity() as any} /></TooltipProvider>);
     expect(screen.queryByTestId('published-toggle')).not.toBeInTheDocument();
   });
 
   it('renders nothing for a type that cannot be published', () => {
-    render(<PublishedToggle entity={entity({ type: 'task' }) as any} />);
+    render(<TooltipProvider delayDuration={0}><PublishedToggle entity={entity({ type: 'task' }) as any} /></TooltipProvider>);
     expect(screen.queryByTestId('published-toggle')).not.toBeInTheDocument();
   });
 
   it('renders nothing for an asset another project owns', () => {
-    render(<PublishedToggle entity={entity({ project_id: OTHER_PROJECT_ID }) as any} />);
+    render(<TooltipProvider delayDuration={0}><PublishedToggle entity={entity({ project_id: OTHER_PROJECT_ID }) as any} /></TooltipProvider>);
     expect(screen.queryByTestId('published-toggle')).not.toBeInTheDocument();
   });
 
   it('renders nothing for a system asset', () => {
-    render(<PublishedToggle entity={entity({ scope: 'system' }) as any} />);
+    render(<TooltipProvider delayDuration={0}><PublishedToggle entity={entity({ scope: 'system' }) as any} /></TooltipProvider>);
     expect(screen.queryByTestId('published-toggle')).not.toBeInTheDocument();
   });
 
-  it('carries an info glyph that explains what Published does', async () => {
-    render(<PublishedToggle entity={entity() as any} />);
-    await userEvent.click(screen.getByTestId('published-info'));
+  it('explains what Published does in the button tooltip', async () => {
+    render(<TooltipProvider delayDuration={0}><PublishedToggle entity={entity() as any} /></TooltipProvider>);
+    await userEvent.hover(screen.getByTestId('published-toggle'));
+    await screen.findAllByTestId('published-info');
     const text = document.body.textContent ?? '';
     expect(text).toContain('project_manifest.json');
     expect(text).toContain('flow asset install');

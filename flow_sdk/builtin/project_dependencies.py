@@ -78,6 +78,8 @@ _TASKS: dict[str, "asyncio.Task"] = {}
 #: nothing new to say about a dependency it did not try to fetch, so it repeats what the
 #: last fetch found ("repository not found") instead of a vaguer "not here yet".
 _LAST_FAILURE: dict[tuple[str, str, Optional[str]], tuple[str, str]] = {}
+#: ``(project_id, name, via)`` → why the last "pull to latest" left a checkout behind, until a pull succeeds.
+_LAST_PULL_ERROR: dict[tuple[str, str, Optional[str]], Optional[str]] = {}
 
 #: ``(project_id, dependency name)`` whose missing-dependency warning was dismissed.
 #: Process memory on purpose: "don't show again until Flowpad restarts".
@@ -104,8 +106,31 @@ class _Found:
     transportable: bool
     cloned: bool = False
     note: Optional[str] = None
+    #: Why an update left the checkout where it was.
+    pull_error: Optional[str] = None
     #: An id entry: what it resolved to (its TypeId, and where its own flow.json lives).
     resolved: Optional["Resolved"] = None
+
+
+#: A failed pull, said the way the person reads it.
+_PULL_ERRORS = {
+    "conflict": "Has local changes — can't pull without losing them",
+    "no_remote": "The checkout has no remote to pull from",
+}
+
+
+async def _checkout_status(path: "str | Path"):
+    """The checkout's git status: ``behind`` as of the last fetch (cached refs, no network) and its
+    edited files. ``None`` when git cannot say."""
+    from flow_sdk.builtin.faas.git_repo import GitRepo  # noqa: PLC0415
+
+    status = await (await GitRepo.local(str(path))).get_status()
+    return None if status.error else status
+
+
+def _has_local_changes(status) -> bool:
+    """Tracked files edited in the checkout (untracked files are not the person's edits to lose)."""
+    return bool(status) and any(f.status != "?" for f in status.files)
 
 
 class _NotReady(Exception):
@@ -129,14 +154,24 @@ async def _github_token() -> Optional[str]:
 
 def _checkout_for(origin: Any, cached: Optional[str]) -> Optional[Path]:
     """A local checkout of ``origin``'s repo: the folder's cached path first (where the
-    user added it from — any location, any branch), then one found by URL."""
-    from flow_sdk.utils.git import find_local_repo_for_url, find_project_root  # noqa: PLC0415
+    user added it from — any location, any branch), then one found by URL inside THIS
+    instance's workspace roots.
+
+    Every instance on the machine sees the same ``~/.claude`` project list, so a URL
+    lookup also lists other instances' clones (prod's ``~/Flowpad workspace`` among
+    them). A checkout in another instance's workspace is that instance's, never this
+    instance's dependency — adopting it registers a duplicate-named project here.
+    """
+    from flow_sdk.config import all_workspace_roots  # noqa: PLC0415
+    from flow_sdk.utils.git import _in_another_instance, find_local_repo_for_url, find_project_root  # noqa: PLC0415
+
+    roots = [root.resolve() for root in all_workspace_roots()]
 
     if cached and Path(cached).is_dir():
         repo = find_project_root(cached)
-        if repo and origin.matches_checkout(Path(repo)):
+        if repo and not _in_another_instance(repo) and origin.matches_checkout(Path(repo)):
             return Path(repo)
-    local = find_local_repo_for_url(origin.clone_url())
+    local = find_local_repo_for_url(origin.clone_url(), within=roots)
     if local and origin.matches_checkout(Path(local)):
         return Path(local)
     return None
@@ -160,18 +195,33 @@ async def _git(dep: FlowDependency, url: str, branch: str, *, fetch: bool, updat
         cached_root = folder.path
     repo = await asyncio.to_thread(_checkout_for, origin, cached_root)
     made = False
+    pull_error = None
     if repo is None:
-        if not fetch:
-            raise _NotReady("missing", "not on this machine yet — sync to fetch it")
         target = await asyncio.to_thread(origin.next_clone_target)
-        result = await git_clone(origin.clone_url(), str(target), branch=branch or None, token=await _github_token())
-        if not result.ok:
-            raise _NotReady("unreachable", f"could not clone {origin.clone_url()}: {result.detail}")
-        repo, made = target, True
+        if target.exists() and await asyncio.to_thread(origin.matches_checkout, target, require_branch=True):
+            # Already here: the hub delivered it with the project (a deployed machine never clones a
+            # dependency itself), or an earlier clone that no project registered yet. Adopting it
+            # needs no network, so a status read finds it too.
+            repo = target
+        elif not fetch:
+            raise _NotReady("missing", "not on this machine yet — sync to fetch it")
+        else:
+            result = await git_clone(
+                origin.clone_url(), str(target), branch=branch or None, token=await _github_token()
+            )
+            if not result.ok:
+                raise _NotReady("unreachable", f"could not clone {origin.clone_url()}: {result.detail}")
+            repo, made = target, True
     elif update and cloned:
-        pulled = await (await GitRepo.local(str(repo))).pull(branch=branch or None)
-        if not pulled.ok:
-            logger.info("[deps] pull %s for %s: %s", pulled.kind, repo, pulled.message)
+        if _has_local_changes(await _checkout_status(repo)):
+            # ``pull --autostash`` would replay them onto the new commits and leave conflict markers in
+            # the person's edits. A dependency is kept as they left it; the row says why.
+            pull_error = _PULL_ERRORS["conflict"]
+        else:
+            pulled = await (await GitRepo.local(str(repo))).pull(branch=branch or None)
+            if not pulled.ok and pulled.kind != "nothing":
+                logger.info("[deps] pull %s for %s: %s", pulled.kind, repo, pulled.message)
+                pull_error = _PULL_ERRORS.get(pulled.kind) or (pulled.message or pulled.kind).strip().splitlines()[0]
     root = safe_join(repo, dep.path) if dep.path != "." else repo
     if root is None or not root.is_dir():
         raise _NotReady("invalid", f"{dep.path!r} is not a folder in {origin.clone_url()}")
@@ -184,7 +234,7 @@ async def _git(dep: FlowDependency, url: str, branch: str, *, fetch: bool, updat
     if folder.path != path:
         folder.path = path
         await folder.save()
-    return _Found(folder, path, "git", True, cloned=made or cloned, note=note)
+    return _Found(folder, path, "git", True, cloned=made or cloned, note=note, pull_error=pull_error)
 
 
 async def _file(target: str, base: Path) -> _Found:
@@ -227,8 +277,8 @@ async def _local_project_root(project_id: str, rel: str) -> Optional[str]:
 async def _hub_fetch(dep: FlowDependency, project_id: str, *, fetch: bool, update: bool, cloned: bool) -> _Found:
     """A hub project: its row names where its files live (``git_origin``) — the
     project's hosted repository, or its own git remote."""
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
     from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER  # noqa: PLC0415
     from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
@@ -237,12 +287,12 @@ async def _hub_fetch(dep: FlowDependency, project_id: str, *, fetch: bool, updat
     if not fetch:
         raise _NotReady("missing", "not on this machine yet — sync to fetch it")
     try:
-        row = await hub_get_or_raise(BuiltinEntityType.PROJECT, project_id)
+        row = await HubProxy.call("GET", BuiltinEntityType.PROJECT, project_id)
     except HubError as exc:
         from flow_sdk.dependencies.resolve import hub_reason  # noqa: PLC0415
 
         status = getattr(exc, "status_code", 0)
-        reason = "this hub project does not exist" if status == 404 else hub_reason(status)
+        reason = "this hub project does not exist" if status == 404 else hub_reason(status, exc.reason)
         raise _NotReady("unreachable", reason) from exc
     data = row.get("data", row) if isinstance(row, dict) else {}
     origin = ORIGIN_ADAPTER.validate_python(data.get("git_origin")) if data.get("git_origin") else None
@@ -367,10 +417,15 @@ def _own_identities(root: Path, project_id: Optional[str] = None) -> set[str]:
         out.add(f"ref:project-{project_id}")
     try:
         from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+        from flow_sdk.utils.git import find_project_root, git_remote_url  # noqa: PLC0415
 
-        own = GitOrigin.for_asset_path(str(root))
+        # The key is the repo's origin alone: one ``git remote`` read, not ``for_asset_path``'s
+        # branch, HEAD and per-asset commit reads (27-40 ms -> 8-11 ms a call, same key).
+        repo = find_project_root(str(root))
+        url = git_remote_url(repo) if repo else None
+        own = GitOrigin.from_url(url, rel_path=".") if url else None
         if own is not None:
-            out.add(f"git:{GitOrigin.from_url(own.clone_url(), rel_path='.').key()}")
+            out.add(f"git:{own.key()}")
     except Exception:  # noqa: BLE001
         pass
     return out
@@ -477,6 +532,7 @@ async def _from_link(project: "Project", dep: FlowDependency, via: Optional[str]
     folder is still there and still the same source. No network, no git."""
     from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
     from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.utils.git import _in_another_instance  # noqa: PLC0415
 
     link = _link_for(project, dep.name, via)
     if link is None:
@@ -485,6 +541,10 @@ async def _from_link(project: "Project", dep: FlowDependency, via: Optional[str]
     if data.get("source") != dep.source or data.get("subpath", ".") != dep.path or data.get("required") != dep.required:
         return None
     if not data.get("path") or not Path(data["path"]).is_dir():
+        return None
+    if _in_another_instance(data["path"]):
+        # Linked before checkouts were confined to this instance: another instance's clone is
+        # not this dependency — resolve it again.
         return None
     folder = await Folder.get_by_id(TypeId(tid).id)
     if folder is None:
@@ -543,6 +603,10 @@ async def dependency_project(state: DependencyState, *, create: bool = False) ->
     owners = await Project._mount_owners(str(root))
     if owners:
         return owners[0]
+    # An asset inside a project (a chart, a skill) may carry its own flow.json: that lists the asset's
+    # links, it does not make the folder a project. Projects do not nest, so no provider is made here.
+    if any(owner._visible() for owner in await Project._enclosing_owners(str(root))):
+        return None
     if create and ((root / flow_json.FLOW_JSON).is_file() or manifest_path(root).is_file()):
         async with keyed_loop_lock(_PROVIDER_LOCKS, str(root)):
             return await Project.recover_by_path(str(root))
@@ -614,6 +678,26 @@ def schedule_resolve(project: "Project") -> None:
     _TASKS[pid] = create_detached_task(run(), name=f"deps-resolve:{pid}")
 
 
+async def check_updates(project: "Project") -> list[DependencyState]:
+    """Fetch the remote of every git checkout Flowpad cloned, so each one's ``behind`` is current,
+    then answer with the states. The fetches run together as git subprocesses, off the event loop;
+    a fetch that fails leaves that checkout's last known count."""
+    from flow_sdk.builtin.faas.git_repo import GitRepo  # noqa: PLC0415
+
+    states = await resolve(project, fetch=False)
+
+    async def fetched(state: DependencyState) -> DependencyState:
+        if not (state.state == "ready" and state.local_path and parse_source(state.source).kind == "git"
+                and _was_cloned(project, state.name, state.via)):
+            return state
+        status = await (await GitRepo.local(state.local_path)).fetch()
+        if status.error:
+            logger.info("[deps] update check for %s: %s", state.local_path, status.error)
+        return state.model_copy(update={"behind": status.behind})
+
+    return list(await asyncio.gather(*(fetched(s) for s in states)))
+
+
 async def settled(project_id: str) -> None:
     """Wait for the background resolve / add running for a project, if any."""
     running = _TASKS.get(str(project_id))
@@ -670,13 +754,14 @@ async def _resolve(
 
     states: list[DependencyState] = []
     desired: dict[str, tuple["Folder", dict]] = {}
-    seen = {f"ref:{asset}"} if asset else _own_identities(root, pid)
+    # Both read git and the project's files: off the loop, which every other request waits on.
+    seen = {f"ref:{asset}"} if asset else await asyncio.to_thread(_own_identities, root, pid)
     declared_by: dict[str, str] = {}
     rows: dict = {}   # dataset rows, read once for every value id this walk resolves
     # (entry, base, own, via_path): ``own`` = declared by this project — its root file or one of its
     # own assets — so its optional entries count; a dependency's own optionals never do.
     queue: deque[tuple[FlowDependency, Path, bool, list[str]]] = deque((d, root, True, []) for d in [*spec.entries(), *locals_])
-    own = own_entries if own_entries is not None else ([] if asset else _own_asset_entries(root))
+    own = own_entries if own_entries is not None else ([] if asset else await asyncio.to_thread(_own_asset_entries, root))
     for label, entries, problem, _folder in own:
         if problem:
             states.append(DependencyState(name=label, source="", state="invalid", reason=problem, via=label, via_path=[label]))
@@ -757,8 +842,15 @@ async def _resolve(
         if found.resolved is None and is_path_under(found.path, root_canon):
             states.append(state("invalid", reason="a dependency cannot be inside the project itself"))
             continue
+        # Only a checkout Flowpad cloned is Flowpad's to keep current; one the person made is theirs.
+        checkout = await _checkout_status(found.path) if source.kind == "git" and found.cloned and found.path else None
+        behind = checkout.behind if checkout else 0
+        if fetch and update:
+            # The last pull's answer outlives the request: a listing (no git pull) still says why it stayed.
+            _LAST_PULL_ERROR[key] = found.pull_error
         states.append(state(
             "ready", local_path=found.path, reason=found.note, typeid=found.resolved.typeid if found.resolved else None,
+            behind=behind, pull_error=_LAST_PULL_ERROR.get(key) if behind else None,
         ))
         if found.folder is not None:
             desired[str(found.folder.typeid)] = (found.folder, _sidecar(found, dep, via, own))
@@ -937,12 +1029,20 @@ async def _reconcile(project: "Project", desired: dict[str, tuple["Folder", dict
                 added.append(tid)
     if changed:
         await project.save()
+        # The scope resolver walks dependency links off the cached project list
+        # (Dependencies scope, Mine's plain-folder exclusion); a link change is
+        # exactly what makes that snapshot wrong.
+        from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache  # noqa: PLC0415
+
+        invalidate_projects_cache()
     return added
 
 
 async def _index(project: "Project", linked: list[tuple["Folder", dict]]) -> None:
     """Index newly linked roots. Rows found in a folder that is itself a project's mount
-    belong to THAT project; anything else belongs to the project that depends on it."""
+    belong to THAT project, as its project content (``scope="project"`` — the same stamp
+    the provider's own index gives them, so the result does not depend on which walk ran
+    last); anything else belongs to the project that depends on it, as user scope."""
     if not linked:
         return
     from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
@@ -950,8 +1050,13 @@ async def _index(project: "Project", linked: list[tuple["Folder", dict]]) -> Non
 
     mounts = await load_project_mounts()
     for _folder, data in linked:
-        owner = deepest_project_id_for_path(data["path"], mounts, default=str(project.id))
-        await _index_additional_dir(data["path"], read_only=bool(data.get("read_only")), project_id=owner)
+        provider = deepest_project_id_for_path(data["path"], mounts)
+        await _index_additional_dir(
+            data["path"],
+            read_only=bool(data.get("read_only")),
+            project_id=provider or str(project.id),
+            own=provider is not None,
+        )
 
 
 # ── authoring ───────────────────────────────────────────────────────────────

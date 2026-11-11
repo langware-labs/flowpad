@@ -51,7 +51,7 @@ def probe(monkeypatch):
     asked: list[str] = []
     answer: dict = {"ok": False, "code": "missing_token", "detail": "No token stored for this provider"}
 
-    async def connection_answer(provider: str):
+    async def connection_answer(provider: str, url=None):
         asked.append(provider)
         return dict(answer)
 
@@ -148,3 +148,82 @@ async def test_a_setup_that_fell_short_stays_the_record_after_the_load_pass(tmp_
     await asyncio.wait_for(project_setup._RUNS[(project.id, root)], 10)
 
     assert core_setup.read_setup(root).state is SetupState.FAILED
+
+
+async def test_the_sign_in_says_what_it_is_for_in_the_drivers_words_before_and_after_verify(probe):
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.data_source import _declared_sign_in
+
+    manifest = DataDriverSpec.model_validate({
+        "schema": 1, "name": PROVIDER, "auth": {"connector": "github"},
+        "permissions": {
+            "permission.github.repo.write": {"mechanism": "oauth", "oauth_scopes": ["repo"], "writes": True,
+                                             "why": "Push the files back."},
+            "permission.github.repo.read": {"mechanism": "oauth", "oauth_scopes": ["repo"],
+                                            "why": "Read the repository's files."},
+        },
+    })
+    DataDriver.register(DataDriver.for_class(_SignedIn, manifest, kind="datasource.test.signin"))
+    read = "Read the repository's files."  # the read reason, never the write-back one
+    assert _declared_sign_in(SimpleNamespace(manifest=manifest)).why == read
+    src = await _source()
+    await src.verify()
+    (need,) = src.setup_needs
+    assert need.why == read
+
+
+async def test_a_sign_in_without_a_needed_scope_is_not_set_up_yet(probe, monkeypatch):
+    """A read-only grant cannot write back: the sign-in step says so, so Setup offers Connect again."""
+    from flow_sdk.core.oauth import provider_registry
+
+    _asked, answer = probe
+    answer.update(ok=True)
+    granted = ["drive.readonly"]
+
+    async def held(_provider, _user, **_kw):
+        return tuple(granted)
+
+    monkeypatch.setattr(provider_registry, "granted_scopes", held)
+    ok, detail = await project_setup.requirement_step("", "connection:google::drive.readonly,drive", check=True)
+    assert ok is False and "drive" in detail and "connect again" in detail
+    assert (await project_setup.requirement_step("", "connection:google::drive.readonly", check=True))[0] is True
+    granted.append("drive")
+    assert (await project_setup.requirement_step("", "connection:google::drive.readonly,drive", check=True))[0] is True
+
+
+async def test_a_grant_without_the_write_scope_asks_again_and_says_what_writing_is_for(probe, monkeypatch):
+    """The sign-in works but cannot write back: Verify owes the sign-in again, in the write permission's words."""
+    from flow_sdk.core.oauth import provider_registry
+
+    _asked, answer = probe
+    answer.update(ok=True)
+    granted = ["repo:read"]
+
+    async def held(_provider, _user, **_kw):
+        return tuple(granted)
+
+    monkeypatch.setattr(provider_registry, "granted_scopes", held)
+    manifest = DataDriverSpec.model_validate({
+        "schema": 1, "name": PROVIDER, "auth": {"connector": "github"},
+        "permissions": {
+            "permission.github.repo.read": {"mechanism": "oauth", "oauth_scopes": ["repo:read"], "why": "Read the files."},
+            "permission.github.repo.write": {"mechanism": "oauth", "oauth_scopes": ["repo"], "writes": True,
+                                             "why": "Push the files back."},
+        },
+    })
+    DataDriver.register(DataDriver.for_class(_SignedIn, manifest, kind="datasource.test.signin"))
+
+    writer = await _source()
+    await writer.verify()
+    (need,) = writer.setup_needs
+    assert (need.name, need.state, need.why) == ("github", "missing_scopes", "Push the files back.")
+    assert "repo" in need.detail
+
+    reader = await _source(read_only=True)
+    await reader.verify()
+    assert reader.setup_needs == [], "a reader never needs the write scope"
+
+    granted.append("repo")
+    await writer.verify()
+    assert writer.setup_needs == []

@@ -3,8 +3,10 @@
 source reports derives from ``SourceError`` and ALSO from the closest built-in, so an
 ``except PermissionError`` written before this family keeps working.
 
-``origin`` names the one resource affected, when there is one. There is no retry flag and no
-automatic retry: the application decides. ``OutcomeUnknown`` is the only "may have happened"
+``origin`` names the one resource affected, when there is one. ``provider`` names the data source
+that said it, so the message a person reads starts "Data source error: <provider>". A source retries
+a rate limit only when its row's ``rate_limit_retries`` is above 0 (default 0); otherwise the
+application decides. ``OutcomeUnknown`` is the only "may have happened"
 signal — a caller must never read it as "nothing changed".
 """
 
@@ -17,12 +19,22 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class SourceError(Exception):
-    def __init__(self, message: str = "", *, origin: Optional["CloudOrigin"] = None) -> None:
+    def __init__(self, message: str = "", *, origin: Optional["CloudOrigin"] = None, provider: str = "") -> None:
         super().__init__(message)
         self.origin = origin
+        self.provider = provider
+
+    @property
+    def message(self) -> str:
+        """The source's own words, without the "Data source error" label."""
+        return str(self.args[0]) if self.args else ""
+
+    def __str__(self) -> str:
+        said = self.message
+        return f"Data source error: {self.provider} — {said}" if self.provider else f"Data source error: {said}"
 
     def __reduce__(self):  # errors cross a process boundary intact
-        return type(self), (str(self),), {"origin": self.origin}
+        return type(self), (self.message,), {"origin": self.origin, "provider": self.provider}
 
 
 class AccessDenied(SourceError, PermissionError):
@@ -47,6 +59,10 @@ class InvalidCursor(SourceError, ValueError):
 
 class Rejected(SourceError):
     """The provider refused a write for its own reasons: an invariant, uniqueness, policy."""
+
+
+class Conflict(Rejected):
+    """A conditional write found the resource at another version than the one it was told to expect."""
 
 
 class OutcomeUnknown(SourceError):

@@ -89,7 +89,7 @@ async def _index_trigger(wizard) -> Trigger:
     is the path a trigger actually takes off disk, not a hand-built row.
     """
     from flow_sdk.assets.types.trigger import read_trigger, row_fields
-    from flow_sdk.builtin.trigger_arming import arm_trigger
+    from flow_sdk.builtin.trigger import set_trigger_on
     from flow_sdk.schema.data_spec.trigger_action import TriggerAction
 
     spec = read_trigger(SHIPPED_TRIGGER)
@@ -99,11 +99,13 @@ async def _index_trigger(wizard) -> Trigger:
     trigger.uname = UNAME
     trigger.parent_type_id = str(wizard.typeid)
     fields = row_fields(spec, parent_type_id=str(wizard.typeid))
+    fields.pop("enabled", None)
+    fields.pop("decided", None)
     trigger.actions = [TriggerAction.model_validate(item) for item in fields.pop("actions", [])]
     for field, value in fields.items():
         setattr(trigger, field, value)
     await trigger.save()
-    await arm_trigger(trigger)
+    await set_trigger_on(trigger, True, notify=False)
     return trigger
 
 

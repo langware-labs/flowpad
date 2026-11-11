@@ -9,6 +9,7 @@ import type { GitSyncOp } from '@src/lib/publish-state';
  */
 export function gitResolvePrompt(branch: string, origin: GitSyncOp = 'push'): string {
   const b = branch || 'the current branch';
+  if (origin === 'cherry-pick') return cherryPickPrompt(b);
   const context =
     origin === 'pull'
       ? 'a one-click pull (pull --rebase --autostash) hit a conflict — either during the rebase, or when git re-applied the uncommitted work it had stashed first.'
@@ -26,4 +27,17 @@ Context: ${context} Finish it SAFELY — do not resolve everything at any cost. 
 3. DO NOT guess on anything semantically ambiguous or high-stakes. Leave it unresolved and flag conflicts involving: overlapping logic changes on both sides, schema/DB migrations, security/auth/config/secrets, dependency downgrades, or delete-vs-edit. For each, briefly explain in plain language what conflicts and why you didn't auto-resolve it.
 4. If — and only if — no files remain conflicted and nothing critical was flagged: ${finish}
 5. If ANY conflict is critical/ambiguous: STOP — do not continue the rebase or push — and give the user a short plain-language summary of exactly what needs their decision. Never force-push. Keep edits minimal; never invent code beyond merging the two sides.`;
+}
+
+/** Resolve a conflict left by bringing a shared commit in (``cherry-pick -x``): finish it locally, never push. */
+function cherryPickPrompt(b: string): string {
+  return `Resolve the in-progress git cherry-pick on branch "${b}" in this project.
+
+Context: the user chose to bring a commit someone shared with them into this branch (\`git cherry-pick -x\`), and it conflicted. "ours" = this branch; "theirs" = the shared commit. Finish it SAFELY — do not resolve everything at any cost.
+
+1. Run \`git status\` and inspect every conflicted file and BOTH sides of each conflict.
+2. ONLY auto-resolve when the correct resolution is UNAMBIGUOUS (non-overlapping additions, pure formatting, one side clearly supersedes the other).
+3. DO NOT guess on anything semantically ambiguous or high-stakes (overlapping logic, migrations, security/auth/config/secrets, delete-vs-edit). Leave it and explain it in plain language.
+4. If — and only if — nothing is left conflicted and nothing critical was flagged: \`git add -A\`, then \`git cherry-pick --continue --no-edit\` (repeat while a cherry-pick is in progress). If the user's own edits were set aside first, \`git stash pop\` and resolve that the same way, leaving them uncommitted. Do NOT push. Report "brought in".
+5. If ANY conflict is critical/ambiguous: STOP and summarize exactly what needs the user's decision. Never force-push; \`git cherry-pick --abort\` only if the user asks.`;
 }

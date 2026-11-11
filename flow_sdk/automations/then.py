@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+from flow_sdk.schema.data_spec.automation_spec import AutomationRef
 from flow_sdk.schema.data_spec.compute_op_spec import AgentOp, CliOp, ComputeOpSpec, OpSubkind
 from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 from flow_sdk.schema.data_spec.trigger_spec import ThenSpec
@@ -60,6 +61,8 @@ def as_wizard(then: ThenSpec, *, name: str, scope_key: str = "", parent_type_id:
     ops: dict[str, ComputeOpSpec] = {}
     for key, op in (then.ops or {}).items():
         spec = op if isinstance(op, ComputeOpSpec) else ComputeOpSpec.model_validate({"name": key, **op})
+        if spec.subkind is OpSubkind.PYTHON:
+            raise ValueError("an inline Python op has no code folder; reference a ComputeOp asset instead")
         ops[key] = spec if spec.name else spec.model_copy(update={"name": key})
     return WizardSpec(name=name, steps=list(then.steps)), ops
 
@@ -71,7 +74,7 @@ def then_of(trigger: Any) -> Optional[ThenSpec]:
     return raw if isinstance(raw, ThenSpec) else ThenSpec.model_validate(raw)
 
 
-async def run_then(trigger: Any, *, inputs: dict[str, Any], scope_key: str = "") -> WizardResult:
+async def run_then(trigger: Any, *, inputs: dict[str, Any], scope_key: str = "", context=None) -> WizardResult:
     """Run the rule's wizard with the fire's values in scope (*scope_key* names the one the sugar's
     agent takes as input, when the fire has one). Never raises for an outcome."""
     from flow_sdk.core.wizard.execute import _resolve_op, _resolve_wizard  # noqa: PLC0415
@@ -102,6 +105,10 @@ async def run_then(trigger: Any, *, inputs: dict[str, Any], scope_key: str = "")
         trusted=True,
         workdir=folder or Path.cwd(),
         inputs=inputs,
+        input=AutomationRef(trigger_id=str(getattr(trigger, "id", "") or ""), name=str(getattr(trigger, "name", "") or "")),
+        context=context,
+        parent=getattr(context, "parent", None),
+        chain=(f"automation-{getattr(trigger, 'id', '') or trigger.name}",) if context is not None else (),
         resolve_op=resolve_op,
         resolve_wizard=_resolve_wizard,
         activity_path=f"automation/{target_segment(str(getattr(trigger, 'id', '') or spec.name))}",

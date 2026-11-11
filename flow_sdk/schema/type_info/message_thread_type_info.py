@@ -43,4 +43,9 @@ MESSAGE_THREAD = TypeInfo(
     # The DB medium's identity: the projector resolves a thread by this key
     # (``DbSerializer.resolve_key``), minting an ordinary uuid4 only on miss.
     natural_key=("channel", "thread_key", "owner", "data_source_id"),
+    # The natural key and its two shorter prefixes: the projection resolves every
+    # ingested message's thread by it; the pre-owner and pre-account adoption
+    # lookups (``owner IS NULL`` / no ``data_source_id``) use the shorter forms.
+    # One index: SQLite serves every leading-prefix lookup ((channel, thread_key), + owner) from it.
+    indexes=(("channel", "thread_key", "owner", "data_source_id"),),
 )

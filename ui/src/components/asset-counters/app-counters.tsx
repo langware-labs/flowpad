@@ -3,7 +3,9 @@ import { useEntitiesQuery, useProject } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
 import { appsQuery } from '@src/hooks/flow-hooks/useAssetApps';
 import { useMemo } from 'react';
-import { ALL_DEPLOYMENTS, DeploymentBadges, deploymentsByParent, runningRows } from './agent-counters';
+import { ALL_DEPLOYMENTS, DeploymentBadges, deploymentsByProject } from './agent-counters';
+import { crossCounters, useScopes } from './axes';
+import { isPaused, isRunning, runPauseStatuses } from './placement';
 import type { AssetCounter, AssetCounterGroup } from './types';
 
 /** An app plus the placements that make it "running". */
@@ -22,10 +24,11 @@ function useAppCounters(): AssetCounter<AppRow>[] {
     useEntitiesQuery<Deployment>(ALL_DEPLOYMENTS);
 
   const allRows = useMemo(() => {
-    const byApp = deploymentsByParent(deployments, WebApp.type);
+    // An app runs wherever its project is deployed: a deployment places the whole project.
+    const byProject = deploymentsByProject(deployments);
     return [...apps]
       .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
-      .map((app) => ({ app, deployments: byApp.get(app.typeId.toString()) ?? [] }));
+      .map((app) => ({ app, deployments: (app.project_id && byProject.get(app.project_id)) || [] }));
   }, [apps, deployments]);
   const projectId = project?.id;
   const projectRows = useMemo(
@@ -33,33 +36,23 @@ function useAppCounters(): AssetCounter<AppRow>[] {
     [allRows, projectId],
   );
 
-  return useMemo(() => {
-    const projectName = project?.name || <Trans>Project</Trans>;
-    return [
-      {
-        key: 'running',
-        label: <Trans>Running</Trans>,
-        description: <Trans>Apps in {projectName} with a deployment</Trans>,
-        items: runningRows(projectRows),
-        isLoading: appsLoading || deploymentsLoading,
-      },
-      {
-        key: 'project',
-        label: projectName,
-        description: <Trans>Every app in {projectName}</Trans>,
-        items: projectRows,
-        isLoading: appsLoading,
-      },
-      {
-        key: 'total',
-        label: <Trans>Total</Trans>,
-        description: <Trans>Every app on this machine</Trans>,
-        items: allRows,
-        isLoading: appsLoading,
-      },
-    ];
-  }, [project?.name, projectRows, allRows, appsLoading, deploymentsLoading]);
+  const scopes = useScopes(
+    { items: allRows, isLoading: appsLoading },
+    { items: projectRows, isLoading: appsLoading },
+    appCreator,
+  );
+  return useMemo(
+    () =>
+      crossCounters({
+        label: <Trans>Apps</Trans>,
+        scopes,
+        statuses: runPauseStatuses<AppRow>(isRunning, isPaused, deploymentsLoading),
+      }),
+    [scopes, deploymentsLoading],
+  );
 }
+
+const appCreator = (row: AppRow) => row.app.created_by;
 
 export const appCounterGroup: AssetCounterGroup<AppRow> = {
   id: 'apps',

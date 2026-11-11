@@ -1,3 +1,4 @@
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { FSRef, type DeckTemplate } from '@sdk';
 import { Dialog, DialogContent } from '@src/components/ui/dialog';
@@ -66,6 +67,7 @@ function stemOf(path: string): string {
 }
 
 export function DeckTemplateViewer({ fsRef, deckTemplate }: DeckTemplateViewerProps) {
+  const { t } = useLingui();
   const [layouts, setLayouts] = useState<LayoutEntry[] | null>(null);
   const [tokensCss, setTokensCss] = useState('');
   const [themeCss, setThemeCss] = useState('');
@@ -116,13 +118,21 @@ export function DeckTemplateViewer({ fsRef, deckTemplate }: DeckTemplateViewerPr
     // reloadKey (entity updated_date) re-reads on out-of-band reindex.
   }, [fsRef, reloadKey]);
 
-  const title = deckTemplate?.name || deckTemplate?.title || 'Deck template';
+  const title = deckTemplate?.name || deckTemplate?.title || t`Deck template`;
 
   if (error) {
-    return <div className="p-6 text-sm text-destructive">Failed to load deck template: {error}</div>;
+    return (
+      <div className="p-6 text-sm text-destructive">
+        <Trans>Failed to load deck template: {error}</Trans>
+      </div>
+    );
   }
   if (!layouts) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading layouts…</div>;
+    return (
+      <div className="p-6 text-sm text-muted-foreground">
+        <Trans>Loading layouts…</Trans>
+      </div>
+    );
   }
 
   return (
@@ -133,14 +143,16 @@ export function DeckTemplateViewer({ fsRef, deckTemplate }: DeckTemplateViewerPr
           <AssetCollisionBadge />
         </div>
         <p className="text-sm text-muted-foreground">
-          {layouts.length} layout{layouts.length === 1 ? '' : 's'}
+          <Plural value={layouts.length} one="# layout" other="# layouts" />
           {deckTemplate?.description ? ` · ${deckTemplate.description}` : ''}
         </p>
       </div>
 
       {layouts.length === 0 ? (
         <div className="p-6 text-sm text-muted-foreground">
-          This template has no layouts under <code>layouts/</code> yet.
+          <Trans>
+            This template has no layouts under <code>layouts/</code> yet.
+          </Trans>
         </div>
       ) : (
         <div className="flex flex-wrap gap-4 p-6">

@@ -336,7 +336,14 @@ async def test_worker_answers_through_the_endpoint_it_was_given(
     assert not delta["errors"], f"{binary}: {delta['errors']} upstream error(s)"
     # A harness turn is a system prompt plus tools, never a handful of tokens. A counter that moved
     # by 1 would satisfy "> 0" while meaning the accounting is broken.
-    assert delta["input_tokens"] >= 20, f"{binary}: {delta['input_tokens']} input tokens is not a real turn"
+    # Measured on the prompt, not on ``input_tokens`` alone: an Anthropic model served through
+    # OpenRouter reports input EXCLUSIVE of cache (a claude turn is ~10 in + ~23k cache), so the
+    # same ``max`` reconciliation as ``_price_bracket`` is the honest size of the turn.
+    prompt_tokens = max(delta["input_tokens"], delta["cache_read_tokens"] + delta["cache_write_tokens"])
+    assert prompt_tokens >= 20, (
+        f"{binary}: {prompt_tokens} prompt tokens ({delta['input_tokens']} in, "
+        f"{delta['cache_read_tokens']} cache-read, {delta['cache_write_tokens']} cache-write) is not a real turn"
+    )
 
     # The charge must be what those tokens are actually worth. Recomputed from the same price table
     # the hub bills from, so this catches a mis-priced model, a dropped cache field, or a rounding

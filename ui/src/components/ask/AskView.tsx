@@ -5,6 +5,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { getHistoryPosition } from '@src/navigation/history-position-store';
 import { Button } from '@src/components/ui/button';
 import { AskChoiceBlock } from './AskChoiceBlock';
+import { AskSkipButton } from './AskSkipButton';
 import { AskItems } from './AskItems';
 import { AskValueInput } from './AskValueInput';
 import { MarkdownView } from '@src/components/markdown-view';
@@ -44,6 +45,7 @@ export default function AskView() {
     submit,
     answer,
     cancel,
+    skip,
     agentAnswered,
     wizardId,
     openWizard,
@@ -100,9 +102,9 @@ export default function AskView() {
             {question.prompt}
           </h1>
           {question.detail ? (
-            <p className="mt-1 text-sm text-muted-foreground" data-testid="ask-detail">
-              {question.detail}
-            </p>
+            <div className="mt-1 text-sm text-muted-foreground" data-testid="ask-detail">
+              <MarkdownView value={question.detail} compact dataImages />
+            </div>
           ) : (
             <p className="text-xs text-muted-foreground">{question.op}</p>
           )}
@@ -168,6 +170,8 @@ export default function AskView() {
             {error}
           </p>
         ) : null}
+
+        <AskSkipButton skippable={question.skippable} busy={busy} onSkip={() => void skip()} />
 
         {items.length > 0 ? null : (
           <div className="flex gap-2">

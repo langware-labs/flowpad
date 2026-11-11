@@ -264,7 +264,7 @@ async def launch_step_process(
             )
 
     # The agent's declared ``output``: the run hands back a value of it, the way ``Agent.launch`` does.
-    output_shape = getattr(await deployment.agent(), "output", None)
+    output_shape = getattr(await deployment.main_agent(), "output", None)
     try:
         process = await deployment.create_process(
             prompt,

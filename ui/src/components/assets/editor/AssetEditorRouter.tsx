@@ -1,4 +1,6 @@
+import { Trans } from '@lingui/react/macro';
 import { usePrimaryContentPending } from '@sdk/react/primary-content';
+import { ViewerChatSlotProvider } from './ViewerChatToggle';
 import {
   AssetSetup,
   ComputeOp,
@@ -11,6 +13,7 @@ import {
   dataManager,
   Deck,
   DeckTemplate,
+  DocumentFile,
   DynamicWorkflow,
   FSRef,
   Journey,
@@ -23,6 +26,7 @@ import {
   VFSPath,
   Chart,
   Wizard,
+  WebApp,
   type AnyEntity,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -49,12 +53,16 @@ import { ArchivePreview } from '@src/components/archive-preview/ArchivePreview';
 import { ValueViewer } from '@src/components/value-viewer/ValueViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
+import { GitConnectionRequiredCard } from './GitConnectionRequiredCard';
+import { gitConnectionRequired, needsGitConnection } from './git-connection';
+import { errorStatus } from '@src/lib/error-message';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { MarkdownEditor, type WikiLinkTarget } from './markdown/MarkdownEditor';
 import { detectLanguage } from '@sdk';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentProfileEditor } from './agent-profile/AgentProfileEditor';
+import { AppEditor } from './app-profile/AppEditor';
 import { AgentChildView } from './agent-profile/AgentChildView';
 import { CredentialView } from '@src/components/credentials-view/CredentialView';
 import { useNestedHost } from './nested-host';
@@ -85,6 +93,9 @@ const McpAppPreview = lazy(() =>
 );
 const SpreadsheetAssetEditor = lazy(() =>
   import('./spreadsheet/SpreadsheetAssetEditor').then((m) => ({ default: m.SpreadsheetAssetEditor })),
+);
+const DocumentFileViewer = lazy(() =>
+  import('./document-file/DocumentFileViewer').then((m) => ({ default: m.DocumentFileViewer })),
 );
 
 interface AssetEditorRouterProps {
@@ -128,7 +139,7 @@ function ConnectingFallback() {
   return (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
       <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-      Connecting…
+      <Trans>Connecting…</Trans>
     </div>
   );
 }
@@ -141,7 +152,16 @@ function ConnectingFallback() {
  * the FSRef straight from the compute-node-rooted path; `code` → raw CodeEditor.
  * Editors resolve/refresh the backing entity off the FSRef themselves.
  */
-export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiLinkTarget }: AssetEditorRouterProps) {
+/** Every asset viewer, with its Chat toggle (`ViewerChatSlotProvider`). */
+export function AssetEditorRouter(props: AssetEditorRouterProps) {
+  return (
+    <ViewerChatSlotProvider>
+      <AssetEditorRouterInner {...props} />
+    </ViewerChatSlotProvider>
+  );
+}
+
+function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLinkTarget }: AssetEditorRouterProps) {
   const { currentDock, navigation } = useDockNavigation();
   const readOnly = useAssetReadOnly();
   const occurrenceType = useReadOnlyOccurrenceType();
@@ -177,16 +197,21 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
     refetch: refetchEntity,
   } = useEntity<AnyEntity>(typeId);
   const { computeNode, flow } = useAgentContext();
+  // On the hub, a git-stored asset with no git link has no files to read: say so, skip the 404.
+  const transport = typeId ? dataManager.getTypeInfo(typeId.type)?.cloud_file_transport : undefined;
+  const gitBlocked = !!typeId && needsGitConnection(hubReflect, transport, typeIdEntity);
   const {
     data: entityRecord,
     isLoading: recordLoading,
     isError: recordError,
+    error: recordErrorDetail,
     refetch: refetchRecord,
   } = useQuery({
     queryKey: ['asset-record-refs', hubReflect ? 'hub' : 'local', typeId?.toString()],
     queryFn: () => typeIdEntity!.record({ hubReflect }),
     // A fileless asset has no record refs to read: its view renders from the row.
-    enabled: !!typeIdEntity && ptr?.method === AssetRoutingMethod.TYPEID && !isFilelessEditor(ptr?.editor),
+    enabled:
+      !!typeIdEntity && !gitBlocked && ptr?.method === AssetRoutingMethod.TYPEID && !isFilelessEditor(ptr?.editor),
   });
 
   usePrimaryContentPending(!!typeId && (entityLoading || recordLoading));
@@ -245,7 +270,9 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
 
   if (!ptr || !ptr.editor) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Invalid asset pointer</div>
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        <Trans>Invalid asset pointer</Trans>
+      </div>
     );
   }
 
@@ -306,6 +333,19 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   }
   if (ptr.editor === AssetEditor.DIAGNOSIS_REQUEST) {
     return <DiagnosisRequestView value={ptr.value} />;
+  }
+
+  // No git link, or one the hub answered record/refs 404 for: "connect git", never "Missing asset".
+  if (gitConnectionRequired(hubReflect, transport, typeIdEntity, errorStatus(recordErrorDetail)) && typeIdEntity) {
+    return (
+      <GitConnectionRequiredCard
+        name={typeIdEntity.displayName || (typeId?.toString() ?? "")}
+        onRetry={() => {
+          void refetchEntity();
+          void refetchRecord();
+        }}
+      />
+    );
   }
 
   // A typeid pointer whose entity has SETTLED with nothing usable (404 /
@@ -415,6 +455,21 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
                 </AssetCollisionShell>
               )
             }
+          />
+        );
+      case AssetEditor.APP:
+        return (
+          <EntityResolutionGate<WebApp>
+            type={WebApp.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="app"
+            resolvedEntity={typeIdEntity as WebApp | undefined}
+            render={(app) => (
+              <AssetCollisionShell entity={app}>
+                <AppEditor app={app} mainRef={mainFileRef} />
+              </AssetCollisionShell>
+            )}
           />
         );
       case AssetEditor.CHART:
@@ -539,6 +594,23 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
             )}
           />
         );
+      case AssetEditor.DOCUMENT_FILE:
+        return (
+          <EntityResolutionGate<DocumentFile>
+            type={DocumentFile.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="document"
+            resolvedEntity={typeIdEntity as DocumentFile | undefined}
+            render={(documentFile) => (
+              <AssetCollisionShell entity={documentFile}>
+                <Suspense fallback={<ConnectingFallback />}>
+                  <DocumentFileViewer fsRef={fsRef} documentFile={documentFile} />
+                </Suspense>
+              </AssetCollisionShell>
+            )}
+          />
+        );
       case AssetEditor.AGENT_TRACE:
         return (
           <EntityResolutionGate<AgentTrace>
@@ -629,12 +701,14 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
             wikiLinkTarget={wikiLinkTarget}
           />
         );
-      default:
+      default: {
+        const editorName = ptr.editor;
         return (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            No editor for: {ptr.editor}
+            <Trans>No editor for: {editorName}</Trans>
           </div>
         );
+      }
     }
   })();
   // A received git share says which version it is, and offers the sender's

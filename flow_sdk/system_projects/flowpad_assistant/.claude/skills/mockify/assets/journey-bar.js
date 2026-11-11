@@ -15,11 +15,12 @@
     .mk-path{box-shadow:0 0 0 1.5px color-mix(in srgb,var(--mk-hint,#8b5cf6) 35%,transparent)!important;border-radius:6px}
     @keyframes mk-glow{50%{box-shadow:0 0 0 3px color-mix(in srgb,var(--mk-hint,#8b5cf6) 20%,transparent)}}
     @media (prefers-reduced-motion:reduce){.mk-next{animation:none}}
+    [data-dead]{opacity:.55;cursor:not-allowed!important}
     .mk-pick{outline:2px solid #6d28d9!important;outline-offset:2px!important}
     html.mk-picking,html.mk-picking *{cursor:crosshair!important}`;
   document.head.append(docStyle);
 
-  let J = CFG.journey || [];       // the steps (from the mock row once loaded): {id, app, title, note?, branch_of?, when?, decisions?[]}
+  let J = CFG.journey || [];       // the steps (from the mock row once loaded): {id, app, title, note?, expect?[], branch_of?, when?, decisions?[]}
   let cur = 0;
   const data = { sdk: null, mock: null, mocksDs: null, fbDs: null, rows: [], error: '' };
   const openRows = () => data.rows.filter((r) => r.input.status === 'open');
@@ -28,13 +29,30 @@
 
   const isBranch = (s) => !!s.branch_of;
   const find = (id) => J.findIndex((s) => s.id === id);   // -1 when there is no such step
-  const mainAfter = (i) => { for (let k = i + 1; k < J.length; k++) if (!isBranch(J[k])) return k; return i; };
-  // Where a screen goes on: its own `next` (a branch's Try again, a screen that always takes a branch), else
-  // the next main-path screen. Next, its hint and the screen's glowing control all follow this one rule.
-  const onwardOf = (i) => { const n = J[i]?.next ? find(J[i].next) : -1; return n >= 0 ? n : mainAfter(i); };
-  const mainBefore = (i) => { for (let k = i - 1; k >= 0; k--) if (!isBranch(J[k])) return k; return i; };
+  const isRoot = (s) => !isBranch(s) || find(s.branch_of) < 0;   // a main step, or a branch off no known step
+  // Every screen in depth-first order, each with its number: main steps 1, 2, 3, the branches off step 1
+  // 1.1, 1.2, theirs 1.1.1. Next and Back walk this order, so no screen is out of reach and Next never stalls.
+  const tree = () => {
+    const order = [], num = {}, seen = new Set();
+    const visit = (i, label) => {
+      if (seen.has(i)) return;
+      seen.add(i); order.push(i); num[i] = label;
+      let k = 0;
+      J.forEach((s, c) => { if (s.branch_of === J[i].id && !seen.has(c)) visit(c, `${label}.${++k}`); });
+    };
+    let n = 0;
+    J.forEach((s, i) => { if (isRoot(s)) visit(i, String(++n)); });
+    J.forEach((_, i) => visit(i, String(++n)));   // a branch cycle still lands somewhere
+    return { order, num };
+  };
+  const step = (i, by, o = tree().order) => { const k = o[o.indexOf(i) + by]; return k === undefined ? i : k; };
+  // Where a screen goes on: its own `next` when that lies ahead, else the next screen depth-first.
+  // Next, its hint and the screen's glowing control all follow this one rule.
+  const onwardOf = (i) => {
+    const o = tree().order, n = J[i]?.next ? find(J[i].next) : -1;
+    return n >= 0 && o.indexOf(n) > o.indexOf(i) ? n : step(i, 1, o);
+  };
   const show = (id) => {
-    if (typeof window.mockGo === 'function') return window.mockGo(id);
     document.querySelectorAll('[data-step]').forEach((el) => { el.hidden = el.dataset.step !== id; });
   };
   const go = (i, record = true) => {
@@ -42,7 +60,6 @@
     cur = Math.min(J.length - 1, Math.max(0, i));
     const id = J[cur].id;
     if (record && location.hash.slice(1) !== id) history.pushState(null, '', '#' + id);
-    justSaved = '';   // a new screen starts with the box out
     show(id);
     render();
     contrast();
@@ -74,7 +91,6 @@
     .scope.on { background: var(--mk-accent); color: var(--mk-accent-fg); }
     .anchor { display: flex; gap: 8px; align-items: center; margin: 6px 0 8px; padding: 6px 8px; border-radius: 8px; background: var(--mk-soft); }
     .anchor b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .item.on { outline: 2px solid var(--mk-accent); border-radius: 8px; }
     button { all: unset; box-sizing: border-box; cursor: pointer; color: inherit; border-radius: 999px; white-space: nowrap; }
     button:focus-visible { outline: 2px solid var(--mk-accent); outline-offset: 2px; }
     button[disabled] { opacity: .35; cursor: default; }
@@ -88,7 +104,7 @@
     @media (prefers-reduced-motion: reduce) { .next.hint { animation: none; } }
     .ico { height: 32px; min-width: 32px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: var(--mk-fg); }
     .ico:hover { background: var(--mk-soft); }
-    .where { display: flex; flex-direction: column; min-width: 0; padding: 0 6px; }
+    .where { display: flex; flex-direction: column; box-sizing: border-box; flex: 0 0 272px; width: 272px; min-width: 0; padding: 0 6px; }
     .step { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
     .n { color: var(--mk-muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; display: flex; gap: 4px; min-width: 0; max-width: 260px; }
     .n .count { flex: none; }
@@ -102,7 +118,7 @@
     .ptools .tb.on { border-color: var(--mk-accent); color: var(--mk-accent); }
     [hidden] { display: none !important; }
     .min .hide-min { display: none !important; }
-    @media (max-width: 900px) { .restart-label, .nav .lbl, .trail { display: none; } .step { max-width: 26vw; } .nav { padding: 0 10px; } }
+    @media (max-width: 900px) { .restart-label, .nav .lbl, .trail { display: none; } .step { max-width: 26vw; } .where { flex-basis: 26vw; width: 26vw; } .nav { padding: 0 10px; } }
     .panel { position: absolute; left: 0; width: min(420px, calc(100vw - 16px)); max-height: 70vh; overflow: auto; background: var(--mk-bg); color: var(--mk-fg);
       border: 1.5px solid var(--mk-edge); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.3); padding: 10px; }
     .panel.down { top: 50px; } .panel.up { bottom: 50px; }
@@ -119,7 +135,7 @@
     .panel h4 { margin: 4px 2px 8px; font-weight: 700; font-size: 11px; color: var(--mk-muted); text-transform: uppercase; letter-spacing: .06em; }
     .row { display: flex; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 8px; align-items: baseline; }
     .row:hover { background: var(--mk-soft); } .row.on { background: var(--mk-soft); font-weight: 700; }
-    .row .num { color: var(--mk-muted); width: 1.6em; flex: none; font-variant-numeric: tabular-nums; }
+    .row .num { color: var(--mk-muted); min-width: 1.6em; margin-right: 4px; flex: none; font-variant-numeric: tabular-nums; }
     .row.br { padding-left: 30px; } .row small { color: var(--mk-muted); margin-left: auto; padding-left: 12px; }
     .note { color: var(--mk-muted); margin: 0 2px 10px; white-space: pre-wrap; }
     textarea { all: unset; box-sizing: border-box; display: block; width: 100%; min-height: 76px; padding: 8px 10px; border: 1.5px solid var(--mk-muted); border-radius: 8px; white-space: pre-wrap; color: var(--mk-fg); }
@@ -178,9 +194,33 @@
     if (onward && !marked.some((el) => el.classList.contains('mk-next'))) $('.next').classList.add('hint');
   }
   // data-next works on its own: a click on such a control moves the journey (no onclick needed).
+  // Any other control on a screen is not part of the mock: say so where it was clicked, never a silent no-op.
+  // Every app script is stripped, so nothing on a screen is live: anything that LOOKS clickable is inert.
+  const inert = (t, screen) => {
+    for (let el = t; el && el !== screen; el = el.parentElement) {
+      if (el.matches('input, select, textarea, label, [data-dead]') || getComputedStyle(el).cursor === 'pointer') return el;
+    }
+    return null;
+  };
+  let tip = null;
+  const deadTip = (el) => {
+    tip?.remove();
+    const r = el.getBoundingClientRect();
+    tip = document.createElement('div');
+    tip.setAttribute('data-mockify', '');
+    tip.textContent = 'Not part of this mock';
+    tip.style.cssText = `position:fixed;z-index:2147483646;left:${Math.max(4, r.left)}px;top:${Math.max(4, r.bottom + 6)}px;`
+      + 'background:#111827;color:#f9fafb;font:500 12px system-ui;padding:4px 8px;border-radius:6px;pointer-events:none';
+    document.body.append(tip);
+    setTimeout(() => tip?.remove(), 1400);
+  };
   document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-mockify]') || picking) return;
     const el = e.target.closest('[data-next]');
-    if (el && !el.closest('[data-mockify]')) { e.preventDefault(); window.mockifyGo(el.dataset.next); }
+    if (el) { e.preventDefault(); window.mockifyGo(el.dataset.next); return; }
+    const screen = e.target.closest('[data-step]');
+    const dead = screen && !e.target.closest('[data-live]') && inert(e.target, screen);
+    if (dead) { e.preventDefault(); deadTip(dead); }
   });
   let open = '';
   let panelKey = '';   // what the open panel last drew: re-drawn only when this changes
@@ -190,8 +230,6 @@
   const setPanel = (p) => { open = p; renderPanel(); };
   const NO_DRAFT = { text: '', decision: '', image: '', anchor: null, shot: '' };
   let draft = { ...NO_DRAFT };
-  let justSaved = '';   // after a Save: the box folds away and the saved entry shows, until a new comment
-  const composing = () => !justSaved;
   const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   // ── contrast: the bar takes the opposite of the screen behind it ──
@@ -229,15 +267,15 @@
   }
   function render() {
     if (!J.length) { $('.step').textContent = data.error || 'Loading the mock…'; $('.n').textContent = ''; return; }
-    const s = J[cur];
+    const s = J[cur], tr = tree();
     $('.step').textContent = (isBranch(s) ? '↳ ' : '') + s.title;
     const multi = multiApp();
     let on = -1; const cs = crumbs();
     cs.forEach((c, k) => { if (c.from <= cur && (!isBranch(s) || c.app === s.app)) on = k; });
     const trail = cs.map((c, k) => (k === on ? `<span class="on">${esc(c.app)}</span>` : esc(c.app))).join(' ▸ ');
     $('.n').innerHTML = (multi ? `<span class="trail">${trail}</span><span class="count">·</span>` : '')
-      + `<span class="count">${cur + 1} of ${J.length}</span>`;
-    $('.back').disabled = cur === 0;
+      + `<span class="count">${J.some(isBranch) ? `${tr.num[cur]} · ` : ''}${tr.order.indexOf(cur) + 1} of ${J.length}</span>`;
+    $('.back').disabled = step(cur, -1, tr.order) === cur;
     $('.next').disabled = onwardOf(cur) === cur;
     const nOpen = openRows().length;
     $('.exec-n').textContent = nOpen ? `(${nOpen})` : '';
@@ -262,11 +300,11 @@
     if (!open) return;
     placePanel();
     if (open === 'steps') {
-      let n = 0;
-      const multi = multiApp();
-      panel.innerHTML = head() + '<h4>Screens</h4>' + J.map((s, i) => {
+      const multi = multiApp(), tr = tree();
+      panel.innerHTML = head() + '<h4>Screens</h4>' + tr.order.map((i) => {
+        const s = J[i];
         const label = (isBranch(s) ? '↳ ' : '') + esc(isBranch(s) && s.when ? `${s.when} — ${s.title}` : s.title);
-        const num = isBranch(s) ? '' : String(++n);
+        const num = tr.num[i];
         return `<button class="row${isBranch(s) ? ' br' : ''}${i === cur ? ' on' : ''}" data-i="${i}"><span class="num">${num}</span>${label}${multi ? `<small>${esc(s.app)}</small>` : ''}</button>`;
       }).join('') + `<button class="row hints-toggle" style="margin-top:6px">${hints ? '☑' : '☐'} Highlight the next step on each screen</button>`;
       return;
@@ -312,19 +350,19 @@
     const decisions = s.decisions || [];
     let html = head() + `<h4>Feedback · ${esc(s.title || '')}</h4>`;
     if (s.note) html += `<div class="note">${esc(s.note)}</div>`;
-    if (!data.fbDs) {
+    if (s.expect && s.expect.length) html += `<div class="note"><b>Test checks</b>\n${s.expect.map((e) => '✓ ' + esc(e)).join('\n')}</div>`;
+    if (!data.fbDs || !data.mock) {
       html += `<div class="msg">${esc(data.error || 'Loading…')}</div>`;
       panel.innerHTML = html; return;
     }
-    if (composing() && decisions.length) {
+    if (decisions.length) {
       html += `<div class="chips">${decisions.map((d) => `<button class="chip${draft.decision === d.id ? ' on' : ''}" data-dec="${esc(d.id)}" title="${esc(d.question)}">${esc(d.id)} · ${esc(d.question.length > 40 ? d.question.slice(0, 40) + '…' : d.question)}</button>`).join('')}</div>`;
     }
-    if (composing() && draft.anchor) {
+    if (draft.anchor) {
       html += `<div class="anchor">📍 <span>On</span> <b title="${esc(draft.anchor.selector)}">${esc(draft.anchor.label)}</b><button class="ico clear-anchor" title="Not on this element">✕</button></div>`
         + (draft.shot ? `<img class="thumb" src="${draft.shot}" alt="the element">` : '');
     }
-    if (!composing()) html += `<div class="actions"><button class="tb review-all">Review all feedback</button><button class="save new-comment">＋ New comment</button></div>`;
-    else html += `<textarea placeholder="${draft.anchor ? 'What do you want for this element?' : 'What should change on this screen? (or use the picker at the left of the bar to point at an element)'}"></textarea>`
+    html += `<textarea placeholder="${draft.anchor ? 'What do you want for this element?' : 'What should change on this screen? (or use the picker at the left of the bar to point at an element)'}"></textarea>`
       + (draft.image ? `<img class="thumb" src="${draft.image}" alt="attached image">` : '')
       + `<div class="actions"><button class="attach">📎 ${draft.image ? 'Replace image' : 'Attach image'}</button>`
       + (draft.image ? '<button class="ico clear-img" title="Remove the image">✕</button>' : '')
@@ -333,13 +371,12 @@
     if (here.length) {
       html += `<h4 style="margin-top:14px">Saved on this screen (${here.length})</h4>` + here.map((r) => {
         const i = r.input;
-        return `<div class="item${r.key === justSaved ? ' on' : ''}" data-key="${esc(r.key)}"><div class="meta">${i.anchor ? `<b>📍 ${esc(i.anchor.label)}</b>` : ''}${i.decision ? `<b>${esc(i.decision)}</b>` : ''}<span>${esc(i.status)}</span><span>${esc((i.created || '').slice(11, 16))}</span>`
+        return `<div class="item" data-key="${esc(r.key)}"><div class="meta">${i.anchor ? `<b>📍 ${esc(i.anchor.label)}</b>` : ''}${i.decision ? `<b>${esc(i.decision)}</b>` : ''}<span>${esc(i.status)}</span><span>${esc((i.created || '').slice(11, 16))}</span>`
           + (i.status === 'open' ? `<button class="del" data-key="${esc(r.key)}" data-v="${esc(r.version || '')}" title="Delete">✕</button>` : '') + `</div>`
           + `<div>${esc(i.text)}</div>${i.element_shot ? `<img class="thumb" src="${i.element_shot}" alt="the element">` : ''}${i.screenshot ? `<img class="thumb" src="${i.screenshot}" alt="">` : ''}</div>`;
       }).join('');
     }
     panel.innerHTML = html;
-    if (justSaved) root.querySelector('.item.on')?.scrollIntoView({ block: 'nearest' });
     const ta = $('textarea');
     if (!ta) return;
     ta.value = draft.text;
@@ -378,7 +415,6 @@
     const el = e.target;
     setPicking(false);
     draft.anchor = anchorOf(el); draft.shot = '';
-    justSaved = '';
     setPanel('feedback');
     snapshot(el).then((png) => { if (png && draft.anchor) { draft.shot = png; renderPanel(); } });
   }, true);
@@ -495,10 +531,11 @@
         .map((kind) => sdk.Dataset.forKind(kind, projectId || undefined)));
       if (!mocksDs || !fbDs) throw new Error('this project has no mocks / mock-feedback dataset (set MOCKIFY.project to the mock project id)');
       Object.assign(data, { sdk, mocksDs, fbDs });
+      // Subscribe BEFORE the first read: a page opened before its row is put must still pick it up.
+      mocksDs.onRowsChanged(() => loadMock().then(refresh));
+      fbDs.onRowsChanged(() => refresh());
       await loadMock();
       await refresh();
-      mocksDs.onRowsChanged(loadMock);
-      fbDs.onRowsChanged(() => refresh());
     } catch (err) {
       data.error = `Feedback is off: ${err?.message || err}`;
       data.fbDs = null;
@@ -517,9 +554,15 @@
   const loadMock = coalesced(async () => {
     const found = await data.mocksDs.query({ match: { key: CFG.key } });
     const row = found.rows[0];
-    if (!row) throw new Error(`no mock row "${CFG.key}" in the mocks dataset`);
+    // No row yet is a wait, not a failure: the subscription in boot() loads it when it is put.
+    if (!row) { data.error = `Waiting for mock row "${CFG.key}" in the mocks dataset…`; render(); return; }
+    if (data.error?.startsWith('Waiting for mock row')) data.error = null;
     const changed = row.version !== data.mock?.version;
     data.mock = row;
+    // A fast mock is the person's choice, never the builder's: without its reason it is not reviewable.
+    if (row.input.mode === 'fast' && !(row.input.fast_reason || '').trim()) {
+      throw new Error('fast mock without fast_reason — rebuild it in real mode (SKILL.md §2)');
+    }
     J = row.input.journey || [];
     if (changed) render();
   });
@@ -531,7 +574,7 @@
   });
   function finishBoot() {
     cur = Math.max(0, find(location.hash.slice(1)));
-    if (typeof window.mockGo !== 'function' && J.length) show(J[cur].id);
+    if (J.length) show(J[cur].id);
     render();
     contrast();
   }
@@ -550,8 +593,7 @@
     try {
       await data.fbDs.append([{ key, input }]);
       draft = { ...NO_DRAFT };
-      justSaved = key;   // saved: the box folds away and the new entry shows, highlighted
-      panelKey = '';   // refresh redraws the open panel once
+      setPanel('');   // saved: back to the clean bar; the bubble and Execute (n) show it
       await refresh();
     } catch (err) {
       panel.insertAdjacentHTML('beforeend', `<div class="msg">Not saved: ${esc(err?.message || err)}</div>`);
@@ -615,7 +657,8 @@
     const file = new File([feedbackMarkdown(rows)], name, { type: 'text/markdown' });
     const uploads = await sdk.fsStore.getState().uploadFiles(new sdk.TypeId(dir.compute_node_id), dir.abs_path, [file]);
     await Promise.all(uploads.map((u) => u.waitForCompletion()));
-    await proc.enqueue(noteFor(rows, name, `${dir.abs_path}/${name}`), 'mockify');
+    // submit = type the line, then a discrete Enter: a queued line can land in a terminal's input box unsent.
+    await proc.submit(noteFor(rows, name, `${dir.abs_path}/${name}`));
   }
 
   async function submitAll() {
@@ -634,6 +677,9 @@
       panelKey = panelState();
       panel.innerHTML = head() + `<h4>Submitted</h4><div class="msg">${rows.length} comment(s) sent to ${esc(target.name || 'the session that builds this mock')}.</div>`;
       placePanel(); panel.hidden = false;
+      // Back to the session's tab: it now has the comments to act on. The Submitted panel above is what a
+      // page with no host (opened on its own) keeps showing.
+      data.sdk.navigateHost?.({ typeid: `agentic_process-${m.input.session}` });
     } catch (err) {
       setPanel('send');
       panel.insertAdjacentHTML('beforeend', `<div class="msg">Not sent: ${esc(err?.message || err)}</div>`);
@@ -641,7 +687,7 @@
   }
 
   // ── controls ──
-  $('.back').onclick = () => go(mainBefore(cur));
+  $('.back').onclick = () => go(step(cur, -1));
   $('.next').onclick = () => go(onwardOf(cur));
   $('.restart').onclick = () => { setPanel(''); go(0); };
   $('.steps').onclick = () => setPanel(open === 'steps' ? '' : 'steps');
@@ -658,13 +704,13 @@
     const t = e.target;
     if (t.closest('.close')) { setPanel(''); return; }
     const tool = t.closest('.ptool');
-    if (tool) { if (tool.dataset.panel === 'feedback') justSaved = ''; setPanel(tool.dataset.panel); return; }
+    if (tool) { setPanel(tool.dataset.panel); return; }
     if (t.closest('.send-now')) { submitAll(); return; }
     if (t.closest('.save-now')) {
       const b = t.closest('.save-now'); b.disabled = true;
       sessionOf().then((proc) => {
         if (!proc) throw new Error('the mock row names no session');
-        return proc.enqueue(`Save mock "${CFG.key}" to the repo: the person pressed Save — run the mockify skill's scripts/mock_project.py save ${data.mock.input.repo} ${CFG.key} (SKILL.md "Save to repo").`, 'mockify');
+        return proc.submit(`Save mock "${CFG.key}" to the repo: the person pressed Save — run the mockify skill's scripts/mock_project.py save ${data.mock.input.repo} ${CFG.key} (SKILL.md "Save to repo").`);
       }).then(() => { b.textContent = `✓ Asked ${target.name} to save it`; })
         .catch((err) => { b.disabled = false; panel.insertAdjacentHTML('beforeend', `<div class="msg">Not asked: ${esc(err?.message || err)}</div>`); });
       return;
@@ -676,7 +722,6 @@
         .catch((err) => { b.disabled = false; panel.insertAdjacentHTML('beforeend', `<div class="msg">Not sent: ${esc(err?.message || err)}</div>`); });
       return;
     }
-    if (t.closest('.review-all')) { setPanel('send'); return; }
     if (t.closest('.copy-md')) {
       const b = t.closest('.copy-md'), md = feedbackMarkdown(b.dataset.which === 'sent' ? sentRows() : openRows());
       const done = () => { b.textContent = '✓ Copied'; setTimeout(() => { b.textContent = '⧉ Copy'; }, 1500); };
@@ -694,7 +739,6 @@
     if (t.closest('.hints-toggle')) { hints = !hints; store.set('hints', hints); markHints(true); renderPanel(); return; }
     const row = t.closest('[data-i]');
     if (row) { setPanel(''); go(+row.dataset.i); return; }
-    if (t.closest('.new-comment')) { justSaved = ''; renderPanel(); return; }
     const chip = t.closest('[data-dec]');
     if (chip) { draft.decision = draft.decision === chip.dataset.dec ? '' : chip.dataset.dec; renderPanel(); return; }
     if (t.closest('.attach')) { $('.file').click(); return; }
@@ -706,7 +750,7 @@
   });
   panel.addEventListener('change', (e) => { const f = e.target.files?.[0]; if (f) readImage(f); });
 
-  // Drag by the grip; the position survives reloads (real-mode mocks reload per step) and stays on screen.
+  // Drag by the grip; the position is kept for the session and stays on screen.
   $('.grip').addEventListener('pointerdown', (e) => {
     const r = host.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
     e.target.setPointerCapture(e.pointerId);

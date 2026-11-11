@@ -104,7 +104,7 @@ def main() -> int:
     py = sh(f"head -1 {shlex.quote(flow)}").strip().lstrip("#!").strip() or "python3"
     log("box app", base, "instance", instance, "version", sh(f"{py} -c 'import flow_sdk._version as v;print(v.__version__)'").strip())
 
-    gate = json.loads(sh(f"{py} -c 'import json,sys;from flow_sdk.instance_settings.cookie_gate import gate_headers as g;print(json.dumps(g(sys.argv[1])))' {base}").strip() or "{}")
+    gate = json.loads(sh(f"{py} -c 'import json,sys;from flow_sdk.instance_settings.cookie_gate import get_header as g;h=g();print(json.dumps(dict([h] if h else [])))' {base}").strip() or "{}")
     hdr = " ".join(f"-H {shlex.quote(f'{k}: {v}')}" for k, v in gate.items())
     log("gate", "armed" if gate else "none")
 

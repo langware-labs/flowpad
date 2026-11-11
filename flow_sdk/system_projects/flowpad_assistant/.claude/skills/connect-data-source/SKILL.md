@@ -36,6 +36,13 @@ into a source that demonstrably works, and shows it to the user.
 > request, having said the cost out loud.
 > **5. Say what is the user's step.** Credentials, OAuth and bot invites are
 > theirs. Name the exact click; never loop waiting for it.
+> **6. A data source is committed; a secret never is.** `data_source.json` is a
+> project asset that goes into git with the project. Put only config in it (an
+> address, a channel, an id). Every token, password, API key or other personal
+> secret goes to the credential store (`flow credentials set`, `.env.local`
+> style), which the driver reads through its `auth`. Never paste one into
+> config. `tests/unit/test_data_source_holds_no_secret.py` fails on a tracked
+> file that holds one.
 
 
 ## FlowCall blocks

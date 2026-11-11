@@ -43,6 +43,12 @@ class VaultNotEnabled(SecretStoreError):
     code = "vault-disabled"
 
 
+class StoreToolMissing(SecretStoreError):
+    """The command line a store drives is not installed on this machine — its manager's setup wizard installs it."""
+
+    code = "tool-missing"
+
+
 class StoreNeedsConnection(SecretStoreError):
     """A store that acts as an account was used before a connection was bound to it."""
 
@@ -77,6 +83,7 @@ class StoreAccessDenied(SecretStoreError, PermissionError):
 
 
 __all__ = [
+    "StoreToolMissing",
     "MissingSecrets",
     "NoCurrentProject",
     "SecretStoreError",

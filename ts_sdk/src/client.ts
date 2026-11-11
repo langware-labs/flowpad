@@ -49,6 +49,46 @@ export function clearStats() {
 export type ExecutionContext = 'browser' | 'node';
 
 /**
+ * Where a paged list answer says the next page starts — `has_more` / `next_offset` / `next_cursor` beside
+ * `data`. `next_cursor` (sent back as `filter.after`) continues right after the page's last row; it is
+ * null on the last page, or when that row has no value for a sort field — then page by `next_offset`.
+ */
+export interface ListPage {
+  has_more: boolean;
+  next_offset: number;
+  next_cursor?: string | null;
+}
+
+/**
+ * The unwrap keeps a paged answer's `has_more` / `next_offset` / `next_cursor` on the list it returns — as
+ * non-enumerable properties, so the rows still spread, map and serialize as a plain array. An unpaged
+ * answer has no `has_more`, and its list gets nothing.
+ */
+export function withPage<T>(data: T, envelope: unknown): T {
+  const meta = envelope as Partial<ListPage> | null | undefined;
+  if (!Array.isArray(data) || typeof meta?.has_more !== 'boolean') return data;
+  Object.defineProperty(data, 'has_more', { value: meta.has_more, enumerable: false, configurable: true });
+  Object.defineProperty(data, 'next_offset', { value: meta.next_offset, enumerable: false, configurable: true });
+  Object.defineProperty(data, 'next_cursor', {
+    value: meta.next_cursor ?? null,
+    enumerable: false,
+    configurable: true,
+  });
+  return data;
+}
+
+/** The page a list answer carried, or undefined for an unpaged one. */
+export function pageOf(rows: unknown): ListPage | undefined {
+  const meta = rows as Partial<ListPage> | null | undefined;
+  if (!Array.isArray(rows) || typeof meta?.has_more !== 'boolean') return undefined;
+  return {
+    has_more: meta.has_more,
+    next_offset: Number(meta.next_offset ?? rows.length),
+    next_cursor: typeof meta.next_cursor === 'string' && meta.next_cursor ? meta.next_cursor : null,
+  };
+}
+
+/**
  * Axios, retyped to say what this client ACTUALLY returns.
  *
  * `initApiClient`'s response interceptor returns `response.data.data` — it
@@ -60,8 +100,10 @@ export type ExecutionContext = 'browser' | 'node';
  * code (`const rows = await apiClient.get<Row[]>(…); rows.map(…)`) and the
  * compiler called it an error.
  */
-export interface ApiAxiosInstance
-  extends Omit<AxiosInstance, 'request' | 'get' | 'delete' | 'head' | 'options' | 'post' | 'put' | 'patch'> {
+export interface ApiAxiosInstance extends Omit<
+  AxiosInstance,
+  'request' | 'get' | 'delete' | 'head' | 'options' | 'post' | 'put' | 'patch'
+> {
   request<T = unknown, D = unknown>(config: AxiosRequestConfig<D>): Promise<T>;
   get<T = unknown, D = unknown>(url: string, config?: AxiosRequestConfig<D>): Promise<T>;
   delete<T = unknown, D = unknown>(url: string, config?: AxiosRequestConfig<D>): Promise<T>;
@@ -129,6 +171,12 @@ function initApiClient(client: ApiAxiosInstance) {
         request.headers['Authorization'] = `Bearer ${extendedClient.testUserToken}`;
       }
 
+      // Who is asking — the screen this call came from — so a hub error it causes says "Made by".
+      if (typeof window !== 'undefined' && !request.headers?.['X-Flow-Caller']) {
+        request.headers = request.headers || {};
+        request.headers['X-Flow-Caller'] = window.location.pathname.slice(0, 200);
+      }
+
       return request;
     },
     function (error) {
@@ -155,13 +203,16 @@ function initApiClient(client: ApiAxiosInstance) {
           warnings.map((w) => `${w.error_code}: ${w.message}`).join('; '),
         );
       }
-      return response.data.data;
+      // A caller that reads the warnings itself (`DataManager.callActionWithWarnings`) gets the envelope.
+      if ((response.config as { keepEnvelope?: boolean } | undefined)?.keepEnvelope) return response.data;
+      return withPage(response.data.data, response.data);
     },
     (error) => {
       // Any status codes that falls outside the range of 2xx cause this function to trigger
       // Do something with response error
       const method = error.config?.method?.toUpperCase() || 'UNKNOWN';
       apiStats.incrementFailed(method);
+      rememberFailedCall(error);
 
       // A sandbox waking from E2B's idle pause: retry silently, a few times,
       // with a short delay — see SANDBOX_WAKING_RETRY_STATUS above.
@@ -200,6 +251,81 @@ function initApiClient(client: ApiAxiosInstance) {
       //return Promise.reject(error);
     },
   );
+}
+
+/** A failed backend call, described once when it fails — the request and the backend's answer. */
+export interface FailedCallDetail {
+  request: { method?: string; url?: string; caller?: string };
+  response: { status?: number; message?: string; body?: string; errorCode?: string; requestId?: string };
+}
+
+const MAX_BODY_CHARS = 4096;
+
+interface AxiosLikeError {
+  isAxiosError?: boolean;
+  config?: { method?: string; url?: string; headers?: Record<string, unknown> };
+  response?: { status?: number; data?: unknown; headers?: Record<string, unknown> };
+  message?: string;
+}
+
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+
+/** The backend's own reason: the envelope `message`, or FastAPI's `detail` (a string or a list of problems). */
+function answerOf(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return str(data);
+  const d = data as { message?: unknown; detail?: unknown };
+  if (Array.isArray(d.detail))
+    return d.detail.map((x: { msg?: unknown }) => str(x?.msg) ?? JSON.stringify(x)).join('; ');
+  return str(d.detail) ?? str(d.message);
+}
+
+/** `FailedCallDetail` for an axios error, or undefined for anything else. */
+export function describeFailedCall(error: unknown): FailedCallDetail | undefined {
+  const e = error as AxiosLikeError | null;
+  if (!e || typeof e !== 'object' || !(e.isAxiosError || e.config)) return undefined;
+  const data = e.response?.data;
+  const body =
+    data === undefined || data === null ? undefined : typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  const headers = e.response?.headers ?? {};
+  return {
+    request: {
+      method: e.config?.method?.toUpperCase(),
+      url: e.config?.url,
+      caller: str(e.config?.headers?.['X-Flow-Caller']),
+    },
+    response: {
+      status: e.response?.status,
+      message: answerOf(data),
+      body: body && body.length > MAX_BODY_CHARS ? `${body.slice(0, MAX_BODY_CHARS)}…` : (body ?? e.message),
+      // Both places a code lives, in `describeApiError`'s order: routes use `error_code`, entity actions `code`.
+      errorCode:
+        str((data as { data?: { error_code?: unknown } } | undefined)?.data?.error_code) ??
+        str((data as { data?: { code?: unknown } } | undefined)?.data?.code),
+      requestId: str(headers['x-flow-request-id']) ?? str(headers['x-request-id']),
+    },
+  };
+}
+
+/**
+ * The last few failed backend calls, newest first, already described (the axios error itself is
+ * not kept). An alert raised from a caught error that was not handed to `notify` (it shows only
+ * "Request failed with status code 409") is matched back to its call here.
+ */
+export interface FailedCall {
+  at: number;
+  /** axios's own message ("Request failed with status code 409"). */
+  message: string;
+  detail: FailedCallDetail;
+}
+
+const MAX_FAILED_CALLS = 20;
+export const recentFailedCalls: FailedCall[] = [];
+
+function rememberFailedCall(error: unknown): void {
+  const detail = describeFailedCall(error);
+  if (!detail) return;
+  recentFailedCalls.unshift({ at: Date.now(), message: (error as Error).message ?? '', detail });
+  recentFailedCalls.length = Math.min(recentFailedCalls.length, MAX_FAILED_CALLS);
 }
 
 export function getApiClient(): ApiAxiosInstance {

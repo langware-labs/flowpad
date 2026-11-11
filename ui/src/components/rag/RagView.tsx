@@ -56,8 +56,10 @@ function RagIndexCard({ index, onChanged }: { index: RagIndex; onChanged: () => 
     [onChanged, t],
   );
 
-  const drop = (path: string) =>
-    guard(t`Could not stop covering ${path}`, () => removeRoot(index.id, path));
+  const drop = (path: string) => guard(t`Could not stop covering ${path}`, () => removeRoot(index.id, path));
+
+  const documentCount = index.document_count;
+  const chunkCount = index.chunk_count;
 
   const add = () => {
     const path = window.prompt(t`Absolute path of the folder to cover`);
@@ -86,7 +88,9 @@ function RagIndexCard({ index, onChanged }: { index: RagIndex; onChanged: () => 
           {statusLine(index)}
         </span>
         <span className="ms-auto text-xs tabular-nums text-muted-foreground">
-          {index.document_count} docs · {index.chunk_count} chunks
+          <Trans>
+            {documentCount} docs · {chunkCount} chunks
+          </Trans>
           {index.model ? ` · ${index.model}` : ''}
         </span>
       </header>
@@ -187,10 +191,7 @@ export function RagView() {
   const { data: indexes = [], refetch } = useEntitiesQuery<RagIndex>(indexesQuery, { priority: 'demand' });
   const [creating, setCreating] = useState(false);
 
-  const sorted = useMemo(
-    () => [...indexes].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
-    [indexes],
-  );
+  const sorted = useMemo(() => [...indexes].sort((a, b) => (a.name || '').localeCompare(b.name || '')), [indexes]);
 
   const create = useCallback(async () => {
     setCreating(true);
@@ -212,9 +213,7 @@ export function RagView() {
           <Trans>Search indexes</Trans>
         </h1>
         {indexes.length > 0 && (
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            {indexes.length}
-          </span>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{indexes.length}</span>
         )}
         <Button
           variant="outline"
@@ -229,14 +228,14 @@ export function RagView() {
       </header>
       <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
         <Trans>
-          An index covers the folders you add and everything beneath them. Covered folders wear a
-          brain in the file tree, and a folder removed here loses it.
+          An index covers the folders you add and everything beneath them. Covered folders wear a brain in the file
+          tree, and a folder removed here loses it.
         </Trans>
       </p>
 
       <div className="space-y-3">
         {sorted.map((index) => (
-          <RagIndexCard key={index.id} index={index} onChanged={refetch} />
+          <RagIndexCard key={index.id} index={index} onChanged={() => void refetch()} />
         ))}
         {!sorted.length && (
           <p className="text-sm text-muted-foreground">

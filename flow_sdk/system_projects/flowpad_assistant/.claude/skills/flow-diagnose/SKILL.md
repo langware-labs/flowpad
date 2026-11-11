@@ -161,6 +161,24 @@ The global `~/.flow/logs/server/` and `~/.flow/logs/monitor/` are **dead directo
 since the backend moved to per-instance logging. Reading them yields nothing and will make you
 conclude "no evidence" while hundreds of MB sit in `$LOGS/`. See the `flowpad_logs` skill.
 
+### When no problem was described
+
+Your prompt says so when the person wrote nothing, or only a word like `hi9` or `test`: that is a test
+message, not a symptom. The sweep still runs, but you must not let what it finds pass for the cause of a
+report that named none. An old crash that headlines a ticket which said nothing reads as the problem the
+person had.
+
+* **Say it first.** `--title` starts "No problem described" and `--symptoms` quotes what they wrote
+  ("User wrote only 'hi9'"). `--summary` opens with: "No problem was described, so the whole log history
+  was swept."
+* **Now, apart from then.** Judge what is wrong NOW from the last hour or so of logs and the live checks.
+  If nothing fails now, `--status ok` (or `informational` when something older is worth knowing) and say
+  "Nothing is failing now" before anything else.
+* **Older events go in their own block**, in `--summary` after the line above and in the Details: one line
+  each, with its date, headed "Older events, not related to the report:". Never put an older event in the
+  title, never use it as `--rca`, and never set a `--cause` for it (`unknown`).
+* Do not repair anything for an event that is already over.
+
 ### Step 2 — Full diagnostic sweep (no error text given)
 
 Run ALL checks below, collect all results, THEN report. Do not stop at the first finding.
@@ -174,15 +192,21 @@ lsof -ti tcp:$PORT
 netstat -ano | findstr ":$PORT"
 ```
 
-Expected: empty (port free). Any PID = potential conflict.
+Expected: the port is held by THIS instance's own backend (its `server_pid` in
+`server.json`) and it answers healthy — that is the normal running state, **not**
+a conflict. A conflict is only when the holder is a *different* process, or the
+port is held but the backend does not answer. This instance's own healthy backend
+is never a conflict and is never killed (see A1).
 
 **2b. Backend health**
 
 ```bash
-curl -fsS http://localhost:$PORT/health/status
+curl -fsS -H "X-Cookie-Gate: $(cat ~/.flow/instances/${FLOW_INSTANCE:-prod}/.cookie_gate)" http://localhost:$PORT/health/status
 ```
 
-Expected: `{"data":true}`. Anything else or curl error = unhealthy.
+Expected: `{"data":true}`. A 403 "Forbidden" page means the backend is up and its cookie gate refused the
+call (missing or wrong `.cookie_gate` token in the instance folder), not that it is down. Anything else or
+curl error = unhealthy.
 
 **2c. Log tails** (newest file in each directory, last 20 lines)
 Consult the **`flowpad_logs`** skill for the full, authoritative list of log locations and scan
@@ -297,6 +321,17 @@ so you know what shortcuts you have:
 
 * **G17** — backend spawned but crashed / port not freed by the shell.
 
+* **H18** — **one of the person's files failed to index** ("Indexing failed: chart …", a path and a
+  parser message such as "while parsing a block mapping — did not find expected key (line 3,
+  column 3)"). The file is the cause, not Flowpad. Repair exactly that file and nothing else:
+  open it, fix the malformed part the message points at (usually frontmatter — a value wrapped
+  past its closing quote, an unquoted `:`), keeping every word of its content. Prove it parses
+  (`python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]).read().split("---")[1])' <file>`),
+  then re-index it: `flow record index <the folder or file>` must report `errors: 0`. Record with
+  `--status fixed`, and make `--fix` one sentence saying what changed in which file — the warnings
+  list shows that sentence on the entry. This is the person's own project file, so the
+  never-change-a-checkout rule does not apply to it; it still applies to Flowpad's source.
+
 Read `references/catalog.md` for each entry's exact detection + repair. The **G-series** is found
 in the `main_desktop` logs (Step 2g) — check it even when the backend is currently healthy, since a
 "won't start / stuck on Starting" is usually an Electron↔backend *timing* problem, not a dead
@@ -351,13 +386,37 @@ The per-issue repair details (A1–G17) below are the **"how"** for the Fix sub-
 
 Repair:
 
-1. Run `flow stop`.
-2. Re-check port. If still held:
+1. **First decide whether the holder is this instance's own backend.** Read `server_pid`
+   from `server.json` (same place Step 1 reads `$PORT`):
 
-   * macOS/Linux: `kill -TERM <pid>` → wait 3 s → `kill -KILL <pid>` if still alive.
+   ```bash
+   SERVER_PID=$("$FLOWPAD_PYTHON" -c "import json,os,pathlib; inst=os.environ.get('FLOW_INSTANCE','prod'); p=pathlib.Path.home()/'.flow'/'instances'/inst/'server.json'; print(json.load(open(p)).get('server_pid','') if p.exists() else '')")
+   ```
 
-   * Windows: `taskkill /PID <pid> /F`
-3. Report each PID killed and whether it was a Flowpad process or foreign.
+   If the PID on `$PORT` equals `$SERVER_PID` **and** the backend answers healthy, there is
+   **no conflict** — the port is held by the live backend this skill is running inside.
+   Do **not** kill it and do **not** run `flow stop`: that ends this run (and FlowPad)
+   before anything is recorded. Report "port held by this instance's healthy backend —
+   expected, no action" and stop. This is the common case and the end of A1.
+
+2. **Only if the holder is a different process** — a foreign program, or a stale/dead backend
+   whose PID is not the recorded `$SERVER_PID` — free the port. Never signal the live
+   `$SERVER_PID` of the instance you are running inside, and never `flow stop` from in here.
+
+   Prefer **`flow proc kill <pid>`**: it is the broker that refuses to kill this instance's live
+   backend — the one recorded in `server.json` (`$SERVER_PID`, confirmed still that process) — and
+   its ancestor chain (launcher, monitor, Electron), identified by that record, NOT by whatever
+   merely holds the port. So a stale or foreign port holder is still freed, but even a wrong PID
+   you resolved cannot take down the backend. It prints one JSON line — `{"killed": [...],
+   "refused_protected": [...], "denied": [...], "not_found": [...]}`. A PID in `refused_protected`
+   is the live backend or one of its ancestors: leave it, report "no conflict", stop. If nothing
+   matched, the command exits non-zero with empty lists — that means "nothing to kill", not a
+   successful kill. A raw `kill`/`taskkill` is the fallback only where `flow` is unavailable.
+
+   * Broker (any OS): `flow proc kill <pid>`
+   * Fallback macOS/Linux: `kill -TERM <pid>` → wait 3 s → `kill -KILL <pid>` if still alive.
+   * Fallback Windows: `taskkill /PID <pid> /F`
+3. Report each PID killed and whether it was a foreign process or a stale Flowpad process.
 4. Confirm port is free: re-run lsof/netstat. Tell user to relaunch Flowpad (do NOT auto-start).
 
 ***
@@ -525,7 +584,7 @@ real reports land here. Diagnose it with the same rigor and confidence as a cata
 and report what you found.
 
 1. **Gather evidence** broadly — fit the investigation to the actual symptom, don't stop at a
-   generic sweep. Start with: `curl -fsS http://localhost:$PORT/health/status`; the newest files
+   generic sweep. Start with: `curl -fsS -H "X-Cookie-Gate: $(cat ~/.flow/instances/${FLOW_INSTANCE:-prod}/.cookie_gate)" http://localhost:$PORT/health/status`; the newest files
    under `$LOGS/{server,monitor}` and `$DESKTOP` (Step 1); instance state in `~/.flow/instances/$INST/`
    (`flowpad.db`, `server.lock`, `server.pid`, `server.json`); disk space. Then go where the symptom
    points — if the user describes unexpected data, wrong UI state, a feature misbehaving, etc., probe
@@ -552,7 +611,7 @@ this headlessly and autonomously (no questions):
 
 1. **Ensure the backend is up.** If your fix was meant to unblock startup, start it now
    (`flow start`, or `"$FLOWPAD_PYTHON" -m flow_sdk.server.run` in the background) and wait for
-   `curl -fsS http://localhost:$PORT/health/status` to return `{"data":true}` (`$PORT` resolved in
+   `curl -fsS -H "X-Cookie-Gate: $(cat ~/.flow/instances/${FLOW_INSTANCE:-prod}/.cookie_gate)" http://localhost:$PORT/health/status` to return `{"data":true}` (`$PORT` resolved in
    Step 1).
 2. **Drive the UI with Playwright (headless, Chromium).** Use the copy already in `ui/`
    (`@playwright/test`). If the browser binary isn't installed, install it once:
@@ -627,6 +686,20 @@ run it with the right status:
    it records the diagnosis for history only. **Use** **`--status ok`** **for a healthy result — and still run
    the script.**
 
+4. **`--cause` says whose problem it is** — it decides whether the person is offered to report it,
+   and to whom. Pick exactly one, from your evidence:
+   - `project` — the person's own project files (a broken `agent.json`, a bad reference in their data).
+     Nothing to report: they own it, and you usually fixed it.
+   - `machine` — this computer, not software: a port held by another app, a full disk, no network.
+   - `flowpad` — Flowpad itself: its server, its UI, its packaging, a shipped skill.
+   - `dependency` — an external asset the project uses: a `flow.json` dependency, a pip/npm package, an
+     external code library. Also pass `--cause-asset "<its name>"` (the folder, package or repo name).
+     **Check the project's `flow.json` first:** every folder its `dependencies` / `optionalDependencies`
+     name is a dependency — a `file:` one on this same computer too — even when it sits beside the
+     project in the workspace. Its files are not the person's to fix: never edit them, report them.
+   - `unknown` — you could not tell. Say so in `--rca`.
+   A report is offered for `flowpad`, `dependency` and `unknown` only.
+
 (Surfacing the diagnosis to the user — the CLI's Home-Feed card, or the UI's "View diagnosis" popup —
 is handled by the `flow diagnose` runner afterwards, not by you. The runner also cross-links the
 diagnosis to this process for you — do **not** attempt the cross-link yourself.)
@@ -639,6 +712,7 @@ diagnosis to this process for you — do **not** attempt the cross-link yourself
   --fix "<what you did / what the user should do, or 'none needed'>" \
   --summary "<one-paragraph plain summary>" \
   --status fixed|needs_action|unrecognized|informational|ok \
+  --cause project|machine|flowpad|dependency|unknown \
   --platform "macOS|Windows|Linux" \
   --details "<the full == Flowpad Diagnostic Report == block from Step 6>"
 ```
@@ -772,11 +846,12 @@ Platform: Linux
 Date: 2026-06-04 09:25:00
 
 [FOUND] Port 9007 occupied (A1) — FIXED
-  Detection: lsof -ti tcp:9007 → PID 7743 (python / flowpad backend)
-  Action:    Ran `flow stop`; PID 7743 terminated via SIGTERM.
-             Port 9007 is now free. Please relaunch Flowpad.
+  Detection: lsof -ti tcp:9007 → PID 7743; server.json server_pid=4821 (dead) ≠ 7743,
+             and 7743 does not answer /health → a stale/foreign holder, not the live backend.
+  Action:    Confirmed 7743 is not this instance's live server_pid, then terminated it
+             (SIGTERM → SIGKILL). Did NOT run `flow stop`. Port 9007 is now free. Please relaunch.
 
-To Summarize: A stale Flowpad backend process was still holding port 9007. It has been stopped cleanly. Relaunch Flowpad and it should come up normally.
+To Summarize: A stale process was holding port 9007 and blocking startup; it was not the live backend, so it was cleared. Relaunch Flowpad and it should come up normally.
 ```
 
 ### Example 4: An issue with no ready-made fix — diagnosed normally

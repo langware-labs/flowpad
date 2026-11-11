@@ -11,7 +11,9 @@ import {
   SkipForward,
   Square,
   XCircle,
+  type LucideIcon,
 } from 'lucide-react';
+import { cn } from '@src/lib/utils';
 
 /**
  * The setup tree as it stands: every asset of the project (or of one node of it), indented under what
@@ -114,26 +116,34 @@ function SetupNodeRow({ node, depth, waiting = '' }: { node: SetupNodeResult; de
   );
 }
 
+/** A node state's glyph and colour — the tree's rows and the setup page's live chips draw the same. */
+export function stateGlyph(state: SetupNodeResult['state']): { Icon: LucideIcon; tone: string; spin?: boolean } {
+  switch (state) {
+    case 'done':
+      return { Icon: CheckCircle2, tone: 'text-emerald-600' };
+    case 'running':
+      return { Icon: Loader2, tone: 'text-primary', spin: true };
+    case 'failed':
+    case 'refused':
+      return { Icon: XCircle, tone: 'text-red-500' };
+    case 'blocked':
+      return { Icon: Lock, tone: 'text-amber-600' };
+    case 'held':
+      return { Icon: Hourglass, tone: 'text-muted-foreground' };
+    case 'skipped':
+      return { Icon: SkipForward, tone: 'text-muted-foreground' };
+    case 'stopped':
+      return { Icon: Square, tone: 'text-muted-foreground' };
+    default:
+      return { Icon: Circle, tone: 'text-muted-foreground' };
+  }
+}
+
 function StateIcon({ node }: { node: SetupNodeResult }) {
   const cls = 'mt-0.5 size-4 shrink-0';
   if (node.shared) return <CornerDownRight className={`${cls} text-muted-foreground`} />;
-  switch (node.state) {
-    case 'done':
-      return <CheckCircle2 className={`${cls} text-emerald-600`} />;
-    case 'running':
-      return <Loader2 className={`${cls} animate-spin text-primary`} />;
-    case 'failed':
-    case 'refused':
-      return <XCircle className={`${cls} text-red-500`} />;
-    case 'blocked':
-      return <Lock className={`${cls} text-amber-600`} />;
-    case 'held':
-      return <Hourglass className={`${cls} text-muted-foreground`} />;
-    case 'skipped':
-      return <SkipForward className={`${cls} text-muted-foreground`} aria-label="skipped" />;
-    case 'stopped':
-      return <Square className={`${cls} text-muted-foreground`} aria-label="stopped" />;
-    default:
-      return <Circle className={`${cls} text-muted-foreground`} />;
-  }
+  const { Icon, tone, spin } = stateGlyph(node.state);
+  // Only the two states with no colour of their own are named for a screen reader (as before).
+  const label = node.state === 'skipped' || node.state === 'stopped' ? node.state : undefined;
+  return <Icon className={cn(cls, tone, spin && 'animate-spin')} aria-label={label} />;
 }

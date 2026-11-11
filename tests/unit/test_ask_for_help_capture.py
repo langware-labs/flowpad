@@ -58,7 +58,13 @@ async def test_asking_a_person_writes_the_task_the_conversation_and_the_message(
     assert task.origin_conversation == conv_id and task.assignee == "dana@x.test" and task.kind == "vibe"
     conv = await Conversation.get_one({"id": conv_id})
     assert conv.awaits_hub, "captured for the hub, not there yet"
-    assert [m.text for m in await _messages(conv_id)] == ["help me ship"]
+    assert [m.text for m in await _messages(conv_id)] == ["help me ship\n\nDiagnosis: on its way"]
+
+
+def test_the_last_line_of_a_request_says_whether_a_diagnosis_is_coming():
+    assert afh.diagnosis_line(diagnosing=True, attached=False) == "Diagnosis: on its way"
+    assert afh.diagnosis_line(diagnosing=False, attached=True) == "Diagnosis: attached"
+    assert afh.diagnosis_line(diagnosing=False, attached=False) == "Diagnosis: not requested"
 
 
 async def test_the_same_request_sent_again_writes_nothing_new():
@@ -85,3 +91,20 @@ async def test_a_desk_ask_with_no_desk_known_yet_is_kept_for_delivery():
 async def test_a_person_needs_an_address():
     response = await _ask({"recipient": {"kind": "person"}, "text": "to whom?"})
     assert response.status_code == 400
+
+
+async def test_a_conversation_already_on_the_hub_is_never_opened_again():
+    """A stale copy can bring ``awaits_hub`` back after stage 0 finished (``remote`` is set). Opening again
+    re-shares with people who already joined -- the hub answers "User has already accepted" and every later
+    message is held back. Delivery clears the flag instead and sends what is owed."""
+    someone = (await get_or_create_local_user()).typeid
+    conv = Conversation(title="already there", members=[{"email": "dana@x.test"}])
+    conv.awaits_hub = True
+    conv.remote = True
+    conv = await conv.save(someone)
+
+    with patch.object(afh, "open_on_hub", AsyncMock()) as opened:
+        await conv.deliver(bodies=False)
+
+    opened.assert_not_awaited()
+    assert not (await Conversation.get_one({"id": conv.id})).awaits_hub

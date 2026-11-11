@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DataSource, type Conversation } from '@sdk';
@@ -10,7 +11,9 @@ import { sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-s
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { cn } from '@src/lib/utils';
 import { COMPACT } from './CategoryChips';
+import { deskChipLabel } from './conversation-category';
 import { humanizeType } from '@src/utils/humanize';
+import { AUTOMATIONS_CHANNEL, DIAGNOSIS_CHANNEL } from '@src/components/stream-inbox-view/channel-owner';
 
 /**
  * ONE resolver from a message's channel to its glyph + label, and the compact
@@ -60,13 +63,13 @@ export function sourceForOrigin(
   if (!origin?.kind) return undefined;
   const kind = origin.kind.trim().toLowerCase();
   return (
-    (originLocal?.data_source_id
-      ? sources.find((s) => s.id === originLocal.data_source_id)
-      : undefined) ?? sources.find((s) => (s.channel || '').trim().toLowerCase() === kind)
+    (originLocal?.data_source_id ? sources.find((s) => s.id === originLocal.data_source_id) : undefined) ??
+    sources.find((s) => (s.channel || '').trim().toLowerCase() === kind)
   );
 }
 
 export function useChannelAttribution() {
+  const { t } = useLingui();
   const { specFor } = useSourceSpecs();
   const { data: sources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
 
@@ -94,18 +97,27 @@ export function useChannelAttribution() {
       const byChannel = !!sourceSpec?.channel_icon_names?.[kind];
       // A driver in a group is one way to that CHANNEL ("Flow — no setup" is a way to WhatsApp): the row names the
       // channel, the group, never the way's own title.
+      // A help desk source is named after its desk: staff see WHICH desk ("GTM Studio help desk").
+      const deskName = source?.provider === 'helpdesk' ? (source.name || '').trim() : '';
       const label =
+        (deskName ? deskChipLabel(deskName) : undefined) ||
         (byChannel ? undefined : sourceSpec?.group || sourceSpec?.title) ||
         kindSpec?.group ||
         kindSpec?.title ||
+        // Flowpad's own Diagnosis channel is named in the person's language, like its 🩺 mark.
+        (kind === DIAGNOSIS_CHANNEL ? t`Diagnosis` : undefined) ||
+        (kind === AUTOMATIONS_CHANNEL ? t`Automations` : undefined) ||
+        // A channel no source delivers (the hub's Chat API thread) is named by the conversation's own spec.
+        (channelSpec?.name === kind ? channelSpec.title : undefined) ||
         channelLabel(kind);
       // The first spec that names a glyph; none: a chat bubble, not the DataSource type's registry glyph.
-      const spec = [sourceSpec, kindSpec].find((x) => sourceIconName(x, kind));
+      const ownSpec = channelSpec?.name === kind ? { icon_name: channelSpec.icon_name } : undefined;
+      const spec = [sourceSpec, kindSpec, ownSpec].find((x) => sourceIconName(x, kind));
       if (!spec) return { icon: MessageSquare, badge: null, label };
       const { Base, Badge } = sourceGlyphs(spec, kind);
       return { icon: Base, badge: Badge, label };
     },
-    [sources, specFor],
+    [sources, specFor, t],
   );
 
   /** A whole conversation's channel — what its header names it by, before any message is read. */
@@ -126,8 +138,11 @@ export function useChannelAttribution() {
 
 // Same compact treatment as CategoryChips — one visual language, no new pill.
 // The source chip is the one a row is recognised BY, so its glyph is bigger than
-// a category's and keeps its brand colour — the text stays quiet.
-const SOURCE_CHIP = cn(COMPACT, 'gap-1 border-border bg-muted ps-1 pe-1.5 py-px text-[10px] font-semibold text-muted-foreground');
+// a category's and keeps its brand colour; a soft violet tint makes it catch the eye.
+const SOURCE_CHIP = cn(
+  COMPACT,
+  'gap-1 border-violet-500/40 bg-violet-500/10 ps-1 pe-1.5 py-px text-[10px] font-semibold text-violet-700 dark:text-violet-300',
+);
 
 /** The per-row source chip: icon + channel, for channels whose spec wears one.
  *  Presentational: the LIST resolves attribution once (`useChannelAttribution`)
@@ -163,12 +178,7 @@ export function SourceChip({
     );
   }
   return (
-    <Badge
-      variant="outline"
-      className={cn(SOURCE_CHIP, className)}
-      data-chip-type="source"
-      title={attribution.label}
-    >
+    <Badge variant="outline" className={cn(SOURCE_CHIP, className)} data-chip-type="source" title={attribution.label}>
       <IconWithBadge Base={icon} Badge={badge} className="size-4 shrink-0" />
       {attribution.label}
     </Badge>

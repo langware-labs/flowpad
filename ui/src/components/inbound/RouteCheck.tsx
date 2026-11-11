@@ -3,9 +3,9 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { type InboundApi, InboundWebhooks, type InboundNumber, type InboundReach } from '@sdk';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
+import { errorMessage } from '@src/lib/error-message';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { claimTitle } from './inbound-model';
-import { errorText } from './use-inbound';
 
 interface Checked {
   id: string;
@@ -49,7 +49,7 @@ export function RouteCheck({
         try {
           return { id: claim.id, name, reach: await api.probe(claim.id), error: null, misroutes: claim.misroutes };
         } catch (e) {
-          return { id: claim.id, name, reach: null, error: errorText(e), misroutes: claim.misroutes };
+          return { id: claim.id, name, reach: null, error: errorMessage(e, String(e)), misroutes: claim.misroutes };
         }
       }),
     ).then((checked) => alive && setRows(checked));

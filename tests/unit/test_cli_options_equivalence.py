@@ -223,7 +223,13 @@ def test_cli_options_match_golden(vendor, cid, kwargs, platform, monkeypatch):
     # ["claude"], reproducing the frozen golden byte-for-byte on every platform.
     monkeypatch.setattr(shutil, "which", lambda *a, **k: None)
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
-    assert _capture(vendor, kwargs, platform) == golden[vendor][cid][platform], (
+    expected = golden[vendor][cid][platform]
+    if "error" in expected:
+        with pytest.raises(ValueError) as error:
+            _capture(vendor, kwargs, platform)
+        assert str(error.value) == expected["error"]
+        return
+    assert _capture(vendor, kwargs, platform) == expected, (
         f"{vendor}/{cid}/{platform} diverged from the frozen golden — the consolidation changed output"
     )
 
@@ -239,13 +245,26 @@ def test_spawn_contract_preserves_argv_env_and_prompt_channel(
     monkeypatch.setattr(sys, "platform", platform)
     monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
     options = _VENDORS[vendor](**kwargs)
+    expected = json.loads(GOLDEN.read_text(encoding="utf-8"))[vendor][cid][platform]
+    if "error" in expected:
+        for emit in (options.to_spawn, options.to_spawn_args, options.to_shell_string):
+            with pytest.raises(ValueError) as error:
+                emit(instruction=instruction)
+            assert str(error.value) == expected["error"]
+        return
     argv, env, stdin = options.to_spawn(instruction=instruction)
     compat_argv, compat_env = options.to_spawn_args(instruction=instruction)
 
     assert (argv, env) == (compat_argv, compat_env)
-    assert stdin == (None if vendor == "claude" else instruction or "")
-    if instruction:
-        assert (argv[-2:] == ["--", instruction]) is (vendor == "claude")
+    # The prompt rides argv for claude and for an interactive codex launch; a headless codex exec
+    # reads it from stdin (the ``-`` sentinel).
+    on_stdin = options.PROMPT_CHANNEL == "stdin"
+    assert on_stdin is (vendor != "claude" and not (vendor == "codex" and cid.startswith("interactive")))
+    assert stdin == ((instruction or "") if on_stdin else None)
+    if instruction and vendor == "claude":
+        assert argv[-2:] == ["--", instruction]
+    elif instruction and not on_stdin:
+        assert argv[-1] == instruction
 
 
 @pytest.mark.parametrize("vendor", _VENDORS)

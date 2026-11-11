@@ -413,12 +413,16 @@ class ProcessAssets:
             directories = [*self.process.resolved_add_dirs]
             if self.process.workdir:
                 directories.insert(0, self.process.workdir)
-            if link_skills(self._process_assets_path(), directories):
+            # The launching agent's own skills (``agent_run``): the project's of the same name win.
+            own = (self.process.context_data or {}).get("agent_skills_dir")
+            if link_skills(self._process_assets_path(), directories, own=[own] if own else []):
                 self.ensure_process_assets()
         instructions = await self._prepare_system_instruction_assets()
         hook_runtime = ProcessHookRuntime()
         supports_hooks = bool(getattr(self.process.driver, "supports_process_hooks", False))
         if self.process.process_hook_events or supports_hooks:
+            from flow_sdk.builtin.agentic_process.system_prompt import is_app_launch  # noqa: PLC0415
+
             prepare = getattr(self.process.driver, "prepare_process_hooks", None)
             if prepare is None:
                 raise ValueError("process hooks are unsupported by this worker")
@@ -429,6 +433,7 @@ class ProcessAssets:
                 assets,
                 str(self.process.id),
                 tuple(self.process.process_hook_events),
+                app_launch=is_app_launch(self.process.context_data),
             )
         mcp_runtime = ProcessMcpRuntime()
         prepare_mcp = getattr(self.process.driver, "prepare_process_mcp", None)

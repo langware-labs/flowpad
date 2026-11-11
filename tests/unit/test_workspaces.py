@@ -130,7 +130,7 @@ def test_no_workspaces_changes_nothing(home):
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_workspaces_home_per_instance(tmp_path):
     """prod's new workspaces go to ``~/Flowpad``; any other instance stays out of the
-    user's area and out of every instance root (``~/Flowpad workspaces/<name>``)."""
+    user's area and out of every instance root (``<instance_dir>/workspace``)."""
     import flow_sdk.instance_settings as isettings
     from flow_sdk.instance_settings.base_settings import BaseInstanceSettings
 
@@ -139,7 +139,7 @@ def test_workspaces_home_per_instance(tmp_path):
     dev = dataclasses.replace(base, instance_name="dev-1", user_home=tmp_path)
     assert BaseInstanceSettings.workspaces_home.fget(prod) == tmp_path / "Flowpad"
     dev_home = BaseInstanceSettings.workspaces_home.fget(dev)
-    assert dev_home == tmp_path / "Flowpad workspaces" / ".workspaces" / "dev-1"
+    assert dev_home == BaseInstanceSettings.instance_dir.fget(dev) / "workspaces"
     assert not dev_home.is_relative_to(BaseInstanceSettings.workspace_root.fget(dev))
 
 

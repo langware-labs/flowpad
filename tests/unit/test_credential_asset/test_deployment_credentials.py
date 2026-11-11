@@ -7,6 +7,7 @@ scope and the deployment's ``environment``: ``development`` keeps the original l
 ``credential.project.<pid>.VAR``), a named environment its own file (``.env.<env>.local``) and vault
 names. A ``credential.json`` written before 0.2.178 still says where; the boot lift moves it.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,6 +40,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     vault_name,
 )
 from flow_sdk.schema.data_spec.deployment_secrets_spec import VAULT
+from flow_sdk.utils.git_ignore import IGNORED, ignore_status
 from tests.utils.deployments import make_deployment
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -80,7 +82,12 @@ async def project(home, tmp_path):
 
 
 def _manifest(name: str, *env_vars: str, **extra) -> dict:
-    return {"name": name, "vars": {v: {"label": v} for v in env_vars}, "setup": f"Store it: `flow credentials set {name} ...`.", **extra}
+    return {
+        "name": name,
+        "vars": {v: {"label": v} for v in env_vars},
+        "setup": f"Store it: `flow credentials set {name} ...`.",
+        **extra,
+    }
 
 
 _deployment = make_deployment
@@ -116,7 +123,6 @@ def test_invalid_environment_names_are_refused(name):
         assert normalize_environment(name) == "development"
 
 
-
 # ── values per deployment ──────────────────────────────────────────────────
 
 
@@ -133,8 +139,8 @@ async def test_a_production_value_lands_in_its_own_gitignored_file(home, project
 
     assert dict(dotenv_values(mount / ".env.local")) == {"DATABASE_URL": "postgres://localhost/dev"}
     assert dict(dotenv_values(mount / ".env.production.local")) == {"DATABASE_URL": "postgres://hosted/prod"}
-    ignored = (mount / ".gitignore").read_text().splitlines()
-    assert ".env.local" in ignored and ".env.production.local" in ignored
+    assert ignore_status(mount / ".env.local") == IGNORED
+    assert ignore_status(mount / ".env.production.local") == IGNORED
 
     dev = await resolve_project_secrets(project)
     prod = await resolve_project_secrets(project, placement=await Placement.of(production))
@@ -142,11 +148,34 @@ async def test_a_production_value_lands_in_its_own_gitignored_file(home, project
     assert prod["DATABASE_URL"].get_secret_value() == "postgres://hosted/prod"
 
 
+@pytest.mark.parametrize(
+    "environment, written", [("production", ".env.production.local"), ("development", ".env.local")]
+)
+async def test_a_value_written_at_this_computer_is_read_in_the_same_environment(home, project, environment, written):
+    """FLOWPAD-2303: a write addressed to this computer by id lands in the environment its reads use."""
+    environment_settings.set_default_environment(environment)
+    here = await Deployment.this_computer()
+
+    await save_credential(
+        scope="project",
+        project_id=str(project.id),
+        manifest=_manifest("mail", "MAIL_ADDRESS"),
+        values={"MAIL_ADDRESS": "username@gmail.com"},
+        deployment_id=str(here.id),
+    )
+
+    assert [f.name for f in Path(project.fs_storage_mount_path).glob(".env*.local")] == [written]
+    assert (await resolve_project_secrets(project))["MAIL_ADDRESS"].get_secret_value() == "username@gmail.com"
+
+
 async def test_a_vault_exception_keeps_production_out_of_every_file(home, project):
     mount = Path(project.fs_storage_mount_path)
     production = await _deployment("production", exceptions={"DATABASE_URL": VAULT})
     spec = await save_credential(
-        scope="project", project_id=str(project.id), manifest=_manifest("db", "DATABASE_URL"), values={"DATABASE_URL": "dev"},
+        scope="project",
+        project_id=str(project.id),
+        manifest=_manifest("db", "DATABASE_URL"),
+        values={"DATABASE_URL": "dev"},
     )
     await set_credential_values(str(spec.typeid), {"DATABASE_URL": "prod"}, str(production.id))
 
@@ -163,10 +192,12 @@ async def test_two_credentials_saved_at_once_both_keep_their_store(home):
     before the first wrote — that dropped the first credential's variables to the default store,
     where its values (written to the vault) were never found."""
     await Deployment.this_computer()  # exists before either save, as it does on a running instance
-    saved = await asyncio.gather(*(
-        save_credential(scope="user", manifest=_manifest(name, var), values={var: "v"}, store="vault")
-        for name, var in (("first", "FIRST_TOKEN"), ("second", "SECOND_TOKEN"))
-    ))
+    saved = await asyncio.gather(
+        *(
+            save_credential(scope="user", manifest=_manifest(name, var), values={var: "v"}, store="vault")
+            for name, var in (("first", "FIRST_TOKEN"), ("second", "SECOND_TOKEN"))
+        )
+    )
 
     here = await Deployment.this_computer()
     for spec in saved:
@@ -178,7 +209,10 @@ async def test_an_agents_local_deployment_reads_what_this_computer_reads(home, p
     await here.keep_in(["DATABASE_URL"], VAULT)
     local = await _deployment("development", name="agent")  # no binding of its own
     spec = await save_credential(
-        scope="project", project_id=str(project.id), manifest=_manifest("db", "DATABASE_URL"), values={"DATABASE_URL": "v"},
+        scope="project",
+        project_id=str(project.id),
+        manifest=_manifest("db", "DATABASE_URL"),
+        values={"DATABASE_URL": "v"},
     )
 
     assert read_secret(f"credential.project.{project.id}.DATABASE_URL") == "v"
@@ -253,7 +287,10 @@ async def test_delete_forgets_values_at_every_deployment_and_every_store(home, p
     production = await _deployment("production", exceptions={"DATABASE_URL": VAULT})
     mount = Path(project.fs_storage_mount_path)
     spec = await save_credential(
-        scope="project", project_id=str(project.id), manifest=_manifest("db", "DATABASE_URL"), values={"DATABASE_URL": "dev"},
+        scope="project",
+        project_id=str(project.id),
+        manifest=_manifest("db", "DATABASE_URL"),
+        values={"DATABASE_URL": "dev"},
     )
     await set_credential_values(str(spec.typeid), {"DATABASE_URL": "prod"}, str(production.id))
     (mount / ".env.staging.local").write_text("DATABASE_URL=stale\n")
@@ -267,7 +304,9 @@ async def test_delete_forgets_values_at_every_deployment_and_every_store(home, p
     assert dict(dotenv_values(mount / ".env.staging.local")) == {}
     assert (result.removed, result.deleted) == (True, ["DATABASE_URL"])
     assert sorted((s.type, s.deleted == ["DATABASE_URL"]) for s in result.stores) == [
-        ("env_file", True), ("env_file", True), ("vault", True)
+        ("env_file", True),
+        ("env_file", True),
+        ("vault", True),
     ]
 
 
@@ -277,7 +316,10 @@ async def test_a_deleted_credentials_store_pin_does_not_route_the_next_one(home,
     credential of the same name — a project's, declared later — keeps its value where development
     keeps values (the project's ``.env.local``), not in the deleted one's vault."""
     planted = await save_credential(
-        scope="user", manifest=_manifest("telegram", "TELEGRAM_BOT_TOKEN"), values={"TELEGRAM_BOT_TOKEN": "a"}, store="vault",
+        scope="user",
+        manifest=_manifest("telegram", "TELEGRAM_BOT_TOKEN"),
+        values={"TELEGRAM_BOT_TOKEN": "a"},
+        store="vault",
     )
     assert (await Deployment.this_computer()).secrets.store_of("TELEGRAM_BOT_TOKEN").type == "vault"
 
@@ -285,7 +327,9 @@ async def test_a_deleted_credentials_store_pin_does_not_route_the_next_one(home,
 
     assert "TELEGRAM_BOT_TOKEN" not in (await Deployment.this_computer()).secrets.exceptions
     await save_credential(
-        scope="project", project_id=str(project.id), manifest=_manifest("telegram", "TELEGRAM_BOT_TOKEN"),
+        scope="project",
+        project_id=str(project.id),
+        manifest=_manifest("telegram", "TELEGRAM_BOT_TOKEN"),
         values={"TELEGRAM_BOT_TOKEN": "b"},
     )
     assert dotenv_values(Path(project.fs_storage_mount_path) / ".env.local") == {"TELEGRAM_BOT_TOKEN": "b"}
@@ -295,10 +339,15 @@ async def test_a_pin_another_credential_still_reads_through_survives_a_delete(ho
     """The same variable declared twice (the user's and a project's): deleting one leaves this
     computer's pin, or the survivor's vault value would no longer be found."""
     mine = await save_credential(
-        scope="user", manifest=_manifest("telegram", "TELEGRAM_BOT_TOKEN"), values={"TELEGRAM_BOT_TOKEN": "a"}, store="vault",
+        scope="user",
+        manifest=_manifest("telegram", "TELEGRAM_BOT_TOKEN"),
+        values={"TELEGRAM_BOT_TOKEN": "a"},
+        store="vault",
     )
     theirs = await save_credential(
-        scope="project", project_id=str(project.id), manifest=_manifest("telegram", "TELEGRAM_BOT_TOKEN"),
+        scope="project",
+        project_id=str(project.id),
+        manifest=_manifest("telegram", "TELEGRAM_BOT_TOKEN"),
         values={"TELEGRAM_BOT_TOKEN": "b"},
     )
 
@@ -340,7 +389,9 @@ async def test_a_process_reads_where_its_deployment_keeps_values(home):
 
     placement = await placement_for(SimpleNamespace(deployment_id=staging.id))
     assert (placement.environment, placement.deployment_id, placement.secrets.store_of("K").type) == (
-        "staging", str(staging.id), "vault"
+        "staging",
+        str(staging.id),
+        "vault",
     )
 
 
@@ -353,7 +404,10 @@ async def test_a_process_without_a_deployment_reads_at_this_computer_in_the_inst
 async def test_a_missing_deployment_reads_at_this_computer(home):
     with patch.object(environment_settings.app_config, "get_config", return_value=None):
         placement = await placement_for(SimpleNamespace(deployment_id="0b2c0f3e-1a4d-4c5b-8e6f-7a8b9c0d1e2f"))
-        assert (placement.environment, placement.deployment_id) == ("development", str((await Deployment.this_computer()).id))
+        assert (placement.environment, placement.deployment_id) == (
+            "development",
+            str((await Deployment.this_computer()).id),
+        )
 
 
 def test_an_invalid_stored_default_reads_as_development():
@@ -373,7 +427,10 @@ async def test_the_lift_moves_where_values_live_onto_deployments_and_runs_once(h
     folder = mount / "agentic-assets" / "credential" / "db"
     folder.mkdir(parents=True)
     legacy = {
-        "name": "db", "schema": 2, "setup": "x", "value_store": "vault",
+        "name": "db",
+        "schema": 2,
+        "setup": "x",
+        "value_store": "vault",
         "vars": {"DATABASE_URL": {}, "SENTRY_DSN": {"required": False}},
         "environments": {"production": {"value_store": "env", "required": ["SENTRY_DSN"]}, "staging": {}},
     }

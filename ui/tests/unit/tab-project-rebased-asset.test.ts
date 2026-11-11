@@ -10,10 +10,11 @@
  * the asset's `project_id` (present in the DB) is never read, and the tab is
  * minted project-less (observed: `rca` tab row had project_id=None).
  *
- * Expectation under test: the asset/file/path project ALWAYS wins — it is
- * adopted onto the tab, replacing any project the URL/dock already names.
- *
- * Both tests FAIL before the fix (the tab gets `null`).
+ * Expectation under test (rule 1, `resolveTabProject` step 3): the project the
+ * URL presents the asset IN wins — `/dock/project/<P>/…` is set only by `flow
+ * show` / presentation, and a tab there is a GUEST of P when the asset's own
+ * project differs. The inner asset is still resolved by path (its own project
+ * is the tab's `target_project_id`, and the loader's redirect target).
  */
 import { dataManager, Project, Tab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -43,8 +44,8 @@ function projectRebasedSkillDock(projectId: string): DockPointer {
   return DockPointer.rebaseAssetsOntoProject(assetsDock, projectId);
 }
 
-describe('Tab.getFromDockPointer — project-rebased asset dock adopts the asset path project', () => {
-  it('resolves the inner asset by path and adopts the asset entity project_id', async () => {
+describe('Tab.getFromDockPointer — a project-rebased asset dock belongs to the URL project', () => {
+  it('resolves the inner asset by path and stamps the presenting project', async () => {
     const byPath = vi.spyOn(dataManager, 'getEntityByPath').mockResolvedValue({
       typeId: { type: 'skill', id: SKILL_ID },
       project_id: ASSET_PID,
@@ -56,17 +57,17 @@ describe('Tab.getFromDockPointer — project-rebased asset dock adopts the asset
     // The inner asset path must be recovered from the PROJECT-rebased pointer
     // and looked up by its machine path (== asset_ref).
     expect(byPath).toHaveBeenCalledWith(MACHINE_PATH);
-    // …and the asset's own project is what the tab adopts.
-    expect(cap.value()).toBe(ASSET_PID);
+    // …and the presenting project is what the tab carries.
+    expect(cap.value()).toBe(URL_PID);
   });
 
-  it('the asset/path project replaces the project named in the URL segment', async () => {
+  it('the URL project wins over the asset project (a guest tab)', async () => {
     // URL says project=URL_PID, but the skill actually belongs to ASSET_PID.
     vi.spyOn(dataManager, 'getEntityByPath').mockResolvedValue({
       typeId: { type: 'skill', id: SKILL_ID },
       project_id: ASSET_PID,
     } as any);
-    // Guard: even if the fix recovers project-<id> from the URL, the asset wins.
+    // The project row itself is never the target.
     vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue({
       typeId: { type: 'project', id: URL_PID },
     } as any);
@@ -74,7 +75,7 @@ describe('Tab.getFromDockPointer — project-rebased asset dock adopts the asset
 
     await Tab.getFromDockPointer(projectRebasedSkillDock(URL_PID));
 
-    expect(cap.value()).toBe(ASSET_PID);
-    expect(cap.value()).not.toBe(URL_PID);
+    expect(cap.value()).toBe(URL_PID);
+    expect(cap.value()).not.toBe(ASSET_PID);
   });
 });

@@ -79,11 +79,15 @@ export function useShowTargetListener(): void {
   const mountedAtRef = useRef(Date.now());
 
   const showTarget = useCallback(async (
+    processId: string,
     target: ShowTarget,
     placement: ShowPlacement,
     slot: { afterTabId: string | null; parentTabId: string | null },
   ): Promise<void> => {
-    const dock = dockForDisplayTarget(target);
+    const found = dockForDisplayTarget(target);
+    // A screen nested in a workspace is a tab OF that workspace (keyed `|@<host>`), never the
+    // same screen's top-level tab pulled in.
+    const dock = found && slot.parentTabId ? found.withHost(`${AgenticProcess.type}-${processId}`) : found;
     if (!dock) {
       // A real answer, not a failure: an entity type with no editor and no
       // path, or an `app` with no dev server, addresses nothing openable. The
@@ -117,7 +121,7 @@ export function useShowTargetListener(): void {
         }
       }
       handledRef.current.set(processId, { key, sawLive: live });
-      void showTarget(target, placement, slot);
+      void showTarget(processId, target, placement, slot);
     },
     [showTarget],
   );

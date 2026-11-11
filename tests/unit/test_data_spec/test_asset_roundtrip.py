@@ -109,6 +109,8 @@ NOT_ON_DISK[Dataset] = set(Dataset.model_fields) - _spec_fields(Dataset) - {"id"
 _Row = DEFAULT_DATASET_SPEC.row_type()
 OVERRIDES[Dataset] = {
     "data_layout": DataLayoutEnum.IO_FOLDER,
+    "data_source": None,
+    "path": None,
     "spec": DatasetSpec.parse({"rows": [{"input": "file_ref", "output": "file_ref"}]}),
     "rows": [_Row(
         kind=RowKind.EVAL,
@@ -140,9 +142,14 @@ def _register_probe_types() -> None:
         SchemaRegistry.register(info)
 
 
-# The probes are registered like every real type: identity through a
-# FolderJsonCarrier, layout on TypeInfo. `type` is what _type_of reads.
-_register_probe_types()
+@pytest.fixture(autouse=True, scope="module")
+def _probe_types():
+    """The probes are registered like every real type: identity through a FolderJsonCarrier, layout on
+    TypeInfo (`type` is what _type_of reads) — for this module only, so no later test sees them."""
+    _register_probe_types()
+    yield
+    for cls in (_Leaf, _Inner, _Root):
+        SchemaRegistry._types.pop(cls.model_fields["type"].default, None)
 
 
 # ── the matrix ────────────────────────────────────────────────────────────────

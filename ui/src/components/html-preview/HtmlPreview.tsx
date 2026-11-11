@@ -1,9 +1,12 @@
 import { t } from '@lingui/core/macro';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { ActionInfo, dataManager, TypeId, type AnyEntity } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { GitShareFrame } from '@src/components/assets/editor/GitShareBar';
+import { ContentEpochContext } from '@src/contexts/content-epoch-context';
+import PersistentIframe, { reloadOnNewEpoch, type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { useFS } from '@src/hooks/useFS';
+import { openShareLink, previewShareUrl } from './share-links';
 
 /**
  * Render a local HTML file — a chart, a report, a small static site — in an
@@ -50,6 +53,19 @@ import { useFS } from '@src/hooks/useFS';
  * together the sandbox is not a boundary — the page can reach the API with the
  * user's session and touch `parent.document`. Real isolation needs a SEPARATE,
  * un-gated origin to serve from, which is its own piece of work.
+ *
+ * **One frame per page per session, parked, never reloaded by a switch.** The page is a
+ * `PersistentIframe`: the registry keeps a frame per `src` and only hides it when the
+ * session is left, so coming back shows the page as it was — its scroll, its form, its
+ * script state — with no request. The `src` names the file and the session (`process`),
+ * never the revision: a revision in the url would park a new frame for every edit and keep
+ * the old ones forever. An edit reloads the SAME frame instead (`cacheKey`), also when it
+ * landed while the page was parked. The vibe host has no per-file write event, only its content
+ * epoch (an agent turn that wrote, a re-show), so that reloads the frame too: a remount alone
+ * hands the parked document back unchanged.
+ *
+ * The frame is an app's MECHANISM, not an app's powers: it keeps the page's own short
+ * sandbox and asks for no browser features (camera, microphone, clipboard, location).
  */
 const PREVIEW_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads';
 
@@ -57,17 +73,34 @@ export function HtmlPreview({ path }: { path: string }) {
   const { computeNode, flowId } = useAgentContext();
   const fs = useFS(computeNode?.typeId);
 
-  // The revision the FS store bumps on every write to this path. Carrying it in
-  // the query string is what makes an agent's edit show up: the response is
-  // `no-store`, but the iframe would keep the document it already has until its
-  // src actually changes.
+  // The revision the FS store bumps on every write to this path. A new one reloads
+  // the frame, which is what makes an agent's edit show up: the response is
+  // `no-store`, but the iframe keeps the document it already has until it is
+  // navigated again.
   const revision = fs?.revision(path) ?? 0;
   // The process this page is shown beside. The server writes it into the page as
   // `__FLOWPAD_PROCESS_ID__`, so the page's SDK can reach that process
   // (`setDisplayContext`, `enqueue`). The id, not the loaded process: it is in
   // the URL from the first render, so the frame loads once, already bound.
-  const processParam = flowId ? `&process=${encodeURIComponent(flowId)}` : '';
-  const src = computeNode?.typeId && fs ? `${fs.getServeUrl(path)}?r=${revision}${processParam}` : null;
+  const processQuery = flowId ? `?process=${encodeURIComponent(flowId)}` : '';
+  const src = computeNode?.typeId && fs ? `${fs.getServeUrl(path)}${processQuery}` : null;
+  const frameRef = useRef<PersistentIframeHandle>(null);
+  const contentEpoch = useContext(ContentEpochContext);
+  useEffect(() => {
+    if (src) reloadOnNewEpoch(src, contentEpoch, () => frameRef.current?.refresh());
+  }, [src, contentEpoch]);
+  // The page's share menu asks the host to open WhatsApp, a mail draft or the mail app,
+  // none of which the sandboxed frame can open itself. Only this frame's own page, and
+  // only the closed list in `previewShareUrl`.
+  useEffect(() => {
+    const onGuest = (event: MessageEvent) => {
+      if (!frameRef.current?.isGuest(event.source)) return;
+      const url = previewShareUrl(event.data);
+      if (url) openShareLink(url);
+    };
+    window.addEventListener('message', onGuest);
+    return () => window.removeEventListener('message', onGuest);
+  }, []);
   // A page received by git is an artifact naming this file: its share bar
   // (version, newer versions, send edits back) sits above the page.
   const [sharedAs, setSharedAs] = useState<AnyEntity | null>(null);
@@ -79,9 +112,7 @@ export function HtmlPreview({ path }: { path: string }) {
     action.bodyParameters = { path };
     void dataManager
       .callAction<{ path: string }, { type_id: string | null }>(action)
-      .then(async (res) =>
-        res?.type_id ? ((await dataManager.getByTypeId(new TypeId(res.type_id))) as AnyEntity | null) : null,
-      )
+      .then(async (res) => (res?.type_id ? await dataManager.getByTypeId(new TypeId(res.type_id)) : null))
       .then((row) => live && setSharedAs(row ?? null))
       .catch(() => live && setSharedAs(null));
     return () => {
@@ -97,13 +128,17 @@ export function HtmlPreview({ path }: { path: string }) {
 
   return (
     <GitShareFrame entity={sharedAs}>
-      <iframe
-        title={t`HTML preview`}
-        sandbox={PREVIEW_SANDBOX}
-        src={src}
-        className="h-full w-full border-0 bg-white"
-        data-testid="html-preview"
-      />
+      {/* White under the frame: a page without a background of its own reads as a page, not the app. */}
+      <div className="h-full w-full bg-white">
+        <PersistentIframe
+          ref={frameRef}
+          src={src}
+          cacheKey={revision}
+          sandbox={PREVIEW_SANDBOX}
+          allow=""
+          testId="html-preview"
+        />
+      </div>
     </GitShareFrame>
   );
 }

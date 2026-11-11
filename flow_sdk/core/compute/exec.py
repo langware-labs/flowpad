@@ -26,10 +26,17 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+from flow_sdk import toplog
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult, last_line  # noqa: F401 -- last_line is re-exported
 from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
 logger = logging.getLogger(__name__)
+
+
+async def _waited(proc) -> int:
+    code = await proc.wait()
+    toplog.log("shell_exec", "reaped pid=%s returncode=%s", proc.pid, code)
+    return code
 
 
 async def _spawn(command: str, *, cwd: str, env: dict, platform: str):
@@ -76,15 +83,7 @@ def flow_env() -> dict[str, str]:
     return env
 
 
-def last_line(text: str) -> str:
-    """The last non-empty line of a chunk of output — what a command is doing right now."""
-    for line in reversed(text.replace("\r", "\n").splitlines()):
-        if line.strip():
-            return line.strip()
-    return ""
-
-
-async def _drain(stream: asyncio.StreamReader, on_output: Optional[Callable[[str], None]]) -> bytes:
+async def _drain(stream: asyncio.StreamReader, on_output: Optional[Callable[[str], None]], name: str = "") -> bytes:
     """Read a stream to EOF, telling ``on_output`` the latest line each time bytes arrive.
 
     A plain ``read()`` would answer only at the end, so nothing could say the command was still
@@ -94,6 +93,7 @@ async def _drain(stream: asyncio.StreamReader, on_output: Optional[Callable[[str
     while True:
         chunk = await stream.read(4096)
         if not chunk:
+            toplog.log("shell_exec", "%s EOF", name)
             return b"".join(chunks)
         chunks.append(chunk)
         if on_output is not None:
@@ -153,6 +153,7 @@ async def run_shell(
         logger.warning("wizard: could not spawn %r: %s", command, exc)
         return CliResult.of_process(command, None, stderr=str(exc), duration_s=time.monotonic() - t0)
 
+    toplog.log("shell_exec", "spawned pid=%s timeout=%ss command=%r", proc.pid, timeout_seconds, command)
     if on_spawn is not None:
         try:
             on_spawn(proc.pid)
@@ -165,7 +166,7 @@ async def run_shell(
     # came back with no output at all — exactly the output that says where it
     # hung. Reading to EOF under a shield keeps it; the kill closes the pipes.
     finished = asyncio.ensure_future(
-        asyncio.gather(_drain(proc.stdout, on_output), _drain(proc.stderr, on_output), proc.wait())
+        asyncio.gather(_drain(proc.stdout, on_output, "stdout"), _drain(proc.stderr, on_output, "stderr"), _waited(proc))
     )
     stopper = asyncio.ensure_future(stop.wait()) if stop is not None else None
     waiters = [finished, stopper] if stopper is not None else [finished]
@@ -185,6 +186,7 @@ async def run_shell(
             stopper.cancel()
     stopped = False
     if not finished.done():
+        toplog.log("shell_exec", "deadline pid=%s after %.2fs, killing group", proc.pid, time.monotonic() - t0)
         kill_process_tree(proc)
         stopped = stop is not None and stop.is_set()
         timed_out = not stopped

@@ -1,15 +1,17 @@
 import { useMemo } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { DataSource, TypeId, dataManager, workerFromSessionType, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { SessionWorker } from '@src/hooks/use-transcript';
+import { messageDirection, messageIconTag } from './message-direction';
+import { useLocalUser } from './useLocalUser';
 
 /**
  * Minimal shape we need to render an entity as a clickable label. Covers the
@@ -41,8 +43,6 @@ interface EntityChipProps {
   inside?: { type: string; id: string };
   /** Optional click override — bypass the standard A-inside-B navigation. */
   onClick?: () => void;
-  /** Project shell to use when the chip opens an asset editor pointer. */
-  projectId?: string | null;
   /** Tooltip text. Defaults to "Open <name>". */
   title?: string;
   /** Visual size — "chip" matches the conversation-toolbar buttons. Default "chip". */
@@ -62,6 +62,8 @@ interface EntityChipProps {
   /** The loaded entity row. Transcripts open by file location, so their
    *  pointer needs fields (`asset_ref`, `received`) a bare TypeId lacks. */
   row?: object | null;
+  /** Icon only; the name slides out on hover/focus. */
+  collapsed?: boolean;
 }
 
 /**
@@ -73,19 +75,19 @@ interface EntityChipProps {
  * entity chip stay visually consistent.
  */
 /** Icon for an entity type from the SchemaRegistry (backend TypeInfo.icon is
- *  the single source of truth), with an ExternalLink fallback. */
+ *  the single source of truth), with the generic document glyph as fallback. */
 export function iconForEntity(type: string): LucideIcon {
   // Guarded: dataManager may be uninitialized in isolated unit tests that mount
   // a component before bootstrap/loadTypes ran.
   const name = dataManager?.iconForType?.(type);
-  return (name && lucideByName(name)) || ExternalLink;
+  return (name && lucideByName(name)) || FileText;
 }
 
 /**
  * Backwards-compatible map facade over {@link iconForEntity}. Reads icons from
  * the SchemaRegistry (no hardcoded list); ``ICON_BY_TYPE[type]`` and
  * ``ICON_BY_TYPE.task`` both resolve a LucideIcon, or undefined when the type
- * has no backend icon (so existing ``?? ExternalLink`` fallbacks still work).
+ * has no backend icon (so callers can fall back).
  */
 export const ICON_BY_TYPE: Record<string, LucideIcon> = new Proxy({} as Record<string, LucideIcon>, {
   get(_t, prop): LucideIcon | undefined {
@@ -116,6 +118,10 @@ const DEFAULT_STYLE = 'border border-border bg-muted/30 text-muted-foreground ho
  *  Forward / Task it), so the row reads as one. */
 export const CHIP_LAYOUT =
   'inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors';
+
+/** Icon-only pill whose label expands on hover (``collapsed``). */
+const COLLAPSED_CHIP_LAYOUT =
+  'group/chip inline-flex h-6 items-center rounded-full px-1.5 text-[11px] font-medium transition-colors';
 
 /** A chip's colors for an entity type (neutral when the type has none). */
 export function chipStyleFor(type?: string): string {
@@ -159,16 +165,16 @@ export function EntityChip({
   entity,
   inside,
   onClick,
-  projectId,
   title,
   size = 'chip',
   muted = false,
   staged = false,
   row,
+  collapsed = false,
 }: EntityChipProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
-  const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? ExternalLink;
+  const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? FileText;
   const label = entity.name ?? (resolved?.id || '(unnamed)');
   const typeWord = resolved ? resolved.type.charAt(0).toUpperCase() + resolved.type.slice(1).replace(/_/g, ' ') : '';
   const typeStyle = muted
@@ -193,12 +199,20 @@ export function EntityChip({
       if (staged) return;
       if (!resolved || !resolved.id) return;
       const pointer = buildDockPointer({ ...row, ...resolved }, inside);
-      if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, projectId));
+      // The plain dock: the loader places the entity in ITS OWN project, not the chat's.
+      if (pointer) navigation.openDock(pointer);
     };
-  }, [muted, staged, onClick, resolved, inside, navigation, projectId, row]);
+  }, [muted, staged, onClick, resolved, inside, navigation, row]);
 
-  const baseLayout =
-    size === 'chip' ? CHIP_LAYOUT : 'inline-flex items-center gap-1 text-[11px] font-medium transition-colors';
+  const baseLayout = collapsed
+    ? COLLAPSED_CHIP_LAYOUT
+    : size === 'chip'
+      ? CHIP_LAYOUT
+      : 'inline-flex items-center gap-1 text-[11px] font-medium transition-colors';
+  // Collapsed: the label is zero-width until the chip is hovered/focused; its margin is the gap.
+  const labelCls = collapsed
+    ? 'max-w-0 transition-[max-width,margin] duration-200 group-hover/chip:mx-1 group-hover/chip:max-w-[20rem] group-focus-visible/chip:mx-1 group-focus-visible/chip:max-w-[20rem]'
+    : '';
 
   return (
     <button
@@ -209,93 +223,13 @@ export function EntityChip({
       aria-disabled={muted}
       data-testid={`entity-chip-${entity.type}-${entity.id}`}
       data-state={muted ? 'unavailable' : staged ? 'staged' : 'installed'}
+      aria-label={collapsed ? label : undefined}
       className={`${baseLayout} ${typeStyle}${muted ? 'cursor-default opacity-60' : ''}`}
     >
-      <Icon className="h-3 w-3" />
-      <span className="truncate">{label}</span>
+      <Icon className="h-3 w-3 shrink-0" />
+      <span className={`truncate ${labelCls}`}>{label}</span>
     </button>
   );
-}
-
-/**
- * Map an entity-type pair to the right DockPointer factory.
- * Centralised here so `EntityChip` itself stays declarative.
- *
- * For unknown entity types, falls back to a generic
- * ``/dock/<type>/<id>`` pointer via ``DockPointer.fromUrl``. The dock
- * router validates and 404s gracefully if there is no matching view —
- * silent no-ops on click are worse than a visible "unknown view" page.
- */
-export function buildDockPointer(
-  resolved: { type: string; id: string },
-  inside: { type: string; id: string } | undefined,
-): DockPointer | null {
-  switch (resolved.type) {
-    case 'project':
-      // From a conversation, a project chip lands like the asset review popup's
-      // Open (ProjectInstallAction): the bare project asking for its home page.
-      // A `/conversation/<cid>` sub-path would stop the home-page redirect.
-      return inside?.type === 'conversation'
-        ? withHomePage(DockPointer.forProject(resolved.id))
-        : DockPointer.forProject(resolved.id);
-    case 'task':
-      return DockPointer.forTasks(
-        resolved.id,
-        inside?.type === 'conversation' ? { conversationId: inside.id } : undefined,
-      );
-    case 'spec':
-      return DockPointer.forSpec(resolved.id);
-    case 'flowpad_diagnosis':
-      // Entity type is `flowpad_diagnosis` but the view type is `diagnosis`, so the
-      // generic fallback can't resolve it — map explicitly to the diagnosis viewer.
-      return DockPointer.forDiagnosis(resolved.id);
-    case DataSource.type:
-      return DockPointer.forDataSources({ section: 'source', id: resolved.id, tab: null });
-    case 'conversation':
-      return DockPointer.forConversation(resolved.id);
-    case 'claude_session':
-    case 'codex_session':
-    case 'copilot_session':
-    case 'opencode_session':
-    case 'deepagents_session': {
-      const worker = workerFromSessionType(resolved.type) as SessionWorker;
-      // Transcripts are the ONLY type addressed by location rather than by
-      // TypeId (they have no asset-editor entry — they open through the lens,
-      // which takes a worker + a file). So unlike every other case here, a bare
-      // {type, id} is NOT enough to build a working pointer, and the caller must
-      // pass the resolved entity.
-      const session = resolved as { asset_ref?: string | null; received?: boolean };
-      const ref = session.asset_ref?.trim();
-      if (ref) return DockPointer.forLensTranscript(worker, ref);
-      // No path in hand. The session-id form is answered by
-      // ``resolve_session_jsonl``, which searches THIS machine's CLI dir — right
-      // for a locally-run session, and guaranteed to 404 for a received one
-      // ("NOT_FOUND: ~/.claude/projects/ ... cannot resolve session <id>"). So
-      // only take it on an entity that explicitly says it ran here. `undefined`
-      // means the caller handed us a stub and we simply don't know — returning
-      // null lets them fall back instead of opening a broken tab.
-      if (session.received === false) return DockPointer.forLensTranscript(worker, resolved.id);
-      return null;
-    }
-    default: {
-      // Asset-editor types (markdown family, agent, skill, workflow, chart)
-      // open by their TypeId — no asset_ref needed; the loader resolves the
-      // entity. This is why the chip never has to defer on an unresolved path.
-      const editor = editorForType(resolved.type);
-      if (editor) {
-        return AssetDocPointer.forTypeId(editor, new TypeId(resolved.type, resolved.id)).toDockPointer();
-      }
-      try {
-        return DockPointer.fromUrl(resolved.type, resolved.id);
-      } catch {
-        // The view-type registry rejected this type. Log so the
-        // misconfiguration is visible during development; return null so
-        // the click is a no-op rather than throwing into the React tree.
-        console.warn(`[EntityChip] no dock target for type=${resolved.type}`);
-        return null;
-      }
-    }
-  }
 }
 
 interface ContextEntityChipProps {
@@ -304,9 +238,9 @@ interface ContextEntityChipProps {
   typeId: TypeId;
   inside?: { type: string; id: string };
   onClick?: () => void;
-  projectId?: string | null;
   title?: string;
   size?: 'chip' | 'inline';
+  collapsed?: boolean;
 }
 
 /**
@@ -319,7 +253,14 @@ interface ContextEntityChipProps {
  * hand-constructing each chip.
  */
 
-export function ContextEntityChip({ typeId, inside, onClick, projectId, title, size }: ContextEntityChipProps) {
+export function ContextEntityChip({
+  typeId,
+  inside,
+  onClick,
+  title,
+  size,
+  collapsed,
+}: ContextEntityChipProps) {
   // Resolve the display name; navigation is owned by the single ``EntityChip``.
   // Asset types navigate by TypeId (the loader resolves the entity), so there's
   // no asset_ref to fetch and no deferral/prewarm dance — the chip just renders.
@@ -330,17 +271,27 @@ export function ContextEntityChip({ typeId, inside, onClick, projectId, title, s
   // dangling/unmaterialized context reference). Render a muted, non-navigable
   // chip; the SDK's negative cache keeps us from re-fetching every render.
   const resolvedName = data?.displayName ?? (notFound ? `${typeId.type} (unavailable)` : typeId.toString());
+  const chip = { typeId, type: typeId.type, id: typeId.id, name: resolvedName };
+  const Chip = typeId.type === 'flow_message' ? MessageEntityChip : EntityChip;
 
   return (
-    <EntityChip
-      entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName }}
+    <Chip
+      entity={chip}
       row={data}
       inside={inside}
       onClick={onClick}
-      projectId={projectId}
       title={title}
       size={size}
       muted={notFound}
+      collapsed={collapsed}
     />
   );
+}
+
+/** A message chip: the type's icon with a sent / received arrow badge. Its own component so only
+ *  message chips subscribe to the local user. */
+function MessageEntityChip(props: EntityChipProps) {
+  const { localUser } = useLocalUser();
+  const direction = messageDirection(props.row as { sender_id?: string } | null, localUser?.id);
+  return <EntityChip {...props} entity={{ ...props.entity, icon: lucideByName(messageIconTag(direction)) }} />;
 }

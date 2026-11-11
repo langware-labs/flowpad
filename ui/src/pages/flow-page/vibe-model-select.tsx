@@ -1,23 +1,14 @@
 import { PrefKey, WorkerModelTier } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { useOptionalHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from '@src/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@src/components/ui/select';
 import { cn } from '@src/lib/utils';
 import { useMemo } from 'react';
 import { useLingui } from '@lingui/react/macro';
 
 export const VIBE_MODEL_DEFAULT = WorkerModelTier.MD;
 
-const VIBE_MODEL_TIERS = [
-  WorkerModelTier.SM,
-  WorkerModelTier.MD,
-  WorkerModelTier.LG,
-] as const;
+const VIBE_MODEL_TIERS = [WorkerModelTier.SM, WorkerModelTier.MD, WorkerModelTier.LG] as const;
 
 export type VibeModelTier = (typeof VIBE_MODEL_TIERS)[number];
 
@@ -49,6 +40,10 @@ interface VibeModelSelectProps {
   className?: string;
   triggerClassName?: string;
   testId?: string;
+  /** The sizes the budget funding this session offers; `null` = not known, nothing is held back. */
+  availableSizes?: readonly string[] | null;
+  /** A size the agent requires: the picker shows it and does not offer to leave it. */
+  pinnedSize?: string | null;
 }
 
 /** Custom named model options defined for the default harness (its
@@ -85,6 +80,8 @@ export function VibeModelSelect({
   className,
   triggerClassName,
   testId = 'vibe-model-select',
+  availableSizes = null,
+  pinnedSize = null,
 }: VibeModelSelectProps) {
   const { t } = useLingui();
   const customOptions = useCustomModelOptions();
@@ -92,7 +89,9 @@ export function VibeModelSelect({
   // resolves it via the harness model_map); anything else normalizes to a tier.
   const resolveValue = (v: unknown): string =>
     typeof v === 'string' && customOptions.includes(v) ? v : normalizeVibeModelTier(v);
-  const selected = resolveValue(value);
+  const selected = pinnedSize ? resolveValue(pinnedSize) : resolveValue(value);
+  // A size the budget does not offer cannot be run: it is listed, so the person sees it exists, but not pickable.
+  const offered = (tier: string) => !availableSizes || availableSizes.includes(tier);
   const labels: Record<string, string> = {
     [WorkerModelTier.SM]: t`Fast`,
     [WorkerModelTier.MD]: t`Balanced`,
@@ -104,11 +103,11 @@ export function VibeModelSelect({
     <Select
       value={selected}
       onValueChange={(next) => void onChange(resolveValue(next))}
-      disabled={disabled}
+      disabled={disabled || !!pinnedSize}
     >
       <SelectTrigger
         aria-label={t`Model`}
-        title={labelFor(selected)}
+        title={pinnedSize ? t`The agent requires this model size` : labelFor(selected)}
         data-testid={testId}
         className={cn(
           'h-7 w-auto min-w-[142px] shrink-0 rounded-md border-input bg-background px-2 text-xs shadow-none',
@@ -123,7 +122,13 @@ export function VibeModelSelect({
       </SelectTrigger>
       <SelectContent align="start" className="min-w-[7.75rem]">
         {VIBE_MODEL_TIERS.map((tier) => (
-          <SelectItem key={tier} value={tier} data-testid={`vibe-model-option-${tier}`} className="py-1 text-xs">
+          <SelectItem
+            key={tier}
+            value={tier}
+            disabled={!offered(tier)}
+            data-testid={`vibe-model-option-${tier}`}
+            className="py-1 text-xs"
+          >
             {labels[tier]}
           </SelectItem>
         ))}

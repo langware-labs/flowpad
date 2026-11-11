@@ -1,16 +1,14 @@
 import { t } from '@lingui/core/macro';
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, isValidUuid } from '@sdk';
 import type { SearchResult } from '@src/hooks/use-record-search';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { notify } from '@src/notifications';
 import type { SpotlightRow } from './types';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export function historyDisplayName(e: WorkerHistoryEntry): string {
   const name = (e.name ?? '').trim();
-  if (name && !UUID_RE.test(name) && name !== e.worker_id) return name;
+  if (name && !isValidUuid(name) && name !== e.worker_id) return name;
   const prompt = (e.last_prompt ?? '').trim();
   if (prompt) return prompt.length > 80 ? `${prompt.slice(0, 80)}…` : prompt;
   return 'Untitled session';
@@ -39,9 +37,9 @@ export function workerIdFromSearchResult(r: SearchResult): string {
 
 export function searchResultDisplayName(r: SearchResult): string {
   const title = (r.fts_title ?? '').trim();
-  if (title && !UUID_RE.test(title)) return title;
+  if (title && !isValidUuid(title)) return title;
   const name = (r.name ?? '').trim();
-  if (name && !UUID_RE.test(name)) return name;
+  if (name && !isValidUuid(name)) return name;
   const desc = (r.fts_description ?? '').trim();
   if (desc) return desc.length > 80 ? `${desc.slice(0, 80)}…` : desc;
   return 'Untitled session';
@@ -92,7 +90,7 @@ async function resolveProcessAndOpenTerminal(
 
 export function searchResultToRow(r: SearchResult): SpotlightRow {
   const name = (r.fts_title || r.name || '').trim();
-  const title = name && !UUID_RE.test(name) ? name : searchResultDisplayName(r);
+  const title = name && !isValidUuid(name) ? name : searchResultDisplayName(r);
   return {
     key: r.record_id,
     recordType: r.record_type,

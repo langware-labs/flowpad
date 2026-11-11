@@ -80,6 +80,8 @@ export interface SetupTreeResult {
   total: number;
   done: number;
   ran: boolean;
+  /** When the run ended (ISO, UTC) — the setup page's "Last run". */
+  finished_at?: string | null;
 }
 
 export interface ProjectLoadResult {
@@ -96,6 +98,11 @@ export interface ProjectLoadResult {
   tree?: SetupTreeResult | null;
   /** What a `running` load is doing: `load` only starts what is set up, `setup` sets up first. */
   phase?: 'load' | 'setup' | null;
+  /** A `ready` app that opened because it answers, checked behind it: what its setup still owes (a
+   *  credential that expired under it), `''` for nothing, `null`/absent while that check has not answered. */
+  setup_owed?: string | null;
+  /** A `failed` load whose setup was held, and by what: `first_run_setup` until first-run setup ends all green. */
+  blocked?: 'first_run_setup' | null;
 }
 
 /** Where a declared dependency stands on THIS machine. */
@@ -134,6 +141,10 @@ export interface DependencyState {
   description?: string | null;
   /** A required, not-ready dependency whose warning was dismissed until the next restart. */
   dismissed: boolean;
+  /** A git checkout Flowpad cloned: commits behind its remote, as of the last fetch. */
+  behind?: number;
+  /** Why the last "pull to latest" left this checkout where it was. */
+  pull_error?: string | null;
 }
 
 /** A project's visual identity, from the `brand` block of

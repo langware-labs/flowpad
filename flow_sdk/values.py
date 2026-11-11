@@ -25,6 +25,18 @@ from flow_sdk.schema.data_spec.value_ref import parse_ref, ref_of
 VALUE_FILE = "value.json"
 
 
+def kind_of_value_file(path: Path | str) -> str | None:
+    """The ``spec_kind`` a ``*.value.json`` file carries; None for any other file, or an unreadable one."""
+    path = Path(path)
+    if not path.name.endswith(".value.json") or not path.is_file():
+        return None
+    try:
+        kind = json.loads(path.read_text(encoding="utf-8")).get("spec_kind")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return kind if isinstance(kind, str) and kind else None
+
+
 def store_of(asset_folder: Path | str) -> Path:
     """Where an asset keeps the values it owns."""
     return Path(asset_folder) / AGENTIC_ASSETS_DIR / "value"

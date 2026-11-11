@@ -48,6 +48,7 @@ describe('editorForPath', () => {
     ['/tmp/LOGS.ZIP', AssetEditor.ARCHIVE],
     // one value of a kind — its kind's data viewer; a plain .json stays code
     ['/tmp/diagnosis.value.json', AssetEditor.VALUE],
+    ['/p/agentic-assets/value/eval.run-1a2b/value.json', AssetEditor.VALUE],
     ['/tmp/Run.VALUE.JSON', AssetEditor.VALUE],
     ['/tmp/value.json', AssetEditor.CODE],
     // code fallback

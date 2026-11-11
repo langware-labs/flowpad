@@ -52,11 +52,13 @@ class LocalServiceClient:
     def __init__(self, port: int) -> None:
         import httpx
 
+        from flow_sdk.instance_settings.cookie_gate import CookieGateAuthHttpx
+
         self.port = port
         self.base_url = f"http://127.0.0.1:{port}"
         # The OAuth wait endpoint already owns the protocol deadline. A second
         # HTTP-client deadline would cut that standard wait short.
-        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=None)
+        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=None, auth=CookieGateAuthHttpx())
 
     async def request(
         self,
@@ -64,16 +66,8 @@ class LocalServiceClient:
         path: str,
         json: Any = None,
     ) -> LocalResponse:
-        from flow_sdk.instance_settings.cookie_gate import gate_headers
-
-        url = f"{self.base_url}{path}"
         try:
-            response = await self._client.request(
-                method,
-                path,
-                json=json,
-                headers=gate_headers(url),
-            )
+            response = await self._client.request(method, path, json=json)
         except Exception as exc:  # noqa: BLE001 — typed local-service boundary
             raise FlowServiceError(
                 "service_lost",
@@ -259,11 +253,15 @@ def _exact_cleanup(generation: ServiceGeneration) -> None:
             # Listener readiness is deliberately not required: a child that
             # failed during startup is still our exact PID/create-time owner.
             exact_table = ProcTable(procs={generation.pid: process})
+            # Tearing down our own service generation by exact pid+create_time is a trusted
+            # lifecycle kill (the worker path is already refused upstream at `flow stop`), so the
+            # FLOWPAD-2112 port guard is told to allow reaping this backend.
             kill_owned(
                 generation.instance,
                 exact_table,
                 roles=frozenset({Role.BACKEND}),
                 extra=[process],
+                allow_protected=True,
             )
     # Independently clear only our exact record. This also cleans a stale
     # generation after the child has already died and vanished from the scan.

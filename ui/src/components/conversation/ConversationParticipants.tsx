@@ -1,19 +1,17 @@
-import { useState } from 'react';
+import { plural } from '@lingui/core/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Users } from 'lucide-react';
 import { ConversationKind, isHelpdeskKind, type ConversationParticipant } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import {
-  contactFromParticipant,
   participantInitials,
   participantIsUser,
   participantName,
   participantRoleLabel,
-  type ContactIdentity,
 } from './participant-display';
 import { avatarColorForParticipant } from './avatar-color';
-import { ContactPermissionsDialog } from './ContactPermissionsDialog';
 
 // Show names inline only when the room allows them AND the roster is small
 // enough to fit; otherwise fall back to overlapping initials-avatars.
@@ -37,8 +35,7 @@ interface ConversationParticipantsProps {
  * use MembersAvatarStack instead.
  */
 export function ConversationParticipants({ participants, kind }: ConversationParticipantsProps) {
-  const [open, setOpen] = useState(false);
-  const [permissionsContact, setPermissionsContact] = useState<ContactIdentity | null>(null);
+  const { t } = useLingui();
   const { cloudUser, currentUser } = useAuth();
 
   if (!participants || participants.length === 0) return null;
@@ -49,6 +46,7 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
   const others = participants.filter((p) => !participantIsUser(p, me));
   if (others.length === 0) return null;
 
+  const participantCount = participants.length;
   const allowNames = !isHelpdeskKind(kind);
   const showNames = allowNames && others.length <= NAME_LIMIT;
 
@@ -73,7 +71,7 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover>
         <PopoverTrigger asChild>
           <button
             type="button"
@@ -81,7 +79,7 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
             // navigate). The popover still opens — Radix's own handler runs.
             onClick={(e) => e.stopPropagation()}
             className="flex min-w-0 max-w-[150px] items-center gap-1 rounded text-muted-foreground transition-colors hover:text-foreground"
-            aria-label={`${participants.length} participant${participants.length === 1 ? '' : 's'}`}
+            aria-label={t`${plural(participantCount, { one: '# participant', other: '# participants' })}`}
             data-testid="conversation-participants"
           >
             <Users className="h-2.5 w-2.5 shrink-0" />
@@ -90,12 +88,11 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
         </PopoverTrigger>
         <PopoverContent align="start" side="top" className="w-56 p-2" onClick={(e) => e.stopPropagation()}>
           <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Participants ({participants.length})
+            <Trans>Participants ({participantCount})</Trans>
           </div>
           <ul className="flex flex-col gap-1">
             {participants.map((p, i) => {
               const role = participantRoleLabel(p);
-              const contact = participantIsUser(p, me) ? null : contactFromParticipant(p);
               const row = (
                 <>
                   <Avatar className="h-5 w-5">
@@ -111,31 +108,13 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
               );
               return (
                 <li key={p.user_id || p.email || i} className="flex items-center gap-2 text-xs">
-                  {contact ? (
-                    <button
-                      type="button"
-                      className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-start transition-colors hover:bg-muted"
-                      onClick={() => {
-                        setPermissionsContact(contact);
-                        setOpen(false);
-                      }}
-                      aria-label={`Open permissions for ${participantName(p)}`}
-                      data-testid={`conversation-participant-contact-${p.user_id || p.email || i}`}
-                    >
-                      {row}
-                    </button>
-                  ) : (
-                    <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{row}</div>
-                  )}
+                  <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{row}</div>
                 </li>
               );
             })}
           </ul>
         </PopoverContent>
       </Popover>
-      {permissionsContact && (
-        <ContactPermissionsDialog open onClose={() => setPermissionsContact(null)} contact={permissionsContact} />
-      )}
     </>
   );
 }

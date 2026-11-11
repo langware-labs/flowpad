@@ -92,6 +92,24 @@ class ApiSuccessResponse(ApiResponse[T], Generic[T]):
     message: str | None = "success"
 
 
+class ApiPageResponse(ApiSuccessResponse[T], Generic[T]):
+    """One page of a list: ``has_more`` says whether a next page exists, ``next_offset`` is the ``offset``
+    to ask for it (rows the server consumed, hidden ones included — so it can differ from offset + len)."""
+
+    has_more: bool = False
+    next_offset: int = 0
+    #: Send back as ``filter.after`` to continue right after this page's last row (``None`` on the last page,
+    #: or when that row has no value for a sort field — then page by ``next_offset``).
+    next_cursor: str | None = None
+
+    def model_dump(self, **kwargs) -> dict:
+        res = super().model_dump(**kwargs)
+        res["has_more"] = self.has_more
+        res["next_offset"] = self.next_offset
+        res["next_cursor"] = self.next_cursor
+        return res
+
+
 class ApiFailResponse(ApiResponse[T], Generic[T]):
     """Failed API response with error details"""
     status: ApiResponseStatus = Field(default=ApiResponseStatus.FAIL, validate_default=True)

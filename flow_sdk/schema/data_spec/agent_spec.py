@@ -1,7 +1,6 @@
 """Filesystem contracts independent of application entities."""
-from typing import ClassVar, Optional
 
-from pydantic import ConfigDict
+from typing import ClassVar, Optional
 
 from flow_sdk.schema.data_spec import AssetDocumentSpec
 from flow_sdk.schema.data_spec._form import ShapeForm
@@ -9,37 +8,9 @@ from flow_sdk.schema.data_spec.auto_open_spec import AutoOpenEntry
 from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
-from flow_sdk.schema.data_spec.spec import DataSpec
 
-#: The launch settings a place may override. Anything else is the definition's.
+#: The launch settings a deployment may override for its main agent (``Deployment.main_agent_overrides``).
 PLACE_OVERRIDABLE_FIELDS: tuple[str, ...] = ("worker_type", "model", "permission_mode", "effort", "mcp_servers")
-
-
-class AgentPlaceSpec(DataSpec):
-    """How this agent runs on ONE place — a Deployment it is placed on.
-
-    Keyed by the Deployment id and carried in agent.json, so a place's overrides
-    travel with the definition like its schedules do; each machine applies only
-    the entry naming a placement that runs there. ``None`` = inherit the
-    definition. ``mcp_servers`` names servers (names travel; ids do not).
-    """
-
-    spec_kind: ClassVar[str] = "agent.place"
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    deployment_id: str
-    #: Whether the agent runs on this place at all. ``None`` = the definition's ``enabled``.
-    #: A gate, not a launch setting — so it is not in ``overrides()``.
-    enabled: Optional[bool] = None
-    worker_type: Optional[str] = None
-    model: Optional[str] = None
-    permission_mode: Optional[str] = None
-    effort: Optional[str] = None
-    mcp_servers: Optional[list[str]] = None
-
-    def overrides(self) -> dict:
-        """The fields this place actually overrides."""
-        return {name: getattr(self, name) for name in PLACE_OVERRIDABLE_FIELDS if getattr(self, name) is not None}
 
 
 class AgentSpec(AssetDocumentSpec):
@@ -74,20 +45,23 @@ class AgentSpec(AssetDocumentSpec):
     subagents: Optional[list[str]] = None
     additional_dirs: Optional[list[str]] = None
     load_flowpad_assistant: Optional[bool] = None
+    #: Which of the assistant's skills to load, by folder name. Unset = all of them.
+    assistant_skills: Optional[list[str]] = None
     chief_of_staff: Optional[bool] = None
     cli_options: Optional[dict] = None
     enabled: Optional[bool] = None
     intro: Optional[str] = None
+    #: ``intro`` in other languages, keyed by locale code (``he``, ``ar``, ``en-US``).
+    intro_translations: Optional[dict[str, str]] = None
     auto_launch: Optional[bool] = None
     auto_launch_prompt: Optional[str] = None
+    #: Sessions as this agent stay in Vibe: no tab strip, no switch to Chat or Terminal.
+    vibe_only: Optional[bool] = None
+    #: The Vibe display's starter chips for sessions as this agent; each chip's text is the prompt it sends.
+    starter_prompts: Optional[list[str]] = None
     #: What every new session as this agent opens with: a place, a ``navigate`` op that can repair
     #: it (``{"op": name}``) or a wizard (``{"wizard": name}``); the first place is the active one.
     auto_open: Optional[list[AutoOpenEntry]] = None
-    #: Per-place launch overrides, keyed by Deployment id.
-    places: Optional[list[AgentPlaceSpec]] = None
-    #: The ONE place (Deployment id) that answers this agent's email. Unset = legacy:
-    #: every machine that polls the mailbox answers.
-    email_place: Optional[str] = None
     #: The agent's own phone number (the one its WhatsApp channel answers on). Declaration only.
     phone: Optional[PhoneNumberSpec] = None
     #: What the agent needs wherever it runs — credentials, permissions, variables — derived from what

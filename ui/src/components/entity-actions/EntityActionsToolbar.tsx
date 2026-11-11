@@ -10,6 +10,7 @@ import { agenticProcessShareSource, genericEntityShareSource, projectShareSource
 import { useEntityShare } from '@src/hooks/use-entity-share';
 import { cn } from '@src/lib/utils';
 import { CloudAssetPublishButton } from './CloudAssetPublishButton';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 
 type Variant = 'prominent' | 'compact';
 
@@ -24,6 +25,8 @@ export interface EntityActionsToolbarProps {
    * 'compact' (default) renders every action as a same-sized icon button.
    */
   variant?: Variant;
+  /** Slot for caller-supplied actions before the toolbar's own (the bar's Record screen). */
+  leading?: React.ReactNode;
   /** Slot for caller-supplied extra trailing actions (e.g. <ExportEntityButton>). */
   trailing?: React.ReactNode;
   /**
@@ -50,6 +53,7 @@ export function EntityActionsToolbar({
   favoriteTitle,
   favoriteIcon,
   variant = 'compact',
+  leading,
   trailing,
   hideFavorite = false,
   onShared,
@@ -63,7 +67,8 @@ export function EntityActionsToolbar({
   const isProject = typeId.type === Project.type;
   const { data: project } = useEntity<Project>(isProject ? typeId : null);
   const openShare = () => {
-    if (isProject && project && project.remote !== true) {
+    // On the hub every project IS its hub row — there is nothing to publish first.
+    if (isProject && project && project.remote !== true && !isHubOnly()) {
       setPublishOpen(true);
       return;
     }
@@ -93,6 +98,7 @@ export function EntityActionsToolbar({
 
   return (
     <div className={cn('flex items-center gap-0.5', className)}>
+      {leading}
       <CloudAssetPublishButton typeId={typeId} variant={variant} />
       <ShareButton
         variant={variant}

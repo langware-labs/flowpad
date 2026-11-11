@@ -483,6 +483,7 @@ class FsRecordsActionsMixin:
             apply_scope_filter,
             apply_system_filter,
             apply_tag_filter,
+            wanted_tags,
             resolve_project_scope,
             scope_record_project_ids,
         )
@@ -505,7 +506,7 @@ class FsRecordsActionsMixin:
         vault_root = qp.get("vault_root") or None
         include_system = qp.get("include_system", "").strip().lower() in ("true", "1")
         tags_raw = qp.get("tags") or ""
-        tag_list = [t.strip() for t in tags_raw.split(",") if t.strip()]
+        tag_list = wanted_tags(tags_raw)
 
         def _row(ent, *, snippet=None) -> dict:
             ent_status = getattr(ent, "status", None) or ""
@@ -522,7 +523,7 @@ class FsRecordsActionsMixin:
                 "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
                 "last_edited_at": getattr(ent, "last_edited_at", None),
                 "asset_ref": "",  # filled below; awaitable
-                "labels": getattr(ent, "labels", None) or [],
+                "subkind": getattr(ent, "subkind", None) or "",
             }
             for extra_field in ("session_id", "worker_session_id"):
                 val = getattr(ent, extra_field, None)
@@ -1406,9 +1407,9 @@ class FsRecordsActionsMixin:
         * **Never a 409.** A user-initiated index holding the activity means we
           skip silently (same as the startup system-assets pass). The user never
           caused this run and must never see it fail.
-        * **Never sweeps.** ``orphan_action`` stays INDEX (count-only). An
-          automatic run must not delete records — that caps the blast radius if
-          the walk ever returns a short candidate list.
+        * **Removes rows whose file is deleted** (``OrphanAction.DELETE``). Orphan-ness
+          is a stat of each row's own file (``source_gone``), never "the walk did not
+          see it", so a short walk cannot delete a live record.
         * **Never foreground.** Protected-folder projects are gated, so a plain
           project switch cannot trip a macOS consent dialog.
 
@@ -1445,18 +1446,18 @@ class FsRecordsActionsMixin:
                 project_id=str(project_id),
                 force=force,
                 trigger=trigger,
-                # Count-only: an automatic run must never delete records.
-                orphan_action=OrphanAction.INDEX,
+                orphan_action=OrphanAction.DELETE,
                 indexer=get_auto_scan_indexer() if scan_mode is not None else None,
                 project_record=project_record,
                 on_started=on_started,
                 queue=queue,
             )
             logging.info(
-                "[auto-index] project %s (%s): %d new, %d errors in %.0fms",
+                "[auto-index] project %s (%s): %d new, %d removed, %d errors in %.0fms",
                 project_id,
                 trigger,
                 result.total_indexed,
+                result.total_orphans_db_removed,
                 result.total_errors,
                 result.duration_ms,
             )
@@ -1526,7 +1527,9 @@ class FsRecordsActionsMixin:
 
         from pathlib import Path as _Path  # noqa: PLC0415
 
-        _p = _Path(index_path).expanduser().resolve() if index_path else None
+        from flow_sdk.fs_store.path_utils import disk_spelling  # noqa: PLC0415
+
+        _p = disk_spelling(_Path(index_path).expanduser()) if index_path else None
 
         # Surface stale callers still using the legacy `?project_id=<id>` shim
         # — it now silently triggers a full-tree walk (scope_filter=None).
@@ -1541,7 +1544,7 @@ class FsRecordsActionsMixin:
             )
         orphan_action_raw = qp.get("orphan_action", "").strip().lower()
         try:
-            orphan_action = OrphanAction(orphan_action_raw) if orphan_action_raw else OrphanAction.INDEX
+            orphan_action = OrphanAction(orphan_action_raw) if orphan_action_raw else OrphanAction.DELETE
         except ValueError:
             return ApiFailResponse(
                 message=(f"Invalid orphan_action '{orphan_action_raw}'. Valid: {[a.value for a in OrphanAction]}"),
@@ -1683,25 +1686,12 @@ class FsRecordsActionsMixin:
                 ),
             )
         else:
-            # Orphan-aware runs (orphan_action != INDEX) must walk EVERY source
-            # so ``seen_ids`` is global — a record is orphan iff its source is
-            # missing *anywhere*. ``default_roots()`` (the old
-            # ``custom_roots = None``) only covers USER_HOME's targeted
-            # expanders + the backend CWD + system; it does NOT descend the
-            # registered project file trees, so every project record went
-            # unseen and was mass-deleted as a false orphan. Resolve the FULL
-            # all-projects root set for orphan runs; INDEX runs use the
-            # requested scope. Either way ``scope_filter`` is still passed to
-            # the indexer (opts.scope_filter) to narrow which orphans are acted on.
-            roots_scope = (
-                await get_all_scope_filter(create_missing=False)
-                if orphan_action != OrphanAction.INDEX
-                else scope_filter
-            )
+            # Walk the requested scope only: an orphan is a row whose own file is
+            # deleted (``source_gone``), so removing it needs no global walk.
             # Explicit manual project refresh has the same foreground intent as
-            # browsing it. Background indexing and global orphan sweeps stay gated.
-            foreground = trigger == "manual" and bool(qp.get("projects")) and orphan_action == OrphanAction.INDEX
-            custom_roots = await self._resolve_scoped_roots(roots_scope, foreground=foreground)
+            # browsing it. Background indexing stays gated.
+            foreground = trigger == "manual" and bool(qp.get("projects"))
+            custom_roots = await self._resolve_scoped_roots(scope_filter, foreground=foreground)
             if isinstance(custom_roots, ApiFailResponse):
                 return custom_roots
 
@@ -2016,8 +2006,8 @@ class FsRecordsActionsMixin:
         changed path (resolving inner files to their owning folder asset),
         mint type-inferred new files, and orphan/re-sync deleted ones — each
         with a ``notify=True`` broadcast. The push trigger for the
-        ``file change → reindex → entity change → refresh`` loop; called by the
-        agentic turn-end seam and any client with a changed-file set.
+        ``file change → reindex → entity change → refresh`` loop for a client with
+        a changed-file set (a session's turn end calls ``reindex_paths`` directly).
         """
         from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
 
@@ -2328,15 +2318,11 @@ class FsRecordsActionsMixin:
                     return ApiFailResponse(message="Record uid is required for delete", status_code=400)
                 # Remove Entity + FTS before deleting from disk
                 from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-                from flow_sdk.db import get_db_driver  # noqa: PLC0415
                 from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
 
                 entity = await Entity.get_one(QueryFilter.parse({"id": uid}, record_type))
                 if entity is not None:
-                    driver = get_db_driver()
-                    if hasattr(driver, "fts_delete"):
-                        await driver.fts_delete(entity.id)
-                    await entity.delete()
+                    await entity.delete()  # the driver drops its FTS row with it
                 # Remove from disk — including the live asset_ref folder so
                 # records like Skill don't re-surface via discover() after delete.
                 record = await asyncio.to_thread(record_list.get, uid)

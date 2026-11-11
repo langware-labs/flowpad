@@ -33,6 +33,10 @@ Prompt delivery / cancel semantics:
   alive, idle, and able to take a new user message on the same stdin
   (``claim_for_message`` + ``write_user_message``) — see ``worker_turns``. A CLI
   that never reports its state is closed at ``result``, as before.
+- A job the CLI's own scheduler holds (``CronCreate``, a ``ScheduleWakeup``
+  wakeup) keeps the worker parked the same way: it fires only while the process
+  lives, and ``background_tasks_changed`` never lists it, so the worker tracks
+  it from the tool calls (``_observe_cron_jobs``).
 - A user-requested cancel is NOT an error: after ``close_session()``, the
   interrupted turn's ``result`` (which the CLI reports as ``is_error``) is
   reclassified to ``outcome=aborted`` and the worker emits the canonical
@@ -43,6 +47,7 @@ Prompt delivery / cancel semantics:
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import logging
 import os
@@ -51,6 +56,13 @@ from typing import AsyncIterator
 from uuid import uuid4
 
 from flow_sdk import toplog
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.claude_cron_job import (
+    SCHEDULE_TOOLS,
+    ClaudeCronJob,
+    content_blocks,
+    cron_job_from_result,
+    restored_cron_jobs,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.credential import (
     ensure_fresh_before_turn,
@@ -59,6 +71,8 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.event_to_flowdata impor
     convert_event,
     final_end_frame,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.launch_screen import classify_auth
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import get_session_jsonl_path
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     STREAM_JSON_LINE_LIMIT_BYTES,
     AgenticContext,
@@ -82,6 +96,7 @@ from flow_sdk.builtin.agentic_process.turn_abort import (
     TURN_TERMINATED_ATTR,
     abort_status_frame,
 )
+from flow_sdk.builtin.process_lifecycle import is_recoverable_worker_interruption
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowElementType,
@@ -93,6 +108,12 @@ logger = logging.getLogger(__name__)
 # Grace period before escalating SIGTERM → SIGKILL. Keep under the UI's cancel
 # timeout (~10 s) so a stuck subprocess never wedges the chat.
 CANCEL_GRACE_SECONDS = 5.0
+
+
+def _killed_from_outside(returncode: int) -> bool:
+    """The CLI turns SIGTERM into the shell's 128+N (143); a signal it does not catch arrives as -N."""
+    return is_recoverable_worker_interruption(128 - returncode if returncode > 128 else returncode)
+
 
 # What a user sees in place of the CLI's raw auth 401. The raw text is always
 # logged first — see ``_humanize_auth_error``.
@@ -183,7 +204,16 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         #: Ids of the background work the CLI reports as still running
         #: (``background_tasks_changed`` carries the COMPLETE current set).
         self._background_task_ids: set[str] = set()
+        #: CronCreate jobs still scheduled, by the CLI's job id. Not in ``background_tasks_changed``,
+        #: so built from the tool calls: create adds; delete, a one-shot's fire or expiry removes.
+        self._cron_jobs: dict[str, ClaudeCronJob] = {}
+        #: Schedule tool calls waiting for their result: tool_use id → (tool name, input).
+        self._schedule_calls: dict[str, tuple[str, dict]] = {}
+        #: The self-paced /loop's one pending wakeup (``scheduledFor``, epoch seconds), or None.
+        self._pending_wakeup: float | None = None
         self._result_seen = False
+        self._stderr_tail: collections.deque[str] = collections.deque(maxlen=40)
+        self._auth_failure, self._failure_taken = None, False  # (code, message): a 401/403 or "Not logged in"
 
     @property
     def session_state(self) -> str | None:
@@ -191,7 +221,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
 
     @property
     def parked(self) -> bool:
-        """Idle between turns, kept alive only because background work still runs.
+        """Idle between turns, kept alive only because background work or a scheduled job remains.
 
         The CLI answered and went ``idle`` but its stdin is still open: the one state
         in which a NEW user message can be written to this same process and answered
@@ -270,7 +300,13 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         self._stopped_while_parked = False
         self._session_state = None
         self._background_task_ids = set()
+        # ``--resume`` restores the session's cron jobs and the new stream never announces them.
+        self._cron_jobs = await self._restored_cron_jobs(context)
+        self._schedule_calls = {}
+        self._pending_wakeup = None
         self._result_seen = False
+        self._auth_failure, self._failure_taken = None, False
+        self._stderr_tail.clear()
         # A turn must never start on a token we already know is dead — the CLI
         # would renew it inside this request and, if that renewal is slow, give
         # up and hand the user a raw 401. One file read on every healthy turn;
@@ -581,6 +617,18 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             )
             + "\n"
         )
+        if not context.resume_session_id:
+            # Under ``--print --input-format stream-json`` the CLI never titles a
+            # session by itself (its interactive auto-title is off; measured on 2.1.310:
+            # a headless first turn leaves no ``ai-title`` row while a PTY one does).
+            # The Agent SDK host asks for it with this control request; ``persist``
+            # makes the CLI append the native ``ai-title`` row the naming adapter reads.
+            CTRL_REQUEST_GENERATE_SESSION_TITLE = {
+                "type": "control_request",
+                "request_id": f"session-title-{uuid4().hex[:8]}",
+                "request": {"subtype": "generate_session_title", "description": prompt, "persist": True},
+            }
+            stdin_payload += json.dumps(CTRL_REQUEST_GENERATE_SESSION_TITLE) + "\n"
         env_from_opts = dict(opts.env_vars)
 
         # Start from os.environ so the CLI can find its creds, home. Strip the
@@ -615,10 +663,36 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 decoded = line.decode("utf-8", errors="replace").rstrip()
                 if decoded:
                     logger.warning("claude stderr: %s", decoded)
+                    self._stderr_tail.append(decoded)
+                    self._fail_auth(classify_auth(decoded))
         except asyncio.CancelledError:
             pass
         except Exception:
             logger.warning("stderr drain error", exc_info=True)
+
+    def _fail_auth(self, failure: tuple[str, str] | None) -> None:  # first wins; reported at the turn's end, never a kill
+        if failure and self._auth_failure is None:
+            self._auth_failure = failure
+
+    def turn_failure(self):
+        """Taken once: a refused credential, or exit ≠ 0 before any result (not a user stop, not killed from outside)."""
+        from flow_sdk.builtin.agentic_process.launch_health import LaunchError  # noqa: PLC0415
+
+        proc, ended = self._proc, self._result_seen or self._cancel_requested or self._stopped_while_parked
+        crashed = (
+            proc is not None
+            and proc.returncode not in (None, 0)
+            and not ended
+            and not _killed_from_outside(proc.returncode)
+        )
+        if self._failure_taken or not (self._auth_failure or crashed):
+            return None
+        self._failure_taken = True
+        code, message = self._auth_failure or (
+            "cli_crashed",
+            f"claude exited with code {proc.returncode} before answering",
+        )
+        return LaunchError.of(code, message, "claude"), message if self._auth_failure else "\n".join(self._stderr_tail)
 
     async def _terminate_process(self) -> None:
         """SIGTERM → grace → SIGKILL. Safe to call multiple times."""
@@ -632,11 +706,12 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         )
 
     def _observe_session_events(self, event: dict | None) -> None:
-        """Mirror the CLI's own typed signals: its state, the result, its background work."""
+        """Mirror the CLI's own typed signals: its state, the result, its background work, its scheduled jobs."""
         if event is None:
             return
         if event.get("type") == "result":
             self._result_seen = True
+        self._fail_auth(classify_auth(event))
         subtype = event.get("subtype")
         if subtype == "session_state_changed":
             state = event.get("state")
@@ -648,6 +723,67 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 self._background_task_ids = {
                     task["task_id"] for task in tasks if isinstance(task, dict) and task.get("task_id")
                 }
+        self._observe_cron_jobs(event)
+
+    def _observe_cron_jobs(self, event: dict) -> None:
+        """Track the jobs the CLI's scheduler holds (CronCreate / CronDelete / ScheduleWakeup).
+
+        They are not in ``background_tasks_changed``, so they are read from the tool calls and
+        their results; a fire is a turn the scheduler starts (``command_lifecycle``) and names no job.
+        """
+        etype = event.get("type")
+        if etype == "assistant":
+            for block in content_blocks(event):
+                if block.get("type") == "tool_use" and block.get("name") in SCHEDULE_TOOLS and block.get("id"):
+                    self._schedule_calls[block["id"]] = (block["name"], block.get("input") or {})
+        elif etype == "user":
+            self._observe_schedule_results(event)
+        elif etype == "command_lifecycle" and event.get("state") == "started":
+            self._observe_scheduled_fire(time.time())
+
+    def _observe_schedule_results(self, event: dict) -> None:
+        """Apply a schedule tool call once its result says it succeeded."""
+        result = event.get("tool_use_result")
+        result = result if isinstance(result, dict) else {}
+        for block in content_blocks(event):
+            if block.get("type") != "tool_result":
+                continue
+            call = self._schedule_calls.pop(block.get("tool_use_id"), None)
+            if call is None or block.get("is_error"):
+                continue
+            name, args = call
+            if name == "CronCreate":
+                job = cron_job_from_result(result, seen_at=time.time())
+                if job is not None:
+                    self._cron_jobs[job.id] = job
+            elif name == "CronDelete":
+                self._cron_jobs.pop(str(result.get("id") or args.get("id")), None)
+            elif name == "ScheduleWakeup":
+                scheduled_for = result.get("scheduledFor")
+                stop = args.get("stop") or not isinstance(scheduled_for, (int, float))
+                self._pending_wakeup = None if stop else scheduled_for / 1000
+
+    def _observe_scheduled_fire(self, now: float) -> None:
+        """A turn the scheduler started. It names no job, so drop whatever the CLI has dropped by now:
+        a one-shot whose fire time has come, an expired recurring job, a due wakeup."""
+        self._cron_jobs = {job_id: job for job_id, job in self._cron_jobs.items() if job.ends_at > now}
+        if self._pending_wakeup is not None and self._pending_wakeup <= now:
+            self._pending_wakeup = None
+
+    @property
+    def _keeps_alive(self) -> bool:
+        """What the CLI still has to do with no turn running: background work or a scheduled job."""
+        return bool(self._background_task_ids or self._cron_jobs or self._pending_wakeup is not None)
+
+    @staticmethod
+    async def _restored_cron_jobs(context: AgenticContext) -> dict[str, ClaudeCronJob]:
+        """The cron jobs ``--resume`` brings back for this session; none for a fresh one."""
+        if not context.resume_session_id:
+            return {}
+        path = get_session_jsonl_path(context.resume_session_id)
+        if path is None:
+            return {}
+        return await asyncio.to_thread(restored_cron_jobs, path, time.time())
 
     def _close_stdin_when_finished(self) -> None:
         """Close stdin once there is nothing left for this process to do.
@@ -661,6 +797,10 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         ends) with it. While work is running the process is parked instead — see
         :attr:`parked` — and ``claude -p`` keeps it alive on its own account.
 
+        A scheduled job (a CronCreate job, a pending wakeup) counts as work left: it
+        fires only while the process lives, and a closed stdin exits the CLI at once —
+        the hourly check that fired once and never again (2026-10-15).
+
         A CLI that never reports its state is closed at ``result``, as before. A
         stop that was asked for closes at ``idle`` whatever is still running.
         """
@@ -668,7 +808,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             return
         if self._session_state is None:
             self._close_stdin()
-        elif self._session_state == "idle" and (self._cancel_requested or not self._background_task_ids):
+        elif self._session_state == "idle" and (self._cancel_requested or not self._keeps_alive):
             self._close_stdin()
 
     def _close_stdin(self) -> None:

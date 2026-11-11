@@ -64,7 +64,7 @@ export function processRouteCarry(dock: DockPointer, extra: Partial<ProcessRoute
 }
 import { ViewType } from '@sdk';
 import { projectScope, scopeFilterEqual, type ScopeFilter } from '@src/lib/scope-filter';
-import { replace } from 'react-router';
+import { redirect } from 'react-router';
 import { errorStatus } from '@src/lib/error-message';
 import { perfLog, perfTime } from './_perf';
 import { loadProcess, ProcessLoadError, resolveProcessIdentity } from './load-process';
@@ -192,7 +192,7 @@ async function routeNewTerminal(shellUrl: ShellUrlBuilder): Promise<never> {
   const cn = dataContext.computeNode;
   if (!cn) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(shellUrl());
+    throw redirect(shellUrl());
   }
   const shells = await Shell.query<Shell>(new QueryRequest({ type: Shell.type, scope: [] }));
   const { nextTerminalName } = await import('@src/components/terminal/rename-rules');
@@ -200,10 +200,10 @@ async function routeNewTerminal(shellUrl: ShellUrlBuilder): Promise<never> {
   const cwd = dataContext.project?.fs_storage_mount_path ?? undefined;
   const newShell = Shell.create(cn, { name, workdir: cwd });
   await newShell.save(cn.typeId);
-  // Use replace so going BACK doesn't re-trigger this loader and create
-  // another terminal.
+  // The new shell's URL takes the place of `new_terminal` (I7), so Back never
+  // lands on `new_terminal` and creates another terminal.
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw replace(shellUrl(newShell.dockPointer.pointer));
+  throw redirect(shellUrl(newShell.dockPointer.pointer));
 }
 
 async function routeDefaultShell(shellUrl: ShellUrlBuilder): Promise<void> {
@@ -219,14 +219,10 @@ async function routeDefaultShell(shellUrl: ShellUrlBuilder): Promise<void> {
     return;
   }
   perfLog(`routeDefaultShell redirect → ${shellUrl(loadedToPointer(result.loaded))}`);
-  // Replace (not push): bare /dock/shell is a transient placeholder the user
-  // never sees — the loader resolves it to a concrete shell URL synchronously.
-  // Using redirect() (PUSH) leaves bare /dock/shell as a no-op history entry,
-  // which (a) breaks back/forward navigation across tab clicks and (b) is
-  // dropped silently on hard-refresh. Home → BACK still returns to home
-  // because the resolved /dock/shell/<id> entry replaces the bare one.
+  // Bare /dock/shell is a placeholder the user never sees: the concrete shell
+  // URL takes its place (I7), so it never becomes a history entry.
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw replace(shellUrl(loadedToPointer(result.loaded)));
+  throw redirect(shellUrl(loadedToPointer(result.loaded)));
 }
 
 /**
@@ -238,7 +234,7 @@ async function routeDefaultShell(shellUrl: ShellUrlBuilder): Promise<void> {
  * be a PROJECTION of that same id — not the project that happened to be ambient
  * when the scope was seeded at click (`openDock`, NavigationActions). When they
  * diverge (open an oss chat while acme-streams was active → URL carries
- * acme's scope), `replace()` the URL onto the same pointer carrying the
+ * acme's scope), redirect the URL onto the same pointer carrying the
  * process's own project scope. This runs at LOAD, so it also corrects deep
  * links / hard refresh / back-forward, not just the click path. A genuinely
  * projectless target actively removes any seeded project scope so its tab and
@@ -271,7 +267,7 @@ async function reconcileProcessScope(processId: string, requestPath: string, car
     detectLayout(requestPath),
   ).withViewMode(carry?.viewMode ?? sessionOpenViewMode(proc));
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw replace((want ? base.withScopeFilter(want) : base.withoutScopeFilter()).toUrl(requestPath));
+  throw redirect((want ? base.withScopeFilter(want) : base.withoutScopeFilter()).toUrl(requestPath));
 }
 
 /**
@@ -302,7 +298,7 @@ export function restoreDisplayRedirect(processId: string, requestPath: string, c
 
 /**
  * A process URL that is dead (entity gone, or unreachable): fall back to the next
- * candidate and ``replace()`` so BACK doesn't re-trigger this loader. Never returns.
+ * candidate, which takes the dead URL's place (I7). Never returns.
  */
 async function fallbackFromDeadProcess(processId: string, e: ProcessLoadError, shellUrl: ShellUrlBuilder): Promise<never> {
   const directCleanup = buildProcessCleanup(e);
@@ -317,7 +313,7 @@ async function fallbackFromDeadProcess(processId: string, e: ProcessLoadError, s
   handleCleanups([directCleanup, ...next.cleaned]);
   if (!next.loaded) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(shellUrl());
+    throw redirect(shellUrl());
   }
   const fallbackPointer = loadedToPointer(next.loaded);
   const requestedProc = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
@@ -331,7 +327,7 @@ async function fallbackFromDeadProcess(processId: string, e: ProcessLoadError, s
     message: t`${directCleanup.title} — opened "${fallbackName}" instead.`,
   });
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw replace(shellUrl(fallbackPointer));
+  throw redirect(shellUrl(fallbackPointer));
 }
 
 async function routeProcessPointer(
@@ -341,7 +337,7 @@ async function routeProcessPointer(
   carry?: ProcessRouteCarry,
 ): Promise<void> {
   // Scope alignment is the RESOLVE phase's (`resolveShellRoute`), which ran before
-  // this one and threw its `replace()` if the URL diverged from the process's
+  // this one and threw its redirect if the URL diverged from the process's
   // project. By here the scopes match, so the runtime attaches under the right one.
   try {
     await loadProcess(processId);
@@ -355,7 +351,7 @@ async function routeProcessPointer(
     const displayUrl = restoreDisplayRedirect(processId, requestPath, carry);
     if (displayUrl) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw replace(displayUrl);
+      throw redirect(displayUrl);
     }
     return;
   } catch (e) {
@@ -409,11 +405,10 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
       const recovered = await AgenticProcess.getByWorkerId(shellId).catch(() => null);
       if (recovered) {
         // eslint-disable-next-line @typescript-eslint/only-throw-error
-        throw replace(shellUrl(recovered.terminalDockPointer.pointer));
+        throw redirect(shellUrl(recovered.terminalDockPointer.pointer));
       }
     }
 
-    // See routeProcessPointer for rationale on `replace`.
     const directCleanup = buildShellCleanup(e);
     toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=shell_missing kind=${e.kind} shell=${shellId.slice(0, 8)} → fallback`);
     const next = await loadNextProcess({
@@ -423,7 +418,7 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
     handleCleanups([directCleanup, ...next.cleaned]);
     if (!next.loaded) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw replace(shellUrl());
+      throw redirect(shellUrl());
     }
     const fallbackPointer = loadedToPointer(next.loaded);
     notify.error({
@@ -431,7 +426,7 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
       message: t`Couldn't load ${shellId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(shellUrl(fallbackPointer));
+    throw redirect(shellUrl(fallbackPointer));
   }
 }
 
@@ -442,7 +437,7 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
  * Step 3 of docs/navigation/dock-loading.md for shell URLs: every redirect a shell
  * URL takes on IDENTITY alone — the owning project's scope, a dead process, a
  * plain shell a process owns — decided before the route materializes a tab or
- * writes context (I2). Throws a `replace()` redirect, or returns when the URL is
+ * writes context (I2). Throws a redirect, or returns when the URL is
  * already where it should be. Read-only apart from the dead-link fallback, which
  * resolves the sibling to go to.
  */
@@ -478,10 +473,10 @@ export async function resolveShellRoute(
     // A process owns this shell: its URL is the process's — in ONE hop, already
     // scoped to the process's project (a bare process URL would redirect again).
     // Scope alignment throws that URL; a projectless owner falls through to the
-    // bare one. `replace` so BACK doesn't pop back to the shell URL and re-bounce.
+    // bare one. The process URL takes the shell URL's place (I7).
     await reconcileProcessScope(ownerId, requestPath, { ...carry, scope: undefined });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(shellUrl(new TypeId(AgenticProcess.type, ownerId).toString()));
+    throw redirect(shellUrl(new TypeId(AgenticProcess.type, ownerId).toString()));
   }
 }
 

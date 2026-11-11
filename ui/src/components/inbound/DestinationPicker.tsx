@@ -3,6 +3,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import type { ChannelRouteTarget } from '@sdk';
 import { Input } from '@src/components/ui/input';
 import { cn } from '@src/lib/utils';
+import { Chip } from './Chip';
 import { type DestinationOption, manualTarget, samePlace } from './inbound-model';
 
 /**
@@ -56,21 +57,17 @@ export function DestinationPicker({
         <div className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm">
           <div className="flex gap-2">
             {(['desktop', 'node'] as const).map((k) => (
-              <button
+              <Chip
                 key={k}
-                type="button"
-                data-testid={`inbound-manual-kind-${k}`}
+                active={kind === k}
+                testId={`inbound-manual-kind-${k}`}
                 onClick={() => {
                   setKind(k);
                   typed(k, where, channel);
                 }}
-                className={cn(
-                  'rounded-full px-2 py-0.5 text-xs font-medium',
-                  kind === k ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
-                )}
               >
                 {k === 'desktop' ? <Trans>Desktop instance</Trans> : <Trans>Machine</Trans>}
-              </button>
+              </Chip>
             ))}
           </div>
           <Input

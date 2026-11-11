@@ -14,6 +14,7 @@ import { useEffect } from 'react';
 import { NavigationActions } from '@src/navigation/NavigationActions';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { isAppType } from '@src/navigation/app-dock';
 import {
   dockPointerForClickTarget,
   renderDesktopNotification,
@@ -69,6 +70,12 @@ export function useUiCommandListener(): void {
         typeId = new TypeId(msg.type, msg.id);
       } catch (err) {
         console.warn('[ui_command] invalid TypeId', msg, err);
+        return;
+      }
+
+      // An app (web app, artifact, endpoint) opens running — the same dock `flow show` opens it in.
+      if (isAppType(typeId.type)) {
+        navigateTo(new DockPointerData(ViewType.APP, typeId.toString()));
         return;
       }
 
@@ -149,6 +156,14 @@ export function useUiCommandListener(): void {
       }
       if (msg.kind === 'desktop_notify') {
         renderDesktopNotification((msg.info ?? {}) as NotificationPayload);
+        return;
+      }
+      // `open_link`: the hub asked this desktop to open a received message (its email landing page).
+      // The backend already fetched and synced it; this is the same `/dock/home?action=open…` the deep
+      // link lands on, so `IncomingDeepLink` takes it from here. The desktop window comes forward first.
+      if (msg.kind === 'open_link') {
+        (window as unknown as { electronAPI?: { focusWindow?: () => void } }).electronAPI?.focusWindow?.();
+        window.location.assign(`/dock/home?${new URLSearchParams(msg.query ?? {}).toString()}`);
         return;
       }
       // `install_request`: the hub relayed a one-click install to this desktop.

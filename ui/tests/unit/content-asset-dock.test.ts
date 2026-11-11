@@ -2,6 +2,7 @@ import { Layout, TypeId } from '@sdk';
 import { describe, expect, it } from 'vitest';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import {
+  chatModeOfDock,
   contentAssetTargetForDock,
   isContentAssetDock,
   isOwnChatAssetDock,
@@ -121,3 +122,20 @@ describe('own-chat asset docks', () => {
   });
 });
 
+
+describe('chatModeOfDock — the one table every doc-chat control reads', () => {
+  it.each([
+    ['markdown editor', AssetDocPointer.forTypeId(AssetEditor.MARKDOWN, new TypeId('markdown', ID)).toDockPointer(), 'beside'],
+    ['raw file editor', DockPointer.forFile('/Users/a/attachment.md'), 'beside'],
+    ['html preview', AssetDocPointer.forVfs(AssetEditor.HTML, '/Users/a/index.html').toDockPointer(), 'display'],
+    ['agent profile', AssetDocPointer.forTypeId(AssetEditor.AGENT, new TypeId('agent', ID)).toDockPointer(), 'own'],
+    [
+      'fileless llm endpoint',
+      AssetDocPointer.forTypeId(AssetEditor.LLM_ENDPOINT, new TypeId('llm_endpoint', ID)).toDockPointer(),
+      'none',
+    ],
+    ['asset list', DockPointer.forAssetList('all'), 'none'],
+  ])('%s → %s', (_name, dock, mode) => {
+    expect(chatModeOfDock(dock)).toBe(mode);
+  });
+});

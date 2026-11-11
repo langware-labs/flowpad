@@ -1,13 +1,15 @@
 import { t } from '@lingui/core/macro';
+import { sectionRecordTypes } from './section-record-types';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FolderOpen, Home, Link, Trash2 } from 'lucide-react';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, DiagnosisRequest, fsManager, fsStore, Project, RecordType, TypeId, VFSPath } from '@sdk';
+import apiClient from '@sdk/client';
+import { dataContext, DiagnosisRequest, fsManager, fsStore, Project, RecordType, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ViewType } from '@src/types/ViewType';
 import { notify } from '@src/notifications';
@@ -40,7 +42,7 @@ import {
   assetContextFolderNodeId,
   assetContextFoldersRoot,
 } from '@src/components/browseable-tree/adapters/assetContextFoldersRoot';
-import { useDataSourcesRoot } from '@src/components/browseable-tree/adapters/dataSourcesRoot';
+import { useDataSourcesRoots } from '@src/components/browseable-tree/adapters/dataSourcesRoot';
 import { flatEntityRoots } from '@src/components/browseable-tree/adapters/flatEntityRoot';
 import {
   basename as fsBasename,
@@ -53,58 +55,26 @@ import {
 } from '@src/components/browseable-tree/adapters/fsFolderRoot';
 import { useExplorerComputeNode } from '@src/components/explorer-view/useExplorerComputeNode';
 import {
-  markdownFolderNodeId,
   markdownFolderRoot,
-  type MarkdownDragItem,
-  type MarkdownFolderTarget,
 } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
 import type { Browseable, BrowseableRoot, DroppedFileEntry } from '@src/components/browseable-tree/types';
 import type { MultiSelectAction } from '@src/components/navigator-panel/types';
+import type { FsOpsHost } from '@src/components/browseable-tree/adapters/fsFileOps';
+import { useMenuDialogs } from '@src/components/ui/browseable-menu';
+import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
 
-const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION, RecordType.PROJECT]);
+const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION, RecordType.PROJECT, RecordType.COMPUTE_OP]);
 
 // --- path helpers (mirrors AssetsPage; pure) -------------------------------
 function normalizeTreePath(path: string): string {
   return path.replace(/^\/+/, '').replace(/\/+$/, '');
 }
-function basenamePath(path: string): string {
-  const trimmed = path.replace(/\/+$/, '');
-  const idx = trimmed.lastIndexOf('/');
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
-function dirnamePath(path: string): string {
-  const trimmed = path.replace(/\/+$/, '');
-  const idx = trimmed.lastIndexOf('/');
-  if (idx < 0) return '';
-  if (idx === 0) return '/';
-  return trimmed.slice(0, idx);
-}
-function parseAssetEditorPointer(pointer: string | undefined): { typeName: string; absPath: string } | null {
-  if (!pointer?.startsWith('editor/')) return null;
-  let ptr: AssetDocPointer;
-  try {
-    ptr = AssetDocPointer.parse(pointer);
-  } catch {
-    return null;
-  }
-  if (ptr.mode !== AssetMode.EDITOR || ptr.method !== AssetRoutingMethod.VFS || !ptr.editor) return null;
-  const vfs = VFSPath.parse(ptr.value);
-  return { typeName: ptr.editor, absPath: `/${vfs.entitySubPath.replace(/^\/+/, '')}` };
-}
 function joinRelPath(parent: string, name: string): string {
   const base = normalizeTreePath(parent);
   const cleanName = name.replace(/^\/+/, '').replace(/\/+$/, '');
   return base ? `${base}/${cleanName}` : cleanName;
-}
-function joinAbsPath(parent: string, name: string): string {
-  const base = parent.replace(/\/+$/, '');
-  const cleanName = name.replace(/^\/+/, '').replace(/\/+$/, '');
-  return base && base !== '/' ? `${base}/${cleanName}` : `/${cleanName}`;
-}
-function isValidFolderName(name: string): boolean {
-  return !!name && name !== '.' && name !== '..' && !/[\\/]/.test(name);
 }
 
 /**
@@ -123,11 +93,8 @@ export function useAssetsModel() {
     reload: reloadTypes,
   } = useAssetTypes({ allUserTypes: true });
   const { indexType } = useSystemTools();
-  const dataSourcesRoot = useDataSourcesRoot();
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
-  const [newFolderTarget, setNewFolderTarget] = useState<MarkdownFolderTarget | null>(null);
-  const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
 
   const currentProjectId = dataContext.project?.id ?? null;
   const currentProjectName = dataContext.project?.getDisplayName() ?? dataContext.project?.name ?? null;
@@ -145,6 +112,7 @@ export function useAssetsModel() {
   );
   const scopeProjectId = urlProjectId ?? pinnedProjectId(urlScope) ?? currentProjectId;
   const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
+  const { dataSourcesRoot, channelsRoot } = useDataSourcesRoots(scopeProjectId ?? null);
 
   // The scoped project entity, watched so `include_dirs` edits (add/remove
   // dependency) re-render the tree. Backs the "Dependencies" root.
@@ -216,29 +184,57 @@ export function useAssetsModel() {
     reload: reloadStats,
   } = useAssetStats(effectiveFilter.scope);
 
-  // The scoped project's server-computed menu: per-type counts for the project
-  // AND, nested under it, for every dependency (recursively). Backs both the
-  // type-row counts below and the nested rows under each dependency row.
-  const { menu: assetMenu, nodesByPath: menuNodesByPath } = useProjectAssetMenu(scopeProject);
+  // The scoped project's server-computed menu: per-folder counts for the project and,
+  // nested under it, every dependency (recursively). Backs the Packages rows only —
+  // each folder's badge counts what that folder's row lists.
+  const { nodesByPath: menuNodesByPath, refresh: reloadAssetMenu } = useProjectAssetMenu(scopeProject);
+  // The dependency folders that hold documents — the menu nodes below the project's own
+  // mount with markdown of their own. Under the Dependencies scope the Documents tree
+  // lists exactly these folders' vaults: one with no documents would only read "Empty".
+  // Keyed on CONTENT, so a menu refetch with the same folders keeps the Set's identity
+  // (and the tree roots built from it) stable.
+  const scopeMount = scopeProject?.fs_storage_mount_path ?? '';
+  const dependencyRootsKey = Array.from(menuNodesByPath.entries())
+    .filter(
+      ([path, node]) =>
+        path && path !== scopeMount && (node.groups ?? []).some((g) => g.type_name === 'markdown' && g.own_count > 0),
+    )
+    .map(([path]) => path)
+    .join('|');
+  const dependencyRoots = useMemo(
+    () => new Set(dependencyRootsKey ? dependencyRootsKey.split('|') : []),
+    [dependencyRootsKey],
+  );
 
   // The budgets this person may spend — read once here for the count badge; the tree
   // adapter and the body read the same cached answer.
   const { endpoints: myEndpoints } = useMyEndpoints();
   const myDiagnosisRequests = useMyDiagnosisRequests();
 
+  // Tags are row-only (never indexed), so `asset-stats` has no `tag` count and the Tag root
+  // stayed hidden even in dev mode. Their count is how many Tag entities the box lists.
+  const [tagCount, setTagCount] = useState(0);
+  useEffect(() => {
+    let live = true;
+    void Promise.resolve(apiClient.get('/graph/tag'))
+      .then((rows) => live && setTagCount(Array.isArray(rows) ? rows.length : 0))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [assetStats.per_type]);
+
+  // ONE count source, the same scope as the list: asset-stats counts exactly the rows
+  // `/search?top_level=true` returns for `effectiveFilter.scope` (nested rows are
+  // subtracted server-side). Dependency assets are counted only when the scope asks for
+  // them (the Dependencies mode); the per-folder menu counts belong to the Packages rows,
+  // never to a type row whose list cannot show them.
   const typeCounts = useMemo(() => {
     const counts = new Map(Object.entries(assetStats.per_type));
-    // Fold in the menu's accumulated counts, which INCLUDE the project's context
-    // folders — assets that are scope-invisible to `asset-stats` (they index as
-    // user-scope with no project id) and so never reached the menu before.
-    //
-    // Max, not replace: the two count different things and neither is a superset.
-    // The path-attributed menu can't see a non-file-backed type (`spec` has no
-    // `asset_ref`), while `asset-stats` can't see dependencies. Taking the
-    // larger keeps every row that shows today and adds the ones that were
-    // missing — a count only ever gates a row IN.
-    for (const group of assetMenu?.root?.groups ?? []) {
-      counts.set(group.type_name, Math.max(counts.get(group.type_name) ?? 0, group.count));
+    // A section counts what it lists: Documents = markdown + its .docx / .txt files.
+    for (const [type, n] of Array.from(counts)) {
+      const extra = sectionRecordTypes(type).slice(1).reduce((sum, other) => sum + (counts.get(other) ?? 0), 0);
+      if (extra) counts.set(type, n + extra);
     }
     // LLM endpoints are neither indexed nor path-attributed, so neither source above can
     // see them and the row would be hidden for everyone outside dev mode. Their count is
@@ -247,8 +243,9 @@ export function useAssetsModel() {
     // Diagnosis requests likewise have no file to index or attribute: the hub lists them, and
     // the scope narrows them to the project each was opened under (or the user, for the rest).
     counts.set(DiagnosisRequest.type, requestsInScope(myDiagnosisRequests, effectiveFilter.scope).length);
+    counts.set('tag', tagCount);
     return counts;
-  }, [assetStats.per_type, assetMenu, myEndpoints.length, myDiagnosisRequests, effectiveFilter.scope]);
+  }, [assetStats.per_type, myEndpoints.length, myDiagnosisRequests, effectiveFilter.scope, tagCount]);
 
   // An LLM endpoint belongs to a PERSON, never to a project — it is exactly the kind of
   // user-scoped asset the User chip exists for. Under a project-only scope the row would
@@ -287,8 +284,15 @@ export function useAssetsModel() {
   // cache don't re-flash it).
   const menuLoading = typesLoading || statsLoading;
   const menuError = typesError ?? statsError;
+  // Reload everything the tree reads — types, counts, the dependency menu — then
+  // re-list every root in place, so counts and rows refresh together.
   const reloadMenu = () => {
-    void Promise.all([reloadTypes(), reloadStats()]).catch(() => {});
+    void Promise.all([reloadTypes(), reloadStats(), reloadAssetMenu()])
+      .then(() => {
+        for (const t of visibleTypes) refreshNode(`asset-type:${t.type_name}`);
+        refreshNode(ASSET_CONTEXT_FOLDERS_ROOT_ID);
+      })
+      .catch(() => {});
   };
 
   // Reactivity only: keep each type's tree root live. A created / indexed /
@@ -300,6 +304,16 @@ export function useAssetsModel() {
   // dependencies adapter so its nested per-type rows honor the same gate.
   const visibleTypeNameSet = useMemo(() => new Set(visibleTypeNames), [visibleTypeNames]);
   useAssetTreeRefresh(visibleTypeNames, effectiveFilter.scope);
+  // The Documents root lists vaults; when the list changes (it often arrives after
+  // the first render) re-list the root in place — its id is stable.
+  const markdownVaultsKey = (visibleTypes.find((t) => t.type_name === 'markdown')?.vaults ?? [])
+    .map((v) => v.absPath)
+    .join('|');
+  // The dependency closure arrives with the (async) asset menu; under the
+  // Dependencies scope it decides which vaults the root lists.
+  useEffect(() => {
+    refreshNode('asset-type:markdown');
+  }, [markdownVaultsKey, dependencyRootsKey]);
   const creatableTypes = useMemo(
     () => new Set(allTypes.filter((t) => t.creatable).map((t) => t.type_name)),
     [allTypes],
@@ -308,7 +322,7 @@ export function useAssetsModel() {
   const openScoped = useCallback(
     (scope: ScopeFilter) => {
       const base =
-        effectivePointer === (AssetMode.PROJECT_HOME as string) && scope.mode !== 'project'
+        effectivePointer === (AssetMode.PROJECT_HOME as string) && !pinnedProjectId(scope)
           ? DockPointer.forAssetList('all')
           : (currentDock ?? DockPointer.forAssetList('all'));
       navigation.openDock(base.withScopeFilter(scope));
@@ -563,43 +577,35 @@ export function useAssetsModel() {
     return DockPointer.forAssetEditor(openAssetTypeId.type, openAssetFields.asset_ref);
   }, [openAssetTypeId, openAssetFields?.asset_ref]);
 
+  // File-manager actions on the Files and Documents trees: their name prompts
+  // and confirms render once, from the navigator (`fileOpsDialogs`).
+  const fileDialogs = useMenuDialogs();
+  const { requestName, confirm } = fileDialogs;
+  // Read through a ref: rows keep the host they were built with, so the host
+  // must stay one object while the open dock changes underneath it.
+  const openDockRef = useRef(currentDock);
+  openDockRef.current = currentDock;
+  const fileOpsHost = useMemo<FsOpsHost>(
+    () => ({
+      requestName,
+      confirm,
+      navigate: navigateAsset,
+      // A renamed / moved file that is open follows to its new path, so the
+      // editor doesn't sit on a path that no longer exists.
+      onPathMoved: (from, to) => {
+        const open = openDockRef.current?.resourceVfsPath?.machinePath;
+        if (!open) return;
+        if (open === from) navigateAsset(dockPointerForFile(to));
+        else if (open.startsWith(`${from}/`)) navigateAsset(dockPointerForFile(`${to}${open.slice(from.length)}`));
+      },
+    }),
+    [requestName, confirm, navigateAsset],
+  );
+
   const handleNew = useCallback((type: string) => {
     setNewTypeTarget(type);
     setNewTypeDialogOpen(true);
   }, []);
-
-  const handleCreateFolder = useCallback((target: MarkdownFolderTarget) => {
-    setNewFolderTarget(target);
-    setNewFolderDialogOpen(true);
-  }, []);
-
-  const handleNewFolderConfirm = useCallback(
-    async (rawName: string) => {
-      const name = rawName.trim();
-      if (!newFolderTarget || !isValidFolderName(name)) {
-        notify.error({ title: t`Invalid folder name` });
-        return;
-      }
-      const typeId = new TypeId(newFolderTarget.typeid);
-      const folderRelPath = joinRelPath(newFolderTarget.relPath, name);
-      try {
-        if (await fsManager.exists(typeId, folderRelPath)) {
-          notify.error({ title: t`Folder already exists` });
-          return;
-        }
-        await fsManager.mkdir(typeId, folderRelPath);
-        fsStore.getState().invalidate(typeId, newFolderTarget.relPath || '/', 'browse');
-        refreshNode(markdownFolderNodeId(newFolderTarget.typeid, newFolderTarget.absPath));
-        notify.success({ title: t`Folder created` });
-      } catch (err) {
-        console.error('[AssetsNavigator] Failed to create folder:', err);
-        notify.error({ title: t`Failed to create folder` });
-      } finally {
-        setNewFolderTarget(null);
-      }
-    },
-    [newFolderTarget],
-  );
 
   const handleNewConfirm = useCallback(
     async (name: string) => {
@@ -638,73 +644,6 @@ export function useAssetsModel() {
     [newTypeTarget, navigateAsset, effectiveFilter.scope],
   );
 
-  const handleMoveMarkdownItem = useCallback(
-    async (item: MarkdownDragItem, target: MarkdownFolderTarget) => {
-      const name = basenamePath(item.relPath) || item.label;
-      if (!name) return;
-      const typeId = new TypeId(item.typeid);
-      const sourceRel = normalizeTreePath(item.relPath);
-      const destRel = joinRelPath(target.relPath, name);
-      const destAbs = joinAbsPath(target.absPath, name);
-      const sourceParentRel = dirnamePath(sourceRel);
-      const sourceParentAbs = dirnamePath(item.absPath);
-      if (sourceRel === destRel) return;
-      try {
-        if (await fsManager.exists(typeId, destRel)) {
-          notify.error({ title: t`Destination already has an item with that name` });
-          return;
-        }
-        await fsManager.move(typeId, sourceRel, destRel);
-        const store = fsStore.getState();
-        store.invalidate(typeId, sourceRel, 'all');
-        store.invalidate(typeId, destRel, 'all');
-        store.invalidate(typeId, sourceParentRel || '/', 'browse');
-        store.invalidate(typeId, target.relPath || '/', 'browse');
-        refreshNode(markdownFolderNodeId(item.typeid, sourceParentAbs));
-        refreshNode(markdownFolderNodeId(item.typeid, target.absPath));
-
-        const activeEditor = parseAssetEditorPointer(effectivePointer);
-        const sourceAbs = item.absPath.replace(/\/+$/, '');
-        const activeEditorInMovedFolder = !!(
-          activeEditor &&
-          item.kind === 'markdown-folder' &&
-          activeEditor.typeName === item.typeName &&
-          activeEditor.absPath.startsWith(`${sourceAbs}/`)
-        );
-        if (activeEditor?.typeName === item.typeName && activeEditor.absPath === sourceAbs) {
-          navigateAsset(DockPointer.forAssetEditor(item.typeName, destAbs));
-        } else if (activeEditorInMovedFolder && activeEditor) {
-          const suffix = activeEditor.absPath.slice(sourceAbs.length).replace(/^\/+/, '');
-          const nextAbs = suffix ? `${destAbs}/${suffix}` : destAbs;
-          navigateAsset(DockPointer.forAssetEditor(item.typeName, nextAbs));
-        } else if (item.kind === 'markdown-folder' && effectivePointer) {
-          const folder = DockPointer.parseAssetFolderPointer(effectivePointer);
-          if (folder && folder.typeName === item.typeName && folder.typeid === item.typeid) {
-            const currentRel = normalizeTreePath(folder.relPath);
-            if (currentRel === sourceRel || currentRel.startsWith(`${sourceRel}/`)) {
-              const suffix = currentRel.slice(sourceRel.length).replace(/^\/+/, '');
-              const nextRel = suffix ? `${destRel}/${suffix}` : destRel;
-              navigateAsset(DockPointer.forAssetFolder(item.typeName, item.typeid, nextRel));
-            }
-          }
-        }
-
-        try {
-          await indexType('markdown', effectiveFilter.scope, { force: true });
-        } catch (err) {
-          console.error('[AssetsNavigator] Markdown reindex after move failed:', err);
-          notify.error({ title: t`Moved, but reindex failed` });
-          return;
-        }
-        notify.success({ title: t`Moved` });
-      } catch (err) {
-        console.error('[AssetsNavigator] Failed to move markdown item:', err);
-        notify.error({ title: t`Failed to move item` });
-      }
-    },
-    [effectiveFilter.scope, effectivePointer, indexType, navigateAsset],
-  );
-
   const roots = useMemo<BrowseableRoot[]>(() => {
     const list: BrowseableRoot[] = [];
     // Special top entry: jump back to the selected project's home. In a project
@@ -731,9 +670,9 @@ export function useAssetsModel() {
         return markdownFolderRoot(t, {
           indexType,
           onNew: handleNew,
-          onCreateFolder: handleCreateFolder,
-          onMoveItem: handleMoveMarkdownItem,
+          fileOps: fileOpsHost,
           filter: effectiveFilter,
+          dependencyRoots,
           onOpenKnowledgeBrowser: (absPath) => navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
         });
       }
@@ -762,12 +701,14 @@ export function useAssetsModel() {
         pointerForVfs: (path) => DockPointer.forAssetFs(path),
         filePointerForVfs: fsFileViewerPointerForVfs,
         draggable: true,
+        fileOps: fileOpsHost,
       });
       const taskIdx = displayTypes.findIndex((t) => t.type_name === (RecordType.TASK as string));
       typeRoots.splice(taskIdx >= 0 ? taskIdx + 1 : typeRoots.length, 0, filesRoot);
     }
     list.push(...typeRoots);
     if (dataSourcesRoot) list.push(dataSourcesRoot);
+    if (channelsRoot) list.push(channelsRoot);
     // Dependencies (project flow.json) — shown whenever a project is in scope
     // (even with none yet, so the "+" add action is reachable).
     if (hasScopeProject) {
@@ -791,11 +732,11 @@ export function useAssetsModel() {
     return list;
   }, [
     dataSourcesRoot,
+    channelsRoot,
     displayTypes,
     indexType,
     handleNew,
-    handleCreateFolder,
-    handleMoveMarkdownItem,
+    fileOpsHost,
     creatableTypes,
     effectiveFilter,
     navigation,
@@ -814,6 +755,7 @@ export function useAssetsModel() {
     handleDropIntoContextDir,
     handleExternalDropIntoContextDir,
     menuNodesByPath,
+    dependencyRoots,
     visibleTypeNameSet,
   ]);
   return {
@@ -838,11 +780,8 @@ export function useAssetsModel() {
     newTypeDialogOpen,
     setNewTypeDialogOpen,
     handleNewConfirm,
-    newFolderTarget,
-    newFolderDialogOpen,
-    setNewFolderDialogOpen,
-    handleNewFolderConfirm,
     // dependencies — the add flow's dialogs, rendered by the view
     dependencyDialogs: ctxFolder.dialogs,
+    fileOpsDialogs: fileDialogs.dialogs,
   } as const;
 }

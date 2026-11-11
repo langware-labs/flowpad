@@ -201,9 +201,27 @@ async def test_base_href_is_https_when_served_through_a_sandbox_host(bootstrappe
     resp = await bootstrapped_client.get(f"http://9007-sbx123.e2b.dev{_view_url(app)}")
 
     assert resp.status_code == 200, resp.text
-    assert _base_href(resp.text) == (
-        f"https://9007-sbx123.e2b.dev/api/v1/graph/service_endpoint/{app.id}/service/"
-    )
+    assert _base_href(resp.text) == (f"https://9007-sbx123.e2b.dev/api/v1/graph/service_endpoint/{app.id}/service/")
+
+
+@pytest.mark.asyncio
+async def test_base_href_is_https_on_the_e2b_app_domain(bootstrapped_client, user, tmp_path):
+    """E2B now publishes sandbox ports under ``e2b.app``, not ``e2b.dev``.
+
+    Measured against a live sandbox (``https://9007-<id>.e2b.app``): the proxy
+    still sends no ``X-Forwarded-Proto`` — only Host, Via, X-Cloud-Trace-Context
+    and X-Request-Id — so the Host is still the only evidence. A host check that
+    knows only ``e2b.dev`` falls back to http, the page carries
+    ``<base href="http://…">``, its assets are blocked as mixed content, and a
+    served app hangs on its connecting state.
+    """
+    app = await _make_app(tmp_path)
+
+    # Exactly how e2b delivers it today: plain http, e2b.app Host, no forwarded proto.
+    resp = await bootstrapped_client.get(f"http://9007-sbx123.e2b.app{_view_url(app)}")
+
+    assert resp.status_code == 200, resp.text
+    assert _base_href(resp.text) == (f"https://9007-sbx123.e2b.app/api/v1/graph/service_endpoint/{app.id}/service/")
 
 
 @pytest.mark.asyncio

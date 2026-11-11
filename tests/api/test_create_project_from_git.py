@@ -223,6 +223,30 @@ async def test_create_project_from_git_collision_suggests(bootstrapped_client):
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
+async def test_create_project_from_git_a_hub_projects_name_suggests_before_cloning(bootstrapped_client):
+    """A hub project not set up here (no folder) still holds its name: cloning a repo of that
+    name answers 409 with a name free both as a folder and as a project — and clones nothing."""
+    from flow_sdk.builtin.project import Project
+
+    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    cn_id = _cn_id(bootstrap.json())
+
+    leaf = "hub-held-name"
+    await Project(name=leaf, remote=True).save()
+
+    # No mock — must short-circuit before git_clone runs.
+    r = await bootstrapped_client.post(
+        f"/api/v1/graph/compute_node/{cn_id}/create-project-from-git",
+        json={"git_origin": _origin(f"https://example.com/repos/{leaf}.git")},
+    )
+    assert r.status_code == 409, r.text
+    assert r.json()["data"] == {"suggested_name": f"{leaf}-2", "attempted_name": leaf}
+    assert not (agent_workspace_root() / leaf).exists()
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_create_project_from_git_accepts_suggested(bootstrapped_client):
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _cn_id(bootstrap.json())

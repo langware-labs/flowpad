@@ -1,3 +1,4 @@
+import json
 from json import JSONDecodeError
 
 from fastapi import HTTPException, Request
@@ -12,12 +13,108 @@ from flow_sdk.builtin.visitor import Visitor
 from flow_sdk.cloud_client.shared.errors import HubError, is_permission_refusal
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.db.drivers.query import QueryFilter
+from flow_sdk.db.drivers.query import (
+    PAGING_KEYS,
+    ExpressionNode,
+    QueryFilter,
+    QueryOp,
+    encode_cursor,
+    keyset_after,
+    page_order,
+)
 from flow_sdk.flowpad_types.enums.auth_enums import AuthRole
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.responses.response import ApiFailResponse, ApiPageResponse, ApiSuccessResponse
 from flow_sdk.server.routes.graph import get_by_id, get_entity_model_from_registry
+
+#: A row no reader is shown unless they ask: an SDK-shipped system entity. A type that has no ``system``
+#: field at all stores nothing there, so the null branch keeps it.
+_NOT_SYSTEM = ExpressionNode(
+    op=QueryOp.OR,
+    operands=[
+        ExpressionNode(op=QueryOp.IS_NULL, operands=["system"]),
+        ExpressionNode(op=QueryOp.EQ, operands=["system", False]),
+    ],
+)
+
+
+def _and_match(match: ExpressionNode | None, extra: ExpressionNode) -> ExpressionNode:
+    """``match`` narrowed by ``extra`` -- ``extra`` alone when there is no match to narrow."""
+    return ExpressionNode(op=QueryOp.AND, operands=[match, extra]) if match is not None else extra
+
+
+def _parse_list_filter(params: dict, entity_type: str) -> QueryFilter:
+    """The hub's list contract: paging (``limit``/``offset``/``order_by``) lives inside ``filter``, next to
+    a ``match``. Anything else is refused rather than silently ignored — a caller that thinks it asked for
+    100 rows must not get every row back."""
+    plain = [key for key in ("limit", "offset", "order_by") if key in params]
+    if plain:
+        raise HTTPException(status_code=400, detail=f"paging goes inside filter, not as {', '.join(plain)}")
+    raw = params.get("filter", {})
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid query filter JSON: {e}")
+    if isinstance(data, dict) and "match" not in data and any(key in data for key in PAGING_KEYS):
+        raise HTTPException(status_code=400, detail='filter with limit/offset/order_by/expand needs a "match"')
+    try:
+        entities_filter = QueryFilter.parse(data, entity_type)
+        if entities_filter.after is not None and entities_filter.offset is not None:
+            raise ValueError("after and offset are two ways to say where a page starts; send one")
+        if entities_filter.limit is not None or entities_filter.offset is not None or entities_filter.after:
+            # A page's order is explicit and total, so the next page (by offset or cursor) continues it.
+            order = page_order(entities_filter.order_by)
+            entities_filter.order_by = [{field: direction} for field, direction in order]
+            if entities_filter.after:
+                keyset = keyset_after(order, entities_filter.after)
+                entities_filter.match = _and_match(entities_filter.match, keyset)
+        return entities_filter
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+async def _visible_page(entity_model, entities_filter: QueryFilter, source_entity, is_visible) -> ApiPageResponse:
+    """A full page of rows this reader is shown. Rows are dropped after the database query (system rows),
+    so a plain ``LIMIT`` would answer short pages; this keeps reading until the page is full or the rows run
+    out, and reports where it stopped (``next_offset``) and whether anything is left (``has_more``) — the
+    hub's ``_visible_page``."""
+    limit = entities_filter.limit
+    db_offset = entities_filter.offset or 0
+    page: list[Entity] = []
+    has_more = False
+    fetch = (limit + 1) if limit else None
+    while True:
+        batch_filter = entities_filter.model_copy(deep=True, update={"offset": db_offset or None, "limit": fetch})
+        batch = await entity_model.get_all(batch_filter, source_entity)
+        # Rows the store read but could not build are not in ``batch``; they still took their place in
+        # the store's page, so they count into the next offset like a hidden row.
+        rows_read = batch_filter.rows_read if batch_filter.rows_read is not None else len(batch)
+        unreadable = max(rows_read - len(batch), 0)
+        if unreadable and limit is not None and fetch > limit - len(page) + 1:
+            # Where the unreadable rows sit in this batch is unknown, so the page must not close inside
+            # it: read again just what the page still needs (+1), which the page cannot overrun.
+            fetch = limit - len(page) + 1
+            continue
+        for entity in batch:
+            if limit is not None and len(page) == limit:
+                has_more = True
+                break
+            db_offset += 1
+            if is_visible(entity):
+                page.append(entity)
+        else:
+            db_offset += unreadable
+            if fetch is not None and rows_read == fetch:
+                fetch = max(fetch, limit * 4)  # rows were dropped: read further in bigger steps
+                continue
+        break
+    next_cursor = None
+    if has_more and page:
+        # From the last row the reader SEES (a hidden row's sort values would leak through the cursor).
+        order = [(field, direction) for spec in entities_filter.order_by for field, direction in spec.items()]
+        next_cursor = encode_cursor(order, page[-1].model_dump(mode="json"))
+    return ApiPageResponse[list[Entity]](data=page, has_more=has_more, next_offset=db_offset, next_cursor=next_cursor)
 
 
 # noinspection PyUnusedLocal
@@ -34,8 +131,7 @@ async def handle_query_resource(request: Request):
             detail=f"Query resource error: Unknown entity type: {request_info.direct_resource_type}",
         )
     filter_params = request_info.request_parameters.get("filter", {})
-    entities_filter = QueryFilter.parse(filter_params, entity_model.get_type())
-    _apply_top_level_paging(request_info, entities_filter)
+    entities_filter = _parse_list_filter(request_info.request_parameters, entity_model.get_type())
     source_entity = request_info.target_entity_typeid
     if source_entity is None:  # TODO, We need to validate parent access
         source_entity = request_info.user
@@ -45,49 +141,23 @@ async def handle_query_resource(request: Request):
     entities_filter.expand_permissions = request_info.expand_permissions
     entities_filter.expand_is_private = request_info.expand_is_private
     entities_filter.expand_blobs = request_info.expand_blobs
-    _all = await entity_model.get_all(entities_filter, source_entity)
     # Hide SDK-shipped system entities by default. Callers opt in with
     # ?include_system=true on the request (or include_system: true in the filter).
     include_system = _request_wants_system(request_info, filter_params)
     if not include_system:
-        _all = [e for e in _all if not getattr(e, "system", False)]
-    return ApiSuccessResponse[list[Entity]](data=_all)
+        # The hidden rows are excluded by the QUERY, not after it: a row dropped afterwards still took its
+        # place in the store's page, so ``offset`` counted rows the caller never saw and the page asked for
+        # at ``offset + limit`` started back inside the previous one (1088 markdown docs beside 36 system
+        # ones answered 36 duplicate rows over twelve ordered pages).
+        entities_filter.match = _and_match(entities_filter.match, _NOT_SYSTEM)
 
+    def is_visible(entity: Entity) -> bool:
+        return include_system or not getattr(entity, "system", False)
 
-def _apply_top_level_paging(request_info, entities_filter) -> None:
-    """Honor ?limit= / ?offset= / ?order_by= query params on graph list requests.
-
-    Historically only ``limit``/``offset`` INSIDE the ``filter`` JSON were
-    honored; a top-level ``?limit=5000`` was silently dropped, turning
-    intended-bounded list calls into full-corpus dumps. ``QueryFilter.toJSON``
-    (ts_sdk) sends ``order_by`` top-level too — dropping it paged a limited list
-    in insertion order, so the stream inbox's newest conversations fell off its
-    first page. Filter-JSON values win when both are set; malformed values are ignored.
-    """
-    params = request_info.request_parameters
-    if getattr(entities_filter, "order_by", None) is None and params.get("order_by"):
-        entities_filter.order_by = params["order_by"]
-    for field in ("limit", "offset"):
-        if getattr(entities_filter, field, None) is not None:
-            continue
-        raw = params.get(field)
-        if raw is None:
-            continue
-        try:
-            value = int(raw)
-        except (TypeError, ValueError):
-            service_log.debug(f"[graph read] ignoring malformed ?{field}={raw!r}")
-            continue
-        if value >= 0:
-            setattr(entities_filter, field, value)
-    # The SDK sends order_by beside filter too; without it a limited list is
-    # cut in storage order and the newest rows fall off the page.
-    raw_order = params.get("order_by")
-    if entities_filter.order_by is None and raw_order:
-        try:
-            entities_filter.order_by = QueryFilter.parse({"order_by": raw_order}, entities_filter.type).order_by
-        except Exception as e:  # noqa: BLE001 — a malformed sort is ignored, like a malformed limit
-            service_log.debug(f"[graph read] ignoring malformed ?order_by={raw_order!r}: {e}")
+    if entities_filter.limit is None and entities_filter.offset is None and entities_filter.after is None:
+        _all = await entity_model.get_all(entities_filter, source_entity)
+        return ApiSuccessResponse[list[Entity]](data=[e for e in _all if is_visible(e)])
+    return await _visible_page(entity_model, entities_filter, source_entity, is_visible)
 
 
 def _request_wants_system(request_info, filter_params) -> bool:
@@ -196,9 +266,14 @@ async def handle_delete_by_id():
         else:
             is_deleted = await entity_model.delete_by_id(target_typeid.id)
     except HubError as e:
-        raise HTTPException(
-            status_code=502, detail=f"{e.reason} ({e.status_code}); it is kept here so the delete can be retried"
-        ) from e
+        # By kind: a hub refusal keeps its status (403, 401), signed out 401, no hub 503, and
+        # offline or a hub 5xx 502. The local row is kept, so the delete can be retried.
+        raise HTTPException(status_code=e.http_status, detail=e.user_message()) from e
+    # Removing the hub row above fans ``child_deleted`` back to this instance, which can drop the
+    # local mirror before ``delete_by_id`` reaches it. A row that existed and is gone now was
+    # deleted — by this request — so that is success, not a refusal.
+    if not is_deleted and entity is not None and await entity_model.get_one({"id": target_typeid.id}) is None:
+        is_deleted = True
     if not is_deleted:
         raise HTTPException(
             status_code=403,
@@ -502,7 +577,7 @@ async def _dispatch_create_save(
         entity = await entity.save(someone_typeid)
     elif target_typeid.type == Visitor.get_type():
         entity = await entity.save()
-        await entity.set_visitor_role(AuthRole.ANONYMOUS_VIEWER.value.lower())
+        await entity.set_visitor_roles([AuthRole.READER.value.lower()])
     else:
         target_entity: Entity | None = (
             await request_info.get_target_entity()

@@ -2,11 +2,12 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import * as fs from 'fs';
 
 import { apiBase } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string) {
-  const res = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name } });
+  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
@@ -20,10 +21,10 @@ async function openBoard(page: Page, id: string) {
       /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
     }
   });
-  await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
-  await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
+  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
-    timeout: 15_000,
+    timeout: adjusted(15_000),
   });
 }
 
@@ -35,7 +36,7 @@ async function injectRect(page: Page, label: string) {
   await page.waitForFunction(
     () => typeof (window as any).__chartApi === 'object' && !!(window as any).__chartApi
       && typeof (window as any).__excalidrawLib === 'object' && !!(window as any).__excalidrawLib,
-    null, { timeout: 15_000 },
+    null, { timeout: adjusted(15_000) },
   );
   await page.evaluate((text) => {
     const lib = (window as any).__excalidrawLib;
@@ -70,7 +71,7 @@ function fileLabels(boardPath: string): string[] {
 // single-user, there is NO live WS sync between tabs, so it is last-write-wins.
 test.describe('Whiteboard — Multi-tab (X1)', () => {
   test('X1: two tabs on one board — no live sync, last-write-wins', async ({ context, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const { id, assetRef } = await createWhiteboard(request, `x1-${Date.now() % 10000}`);
 
     const tabA = await context.newPage();
@@ -82,7 +83,7 @@ test.describe('Whiteboard — Multi-tab (X1)', () => {
 
     // Tab A injects "A" and saves past the debounce (board.json holds rect+label).
     await injectRect(tabA, 'A');
-    await expect.poll(() => fileLabels(boardPath), { timeout: 10_000 }).toContain('A');
+    await expect.poll(() => fileLabels(boardPath), { timeout: adjusted(10_000) }).toContain('A');
 
     // Tab B does NOT auto-update with A's element (no WS sync between tabs).
     await tabB.waitForTimeout(1_500);
@@ -91,13 +92,13 @@ test.describe('Whiteboard — Multi-tab (X1)', () => {
 
     // Tab B injects a DIFFERENT element "B" and saves — B is the last writer.
     await injectRect(tabB, 'B');
-    await expect.poll(() => fileLabels(boardPath), { timeout: 10_000 }).toContain('B');
+    await expect.poll(() => fileLabels(boardPath), { timeout: adjusted(10_000) }).toContain('B');
 
     // Reload tab A — it re-reads board.json, which (last-write-wins) now holds
     // tab B's scene ("B"), not tab A's "A".
     await tabA.reload();
-    await tabA.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
-    await tabA.waitForFunction(() => (window as any).__chartApi, null, { timeout: 15_000 });
+    await tabA.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+    await tabA.waitForFunction(() => (window as any).__chartApi, null, { timeout: adjusted(15_000) });
     await tabA.waitForTimeout(1_500);
     const aLabelsAfterReload = await boardLabels(tabA);
     expect(aLabelsAfterReload, "reloaded tab A shows tab B's last write").toContain('B');
@@ -106,6 +107,6 @@ test.describe('Whiteboard — Multi-tab (X1)', () => {
     await tabA.close();
     await tabB.close();
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 });

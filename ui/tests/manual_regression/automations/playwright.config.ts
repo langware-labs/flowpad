@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Automations screen — browser stress validation. Assumes the backend + frontend
@@ -9,8 +10,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.md.ts',
-  timeout: 60_000,
-  expect: { timeout: 15_000 },
+  timeout: adjusted(60_000),
+  expect: { timeout: adjusted(15_000) },
   fullyParallel: false,
   retries: 0,
   workers: 1,

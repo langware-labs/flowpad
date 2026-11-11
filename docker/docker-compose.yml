@@ -24,6 +24,8 @@ x-flow-backend: &flow-backend
   # containers-are-sandboxes escape hatch.
   environment: &flow-backend-env
     IS_SANDBOX: "1"
+    # Healthchecks and the realtime rig curl the API without a token (docs/cookie-gate.md).
+    FLOWPAD_COOKIE_GATE: "off"
   extra_hosts:
     - "host.docker.internal:host-gateway"
   healthcheck: &flow-backend-healthcheck

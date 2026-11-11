@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ExpressionNode, QueryFilter, QueryRequest, FlowMessage } from '@sdk';
+import apiClient, { pageOf, withPage } from '@sdk/client';
 
 describe('$IN id-array serialization', () => {
   const ids = [
@@ -47,10 +48,7 @@ describe('$IN id-array serialization', () => {
   });
 
   it('round-trips through QueryFilter.parse without mangling the array', () => {
-    const filter = QueryFilter.parse(
-      { match: { op: '$IN', operands: ['id', ids] } },
-      FlowMessage.type,
-    );
+    const filter = QueryFilter.parse({ match: { op: '$IN', operands: ['id', ids] } }, FlowMessage.type);
     const json = filter.toJSON() as { filter: { match: { operands: unknown[] } } };
     expect(json.filter.match.operands).toEqual(['id', ids]);
   });
@@ -64,5 +62,71 @@ describe('$IN id-array serialization', () => {
     const not = new QueryFilter({ match: new ExpressionNode({ op: '$NIN', operands: ['id', ids] }) });
     expect(not.validate({ id: ids[1] })).toBe(false);
     expect(not.validate({ id: 'other' })).toBe(true);
+  });
+});
+
+describe('paging rides inside filter on the wire', () => {
+  const wireOf = (filter: QueryFilter) =>
+    decodeURIComponent(apiClient.getUri({ url: '/graph/task', params: filter.toJSON() }));
+
+  it('encodes match, limit, offset and order_by as filter[...] — nothing top-level', () => {
+    const wire = wireOf(
+      QueryFilter.parse({ status: 'open', limit: 100, offset: 200, order_by: [{ created_date: 'desc' }] }, 'task'),
+    );
+    expect(wire).toContain('filter[match][op]=$EQ');
+    expect(wire).toContain('filter[match][operands][0]=status');
+    expect(wire).toContain('filter[limit]=100');
+    expect(wire).toContain('filter[offset]=200');
+    expect(wire).toContain('filter[order_by][0][created_date]=desc');
+    expect(wire).not.toMatch(/[?&](limit|offset|order_by)[=[]/);
+  });
+
+  it('a page asked after a cursor says filter[after] — and after is a filter word, never a match field', () => {
+    const wire = wireOf(QueryFilter.parse({ status: 'open', limit: 2, after: 'eyJ9' }, 'task'));
+    expect(wire).toContain('filter[after]=eyJ9');
+    expect(wire).toContain('filter[match][operands][0]=status');
+    expect(wire).not.toContain('operands][0]=after');
+    expect(wire).not.toMatch(/[?&]after=/);
+  });
+
+  it('a page with no match still says one (every row), never a bare filter[limit]', () => {
+    const wire = wireOf(new QueryFilter({ limit: 3 }));
+    expect(wire).toContain('filter[match][op]=$IS_NOT_NULL');
+    expect(wire).toContain('filter[limit]=3');
+  });
+});
+
+describe('a paged answer keeps has_more / next_offset past the unwrap', () => {
+  it('rides on the rows without changing what they spread or serialize to', () => {
+    const rows = withPage([{ id: 'a' }], { status: 'SUCCESS', data: [], has_more: true, next_offset: 7 });
+    expect(pageOf(rows)).toEqual({ has_more: true, next_offset: 7, next_cursor: null });
+    expect(JSON.stringify(rows)).toBe('[{"id":"a"}]');
+    expect([...rows]).toEqual([{ id: 'a' }]);
+  });
+
+  it('an unpaged answer has no page', () => {
+    expect(pageOf(withPage([{ id: 'a' }], { status: 'SUCCESS', data: [] }))).toBeUndefined();
+  });
+
+  it('the response interceptor keeps it', async () => {
+    const handlers = (apiClient.interceptors.response as any).handlers as { fulfilled: (r: unknown) => unknown }[];
+    const unwrap = handlers.find((h) => h?.fulfilled)!.fulfilled;
+    const rows = await unwrap({
+      config: { method: 'get' },
+      data: { status: 'SUCCESS', data: [{ id: 'a' }], has_more: false, next_offset: 1 },
+    });
+    expect(pageOf(rows)).toEqual({ has_more: false, next_offset: 1, next_cursor: null });
+  });
+
+  it('keeps the next_cursor a page carried', () => {
+    const rows = withPage([{ id: 'a' }], {
+      status: 'SUCCESS',
+      data: [],
+      has_more: true,
+      next_offset: 1,
+      next_cursor: 'eyJ9',
+    });
+    expect(pageOf(rows)).toEqual({ has_more: true, next_offset: 1, next_cursor: 'eyJ9' });
+    expect(JSON.stringify(rows)).toBe('[{"id":"a"}]');
   });
 });

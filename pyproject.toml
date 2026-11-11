@@ -57,6 +57,8 @@ dependencies = [
     # source with Rust and fails on any Mac without the Xcode command line tools. Reached
     # transitively via mcp -> pyjwt[crypto]; 48.0.1 is the last release with a universal2 wheel.
     "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    # Secured transfer (``flow_sdk/secrets/sealed.py``): X25519, Ed25519, ChaCha20-Poly1305, HKDF.
+    "cryptography>=44",
     "numpy",
     "bs4>=0.0.2",
     "h2",
@@ -115,6 +117,10 @@ include = ["flow_sdk*"]
 "flow_sdk" = [
     "system_projects/**/*",
     "system_projects/**/.claude/**/*",
+    # A skill's template is copied verbatim into a user's project, dotfiles too (`.env.example`,
+    # `.gitignore`, `.github/`) — and glob's `*` never matches a name that starts with a dot.
+    "system_projects/**/.claude/skills/*/template*/**/.*",
+    "system_projects/**/.claude/skills/*/template*/**/.*/**/*",
     "server/static/**/*",
     # Builtin asset editors (SDK apps declared through TypeMetadata.editors).
     "assets/editors/**/*",
@@ -130,6 +136,11 @@ include = ["flow_sdk*"]
     "rag/vcruntime/**/*",
     # The UI actions the smart navigator can pick (flow_sdk/core/navigator.py).
     "core/ui_actions.json",
+    # The recovery handlings every web app falls back to (flow_sdk/core/webapp/handling.py).
+    "core/webapp/default_handlings.json",
+    # Desktop <-> backend version-compatibility declaration (flow_sdk/utils/compat.py).
+    # Plain data in the wheel, so a staged install's floor can be read without running code.
+    "compat.json",
 ]
 
 # Keep skill UI source + the built main.html, but never ship node_modules,
@@ -185,6 +196,11 @@ testpaths = ["tests"]
 [tool.pytest_env]
 SQLITE_DATABASE_PATH = "/tmp/flowpad_test.db"
 TESTING = "true"
+# Never the real hub: a shell with FLOW_INSTANCE=prod otherwise resolves to app.flowpad.ai, and the
+# suite's background polls send test credentials there. Nothing listens on port 9; a test that
+# needs a hub starts its own and points at it. An explicit FLOWPAD_HUB_URL wins: the hub tier
+# (tests/hub_tests) is driven that way, and its conftest refuses any non-local hub.
+FLOWPAD_HUB_URL = { value = "http://127.0.0.1:9", skip_if_set = true }
 
 [tool.uv]
 prerelease = "allow"

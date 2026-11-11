@@ -7,8 +7,9 @@
 import { Trans } from '@lingui/react/macro';
 import { Agent, Deployment, isTypeId, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { AgentDeploymentsSection } from '@src/components/assets/editor/agent-profile/AgentDeploymentsSection';
-import { AgentDeploymentPanel } from '@src/components/assets/editor/agent-profile/AgentDeploymentPanel';
+import { Button } from '@src/components/ui/button';
+import { AgentPlacesColumn } from '@src/components/assets/editor/agent-profile/AgentPlacesColumn';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { EntityIcon } from './EntityIcon';
 import type { NodeData } from '../graph/graphModel';
 import { paletteForTheme, type EdgeKind } from '../graph/themeColors';
@@ -31,41 +32,51 @@ function propertyLabel(key: string): string {
   return key.replaceAll('_', ' ');
 }
 
-function AgentDeploymentControls({ id }: { id: string }) {
+/** An agent node: the deployments it is the main agent of, each a link to its project's deployment page. */
+function AgentDeploymentLinks({ id }: { id: string }) {
   const { data: agent } = useEntity<Agent>(new TypeId(Agent.type, id));
   if (!agent) return null;
-
   return (
     <div className="section" data-testid="worldview-agent-deployments">
-      <h3>
-        <Trans>Deployments</Trans>
-      </h3>
-      <AgentDeploymentsSection agent={agent} />
+      <AgentPlacesColumn agent={agent} />
     </div>
   );
 }
 
-/** The agent a deployment node places, when it places one — its parent, as `Deployment.agentTypeId` reads it. */
-function placedAgentId(node: NodeData): string | null {
-  if (node.type !== Deployment.type) return null;
+/** A deployment node of a project: a link to its page in the project's Deployments, where it is run. */
+function ProjectDeploymentLink({ id }: { id: string }) {
+  const { navigation } = useDockNavigation();
+  const { data: deployment } = useEntity<Deployment>(new TypeId(Deployment.type, id));
+  const pointer = deployment?.projectPagePointer;
+  if (!pointer) return null;
+  return (
+    <div className="section" data-testid="worldview-project-deployment">
+      <Button size="sm" variant="outline" onClick={() => navigation.openDock(pointer)} data-testid="worldview-open-deployment">
+        <Trans>Open deployment</Trans>
+      </Button>
+    </div>
+  );
+}
+
+/** Whether a node is a deployment of a project — its parent, as `Deployment.projectTypeId` reads it. */
+function isProjectDeployment(node: NodeData): boolean {
+  if (node.type !== Deployment.type) return false;
   const parent = node.properties?.parent_type_id;
-  if (typeof parent !== 'string') return null;
-  if (!isTypeId(parent)) return null;
-  const typeId = new TypeId(parent);
-  return typeId.type === Agent.type ? typeId.id : null;
+  return typeof parent === 'string' && isTypeId(parent) && new TypeId(parent).type === 'project';
 }
 
 export function NodeDetails({ node, showWorldViewProperties = false, onNeighborClick }: Props) {
-  const agentId = placedAgentId(node);
   return (
     <>
-      {agentId && <AgentDeploymentPanel agentId={agentId} deploymentId={node.id} />}
+      {isProjectDeployment(node) && <ProjectDeploymentLink id={node.id} />}
       <div className="section">
         <h3>
           <Trans>Identity</Trans>
         </h3>
         <div className="kv-row">
-          <span className="k">type</span>
+          <span className="k">
+            <Trans>type</Trans>
+          </span>
           <span className="v">{node.type}</span>
         </div>
         <div className="kv-row">
@@ -73,11 +84,15 @@ export function NodeDetails({ node, showWorldViewProperties = false, onNeighborC
           <span className="v">{node.id}</span>
         </div>
         <div className="kv-row">
-          <span className="k">community</span>
+          <span className="k">
+            <Trans>community</Trans>
+          </span>
           <span className="v">{node.community}</span>
         </div>
         <div className="kv-row">
-          <span className="k">degree</span>
+          <span className="k">
+            <Trans>degree</Trans>
+          </span>
           <span className="v">{node.degree}</span>
         </div>
       </div>
@@ -96,7 +111,7 @@ export function NodeDetails({ node, showWorldViewProperties = false, onNeighborC
         </div>
       )}
 
-      {node.type === Agent.type && <AgentDeploymentControls id={node.id} />}
+      {node.type === Agent.type && <AgentDeploymentLinks id={node.id} />}
 
       <div className="section">
         <h3>

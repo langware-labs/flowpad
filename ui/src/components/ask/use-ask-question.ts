@@ -10,6 +10,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
 import type { AssistState } from './AskAssist';
 import type { AskItem } from './AskItems';
+import { SKIPPED } from './AskSkipButton';
 
 /**
  * A question a ComputeOp put to a person — the data and actions behind it,
@@ -81,6 +82,15 @@ export interface AskQuestion {
   /** The op's words for the two buttons. Empty: the defaults, Send / Cancel. */
   submit_label?: string;
   cancel_label?: string;
+  /** What each field of a record answer is called where it is typed; a field without one shows its key. */
+  labels?: Record<string, string>;
+  /** Where this question stands in the sequence the person walks ("Set up on Slack · 1 of 2"). */
+  stage?: { label?: string; index: number; total: number } | null;
+  /** A check of the typed value before it is sent: the source setup step that judges it (`AskForm` runs it
+   *  through the host's `verifyWith`). Null: nothing to verify. */
+  verify?: { label?: string; source_step: string } | null;
+  /** Closes by itself once its goal holds (a phone sends a code): nothing to Send, only to watch. */
+  auto?: boolean;
   /** The declared kind opened one level: `{field: form}`, or the kind itself for a scalar. */
   fields: Shape;
   /** The answer is a secret (an API key): drawn masked. */
@@ -96,6 +106,8 @@ export interface AskQuestion {
   wizard_id?: string;
   /** How a person finds the value — the op's `setup.md`, markdown. */
   guide?: string;
+  /** A setup asked: the person may skip that step instead (`POST ask/<id>/skip`), and setup goes on. */
+  skippable?: boolean;
   /** The op names an agent that can answer instead (AI Assist). */
   assist_available?: boolean;
   assist?: AssistState | null;
@@ -110,6 +122,8 @@ export function fieldsOf(shape: Shape): string[] {
   return [''];
 }
 
+const SETTLED_BY: Record<string, 'cancelled' | 'skipped'> = { '/cancel': 'cancelled', '/skip': 'skipped' };
+
 export function useAskQuestion(questionId: string | undefined) {
   const { _ } = useLingui();
   const { navigation } = useDockNavigation();
@@ -119,7 +133,7 @@ export function useAskQuestion(questionId: string | undefined) {
   // The KIND of ending, not its text — the text depends on whether there is
   // something better to show instead (see `settledMessage` below), which can
   // only be decided once `wizardId` is known.
-  const [settledKind, setSettledKind] = useState<'' | 'gone' | 'cancelled' | 'answered'>('');
+  const [settledKind, setSettledKind] = useState<'' | 'gone' | 'cancelled' | 'answered' | 'skipped'>('');
   const [busy, setBusy] = useState(false);
 
   useKeepQuestionOpen(settledKind ? null : questionId);
@@ -147,7 +161,7 @@ export function useAskQuestion(questionId: string | undefined) {
       setError('');
       try {
         await apiClient.post(`/api/v1/ask/${questionId}${path}`, body);
-        setSettledKind(path === '/cancel' ? 'cancelled' : 'answered');
+        setSettledKind(SETTLED_BY[path] ?? 'answered');
       } catch (reason) {
         // A 422 means the value did not match the shape the op declared. The
         // question is still open, so this is correctable in place.
@@ -170,6 +184,7 @@ export function useAskQuestion(questionId: string | undefined) {
   const answer = useCallback((value: string | Record<string, unknown>) => send('/answer', { value }), [send]);
 
   const cancel = useCallback(() => send('/cancel'), [send]);
+  const skip = useCallback(() => send('/skip'), [send]);
   /** The cards are the form (`AskChoiceBlock`): no bare field, and no Send of the question's own. */
   const hasChoices = hasChoicesOf(question);
   /** The question settled while AI Assist worked on it: the agent answered. */
@@ -205,6 +220,7 @@ export function useAskQuestion(questionId: string | undefined) {
   const settledMessage = useMemo(() => {
     if (settledKind === 'gone') return _(msg`This question is no longer waiting.`);
     if (settledKind === 'cancelled') return _(msg`Cancelled.`);
+    if (settledKind === 'skipped') return _(SKIPPED);
     if (settledKind === 'answered') return wizardId ? null : _(msg`Got it — your answer was sent.`);
     return null;
   }, [settledKind, wizardId, _]);
@@ -221,6 +237,7 @@ export function useAskQuestion(questionId: string | undefined) {
     submit,
     answer,
     cancel,
+    skip,
     agentAnswered,
     wizardId,
     openWizard,

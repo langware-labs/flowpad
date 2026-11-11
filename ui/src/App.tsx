@@ -1,6 +1,8 @@
 import '@src/styles/highlightjs.css';
 import { useAsyncSdkInit } from '@src/hooks/use-async-sdk-init';
 import { trackEvent } from '@src/utils/analytics';
+import { loadGoogleTagManager } from '@src/utils/google-tag-manager';
+import { settleHeldSignUp, trackSignUpWhenConsented } from '@src/utils/pending-signup';
 import { config, dataContext, navigator } from '@sdk';
 import { useLocation } from 'react-router';
 import { useAuth, useGlobalEvents } from '@sdk/react/hooks';
@@ -8,6 +10,7 @@ import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesCo
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
+import { UpdateReadyBridge } from '@src/components/update-ready/UpdateReadyBridge';
 import { flushAgentAutoLaunchWarning } from '@src/agents/agent-auto-launch-warning';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { ActivityDetailsModalRoot } from '@src/components/footer/ActivityDetailsModal';
@@ -21,6 +24,7 @@ import { useEffect, useRef } from 'react';
 import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
+import { LaunchFailureRoot } from '@src/components/launch-failure/LaunchFailureCard';
 import { HarnessSignInDialogRoot } from '@src/components/harness-login/HarnessSignInDialog';
 import { ProjectLoadDialogRoot } from '@src/components/project-setup/ProjectLoadDialog';
 import { ProjectSetupDialogRoot } from '@src/components/project-setup/ProjectSetupDialog';
@@ -50,6 +54,7 @@ import { PrimaryContentProvider } from '@sdk/react/primary-content';
 import { AddAssetDialogRoot } from '@src/components/install/AddAssetDialog';
 import { AskModalRoot } from '@src/components/ask/AskModal';
 import { WizardPopupRoot } from '@src/components/assets/editor/wizard/WizardPopupRoot';
+import { FirstRunGateRoot } from '@src/components/setup-incomplete/first-run-gate';
 import { UiActionRoot } from '@src/navigation/UiActionRoot';
 
 // Bootstrap-error UX is handled by the router's root `errorElement`
@@ -103,6 +108,7 @@ const GlobalEvents = () => {
 const AppContent = ({ children }: { children: React.ReactNode }) => {
   useAsyncSdkInit();
   const { user, someone } = useAuth();
+  const { pathname, search } = useLocation();
   const analyticsTrackingRef = useRef(false);
 
   // Wire all WS-driven notifications (hub errors, bootstrap notice, skill/task badges).
@@ -129,20 +135,30 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
       }
     }
 
+    // A sign-up happens once, on a first load where the cookie banner is usually unanswered.
+    if (eventName === 'sign_up') {
+      trackSignUpWhenConsented();
+      return;
+    }
+
     trackEvent({
       user_id: user?.id ?? null,
       event: eventName,
     });
   }, [someone, user]);
 
+  // On each route: a sign-up that landed on a page without GTM can reach one in-app.
+  useEffect(() => settleHeldSignUp(), [pathname, search]);
+
+  // On the route, not at page start: the login callback lands on `/`, which redirects to the hub home.
+  useEffect(() => loadGoogleTagManager(pathname, search), [pathname, search]);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <NotificationOutlet />
         <NotificationCommandBridge />
-        {/* `<DiagnoseErrorModal/>` is mounted in `main.tsx`, above the router:
-            the root error boundary replaces this whole tree, and the error
-            screen's diagnose button still needs a host. */}
+        <UpdateReadyBridge />
         <DeleteAssetModal />
         <InputPromptModal />
         <ImageAnnotatorRoot />
@@ -166,6 +182,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <AskModalRoot />
         {/* A popup wizard (first-run setup) shown over the current page, which stays as it was. */}
         <WizardPopupRoot />
+        {/* A project setup held for first-run setup carries on once that wizard is all green. */}
+        <FirstRunGateRoot />
         <GlobalEvents />
         {/* One-click install from the hub lands here — desktop only (it writes files). */}
         {!isHubOnly() && <AddAssetDialogRoot />}
@@ -174,6 +192,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
+        {/* A coding agent the server refused to start — one recovery card. */}
+        {!isHubOnly() && <LaunchFailureRoot />}
         {!isHubOnly() && <HarnessSignInDialogRoot />}
         {!isHubOnly() && (
           <>

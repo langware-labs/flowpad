@@ -28,7 +28,7 @@ vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    dataContext: { userTypeId: { type: 'user', id: 'u1' } },
+    dataContext: { userTypeId: { type: 'user', id: 'u1' }, caps: { localFiles: true } },
     dataManager: {
       callAction: vi.fn(() => Promise.resolve({ has_token: false })),
       // The dialog subscribes to the SDK's OAUTH_FLOW_COMPLETE event.

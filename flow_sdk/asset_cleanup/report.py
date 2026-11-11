@@ -2,8 +2,7 @@
 
 ``generate_asset_cleanup_report(result)`` always saves the report entity (the
 scan happened either way); the Home-Feed entry is posted ONLY when the scan
-found garbage — a clean scan is not feed-worthy. Mirrors
-``flow_sdk/usage_report/callback.py``.
+found garbage — a clean scan is not feed-worthy.
 """
 from __future__ import annotations
 

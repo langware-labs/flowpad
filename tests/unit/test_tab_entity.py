@@ -14,6 +14,7 @@ Real DB, no mocks (session SQLite fixture from tests/conftest.py).
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
@@ -125,6 +126,29 @@ async def test_close_is_soft_and_reopen_reshows() -> None:
 
 
 @pytest.mark.asyncio
+async def test_project_home_landing_does_not_resurrect_closed_content_tab() -> None:
+    """A credential opened in the project-scoped Assets view shares that view's
+    pointer with Project home. Closing it, then landing on Project home (a project
+    switch from Assets), must not bring the closed 'whatsapp' chip back."""
+    project_id = str(uuid.uuid4())
+    scoped_assets = json.dumps({
+        "viewType": "assets",
+        "pointer": "",
+        "options": {"scope-mode": "project", "scope-activeProjectId": project_id},
+    })
+    credential_tab = await ensure_tab(
+        scoped_assets, target_type="credential", target_id=str(uuid.uuid4()), name="whatsapp",
+    )
+    await credential_tab.close()
+
+    landing = await ensure_tab(scoped_assets, project_id=project_id)
+
+    stored = await Tab.get_one({"id": landing.id})
+    assert stored.name != "whatsapp", "Project home landing re-showed the closed credential tab"
+    assert stored.target_type is None, "the landing tab kept the closed credential as its target"
+
+
+@pytest.mark.asyncio
 async def test_visible_query_over_mixed_kinds() -> None:
     from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
 
@@ -228,8 +252,11 @@ async def test_missing_project_cleanup_deletes_tab_without_target_teardown() -> 
         f"dock/missing-project-probe#{uuid.uuid4()}",
         target_type=_TabTargetProbe.get_type(),
         target_id=probe.id,
-        project_id=dangling_project_id,
     )
+    # The resolver never stamps a projectless target with a client hint, so the
+    # stale owner the reaper must find is written onto the row directly.
+    tab.project_id = dangling_project_id
+    await tab.save()
 
     deleted = await delete_tabs_for_missing_project(dangling_project_id)
 
@@ -751,8 +778,10 @@ async def test_list_all_spans_all_projects_unlike_scoped_list() -> None:
     await Project(id=pb, name=f"tab-list-b-{pb[:8]}").save()
     # Live Shell rows so the target reap keeps these terminal tabs (a shell tab
     # whose Shell is absent is now reaped as a dead session, same as agentic_process).
-    sa = Shell(id=str(uuid.uuid4()))
-    sb = Shell(id=str(uuid.uuid4()))
+    # Each shell names its own project: the tab's project is the target's (the
+    # client hint only fills in for a shell that has none).
+    sa = Shell(id=str(uuid.uuid4()), project_id=pa)
+    sb = Shell(id=str(uuid.uuid4()), project_id=pb)
     await sa.save()
     await sb.save()
     a = await ensure_tab(f"shell|a#{tag}", target_type="shell", target_id=sa.id, project_id=pa)
@@ -801,7 +830,12 @@ async def test_tab_project_id_follows_target_entity_project_change() -> None:
     # project color ("stays blue"). This is the project-change sibling of the
     # orphan-close hook that already exists for Entity.delete
     # (test_deleting_target_soft_closes_its_tabs) but is MISSING for a project change.
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    # REAL Project rows: a tab takes its target's project only when that project
+    # exists (a stamp naming no project is a non-project folder's derived id).
     p1 = str(uuid.uuid4())
+    await Project(id=p1, name=f"tab-follow-a-{p1[:8]}").save()
     probe = _TabTargetProbe(id=str(uuid.uuid4()), project_id=p1)
     await probe.save()
     tab = await ensure_tab(
@@ -814,6 +848,7 @@ async def test_tab_project_id_follows_target_entity_project_change() -> None:
 
     # The target entity is reassigned to a different project (the user's action).
     p2 = str(uuid.uuid4())
+    await Project(id=p2, name=f"tab-follow-b-{p2[:8]}").save()
     probe.project_id = p2
     await probe.save()
 
@@ -1296,78 +1331,33 @@ async def test_reap_cycle_emits_single_broadcast() -> None:
         )
 
 
-# ── the vibe workspace's ACTIVE DISPLAY (one replaceable row per workspace) ─────
-
-
-def _active_display_ptr(host: str, view_type: str, sub: str) -> str:
-    """The pointer the frontend stores for a workspace's active display.
-
-    Two halves that pull in opposite directions, deliberately: ``tabHash`` is the
-    HOST (constant — one row per workspace), while ``viewType``/``pointer`` are the
-    live target (they change on every ``flow show``). That is what makes the row
-    replaceable instead of one chip accumulating per show.
-    """
-    return _test_json.dumps(
-        {
-            "viewType": view_type,
-            "pointer": sub,
-            "options": {"activeDisplay": "1"},
-            "tabHash": f"workspaceActive|{host}",
-            "workspaceContent": True,
-        }
-    )
+# ── the retired active-display row (one re-pointed row per workspace) ─────────
 
 
 @pytest.mark.asyncio
-async def test_active_display_repoints_one_row_and_follows_its_target() -> None:
-    host = f"agentic_process-{uuid.uuid4()}"
-    project = str(uuid.uuid4())
-    first = _active_display_ptr(host, "project", f"{project}/editor/markdown/typeid/markdown-{uuid.uuid4()}")
-    second = _active_display_ptr(host, "project", f"{project}/editor/markdown/typeid/markdown-{uuid.uuid4()}")
-
-    a = await ensure_tab(first, name="first.md", icon_key="FileText")
-    b = await ensure_tab(second, name="second.md", icon_key="Presentation")
-
-    # ONE row: identity is the workspace, so the second show re-points the first.
-    assert a.id == b.id == tab_id_for(first) == tab_id_for(second)
-    assert b.pointer == second
-
-    # And its label FOLLOWS the target. The generic rule is backfill-only ("a null
-    # name was never a user rename"), which would freeze this chip on `first.md`
-    # forever — the one row whose target legitimately changes needs the exception.
-    assert b.name == "second.md"
-    assert b.icon_key == "Presentation"
-
-
-@pytest.mark.asyncio
-async def test_active_display_hash_is_not_mistaken_for_the_retired_display_view() -> None:
-    """The namespace must dodge the legacy-display reaper, which pre-filters on a
-    raw ``"display" in pointer`` substring before parsing. A ``workspace-display|``
-    spelling would pay that parse on every list read and sit one comparison away
-    from being hard-deleted by a sweep it has nothing to do with."""
-    from flow_sdk.builtin.tab import _LEGACY_DISPLAY_VIEW, _pointer_view_type
+async def test_retired_active_display_row_is_dropped_on_read() -> None:
+    """A shown thing is an ordinary child tab now; a stored ``workspaceActive|<host>`` row is dropped, not migrated."""
+    from flow_sdk.builtin.tab import _visible_tabs_sorted_with_targets
 
     host = f"agentic_process-{uuid.uuid4()}"
-    ptr = _active_display_ptr(host, "project", f"{uuid.uuid4()}/editor/markdown/typeid/markdown-{uuid.uuid4()}")
-    assert _pointer_view_type(ptr) != _LEGACY_DISPLAY_VIEW
-    assert "display" not in _pointer_view_type(ptr)
+    retired = _test_json.dumps({
+        "viewType": "editor",
+        "pointer": f"t/{uuid.uuid4()}.md",
+        "options": {"activeDisplay": "1"},
+        "tabHash": f"workspaceActive|{host}",
+        "workspaceContent": True,
+    })
+    row = await ensure_tab(retired, name="old.md")
+    kept = await ensure_tab(f"t/{uuid.uuid4()}.md", name="kept.md")
+
+    tabs, _ = await _visible_tabs_sorted_with_targets()
+    ids = {t.id for t in tabs}
+    assert row.id not in ids and await Tab.get_one({"id": row.id}) is None
+    assert kept.id in ids
 
 
-@pytest.mark.asyncio
-async def test_active_display_stays_a_workspace_child() -> None:
-    """Adoption reads the RAW viewType/pointer, not the hash — so the active
-    display must still pass the allow-list, or the list-path reaper null-heals its
-    parent edge and it silently drops out of the workspace child strip."""
-    host = f"agentic_process-{uuid.uuid4()}"
-    project = str(uuid.uuid4())
-    assert _pointer_is_adoptable_child(
-        _active_display_ptr(host, "project", f"{project}/editor/markdown/typeid/markdown-{uuid.uuid4()}")
-    )
-    # A scope-keyed assets pointer rides on the `workspaceContent` bit.
-    assert _pointer_is_adoptable_child(_active_display_ptr(host, "assets", ""))
-    # An artifact-addressed app is workspace content too (addressable-screen rule).
-    assert _pointer_is_adoptable_child(_active_display_ptr(host, "app", f"artifact-{uuid.uuid4()}"))
-    # So is a web page — a terminal link opened in Vibe (frontend `isAdoptableChildDock` lists both).
+def test_app_and_web_page_are_workspace_children() -> None:
+    assert _pointer_is_adoptable_child(_jptr("app", f"micro_app-{uuid.uuid4()}"))
     assert _pointer_is_adoptable_child(_jptr("web-app", "url/aHR0cHMlM0ElMkYlMkZleGFtcGxlLmNvbQ"))
 
 
@@ -1401,8 +1391,11 @@ async def test_missing_project_cleanup_reaps_non_uuid_project_id() -> None:
         f"dock/non-uuid-project-probe#{uuid.uuid4()}",
         target_type=_TabTargetProbe.get_type(),
         target_id=probe.id,
-        project_id="proj-123",
     )
+    # The resolver never stamps a projectless target with a client hint, so the
+    # stale owner the reaper must find is written onto the row directly.
+    tab.project_id = "proj-123"
+    await tab.save()
 
     deleted = await delete_tabs_for_missing_project("proj-123")
 

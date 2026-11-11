@@ -32,7 +32,6 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
 VERSION_FILE="flow_sdk/_version.py"
-MIGRATIONS_DIR="flow_sdk/system_projects/flowpad_assistant/migrations"
 
 # Colors for output
 RED='\033[0;31m'
@@ -129,69 +128,6 @@ bump_version() {
     echo "${major}.${minor}.${patch}"
 }
 
-# Function to update version in _version.py
-update_version_file() {
-    local new_version="$1"
-    echo "__version__ = \"${new_version}\"" > "$VERSION_FILE"
-}
-
-# Rotate the migration recipe slot. Args: <version being released>
-#
-# `run_if_needed` resolves a recipe under the RUNNING version's own directory,
-# so a migration is only ever reached by installs of the version it ships in.
-# That makes the directory named after the NEXT version the only reachable
-# place to write one — and a release consumes it. Two things must happen here,
-# in the bump's own commit, or the guard in
-# tests/unit/test_migration_recipes_ship_with_their_version.py goes red on
-# every branch cut afterwards:
-#
-#   * The slot being released is DELETED if it is still empty. An empty slot
-#     that ships is worse than no slot: `_recipe_versions()` lists directories,
-#     so a directory carrying no recipe reads as one its own wheel never
-#     carried — i.e. stranded. A slot that DID get a migration written into it
-#     is kept; it shipped, and it runs.
-#   * The next slot is opened, so the next migration has somewhere to live.
-rotate_migration_slot() {
-    local released="$1"
-    local released_dir="${MIGRATIONS_DIR}/${released}"
-
-    if [[ -d "$released_dir" ]] \
-       && [[ ! -f "${released_dir}/scripts/migrate.py" ]] \
-       && [[ ! -f "${released_dir}/skill/SKILL.md" ]]; then
-        echo -e "${YELLOW}Retiring empty migration slot ${released} (nothing was written into it)${NC}"
-        rm -rf "$released_dir"
-    fi
-
-    local next
-    next="$(bump_version "$released" patch)" || return 1
-    local next_dir="${MIGRATIONS_DIR}/${next}"
-    if [[ -d "$next_dir" ]]; then
-        return 0
-    fi
-
-    echo -e "${YELLOW}Opening migration slot ${next}${NC}"
-    mkdir -p "$next_dir"
-    cat > "${next_dir}/README.md" <<EOF
-# ${next} — the open slot
-
-This directory is the next UNRELEASED recipe version: the only place a new
-migration can be added and still be reached. It is created by the release
-script when ${released} is cut; do not hand-author it.
-
-\`run_if_needed\` resolves a recipe under the RUNNING version's own directory,
-so a recipe committed after its version was built is never found by any install
-— that version is gone, and every later release looks under its own directory.
-A migration written here ships in the ${next} wheel and runs on upgrade to it.
-
-Add one as \`scripts/migrate.py\` with a \`run()\` entry point, or as
-\`skill/SKILL.md\` for an agent-driven recipe. Until then \`_resolve_recipe\`
-returns None for this version — "nothing to do" — which is correct.
-
-If this slot is still empty when ${next} is released, the release script
-deletes it rather than shipping a directory with no recipe in it.
-EOF
-}
-
 echo -e "${GREEN}=== Flowpad Deployment ===${NC}"
 echo ""
 
@@ -223,9 +159,28 @@ if [[ "$NEW_VERSION" == "$CURRENT_VERSION" ]] || \
     exit 1
 fi
 
+# Desktop <-> backend compatibility gate (docs/version-compatibility.md). It is offline, stdlib-only and takes
+# seconds, so it runs FIRST: before the test run, before the remote flow-rs signing, before anything is written.
+# Checked against the version about to be released, not the one in _version.py. A release that fails this must
+# never be tagged or published -- and a failure here costs nothing.
+echo -e "${YELLOW}Validating version-compatibility declarations for ${NEW_VERSION}...${NC}"
+if ! python3 scripts/check_version_compat.py --backend-version "$NEW_VERSION"; then
+    echo -e "${RED}Error: version-compatibility validation failed -- fix electron/engine-compat.json / flow_sdk/compat.json${NC}"
+    exit 1
+fi
+echo -e "${GREEN}Version-compatibility declarations valid${NC}"
+echo ""
+
 # Get current branch
 CURRENT_BRANCH=$(git branch --show-current)
 echo -e "Branch: ${GREEN}$CURRENT_BRANCH${NC}"
+# A release must come from release/v0.2. On a detached HEAD the branch push below pushes
+# nothing and only the tag lands -- that is how v0.2.245 shipped a fix release never had.
+RELEASE_BRANCH="release/v0.2"
+if [[ "$CURRENT_BRANCH" != "$RELEASE_BRANCH" ]]; then
+    echo -e "${RED}Error: releases are cut from ${RELEASE_BRANCH}, not '${CURRENT_BRANCH:-detached HEAD}'${NC}"
+    exit 1
+fi
 
 # Check if remote exists
 REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
@@ -246,7 +201,7 @@ if [[ "$SKIP_TESTS" == false ]]; then
     TEST_LOG="${TMPDIR:-/tmp}/deploy-tests-$(date +%Y%m%d-%H%M%S).log"
     echo -e "${YELLOW}Running tests... (live log: tail -f ${TEST_LOG})${NC}"
     # --long: never ship on a run that silently skipped the slow tests.
-    PYTHONUNBUFFERED=1 python3 -m pytest tests/ flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -v --tb=short --durations=20 --long 2>&1 | tee "$TEST_LOG"
+    PYTHONUNBUFFERED=1 python3 -m pytest tests/ flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver flow_sdk/system_projects/flowpad_assistant/agentic-assets/secret_manager -v --tb=short --durations=20 --long 2>&1 | tee "$TEST_LOG"
     if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
         echo -e "${GREEN}Tests passed!${NC}"
     else
@@ -407,13 +362,10 @@ else
     echo ""
 fi
 
-# Update version file
+# Update version file and roll the migration slot in the SAME commit — the
+# release is what consumes the slot, so the release is what must open the next one.
 echo -e "${YELLOW}Updating version to ${NEW_VERSION}...${NC}"
-update_version_file "$NEW_VERSION"
-
-# Rotate the migration slot in the SAME commit as the bump — the release is
-# what consumes the slot, so the release is what must open the next one.
-rotate_migration_slot "$NEW_VERSION"
+"$SCRIPT_DIR/bump_version.sh" "$NEW_VERSION"
 
 # Stage and commit all changes
 echo -e "${YELLOW}Committing version bump...${NC}"

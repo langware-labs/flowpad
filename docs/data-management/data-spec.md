@@ -98,10 +98,12 @@ the value (several fields: the combination; a row leaving one empty is not judge
 refused with `code: "unique"`, a batch is checked against itself, and a duplicate that reached the
 disk is reported in `problems` (`rules.UniqueIndex`).
 
-A field may say an outside system owns its value — `"owned_by": "crm"` — and then only a writer
-that passes `by="crm"` sets or changes it (`code: "owned"` otherwise); `GET /kinds/<kind>` carries
-`owned_by` per field. A record may `"include": ["crm.synced"]` other records: their fields, rules
-and owners are its own (a field named twice is refused; a change to an included schema rebuilds the
+A field may say a system of record holds its value — `"truth": "soc"` / `"soc.<path>"` /
+`{link, by, path}` / `{value}` (`flow_sdk/datasets/truth.py`; exactly one field `"soc.external_id"`) —
+and then, in a dataset whose data source is that system, only the system (`by="soc"`) sets it directly;
+any other change goes to the system first ([dataset stores](dataset-stores.md)), or is refused
+(`code: "owned"`). `GET /kinds/<kind>` carries `truth` per field. A record may
+`"include": ["crm.synced"]` other records: their fields, rules and truth are its own (a field named twice is refused; a change to an included schema rebuilds the
 kinds that include it on the next `load_root` / apply of the group).
 
 The marks (`?`, `enum:`, `{"*": …}`) are **input only**: `to_authoring_form`
@@ -118,8 +120,8 @@ what was written — that is what keeps `agent.json` and `dataset.json` readable
 ### `spec_kind` is the connector
 
 An ordinary dot-path tag (`flow_sdk/tags/grammar.py`), resolved through the
-**one** `SchemaRegistry`: a reserved primitive (`string` `int` `float` `bool` `binary`)
-→ its Python type; a registered kind → its class (`register_kind` /
+**one** `SchemaRegistry`: a reserved primitive (`string` `int` `float` `bool` `date`, and `binary`, which
+`io/native.py` adds) → its Python type; a registered kind → its class (`register_kind` /
 `kind_type` / `kind_for`); an unregistered name → **anonymous**: `Any`. Legal,
 opaque, never minted. A kind referenced before it is registered resolves to
 `Any` — compilation is eager, so there is no cycle to detect.
@@ -226,7 +228,7 @@ is an entity field with a compatible core (the entity may narrow: `str` → `Typ
 | a field typed as another **asset type** | a sub-asset with its own identity — recognised by the REGISTRY (the nested class's type has an `asset_spec`), never by inheritance; a `list[…]` of a file-layout type is a directory of files |
 
 ```python
-class SubAgentSpec(FrontMatter):            # a DataSpec with extra="ignore" (hand-edited file)
+class SubAgentSpec(FrontMatter):            # a schema with extra="ignore" (hand-edited file)
     file_ext: ClassVar[str | None] = ".md"
     name: str | None = None
     tools: Any = None

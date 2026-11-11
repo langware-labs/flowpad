@@ -43,6 +43,20 @@ class Mutable(Protocol):
 
 
 @runtime_checkable
+class RowFiles(Protocol):
+    """A flat store of small files addressed by a relative path (``rows/acme/row.json``), each with a
+    version that moves on every write -- what a dataset's rows can live in (an object-store data source,
+    ``datasets/stores.py``). ``expected`` makes a write or delete conditional: the version the caller read, or
+    ``""`` for "must not exist"; a mismatch is ``Conflict`` and nothing changes. A store that cannot
+    condition a write atomically checks right before it and says so in its docs."""
+
+    async def list_files(self) -> dict[str, str]: ...
+    async def read_file(self, path: str) -> bytes: ...
+    async def write_file(self, path: str, data: bytes, *, expected: Optional[str] = None) -> str: ...
+    async def delete_file(self, path: str, *, expected: Optional[str] = None) -> None: ...
+
+
+@runtime_checkable
 class Openable(Protocol):
     """Read the bytes of a file the source handed out — an inbound message's attachment. The runtime
     copies them while the session is open, because a provider's link rarely outlives it."""

@@ -283,6 +283,43 @@ class TestGetAllSkipsUnreadableRows:
         assert "skipped 25 unreadable row(s)" in warnings[0].getMessage()
 
 
+async def test_a_page_with_a_skipped_row_is_still_full(driver):
+    """A skipped unreadable row must not short a list page: the store counts it into the rows it read
+    (it took its place in the SQL page, like a row the hub hides), and the list route reads on until the
+    page is full — so ``limit=2`` answers two, and its ``next_offset`` neither repeats nor skips a row."""
+    from flow_sdk.app.actions.graph_crud_actions import _visible_page
+
+    async with driver.session_factory() as session:
+        for entity_id in ("a1", "bad1", "bad2", "ok2", "ok3", "ok4"):
+            data = '{"created_date": []}' if entity_id.startswith("bad") else "{}"
+            await session.execute(text(
+                "INSERT INTO entities (id, type, namespace, data, record_data_ref) "
+                "VALUES (:id, 'note', '', :data, NULL)"
+            ), {"id": entity_id, "data": data})
+        await session.commit()
+
+    sql_page = QueryFilter(type="note", order_by=[{"id": "asc"}], limit=3)
+    assert [r.id for r in await driver.get_all(sql_page)] == ["a1"]
+    assert sql_page.rows_read == 3
+
+    class _Notes:  # the list route's view of an entity model: a real driver read, nothing faked
+        @staticmethod
+        async def get_all(entities_filter, source_entity=None):
+            return await driver.get_all(entities_filter, source_entity)
+
+    ids, offset, pages = [], 0, []
+    while True:
+        flt = QueryFilter(type="note", order_by=[{"id": "asc"}], limit=2, offset=offset or None)
+        page = await _visible_page(_Notes, flt, None, lambda entity: True)
+        pages.append([r.id for r in page.data])
+        ids += pages[-1]
+        if not page.has_more:
+            break
+        offset = page.next_offset
+    assert pages[0] == ["a1", "ok2"], f"short first page: {pages}"
+    assert ids == ["a1", "ok2", "ok3", "ok4"]
+
+
 class TestProjectScopeMatchesProjectId:
     """A project's scope covers rows stamped with its ``project_id``.
 

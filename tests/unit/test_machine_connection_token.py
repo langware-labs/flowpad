@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.core.oauth import hub_oauth
 
@@ -15,14 +16,15 @@ NODE = "compute_node-2b1c7a4e-5f2d-4a83-9c11-6d4e8f0a1b23"
 async def test_a_machine_asks_its_own_route_and_a_refusal_is_no_token(monkeypatch):
     asked = []
 
-    async def hub_get(etype, eid=None, action=None, sub_path=None, **_):
+    async def fake_call(method, etype, eid=None, action=None, sub_path=None, **_):
+        assert method == "GET"
         asked.append((str(etype), eid, action, sub_path))
         if sub_path == "slack_bot":
             return {"value": "xoxb-fresh"}
         raise HubError(404, "not found")
 
     monkeypatch.setattr("flow_sdk.instance_settings.runtime.get_assigned_compute_node", lambda: NODE)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", hub_get)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
 
     assert await hub_oauth.hub_credential_value("slack_bot") == "xoxb-fresh"
     assert await hub_oauth.hub_credential_value("github_credentials") is None

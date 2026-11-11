@@ -9,6 +9,7 @@ from flow_sdk.schema.view_mode import ViewMode
 
 SUBAGENT = TypeInfo(
     type_name=EntityType.SUBAGENT,
+    template={"description": "Use for <the task to hand this agent>.", "prompt": "You are {name}. <what you do and how you report back>.\n"},
     process_projection=project_process_asset,
     editor="subagent",
     display_name="Sub-agents",

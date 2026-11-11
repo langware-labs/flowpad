@@ -28,7 +28,7 @@ You are often handed one already (`conversation/<uuid>` or `conversation-<uuid>`
 by participant name / email / title:
 
 ```bash
-flow conversation list        # id, title, participants, message_count
+flow conversation list        # id, title, members, message_count
 ```
 
 Do not `Read` the conversation's records folder: it holds pointers only, never message text.
@@ -79,6 +79,9 @@ into a Flowpad conversation, on behalf of the user. Triggered by "send X to my c
 with Y", "attach this doc to the Z conversation", "message Y the report", "send them a prompt
 to run".
 
+Write the text with the `message-formatter` skill before any send below (title = the subject in
+a few words; the text never repeats it).
+
 `flow conversation send <conv-id> <text>` exists and is fine for a **text-only** send. It
 takes no attachment, asset or prompt options, so every richer send goes through the backend's
 own `add_message` action — the same endpoint the UI uses — called over local HTTP. Prefer the
@@ -92,6 +95,7 @@ The backend is instance-scoped. Read the port from the instance's `server.json`:
 ```bash
 PORT=$(python3 -c "import json,os,pathlib; inst=os.environ.get('FLOW_INSTANCE','prod'); print(json.load(open(pathlib.Path.home()/'.flow'/'instances'/inst/'server.json'))['port'])")
 BASE="http://localhost:$PORT/api/v1"
+GATE="X-Cookie-Gate: $(flow auth get-cookie-gate 2>/dev/null)"   # the backend refuses requests without its token
 ```
 
 If `server.json` is missing, that instance's backend is not running — stop and tell the user.
@@ -102,11 +106,11 @@ If the user gave an explicit conversation id (or a `conversation-<uuid>` TypeId)
 Otherwise resolve by participant or title from the local conversation list:
 
 ```bash
-curl -s --max-time 15 "$BASE/graph/conversation" | python3 -c "
+curl -s -H "$GATE" --max-time 15 "$BASE/graph/conversation" | python3 -c "
 import json,sys
 needle = 'NEEDLE'.lower()   # participant email/name fragment or title fragment
 for c in json.load(sys.stdin)['data']:
-    parts = c.get('participants') or []
+    parts = c.get('members') or []
     hay = ' '.join([c.get('title') or ''] + [p.get('email','')+' '+p.get('name','') for p in parts]).lower()
     if needle in hay:
         print(c['id'], '|', c.get('title'), '|', c.get('updated_date'), '|', [p.get('email') for p in parts])
@@ -115,12 +119,14 @@ for c in json.load(sys.stdin)['data']:
 
 - "my latest conversation with Y" → among the matches, pick the **max `updated_date`**.
 - Multiple plausible matches with similar recency → list them and ask the user; do not guess.
-- No match → send nothing (any other conversation is the wrong person) and ask the user for the contact's email.
+- A reply to a message the user received, or a follow-up on it, goes in that message's own conversation (`--reply-to <msg-id>`), whatever its title. Only an explicit request from the user starts a new conversation for it.
+- For a message that answers nothing: a group conversation, or one about another subject, is not a match: everyone in it would read the message.
+- No match → never post into another conversation: `flow contacts find <name>`, then `flow conversation new <email|user_id> "<text>" --title "<subject>"` starts one; not in the address book → ask the user for the email.
 
 ## Step 2 — check cloud login (sends require it)
 
 ```bash
-curl -s --max-time 15 "$BASE/cloud/status" | python3 -c "import json,sys; d=json.load(sys.stdin)['data']; print(d.get('logged_in'), d.get('hub_ws_status'))"
+curl -s -H "$GATE" --max-time 15 "$BASE/cloud/status" | python3 -c "import json,sys; d=json.load(sys.stdin)['data']; print(d.get('logged_in'), d.get('hub_ws_status'))"
 ```
 
 If `logged_in` is not `True`, stop and ask the user to sign in (Flowpad UI cloud sign-in, or
@@ -136,19 +142,25 @@ One endpoint carries every kind of send; pick the payload keys for what you are 
 | `message` (alias `text`) | the text body | required unless a prompt / file / asset is attached |
 | `files` | an on-disk file, uploaded | repeatable, one field per file |
 | `asset_references` | a Flowpad entity, referenced not uploaded | its TypeId, e.g. `markdown-<uuid>` |
-| `prompt_text` | a runnable prompt for the recipient | minted as a real `Prompt` entity, attached as a `type_id` with an inline `prompt_preview` |
-| `prompt_files` | prompt bodies read from files | text files become `Prompt` entities; images stay raw |
+| `prompt_text` | a runnable prompt for the recipient | rides inline on the message as a `prompt` attachment — never saved to the library or the project |
+| `prompt_files` | prompt bodies read from files | text rides inline like `prompt_text`; images stay raw files |
 | `reply_to_id` | the message this answers | quotes it and joins the thread rooted at it; must be a message of this conversation |
 | `thread_root_id` | a message whose thread to write into | joins that thread without quoting; ignored when `reply_to_id` is set |
 
 Text-only replies have a CLI form: `flow conversation send <conversation> "<text>" --reply-to <msg-id>`.
+A runnable prompt has one too: `flow conversation send <conversation> "<what they read>" --prompt "<what they run>" [--session <live-session-id>]`.
+
+**Never create a `Prompt` to send it.** A library `Prompt` is a file under the project's
+`agentic-assets/prompt/` — private chat text one `git add` away from a push. Send the text
+inline (`--prompt` / `prompt_text`). `flow conversation attach <conv> prompt-<uuid>` is only for
+sharing a prompt the user already keeps in their library.
 On a source channel (email, Slack, WhatsApp …) answer through the channel instead:
 `flow conversation reply <conversation> "<text>" --reply-to <msg-id>`.
 
 Multipart when the send uploads files:
 
 ```bash
-curl -s --max-time 15 -X POST "$BASE/graph/conversation/<CONV_ID>/add_message" \
+curl -s -H "$GATE" --max-time 15 -X POST "$BASE/graph/conversation/<CONV_ID>/add_message" \
   -F 'message=<short intro text for the recipient>' \
   -F "files=@/abs/path/to/doc.md" \
   # repeat -F "files=@..." per extra file
@@ -159,7 +171,7 @@ A JSON body is accepted for everything that is not a file upload, and is the rig
 long multi-line text — quoting a prompt through repeated `-F` flags is where these sends break:
 
 ```bash
-curl -s --max-time 180 -X POST "$BASE/graph/conversation/<CONV_ID>/add_message" \
+curl -s -H "$GATE" --max-time 180 -X POST "$BASE/graph/conversation/<CONV_ID>/add_message" \
   -H 'Content-Type: application/json' --data @payload.json
 # payload.json: {"text": "<what the human reads>", "prompt_text": "<what they run>"}
 ```
@@ -185,7 +197,7 @@ Fall back to walking the conversation when the response is missing the id, then 
 attachment and upload state on the row itself:
 
 ```bash
-curl -s --max-time 15 "$BASE/graph/conversation/<CONV_ID>" | python3 -c "
+curl -s -H "$GATE" --max-time 15 "$BASE/graph/conversation/<CONV_ID>" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)['data']
 ids=d.get('message_ids') or []
@@ -193,7 +205,7 @@ ids=json.loads(ids) if isinstance(ids,str) else ids
 print(ids[-1]['typeid'])
 "
 # then, with FM_ID = uuid part of that typeid:
-curl -s --max-time 15 "$BASE/graph/flow_message/<FM_ID>" | python3 -c "
+curl -s -H "$GATE" --max-time 15 "$BASE/graph/flow_message/<FM_ID>" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)['data']
 print('delivery_status:', d.get('delivery_status'), '| body_status:', d.get('body_status'))
@@ -204,7 +216,7 @@ print([(a.get('attachment_type'), a.get('data')) for a in d.get('attachment') or
 Done when `delivery_status` is `sent` (the hub accepted it) **and** the body has settled:
 `body_status` is `ready` for a send that carries a bundle, or `na` when nothing rides one
 (text-only, or inline-only attachments). Then check the attachment list matches what you sent —
-`('file', 'data/<your-filename>')` for an upload, `('type_id', 'prompt-<uuid>')` for a prompt.
+`('file', 'data/<your-filename>')` for an upload, `('prompt', '<the prompt text>')` for a prompt.
 Report the message id and what the recipient can now do with it (download, run the prompt).
 If `delivery_status` stays `created` or `body_status` stays `uploading`, report that honestly —
 do not mark the send verified.

@@ -4,6 +4,7 @@ Search route for the local server.
 Uses FTS5 full-text search via Entity.search().
 """
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -16,6 +17,7 @@ from flow_sdk.server.search_filters import (
     apply_scope_filter,
     apply_system_filter,
     apply_tag_filter,
+    wanted_tags,
     scope_record_project_ids,
 )
 
@@ -96,13 +98,16 @@ async def search_records(
     q: str = Query(default="", description="Search query"),
     limit: int = Query(default=10, ge=1, description="Maximum results to return"),
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
-    record_type: Optional[str] = Query(default=None, description="Filter by record type"),
+    record_type: Optional[str] = Query(default=None, description="Filter by record type; a comma list matches any of them"),
     status: Optional[str] = Query(default=None, description="Filter by record status"),
     user: Optional[str] = Query(
         default=None, description="ScopeFilter.user: include user-scope records. 'true' (default if absent) or 'false'."
     ),
     projects: Optional[str] = Query(
         default=None, description="ScopeFilter.projects: comma-separated project entity IDs to include."
+    ),
+    deps: Optional[str] = Query(
+        default=None, description="ScopeFilter.deps: 'true' widens projects to their dependency closure."
     ),
     tags: Optional[str] = Query(default=None, description="Comma-separated tags to filter by"),
     parent_path: Optional[str] = Query(
@@ -153,7 +158,7 @@ async def search_records(
     # caller), pass None so the filter is disabled (back-compat for any
     # request that hasn't migrated to the new wire format yet).
     scope_filter = (
-        ScopeFilter.from_query_params({"user": user, "projects": projects})
+        ScopeFilter.from_query_params({"user": user, "projects": projects, "deps": deps})
         if user is not None or projects is not None
         else None
     )
@@ -164,7 +169,7 @@ async def search_records(
     # the list (the count clause already counts them), keeping list/count in sync.
     scoped_pids = scope_record_project_ids(scope_filter) if scope_filter else ()
 
-    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+    tag_list = wanted_tags(tags)
 
     # Build calibration from query params
     cal_col_weights = None
@@ -219,7 +224,14 @@ async def search_records(
             for type_name in sorted({i.type_name for i in SchemaRegistry.repo_family_to_info().values()}):
                 all_entities.extend(await Entity.get_all(_qf(type_name)))
         else:
-            all_entities = await Entity.get_all(_qf(record_type))
+            # A comma list ("markdown,document_file") browses each type.
+            from flow_sdk.db.drivers.sqlite.sqlite_driver import split_record_types  # noqa: PLC0415
+
+            types = split_record_types(record_type) if record_type else [None]
+            per_type = await asyncio.gather(*(Entity.get_all(_qf(t)) for t in types))
+            all_entities = [e for chunk in per_type for e in chunk]
+            if len(types) > 1:
+                all_entities.sort(key=lambda e: str(getattr(e, "updated_date", "") or ""), reverse=True)
 
         all_entities = apply_scope_filter(all_entities, scope_filter)
         all_entities = apply_folder_filter(all_entities, parent_path, vault_root)
@@ -262,6 +274,7 @@ async def search_records(
             record_type=record_type,
             status=status,
             calibration=calibration,
+            tags=tag_list,
         )
     except Exception:
         logger.warning("FTS search failed (index may not be ready), returning empty results", exc_info=True)
@@ -276,7 +289,6 @@ async def search_records(
     entities = apply_folder_filter(entities, parent_path, vault_root)
     entities = apply_containment_filter(entities, top_level, parent_type_id)
     entities = apply_system_filter(entities, include_system, scoped_pids)
-    entities = apply_tag_filter(entities, tag_list)
 
     total_count = len(entities)
     page = entities[offset : offset + limit]

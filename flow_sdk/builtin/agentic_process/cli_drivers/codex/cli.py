@@ -31,7 +31,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     insert_capability_path_dir,
     worker_bin_folder,
 )
-from flow_sdk.builtin.agentic_process.model_tiers import CODEX_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +42,6 @@ class CodexAgentOptions(AgentOptions):
     property on AgenticProcess returns something inspectable for codex too
     (the ``test_agentic_process_clock_agent`` test asserts on ``cmd_line``).
     """
-
-    # sm/md/lg → gpt-5.6-luna/gpt-5.6-terra/gpt-5.6-sol, applied when emitting command.
-    MODEL_TIERS = CODEX_MODEL_TIERS
 
     def __init__(
         self,
@@ -89,7 +85,11 @@ class CodexAgentOptions(AgentOptions):
     DEFAULT_REASONING_EFFORT = "low"
 
     EXECUTABLE = "codex"
-    PROMPT_CHANNEL = "stdin"  # codex reads the prompt from stdin (the `-` sentinel)
+
+    @property
+    def PROMPT_CHANNEL(self) -> str:
+        """Interactive launches take argv; headless exec reads the stdin sentinel."""
+        return "stdin" if self.json_stream else "argv"
 
     def configure_fork(self, source_session_id: str) -> None:
         if self.json_stream:

@@ -1,5 +1,6 @@
 import { defineConfig, mergeConfig } from 'vitest/config';
 import viteConfig from '../../vite.config';
+import { adjusted } from '../adjustableTimeout';
 
 const resolvedViteConfig = typeof viteConfig === 'function' ? viteConfig({ mode: 'test', command: 'serve' } as any) : viteConfig;
 
@@ -27,8 +28,8 @@ export default mergeConfig(
       },
     },
     test: {
-      hookTimeout: 15000,
-      testTimeout: 15000,
+      hookTimeout: adjusted(15000),
+      testTimeout: adjusted(15000),
       environment: 'jsdom',
       setupFiles: ['./tests/_lingui-mock.ts', './tests/_restore-globals.ts', './tests/unit/testSetup.ts'],
       pool: 'threads',

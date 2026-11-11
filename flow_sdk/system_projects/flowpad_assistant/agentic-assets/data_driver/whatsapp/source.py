@@ -56,9 +56,10 @@ from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapp
 
 from pydantic import StringConstraints
 
+from flow_sdk.builtin.source_item import MessageSpec
 from flow_sdk.sources import http
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.config import Sharing, SourceConfig, config_field
 from flow_sdk.sources.credentials import ResolvedSecrets
 from flow_sdk.sources.errors import (
     AccessDenied,
@@ -128,9 +129,40 @@ MEDIA_TYPES: dict[str, FileKind] = {
 }
 
 
+class WhatsAppMessageSpec(MessageSpec):
+    """Outbound WhatsApp message: the generic shape, chat-targeted replies — the person, or the group.
+
+    No extra fields — WhatsApp has no subject, and templates, media and
+    interactive replies are explicit non-goals for now (the driver sends plain
+    text inside the 24-hour window).
+    """
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, files=()) -> "WhatsAppMessageSpec":
+        """A reply to inbound message ``m`` — a pure constructor, no I/O.
+
+        WhatsApp replies target the CHAT, and the chat IS the thread: a 1:1
+        conversation is the pair (business number, wa_id), a group's is the
+        group — so ``to`` and ``thread_key`` carry the same id (a wa_id, or the
+        group id: a reply in a group goes to the group, never privately to
+        whoever wrote) and there is nothing to derive. The
+        replied-to id rides ``reply_to_external_id`` and becomes Meta's
+        ``context`` — which renders as a quote and does not start a thread,
+        because WhatsApp has none.
+        """
+        thread_key = str(getattr(m, "thread_key", "") or "")
+        return cls(
+            to=[thread_key],
+            body=body,
+            thread_key=thread_key,
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            files=list(files),
+        )
+
+
 class WhatsAppMessageData(MessageData):
     spec_kind: ClassVar[str] = "ingest.message.whatsapp"
-    volatile: ClassVar[frozenset[str]] = frozenset({"raw"})
+    digest_exclude: ClassVar[frozenset[str]] = frozenset({"raw"})
 
     raw: Optional[dict] = None
 
@@ -149,7 +181,7 @@ class WhatsAppConfig(SourceConfig):
     #: The WhatsApp Business Account the number is in — what the app is subscribed to.
     waba_id: Annotated[str, StringConstraints(strip_whitespace=True)] = ""
     #: The person's own number the test mode was proven on (a Meta test recipient).
-    test_recipient: str = ""
+    test_recipient: str = config_field("", sharing=Sharing.PRIVATE)
     #: Who may drive the owning agent from this number (wa_ids); the row keeps it as allowed_senders.
     allowed_senders: list[Annotated[str, StringConstraints(pattern=r"^[0-9]+$")]] = []
     #: Where Graph is. Empty means Meta's own host; a test names a loopback double. Never a secret.
@@ -242,8 +274,6 @@ class WhatsAppSource(MessageSource):
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
     def outbound_spec(cls) -> type:
-        from flow_sdk.builtin.source_item import WhatsAppMessageSpec  # noqa: PLC0415
-
         return WhatsAppMessageSpec
 
     def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):

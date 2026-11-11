@@ -206,7 +206,7 @@ class Wizard(Entity):
         from flow_sdk.core.wizard.state import read_state, strip_heavy  # noqa: PLC0415
 
         if not self.id:
-            return {"result": None, "approved": False}
+            return {"result": None, "approved": False, "checked": False}
         try:
             # The STORED dump, stripped — never re-validated here: this rides
             # every row of `GET /graph/wizard` and every WS push, and `read_state`
@@ -217,9 +217,10 @@ class Wizard(Entity):
             return {
                 "result": strip_heavy(raw) if isinstance(raw, dict) and "exit_code" in raw else None,
                 "approved": bool(state.get("approved")),
+                "checked": bool(state.get("checked")),
             }
         except Exception:  # noqa: BLE001 — a run summary must never fail a fetch
-            return {"result": None, "approved": False}
+            return {"result": None, "approved": False, "checked": False}
 
     async def run(
         self,
@@ -441,6 +442,19 @@ class Wizard(Entity):
 
         await show_wizard_fresh(self)
         return ApiSuccessResponse(data={"opened": True})
+
+    @action.post(action_name="closed")
+    async def closed_action(self) -> ApiResponse:
+        """`POST /wizard/<id>/closed` — the person closed this wizard's window, finished or not.
+
+        Closing the first-run wizard lets project setup go ahead (``core/wizard/first_run``).
+        """
+        from flow_sdk.core.wizard.first_run import mark_closed  # noqa: PLC0415
+        from flow_sdk.server.builtin_triggers import LLM_SETUP_WIZARD  # noqa: PLC0415
+
+        if self.name == LLM_SETUP_WIZARD:
+            mark_closed()
+        return ApiSuccessResponse(data={"closed": True})
 
     @action.post(action_name="start")
     async def start_action(self) -> ApiResponse:

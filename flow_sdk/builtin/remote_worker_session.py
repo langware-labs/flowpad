@@ -49,15 +49,26 @@ class ReplyPolicy(StrEnum):
     REVIEW = "review"  # save as a host draft inside the session
 
 
-def scratch_workdir() -> "Path":
-    """The folder a "No project" live session runs in — one per instance, always
-    the same. Under the instance's own data folder (never machine-wide), which is
-    a protected path, so running there never mints a Project for it."""
+def _instance_scratch(name: str) -> "Path":
+    """A fixed folder under the instance's own data folder (never machine-wide).
+    It is a protected path, so running there never mints a Project for it."""
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
-    folder = get_instance_settings().instance_dir / "live-session-scratch"
+    folder = get_instance_settings().instance_dir / name
     folder.mkdir(parents=True, exist_ok=True)
     return folder
+
+
+def scratch_workdir() -> "Path":
+    """The folder a "No project" live session runs in — one per instance, always the same."""
+    return _instance_scratch("live-session-scratch")
+
+
+def chat_scratch_workdir() -> "Path":
+    """The folder a project-less CHAT runs in (e.g. chat about a message
+    attachment) — one per instance, separate from the live-session scratch so a
+    guest's files and the user's own chats never mix."""
+    return _instance_scratch("chat-scratch")
 
 
 # The approve refusal for a session with nowhere to run — the UI answers it with a project picker.
@@ -65,8 +76,7 @@ NEEDS_PROJECT_MESSAGE = "pick the project this live session runs in"
 
 
 class ApprovedVia(StrEnum):
-    MANUAL = "manual"                  # the host clicked Approve
-    STANDING_GRANT = "standing_grant"  # a ContactPermission pre-approved it
+    MANUAL = "manual"  # the host clicked Approve — the only way a session is approved
 
 
 class InboundDecision(StrEnum):
@@ -74,29 +84,27 @@ class InboundDecision(StrEnum):
     IGNORE = "ignore"        # terminal session — nothing runs, marker untouched
     EXPIRE = "expire"        # past MAX_SESSION_LENGTH — the host closes it
     PARK_PENDING = "park"    # no consent yet — stays queued until approve
-    RUN = "run"              # active (or pre-approved) — run the turn
+    RUN = "run"              # active — run the turn
 
 
 # The two active sub-states a turn cycles between once the host approved.
 ACTIVE_STATUSES = frozenset({RemoteWorkerSessionStatus.IDLE, RemoteWorkerSessionStatus.RUNNING})
 # States a turn may run in: ACTIVE plus ERROR (the next turn is the retry).
 RUNNABLE_STATUSES = ACTIVE_STATUSES | {RemoteWorkerSessionStatus.ERROR}
-# States that mean "no consent yet" — a standing grant collapses these to RUN.
-UNAPPROVED_STATUSES = frozenset({RemoteWorkerSessionStatus.DRAFT, RemoteWorkerSessionStatus.PENDING})
 # Absorbing states — no transition leaves them.
 TERMINAL_STATUSES = frozenset({RemoteWorkerSessionStatus.ENDED, RemoteWorkerSessionStatus.DECLINED})
 # Every state a session can still be in before it ends.
 LIVE_STATUSES = frozenset(RemoteWorkerSessionStatus) - TERMINAL_STATUSES
 
 # Legal lifecycle moves. Anything → ENDED (disconnect wins from every live
-# state); terminals absorb. PENDING→RUNNING is the pre-granted fast path
-# (approve+run collapse into one step when ContactPermission auto-approves).
+# state); terminals absorb. PENDING leaves only by the host's Approve (→ IDLE),
+# a Decline or an end — never straight into a running turn.
 _TRANSITIONS: dict[str, frozenset] = {
     RemoteWorkerSessionStatus.DRAFT: frozenset({
         RemoteWorkerSessionStatus.PENDING, RemoteWorkerSessionStatus.ENDED,
     }),
     RemoteWorkerSessionStatus.PENDING: frozenset({
-        RemoteWorkerSessionStatus.IDLE, RemoteWorkerSessionStatus.RUNNING,
+        RemoteWorkerSessionStatus.IDLE,
         RemoteWorkerSessionStatus.DECLINED, RemoteWorkerSessionStatus.ENDED,
     }),
     RemoteWorkerSessionStatus.IDLE: frozenset({
@@ -119,7 +127,7 @@ _TRANSITIONS: dict[str, frozenset] = {
 # Hard cap on a live session's length, counted from approval (the card's clock).
 # Past it the host closes the session (and tells the guest); the guest stops
 # sending into it on its own, so the cap holds even with the host offline.
-MAX_SESSION_LENGTH = timedelta(hours=2)
+MAX_SESSION_LENGTH = timedelta(hours=4)
 
 
 def is_terminal(status: str | None) -> bool:
@@ -137,12 +145,12 @@ def can_transition(current: str | None, new: str) -> bool:
     return new in _TRANSITIONS[current]
 
 
-def decide_inbound_prompt(*, status: str | None, standing_grant: bool, expired: bool = False) -> InboundDecision:
+def decide_inbound_prompt(*, status: str | None, expired: bool = False) -> InboundDecision:
     """THE inbound gate, as a pure function of session state.
 
     terminal → IGNORE; past the length cap → EXPIRE; IDLE/RUNNING/ERROR → RUN;
-    PENDING/DRAFT/unknown → RUN when a standing grant pre-approves the
-    session, else PARK. No message-level concern lives here — draft / own-send
+    PENDING/DRAFT/unknown → PARK until the host approves. Nothing approves a
+    session for the host. No message-level concern lives here — draft / own-send
     / already-consumed guards belong to the async wrapper that has the DB.
     """
     if is_terminal(status):
@@ -151,7 +159,7 @@ def decide_inbound_prompt(*, status: str | None, standing_grant: bool, expired: 
         return InboundDecision.EXPIRE
     if status in RUNNABLE_STATUSES:
         return InboundDecision.RUN
-    return InboundDecision.RUN if standing_grant else InboundDecision.PARK_PENDING
+    return InboundDecision.PARK_PENDING
 
 
 def _now_iso() -> str:
@@ -212,7 +220,16 @@ class RemoteWorkerSession(Entity):
         default=None, description="ReplyPolicy: auto (send replies) | review (host drafts)."
     )
     approved_at: Optional[str] = APIField(default=None, description="ISO-UTC when the host approved.")
-    approved_via: Optional[str] = APIField(default=None, description="ApprovedVia: manual | standing_grant.")
+    # How many prompts this session may run: 1 for a session a plain prompt
+    # opened (a "prompt request"), None for a live session (no limit). The
+    # guest proposes it on the start marker; the host fills it once. The host
+    # counts answered turns in ``prompts_used`` and ends the session when the
+    # limit is reached, so approving one prompt never approves the next.
+    prompt_limit: Optional[int] = APIField(
+        default=None, description="Prompts this session may run; None = unlimited (a live session)."
+    )
+    prompts_used: int = APIField(default=0, description="Turns answered so far (host-authoritative).")
+    approved_via: Optional[str] = APIField(default=None, description="ApprovedVia: manual.")
 
     # Host-authoritative, synced projection so the guest can render live state.
     status: str = APIField(default=RemoteWorkerSessionStatus.IDLE)
@@ -227,6 +244,16 @@ class RemoteWorkerSession(Entity):
     def is_host(self, user_id: str | None) -> bool:
         """True when ``user_id`` is this session's host (the executor)."""
         return bool(self.host_user_id) and user_id == self.host_user_id
+
+    @property
+    def is_prompt_request(self) -> bool:
+        """Opened by a plain prompt: a limited session, never joined by the next prompt."""
+        return self.prompt_limit is not None
+
+    @property
+    def limit_reached(self) -> bool:
+        """A prompt request that already answered its prompt(s) — the host ends it."""
+        return self.is_prompt_request and self.prompts_used >= self.prompt_limit
 
     @property
     def effective_reply_policy(self) -> ReplyPolicy:
@@ -244,12 +271,14 @@ class RemoteWorkerSession(Entity):
         "host_user_id", "guest_user_id", "host_name", "guest_name",
         "status", "last_activity_at", "started_at",
         "starting_message_id", "reply_policy", "approved_at", "approved_via",
+        "prompt_limit", "prompts_used",
     })
     # Host-authoritative subset: adopted from a snapshot only on the guest,
     # and only when the snapshot's activity clock is fresher.
     _HOST_AUTHORITATIVE_FIELDS: ClassVar[frozenset[str]] = frozenset({
         "status", "last_activity_at", "host_user_id", "host_name",
         "collaboration_room_id", "reply_policy", "approved_at", "approved_via",
+        "prompts_used",
     })
     # Identity the host row may be MISSING when it materialized from a guest
     # carrier packed before the guest's roster resolved — filled once, never
@@ -257,7 +286,7 @@ class RemoteWorkerSession(Entity):
     # opening proposal, adopted the same fill-only way.
     _HOST_FILL_FIELDS: ClassVar[tuple[str, ...]] = (
         "guest_user_id", "guest_name", "conversation_id", "host_user_id", "host_name",
-        "starting_message_id", "reply_policy",
+        "starting_message_id", "reply_policy", "prompt_limit",
     )
 
     @classmethod
@@ -369,15 +398,17 @@ class RemoteWorkerSession(Entity):
         """The conversation's open live session — its newest one not ENDED/DECLINED
         and not past its length cap (a prompt after the cap opens a new session).
 
-        A conversation holds ONE open session: every prompt sent in it joins
+        A conversation holds ONE open live session: every prompt sent in it joins
         that session (queued while PENDING, re-run after an ERROR) until either
-        side ends it; only then does the next prompt open another. A lookup on
-        the natural key, never a derived id.
+        side ends it; only then does the next prompt open another. A prompt
+        request (``prompt_limit`` set) is never joined — it runs the prompt that
+        opened it and ends — so it is not "the open session". A lookup on the
+        natural key, never a derived id.
         """
         if not conversation_id:
             return None
         rows = await cls.get_all({"conversation_id": conversation_id})
-        open_rows = [r for r in rows if r.is_open]
+        open_rows = [r for r in rows if r.is_open and not r.is_prompt_request]
         if not open_rows:
             return None
         return max(open_rows, key=lambda r: r.started_at or r.last_activity_at or "")
@@ -465,8 +496,7 @@ class RemoteWorkerSession(Entity):
         """Consent: PENDING/DRAFT → IDLE with the approval stamped. Returns
         False when the move is illegal (already terminal). Idempotent on an
         already-active session. Announces with an ``approved`` line so the
-        guest's mirror flips. Shared by the Approve control and the
-        standing-grant path of the inbound gate."""
+        guest's mirror flips. Called only by the host's Approve."""
         if self.status in ACTIVE_STATUSES:
             return True
         if not can_transition(self.status, RemoteWorkerSessionStatus.IDLE):
@@ -499,22 +529,6 @@ class RemoteWorkerSession(Entity):
         conv = await Conversation.get_one({"id": self.conversation_id}) if self.conversation_id else None
         return getattr(conv, "project_id", None) or None
 
-    async def remember_guest(self, scope: str) -> None:
-        """Standing grant: future sessions from this guest start approved.
-        ``scope``: ``project`` (this session's project) or ``everywhere``."""
-        from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction  # noqa: PLC0415
-
-        if not self.guest_user_id:
-            return
-        project_id = self.project_id if scope == "project" else None
-        rows = await ContactPermission.get_all({"contact_user_id": self.guest_user_id})
-        row = next((r for r in rows if r.project_id == project_id), None)
-        if row is None:
-            row = ContactPermission(contact_user_id=self.guest_user_id, project_id=project_id)
-        if PermissionAction.AUTO_APPROVE_SESSION.value not in (row.allowed_actions or []):
-            row.allowed_actions = [*(row.allowed_actions or []), PermissionAction.AUTO_APPROVE_SESSION.value]
-        await row.save()
-
     @action.post(action_name="approve")
     async def _http_approve(self) -> ApiResponse:
         """Host approves a PENDING live session and re-drives the prompts that
@@ -522,9 +536,8 @@ class RemoteWorkerSession(Entity):
         immediately; ``prompt_auto_handled``-before-run keeps the re-drive
         idempotent against concurrently arriving prompts.
 
-        Body: ``{remember?: "project" | "everywhere", project_id?, scratch?}``.
-        ``remember`` also writes the standing grant for this guest;
-        ``project_id`` is where the session runs, required when neither the
+        Body: ``{project_id?, scratch?}``. It approves this session only —
+        nothing is remembered for the guest's next one. ``project_id`` is where the session runs, required when neither the
         session nor its conversation has a project — refused (409, session left
         PENDING) rather than approved into a turn that can only fail.
         ``scratch: true`` is the host's "No project": the session runs in the
@@ -533,13 +546,9 @@ class RemoteWorkerSession(Entity):
 
         ri = get_current_request_info()
         body = (await ri.get_post_data() or {}) if ri else {}
-        remember = str(body.get("remember") or "").strip()
-        if remember and remember not in ("project", "everywhere"):
-            return ApiFailResponse(message="remember must be 'project' or 'everywhere'", status_code=400)
+        if body.get("remember"):
+            return ApiFailResponse(message="approve covers this session only; nothing can be remembered", status_code=400)
         if body.get("scratch") in (True, "true", "1"):
-            if remember == "project":
-                # A grant scoped to no project would read as "everywhere".
-                return ApiFailResponse(message="a temp-folder session has no project to remember", status_code=400)
             self.workdir = str(scratch_workdir())
         else:
             requested = str(body.get("project_id") or "").strip() or None
@@ -551,10 +560,6 @@ class RemoteWorkerSession(Entity):
             self.project_id = project_id
         if self.status not in ACTIVE_STATUSES and not can_transition(self.status, RemoteWorkerSessionStatus.IDLE):
             return ApiFailResponse(message=f"illegal live-session transition: {self.status} → idle")
-        # The grant lands BEFORE the session goes live: the guest acts on "approved"
-        # at once, and its next session must already find itself remembered.
-        if remember:
-            await self.remember_guest(remember)
         await self.approve(via=ApprovedVia.MANUAL)
         import asyncio  # noqa: PLC0415
 

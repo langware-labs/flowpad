@@ -13,7 +13,7 @@ import {
   User,
   Zap,
 } from 'lucide-react';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 
 import { OperationExpandedDetail, OperationOneLiner } from './OperationRow';
 import {
@@ -376,12 +376,12 @@ export function TranscriptEntryItem({
                 </span>
                 <span className="text-[10px] text-muted-foreground">{timestamp}</span>
                 <span className="text-[10px] text-muted-foreground">
-                  {hookCount} hook{hookCount !== 1 ? 's' : ''}
+                  <Plural value={hookCount} one="# hook" other="# hooks" />
                 </span>
                 {hookErrors.length > 0 && (
                   <span className="flex items-center gap-0.5 rounded bg-red-500/10 px-1 text-[10px] text-red-600">
                     <AlertTriangle className="h-2.5 w-2.5" />
-                    {hookErrors.length} error{hookErrors.length !== 1 ? 's' : ''}
+                    <Plural value={hookErrors.length} one="# error" other="# errors" />
                   </span>
                 )}
                 {preventedContinuation && (

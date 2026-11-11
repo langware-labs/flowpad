@@ -127,7 +127,8 @@ async function embedVibeKindSubagents(proc: AgenticProcess): Promise<void> {
  * layer prompt/upload behavior on top.
  */
 export async function createVibeProcessForProject(opts: {
-  projectId: string;
+  /** Null = no project: the session runs in the instance's chat scratch folder. */
+  projectId: string | null;
   workdir?: string;
   /** Stable entity TypeId or compute-node VFS path used for process reuse. */
   targetVfsPath?: string;
@@ -140,14 +141,15 @@ export async function createVibeProcessForProject(opts: {
   sharedContextEntities?: string[];
 }): Promise<AgenticProcess> {
   const { projectId, workdir, targetVfsPath, navigation, open = true, model = VIBE_MODEL_DEFAULT, workerType } = opts;
-  const target = targetVfsPath ?? chatTargetForProject(projectId);
+  const target = targetVfsPath ?? (projectId ? chatTargetForProject(projectId) : undefined);
 
   const computeNode = await ComputeNode.getById('@local');
   if (!computeNode) throw new Error('No local compute node');
   const proc = await computeNode.createProcess(
     {
       workdir: workdir ?? undefined,
-      projectId,
+      projectId: projectId ?? undefined,
+      scratch: !projectId && !workdir,
       targetVfsPath: target,
       processType: ProcessKind.Chat,
       loadFlowpadAssistant: true,
@@ -351,16 +353,20 @@ export function useStartVibeSession(): StartVibeSession {
           // re-probes rather than trusting the stale capability row, so anything
           // that failed for another reason falls through to its real message
           // instead of being mislabelled as an uninstalled harness.
-          confirmMissingThen(kind, error, () =>
-            notify.error({
-              title: t`Could not start`,
-              // `errorDetail`, NOT `errorMessage`: an AxiosError is also an Error
-              // whose own message is the boilerplate "Request failed with status
-              // code 4xx". Taking the envelope ONLY means a failure the server did
-              // not explain falls back to our wording instead of putting a status
-              // line in front of the user as if it were an explanation.
-              message: errorDetail(error) || t`Failed to start the build session.`,
-            }),
+          confirmMissingThen(
+            kind,
+            error,
+            () =>
+              notify.error({
+                title: t`Could not start`,
+                // `errorDetail`, NOT `errorMessage`: an AxiosError is also an Error
+                // whose own message is the boilerplate "Request failed with status
+                // code 4xx". Taking the envelope ONLY means a failure the server did
+                // not explain falls back to our wording instead of putting a status
+                // line in front of the user as if it were an explanation.
+                message: errorDetail(error) || t`Failed to start the build session.`,
+              }),
+            () => Promise.resolve(launch()),
           );
         });
       }

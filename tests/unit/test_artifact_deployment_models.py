@@ -30,14 +30,10 @@ def test_an_inventoried_resource_kind_rides_its_origin_and_artifact_references_a
         name="Service",
         target=DeploymentTarget(provider="gcp", scope="organizations/1"),
         origin={"kind": "gcp.run.service", "provider": "gcp", "external_id": "//run.googleapis.com/x"},
-        labels=["inventory"],
         provider_labels={"team": 7},
     )
     assert "kind" not in deployment.model_dump()
     assert deployment.origin.kind == "gcp.run.service"
-    assert deployment.provider_labels == {"team": "7"}
-    deployment.add_label("cloud")
-    assert deployment.get_labels() == ["inventory", "cloud"]
     assert deployment.provider_labels == {"team": "7"}
     with pytest.raises(ValueError, match="artifact_id"):
         Deployment(

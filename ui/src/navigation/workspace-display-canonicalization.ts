@@ -35,11 +35,5 @@ export function canonicalWorkspaceDisplayPath(pathname: string, search: string):
     return null;
   }
   if (!dock.hostProcessId || dock.viewMode === ViewMode.Vibe) return null;
-  // The active-display bit goes with the host, for the same reason and in the same
-  // breath: it only means anything while a display pane is on screen to BE the
-  // active display. Left behind it would be a flag with no host — which `tabHash`
-  // ignores by design, but which would still ride into every subsequent URL and
-  // read as a lie. Stripping both here keeps "standard mode has no workspace" true
-  // of the whole grammar, not just half of it.
-  return dock.withHost(null).withActiveDisplay(false).toUrl(pathname);
+  return dock.withHost(null).toUrl(pathname);
 }

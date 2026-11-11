@@ -1,3 +1,4 @@
+import { ProcessSourceChips } from '@src/components/terminal/interactive-terminal/ProcessSourceChips';
 import { AgenticProcess } from '@sdk';
 import { useInlineRename } from '@src/components/browseable-tree/use-inline-rename';
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
@@ -40,6 +41,7 @@ export function ProcessNameBar({ process }: { process: AgenticProcess }) {
           {label}
         </button>
       )}
+      <ProcessSourceChips process={process} />
     </div>
   );
 }

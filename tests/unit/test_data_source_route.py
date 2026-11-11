@@ -1,5 +1,5 @@
 """A channel's route: the hub webhook claim that delivers to it, and moving it between this computer and a
-cloud placement of the agent that owns it. The hub is stood in for (``hub_get`` / ``hub_post``)."""
+cloud placement of the agent that owns it. The hub is stood in for (``HubProxy.try_call`` / ``HubProxy.call``)."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -7,27 +7,29 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
 @pytest.fixture
 def hub(monkeypatch):
-    from flow_sdk.cloud_client.transport import hub_http
     from flow_sdk.instance_settings import runtime
 
     state: dict = {"claims": [], "posted": []}
 
-    async def hub_get(entity_type, entity_id=None, action=None, *a, **kw):
+    async def fake_try_call(method, entity_type, entity_id=None, action=None, *a, **kw):
+        assert method == "GET"
         assert (entity_type, action) == ("webhook", "mine")
         return {"webhooks": state["claims"]}
 
-    async def hub_post(entity_type, payload, entity_id=None, action=None, *a, **kw):
+    async def fake_call(method, entity_type, entity_id=None, action=None, *a, payload=None, **kw):
+        assert method == "POST"
         state["posted"].append((entity_type, entity_id, action, payload))
         return {"id": entity_id, "target": payload["target"]}
 
-    monkeypatch.setattr(hub_http, "hub_get", hub_get)
-    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_try_call))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     monkeypatch.setattr(runtime, "instance_uid", lambda: "inst-1")
     return state
 
@@ -63,7 +65,7 @@ async def test_the_route_is_the_claim_that_delivers_here_and_names_this_computer
     route = (await source.route_action()).data
 
     assert route["claim"]["id"] == "c-1" and route["current"] == "this"
-    assert route["places"][0] == {"key": "this", "label": "This computer"}
+    assert {k: route["places"][0][k] for k in ("key", "label")} == {"key": "this", "label": "This computer"}
 
 
 async def test_moving_a_channel_to_a_cloud_placement_points_the_claim_at_its_node(hub, cloud_agent):

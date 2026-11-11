@@ -433,3 +433,16 @@ def isolated_kinds(monkeypatch):
     monkeypatch.setattr(declared, "_shipped_loaded", declared._shipped_loaded)
 
 from tests.utils.decision_double import decision_double  # noqa: E402, F401 — the doubled Decision API, a fixture
+
+
+@pytest.fixture(autouse=True)
+def _restore_data_drivers():
+    """A test's fake data drivers (``DataDriver.register``) must not outlive it: a later
+    ``flow source list`` lists every registered driver and fails on a fake one."""
+    from flow_sdk.ingest.driver_runtime import DRIVERS
+
+    DRIVERS.ensure()  # the shipped drivers load lazily: take the snapshot with them in it
+    saved = dict(DRIVERS._items)
+    yield
+    DRIVERS._items.clear()
+    DRIVERS._items.update(saved)

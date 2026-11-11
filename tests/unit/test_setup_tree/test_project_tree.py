@@ -41,6 +41,9 @@ class FakeSource:
     def typeid(self) -> str:
         return f"data_source-{self.id}"
 
+    async def datasets(self) -> list:   # hosts none: a feed, labelled by its name alone
+        return []
+
 
 @dataclass
 class FakeWizard:
@@ -142,8 +145,10 @@ async def test_the_tree_puts_each_need_under_the_asset_that_needs_it(project):
     assert dict(node["stage:w1:waha-server-stage"].inputs) == {"source": "w1", "owner": "agent-a"}
     assert [g.name for g in tree.gaps] == ["MYSTERY"] and "gap:MYSTERY" not in node
     assert node["asset_setup:waha-container"].trusted is False, "a connector's own wizard is not ours"
-    assert [s.ref for s in node["micro_app-a1"].run.steps] == ["micro_app-a1:install", "micro_app-a1:build"]
-    assert [s.ref for s in node["micro_app-a1"].on_load.steps] == ["micro_app-a1:start", "micro_app-a1:present"]
+    assert node["micro_app-a1"].run is None, "a web app has no separate setup: its one step brings it up"
+    assert [s.ref for s in node["micro_app-a1"].on_load.steps] == ["micro_app-a1:up"]
+    up = tree.ops["micro_app-a1:up"]
+    assert up.completion_check.webapp_step == "up" and up.attempts == []  # recovery is the coordinator's
     assert node["asset_setup:waha-container"].on_load is None, "a declared node loads only what it declares"
 
 
@@ -306,3 +311,70 @@ async def test_an_app_whose_folder_is_gone_is_not_something_to_set_up(monkeypatc
     monkeypatch.setattr(WebApp, "get_all", get_all)
     tree = ProjectTree(SimpleNamespace(id="p1", name="Shop", fs_storage_mount_path=str(tmp_path)))
     assert [app.name for app in await tree._webapps()] == ["here"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("order", ["child first", "parent first"])
+async def test_a_dependency_declared_under_another_declaration_attaches_in_any_order(project, monkeypatch, order):
+    """Spora App: the tenant node, and Admin's API beneath it (``subject: asset_setup:tenant``). The index may hand
+    either row first; the API is the tenant's child either way, and the tenant is the app's."""
+    specs = {
+        "tenant": AssetSetupSpec(name="tenant"),
+        "admin-api": AssetSetupSpec(name="admin-api", subject="asset_setup:tenant", run="", inputs={"service": "api"}),
+    }
+    rows = [AssetSetup(name=n, asset_ref=f"/p/agentic-assets/webapp/site/agentic-assets/asset_setup/{n}")
+            for n in (("admin-api", "tenant") if order == "child first" else ("tenant", "admin-api"))]
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: specs[str(self.name)])
+
+    async def declared(_q):
+        return rows
+
+    monkeypatch.setattr(AssetSetup, "get_all", declared)
+    tree = await ProjectTree(project).load()
+    assert tree.nodes["asset_setup:tenant"].children == ("asset_setup:admin-api",)
+    assert tree.nodes["micro_app-a1"].children == ("asset_setup:tenant",)
+    assert dict(tree.nodes["asset_setup:admin-api"].inputs)["service"] == "api"
+
+
+@pytest.mark.asyncio
+async def test_a_stage_that_provides_the_credential_is_not_preceded_by_it(project, monkeypatch, tmp_path):
+    """A driver whose first stage writes its own credential (the wizard asks for an app's token once the app
+    exists) declares ``provides: [credential]``: the credential is no need before that stage — else the tree
+    asks for values that cannot exist yet. A stage that does not say so still comes after the credential."""
+    reqs = [
+        SetupRequirementSpec(kind="pack", name="slackish", vars=[SetupVarSpec(env_var="TOKEN")], used_by=["mine", "other"]),
+    ]
+    sources = [FakeSource("s1", "mine", "ownapp"), FakeSource("s2", "other", "plainapp")]
+    drivers = {
+        "ownapp": SimpleNamespace(
+            folder=tmp_path / "ownapp", auth=SimpleNamespace(credential="slackish"),
+            setup_wizards=[SetupStageSpec(stage="connect", wizard="connect-stage", provides=("credential",))],
+        ),
+        "plainapp": SimpleNamespace(
+            folder=tmp_path / "plainapp", auth=SimpleNamespace(credential="slackish"),
+            setup_wizards=[SetupStageSpec(stage="connect", wizard="connect-stage")],
+        ),
+    }
+    wizards = {"connect-stage": FakeWizard("connect-stage", [{"id": "c", "kind": "compute", "ref": "connect-op"}])}
+
+    async def collect(_p, *_a):
+        return reqs
+
+    async def sources_of(_p):
+        return sources
+
+    async def driver_of(name):
+        return drivers.get(name)
+
+    async def by_name(name, near=""):
+        return wizards.get(name)
+
+    monkeypatch.setattr(project_setup, "collect_requirements", collect)
+    monkeypatch.setattr(project_setup, "project_sources", sources_of)
+    monkeypatch.setattr(readiness, "driver_of", driver_of)
+    monkeypatch.setattr(Wizard, "by_name", by_name)
+    tree = await ProjectTree(project).load()
+    node = tree.nodes
+
+    assert node["stage:s1:connect-stage"].children == (), "the stage provides the credential: nothing comes before it"
+    assert node["stage:s2:connect-stage"].children == ("credential:slackish",), "a stage that does not provide it still needs it first"

@@ -1,5 +1,14 @@
-import { Agent, Conversation, type DataSource, ExpressionNode, QueryFilter, QueryRequest, TypeId, User } from '@sdk';
-import { type AttentionReason, attentionReason } from '@src/components/data-sources/source-attention';
+import {
+  Agent,
+  Conversation,
+  type DataSource,
+  EVERY_ROW,
+  ExpressionNode,
+  QueryFilter,
+  QueryRequest,
+  TypeId,
+  User,
+} from '@sdk';
 
 /** The backend's `owner_of` rule (`flow_sdk/stream_inbox/projection.py`), client-side, for a
  *  row written before `owner` existed: the agent its legacy `config.agent_id` names,
@@ -27,8 +36,28 @@ export function channelsOwnerFor(agentId: string | undefined, localUserId: strin
  *  cache key, which is what makes opening the stream inbox a warm remount instead of a loading
  *  flash. */
 export function streamInboxConversationsRequest(owner: TypeId): QueryRequest {
-  return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match: ownerMatch(owner) }) });
+  // The stream inbox's own latest page (newest first, one page) — so a strip showing its top rows
+  // asks the server for a page, not for every conversation.
+  return conversationsPageRequest({ owner }, 'all', null);
 }
+
+/** The conversations matching `clauses`, newest first (`updated_date`), at most `limit` — a list that
+ *  shows only its most recent rows asks the server for just those. */
+export function recentConversationsRequest(clauses: ExpressionNode[], limit?: number, name?: string): QueryRequest {
+  return new QueryRequest({
+    type: Conversation.type,
+    name,
+    query: new QueryFilter({
+      match: allOf(clauses) ?? new ExpressionNode(EVERY_ROW),
+      order_by: [{ updated_date: 'desc' }, { id: 'asc' }],
+      ...(limit ? { limit } : {}),
+    }),
+  });
+}
+
+/** The clauses AND-ed; no clause matches every row. */
+export const allOf = (clauses: ExpressionNode[]): ExpressionNode | undefined =>
+  clauses.length ? new ExpressionNode({ op: '$AND', operands: clauses }) : undefined;
 
 function ownerMatch(owner: TypeId): ExpressionNode {
   const owned = new ExpressionNode({ op: '$EQ', operands: ['owner', owner.toString()] });
@@ -48,19 +77,60 @@ export function sourceConversationsRequest(sourceId: string): QueryRequest {
   return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match: sourceMatch(sourceId) }) });
 }
 
-export type StreamInboxViewMode = 'all' | 'unread' | 'archived';
+/** `invites` lists every invite the user received (shares of machines, teams, projects, conversations),
+ *  whatever became of it — the record of what was shared, each one openable. */
+export type StreamInboxViewMode = 'all' | 'unread' | 'archived' | 'invites';
 
 /** How many conversations one page of a stream inbox shows. */
 export const STREAM_INBOX_PAGE_SIZE = 100;
 
-/** Which conversations a page lists: an owner's stream inbox, or one data source's. */
-export type ConversationScope = { owner: TypeId } | { sourceId: string };
+/** Which conversations a page lists: an owner's stream inbox — narrowed to some of its sources when the
+ *  channel marks pick them — or one data source's. The narrowing is part of the query, so a filtered page
+ *  is N rows of those sources, never N rows the browser then thins out. */
+export type ConversationScope =
+  | { owner: TypeId; sourceIds?: readonly string[]; channels?: readonly string[] }
+  | { sourceId: string };
+
+/** Channels no data source delivers but a mark still narrows to: their conversations carry the channel itself
+ *  (``Conversation.channel``). Diagnosis — Diagnose & fix and the help desk it may be reported to — is one. */
+export const DIAGNOSIS_CHANNEL = 'diagnosis';
+/** Standard Flowpad messages (``conversation_channel.FLOWPAD``); a conversation written before channels were stamped carries none. */
+export const FLOWPAD_CHANNEL = 'flowpad';
+/** What Flowpad's automations answer (``conversation_channel.AUTOMATIONS``): one conversation per automation. */
+export const AUTOMATIONS_CHANNEL = 'automations';
+export const BUILT_IN_CHANNELS: readonly string[] = [FLOWPAD_CHANNEL, DIAGNOSIS_CHANNEL, AUTOMATIONS_CHANNEL];
 
 /** A scope as a string: what keys a memo or a request on it. */
-export const scopeKey = (scope: ConversationScope) => ('owner' in scope ? scope.owner.toString() : scope.sourceId);
+export const scopeKey = (scope: ConversationScope) =>
+  'owner' in scope
+    ? [scope.owner.toString(), [...(scope.sourceIds ?? [])].sort().join(','), [...(scope.channels ?? [])].sort().join(',')]
+        .join('|')
+        .replace(/\|+$/, '')
+    : scope.sourceId;
 
-const scopeMatch = (scope: ConversationScope) =>
-  'owner' in scope ? ownerMatch(scope.owner) : sourceMatch(scope.sourceId);
+const scopeClauses = (scope: ConversationScope): ExpressionNode[] => {
+  if (!('owner' in scope)) return [sourceMatch(scope.sourceId)];
+  const clauses = [ownerMatch(scope.owner)];
+  // The picked marks: a source's conversations by its id, a built-in channel's by the channel they carry.
+  const picked: ExpressionNode[] = [];
+  if (scope.sourceIds?.length)
+    picked.push(new ExpressionNode({ op: '$IN', operands: ['channel_source_id', [...scope.sourceIds]] }));
+  if (scope.channels?.length) picked.push(new ExpressionNode({ op: '$IN', operands: ['channel', [...scope.channels]] }));
+  // A Flowpad conversation with no channel stamped and no source behind it.
+  if (scope.channels?.includes(FLOWPAD_CHANNEL))
+    picked.push(
+      new ExpressionNode({
+        op: '$AND',
+        operands: [
+          new ExpressionNode({ op: '$IS_NULL', operands: ['channel'] }),
+          new ExpressionNode({ op: '$IS_NULL', operands: ['channel_source_id'] }),
+        ],
+      }),
+    );
+  if (picked.length === 1) clauses.push(picked[0]);
+  else if (picked.length > 1) clauses.push(new ExpressionNode({ op: '$OR', operands: picked }));
+  return clauses;
+};
 
 const notArchived = () =>
   new ExpressionNode({
@@ -72,16 +142,16 @@ const notArchived = () =>
     ],
   });
 
+const notDeleted = () => new ExpressionNode({ op: '$IS_NULL', operands: ['deleted_at'] });
+
 /** The view's clause, answered by the backend from the projected `archived` / `is_unread`, so a page
  *  is N rows of the view rather than N rows the browser then thins out. */
-function viewMatch(view: StreamInboxViewMode): ExpressionNode {
-  if (view === 'archived') return new ExpressionNode({ op: '$EQ', operands: ['archived', true] });
-  if (view === 'unread')
-    return new ExpressionNode({
-      op: '$AND',
-      operands: [notArchived(), new ExpressionNode({ op: '$EQ', operands: ['is_unread', true] })],
-    });
-  return notArchived();
+function viewClauses(view: StreamInboxViewMode): ExpressionNode[] {
+  if (view === 'archived') return [new ExpressionNode({ op: '$EQ', operands: ['archived', true] })];
+  if (view === 'unread') return [notArchived(), new ExpressionNode({ op: '$EQ', operands: ['is_unread', true] })];
+  // Every conversation that carries a share, archived or not — the record of what was shared with you.
+  if (view === 'invites') return [new ExpressionNode({ op: '$EQ', operands: ['carries_invite', true] })];
+  return [notArchived()];
 }
 
 /** The scope's conversations matching `clauses`, in recency order — the ONE ordering every page and
@@ -95,7 +165,9 @@ function pageQuery(
   return new QueryRequest({
     type: Conversation.type,
     query: new QueryFilter({
-      match: new ExpressionNode({ op: '$AND', operands: [scopeMatch(scope), ...clauses] }),
+      // An owner still reads a conversation they deleted on the hub (kept there for audit, `deleted_at`
+      // set); it is gone from the Stream Inbox. A row kept here never carries the field.
+      match: allOf([...scopeClauses(scope), notDeleted(), ...clauses]),
       order_by: [{ updated_date: direction }, { id: 'asc' }],
       ...page,
     }),
@@ -110,7 +182,7 @@ export function conversationsPageRequest(
   before: string | null,
   size: number = STREAM_INBOX_PAGE_SIZE,
 ): QueryRequest {
-  const clauses = [viewMatch(view)];
+  const clauses = viewClauses(view);
   if (before) clauses.push(new ExpressionNode({ op: '$LT', operands: ['updated_date', before] }));
   return pageQuery(scope, clauses, 'desc', { limit: size });
 }
@@ -123,37 +195,39 @@ export function conversationsByIdsRequest(scope: ConversationScope, ids: string[
   });
 }
 
-/** The bound of the page just NEWER than one whose newest row is at `newest`: the row `size + 1` above
- *  it (one row, read oldest first). Its `updated_date` is the newer page's `before`; no such row means
- *  the newer page is now. */
+/** The rows of the page just NEWER than one whose newest row is at `newest`: the `size` rows above it,
+ *  oldest first — a keyset (`updated_date > newest`), never an offset, so a row arriving meanwhile
+ *  cannot shift the bound. The last of them bounds the newer page (see `newerPageBefore`); fewer than
+ *  a page — or no more past them — means the newer page is now. */
 export function newerBoundaryRequest(
   scope: ConversationScope,
   view: StreamInboxViewMode,
   newest: string,
   size: number = STREAM_INBOX_PAGE_SIZE,
 ): QueryRequest {
-  return pageQuery(scope, [viewMatch(view), new ExpressionNode({ op: '$GT', operands: ['updated_date', newest] })], 'asc', {
-    limit: 1,
-    offset: size,
-  });
+  return pageQuery(
+    scope,
+    [...viewClauses(view), new ExpressionNode({ op: '$GT', operands: ['updated_date', newest] })],
+    'asc',
+    { limit: size },
+  );
+}
+
+/** The newer page's `before` from the rows `newerBoundaryRequest` read: null (the newer page is now)
+ *  unless they are a full page with more past them; else just past the last of them, so the newer page
+ *  — rows older than its bound, newest first — is exactly those rows. */
+export function newerPageBefore(
+  above: { updated_date?: string | Date | null }[],
+  hasMore: boolean,
+  size: number = STREAM_INBOX_PAGE_SIZE,
+): string | null {
+  if (!hasMore || above.length < size) return null;
+  const last = above[above.length - 1]?.updated_date;
+  if (!last) return null;
+  const at = new Date(last).getTime();
+  return Number.isNaN(at) ? null : new Date(at + 1).toISOString();
 }
 
 /** The identity a channel mark draws: provider AND channel, because one transport
  *  (`agent`) reaches several channels and wears a different glyph for each. */
 export const channelKeyOf = (s: DataSource) => `${s.provider}|${s.channel}`;
-
-export interface AttentionItem {
-  source: DataSource;
-  reason: AttentionReason;
-}
-
-/** The sources among `rows` whose channel the list is narrowed to and that are not delivering,
- *  each with why — what the attention strip above the list draws. */
-export function attentionAmong(rows: DataSource[], selected: ReadonlySet<string>): AttentionItem[] {
-  return rows
-    .filter((source) => selected.has(channelKeyOf(source)))
-    .flatMap((source) => {
-      const reason = attentionReason(source);
-      return reason ? [{ source, reason }] : [];
-    });
-}

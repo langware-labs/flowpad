@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { useState } from 'react';
 import { DynamicWorkflow, FSRef, ProcessKind } from '@sdk';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
@@ -23,7 +24,14 @@ interface DynamicWorkflowAssetEditorProps {
  */
 export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowAssetEditorProps) {
   // Manual save only — a workflow script must not be written mid-keystroke.
-  const { content: script, setContent, dirty, saving, isLoading, save: writeScript } = useFSRefContent(fsRef, {
+  const {
+    content: script,
+    setContent,
+    dirty,
+    saving,
+    isLoading,
+    save: writeScript,
+  } = useFSRefContent(fsRef, {
     autoSave: false,
   });
   const [launching, setLaunching] = useState(false);
@@ -70,11 +78,11 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
               data-testid="dw-save"
             >
               <Save className="me-1 h-4 w-4" />
-              Save
+              <Trans>Save</Trans>
             </Button>
             <Button size="sm" variant="default" disabled={busy} onClick={() => void run(true)} data-testid="dw-run">
               <Play className="me-1 h-4 w-4" />
-              Run
+              <Trans>Run</Trans>
             </Button>
             <Button
               size="sm"
@@ -84,7 +92,7 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
               data-testid="dw-run-headless"
             >
               <Zap className="me-1 h-4 w-4" />
-              Run headless
+              <Trans>Run headless</Trans>
             </Button>
           </div>
         }

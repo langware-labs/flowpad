@@ -7,7 +7,6 @@ import { Button } from '@src/components/ui/button';
 import { Check, Copy, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { notify } from '@src/notifications';
-import { Chip } from '../label-chip';
 import { OrganizationChip } from './organization-chip';
 import { useLingui, Trans } from '@lingui/react/macro';
 import { CONNECTION_VISUAL, LOGIN_VISUAL, type BadgeVisual } from './hub-status-visuals';
@@ -226,7 +225,7 @@ export function UserInfo({ user }: UserInfoProps) {
             <Trans>Organization:</Trans>
           </label>
           <div className="flex flex-wrap gap-2">
-            <OrganizationChip orgId={user.organization_id} role={user.organization_role} />
+            <OrganizationChip orgId={user.organization_id} role={user.organization_roles?.join(', ')} />
           </div>
         </div>
       )}
@@ -255,19 +254,6 @@ export function UserInfo({ user }: UserInfoProps) {
             <Trans>Version:</Trans>
           </label>
           <div className="font-mono text-sm text-muted-foreground">v{version}</div>
-        </div>
-      )}
-
-      {user.labels && user.labels.length > 0 && (
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-muted-foreground">
-            <Trans>Labels:</Trans>
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {user.labels.map((label) => (
-              <Chip key={label} label={label} selected={false} onClick={() => {}} />
-            ))}
-          </div>
         </div>
       )}
     </div>

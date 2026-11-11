@@ -23,7 +23,7 @@ import { SourceMenu } from './SourceMenu';
 import { ATTENTION, type AttentionKind, attentionReason, attentionText, attentionVerbs } from './source-attention';
 import { SourceSetupButton } from './SourceSetupButton';
 import { useSourceToggle } from './use-source-toggle';
-import { useSourceVerify } from './use-source-verify';
+import { type VerifyOutcome } from './use-source-verify';
 
 /** The look of a source right now. The lifecycle answers first: health on a source that is not running describes
  *  the last time it ran — for one that never has, "never synced", i.e. nothing. */
@@ -32,24 +32,53 @@ export function sourceLook(source: DataSource): SourceLook {
 }
 
 /** One coloured status line: the dot is the state at a glance, the words say it. A parked source — active, healthy-
- *  looking, and never polled again on its own — says so in its own words. */
-export function SourceStatusLine({ source, className }: { source: DataSource; className?: string }) {
+ *  looking, and never polled again on its own — says so in its own words.
+ *
+ *  A Verify in flight shows HERE ("Verifying…"), and its verdict lands here too — the status word the backend
+ *  settled on, with the verdict's sentence under it — so the press and its answer are one place, in order, and no
+ *  toast arrives beside a row that still reads as before. */
+export function SourceStatusLine({
+  source,
+  className,
+  verifying = false,
+  verdict = null,
+}: {
+  source: DataSource;
+  className?: string;
+  verifying?: boolean;
+  verdict?: VerifyOutcome | null;
+}) {
   const { t } = useLingui();
   const look = sourceLook(source);
-  // One view of the line: parked, held (running, but a file or its mirror waits on a person), or the source's own look.
-  const view = source.isParked
-    ? { text: 'text-foreground', dot: PARKED_DOT, label: t`Parked`, title: i18n._(ATTENTION.parked.next) }
-    : source.isHeld || source.isMirrorBroken
-      ? { text: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-500', label: t`Running · needs you`, title: source.error_detail || undefined }
-      : { text: look.text, dot: look.dot, label: i18n._(look.label), title: undefined };
+  // One view of the line: verifying, parked, held (running, but a file waits on a person), or the source's own look.
+  const view = verifying
+    ? { text: 'text-sky-600 dark:text-sky-400', dot: 'bg-sky-500 animate-pulse', label: t`Verifying…`, title: undefined }
+    : source.isParked
+      ? { text: 'text-foreground', dot: PARKED_DOT, label: t`Parked`, title: i18n._(ATTENTION.parked.next) }
+      : source.isHeld
+        ? { text: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-500', label: t`Running · needs you`, title: source.error_detail || undefined }
+        : { text: look.text, dot: look.dot, label: i18n._(look.label), title: undefined };
+  const said = verifying ? '' : verdict?.result?.detail || verdict?.error || '';
   return (
     <span
-      className={cn('flex min-w-0 items-center gap-1.5 text-xs font-medium', view.text, className)}
+      className={cn('flex min-w-0 flex-col gap-0.5 text-xs font-medium', view.text, className)}
       data-testid={`source-status-${source.id}`}
+      data-verifying={verifying || undefined}
       title={view.title}
     >
-      <span className={cn('size-2 shrink-0 rounded-full', view.dot)} />
-      <span className="truncate">{view.label}</span>
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span className={cn('size-2 shrink-0 rounded-full', view.dot)} />
+        <span className="truncate">{view.label}</span>
+      </span>
+      {said && (
+        <span
+          className="truncate ps-3.5 font-normal text-muted-foreground"
+          title={said}
+          data-testid={`source-verdict-${source.id}`}
+        >
+          {said}
+        </span>
+      )}
     </span>
   );
 }
@@ -106,14 +135,17 @@ interface ActionsProps {
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;
   onDelete: (source: DataSource) => void;
+  /** The Verify the surface owns (`useSourceVerify` with `quiet`): its outcome shows on the status line
+   *  beside these actions, not in a toast. */
+  onVerify: () => void;
+  verifying: boolean;
 }
 
 /** The verbs that recover the source (`attentionVerbs`: Setup then Verify for one in setup; Verify for one
  *  parked or never evaluated), its setup stages once it is set up, and the menu — Pull and the rest live there. */
-export function SourceActions({ source, spec, onEdit, onReplay, onDelete }: ActionsProps) {
+export function SourceActions({ source, spec, onEdit, onReplay, onDelete, onVerify: verify, verifying }: ActionsProps) {
   const { t } = useLingui();
   const { pull, pulling } = useSourcePull(source);
-  const { verify, busy: verifying } = useSourceVerify(source);
   const { toggle: toggleEnabled } = useSourceToggle(source);
   const verbs = attentionVerbs(attentionReason(source));
   const inSetup = verbs.includes('setup');
@@ -154,7 +186,6 @@ export function SourceActions({ source, spec, onEdit, onReplay, onDelete }: Acti
 const NOTE: Partial<Record<AttentionKind, string>> = {
   unresolved: 'border-amber-500/60 bg-amber-500/10',
   held: 'border-amber-500/60 bg-amber-500/10',
-  mirror: 'border-amber-500/60 bg-amber-500/10',
   parked: 'border-red-500/60 bg-red-500/10',
 };
 

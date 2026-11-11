@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { markdownToPlain } from '@src/components/conversation/message-markdown';
+import type { CSSProperties, Dispatch, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from 'react';
 import {
   Archive,
+  BookUser,
   Inbox as InboxIcon,
   Mail,
   MailOpen,
@@ -10,7 +12,6 @@ import {
   Search,
   SquarePen,
   Trash2,
-  UsersRound,
   X,
   Zap,
 } from 'lucide-react';
@@ -19,17 +20,16 @@ import { useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
 import { pullNow } from '@src/components/data-sources/source-parts';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
-import { CreateContactsGroupDialog } from '@src/components/contact-picker/CreateContactsGroupDialog';
+import { ContactsDialog } from '@src/components/contact-picker/ContactsDialog';
 import {
   Conversation,
   FlowMessage,
   Invitation,
   QueryRequest,
   TypeId,
-  acceptInvitation,
+  answerInvitation,
   archiveAllConversations,
   archiveConversation,
-  declineInvitation,
   deleteArchivedConversations,
   deleteConversation,
   dismissConversation,
@@ -38,14 +38,13 @@ import {
   leaveConversation,
   unarchiveConversation,
   conversationRowMessageIds,
-  latestPointer,
   isProcessFailed,
   isProcessLive,
   type AgenticProcess,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
-import { EntityBatchHydrator, useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
+import { EntityBatchHydrator, useEntityBatchState } from '@src/components/entity-batch/EntityBatchHydrator';
 import { useConversationAutomationMarks } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
@@ -53,10 +52,17 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
+import {
+  DockPointer,
+  STREAM_INBOX_CHANNEL_PARAM,
+  type StreamInboxColumns,
+  type StreamInboxDateWindow,
+} from '@src/navigation/DockPointer';
+import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { updateMessage, bulkUpdateMessages, searchStreamInbox } from './stream-inbox-api';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import {
   type ChannelAttribution,
   SourceChip,
@@ -64,9 +70,9 @@ import {
   useChannelAttribution,
 } from '@src/components/conversation/channel-attribution';
 import { AttachedChannelsBar, ConnectChannelPrompt, useAttachedChannels } from './AttachedChannelsBar';
-import { ChannelAttentionBar } from './ChannelAttentionBar';
 import {
-  attentionAmong,
+  BUILT_IN_CHANNELS,
+  FLOWPAD_CHANNEL,
   channelKeyOf,
   channelsOwnerFor,
   type ConversationScope,
@@ -75,20 +81,41 @@ import {
   STREAM_INBOX_PAGE_SIZE,
   type StreamInboxViewMode,
 } from './channel-owner';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 import { StreamInboxPager } from './StreamInboxPager';
 import { useContext } from '@src/hooks/useContext';
+import { useStreamInboxManager } from '@src/hooks/useStreamInboxManager';
 import {
   conversationFacets,
   actionsFor,
   compareConversationsByRecency,
+  isDeskTicket,
   isViewer,
 } from '@src/components/conversation/conversation-category';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { CategoryChips, COMPACT } from '@src/components/conversation/CategoryChips';
-import { MembershipInvitations } from './MembershipInvitations';
+import { ConversationMarkChips } from '@src/components/conversation/ChannelMessageExtras';
+import { InvitesChannelChip, MembershipInvitations } from './MembershipInvitations';
+import { InviteStateChip } from '@src/components/conversation/InviteCard';
 import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { RowActions } from '@src/components/conversation/RowActions';
 import { attachmentSummary } from '@src/components/conversation/useAttachments';
+import { ConversationAttachmentsButton } from './ConversationAttachmentsButton';
+import { personName } from '@src/components/conversation/participant-display';
+
+/** Row actions on this machine's own state (read marks, archive): the hub page offers none. */
+const PER_MACHINE_ROW_ACTIONS = new Set(['toggle-read', 'archive', 'unarchive']);
+
+/** What removing a conversation does for this viewer: a row that never reached the hub (``remote: false``
+ *  — a hub row carries no flag) is deleted here; the hub's owner (``initiated_by``) deletes it for everyone;
+ *  anyone else leaves. One rule for the row, the bulk counts and the bulk delete. */
+export function deleteKindOf(
+  conv: Pick<Conversation, 'remote' | 'initiated_by'>,
+  cloudUserId: string | null | undefined,
+): 'local' | 'owner' | 'leave' {
+  if (conv.remote === false) return 'local';
+  return conv.initiated_by && conv.initiated_by === cloudUserId ? 'owner' : 'leave';
+}
 
 type RowDeleteAction =
   | { kind: 'invitation'; invitationId: string; conversationId: string }
@@ -98,43 +125,74 @@ type RowDeleteAction =
 
 // ── Time formatter (Gmail-style) ────────────────────────────────────────────
 // today → "12:34 PM"  ·  this year → "Apr 28"  ·  older → locale date
+// Every row formats its time on every render of the list, and the list re-renders on each
+// conversation/message change: ``toLocale*String(undefined, opts)`` builds a fresh
+// Intl.DateTimeFormat per call (311 ms of one create in a profile). One formatter per shape.
+const TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const DAY_FMT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const DATE_FMT = new Intl.DateTimeFormat(undefined);
 function formatGmailTime(iso?: string | Date | null): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   const now = new Date();
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+    return TIME_FMT.format(d);
   }
   if (d.getFullYear() === now.getFullYear()) {
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return DAY_FMT.format(d);
   }
-  return d.toLocaleDateString();
+  return DATE_FMT.format(d);
 }
 
 // ── Conversation list row (Gmail thread row) ────────────────────────────────
 // Single line: [sender(s)] [subject — snippet…] [time]
 // Click anywhere on the row opens the conversation via its dockPointer.
 
+function readStoredChannels(key: string | null): string[] {
+  if (!key) return [];
+  try {
+    const v = JSON.parse(window.localStorage.getItem(key) ?? '[]');
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 // ── Column filters ──────────────────────────────────────────────────────────
 // One filter per row column, typed into the header line above that column:
 // From narrows on the sender names, Subject on the subject + preview text,
-// Date on the conversation's last activity. Local, like the channel filter.
-type DateWindow = 'any' | 'today' | '7d' | '30d';
+// Date on the conversation's last activity. URL-owned (`?from=&subject=&date=`), like the search.
+const NO_COLUMN_FILTER: StreamInboxColumns = { from: '', subject: '', date: 'any' };
 
-export interface ColumnFilter {
-  from: string;
-  subject: string;
-  date: DateWindow;
+function sameColumns(a: StreamInboxColumns, b: StreamInboxColumns): boolean {
+  return a.from === b.from && a.subject === b.subject && a.date === b.date;
 }
 
-const NO_COLUMN_FILTER: ColumnFilter = { from: '', subject: '', date: 'any' };
+/** A box whose value the dock URL owns: it types into a local draft and commits after a pause, so
+ *  history doesn't take one entry per keystroke. Back/forward re-seeds the draft. */
+function useUrlDraft<T>(
+  urlValue: T,
+  commit: (value: T) => void,
+  same: (a: T, b: T) => boolean = Object.is,
+): [T, Dispatch<SetStateAction<T>>] {
+  const [draft, setDraft] = useState(urlValue);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setDraft((cur) => (same(cur, urlValue) ? cur : urlValue)), [urlValue]);
+  const settled = useDebounced(draft);
+  useEffect(() => {
+    if (!same(settled, urlValue)) commit(settled);
+    // Commit only when the typed text settles; a dock change alone must not re-commit stale text.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settled]);
+  return [draft, setDraft];
+}
 
-function isColumnFilterActive(f: ColumnFilter): boolean {
+function isColumnFilterActive(f: StreamInboxColumns): boolean {
   return f.from.trim() !== '' || f.subject.trim() !== '' || f.date !== 'any';
 }
 
-function windowStart(date: DateWindow): number | null {
+function windowStart(date: StreamInboxDateWindow): number | null {
   if (date === 'any') return null;
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -144,7 +202,7 @@ function windowStart(date: DateWindow): number | null {
 }
 
 export function matchesColumnFilter(
-  f: ColumnFilter,
+  f: StreamInboxColumns,
   row: { senders: string; subjectLine: string; updated?: string | Date | null },
 ): boolean {
   const from = f.from.trim().toLowerCase();
@@ -163,6 +221,10 @@ interface ConversationListRowProps {
   /** The newest session an automation started on a message of this conversation. */
   automationMark?: AgenticProcess;
   conv: Conversation;
+  /** What the row shows of `conv` and `automationMark`, as one string (`rowRevision`). The store
+   *  updates an entity IN PLACE, so its identity never says it changed — this does, and lets an
+   *  unchanged row skip the list's re-renders (`memo`). */
+  revision: string;
   isFocused: boolean;
   /** Conversation-level archive. Stamps ``Conversation.archived_at = now()``
    *  server-side; row auto-revives when a FlowMessage newer than the stamp
@@ -194,22 +256,50 @@ interface ConversationListRowProps {
    *  whether to show the "No conversations" empty state. */
   onVisibilityChange: (convId: string, visible: boolean) => void;
   /** Set while the list is narrowed to some channels: does this message's source pass? */
-  channelMatch?: (message: FlowMessage) => boolean;
+  channelMatch?: (message: FlowMessage, conversation: Conversation) => boolean;
   /** Set while a header column filter is engaged. */
-  columnFilter?: ColumnFilter;
+  columnFilter?: StreamInboxColumns;
   /** The list resolves attribution once and hands each row its answer. */
   attributionFor: (
     origin: FlowMessage['origin'],
+    originLocal?: FlowMessage['origin_local'],
     channelSpec?: Conversation['channel_spec'],
   ) => ChannelAttribution | null;
-  refSetter: (el: HTMLDivElement | null) => void;
+  refSetter: (convId: string, el: HTMLDivElement | null) => void;
   agentId?: string;
   /** A host that shows the conversation itself (a source's page): where a row opens. Still URL-first — the host
    *  navigates. Omitted: the conversation view, scoped to `agentId`. */
   onOpenConversation?: (conversationId: string) => void;
 }
 
-export function ConversationListRow({
+/** `ConversationListRow`'s `revision`: everything stored on the row's conversation, plus its
+ *  automation mark's state. A field the row reads through a hook (its messages, the viewer)
+ *  re-renders it on its own. */
+export function rowRevision(conv: Conversation, automationMark?: AgenticProcess): string {
+  return `${entityRevision(conv)}|${automationMark?.id ?? ''}:${automationMark?.status ?? ''}`;
+}
+
+/** Every own field of an entity (stored, projected and private alike), as JSON. One that cannot
+ *  be written out reads as changed every time — a re-render, never a stale row. */
+function entityRevision(entity: object): string {
+  const fields: Record<string, unknown> = {};
+  for (const key of Object.keys(entity)) {
+    const value = (entity as Record<string, unknown>)[key];
+    if (typeof value !== 'function') fields[key] = value;
+  }
+  try {
+    return JSON.stringify(fields);
+  } catch {
+    return `unserializable:${Math.random()}`;
+  }
+}
+
+/**
+ * Memoized, so a list re-render (a filter keystroke, a row reporting its visibility, a message
+ * batch landing) repaints only the rows whose own props moved: the StreamInbox re-rendered ~12 times
+ * while opening and every row rendered with it (500 row renders for 100 rows).
+ */
+export const ConversationListRow = memo(function ConversationListRow({
   conv,
   isFocused,
   onArchive,
@@ -229,7 +319,15 @@ export function ConversationListRow({
   onOpenConversation,
   automationMark,
 }: ConversationListRowProps) {
+  const rowId = conv.id;
+  const rowRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (rowId) refSetter(rowId, el);
+    },
+    [rowId, refSetter],
+  );
   const { navigation } = useDockNavigation();
+  const desktopStreamInbox = !isHubOnly();
 
   // For invitation rows the first message IS the only message; for regular
   // rows we want the latest message preview but still need to peek at the
@@ -238,18 +336,19 @@ export function ConversationListRow({
   const firstPtr = pointers[0];
   // Newest by ts, not last-appended — an ingested mailbox backfills
   // newest-first, so the last pointer there is the OLDEST mail.
-  const lastPtr = latestPointer(pointers);
+  const lastPtr = conv.latestMessagePointer;
   const firstTypeId = useMemo(() => (firstPtr?.id ? new TypeId(FlowMessage.type, firstPtr.id) : null), [firstPtr?.id]);
   const latestTypeId = useMemo(() => (lastPtr?.id ? new TypeId(FlowMessage.type, lastPtr.id) : null), [lastPtr?.id]);
   const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
-  const { data: resolvedLatest } = useEntity<FlowMessage>(latestTypeId);
+  const { data: pointedLatest } = useEntity<FlowMessage>(latestTypeId);
   // A row IS its conversation; its preview loading never hides it. When a new message moves the
   // latest pointer, the row keeps the message it last showed until the new one resolves — only a
   // row that has never shown one waits hidden (`inLoadingState`).
   const shownLatest = useRef<{ convId: string; message: FlowMessage } | null>(null);
-  if (resolvedLatest) shownLatest.current = { convId: conv.id ?? '', message: resolvedLatest };
+  if (pointedLatest) shownLatest.current = { convId: conv.id ?? '', message: pointedLatest };
   const latestMessage =
-    resolvedLatest ?? (latestTypeId && shownLatest.current?.convId === (conv.id ?? '') ? shownLatest.current.message : undefined);
+    pointedLatest ??
+    (latestTypeId && shownLatest.current?.convId === (conv.id ?? '') ? shownLatest.current.message : undefined);
 
   const invitationTypeId = useMemo(() => firstMessage?.firstContextOfType?.('invitation') ?? null, [firstMessage]);
   const invitationId = invitationTypeId?.id ?? null;
@@ -276,21 +375,43 @@ export function ConversationListRow({
     latestPtrTs: lastPtr?.ts ?? null,
     invitation,
     viewer: { email: myEmail, cloudUserId, localUserId },
+    // A row the help desk SOURCE delivered is a staff row: label its state from the desk's side.
+    staffView:
+      isDeskTicket(conv) ||
+      latestMessage?.origin?.kind === 'helpdesk' ||
+      firstMessage?.origin?.kind === 'helpdesk' ||
+      undefined,
   });
-  const attribution = attributionFor(latestMessage?.origin, conv.channel_spec);
+  // Once staff pick a ticket up, later messages reach them through the hub mirror, not the desk source:
+  // the message the desk source delivered still names which desk the row belongs to.
+  const deskMsg = [latestMessage, firstMessage].find((m) => m?.origin?.kind === 'helpdesk');
+  const attributed = deskMsg ?? latestMessage;
+  // A thread the hub writes (a Chat API exchange) carries no per-message origin: the conversation's channel names it.
+  // The asker's own ticket is not: a Diagnosis reported to a help desk reads as the help desk (its kind chip),
+  // not as the channel it started on.
+  const asksTicket = facets.kind === 'helpdesk' && facets.ticket?.perspective === 'requester' && !deskMsg;
+  const attribution = asksTicket
+    ? null
+    : attributed?.origin?.kind
+    ? attributionFor(attributed.origin, attributed.origin_local, conv.channel_spec)
+    : conv.channel
+      ? attributionFor({ kind: conv.channel, namespace: '', key: '', url: null }, null, conv.channel_spec)
+      : null;
   // Alias kept so the existing invitation-row rendering reads cleanly below.
   const isInvitationRow = facets.isInvitation;
 
   // Trash does different things depending on ownership — say which one
   // up-front so the tooltip distinguishes it from the (reversible) Archive.
   const { t } = useLingui();
-  const deleteLabel = !conv.remote
-    ? t`Delete — removes permanently`
-    : cloudUserId && conv.created_by === cloudUserId
-      ? t`Delete for everyone — permanent`
-      : t`Leave conversation`;
+  const deleteKind = deleteKindOf(conv, cloudUserId);
+  const deleteLabel =
+    deleteKind === 'local'
+      ? t`Delete — removes permanently`
+      : deleteKind === 'owner'
+        ? t`Delete for everyone — permanent`
+        : t`Leave conversation`;
 
-  // Which rows a view holds is the page query's answer (`viewMatch`, search by id); a row only hides
+  // Which rows a view holds is the page query's answer (`viewClauses`, search by id); a row only hides
   // itself while it cannot render: ``inLoadingState`` keeps one whose FlowMessage hasn't landed from
   // rendering blank.
   //
@@ -306,12 +427,12 @@ export function ConversationListRow({
   let isHidden = inLoadingState;
   // The channel filter narrows on the latest message's source; a row whose
   // message is not loaded yet cannot claim a channel, so it waits hidden.
-  if (!isHidden && channelMatch) isHidden = !latestMessage || !channelMatch(latestMessage);
+  if (!isHidden && channelMatch) isHidden = !latestMessage || !channelMatch(latestMessage, conv);
 
   // Gmail-style sender column: comma-joined names of everyone who has
   // participated in the thread, with the latest sender first so the most
   // recent author is the lead name. Deduped case-insensitively.
-  // Falls back to ``Unknown`` when neither the latest message nor any
+  // Falls back to the viewer's own name, then ``No members``, when neither the latest message nor any
   // participant has a name; invitation rows always render the canonical
   // ``Invitation`` placeholder so the violet mail-plus icon reads cleanly.
   // MUST run before the `isHidden` early return so the hook order stays
@@ -344,14 +465,21 @@ export function ConversationListRow({
       for (const p of conv.members ?? []) {
         const email = (p?.email || '').trim().toLowerCase();
         pushName(
-          p?.name || (p?.email ? p.email.split('@')[0] : ''),
+          personName(p),
           isViewer(p?.user_id, viewer) || (!!myEmail && email === myEmail),
         );
       }
     }
     const names = [...others, ...own];
-    return names.length > 0 ? names : [t`Unknown`];
+    if (names.length > 0) return names;
+    // A conversation only the viewer is in (a private Diagnosis, a note to self) is theirs: name them, as the
+    // conversation itself does, rather than "Unknown".
+    const selfName = currentUser?.name || cloudUser?.name;
+    const self = selfName || myEmail ? personName({ name: selfName, email: myEmail }) : '';
+    return [self || t`No members`];
   }, [
+    currentUser?.name,
+    cloudUser?.name,
     isInvitationRow,
     firstMessage,
     latestMessage,
@@ -371,15 +499,15 @@ export function ConversationListRow({
   // title source, so it must not feed the subject. Fall back to the email-style
   // "(no subject)" placeholder only when there's no title. The snippet (latest
   // message preview) still renders after it.
-  const subject = isInvitationRow ? t`You've been invited to a conversation` : conv.title?.trim() || t`(no subject)`;
+  const subject = isInvitationRow
+    ? t`You've been invited to a conversation`
+    : conv.title?.trim() || (conv.carries_invite ? t`Shared with you` : t`(no subject)`);
   // ``FlowMessage.text`` is typed string but older rows in the local DB can
   // hold non-string payloads (object-shaped values from earlier schema
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
   const snippetMessage = isInvitationRow ? firstMessage : latestMessage;
   // A message with no text is named by what it carries.
-  const snippet = String(snippetMessage?.text || attachmentSummary(snippetMessage) || '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const snippet = markdownToPlain(String(snippetMessage?.text || attachmentSummary(snippetMessage) || ''));
   // Column filters match what the row shows, so they run on the rendered text.
   if (!isHidden && columnFilter) {
     isHidden = !matchesColumnFilter(columnFilter, {
@@ -402,7 +530,8 @@ export function ConversationListRow({
 
   if (isHidden) return null;
 
-  const count = pointers.length;
+  const count = pointers.length || conv.message_count || 0;
+  const fileCount = conv.attachment_count ?? 0;
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
   const isUnread = facets.isUnread;
@@ -424,14 +553,14 @@ export function ConversationListRow({
     // links, banner clicks, and Stream Inbox clicks all behave identically and the
     // backend reconciles StreamInboxManager.unread after the mutation.
     if (onOpenConversation) onOpenConversation(conv.id);
-    else navigation.openDock(DockPointer.forConversation(conv.id, { agentId }));
+    else navigation.openDockOnThisPage(DockPointer.forConversation(conv.id, { agentId }));
   };
 
   const handleAccept = async () => {
     if (!invitationId) return;
     setAccepting(true);
     try {
-      await acceptInvitation({ invitation_id: invitationId });
+      await answerInvitation(invitationId, 'accept');
     } catch (e) {
       if (isInvitationGoneError(e)) {
         notify.warning({ title: t`Invitation no longer valid`, id: 'membership-invite' });
@@ -445,7 +574,7 @@ export function ConversationListRow({
 
   return (
     <div
-      ref={refSetter}
+      ref={rowRef}
       data-testid="stream-inbox-conversation-row"
       data-conversation-id={conv.id ?? ''}
       data-focused={isFocused ? 'true' : 'false'}
@@ -486,12 +615,16 @@ export function ConversationListRow({
         {!isInvitationRow && count > 1 && (
           <span className="ms-1 shrink-0 font-normal text-muted-foreground">({count})</span>
         )}
+        {!isInvitationRow && convId && fileCount > 0 && (
+          <ConversationAttachmentsButton conversationId={convId} count={fileCount} />
+        )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="stream-inbox-row-subject-line">
         {/* Channel conversations carry exactly one compact source chip; hub
             rows have no origin and render none — absence means "ours". A
-            source-backed ticket wears the source chip alone: the kind chip is
-            for the requester's side, where no source exists. */}
+            source-backed ticket wears the source chip (the desk's name) instead of
+            the kind chip — that is for the requester's side, where no source
+            exists — and still wears its state chip (waiting / picked / closed). */}
         <CategoryChips facets={attribution ? { ...facets, kind: 'direct' } : facets} className="me-1" />
         {automationMark && (
           // An automation ran on a message in here: ⚡ + who. Opens that session; the row opens the conversation.
@@ -499,7 +632,7 @@ export function ConversationListRow({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              navigation.openDock(DockPointer.forProcessRuns({ run: automationMark.id }));
+              navigation.openDockOnThisPage(DockPointer.forProcessRuns({ run: automationMark.id }));
             }}
             className={cn(
               'me-1 inline-flex items-center',
@@ -519,11 +652,21 @@ export function ConversationListRow({
           </button>
         )}
         <SourceChip attribution={attribution} className="me-1" />
-        <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
+        <ConversationMarkChips marks={conv.marks} />
+        {latestMessage?.invite && (
+          <InviteStateChip state={latestMessage.invite.state} resolvedAt={latestMessage.invite.resolved_at} className="me-1" />
+        )}
+        {/* dir="auto" isolates each part: an RTL subject + RTL snippet would otherwise
+            merge into one RTL run that pushes the subject past the truncated edge. */}
+        <span dir="auto" className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>
+          {subject}
+        </span>
         {snippet && (
           <>
             <span className="mx-1 text-muted-foreground">—</span>
-            <span className="text-muted-foreground">{snippet}</span>
+            <span dir="auto" className="text-muted-foreground">
+              {snippet}
+            </span>
           </>
         )}
       </span>
@@ -545,20 +688,18 @@ export function ConversationListRow({
           onToggleRead: () => latestMessage?.id && onToggleRead(latestMessage.id, isUnread),
           onArchive: () => conv.id && onArchive(conv.id),
           onUnarchive: () => conv.id && onUnarchive(conv.id),
-          onDelete: () => {
-            if (!conv.id) return;
-            if (!conv.remote) {
-              onRequestDelete({ kind: 'local', conversationId: conv.id });
-            } else if (cloudUserId && conv.created_by === cloudUserId) {
-              onRequestDelete({ kind: 'owner', conversationId: conv.id });
-            } else {
-              onRequestDelete({ kind: 'leave', conversationId: conv.id });
-            }
-          },
-        })}
+          onDelete: () => conv.id && onRequestDelete({ kind: deleteKind, conversationId: conv.id }),
+        }).filter((spec) => desktopStreamInbox || !PER_MACHINE_ROW_ACTIONS.has(spec.key))}
       />
     </div>
   );
+});
+
+/** A callback whose identity never changes and that always calls the latest `fn`. */
+function useStableCallback<A extends unknown[]>(fn: (...args: A) => unknown): (...args: A) => void {
+  const latest = useRef(fn);
+  latest.current = fn;
+  return useCallback((...args: A) => void latest.current(...args), []);
 }
 
 const columnInputClass =
@@ -589,6 +730,8 @@ export function StreamInboxView({
   agentId,
   sourceId,
   embedded = false,
+  initialChannel,
+  emptyHint,
   onOpenConversation,
 }: {
   agentId?: string;
@@ -598,6 +741,11 @@ export function StreamInboxView({
   /** Inside another page: no stream-inbox-wide verbs (New, New group, Mark all read, Archive all), no channel bar, no
    *  membership invitations — those belong to an owner's stream inbox, not to one source. */
   embedded?: boolean;
+  /** The channel mark (`channelKeyOf` key) the list opens narrowed to — an agent's stream inbox opens on its email.
+   *  The mark's × clears it like any filter; remount (key the view) to open on another. */
+  initialChannel?: string;
+  /** What the empty list says instead of offering channels to connect (an agent whose mailbox admits nobody yet). */
+  emptyHint?: ReactNode;
 } = {}) {
   const { t } = useLingui();
   const [fetching, setFetching] = useState(false);
@@ -605,7 +753,11 @@ export function StreamInboxView({
   // rows whose ``archived_at`` is set and not yet revived by newer activity.
   // "Delete all" is gated behind the 'archived' view — a destructive op only
   // exposed once the user has explicitly archived rows.
-  const [viewMode, setViewMode] = useState<StreamInboxViewMode>('all');
+  // URL-owned (`?view=`), so navigation back to the stream inbox restores the pill.
+  const { navigation, currentDock } = useDockNavigation();
+  const viewMode: StreamInboxViewMode = currentDock?.streamInboxView ?? 'all';
+  // Read state, archive, search and channel pulls are this machine's; the hub page offers none of them.
+  const desktopStreamInbox = !isHubOnly();
   // Set of conv ids whose row currently chose to render. Driven by row-level
   // `onVisibilityChange` callbacks so the header badge and empty-state both
   // reflect exactly what the user sees (rows hide themselves when their latest
@@ -625,27 +777,72 @@ export function StreamInboxView({
   // The channel filter: source ids the list is narrowed to. Local like the text
   // search, and empty means everything.
   const channelsOwner = useMemo(() => channelsOwnerFor(agentId, localUserId), [agentId, localUserId]);
-  const { rows: ownerChannels, specFor, offers: channelOffers, loading: channelsLoading } = useAttachedChannels(channelsOwner);
+  const {
+    rows: ownerChannels,
+    specFor,
+    offers: channelOffers,
+    builtInOffered,
+    loading: channelsLoading,
+  } = useAttachedChannels(channelsOwner);
   const { attributionFor: attributionForOrigin } = useChannelAttribution();
   const attributionFor = useCallback(
-    (origin: FlowMessage['origin'], channelSpec?: Conversation['channel_spec']) =>
-      attributionForOrigin(origin, null, channelSpec),
+    // The message's own source (origin_local) names WHICH source delivered it: two help desks share
+    // the `helpdesk` channel, so the channel alone would name the first desk for every ticket.
+    (
+      origin: FlowMessage['origin'],
+      originLocal?: FlowMessage['origin_local'],
+      channelSpec?: Conversation['channel_spec'],
+    ) => attributionForOrigin(origin, originLocal ?? null, channelSpec),
     [attributionForOrigin],
   );
-  const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
-  // The picked channels that are not listening: the strip above the list explains each one.
-  const attention = useMemo(() => attentionAmong(ownerChannels, channelFilter), [ownerChannels, channelFilter]);
+  // The picked channels live in the URL (`?channel=`), like the view and the search: Back, reload and
+  // a shared link land on the same pick. `initialChannel` is the default when the URL names none.
+  const rawChannels = currentDock?.options?.[STREAM_INBOX_CHANNEL_PARAM];
+  // With neither, the last pick on this machine is remembered per owner.
+  const channelStoreKey = channelsOwner ? `stream-inbox-channels:${channelsOwner.toString()}` : null;
+  const channelFilter = useMemo(
+    () => new Set(currentDock?.streamInboxChannels ?? (initialChannel ? [initialChannel] : readStoredChannels(channelStoreKey))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the raw option is the pick; the dock object changes on every navigation
+    [rawChannels, initialChannel, channelStoreKey],
+  );
+  const setChannelFilter = useCallback(
+    (next: Set<string>) => {
+      if (!initialChannel && channelStoreKey) {
+        try {
+          window.localStorage.setItem(channelStoreKey, JSON.stringify([...next]));
+        } catch {
+          // Storage is unavailable: the pick holds for this visit only.
+        }
+      }
+      if (currentDock) navigation.openDock(currentDock.withStreamInboxChannels([...next], !!initialChannel));
+    },
+    [currentDock, navigation, initialChannel, channelStoreKey],
+  );
+  // The query already narrows to the picked sources; this also hides rows pushed live from other channels.
   const channelMatch = useMemo(
     () =>
       channelFilter.size
-        ? (m: FlowMessage) => {
+        ? (m: FlowMessage, conv: Conversation) => {
+            // A built-in channel (Diagnosis) is the conversation's own; a source's is its message's.
+            if (conv.channel && channelFilter.has(conv.channel)) return true;
             const source = sourceForOrigin(ownerChannels, m.origin, m.origin_local);
+            if (!conv.channel && !source && !conv.channel_source_id) return channelFilter.has(FLOWPAD_CHANNEL);
             return !!source && channelFilter.has(channelKeyOf(source));
           }
         : undefined,
     [channelFilter, ownerChannels],
   );
-  const [columnFilter, setColumnFilter] = useState<ColumnFilter>(NO_COLUMN_FILTER);
+  // The list filters on the URL's value; the boxes hold the draft.
+  const urlColumns = currentDock?.streamInboxColumns ?? NO_COLUMN_FILTER;
+  const columnFilter = useMemo<StreamInboxColumns>(
+    () => ({ from: urlColumns.from, subject: urlColumns.subject, date: urlColumns.date }),
+    [urlColumns.from, urlColumns.subject, urlColumns.date],
+  );
+  const [columnInput, setColumnInput] = useUrlDraft(
+    columnFilter,
+    (next) => currentDock && navigation.openDock(currentDock.withStreamInboxColumns(next)),
+    sameColumns,
+  );
   const [fromWidth, setFromWidth] = useState(readFromWidth);
   const listRef = useRef<HTMLDivElement | null>(null);
   const commitFromWidth = useCallback((width: number) => {
@@ -682,10 +879,30 @@ export function StreamInboxView({
     [fromWidth, commitFromWidth],
   );
   const columnFilterActive = isColumnFilterActive(columnFilter);
+  // The rail's Stream Inbox icon: back to every message, no filter of any kind. Only the user's own
+  // stream listens; a fresh mount already starts unfiltered.
+  useUiActionRequest(embedded || agentId || sourceId ? [] : ['stream-inbox.reset'], () => {
+    if (
+      currentDock &&
+      (currentDock.streamInboxView !== 'all' ||
+        currentDock.streamInboxSearch ||
+        currentDock.pageBefore ||
+        currentDock.streamInboxChannels !== null ||
+        columnFilterActive)
+    )
+      navigation.openDock(
+        currentDock
+          .withStreamInboxFilters({ view: 'all', search: '' })
+          .withStreamInboxChannels([])
+          .withStreamInboxColumns(NO_COLUMN_FILTER),
+      );
+    setColumnInput(NO_COLUMN_FILTER);
+    setSelectedIds(new Set());
+  });
   const setColumn = useCallback(
-    <K extends keyof ColumnFilter>(key: K, value: ColumnFilter[K]) =>
-      setColumnFilter((cur) => ({ ...cur, [key]: value })),
-    [],
+    <K extends keyof StreamInboxColumns>(key: K, value: StreamInboxColumns[K]) =>
+      setColumnInput((cur) => ({ ...cur, [key]: value })),
+    [setColumnInput],
   );
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();
@@ -694,7 +911,7 @@ export function StreamInboxView({
   // Bulk-delete + per-row-delete dialog state.
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
-  const [showNewContactsGroup, setShowNewContactsGroup] = useState(false);
+  const [showContacts, setShowContacts] = useState(false);
   const [rowDelete, setRowDelete] = useState<RowDeleteAction | null>(null);
   // Multi-select: ids of rows ticked for a bulk mark-read/unread/archive/delete.
   // Constrained to currently-visible rows when actions run, so a stale id left
@@ -706,23 +923,26 @@ export function StreamInboxView({
   // action rather than a `$LIKE` entity query: under the reference model a
   // channel message's body lives on its SourceItem (the FlowMessage row stores
   // `text: ""`), so the backend searches BOTH residences and hands back
-  // conversation ids. Debounced per keystroke; the previous result is held
+  // conversation ids. The URL commit debounces typing; the previous result is held
   // while the next request is in flight so the list doesn't blank.
-  const [searchQuery, setSearchQuery] = useState('');
+  // URL-owned (`?q=`).
+  const searchQuery = currentDock?.streamInboxSearch ?? '';
+  const [searchInput, setSearchInput] = useUrlDraft(
+    searchQuery,
+    (next) => currentDock && navigation.openDock(currentDock.withStreamInboxFilters({ search: next })),
+  );
   const needle = searchQuery.trim();
   const searchActive = needle !== '';
   const [matchIds, setMatchIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!searchActive) return;
+    // `needle` is the URL's, already debounced on its way there.
     let stale = false;
-    const timer = setTimeout(() => {
-      void searchStreamInbox(needle, agentId).then((ids) => {
-        if (!stale) setMatchIds(ids);
-      });
-    }, 200);
+    void searchStreamInbox(needle, agentId).then((ids) => {
+      if (!stale) setMatchIds(ids);
+    });
     return () => {
       stale = true;
-      clearTimeout(timer);
     };
   }, [agentId, needle, searchActive]);
 
@@ -731,14 +951,27 @@ export function StreamInboxView({
   // `channelsOwner` is rebuilt whenever its inputs change identity, and a fresh request re-subscribes.
   // One PAGE, not the whole stream inbox: the view's latest N (`before` null = now, live) or the N older
   // than the dock URL's `before`. A body search lists its hits instead.
-  const { navigation, currentDock } = useDockNavigation();
   const pageBefore = currentDock?.pageBefore ?? null;
   const ownerKey = channelsOwner?.toString() ?? '';
-  const scope = useMemo<ConversationScope | null>(
-    () => (sourceId ? { sourceId } : channelsOwner ? { owner: channelsOwner } : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's string form
-    [ownerKey, sourceId],
+  // The channel marks narrow the QUERY to the picked marks' sources: a page is then rows of those
+  // sources, and Older / Newer page through them, rather than the latest page thinned out in the browser.
+  const pickedSources = useMemo(
+    () =>
+      channelFilter.size
+        ? ownerChannels.filter((s) => s.id && channelFilter.has(channelKeyOf(s))).map((s) => s.id as string)
+        : [],
+    [ownerChannels, channelFilter],
   );
+  const pickedChannels = useMemo(() => BUILT_IN_CHANNELS.filter((c) => channelFilter.has(c)), [channelFilter]);
+  // a refreshed channel list with the same picks keeps the scope
+  const pickedKey = [...pickedSources].sort().join(',') + '|' + pickedChannels.join(',');
+  const scope = useMemo<ConversationScope | null>(() => {
+    if (sourceId) return { sourceId };
+    if (!channelsOwner) return null;
+    if (!pickedSources.length && !pickedChannels.length) return { owner: channelsOwner };
+    return { owner: channelsOwner, sourceIds: pickedSources, channels: pickedChannels };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's and the picks' string forms
+  }, [ownerKey, sourceId, pickedKey]);
   const request = useMemo(() => {
     if (!scope) return null;
     if (searchActive) return conversationsByIdsRequest(scope, [...matchIds]);
@@ -762,7 +995,6 @@ export function StreamInboxView({
   if (isSuccess) hasLoadedOnce.current = true;
   const initialLoading = (isLoading || request === null) && !hasLoadedOnce.current;
 
-
   const sorted = useMemo(() => {
     // Sorted here too: a live push appends a newly matching row without re-sorting or trimming
     // the page, so the page is cut back to its size after the sort.
@@ -783,7 +1015,15 @@ export function StreamInboxView({
   // The same batch also yields the messages here, to discover which first-messages
   // carry an invitation context — those ids drive a SECOND batch ``$IN`` so the
   // per-row ``useEntity<Invitation>`` also resolves from cache instead of one GET each.
-  const batchedMessages = useEntityBatch<FlowMessage>(FlowMessage.type, flowMessageIds);
+  const { data: batchedMessages, settled: messagesSettled } = useEntityBatchState<FlowMessage>(
+    FlowMessage.type,
+    flowMessageIds,
+  );
+  // The rows mount once their messages are in the cache: a row stays hidden until its latest
+  // message resolves anyway, and mounting before the batch rendered every row twice more as its
+  // first and latest messages arrived. Latched, so a later batch (a new message) never unmounts them.
+  const rowsReady = useRef(false);
+  if (messagesSettled && !initialLoading) rowsReady.current = true;
   // The sessions automations started on the visible conversations' messages — one query, the newest per row.
   const conversationIds = useMemo(() => sorted.map((c) => c.id ?? '').filter(Boolean), [sorted]);
   const automationMarks = useConversationAutomationMarks(conversationIds);
@@ -809,29 +1049,34 @@ export function StreamInboxView({
 
   const visibleCount = visibleIds.size;
 
-  // Unread pip/badge: backend-owned (StreamInboxManager.unread, reflected live via
-  // the entity channel) — no client-side recount here anymore.
+  // Unread: backend-owned (StreamInboxManager.unread) — the rail badge's number, so the two always
+  // agree. It counts the user's own stream inbox, so an agent's or a source's view does not use it.
+  const { unread: streamInboxUnread } = useStreamInboxManager();
+  const ownStreamInbox = !agentId && !sourceId;
 
   // Refresh = read every channel of this stream inbox NOW (the same `pullNow` a source's own ↻ runs), then the list.
   // A channel waiting on setup or paused is not read; it says so on its own strip.
   const handleRefresh = useCallback(async () => {
     setFetching(true);
     try {
-      const runnable = ownerChannels.filter((source) => source.status === 'active' || source.status === 'new');
-      const answers = await Promise.all(
-        runnable.map(async (source) => ({ name: source.name || source.provider, ...(await pullNow(source)) })),
-      );
-      await fetchConversations(agentId);
-      void refetch();
-      if (answers.length) {
-        const line = answers.map((a) => `${a.name}: ${a.text}`).join(' · ');
-        if (answers.every((a) => a.ok)) notify.success({ title: t`Checked for new messages`, message: line });
-        else notify.error({ title: t`Some channels could not be checked`, message: line });
+      // Pulling the channels and the hub into the local copy is the desktop's; the hub page reads the hub.
+      if (desktopStreamInbox) {
+        const runnable = ownerChannels.filter((source) => source.status === 'active' || source.status === 'new');
+        const answers = await Promise.all(
+          runnable.map(async (source) => ({ name: source.name || source.provider, ...(await pullNow(source)) })),
+        );
+        await fetchConversations(agentId);
+        if (answers.length) {
+          const line = answers.map((a) => `${a.name}: ${a.text}`).join(' · ');
+          if (answers.every((a) => a.ok)) notify.success({ title: t`Checked for new messages`, message: line });
+          else notify.error({ title: t`Some channels could not be checked`, message: line });
+        }
       }
+      void refetch();
     } finally {
       setFetching(false);
     }
-  }, [agentId, refetch, ownerChannels, t]);
+  }, [agentId, desktopStreamInbox, refetch, ownerChannels, t]);
 
   const handleArchive = useCallback(
     async (convId: string) => {
@@ -856,6 +1101,15 @@ export function StreamInboxView({
     },
     [agentId, refetch],
   );
+
+  // The rows get callbacks that never change: an inline arrow per render was a new prop on every
+  // row, so the memoized row re-rendered anyway.
+  const rowArchive = useStableCallback(handleArchive);
+  const rowUnarchive = useStableCallback(handleUnarchive);
+  const rowToggleRead = useStableCallback(handleToggleRead);
+  const setRowRef = useCallback((convId: string, el: HTMLDivElement | null) => {
+    rowRefs.current.set(convId, el);
+  }, []);
 
   const handleMarkAllRead = useCallback(async () => {
     // No optimistic zero: the backend reconciles StreamInboxManager.unread after the
@@ -897,17 +1151,16 @@ export function StreamInboxView({
       for (const c of convs) {
         if (seemsInvitationConv(c)) {
           invitationCount += 1;
-        } else if (!c.remote) {
-          localCount += 1;
-        } else if (cloudUserId && c.created_by === cloudUserId) {
-          ownerCount += 1;
-        } else {
-          nonOwnerCount += 1;
+          continue;
         }
+        const kind = deleteKindOf(c, cloudUserId);
+        if (kind === 'local') localCount += 1;
+        else if (kind === 'owner') ownerCount += 1;
+        else nonOwnerCount += 1;
       }
       return { ownerCount, nonOwnerCount, invitationCount, localCount };
     },
-    [cloudUserId, seemsInvitationConv],
+    [cloudUserId, localUserId, seemsInvitationConv],
   );
   const buckets = useMemo(() => bucketsFor(archivedConvs), [bucketsFor, archivedConvs]);
   const needsHub = buckets.ownerCount + buckets.nonOwnerCount + buckets.invitationCount > 0;
@@ -944,7 +1197,7 @@ export function StreamInboxView({
   // FlowMessage id of a conversation's latest message — the read/unread flag
   // lives on the message, so bulk read toggles patch the last pointer's FM.
   const latestMessageId = (c: Conversation): string | null => {
-    return latestPointer(c.conversationMessageIds)?.id ?? null;
+    return c.latestMessagePointer?.id ?? null;
   };
 
   const handleBulkMarkRead = useCallback(
@@ -994,16 +1247,16 @@ export function StreamInboxView({
           // Hide without notifying the inviter — the selection UI has no place
           // to surface the decline-vs-dismiss choice the per-row dialog offers.
           await dismissConversation({ conversation_id: c.id, ...(agentId ? { agent_id: agentId } : {}) });
-        } else if (!c.remote) {
-          await deleteConversation({ conversation_id: c.id, mode: 'local', ...(agentId ? { agent_id: agentId } : {}) });
-        } else if (cloudUserId && c.created_by === cloudUserId) {
-          await deleteConversation({
-            conversation_id: c.id,
-            mode: 'delete_for_all',
-            ...(agentId ? { agent_id: agentId } : {}),
-          });
         } else {
-          await leaveConversation({ conversation_id: c.id, ...(agentId ? { agent_id: agentId } : {}) });
+          const kind = deleteKindOf(c, cloudUserId);
+          const scope = agentId ? { agent_id: agentId } : {};
+          if (kind === 'leave') await leaveConversation({ conversation_id: c.id, ...scope });
+          else
+            await deleteConversation({
+              conversation_id: c.id,
+              mode: kind === 'local' ? 'local' : 'delete_for_all',
+              ...scope,
+            });
         }
         ok += 1;
       } catch {
@@ -1020,7 +1273,7 @@ export function StreamInboxView({
     }
     clearSelection();
     void refetch();
-  }, [agentId, selectedConvs, seemsInvitationConv, cloudUserId, clearSelection, refetch, t]);
+  }, [agentId, selectedConvs, seemsInvitationConv, cloudUserId, localUserId, clearSelection, refetch, t]);
 
   const handleDeleteArchived = useCallback(() => {
     if (archivedConvs.length === 0) return;
@@ -1079,7 +1332,7 @@ export function StreamInboxView({
     if (!rowDelete) return;
     try {
       if (rowDelete.kind === 'invitation') {
-        await declineInvitation({ invitation_id: rowDelete.invitationId });
+        await answerInvitation(rowDelete.invitationId, 'decline');
         notify.success({ title: t`Invitation declined` });
       } else if (rowDelete.kind === 'owner') {
         await deleteConversation({
@@ -1133,27 +1386,33 @@ export function StreamInboxView({
     [agentId, refetch, t],
   );
 
-  const setView = useCallback((next: StreamInboxViewMode) => {
-    setViewMode((cur) => {
-      if (cur === next) return cur;
+  const setView = useCallback(
+    (next: StreamInboxViewMode) => {
+      if (next === viewMode || !currentDock) return;
       // Visible-ids tracks the previous mode's rows; reset so the count
       // badge doesn't flash stale during the swap. Selection is per-view, so
       // drop it too — carrying ticks across modes would act on hidden rows.
       setVisibleIds(new Set());
       setSelectedIds(new Set());
-      return next;
-    });
-    // A page is a page of ONE view: another view starts at now.
-    if (currentDock?.pageBefore) navigation.openDock(currentDock.withPageBefore(null));
-  }, [currentDock, navigation]);
+      // A page is a page of ONE view: another view starts at now.
+      navigation.openDock(currentDock.withStreamInboxFilters({ view: next }));
+    },
+    [viewMode, currentDock, navigation],
+  );
 
   const inArchivedView = viewMode === 'archived';
   const inUnreadView = viewMode === 'unread';
+  const inInvitesView = viewMode === 'invites';
   // Segmented view pill — All | Unread | Archived. Active mode is filled,
-  // inactive is ghost. Count badge sits inside the active pill so it
-  // reflects exactly what the user is looking at.
+  // inactive is ghost.
   const renderViewPill = (mode: StreamInboxViewMode, label: string, Icon: typeof InboxIcon) => {
     const active = viewMode === mode;
+    // Unread in the user's own Stream Inbox: the backend total, on the pill whether or not it is active.
+    // Otherwise the rows on this page — a full page holds more than it shows, so it reads "N+".
+    let badge: string | null = null;
+    if (mode === 'unread' && ownStreamInbox) badge = streamInboxUnread > 0 ? String(streamInboxUnread) : null;
+    else if (active && visibleCount > 0)
+      badge = visibleCount >= STREAM_INBOX_PAGE_SIZE ? `${STREAM_INBOX_PAGE_SIZE}+` : String(visibleCount);
     return (
       <button
         type="button"
@@ -1166,12 +1425,12 @@ export function StreamInboxView({
       >
         <Icon className="h-3.5 w-3.5" />
         <span>{label}</span>
-        {active && visibleCount > 0 && (
+        {badge !== null && (
           // Fixed min-width + tabular figures: the badge keeps the same box up
           // to three digits, so a growing count doesn't reflow the search input
           // and the buttons to its right.
           <span className="inline-block min-w-[30px] rounded bg-muted px-1.5 py-0.5 text-center text-[10px] tabular-nums text-muted-foreground">
-            {visibleCount}
+            {badge}
           </span>
         )}
       </button>
@@ -1179,12 +1438,62 @@ export function StreamInboxView({
   };
 
   // List mode
+  // The list's main verbs get a row of their own; the channel buttons sit at its far end. Where that
+  // row is not drawn (an agent's StreamInbox, an embedded list, a selection in progress) they fall back to the filter row.
+  const hasTopRow = !agentId && !embedded && selectedCount === 0;
+  const channelButtons = (
+    <>
+      {!agentId && !embedded && (
+        <InvitesChannelChip
+          active={inInvitesView}
+          pending={membershipPendingCount}
+          onClick={() => setView(inInvitesView ? 'all' : 'invites')}
+        />
+      )}
+      {channelsOwner && !embedded && (
+        <AttachedChannelsBar
+          owner={channelsOwner}
+          rows={ownerChannels}
+          offers={channelOffers}
+          builtInOffered={builtInOffered}
+          specFor={specFor}
+          selected={channelFilter}
+          onSelectedChange={setChannelFilter}
+          className="shrink-0"
+        />
+      )}
+    </>
+  );
+
   return (
     <div className="relative flex h-full flex-col">
       {!cloudUser && (
         <LoginRequiredOverlay
           description={t`Sign in to your Flowpad Cloud account to view your stream inbox and conversations.`}
         />
+      )}
+      {/* The list's main verbs get a row of their own, full-size, so they can't be missed. */}
+      {hasTopRow && (
+        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2" data-testid="stream-inbox-primary-actions">
+          <Button
+            onClick={() => setShowNewConversation(true)}
+            data-testid="stream-inbox-new-conversation-button"
+            title={t`Start a new conversation`}
+          >
+            <SquarePen />
+            <Trans>New conversation</Trans>
+          </Button>
+          {desktopStreamInbox && (
+            <>
+              <ProjectUploadMessageButton variant="outline" size="default" />
+              <Button variant="outline" onClick={() => setShowContacts(true)} data-testid="stream-inbox-contacts-button">
+                <BookUser />
+                <Trans>Contacts</Trans>
+              </Button>
+            </>
+          )}
+          <div className="ms-auto flex min-w-0 items-center gap-2">{channelButtons}</div>
+        </div>
       )}
       <div className="flex shrink-0 items-center border-b px-3 py-1.5">
         {/* Selection mode takes over the whole toolbar: the view pills, search and
@@ -1195,37 +1504,41 @@ export function StreamInboxView({
             <span className="me-1 text-xs text-muted-foreground" data-testid="stream-inbox-selection-count">
               <Trans>{selectedCount} selected</Trans>
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => void handleBulkMarkRead(true)}
-              data-testid="stream-inbox-selection-mark-read"
-            >
-              <MailOpen className="me-1 h-3.5 w-3.5" />
-              <Trans>Read</Trans>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => void handleBulkMarkRead(false)}
-              data-testid="stream-inbox-selection-mark-unread"
-            >
-              <Mail className="me-1 h-3.5 w-3.5" />
-              <Trans>Unread</Trans>
-            </Button>
-            {!inArchivedView && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => void handleBulkArchive()}
-                data-testid="stream-inbox-selection-archive"
-              >
-                <Archive className="me-1 h-3.5 w-3.5" />
-                <Trans>Archive</Trans>
-              </Button>
+            {desktopStreamInbox && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => void handleBulkMarkRead(true)}
+                  data-testid="stream-inbox-selection-mark-read"
+                >
+                  <MailOpen className="me-1 h-3.5 w-3.5" />
+                  <Trans>Read</Trans>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => void handleBulkMarkRead(false)}
+                  data-testid="stream-inbox-selection-mark-unread"
+                >
+                  <Mail className="me-1 h-3.5 w-3.5" />
+                  <Trans>Unread</Trans>
+                </Button>
+                {!inArchivedView && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => void handleBulkArchive()}
+                    data-testid="stream-inbox-selection-archive"
+                  >
+                    <Archive className="me-1 h-3.5 w-3.5" />
+                    <Trans>Archive</Trans>
+                  </Button>
+                )}
+              </>
             )}
             <Button
               variant="ghost"
@@ -1259,90 +1572,73 @@ export function StreamInboxView({
                 data-testid="stream-inbox-view-bar"
               >
                 {renderViewPill('all', t`All`, InboxIcon)}
-                {renderViewPill('unread', t`Unread`, MailPlus)}
-                {renderViewPill('archived', t`Archived`, Archive)}
+                {desktopStreamInbox && (
+                  <>
+                    {renderViewPill('unread', t`Unread`, MailPlus)}
+                    {renderViewPill('archived', t`Archived`, Archive)}
+                  </>
+                )}
               </div>
               {/* Text search — filters the list below to conversations whose
                   messages contain the query, spanning archived rows. */}
-              <div className="relative ms-2 flex items-center">
-                <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={t`Search messages`}
-                  className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                  data-testid="stream-inbox-search-input"
-                  aria-label={t`Search messages`}
-                />
-                {searchActive && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
-                    aria-label={t`Clear search`}
-                    data-testid="stream-inbox-search-clear"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
+              {desktopStreamInbox && (
+                <div className="relative ms-2 flex items-center">
+                  <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    placeholder={t`Search messages`}
+                    className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    data-testid="stream-inbox-search-input"
+                    aria-label={t`Search messages`}
+                  />
+                  {searchActive && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchInput('');
+                        if (currentDock) navigation.openDock(currentDock.withStreamInboxFilters({ search: '' }));
+                      }}
+                      className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                      aria-label={t`Clear search`}
+                      data-testid="stream-inbox-search-clear"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-            {/* CENTER — new conversation / new contacts group */}
-            {!agentId && !embedded && (
-              <div className="flex shrink-0 items-center">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setShowNewConversation(true)}
-                  data-testid="stream-inbox-new-conversation-button"
-                  title={t`Start a new conversation`}
-                >
-                  <SquarePen className="me-1 h-3.5 w-3.5" />
-                  <Trans>New</Trans>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setShowNewContactsGroup(true)}
-                  data-testid="stream-inbox-new-contacts-group-button"
-                  title={t`Create a contacts group — add its members to any conversation in one click`}
-                >
-                  <UsersRound className="me-1 h-3.5 w-3.5" />
-                  <Trans>New group</Trans>
-                </Button>
-                <ProjectUploadMessageButton />
-              </div>
-            )}
             {/* RIGHT — actions for the current view */}
             <div className="flex flex-1 items-center justify-end gap-1" data-testid="stream-inbox-action-bar">
               <>
-                {!inArchivedView && !embedded && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => void handleMarkAllRead()}
-                    disabled={isLoading || visibleCount === 0}
-                  >
-                    <Trans>Mark all read</Trans>
-                  </Button>
-                )}
-                {/* Archive all archives every conversation regardless of read state;
-                hide it in the Archived view where it makes no sense. */}
-                {!inArchivedView && !inUnreadView && !embedded && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => void handleArchiveAll()}
-                    disabled={isLoading || visibleCount === 0}
-                    data-testid="stream-inbox-archive-all-button"
-                  >
-                    <Trans>Archive all</Trans>
-                  </Button>
+                {desktopStreamInbox && !inArchivedView && !embedded && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => void handleMarkAllRead()}
+                      disabled={isLoading || visibleCount === 0}
+                    >
+                      <Trans>Mark all read</Trans>
+                    </Button>
+                    {/* Archive all archives every conversation regardless of read state;
+                    hide it in the Archived view where it makes no sense. */}
+                    {!inUnreadView && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => void handleArchiveAll()}
+                        disabled={isLoading || visibleCount === 0}
+                        data-testid="stream-inbox-archive-all-button"
+                      >
+                        <Trans>Archive all</Trans>
+                      </Button>
+                    )}
+                  </>
                 )}
                 {inArchivedView && (
                   <Button
@@ -1404,7 +1700,7 @@ export function StreamInboxView({
             </span>
             <input
               type="text"
-              value={columnFilter.from}
+              value={columnInput.from}
               onChange={(e) => setColumn('from', e.target.value)}
               placeholder={t`From`}
               aria-label={t`Filter by sender`}
@@ -1427,7 +1723,7 @@ export function StreamInboxView({
             </span>
             <input
               type="text"
-              value={columnFilter.subject}
+              value={columnInput.subject}
               onChange={(e) => setColumn('subject', e.target.value)}
               placeholder={t`Subject`}
               aria-label={t`Filter by subject`}
@@ -1435,8 +1731,8 @@ export function StreamInboxView({
               data-testid="stream-inbox-filter-subject"
             />
             <select
-              value={columnFilter.date}
-              onChange={(e) => setColumn('date', e.target.value as DateWindow)}
+              value={columnInput.date}
+              onChange={(e) => setColumn('date', e.target.value as StreamInboxDateWindow)}
               aria-label={t`Filter by date`}
               className={columnInputClass}
               data-testid="stream-inbox-filter-date"
@@ -1449,7 +1745,7 @@ export function StreamInboxView({
             {columnFilterActive && (
               <button
                 type="button"
-                onClick={() => setColumnFilter(NO_COLUMN_FILTER)}
+                onClick={() => setColumnInput(NO_COLUMN_FILTER)}
                 className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
                 title={t`Clear filters`}
                 aria-label={t`Clear filters`}
@@ -1458,21 +1754,10 @@ export function StreamInboxView({
                 <X className="h-3 w-3" />
               </button>
             )}
-            {channelsOwner && !embedded && (
-              <AttachedChannelsBar
-                owner={channelsOwner}
-                rows={ownerChannels}
-                offers={channelOffers}
-                specFor={specFor}
-                selected={channelFilter}
-                onSelectedChange={setChannelFilter}
-                className="shrink-0"
-              />
-            )}
+            {!hasTopRow && channelButtons}
           </div>
         )}
 
-        {!initialLoading && !embedded && <ChannelAttentionBar items={attention} specFor={specFor} />}
 
         {initialLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
@@ -1485,7 +1770,9 @@ export function StreamInboxView({
             <span className="text-sm">
               {searchActive || columnFilterActive
                 ? t`No matching conversations`
-                : inArchivedView
+                : inInvitesView
+                  ? t`Nothing has been shared with you yet`
+                  : inArchivedView
                   ? t`No archived conversations`
                   : inUnreadView
                     ? t`No unread conversations`
@@ -1493,11 +1780,20 @@ export function StreamInboxView({
                       ? t`No messages from this channel yet`
                       : t`No conversations`}
             </span>
-            {/* An owner with no channel connected: the empty list is where connecting one is offered. */}
-            {channelsOwner && !embedded && !inArchivedView && !inUnreadView && !searchActive && !columnFilterActive && (
-              <ConnectChannelPrompt owner={channelsOwner} offers={channelOffers} />
+            {/* An owner with no channel connected: the empty list is where connecting one is offered —
+                unless the caller knows better what is missing (an allowlist, not a channel). */}
+            {!embedded && !inArchivedView && !inUnreadView && !searchActive && !columnFilterActive && (
+              emptyHint ? (
+                <span className="text-sm" data-testid="stream-inbox-empty-hint">
+                  {emptyHint}
+                </span>
+              ) : (
+                // Narrowed to one channel, the list is empty for want of mail on IT: offering other channels
+                // here answers a question nobody asked.
+                channelsOwner && channelFilter.size === 0 && <ConnectChannelPrompt owner={channelsOwner} offers={channelOffers} />
+              )
             )}
-            {!inArchivedView && !searchActive && !columnFilterActive && attention.length === 0 && (
+            {!inArchivedView && !searchActive && !columnFilterActive && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
                 <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 <Trans>Check for new messages</Trans>
@@ -1507,21 +1803,27 @@ export function StreamInboxView({
         )}
 
         {!agentId && !embedded && !inArchivedView && !initialLoading && (
-          <MembershipInvitations recipientEmail={cloudUser?.email ?? null} onPendingCount={setMembershipPendingCount} />
+          <MembershipInvitations
+            recipientEmail={cloudUser?.email ?? null}
+            onPendingCount={setMembershipPendingCount}
+            show={inInvitesView ? 'all' : 'pending'}
+          />
         )}
 
         {/* Start the row batches in the layout phase so the rows' own reads wait
             for them instead of each firing a GET (see EntityBatchHydrator). */}
         <EntityBatchHydrator type={Invitation.type} ids={invitationIds} />
         {!initialLoading &&
+          rowsReady.current &&
           sorted.map((conv) => (
             <ConversationListRow
               key={conv.id ?? ''}
               conv={conv}
               isFocused={false}
-              onArchive={(convId) => void handleArchive(convId)}
-              onUnarchive={(convId) => void handleUnarchive(convId)}
-              onToggleRead={(messageId, isRead) => void handleToggleRead(messageId, isRead)}
+              revision={rowRevision(conv, conv.id ? automationMarks.get(conv.id) : undefined)}
+              onArchive={rowArchive}
+              onUnarchive={rowUnarchive}
+              onToggleRead={rowToggleRead}
               selected={!!conv.id && selectedIds.has(conv.id)}
               onToggleSelect={toggleSelect}
               selectMode={selectedCount > 0}
@@ -1531,22 +1833,20 @@ export function StreamInboxView({
               channelMatch={channelMatch}
               columnFilter={columnFilterActive ? columnFilter : undefined}
               attributionFor={attributionFor}
-              refSetter={(el) => {
-                if (conv.id) rowRefs.current.set(conv.id, el);
-              }}
+              refSetter={setRowRef}
               agentId={agentId}
               onOpenConversation={onOpenConversation}
               automationMark={conv.id ? automationMarks.get(conv.id) : undefined}
             />
           ))}
-        {!initialLoading && !searchActive && scope && (
-          <StreamInboxPager scope={scope} view={viewMode} rows={sorted} />
-        )}
+        {!initialLoading && !searchActive && scope && <StreamInboxPager scope={scope} view={viewMode} rows={sorted} />}
       </div>
 
       {!agentId && <NewConversationDialog open={showNewConversation} onClose={() => setShowNewConversation(false)} />}
 
-      {!agentId && <CreateContactsGroupDialog open={showNewContactsGroup} onOpenChange={setShowNewContactsGroup} />}
+      {!agentId && (
+        <ContactsDialog open={showContacts} onOpenChange={setShowContacts} excludeUserId={cloudUser?.id ?? null} />
+      )}
 
       <BulkConfirmDialog
         open={bulkDialogOpen}

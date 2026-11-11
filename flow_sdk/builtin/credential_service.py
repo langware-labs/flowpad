@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Optional
 
 from pydantic import ValidationError
 
@@ -53,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 _MANIFEST_FIELDS = (
     "title", "description", "needed_for", "justification", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider",
-    "kind", "provider", "scopes", "optional_scopes", "vars", "ways",
+    "kind", "provider", "scopes", "optional_scopes", "vars", "ways", "derived",
 )
 
 
@@ -117,7 +118,12 @@ async def _deployment(deployment_id: Optional[str]) -> "Deployment":
         raise CredentialError(str(e)) from e
 
 
-async def _write_values(spec: "Credential", scope: CredentialScope, values: dict[str, Any], placement: Placement) -> None:
+async def _write_values(
+    spec: "Credential", scope: CredentialScope, values: dict[str, Any], placement: Placement, *, read_files: bool = False
+) -> None:
+    """Values are written as given. ``read_files``: the CLI's ``VAR=@path`` shortcut for a file variable (read a key
+    file on THIS machine) — only the CLI's own input asks for it; no other caller (HTTP, a secured transfer) can make
+    the writer read a local file."""
     from flow_sdk.builtin.env_local_store import EnvLocalNotWritable  # noqa: PLC0415
 
     unknown = sorted(set(values) - set(spec.vars or {}))
@@ -130,7 +136,7 @@ async def _write_values(spec: "Credential", scope: CredentialScope, values: dict
         raise CredentialError("an LLM provider key has no per-environment value; deployments are hub-funded")
     # A file var's content, read now: the pattern is checked against it, not against an ``@path``.
     values = {
-        name: _file_content(str(v)) if spec.vars[name].kind is CredentialVarKind.FILE and v not in (None, "") else v
+        name: _file_content(str(v)) if spec.vars[name].kind is CredentialVarKind.FILE and v not in (None, "") and read_files else v
         for name, v in values.items()
     }
     for env_var, value in values.items():
@@ -325,13 +331,13 @@ async def _auto_declaration(manifest: dict, scope: CredentialScope, project: Opt
 
 
 async def set_credential_values(
-    typeid: str, values: dict[str, Any], deployment_id: Optional[str] = None
+    typeid: str, values: dict[str, Any], deployment_id: Optional[str] = None, *, read_files: bool = False
 ) -> "Credential":
     """Set or rotate the values ``deployment_id`` (default: this computer) reads. Empty values are
-    skipped, never cleared."""
+    skipped, never cleared. ``read_files``: see :func:`_write_values`."""
     placement = await Placement.of(await _deployment(deployment_id))
     spec, target_scope, _ = await _owned_credential(typeid)
-    await _write_values(spec, target_scope, dict(values or {}), placement)
+    await _write_values(spec, target_scope, dict(values or {}), placement, read_files=read_files)
     return spec
 
 
@@ -343,6 +349,24 @@ async def shipped_templates() -> list["Credential"]:
 
     match = ExpressionNode(op=QueryOp.EQ, operands=["scope", SCOPE_SYSTEM])
     return sorted(await Credential.get_all(QueryFilter(match=match)), key=lambda spec: str(spec.name))
+
+
+async def credential_for_need(names: Iterable[str], project: Optional["Project"], *, pairs: Optional[list] = None,
+                              templates: Optional[list["Credential"]] = None) -> dict[str, "Credential"]:
+    """``{VAR: credential}`` — who answers each needed variable in ``project``: the credential a process there
+    reads it from (``credential_resolver.declare``), else the shipped template that says how to ask for it. The
+    one "who needs this" lookup: a template is how to ask, never a reason the need exists. ``pairs`` /
+    ``templates``: already read by the caller (``credentials_in_scope`` / ``shipped_templates``)."""
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope, declare  # noqa: PLC0415
+
+    wanted = set(names)
+    declared = declare(pairs if pairs is not None else await credentials_in_scope(project))
+    owner = {name: declared[name].spec for name in wanted if name in declared}
+    for template in templates if templates is not None else await shipped_templates():
+        for var in template.stored_var_names():
+            if var in wanted:
+                owner.setdefault(var, template)
+    return owner
 
 
 async def template_named(name: str) -> Optional["Credential"]:
@@ -370,7 +394,7 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
         raise CredentialError(f"no credential or template named {name!r}")
     scope = SCOPE_USER if template.lm_provider or project is None else SCOPE_PROJECT
     return await save_credential(
-        manifest=_manifest_of(template),
+        manifest={**_manifest_of(template), "derived": scope == SCOPE_PROJECT},  # for a root's need, gone with it
         scope=scope,
         project_id=str(project.id) if project is not None else None,
     )
@@ -378,9 +402,10 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
 
 async def set_credential_by_name(
     name: str, values: dict[str, Any], *, project_id: Optional[str] = None, deployment_id: Optional[str] = None,
-    choice: str = "",
+    choice: str = "", read_files: bool = False,
 ) -> "Credential":
-    """``flow credentials set``: fill ``name``'s values, declaring it from its template if needed. ``choice`` names
+    """``flow credentials set``: fill ``name``'s values, declaring it from its template if needed. ``read_files``: the
+    CLI's ``VAR=@path`` shortcut (:func:`_write_values`). ``choice`` names
     the ONE_OF way set up here when it holds no value (a sign-in through Flowpad); a value given for exactly one
     way chooses that way by itself."""
     project = await get_project(project_id)
@@ -390,7 +415,7 @@ async def set_credential_by_name(
     if not has_values and not choice:
         raise CredentialError("no value given")
     spec = await credential_named(name, project, declare=True)
-    stored = await set_credential_values(str(spec.typeid), values, deployment_id) if has_values else spec
+    stored = await set_credential_values(str(spec.typeid), values, deployment_id, read_files=read_files) if has_values else spec
     # The way the values were given for: every ONE_OF value given names its way — one way, and it is the choice.
     ways = sorted({way for var, value in (values or {}).items() if str(value or "") and (way := spec.way_of(var))})
     if way := choice or (ways[0] if len(ways) == 1 else ""):
@@ -475,6 +500,7 @@ async def declare_oauth(project: "Project", provider: str, scopes: list[str]) ->
     else:
         manifest = {"name": name, "title": await _provider_title(provider), "kind": CredentialKind.OAUTH.value,
                     "provider": provider, "scopes": wanted}
+    manifest["derived"] = True  # a root's connection: needed while one acts through it
     return await declare_credential(manifest, project_id=str(project.id), require_setup=False), True
 
 
@@ -567,8 +593,8 @@ def drop_folder() -> Path:
     return folder
 
 
-def _take_dropped(file: str) -> dict[str, str]:
-    """Read and delete a dropped values file; only a file inside the drop folder is ever read."""
+def _take_dropped(file: str, key: str = "values") -> dict[str, str]:
+    """Read and delete a dropped file's ``key`` map; only a file inside the drop folder is ever read."""
     import json  # noqa: PLC0415
 
     path = Path(file).resolve()
@@ -578,10 +604,33 @@ def _take_dropped(file: str) -> dict[str, str]:
         raw = json.loads(path.read_text(encoding="utf-8"))
     finally:
         path.unlink(missing_ok=True)
-    values = raw.get("values") if isinstance(raw, dict) else None
+    values = raw.get(key) if isinstance(raw, dict) else None
     if not isinstance(values, dict):
-        raise CredentialError("the dropped file holds no values")
+        raise CredentialError(f"the dropped file holds no {key}")
     return {str(k): str(v) for k, v in values.items() if v}
+
+
+async def place_connections(file: str) -> dict[str, Any]:
+    """The hub pushed this deployment's authorized connections (``{"connections": {provider: access token}}``):
+    each becomes this machine's own sign-in for that provider (``record_credential``), so every reader here —
+    data sources, ``flow connections``, ``connections.require`` — finds it locally and never asks the hub for a
+    token. ``{placed, failed}`` by provider; names only."""
+    from flow_sdk.app.actions.desktop_oauth import record_credential  # noqa: PLC0415
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    tokens = _take_dropped(file, "connections")
+    user = await User.get_local()
+    placed: list[str] = []
+    failed: dict[str, str] = {}
+    for provider, token in tokens.items():
+        try:
+            if await record_credential(user, provider, token):
+                placed.append(provider)
+            else:
+                failed[provider] = "not recorded"
+        except Exception as e:  # noqa: BLE001 — reported per provider, names only
+            failed[provider] = type(e).__name__
+    return {"placed": sorted(placed), "failed": failed}
 
 
 async def declare_vars(
@@ -617,7 +666,7 @@ async def _declaring(names: list[str], project: Optional["Project"], deployment:
     missing = [n for n in names if n not in declared]
     if not missing:
         return declared
-    agent = await deployment.element()
+    agent = await deployment.main_agent()
     owner = {v: r.name for r in (getattr(agent, "requirements", None) or []) if r.kind == "credential" for v in r.vars}
     groups: dict[str, list[str]] = {}
     for name in missing:
@@ -629,7 +678,7 @@ async def _declaring(names: list[str], project: Optional["Project"], deployment:
 
 async def _on_this_machine(deployment_id: str, environment: str) -> tuple["Deployment", Placement]:
     """Where a deployment's machine reads its values: the row this machine keeps for ``deployment_id``
-    (``adopt_placement`` re-keys the agent's; ``expose-endpoints`` keys a serving one), else this
+    (``deployment/<id>/adopt`` re-keys it; ``expose-endpoints`` keys a serving one), else this
     machine's own — the machine IS that deployment, and the hub places before, or without, a successful
     adopt. The environment is the one the hub sends, never the row's (a serving row carries the
     instance default); it becomes this instance's default, so the agent and every terminal read it."""
@@ -643,13 +692,48 @@ async def _on_this_machine(deployment_id: str, environment: str) -> tuple["Deplo
     return row, replace(placement, environment=environment) if environment else placement
 
 
+async def _placed_project(project_id: str, deployment: "Deployment", names: Iterable[str] = ()) -> Optional["Project"]:
+    """The project the placed values belong to, on THIS machine. The hub names its own project id; a machine that
+    cloned the project keeps it under a local id, so when that id is unknown here the deployment's main agent says
+    which project it runs in. Without it the project's own Credentials are never seen and every value lands in the
+    catch-all ``deployment-secrets``, where the project's declaration then hides it."""
+    project = await get_project(project_id) if project_id else None
+    if project is not None:
+        return project
+    agent = await deployment.main_agent() if deployment is not None else None
+    local_id = str(getattr(agent, "project_id", "") or "")
+    if local_id and (project := await get_project(local_id)) is not None:
+        return project
+    return await _project_declaring(names)
+
+
+async def _project_declaring(names: Iterable[str]) -> Optional["Project"]:
+    """The one project on this machine whose own Credentials declare ``names`` -- an invite box's deployment is
+    this computer, with no main agent, while the box holds exactly the project it was opened for. ``None`` when
+    no project, or more than one, declares them: never a guess."""
+    from flow_sdk.builtin.credential_resolver import declared_vars  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT  # noqa: PLC0415
+
+    wanted = set(names)
+    if not wanted:
+        return None
+    found = []
+    from flow_sdk.fs_store.operations.all_projects import get_cached_projects  # noqa: PLC0415
+
+    for project in await get_cached_projects() or []:
+        declared = await declared_vars(project)
+        if any(n in declared and declared[n].scope.scope == SCOPE_PROJECT for n in wanted):
+            found.append(project)
+    return found[0] if len(found) == 1 else None
+
+
 async def place_values(deployment_id: str, project_id: str, file: str, environment: str = "") -> dict[str, Any]:
     """Write the values the hub dropped where this machine reads them for ``deployment_id``:
     ``{placed, failed}`` names, and ``verified``: the sources here that read them, verified now."""
 
     values = _take_dropped(file)
     deployment, placement = await _on_this_machine(deployment_id, environment)
-    project = await get_project(project_id) if project_id else None
+    project = await _placed_project(project_id, deployment, values)
     declared = await _declaring(list(values), project, deployment)
     failed: dict[str, str] = {name: "not declared here" for name in values if name not in declared}
     # One write per store: an env file is rewritten, a vault re-encrypted, once — not once per value.
@@ -740,12 +824,13 @@ async def use_mine(deployment_id: str, names: Optional[list[str]] = None) -> dic
     placement = await Placement.of(deployment)
     if placement.secrets.protected:
         raise CredentialError("a protected deployment's values are entered directly, never copied in", code="protected")
-    agent = await deployment.element()
-    project = await project_of(agent) if agent is not None else None
+    agent = await deployment.main_agent()
+    element = await deployment.element()
+    project = element if getattr(element, "type", None) == "project" else (await project_of(agent) if agent else None)
     if names is None:
-        if agent is None:
-            raise CredentialError("name the values to copy: this deployment runs no agent")
-        ready = await readiness(agent, deployment)
+        if agent is None and project is None:
+            raise CredentialError("name the values to copy: this deployment runs no project")
+        ready = await readiness(agent, deployment, project=project)
         names = ready.value_names(missing_only=True)
     declared = await declared_vars(project)
     funded = sorted(n for n in names if n in declared and declared[n].spec.lm_provider)
@@ -758,3 +843,288 @@ async def use_mine(deployment_id: str, names: Optional[list[str]] = None) -> dic
     for ref, values in stores.values():
         await SecretStore.from_ref(ref).save(values, description="copied from the owner's computer")
     return {"copied": sorted(mine), "not_here": sorted(set(names) - set(mine)), "hub_funded": funded}
+
+
+# ── the project's vaults: values between people ───────────────────────────────
+#
+# A value travels from one person to another ONLY through one of the project's vaults (``secret_vaults``
+# in ``project_manifest.json``, each a group of secrets in one secret manager): the sharer PUBLISHES
+# their local value into a vault, the credential spec travels with the project carrying each variable's
+# ``secret_ref`` ``{vault, key}``, and the receiver FETCHES into their own store. Every verb answers
+# names only; a value is never shown or logged.
+
+
+def _store_refusal(e: Exception) -> Optional[CredentialError]:
+    """A store's own refusal as a fixable CredentialError, or None for anything else."""
+    from flow_sdk.builtin.credential_store import UnknownVault  # noqa: PLC0415
+    from flow_sdk.secrets import StoreAccessDenied, StoreNeedsConnection  # noqa: PLC0415
+
+    from flow_sdk.secrets.managers import UnknownSecretManager  # noqa: PLC0415
+
+    if isinstance(e, UnknownVault):
+        return CredentialError(str(e), code="unknown_vault")
+    if isinstance(e, UnknownSecretManager):
+        return CredentialError(str(e), code="unknown_secret_manager")
+    from flow_sdk.secrets.errors import StoreToolMissing  # noqa: PLC0415
+
+    if isinstance(e, StoreToolMissing):
+        return CredentialError(f"the secret manager is not installed here: {e}", code="manager_missing")
+    if isinstance(e, StoreNeedsConnection):
+        return CredentialError(f"the secret manager needs a sign-in: {e}", code="needs_connection")
+    if isinstance(e, StoreAccessDenied):
+        return CredentialError(f"no access to the vault: {e}", code="denied")
+    return None
+
+
+@contextmanager
+def store_errors():
+    """Inside it, a store's own refusal surfaces as a fixable :class:`CredentialError`; anything else as it is."""
+    try:
+        yield
+    except Exception as e:
+        refusal = _store_refusal(e)
+        if refusal is None:
+            raise
+        raise refusal from e
+
+
+async def _project_of(project_id: str) -> "Project":
+    project = await get_project(project_id)
+    if project is None:
+        raise CredentialError("project not found")
+    return project
+
+
+def _vault_specs(project: "Project") -> dict[str, Any]:
+    from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
+
+    return vaults_of(project)
+
+
+def _vault_spec(vaults: Mapping[str, Any], vault: str) -> Any:
+    """``vault`` out of the project's ``vaults`` (:func:`_vault_specs`); a CredentialError when it has none by that name."""
+    if not vaults:
+        raise CredentialError("this project has no vault — set up a secret manager to share values", code="no_vault")
+    if vault not in vaults:
+        raise CredentialError(f"this project has no vault named {vault!r}", code="unknown_vault")
+    return vaults[vault]
+
+
+def _vault_store(vaults: Mapping[str, Any], vault: str):
+    """The store ``vault`` names, from the manifest already read into ``vaults``."""
+    from flow_sdk.secrets import managers  # noqa: PLC0415  (lazy: managers load assets)
+
+    spec = _vault_spec(vaults, vault)
+    with store_errors():
+        return managers.store_for(spec)
+
+
+async def _shared_credential(name: str, project_id: str) -> tuple["Project", "Credential", list[str]]:
+    """The project, its credential ``name`` and the names of its stored vars."""
+    project = await _project_of(project_id)
+    spec = await credential_named(name, project)
+    if spec is None:
+        raise CredentialError(f"no credential named {name!r} in this project")
+    stored = list(spec.stored_var_names())
+    if not stored:
+        raise CredentialError(f"{name} holds no values to share (a sign-in or a grant lives elsewhere)")
+    return project, spec, stored
+
+
+async def _write_refs(spec: "Credential", refs: dict[str, Any]) -> None:
+    """Record ``{ENV_VAR: SecretRefSpec}`` in credential.json through the one save path."""
+    manifest = _manifest_of(spec)
+    manifest["vars"] = {
+        var: {**v.model_dump(mode="json", exclude_defaults=True), **({"secret_ref": refs[var].model_dump(mode="json")} if var in refs else {})}
+        for var, v in spec.vars.items()
+    }
+    await save_credential(manifest=manifest, typeid=str(spec.typeid), require_setup=False)
+
+
+async def publish(name: str, project_id: str, vault: str) -> dict[str, Any]:
+    """Copy this computer's values of credential ``name`` into ``vault``: a variable lacking a
+    ``secret_ref`` gets ``{vault, key: ENV_VAR}`` written into credential.json; one that has a ref is
+    published to the vault its ref names. ``{published, not_here, vault}`` — names only. A variable
+    with no value here is reported, never cleared in the vault."""
+    from flow_sdk.builtin.credential_resolver import resolve_project_secrets  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.secret_vault_spec import SecretRefSpec  # noqa: PLC0415
+
+    project, spec, stored = await _shared_credential(name, project_id)
+    vaults = _vault_specs(project)
+    _vault_spec(vaults, vault)
+    new_refs = {var: SecretRefSpec(vault=vault, key=var) for var in stored if spec.vars[var].secret_ref is None}
+    refs = {var: spec.vars[var].secret_ref or new_refs[var] for var in stored}
+    mine = await resolve_project_secrets(project, only=stored, placement=await Placement.of(None))
+    by_vault: dict[str, dict[str, Any]] = {}
+    for var, value in mine.items():
+        by_vault.setdefault(refs[var].vault, {})[refs[var].key] = value
+    with store_errors():
+        for vault_name, values in by_vault.items():
+            await _vault_store(vaults, vault_name).save(values, description=f"{spec.name} · {', '.join(sorted(values))}")
+    if new_refs:
+        await _write_refs(spec, new_refs)
+    return {"published": sorted(mine), "not_here": sorted(set(stored) - set(mine)), "vault": vault}
+
+
+async def fetch(name: str, project_id: str) -> dict[str, Any]:
+    """Fetch credential ``name``'s values from the vaults its variables' refs name into this computer's
+    store (``.env.local`` by default — the same writer as ``flow credentials set``):
+    ``{fetched, missing, denied: [vault], vaults}`` — names only. ``missing``: no ref, or the vault
+    holds no value; ``denied``: vaults this person may not read (the rest are still fetched)."""
+    project, spec, stored = await _shared_credential(name, project_id)
+    groups: dict[str, dict[str, str]] = {}
+    for var in stored:
+        ref = spec.vars[var].secret_ref
+        if ref is not None:
+            groups.setdefault(ref.vault, {})[var] = ref.key
+    if not groups:
+        raise CredentialError(f"{name} names no vault for its values — publish them first", code="no_vault")
+    vaults = _vault_specs(project)
+    values: dict[str, str] = {}
+    denied: list[str] = []
+    for vault_name, keys in groups.items():
+        try:
+            held = await _vault_store(vaults, vault_name).load(list(keys.values()))
+        except Exception as e:
+            refusal = e if isinstance(e, CredentialError) else _store_refusal(e)
+            if refusal is None:
+                raise
+            if refusal.code == "denied":
+                denied.append(vault_name)
+                continue
+            raise refusal from e
+        values.update({var: held[key].get_secret_value() for var, key in keys.items() if key in held})
+    if values:
+        await set_credential_values(str(spec.typeid), values, None)
+        await _reverify_waiting_sources(spec.name, project)
+    return {"fetched": sorted(values), "missing": sorted(set(stored) - set(values)), "denied": sorted(denied), "vaults": sorted(groups)}
+
+
+async def vault_check(project_id: str, vault: str) -> dict[str, Any]:
+    """Can this computer reach ``vault`` now (manager installed, signed in)? ``{vault, ready, reason}``."""
+    from flow_sdk.secrets import managers  # noqa: PLC0415
+
+    spec = _vault_spec(_vault_specs(await _project_of(project_id)), vault)
+    try:
+        ready = bool(await managers.run_check(spec))
+        reason = "" if ready else f"the {spec.manager} secret manager is not installed or not signed in"
+    except Exception as e:
+        ready, reason = False, str(_store_refusal(e) or e)
+    return {"vault": vault, "ready": ready, "reason": reason}
+
+
+async def vault_setup(project_id: str, vault: str) -> dict[str, Any]:
+    """Run ``vault``'s secret-manager setup wizard on this computer (install the CLI, sign in, check the vault —
+    each skipped when it holds): ``{vault, ready, reason, steps: [{id, label, state, detail}]}``."""
+    from flow_sdk.secrets.setup_wizard import run_vault_setup  # noqa: PLC0415
+
+    project = await _project_of(project_id)
+    return await run_vault_setup(project, vault, _vault_spec(_vault_specs(project), vault))
+
+
+async def grant(project_id: str, vault: str, email: str) -> dict[str, Any]:
+    """Give ``email`` read access to ``vault`` through its manager's own sharing: ``{vault, email}``."""
+    from flow_sdk.secrets import managers  # noqa: PLC0415
+
+    if not email.strip():
+        raise CredentialError("grant needs the email of the person to give access")
+    spec = _vault_spec(_vault_specs(await _project_of(project_id)), vault)
+    with store_errors():
+        await managers.run_grant(spec, email.strip())
+    return {"vault": vault, "email": email.strip()}
+
+
+def list_managers() -> list[dict[str, Any]]:
+    """Every installed secret manager, as its ``secret_manager.json``."""
+    from flow_sdk.secrets import managers  # noqa: PLC0415
+
+    return [m.model_dump(mode="json") for m in managers.list_managers()]
+
+
+async def list_vaults(project_id: str) -> dict[str, Any]:
+    """The project's vaults by name: ``{vaults: {name: {manager, config}}}`` — places, never values."""
+    return {"vaults": {n: v.model_dump(mode="json") for n, v in _vault_specs(await _project_of(project_id)).items()}}
+
+
+async def set_vault(project_id: str, name: str, vault: Optional[Mapping[str, Any]]) -> dict[str, Any]:
+    """Add/replace (``vault``) or remove (None) the project's vault ``name``; answers :func:`list_vaults`."""
+    from flow_sdk.assets.project_manifest import ManifestError, set_secret_vault  # noqa: PLC0415
+
+    if not name.strip():
+        raise CredentialError("a vault needs a name")
+    project = await _project_of(project_id)
+    try:
+        set_secret_vault(Path(project.fs_storage_mount_path), name.strip(), vault)
+    except (ManifestError, KeyError, ValueError, LookupError) as e:
+        raise CredentialError(str(e)) from e
+    await project._reindex_manifest()
+    return await list_vaults(project_id)
+
+
+# ── test: are the values GOOD, not only present ─────────────────────────────
+
+
+def _scrubbed(text: str, values: list[str]) -> str:
+    """``text`` with every value replaced — a provider's error may echo the key it refused."""
+    for value in sorted((v for v in values if v), key=len, reverse=True):
+        text = text.replace(value, "•••")
+    return text
+
+
+async def test_credential(name: str, project_id: str = "") -> dict[str, Any]:
+    """Run credential ``name``'s ``test`` with this computer's values in its environment and its own folder as
+    the working folder, record the answer on the row (``Credential.test_result``, this machine only) and
+    return ``{name, has_test, state, detail, at}`` — ``state`` ``ok`` / ``invalid`` / ``error``, or
+    ``untested`` when the credential declares no test. Values never leave: the detail is scrubbed."""
+    project = await get_project(project_id) if project_id else None
+    spec = await credential_named(name, project)
+    if spec is None:
+        raise CredentialError(f"no credential named {name!r} in this project or the user scope")
+    return await test_credential_spec(spec, project)
+
+
+def _vault_why(spec: "Credential", project: Optional["Project"]) -> str:
+    """Why the first vault this credential points into cannot be read here, ending in the setup command; "" when
+    none is known. Asks no manager (no unlock prompt): only whether its CLI is on this machine."""
+    from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
+    from flow_sdk.secrets.setup_wizard import manager_missing_why  # noqa: PLC0415
+
+    vaults = vaults_of(project)
+    return next((why for name in spec.vault_names() if name in vaults and (why := manager_missing_why(name, vaults[name]))), "")
+
+
+async def test_credential_spec(spec: "Credential", project: Optional["Project"]) -> dict[str, Any]:
+    """:func:`test_credential` for a credential already in hand — what a secured transfer or a vault fetch runs
+    right after the values land, so the sender learns they work there."""
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    from flow_sdk.builtin.credential_resolver import resolve_project_secrets  # noqa: PLC0415
+    from flow_sdk.builtin.credential_status import run_check  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.credential_status_spec import CredentialTestResultSpec  # noqa: PLC0415
+
+    test = spec.declared_test()
+    if test is None:
+        return {"name": spec.name, "has_test": False, "state": "untested", "detail": "", "at": ""}
+    stored = set(spec.stored_var_names())
+    values = await resolve_project_secrets(project, only=stored, placement=await Placement.of(None))
+    plain = {k: v.get_secret_value() for k, v in values.items()}
+    absent = stored - plain.keys()
+    missing = [v for v in spec.required_var_names() if v in absent]
+    if not missing and stored and not plain:
+        # Not one stored value here (an optional key the vault could not hand over): the provider would only
+        # answer "unauthorized" — say what is missing, and the vault fix when there is one.
+        missing = sorted(absent)
+    if missing:
+        why = _vault_why(spec, project)
+        state, detail = "error", f"no value here for {', '.join(missing)}" + (f" — {why}" if why else "")
+    else:
+        outcome, reason = await run_check(test, workdir=spec.folder or Path.home(), extra_env=plain)
+        state, detail = {
+            "ok": ("ok", ""),
+            "no_command": ("error", "the test has no command for this computer"),
+            "timeout": ("error", "the provider did not answer in time"),
+            "not_installed": ("error", reason),
+        }.get(outcome) or ("invalid", _scrubbed(reason, list(plain.values()))[:200] or "rejected")
+    result = CredentialTestResultSpec(state=state, detail=detail, at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    await spec.record_test(result)
+    return {"name": spec.name, "has_test": True, **result.model_dump(mode="json")}

@@ -7,7 +7,7 @@ A row written before that carries only the flat header, so without this pass the
 would miss it and mint a twin of every record already ingested.
 
 Pass 1 — rows. Each ``source_item`` row without an origin is lifted through
-``flow_sdk.ingest.legacy_lift`` — the same function the ingestor lifts new pages with, so a
+``flow_sdk.ingest.envelope_lift`` — the same function the ingestor lifts new pages with, so a
 migrated row and a freshly ingested one can never disagree. Rows that lift onto one origin
 are duplicates (the old key was never unique): the most recently updated survives, ``read``
 and ``starred`` are OR-merged into it, and messages pointing at a loser are repointed.
@@ -109,7 +109,7 @@ def _lift(row: _Row, sources: dict[str, SimpleNamespace]) -> tuple[str, str, str
     """Fill ``origin``, the flat triple and ``data`` on a row that lacks them. The key, or None."""
     from pydantic import ValidationError
 
-    from flow_sdk.ingest.legacy_lift import data_of, origin_of
+    from flow_sdk.ingest.envelope_lift import data_of, origin_of
     from flow_sdk.schema.data_spec.spec import spec_tag
 
     blob = row.blob

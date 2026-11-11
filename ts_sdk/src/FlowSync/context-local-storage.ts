@@ -1,4 +1,4 @@
-import { TypeId, isTypeId, isValidUUIDv4 } from '../models/TypeId';
+import { TypeId, isTypeId, isValidEntityId } from '../models/TypeId';
 import { ContextEntitiesEnum } from './context';
 
 const STORAGE_ITEM_KEY = 'flowpad-state';
@@ -79,7 +79,7 @@ export function setContextEntityToLocalStorage(entityKey: ContextEntitiesEnum, t
     const state = storedState ? JSON.parse(storedState) : {};
 
     if (typeId) {
-      if (!isValidUUIDv4(typeId.id)) {
+      if (!isValidEntityId(typeId.id)) {
         return;
       }
       state[entityKey] = typeId.toString();

@@ -12,7 +12,8 @@ This module is the bookkeeping that makes that one process look like what the re
 of the app expects — a series of turns, each with a start, an end and a listener:
 
 * a turn **begins** when a message is delivered to the parked worker, or when the CLI
-  starts one on its own (the report of a background command that finished);
+  starts one on its own (the report of a background command that finished, or a
+  scheduled job — a CronCreate job, a ScheduleWakeup — firing);
 * it **ends** when the CLI reports ``idle`` and keeps the process for its background
   work. When the process is about to exit instead, the turn is left open: the runner's
   own ``finally`` ends it, exactly as a one-turn worker always has;

@@ -8,6 +8,7 @@
  * Plus shared: rename, delete node (with its edges), last execution status.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useTriggers } from '@src/hooks/useTriggers';
 import { useAgents } from '@src/hooks/useAgents';
 import {
@@ -34,6 +35,7 @@ export function NodeInspector({ node }: { node: GraphWorkflowDocNode }) {
   const live = useStudio((s) => s.nodeStatus[node.id]);
   const { triggers } = useTriggers();
   const { agents } = useAgents();
+  const { t } = useLingui();
 
   const patch = useCallback(
     (fn: (n: GraphWorkflowDocNode) => void) => {
@@ -60,17 +62,17 @@ export function NodeInspector({ node }: { node: GraphWorkflowDocNode }) {
 
   return (
     <div className="afl-inspector">
-      <Field label="name">
+      <Field label={t`name`}>
         <input value={node.name ?? ''} onChange={(e) => patch((n) => (n.name = e.target.value))} />
       </Field>
 
       {node.node_type === 'trigger' && (
-        <Field label="trigger entity">
+        <Field label={t`trigger entity`}>
           <select value={asStr(nd.typeid)} onChange={(e) => setData('typeid', e.target.value)}>
-            <option value="">— pick a trigger —</option>
-            {triggers.map((t) => (
-              <option key={t.id} value={`trigger-${t.id}`}>
-                {t.name || t.id}
+            <option value="">{t`— pick a trigger —`}</option>
+            {triggers.map((tr) => (
+              <option key={tr.id} value={`trigger-${tr.id}`}>
+                {tr.name || tr.id}
               </option>
             ))}
           </select>
@@ -79,12 +81,9 @@ export function NodeInspector({ node }: { node: GraphWorkflowDocNode }) {
 
       {node.node_type === 'agent' && (
         <>
-          <Field label="agent (definition)">
-            <select
-              value={asStr(nd.typeid)}
-              onChange={(e) => setData('typeid', e.target.value)}
-            >
-              <option value="">— inline (ad-hoc) —</option>
+          <Field label={t`agent (definition)`}>
+            <select value={asStr(nd.typeid)} onChange={(e) => setData('typeid', e.target.value)}>
+              <option value="">{t`— inline (ad-hoc) —`}</option>
               {agents.map((a) => (
                 <option key={a.id} value={`agent-${a.id}`} title={a.description ?? undefined}>
                   {a.name || a.id}
@@ -94,37 +93,45 @@ export function NodeInspector({ node }: { node: GraphWorkflowDocNode }) {
           </Field>
           {asStr(nd.typeid) !== '' && (
             <p className="afl-note">
-              The SubAgent definition's model + system prompt lead; the fields below are
-              per-node overrides / task addendum.
+              <Trans>
+                The SubAgent definition's model + system prompt lead; the fields below are per-node overrides / task
+                addendum.
+              </Trans>
             </p>
           )}
-          <Field label="program kind">
-            <select value={asStr(nd.program_kind) || 'instruction'} onChange={(e) => setData('program_kind', e.target.value)}>
-              <option value="instruction">instruction (agent prompt)</option>
-              <option value="skill">skill (agent /skill)</option>
+          <Field label={t`program kind`}>
+            <select
+              value={asStr(nd.program_kind) || 'instruction'}
+              onChange={(e) => setData('program_kind', e.target.value)}
+            >
+              <option value="instruction">{t`instruction (agent prompt)`}</option>
+              <option value="skill">{t`skill (agent /skill)`}</option>
             </select>
           </Field>
-          <Field label={nd.program_kind === 'skill' ? 'skill name' : 'instruction ref'}>
+          <Field label={nd.program_kind === 'skill' ? t`skill name` : t`instruction ref`}>
             <input value={asStr(nd.program_ref)} onChange={(e) => setData('program_ref', e.target.value)} />
           </Field>
-          <Field label="prompt (appended to the event payload)">
+          <Field label={t`prompt (appended to the event payload)`}>
             <textarea rows={4} value={asStr(nd.prompt)} onChange={(e) => setData('prompt', e.target.value)} />
           </Field>
-          <Field label="model size">
+          <Field label={t`model size`}>
             <select value={asStr(nd.model_size) || 'sm'} onChange={(e) => setData('model_size', e.target.value)}>
               <option value="sm">sm → haiku</option>
               <option value="md">md → sonnet</option>
               <option value="lg">lg → opus</option>
             </select>
           </Field>
-          <Field label="execution">
-            <select value={asStr(nd.execution_mode) || 'serial'} onChange={(e) => setData('execution_mode', e.target.value)}>
-              <option value="serial">serial (queue)</option>
-              <option value="parallel">parallel</option>
+          <Field label={t`execution`}>
+            <select
+              value={asStr(nd.execution_mode) || 'serial'}
+              onChange={(e) => setData('execution_mode', e.target.value)}
+            >
+              <option value="serial">{t`serial (queue)`}</option>
+              <option value="parallel">{t`parallel`}</option>
             </select>
           </Field>
           {nd.execution_mode === 'parallel' && (
-            <Field label="parallel limit">
+            <Field label={t`parallel limit`}>
               <input
                 type="number"
                 min={1}
@@ -133,8 +140,12 @@ export function NodeInspector({ node }: { node: GraphWorkflowDocNode }) {
               />
             </Field>
           )}
-          <Field label="merge identical queued events">
-            <input type="checkbox" checked={!!nd.merge_identical} onChange={(e) => setData('merge_identical', e.target.checked)} />
+          <Field label={t`merge identical queued events`}>
+            <input
+              type="checkbox"
+              checked={!!nd.merge_identical}
+              onChange={(e) => setData('merge_identical', e.target.checked)}
+            />
           </Field>
         </>
       )}
@@ -145,7 +156,8 @@ export function NodeInspector({ node }: { node: GraphWorkflowDocNode }) {
           {(live?.lastStdout || live?.lastStderr || live?.lastExitCode !== undefined) && (
             <div className="afl-stdio">
               <div className="eye">
-                last run{live?.lastExitCode !== undefined ? ` · exit ${live.lastExitCode}` : ''}
+                <Trans>last run</Trans>
+                {live?.lastExitCode !== undefined ? ` · exit ${live.lastExitCode}` : ''}
                 {live?.lastDurationMs ? ` · ${fmtDuration(live.lastDurationMs)}` : ''}
               </div>
               {live?.lastStdout && <pre className="out">{live.lastStdout}</pre>}
@@ -158,7 +170,7 @@ export function NodeInspector({ node }: { node: GraphWorkflowDocNode }) {
       {live?.error && <div className="afl-status warn">✗ {live.error}</div>}
 
       <button className="afl-danger" onClick={deleteNode}>
-        Delete node
+        <Trans>Delete node</Trans>
       </button>
     </div>
   );
@@ -177,6 +189,7 @@ function FunctionPicker({
   node: GraphWorkflowDocNode;
   setData: (key: string, value: unknown) => void;
 }) {
+  const { t } = useLingui();
   const [registry, setRegistry] = useState<GraphWorkflowFunctionInfo[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -198,14 +211,14 @@ function FunctionPicker({
 
   return (
     <>
-      <Field label="function (registry)">
+      <Field label={t`function (registry)`}>
         <select
           value={isScript ? '' : ref}
           onChange={(e) => {
             if (e.target.value) setData('function', e.target.value);
           }}
         >
-          <option value="">{isScript ? '— using a script —' : '— pick a function —'}</option>
+          <option value="">{isScript ? t`— using a script —` : t`— pick a function —`}</option>
           {registry.map((f) => (
             <option key={f.name} value={f.name} title={f.meaning ?? undefined}>
               {f.name}
@@ -214,7 +227,7 @@ function FunctionPicker({
         </select>
       </Field>
       {selectedMeaning && <p className="afl-note">{selectedMeaning}</p>}
-      <Field label="or script (relative to the flow folder)">
+      <Field label={t`or script (relative to the flow folder)`}>
         <input
           value={isScript ? ref : ''}
           placeholder="scripts/my_node.py"
@@ -224,20 +237,19 @@ function FunctionPicker({
           }}
         />
       </Field>
-      <Field label="runtime">
-        <select
-          value={runtime}
-          onChange={(e) => setData('runtime', e.target.value)}
-        >
+      <Field label={t`runtime`}>
+        <select value={runtime} onChange={(e) => setData('runtime', e.target.value)}>
           <option value="inline" disabled={isScript}>
-            inline (server loop — fast, direct SDK)
+            {t`inline (server loop — fast, direct SDK)`}
           </option>
-          <option value="subprocess">subprocess (isolated, full stdio record)</option>
+          <option value="subprocess">{t`subprocess (isolated, full stdio record)`}</option>
         </select>
       </Field>
       <p className="afl-note">
-        Contract: <code>on_graph_workflow_event(event_name, data, flow_ctx)</code> — a dict return
-        auto-emits <code>done</code>; emit more via <code>flow_ctx.emit_flow_event(key, value)</code>.
+        <Trans>
+          Contract: <code>on_graph_workflow_event(event_name, data, flow_ctx)</code> — a dict return auto-emits{' '}
+          <code>done</code>; emit more via <code>flow_ctx.emit_flow_event(key, value)</code>.
+        </Trans>
       </p>
     </>
   );

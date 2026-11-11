@@ -1,16 +1,24 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
+import { useHelpRequestDiagnosis } from '@src/components/conversation/use-help-request-diagnosis';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { openWikiModal } from '@src/components/wiki-tip';
 import { useDockNavigation } from '@src/navigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { useContext, useWarnings } from '@sdk/react/hooks';
+import { useWarnings } from '@sdk/react/hooks';
 import { useSetupIncompleteWarning } from '@src/components/setup-incomplete/use-setup-incomplete-warning';
-import { useSharedProjectWarnings } from '@src/components/task-receive/use-shared-project-warnings';
-import { openProjectSetup } from '@src/components/project-setup/project-setup-store';
-import { notificationText, runAction, runCommand, useAlertStore } from '@src/notifications';
+import {
+  diagnoseAndFix,
+  notificationText,
+  runAction,
+  runCommand,
+  useAlertStore,
+  useDiagnosisLinks,
+} from '@src/notifications';
 import type { NotificationData, NotificationLevel } from '@src/notifications';
-import { DiagnoseIconButton } from '@src/notifications/diagnose/DiagnoseIconButton';
+import type { DiagnoseKind } from '@src/notifications/diagnose/diagnose-and-fix';
+import { ErrorDetailsButton } from '@src/notifications/ErrorDetailsDialog';
 import {
   AlertCircle,
   AlertOctagon,
@@ -21,12 +29,14 @@ import {
   FolderX,
   Info,
   Key,
+  Loader2,
   Settings,
   Wifi,
   WifiOff,
   X,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { create } from 'zustand';
 
 // Map icon names to Lucide components
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -83,14 +93,10 @@ const ALERT_COLOR: Record<NotificationLevel, keyof typeof colorMap> = {
 const ITEM_CLASS = 'group flex w-full items-start gap-2 rounded-md border p-3 transition-colors hover:bg-accent';
 const ICON_BTN_CLASS =
   'flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100';
-/** Same 24px box as ICON_BTN_CLASS, minus the hover-reveal: the stethoscope is
- *  an offer, so it stays visible. Sharing the box keeps it on the same icon
- *  grid as Copy and Dismiss instead of floating a few pixels off. */
-const DIAGNOSE_BTN_CLASS =
-  'flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground';
 
 /** Copy-to-clipboard affordance, shared by derived warnings and logged alerts. */
 function CopyButton({ text }: { text: string }) {
+  const { t } = useLingui();
   const [copied, setCopied] = useState(false);
 
   const copy = useCallback(async () => {
@@ -111,11 +117,123 @@ function CopyButton({ text }: { text: string }) {
         void copy();
       }}
       className={ICON_BTN_CLASS}
-      title={copied ? 'Copied!' : 'Copy warning text'}
-      aria-label={copied ? 'Copied' : 'Copy warning text'}
+      title={copied ? t`Copied!` : t`Copy warning text`}
+      aria-label={copied ? t`Copied` : t`Copy warning text`}
     >
       {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
     </button>
+  );
+}
+
+/** A dismissed warning is hidden until it says something else — another project, another count —
+ *  so the key is its text, not only its id. */
+const dismissKey = (w: UserWarning) => `${w.id}\n${w.message}\n${w.description ?? ''}`;
+
+/** Warnings dismissed this app session, as id → the text dismissed (new text replaces it, so it
+ *  stays one entry per warning). Module-level: every layout mounts its own footer, and a dismissal
+ *  must survive switching between them. */
+const useDismissedWarnings = create<{ keys: ReadonlyMap<string, string>; dismiss: (warnings: UserWarning[]) => void }>(
+  (set) => ({
+    keys: new Map(),
+    dismiss: (warnings) =>
+      set((s) => ({ keys: new Map([...s.keys, ...warnings.map((w) => [w.id, dismissKey(w)] as const)]) })),
+  }),
+);
+
+/** The diagnosis started from an entry, as one line — the same conversation, seen from the warning. It reads the
+ *  conversation's own state (``help-request-diagnosis``); while the diagnosis runs it looks again now and then,
+ *  like the request line in the conversation does. */
+function DiagnosisStatusLine({ conversationId }: { conversationId: string }) {
+  const { t } = useLingui();
+  const [state] = useHelpRequestDiagnosis(conversationId);
+
+  const d = state?.diagnosis;
+  let status: 'diagnosing' | 'replied' | 'reported' | 'fixed' | 'report' | 'diagnosed' | 'failed';
+  let text: string;
+  if (!state || state.diagnosing) {
+    status = 'diagnosing';
+    text = t`Diagnosing… you'll get a message when it's done`;
+  } else if (state.reported && state.replied) {
+    status = 'replied';
+    text = t`Help desk replied`;
+  } else if (state.reported) {
+    status = 'reported';
+    text = t`Sent to the help desk`;
+  } else if (!d) {
+    status = 'failed';
+    text = t`The diagnosis could not run — you can report it from the conversation`;
+  } else if (d.status === 'fixed') {
+    status = 'fixed';
+    text = t`Fixed: ${d.fix || d.summary}`;
+  } else if (state.reportable) {
+    status = 'report';
+    text = t`Couldn't fix it here — report it from the conversation`;
+  } else {
+    status = 'diagnosed';
+    text = t`Diagnosed: ${d.summary}`;
+  }
+  return (
+    <p
+      className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/60 px-2 py-1 text-xs text-foreground/90"
+      data-testid="warnings-popover-diagnosis-status"
+      data-status={status}
+    >
+      {status === 'diagnosing' ? (
+        <Loader2 className="mt-0.5 h-3 w-3 shrink-0 animate-spin" aria-hidden />
+      ) : status === 'failed' || status === 'report' ? (
+        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" aria-hidden />
+      ) : (
+        <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-500" aria-hidden />
+      )}
+      <span className="min-w-0">{text}</span>
+    </p>
+  );
+}
+
+const PRIMARY_BTN = 'rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90';
+const MUTED_BTN = 'rounded bg-muted px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80';
+
+/** An entry's Diagnose & fix: enabled until a diagnosis was started from it; then disabled, with the way to its
+ *  conversation beside it. Dismiss stays on every entry, always — it is the only way an entry leaves. */
+function DiagnoseButtons({
+  conversationId,
+  onDiagnose,
+  onDismiss,
+  testId,
+}: {
+  conversationId: string | undefined;
+  onDiagnose: () => void;
+  onDismiss: () => void;
+  testId: string;
+}) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onDiagnose}
+        disabled={!!conversationId}
+        title={conversationId ? t`Already diagnosed — see the conversation` : undefined}
+        className={`${PRIMARY_BTN} disabled:cursor-not-allowed disabled:opacity-50`}
+        data-testid={testId}
+      >
+        <Trans>Diagnose &amp; fix</Trans>
+      </button>
+      {conversationId && (
+        <button
+          type="button"
+          onClick={() => navigation.openDock(DockPointer.forConversation(conversationId))}
+          className={MUTED_BTN}
+          data-testid="warnings-popover-open-conversation"
+        >
+          <Trans>Open conversation</Trans>
+        </button>
+      )}
+      <button type="button" onClick={onDismiss} className={MUTED_BTN} data-testid="warnings-popover-dismiss-button">
+        <Trans>Dismiss</Trans>
+      </button>
+    </>
   );
 }
 
@@ -124,16 +242,24 @@ interface WarningItemProps {
   onClick: () => void;
   /** The warning's own button (`warning.action`), already wired to close the popover. */
   onAction: () => void;
+  /** Diagnose & fix — starts it in place; the entry then shows its status. */
+  onDiagnose: (detail: string, kind: DiagnoseKind, entryKey: string) => void;
+  onDismiss: () => void;
 }
 
 /**
  * A derived warning — it describes a condition that is true right now
- * (cloud down, no harness, sniffer on). Deliberately NOT dismissible: it goes
- * away when the condition does. Only the logged alerts below can be dismissed.
+ * (cloud down, no harness, sniffer on), and goes away when the condition does.
+ * Dismissing it hides it for this session, until it says something else.
  */
-function WarningItem({ warning, onClick, onAction }: WarningItemProps) {
+function WarningItem({ warning, onClick, onAction, onDiagnose, onDismiss }: WarningItemProps) {
+  const { t } = useLingui();
+  // Named like AlertItem's placeholder, so both rows share one translated "Dismiss …".
+  const alertTitle = warning.message;
   const Icon = iconMap[warning.icon] || AlertTriangle;
   const colors = colorMap[warning.color] || colorMap.yellow;
+  const detail = warning.description ? `${warning.message}\n${warning.description}` : warning.message;
+  const conversationId = useDiagnosisLinks((s) => s.links[warning.id]);
 
   return (
     <div className={`${ITEM_CLASS} ${colors.border}`} data-testid="warnings-popover-warning">
@@ -149,29 +275,44 @@ function WarningItem({ warning, onClick, onAction }: WarningItemProps) {
         </button>
         {/* Beside the row's own click target, not inside it: a button never nests in a button. The
             start margin is the icon's width plus the gap, so it lines up under the text. */}
-        {warning.action && (
-          <button
-            type="button"
-            onClick={onAction}
-            className="ms-10 mt-2 rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-            data-testid="warnings-popover-warning-action"
-          >
-            {warning.action.label}
-          </button>
+        <div className="ms-10 mt-2 flex flex-wrap gap-2">
+          {warning.action && (
+            <button
+              type="button"
+              onClick={onAction}
+              className={PRIMARY_BTN}
+              data-testid="warnings-popover-warning-action"
+            >
+              {warning.action.label}
+            </button>
+          )}
+          {/* Everything in this popover is a warning by construction, so a derived
+              condition (cloud down, no harness) is diagnosable just like a logged one. */}
+          <DiagnoseButtons
+            conversationId={conversationId}
+            onDiagnose={() => onDiagnose(detail, 'warning', warning.id)}
+            onDismiss={onDismiss}
+            testId="warnings-popover-warning-diagnose-fix"
+          />
+        </div>
+        {conversationId && (
+          <div className="ms-10">
+            <DiagnosisStatusLine conversationId={conversationId} />
+          </div>
         )}
       </div>
       <div className="flex shrink-0 items-start gap-0.5">
-        <CopyButton text={warning.description ? `${warning.message}\n${warning.description}` : warning.message} />
-        {/* Everything in this popover is a warning by construction, so a derived
-            condition (cloud down, no harness) is diagnosable just like a logged one. */}
-        <DiagnoseIconButton
-          subject={{ level: 'warning', title: warning.message, message: warning.description }}
-          className={DIAGNOSE_BTN_CLASS}
-        />
-        {/* A derived warning is never dismissible, but its neighbours are: hold
-            the empty dismiss slot so the stethoscope lands in the same top-right
-            column on every row, warning and error alike. */}
-        <span className="h-6 w-6 shrink-0" aria-hidden="true" />
+        <CopyButton text={detail} />
+        <button
+          type="button"
+          onClick={onDismiss}
+          className={ICON_BTN_CLASS}
+          title={t`Dismiss`}
+          aria-label={t`Dismiss ${alertTitle}`}
+          data-testid="warnings-popover-warning-dismiss"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
     </div>
   );
@@ -183,46 +324,68 @@ function WarningItem({ warning, onClick, onAction }: WarningItemProps) {
  * happened, so unlike a derived warning it IS dismissible; its CTAs are carried
  * over so the user can still act on it from here.
  */
-function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: () => void }) {
+function AlertItem({
+  alert,
+  onDiagnose,
+  onDismiss,
+}: {
+  alert: NotificationData;
+  onDiagnose: WarningItemProps['onDiagnose'];
+  onDismiss: () => void;
+}) {
+  const { t } = useLingui();
+  const alertTitle = alert.title;
   const colors = colorMap[ALERT_COLOR[alert.level]] || colorMap.yellow;
   const Icon = alert.level === 'error' ? AlertCircle : AlertTriangle;
+  const text = alert.message;
+  const conversationId = useDiagnosisLinks((s) => s.links[alert.id]);
 
   return (
     <div className={`${ITEM_CLASS} ${colors.border}`} data-testid="warnings-popover-alert">
-      <div className={`rounded-md p-1.5 ${colors.bg}`}>
+      <div className={`relative rounded-md p-1.5 ${colors.bg}`}>
         <Icon className={`h-4 w-4 ${colors.text}`} />
+        {(alert.count ?? 1) > 1 && (
+          <span
+            className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-red-600 px-1 text-center text-[10px] font-semibold leading-4 text-white"
+            data-testid="warnings-popover-alert-count"
+          >
+            {alert.count}
+          </span>
+        )}
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">{alert.title}</p>
-        {alert.message && <p className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{alert.message}</p>}
-        {alert.actions && alert.actions.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {alert.actions.map((action, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => runAction(action, alert.id)}
-                className={`rounded px-2 py-1 text-xs font-medium ${
-                  i === 0
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                }`}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {text && <p className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{text}</p>}
+        {conversationId && <DiagnosisStatusLine conversationId={conversationId} />}
+        <div className="mt-2 flex flex-wrap gap-2">
+          {(alert.actions ?? []).map((action, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => runAction(action, alert.id)}
+              className={i === 0 ? PRIMARY_BTN : MUTED_BTN}
+            >
+              {action.label}
+            </button>
+          ))}
+          <ErrorDetailsButton data={alert} />
+          {/* The log holds only warnings and errors, both diagnosable. */}
+          <DiagnoseButtons
+            conversationId={conversationId}
+            onDiagnose={() => onDiagnose(notificationText(alert), alert.level as DiagnoseKind, alert.id)}
+            onDismiss={onDismiss}
+            testId="warnings-popover-diagnose-fix"
+          />
+        </div>
       </div>
       <div className="flex shrink-0 items-start gap-0.5">
         <CopyButton text={notificationText(alert)} />
-        <DiagnoseIconButton subject={alert} className={DIAGNOSE_BTN_CLASS} />
         <button
           type="button"
           onClick={onDismiss}
           className={ICON_BTN_CLASS}
-          title="Dismiss"
-          aria-label={`Dismiss ${alert.title}`}
+          title={t`Dismiss`}
+          aria-label={t`Dismiss ${alertTitle}`}
           data-testid="warnings-popover-dismiss"
         >
           <X className="h-3.5 w-3.5" />
@@ -235,17 +398,28 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
 export function WarningsPopover() {
   const { warnings: derivedWarnings } = useWarnings();
   const setupWarning = useSetupIncompleteWarning();
-  const sharedProjectWarnings = useSharedProjectWarnings();
+  const dismissedKeys = useDismissedWarnings((s) => s.keys);
+  const dismissWarnings = useDismissedWarnings((s) => s.dismiss);
   const warnings = useMemo(
-    () => [...derivedWarnings, ...(setupWarning ? [setupWarning] : []), ...sharedProjectWarnings],
-    [derivedWarnings, setupWarning, sharedProjectWarnings],
+    () =>
+      [...derivedWarnings, ...(setupWarning ? [setupWarning] : [])].filter(
+        (w) => dismissedKeys.get(w.id) !== dismissKey(w),
+      ),
+    [derivedWarnings, setupWarning, dismissedKeys],
   );
   const alerts = useAlertStore((s) => s.alerts);
   const dismissAlert = useAlertStore((s) => s.dismiss);
   const dismissAllAlerts = useAlertStore((s) => s.dismissAll);
+  const dismissAll = useCallback(() => {
+    dismissWarnings(warnings);
+    dismissAllAlerts();
+  }, [dismissWarnings, warnings, dismissAllAlerts]);
   const { navigation } = useDockNavigation();
-  const { project } = useContext();
   const [open, setOpen] = useState(false);
+  // Starts in place: no navigation, the popover stays open and the entry shows the diagnosis status.
+  const diagnose = useCallback((detail: string, kind: DiagnoseKind, entryKey: string) => {
+    void diagnoseAndFix(detail, kind, entryKey);
+  }, []);
 
   const handleOpenChange = useCallback((isOpen: boolean) => {
     setOpen(isOpen);
@@ -261,8 +435,6 @@ export function WarningsPopover() {
         // Both harness warnings open the login modal — it shows install links
         // for missing CLIs and the device-login flow for logged-out ones.
         openHarnessLoginModal();
-      } else if (warning.id === WARNING_IDS.PROJECT_SETUP_REQUIRED && project) {
-        openProjectSetup({ projectId: String(project.id), projectName: project.name ?? '' });
       } else if (warning.onClick) {
         warning.onClick();
       } else if (warning.wikiPage) {
@@ -278,7 +450,7 @@ export function WarningsPopover() {
       }
       setOpen(false);
     },
-    [navigation, project],
+    [navigation],
   );
 
   const total = warnings.length + alerts.length;
@@ -316,18 +488,14 @@ export function WarningsPopover() {
           <p className="text-xs font-medium text-muted-foreground">
             {total} {total === 1 ? 'Warning' : 'Warnings'}
           </p>
-          {/* Only the logged alerts are dismissible, so the bulk action is
-              offered only when there is at least one. */}
-          {alerts.length > 0 && (
-            <button
-              type="button"
-              onClick={dismissAllAlerts}
-              className="rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              data-testid="warnings-popover-dismiss-all"
-            >
-              Dismiss all
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={dismissAll}
+            className="rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            data-testid="warnings-popover-dismiss-all"
+          >
+            <Trans>Dismiss all</Trans>
+          </button>
         </div>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
           {warnings.map((warning) => (
@@ -339,10 +507,12 @@ export function WarningsPopover() {
                 warning.action?.onClick();
                 setOpen(false);
               }}
+              onDiagnose={diagnose}
+              onDismiss={() => dismissWarnings([warning])}
             />
           ))}
           {alerts.map((alert) => (
-            <AlertItem key={alert.id} alert={alert} onDismiss={() => dismissAlert(alert.id)} />
+            <AlertItem key={alert.id} alert={alert} onDiagnose={diagnose} onDismiss={() => dismissAlert(alert.id)} />
           ))}
         </div>
       </PopoverContent>

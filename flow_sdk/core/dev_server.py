@@ -79,7 +79,9 @@ def _listed(port: int) -> Optional[bool]:
 
     try:
         table = psutil.net_connections(kind="tcp")
-    except (psutil.Error, OSError):
+    except (psutil.Error, OSError, RuntimeError):
+        # RuntimeError: macOS's proc_pidinfo fails for a process that exits mid-scan (a restart) — the
+        # table is unreadable this once, and the connect below answers instead.
         return None
     return any(
         one.status == psutil.CONN_LISTEN and one.laddr and one.laddr.port == port and one.laddr.ip in _LOCAL_BINDS
@@ -116,6 +118,37 @@ def wait_for_port(port: int, timeout: float, *, exited: Optional[Callable[[], bo
     return port_open(port)
 
 
+#: How a plain web-app folder (an ``index.html``, no package manifest) is run in dev: the folder live with
+#: Flowpad's ``/sdk`` and ``/api`` beside it, like the served app (``server/dev_front.py``).
+STATIC_DEV_CMD = '"{python}" -m flow_sdk.server.dev_front --port {{port}}'
+
+#: The bare file server that command replaces. A dev route stored before it existed still names this one,
+#: and on it a page's ``/sdk/flowpad-sdk.js`` is a 404 — so it is upgraded wherever a command is started or
+#: matched (:func:`dev_command`).
+_BARE_STATIC = re.compile(r"""^\s*(?:"[^"]*"|'[^']*'|\S+)\s+-m\s+http\.server\s+(\{port\}|\d+)(?:\s+--bind\s+\S+)?\s*$""")
+
+
+def static_dev_cmd() -> str:
+    """:data:`STATIC_DEV_CMD` for this interpreter — the one that has ``flow_sdk``."""
+    import sys  # noqa: PLC0415
+
+    return STATIC_DEV_CMD.format(python=sys.executable)
+
+
+def is_static_dev(command: str) -> bool:
+    """*command* runs the static dev server — as written, or once :func:`dev_command` upgrades it."""
+    return "-m flow_sdk.server.dev_front" in dev_command(command or "")
+
+
+def dev_command(command: str) -> str:
+    """*command* as it is run: a bare ``python -m http.server <port>`` becomes the static dev server on the
+    same port; anything else is the author's own and runs unchanged."""
+    found = _BARE_STATIC.match(command or "")
+    if not found:
+        return command
+    return static_dev_cmd().replace("{port}", found.group(1))
+
+
 def _slug(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]+", "-", name).strip("-") or "webapp"
 
@@ -139,7 +172,7 @@ def start_process(
     log_file = logs / f"{_slug(name)}-{port}.log"
     log = log_file.open("ab")
     proc = subprocess.Popen(  # noqa: S602 -- the command is the app author's own start command
-        command,
+        dev_command(command),
         cwd=str(cwd),
         shell=True,
         stdin=subprocess.DEVNULL,
@@ -156,6 +189,27 @@ def start_detached(command: str, *, cwd: Path, port: int, name: str) -> tuple[in
     """``start_process`` for a caller that only names the pid."""
     proc, log_file = start_process(command, cwd=cwd, port=port, name=name)
     return proc.pid, log_file
+
+
+#: The kernel's running counters. Its ``oom_kill`` line counts the processes it killed for lack of memory
+#: since boot (Linux 4.13+); a machine with no such file (macOS, Windows) keeps no count.
+VMSTAT = Path("/proc/vmstat")
+
+
+def oom_kills() -> Optional[int]:
+    """How many processes the kernel has killed for lack of memory since boot, or None where it does not say.
+
+    Read before and after a start: a dev server the kernel killed mid-compile looks, from outside, exactly
+    like one that never answers — the counter moving is how the two are told apart."""
+    try:
+        text = VMSTAT.read_text()
+    except OSError:
+        return None
+    for line in text.splitlines():
+        name, _, value = line.partition(" ")
+        if name == "oom_kill":
+            return int(value) if value.strip().isdigit() else None
+    return None
 
 
 def log_tail(log_file: str, lines: int = 8) -> str:

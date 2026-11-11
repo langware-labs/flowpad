@@ -59,6 +59,7 @@ MARKERS: dict[L, str] = {
     L.AGENTS: "<<agents-block>>",  # resolved per row: persona header or catalogue header
     L.AUTO_OPEN: "# Opened for you at session start",
     L.LANGUAGE: "# Language\nAlways respond in Hebrew.",
+    L.CREDENTIALS: "Credentials:\n",
 }
 PERSONA_HEADER = "# You are the '{name}' agent"
 CATALOGUE_HEADER = "# Embedded agent specs"
@@ -158,9 +159,9 @@ async def _sdk_typed_run(e: Env) -> AgenticProcess:
 
 
 async def _cli_process_start(e: Env) -> AgenticProcess:
-    # ``flow process start`` (process_cmd.py) — mirrored: the command builds this inline.
+    # ``flow process start`` — mirrored from headless_turn.py, which builds this inline.
     return await AgenticProcess(worker_type=e.worker_type, workdir=e.workdir(), cli_config={"permission_mode": "bypassPermissions"},
-                                pty_mode=False, visible=False, load_flowpad_assistant=False).save()
+                                pty_mode=False, visible=False, load_flowpad_assistant=True).save()
 
 
 async def _agent_deployment(e: Env, **agent_fields) -> AgenticProcess:
@@ -198,13 +199,23 @@ async def _graph_workflow_agent(e: Env) -> AgenticProcess:
 
 
 async def _trigger(e: Env) -> AgenticProcess:
-    # Legacy schedule trigger (trigger.py) — mirrored.
+    # Legacy schedule trigger (automations/compat.py run_instruction) — mirrored.
     return await AgenticProcess(worker_type=e.worker_type, workdir=e.workdir(), visible=False,
                                 instruction_content="do it", name="Trigger").save()
 
 
 async def _project_language(e: Env) -> AgenticProcess:
     project = await e.project(locale="he")
+    return await AgenticProcess(worker_type=e.worker_type, workdir=project.fs_storage_mount_path,
+                                project_id=project.id, pty_mode=False).save()
+
+
+async def _project_credentials(e: Env) -> AgenticProcess:
+    from flow_sdk.builtin.credential_service import declare_credential  # noqa: PLC0415
+
+    project = await e.project()
+    await declare_credential({"name": "xhostd", "setup": "manual", "vars": {"XHOSTD_TOKEN": {}}},
+                             project_id=str(project.id), require_setup=False)
     return await AgenticProcess(worker_type=e.worker_type, workdir=project.fs_storage_mount_path,
                                 project_id=project.id, pty_mode=False).save()
 
@@ -280,7 +291,7 @@ ROWS: tuple[Row, ...] = (
     # A user's own ``AgenticProcess(...)`` / ``.run()`` — the SDK surface, no flow_sdk site.
     Row("sdk_process", _sdk_process, (L.COMMON, L.INSTRUCTIONS)),
     Row("sdk_typed_run", _sdk_typed_run, (L.COMMON, L.INSTRUCTIONS, L.IO)),
-    Row("cli_process_start", _cli_process_start, (L.COMMON,), sites=("flow_sdk/cli/commands/process_cmd.py",)),
+    Row("cli_process_start", _cli_process_start, (L.COMMON,), sites=("flow_sdk/core/headless_turn.py",)),
     Row("agent_deployment", _agent_deployment, (L.COMMON, L.INSTRUCTIONS), sites=(
         "flow_sdk/builtin/deployment.py", "flow_sdk/builtin/agent_run.py", "flow_sdk/builtin/agent.py",
         "flow_sdk/builtin/agent_serve.py",
@@ -295,8 +306,9 @@ ROWS: tuple[Row, ...] = (
     Row("live_session", _live_session, (L.COMMON,), sites=("flow_sdk/app/actions/execute_prompt.py",)),
     Row("graph_workflow_agent", _graph_workflow_agent, (L.COMMON,),
         sites=("flow_sdk/graph_workflow_manager/manager.py",)),
-    Row("trigger", _trigger, (L.COMMON,), sites=("flow_sdk/builtin/trigger.py",)),
+    Row("trigger", _trigger, (L.COMMON,), sites=("flow_sdk/automations/compat.py",)),
     Row("project_language", _project_language, (L.COMMON, L.LANGUAGE)),
+    Row("project_credentials", _project_credentials, (L.COMMON, L.CREDENTIALS)),
     Row("project_always_use_skills", _project_always_use_skills, (L.COMMON, L.ALWAYS_USE_SKILLS)),
     Row("ts_sdk_script", _ts_sdk_script, (L.COMMON,), sites=("flow_sdk/builtin/faas/scan_actions.py",)),
     Row("app_vibe", _app_vibe, (L.COMMON, L.COMMON_UI, L.AGENTS), persona="vibe"),

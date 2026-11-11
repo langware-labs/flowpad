@@ -246,6 +246,9 @@ export function sessionOpenViewMode(session: { last_mode?: string | null } | nul
   return rememberedViewMode(session) ?? lastSelectedViewMode();
 }
 
+// A launch that names no transport starts on the one its new session opens in.
+AgenticProcess.defaultPtyMode = () => viewModePtyMode(sessionOpenViewMode(null));
+
 /**
  * THE mode switch: persist `val` as the last selected mode and record it on the
  * session `dock` shows. Every path that changes mode on purpose — the in-session

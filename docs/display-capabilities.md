@@ -32,10 +32,42 @@ in the same viewer components:
    `agentic_process.py:2084-2146`; frontend routing
    `vibe-workspace.tsx:369-524`.
 
-Viewer **dispatch is purely frontend**. The backend `TypeInfo` registry
+Entity and file viewer **dispatch is frontend**: the backend `TypeInfo` registry
 carries icon (`TypeInfo.icon`, consumed by `iconForType`), `browseable_by`
 view-mode, and filesystem-shape hints (`main_layout`/`main_file`/`main_ext`)
-— but **no viewer/editor hint**.
+— but no viewer hint. Two exceptions are ranked by the backend: a dataset's
+editor (`GET /api/v1/editors/<typeid>`, [datasets](data-management/datasets.md#editors))
+and a value viewer (below).
+
+### Viewers for a kind
+
+A **value viewer** shows one value (`single`) or a list (`collection`) of a kind. It is a webapp
+asset with `kind: application.web.viewer` whose `views` list `{kind, shows: ["single"|"collection", …]}`
+(`shows` defaults to `["single"]`; kind `*` = any kind). Its ES module exports
+`viewers: {[kind]: {single?, collection?}}` and optionally `contract` (the shipped generic one is the
+`data-viewer` asset).
+
+**Ranking — backend.** `GET /api/v1/viewers/<kind>?shape=single|collection&within=<typeid>`
+(`flow_sdk/server/routes/kinds.py` → `viewers_for` in `flow_sdk/builtin/faas/editors.py`). A viewer
+qualifies only when a `views` entry for that shape names the kind, an ontology ancestor of it, or
+`*`; the most specific (longest) matching declared kind is the one it answers under. Tier 0: it is
+nested in the `within` asset (still only if it qualifies); tier 1: a declared kind covers it; tier 2:
+only `*`. Sorted by tier, then name. Skipped: a viewer whose folder is gone or that no static proxy
+route serves. (Editors differ: nesting alone makes an editor tier 0, and `edits` matches the subject's
+declared kind, then its type.)
+
+**Loading — frontend.** `createViewerContext` (`ts_sdk/src/viewers/registry.ts`) walks the choices in
+order, imports each module, and skips one whose `contract` is set and is not `VIEWER_CONTRACT`
+(warning in the console); the first with a viewer for the shape draws. None → the generic viewer.
+A failed lookup or import, or a viewer that throws on mount, falls back to the generic viewer with a
+visible warning. A viewer draws a nested field of another kind with `ctx.render` / `ctx.renderCollection`.
+
+**Events** (`on(event, detail)`, `ts_sdk/src/viewers/contract.ts`): single — `slice`, `cause` (strings),
+`verdict`; collection — `select` (the item's index into `items`), `cause`.
+
+**Values by reference.** A value that is `<kind>.id.<uuid>` is read from the `within` asset
+(`GET /api/v1/values/<ref>?within=<typeid>`) and drawn as the value it names; one nothing keeps shows
+`not found: <ref>`. A `.value.json` file opens in `ValueViewer`, which uses the same registry (§2).
 
 ### Terminal links
 
@@ -73,8 +105,9 @@ same way on every surface.
 | Extension | AssetEditor | Component |
 |---|---|---|
 | `.md` / `.markdown` (+ mdx/md.out via `isMarkdownDocumentPath`) | MARKDOWN | `PlainMarkdownAssetEditor` |
+| `.value.json`, `value/<name>/value.json` (`VALUE_PATH_RE`, checked after `.mcp.html`) | VALUE | `ValueViewer` (the kind's value viewer, generic else) |
 | `.mcp.html` / `.mcp.htm` (checked before .html) | MCP_APP | `McpAppPreview` (MCP sandbox; agent bridge when the vibe display threads the process, bridge-less elsewhere) |
-| `.html` / `.htm` | HTML | `HtmlPreview` (iframe on the file's own `fs/serve` url, `allow-same-origin`) |
+| `.html` / `.htm` | HTML | `HtmlPreview` (a parked `PersistentIframe` per page per session on the file's own `fs/serve` url, `allow-same-origin`) |
 | png jpg jpeg gif webp svg avif bmp ico | IMAGE | `MediaViewer` (`<img>` via fs `download` URL) |
 | mp4 webm mov | VIDEO | `MediaViewer` (`<video>`) |
 | mp3 wav m4a ogg | AUDIO | `MediaViewer` (`<audio>`) |
@@ -163,7 +196,7 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
 
 | Tier | Surface | Origin model | Powers |
 |---|---|---|---|
-| 1 (was: most locked) | `HtmlPreview` — shown `.html` | backend-origin `fs/serve/<path>` url, `allow-same-origin` — see below | same as tier 3 in practice; its own relative pages/assets resolve because the url mirrors the path |
+| 1 (was: most locked) | `HtmlPreview` — shown `.html` | backend-origin `fs/serve/<path>?process=<id>` url in a parked `PersistentIframe` (one per page per session; an edit reloads it in place), its own short sandbox `allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads` and no `allow=` features | same as tier 3 minus the browser features; its own relative pages/assets resolve because the url mirrors the path; returning to a session shows the page as left, with no reload |
 | 2 | MCP sandbox — `McpAppPreview` (vibe), `ShowView` (`/dock/show`, skill `ui/<component>.html`), `AppHost` (`/dock/apps/<uname>`) | backend-origin `sandbox_proxy.html`, per-request CSP (`_sandbox_csp`, default `connect-src 'none'`) | JSON-RPC bridge; only the vibe `.mcp.html` path routes `ui/message` back to the agent; guest tool calls stubbed everywhere |
 | 3 | `PersistentIframe` — an app's route on its placement's audience proxy (a dev server's `direct-url`, or a `static` route's `service/<mount>/` path) | real origin, `allow-same-origin allow-scripts allow-forms allow-popups …` + broad `allow=` list | full browser powers on its own origin |
 | 4 (full) | Bespoke asset editors / native views | app origin, no iframe | full app access |

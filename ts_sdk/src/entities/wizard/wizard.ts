@@ -52,6 +52,8 @@ export interface WizardRunState {
   result?: WizardResult | null;
   /** A person approved this non-shipped wizard to run shell here. */
   approved?: boolean;
+  /** The last run only checked (`check_only`): nothing was asked or installed yet. */
+  checked?: boolean;
 }
 
 export interface IWizard extends IEntity {
@@ -225,6 +227,13 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
   async open(): Promise<{ opened: boolean }> {
     return await dataManager.callAction<void, { opened: boolean }>(
       new ActionInfo('open', Wizard.type, this.id, 'POST'),
+    );
+  }
+
+  /** The person closed this wizard's window, finished or not. Closing the first-run wizard lets project setup go ahead. */
+  async closed(): Promise<{ closed: boolean }> {
+    return await dataManager.callAction<void, { closed: boolean }>(
+      new ActionInfo('closed', Wizard.type, this.id, 'POST'),
     );
   }
 

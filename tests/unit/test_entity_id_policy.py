@@ -27,11 +27,9 @@ SKIP = ("server/static/", "rust/tests/")
 
 #: file → number of ``uuid5(`` calls it may carry. ``identifier.py`` is the minter itself;
 #: ``machine_id.py`` derives the two machine-scoped singleton ids; ``fs_record.py`` is the
-#: record-side fallback the minter documents; the invitation preview in
-#: ``flow_message_action.py`` is a synthetic row id and is flagged for removal.
+#: record-side fallback the minter documents.
 ALLOWLIST: dict[str, int] = {
     "api/api_types/identifier.py": 1,
-    "app/actions/flow_message_action.py": 1,
     "fs_store/fs_record.py": 1,
     "utils/machine_id.py": 2,
 }

@@ -30,12 +30,12 @@ describe('channel composer', () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => cleanup());
 
-  it('a channel that takes no files keeps the paperclip off; one that does turns it on', () => {
+  it('the plus menu keeps file attachment gated by the channel trait', () => {
     const { rerender } = render(<MessageComposer conversationId={CONV} channel="slack" />);
-    expect((screen.getByTestId('attach-file-button') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('composer-more-actions')).toBeTruthy();
+    expect((document.querySelector('input[type="file"]') as HTMLInputElement).disabled).toBe(true);
     rerender(<MessageComposer conversationId={CONV} channel="whatsapp" channelAcceptsFiles />);
-    expect((screen.getByTestId('attach-file-button') as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByTestId('attach-asset-button') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.querySelector('input[type="file"]') as HTMLInputElement).disabled).toBe(false);
   });
 
   it('a reply banner names the quoted message, and the send carries its id and the files', async () => {

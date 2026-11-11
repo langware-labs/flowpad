@@ -1,12 +1,21 @@
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { EntityCard } from '@src/components/entity-card/EntityCard';
+import { Check, ChevronDown, FolderSearch, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from '@src/components/ui/context-menu';
 import { openBrowseable } from './open';
 import { useLocaleInfo } from '@src/contexts/locale-context';
-import type { Browseable, BrowseableDragData, BrowseableTreeProps, ToolbarAction } from './types';
+import type { Browseable, BrowseableDragData, BrowseableTreeProps, RowKeyAction, ToolbarAction } from './types';
 import { useBrowseableTree } from './useBrowseableTree';
 import {
   collectDroppedEntries,
@@ -19,6 +28,37 @@ import { subscribeRefresh } from './refresh-store';
 import { TreeSelectionContext, type TreeSelectionApi } from './useTreeSelection';
 import { useOpenTabHashes } from '@src/tabs/use-tab-manager';
 import { RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
+
+/** The row that last had keyboard focus in this tree. A refresh can
+ *  re-create that row (a list re-loads, a section appears above it), which
+ *  drops focus to the page; the re-created row takes it back so F2 / Delete /
+ *  ⌘C still reach it. Only on re-creation — a row that merely re-renders never
+ *  takes focus from wherever the user moved it. */
+const KeyRowContext = React.createContext<{ current: { id: string; at: number } | null }>({ current: null });
+/** Only a re-creation soon after the row was focused takes focus back; later,
+ *  a blurred page must not hand Delete to a row the user has moved away from. */
+const KEY_ROW_REFOCUS_MS = 2000;
+
+/** Does this row show the item the URL has open? */
+function rowMatchesActive(
+  node: Browseable,
+  activePointer: DockPointer | null,
+  activeResourcePointer: DockPointer | null | undefined,
+  activeKey: string | null | undefined,
+): boolean {
+  return !!(
+    // Stable-id match: a typeid URL (activeKey) selects this row even though its
+    // `pointer` is the vfs form.
+    (
+      (node.selectionKey && activeKey && node.selectionKey === activeKey) ||
+      // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
+      (node.pointer &&
+        activePointer &&
+        ((node.pointer.viewType === activePointer.viewType && node.pointer.pointer === activePointer.pointer) ||
+          node.pointer.resourceVfsPath?.equals((activeResourcePointer ?? activePointer).resourceVfsPath)))
+    )
+  );
+}
 
 /** Walk a root's currently-visible (expanded) subtree in render order,
  *  collecting the selectable rows. Powers Shift-range + Cmd/Ctrl+A. */
@@ -74,6 +114,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   // Set of open-tab identities → rows backed by an open tab stay bright, the rest
   // dim (see BrowseableRow). Subscribed once here, passed down through the tree.
   const openTabHashes = useOpenTabHashes();
+  const keyRowRef = useRef<{ id: string; at: number } | null>(null);
   const treeElementRef = useRef<HTMLDivElement | null>(null);
   const lastResolvedRef = useRef<string | null>(null);
   const [dragData, setDragData] = useState<BrowseableDragData | null>(null);
@@ -99,6 +140,47 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roots, tree.state]);
+
+  // "Show in <root>" moves the highlight to that root until the open item changes.
+  const [revealRootId, setRevealRootId] = useState<string | null>(null);
+  useEffect(() => setRevealRootId(null), [activePointer, activeResourcePointer, activeKey]);
+
+  // The root that highlights the active item: the revealed one, else the first
+  // (in display order) whose loaded rows hold it.
+  const activeRootId = useMemo(() => {
+    const has = (node: Browseable): boolean =>
+      rowMatchesActive(node, activePointer, activeResourcePointer, activeKey) ||
+      tree.getChildren(node.id).some(has);
+    const reveal = roots.find((r) => r.id === revealRootId);
+    return (reveal && has(reveal) ? reveal : roots.find((r) => r !== reveal && has(r)))?.id ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roots, tree.state.loadStates, activePointer, activeResourcePointer, activeKey, revealRootId]);
+
+  const { t } = useLingui();
+  // "Show in <root>": a later root that also holds the active item. Expands
+  // it there and moves the highlight. Offered on the highlighted row only.
+  const revealAction = useMemo<ToolbarAction | null>(() => {
+    const p = activeResourcePointer ?? activePointer;
+    const from = roots.findIndex((r) => r.id === activeRootId);
+    const target = p && from >= 0 ? roots.slice(from + 1).find((r) => r.ownsPointer(p)) : undefined;
+    if (!target) return null;
+    return {
+      id: 'reveal',
+      icon: <FolderSearch className="h-3 w-3" />,
+      label: t`Show in ${target.label}`,
+      showBusyIndicator: false,
+      run: async () => {
+        await tree.expandParentsForPointer(p, target.id);
+        setRevealRootId(target.id);
+        requestAnimationFrame(() =>
+          treeElementRef.current
+            ?.querySelector('[role="treeitem"][aria-selected="true"]')
+            ?.scrollIntoView({ block: 'center' }),
+        );
+      },
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roots, activeRootId, activePointer, activeResourcePointer, tree.expandParentsForPointer, t]);
 
   // Clear selection when the set of roots changes identity (scope/filter change
   // — root ids carry the filter signature — or the type list changes). Mirrors
@@ -199,6 +281,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
         </div>
       )}
       <div className="flex-1 space-y-0.5 overflow-auto p-1">
+        <KeyRowContext.Provider value={keyRowRef}>
         {levelFooter?.('', mirrored)}
         {roots.map((root) => (
           <BrowseableRow
@@ -215,6 +298,8 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             activePointer={activePointer}
             activeResourcePointer={activeResourcePointer}
             activeKey={activeKey}
+            activeRootId={activeRootId}
+            revealAction={revealAction}
             openTabHashes={openTabHashes}
             onNavigate={handleNavigate}
             dragData={dragData}
@@ -222,6 +307,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             onDragEnd={() => setDragData(null)}
           />
         ))}
+        </KeyRowContext.Provider>
       </div>
     </div>
   );
@@ -255,6 +341,10 @@ interface RowProps {
   activePointer: DockPointer | null;
   activeResourcePointer?: DockPointer | null;
   activeKey?: string | null;
+  /** Root that owns the highlight when the active item appears under several. */
+  activeRootId: string | null;
+  /** "Show in <later root>" — rendered on the highlighted row only. */
+  revealAction: ToolbarAction | null;
   /** Open-tab identities (`pointer.tabHash`) → un-dimmed rows. */
   openTabHashes: Set<string>;
   onNavigate: (p: DockPointer) => void;
@@ -280,6 +370,8 @@ function BrowseableRow({
   activePointer,
   activeResourcePointer,
   activeKey,
+  activeRootId,
+  revealAction,
   openTabHashes,
   onNavigate,
   dragData,
@@ -299,6 +391,28 @@ function BrowseableRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const canRename = !!node.onRename && !node.content;
+  const keyRow = useContext(KeyRowContext);
+  const takesKeys = !!(node.keyActions || canRename);
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const k = keyRow.current;
+    if (
+      takesKeys &&
+      k?.id === node.id &&
+      Date.now() - k.at < KEY_ROW_REFOCUS_MS &&
+      document.activeElement === document.body
+    ) {
+      rowRef.current?.focus({ preventScroll: true });
+    }
+    // Mount only: this is the re-created row taking back its own focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startRename = useCallback(() => {
+    if (!canRename) return;
+    setDraft(node.label);
+    setEditing(true);
+  }, [canRename, node.label]);
 
   // Restored expansion (persistKey / defaultExpandedIds) marks nodes expanded
   // without the children fetch that interactive expand() runs — load on first
@@ -310,18 +424,11 @@ function BrowseableRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded, loadState.status, node.id]);
 
-  const isSelected = !!(
-    // Stable-id match: a typeid URL (activeKey) selects this row even though its
-    // `pointer` is the vfs form.
-    (
-      (node.selectionKey && activeKey && node.selectionKey === activeKey) ||
-      // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
-      (node.pointer &&
-        activePointer &&
-        ((node.pointer.viewType === activePointer.viewType && node.pointer.pointer === activePointer.pointer) ||
-          node.pointer.resourceVfsPath?.equals((activeResourcePointer ?? activePointer).resourceVfsPath)))
-    )
-  );
+  // One highlight per tree: when the open item shows up under several roots
+  // (Documents and Files), only the first root that has it lights up.
+  const isSelected =
+    activeRootId === rootId &&
+    rowMatchesActive(node, activePointer, activeResourcePointer, activeKey);
 
   // Dim openable rows that aren't currently open as a tab (and aren't the active
   // row, which is open by definition). Hover restores full brightness. Rows
@@ -372,14 +479,56 @@ function BrowseableRow({
   // click both shows the content (right pane) AND expands (left pane).
   const handleDoubleClick = useCallback(() => {
     if (canRename && isSelected) {
-      setDraft(node.label);
-      setEditing(true);
+      startRename();
       return;
     }
     if (hasChildrenHint) {
       void tree.toggleExpand(node);
     }
-  }, [canRename, isSelected, node, hasChildrenHint, tree]);
+  }, [canRename, isSelected, startRename, node, hasChildrenHint, tree]);
+
+  /** The rows an action applies to: the whole multi-selection when this row is
+   *  part of one, else just this row. */
+  const rowsForAction = useCallback(
+    (): Browseable[] => (multiSelected && selection && selection.count > 1 ? selection.selectedNodes : [node]),
+    [multiSelected, selection, node],
+  );
+
+  const handleRowKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (editing || e.target !== e.currentTarget) return;
+      const mod = e.metaKey || e.ctrlKey;
+      let action: RowKeyAction | null = null;
+      if (e.key === 'F2') {
+        if (!canRename) return;
+        e.preventDefault();
+        startRename();
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (!openBrowseable(node, onNavigate) && hasChildrenHint) void tree.toggleExpand(node);
+        return;
+      }
+      if (e.key === 'Delete' || (e.key === 'Backspace' && mod)) action = 'delete';
+      else if (mod && !e.shiftKey && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'c') action = 'copy';
+        else if (k === 'x') action = 'cut';
+        else if (k === 'v') action = 'paste';
+        else if (k === 'd') action = 'duplicate';
+      }
+      const run = action ? node.keyActions?.[action] : undefined;
+      if (!run) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // Deleted rows can't stay selected (the selection bar would count ghosts).
+      void Promise.resolve(run(rowsForAction())).then(() => {
+        if (action === 'delete') selection?.clear();
+      });
+    },
+    [editing, canRename, startRename, node, onNavigate, hasChildrenHint, tree, rowsForAction, selection],
+  );
 
   const commitRename = useCallback(async () => {
     setEditing(false);
@@ -444,9 +593,15 @@ function BrowseableRow({
       if (!node.dragData) return;
       e.stopPropagation();
       writeBrowseableDrag(e, node.dragData);
+      // Dragging a file out of the window onto the desktop saves it there
+      // (Chromium / Electron). Ignored by drop targets inside the app.
+      if (node.downloadUrl) {
+        e.dataTransfer.setData('DownloadURL', `application/octet-stream:${node.label}:${node.downloadUrl}`);
+        e.dataTransfer.effectAllowed = 'copyMove';
+      }
       onDragStart(node.dragData);
     },
-    [node.dragData, onDragStart],
+    [node.dragData, node.downloadUrl, node.label, onDragStart],
   );
 
   const handleDragEnd = useCallback(() => {
@@ -463,7 +618,7 @@ function BrowseableRow({
       if (!canAcceptDrop && !foreign && !external) return;
       e.preventDefault();
       e.stopPropagation();
-      e.dataTransfer.dropEffect = external && !canAcceptDrop && !foreign ? 'copy' : 'move';
+      e.dataTransfer.dropEffect = (external && !canAcceptDrop && !foreign) || e.altKey ? 'copy' : 'move';
       setIsDropTarget(true);
     },
     [canAcceptDrop, dragData, node.onDrop, node.onExternalFilesDrop],
@@ -505,8 +660,10 @@ function BrowseableRow({
       e.stopPropagation();
       setIsDropTarget(false);
       setIsDropping(true);
+      // Alt/Option held at drop time ⇒ copy instead of move.
+      const copy = e.altKey;
       try {
-        await node.onDrop(payload);
+        await node.onDrop(payload, { copy });
       } finally {
         setIsDropping(false);
         onDragEnd();
@@ -555,6 +712,12 @@ function BrowseableRow({
       data-multi-selected={multiSelected || undefined}
       aria-expanded={hasChildrenHint ? expanded : undefined}
       draggable={!!node.dragData}
+      ref={rowRef}
+      tabIndex={takesKeys ? -1 : undefined}
+      onKeyDown={handleRowKeyDown}
+      onFocus={(e) => {
+        if (takesKeys && e.target === e.currentTarget) keyRow.current = { id: node.id, at: Date.now() };
+      }}
       onPointerEnter={handleRowPointerEnter}
       onPointerLeave={handleRowPointerLeave}
       onDragStart={handleDragStart}
@@ -619,7 +782,7 @@ function BrowseableRow({
           ) : (
             <>
               {node.icon}
-              <span className="min-w-0 flex-1 truncate" title={node.tooltip ? undefined : node.label}>
+              <span className="min-w-0 flex-1 truncate" title={node.tooltip || node.entity ? undefined : node.label}>
                 {node.label}
               </span>
               {node.badge && <div className="flex-shrink-0">{node.badge}</div>}
@@ -635,17 +798,76 @@ function BrowseableRow({
           was aiming at, and a content-sized menu doesn't resize under it. The
           slot is text-height (`h-4`) and the buttons overflow it, so reserving
           it never makes the row taller. */}
+      {isSelected && revealAction && <ToolbarButton action={revealAction} compact />}
       {node.toolbar && node.toolbar.length > 0 && (
         <div
           className="invisible flex h-4 flex-shrink-0 items-center gap-0.5 overflow-visible group-focus-within:visible group-hover:visible"
           data-testid={`browseable-row-toolbar-${node.id}`}
         >
           {node.toolbar.map((a) => (
-            <ToolbarButton key={a.id} action={a} compact />
+            <ToolbarButton key={a.id} action={a} compact onStartRename={startRename} />
           ))}
         </div>
       )}
     </div>
+  );
+
+  // Right-click: the row's menu, built when it opens so live state (a
+  // clipboard to paste) is current. Right-clicking a row outside the
+  // multi-selection drops the selection, like every file manager.
+  const [menuItems, setMenuItems] = useState<ToolbarAction[]>([]);
+  // A tooltip only on a row without a right-click menu: wrapping the menu's row in a TooltipTrigger as
+  // well takes over its focus and keys (F2 rename stops opening), and wrapping the ContextMenu ROOT hands a
+  // ref to a function component. A menu row never showed its tooltip before either.
+  const hasTip = !!(node.tooltip || node.entity) && !node.contextMenu;
+  const tipTarget = hasTip ? <TooltipTrigger asChild>{rowEl}</TooltipTrigger> : rowEl;
+  const triggerEl = node.contextMenu ? (
+    <ContextMenu
+      onOpenChange={(open) => {
+        if (!open) return;
+        if (canSelect && !multiSelected) selection.anchorAndClear(node, rootId);
+        setMenuItems(typeof node.contextMenu === 'function' ? node.contextMenu() : (node.contextMenu ?? []));
+      }}
+    >
+      <ContextMenuTrigger asChild>{rowEl}</ContextMenuTrigger>
+      <ContextMenuContent
+        className="min-w-[13rem]"
+        data-testid={`browseable-context-menu-${node.id}`}
+        // A closing menu hands focus back to the row it opened on — but never
+        // out of a text field the user is typing in by then (a rename box).
+        onCloseAutoFocus={(e) => {
+          if (document.activeElement instanceof HTMLInputElement) e.preventDefault();
+        }}
+      >
+        {menuItems.map((a, i) => {
+          const disabled = typeof a.disabled === 'function' ? a.disabled() : !!a.disabled;
+          return (
+            <React.Fragment key={a.id}>
+              {a.separatorBefore && i > 0 && <ContextMenuSeparator />}
+              <ContextMenuItem
+                disabled={disabled}
+                className={`gap-2 text-xs ${a.destructive ? 'text-destructive focus:text-destructive' : ''}`}
+                data-testid={`browseable-menu-${a.id}`}
+                onSelect={() => {
+                  // Let the menu close (and give focus back) before the rename input mounts.
+                  if (a.startsRename) setTimeout(startRename, 0);
+                  else
+                    void Promise.resolve(a.run(rowsForAction())).then(() => {
+                      if (a.destructive) selection?.clear();
+                    });
+                }}
+              >
+                <span className="[&>svg]:h-3.5 [&>svg]:w-3.5">{a.icon}</span>
+                {a.label}
+                {a.shortcut && <ContextMenuShortcut>{a.shortcut}</ContextMenuShortcut>}
+              </ContextMenuItem>
+            </React.Fragment>
+          );
+        })}
+      </ContextMenuContent>
+    </ContextMenu>
+  ) : (
+    tipTarget
   );
 
   return (
@@ -654,9 +876,9 @@ function BrowseableRow({
       data-selection-key={node.selectionKey}
       data-resource-vfs={node.pointer?.resourceVfsPath?.uri}
     >
-      {node.tooltip ? (
+      {hasTip ? (
         <Tooltip>
-          <TooltipTrigger asChild>{rowEl}</TooltipTrigger>
+          {triggerEl}
           {/* Sideways, never below: rows stack vertically, so a bottom tooltip
               would cover the next row and sit in the pointer's downward travel
               path. WHICH side depends on the host — away from the panel, into
@@ -665,12 +887,18 @@ function BrowseableRow({
               OUTSIDE the panel — without this, moving onto it fires the panel's
               pointerleave and closes a menu the user never left. The preview is
               read-only, so there is nothing in it to click. */}
-          <TooltipContent side={cuePointsLeft ? 'left' : 'right'} className="pointer-events-none max-w-xs">
-            {node.tooltip}
-          </TooltipContent>
+          {node.entity ? (
+            <TooltipContent side={cuePointsLeft ? 'left' : 'right'} className="pointer-events-none p-0">
+              <EntityCard type={node.entity.type} id={node.entity.id} fallbackName={node.label} />
+            </TooltipContent>
+          ) : (
+            <TooltipContent side={cuePointsLeft ? 'left' : 'right'} className="pointer-events-none max-w-xs">
+              {node.tooltip}
+            </TooltipContent>
+          )}
         </Tooltip>
       ) : (
-        rowEl
+        triggerEl
       )}
 
       {expanded && (
@@ -718,6 +946,8 @@ function BrowseableRow({
               activePointer={activePointer}
               activeResourcePointer={activeResourcePointer}
               activeKey={activeKey}
+              activeRootId={activeRootId}
+              revealAction={revealAction}
               openTabHashes={openTabHashes}
               onNavigate={onNavigate}
               dragData={dragData}
@@ -731,7 +961,16 @@ function BrowseableRow({
   );
 }
 
-export function ToolbarButton({ action, compact }: { action: ToolbarAction; compact?: boolean }) {
+export function ToolbarButton({
+  action,
+  compact,
+  onStartRename,
+}: {
+  action: ToolbarAction;
+  compact?: boolean;
+  /** Runs instead of `action.run` for a `startsRename` action. */
+  onStartRename?: () => void;
+}) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
   // A destructive action takes two clicks: the first arms it, the second runs.
@@ -740,6 +979,10 @@ export function ToolbarButton({ action, compact }: { action: ToolbarAction; comp
 
   const handleClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (action.startsRename) {
+      onStartRename?.();
+      return;
+    }
     if (action.destructive && !armed) {
       setArmed(true);
       return;

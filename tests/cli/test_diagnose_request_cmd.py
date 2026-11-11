@@ -21,6 +21,7 @@ from typer.testing import CliRunner
 from flow_sdk.cli.commands import diagnose_cmd
 from flow_sdk.cli.commands.diagnose_cmd import fit_run, parse_request_id
 from flow_sdk.cli.flow_cli import app
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 runner = CliRunner()
 REQUEST_ID = "0b9e4b44-5d8e-4c39-9d43-4a0b5a2b6d11"
@@ -55,8 +56,9 @@ class _Hub:
         self.submitted: list[dict] = []
         self.files: dict[str, bytes] = {}
 
-    async def __call__(self, method, kind, entity_id, action, payload=None, *, raw=False):
+    async def __call__(self, method, kind, entity_id, action, *, payload=None, raw=False, anonymous=False, **_kw):
         assert kind == "diagnosis_request" and entity_id == REQUEST_ID
+        assert anonymous, "the id is the credential: no hub login is sent"
         if action == "brief":
             return self.brief
         if action.startswith("brief/attachment/"):
@@ -122,7 +124,7 @@ async def _diagnosis(_cls, _id):
 
 def _invoke(hub, calls, stdin):
     with (
-        patch("flow_sdk.cloud_client.transport.hub_http.hub_anonymous_request", hub),
+        patch.object(HubProxy, "call", hub),
         patch.object(diagnose_cmd, "_run_diagnose", _recording_run(calls)),
         patch.object(diagnose_cmd, "_load_recorded_diagnosis", _diagnosis),
     ):

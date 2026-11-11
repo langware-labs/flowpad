@@ -6,7 +6,7 @@ export interface PtyRowRange {
   endTime: number;     // ms epoch
 }
 
-/** Prompt boundary anchor — resolved from Annotation with labels: ['prompt:']. */
+/** Prompt boundary anchor — resolved from Annotation with subkind 'prompt'. */
 export interface PtyAnchor {
   text: string;      // Prompt content — used to locate the row in xterm buffer
   time: string;      // ISO timestamp from the annotation

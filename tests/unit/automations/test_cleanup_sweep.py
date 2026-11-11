@@ -35,8 +35,9 @@ def test_deleted_asset_under_a_present_folder_is_stale(tmp_path):
 
 
 def test_missing_parent_outside_an_install_is_kept(tmp_path):
-    # Could be an unmounted volume: "can't tell" keeps the row.
-    row = rule(TriggerType.TAG, asset_ref=str(tmp_path / "unmounted" / "trigger" / "x"))
+    # Could be an unmounted volume: nothing below the filesystem root exists, so "can't tell" keeps
+    # the row. (A missing folder deeper than that, under a folder that is there, is a deletion.)
+    row = rule(TriggerType.TAG, asset_ref="/flowpad-unmounted-volume-test/trigger/x")
     assert stale_trigger_reason(row) is None
 
 

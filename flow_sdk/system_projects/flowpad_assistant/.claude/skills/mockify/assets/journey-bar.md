@@ -11,22 +11,24 @@ Every popup (☰ screens, feedback, review, save) opens with the same toolbar: *
 ```js
 window.MOCKIFY = { key: 'github-prs',   // the mock's row key in the mock project's `mocks` dataset
                    project: '<id>' };    // the mock project's id (mock_project.py ensure → project_id)
-window.mockGo = (id) => { location.hash = id; location.reload(); };   // real mode only
 window.MOCK_BAR_AT = 'bottom';            // real mode: start bottom-right (build_mock.py sets it)
 ```
 
 Everything else comes from the **mock row** (`mockify.mock`, `schema/`): `journey` — the steps in order —
-and on each step `id`, `app`, `title`, `note`, `branch_of` + `when` for a branch, `next`, `decisions` (`id`, `question`,
-`shown`). Screens are `<section data-step="<id>">` (fast mode; the bar shows/hides them) or drawn on load by
-the page's own script (real mode, via `mockGo`). A decision shown on a screen is `data-decision="D2"`.
+and on each step `id`, `app`, `title`, `note`, `expect` (test checks, shown under the note), `branch_of` + `when` for a branch, `next`, `decisions` (`id`, `question`,
+`shown`). Screens are `<section data-step="<id>">`, one per step, in both modes; the bar shows one and hides the
+rest (no reloads). A decision shown on a screen is `data-decision="D2"`.
 
 A control that moves the journey says where it leads: **`data-next="<step id>"`** — and nothing else (no
-`onclick`): a click on it moves the journey. Where a screen goes ON is its step's `next`, else the next
-main-path screen; Next and the hints follow that one rule. On every screen the bar marks the controls in
+`onclick`): a click on it moves the journey. Where a screen goes ON is its step's `next` when that lies
+ahead, else the next screen depth-first (a step, then its branches, then the next main step); Next, Back
+and the hints follow that one order. With branches, screens are numbered 1, 1.1, 1.2, 2. On every screen the bar marks the controls in
 the page: the one going on gets `.mk-next` (a soft glow in the bar's accent, a few gentle pulses unless the
 reviewer prefers reduced motion), every other one `.mk-path` (a faint ring); with no control going on,
 the bar's own Next glows. Both use `box-shadow`, so a screen's own outlines (an open decision) stay. A
-`data-next` naming no step warns once in the console. The reviewer can switch hints off at the bottom of
+`data-next` naming no step warns once in the console. Anything else on a screen that looks clickable (a pointer cursor,
+a form field) is not part of the mock: a click on it shows "Not part of this mock" beside it instead of
+silently doing nothing; `data-dead` also dims it, and `data-live` exempts a part the page handles itself. The reviewer can switch hints off at the bottom of
 the screens list (remembered for the session).
 
 `MOCKIFY.journey` (same step shape) is an optional OFFLINE copy, used only when the page is not served by
@@ -43,9 +45,9 @@ The bar imports `/sdk/flowpad-sdk.js` (the page must be served by Flowpad — `f
 | 💬 → text (+ decision chip, + 📎 / pasted image) → **Save** | `append` one `mockify.feedback` row: `mock` = the mock row's `ref`, `step`, `text`, `decision?`, `screenshot?` (a `data:image/…;base64` URL — stored as `input/screenshot.png`), `status: open`, `created`; key `<mock>-<step>-<base36 time>` |
 | 🎯 → point at an element (hover outlines it, Esc cancels) → the feedback box opens on it → **Save** | the same row, plus `anchor` (`mockify.anchor`: a `selector` from the screen's `[data-step]` or an id, the element's `label`, its `html`, its position `x y w h`) and `element_shot` (the element drawn through an SVG `foreignObject`, best effort: no picture for a big subtree or a cross-origin image) |
 | ✕ on an open comment | `deleteRow(key, {expected: version})` |
-| **▶ Execute (n)** on the bar | what **Send to <session>** below does, for the open comments — no review first; greyed with none open or no session |
+| **▶ Execute (n)** on the bar | what **Send to <session>** below does, for the open comments — no review first — then asks the host to open the session's tab (`navigateHost`); greyed with none open or no session |
 | **Review** (popup toolbar) | nothing yet: opens the review panel — the open comments as ONE markdown document (screen by screen in journey order; each with its decision, the element it is on and its selector, and the paths of its images under the mock-feedback dataset folder), with **📁 Open folder** (the mock row's `folder`, shown in Finder / Explorer through the compute node), **⧉ Copy** and **Send ▶** |
-| **Send to <session> ▶** | uploads **that same markdown** as a file into the mock's `session` input folder and queues ONE line pointing at it ("File <name>.md is available here: <path>" — a multi-line prompt typed into a terminal session sits unsubmitted in its input box); `Send again` re-delivers the already-sent markdown the same way. Then, for new comments, `putMany` the open rows to `submitted` (with their versions) and the mock row to `status: submitted` |
+| **Send to <session> ▶** | (like ▶ Execute, it then opens the session's tab) uploads **that same markdown** as a file into the mock's `session` input folder and SUBMITS one line pointing at it (`submit`: types it, then a discrete Enter — a queued or multi-line prompt can sit unsent in a terminal session's input box); `Send again` re-delivers the already-sent markdown the same way. Then, for new comments, `putMany` the open rows to `submitted` (with their versions) and the mock row to `status: submitted` |
 
 A comment on an element shows as a numbered **bubble** at that element (at its saved spot when the selector no
 longer finds it; grey once submitted); a click on the bubble opens the comment and outlines the element.
@@ -59,10 +61,10 @@ step change.
 **Restart** goes to the first screen. **Back / Next** and ←/→ follow the **main path** (branches are
 skipped; from a branch Next rejoins the path); ☰ reaches every screen (branches as "↳ when — title");
 browser Back/Forward walk the screens visited; arrows are ignored while typing. Every panel (screens, feedback) closes with its ✕ or Esc;
-the comment typed so far stays until Save, and a successful Save folds the box
-away and shows the saved entry, highlighted, in the panel (＋ New comment brings the box back). Drag by ⋮⋮ (kept on
+the comment typed so far stays until Save, and a successful Save closes the panel
+back to the clean bar (the comment shows as its bubble and in ▶ Execute (n)). Drag by ⋮⋮ (kept on
 screen, panels open upward when the bar sits low); – minimises to `🎯 · n of N` (+ restores). Position
-and minimised state survive reloads (sessionStorage, guarded). The bar **contrasts with the screen behind
+and minimised state are kept for the session (sessionStorage, guarded). The bar **contrasts with the screen behind
 it** (it samples the real background: light bar on a dark screen, dark on a light one), re-checked on
 every step, drag and resize. Hidden `[data-step]` sections stay hidden even if styled `display:flex`.
 `mockifyGo('<id>')` moves the journey from an in-screen button (an unknown id warns, stays put). Under

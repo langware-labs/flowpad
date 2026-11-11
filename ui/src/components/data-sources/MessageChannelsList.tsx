@@ -11,6 +11,7 @@ import { RefreshCw } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import { humanizeSeconds } from '@src/utils/duration';
 import { HEADER_ROW } from './DataSourceRow';
@@ -35,7 +36,7 @@ export function MessageChannelsList() {
       setRows(await DataSource.channels());
       setFailed('');
     } catch (e) {
-      setFailed(e instanceof Error ? e.message : String(e));
+      setFailed(errorMessage(e, String(e)));
     }
   }, []);
   useEffect(() => void load(), [load]);

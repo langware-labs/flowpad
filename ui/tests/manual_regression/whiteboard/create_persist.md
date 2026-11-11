@@ -13,25 +13,25 @@ tags: [whiteboard, create, persistence]
 ### C1: Quick-create via UI
 * Navigate to `${APP_URL}/`.
 * On the landing page, locate the quick-create surface . It's a row of asset-type buttons or a "+" / "New" button — click the trigger to open the dropdown menu.
-  * If no menu opens, fall back to navigating directly to `${APP_URL}/dock/assets/list/whiteboard` and using the asset-list page's "Create" / "+" affordance.
+  * If no menu opens, fall back to navigating directly to `${APP_URL}/dock/assets/list/chart` and using the asset-list page's "Create" / "+" affordance.
 * Find a row labelled "Whiteboard" with a Palette icon.
 * Click "Whiteboard". A name input dialog appears.
 * Type `c1-board-<random-4-digits>` and submit.
-* Wait up to 8s for the editor to open. URL should contain `/dock/assets/editor/whiteboard/`.
-* Validate `[data-testid="whiteboard-editor"]` visible.
+* Wait up to 8s for the editor to open. URL should contain `/dock/assets/editor/chart/`.
+* Validate `[data-testid="chart-editor"]` visible.
 
 > Note: there is NO Cmd+K / Ctrl+K binding for QuickCreate in this codebase. Trigger via click only.
 
 ### C2: Files on disk
-* From the editor URL, derive the folder path (after `/dock/assets/editor/whiteboard/`, prefix with `/`).
+* From the editor URL, derive the folder path (after `/dock/assets/editor/chart/`, prefix with `/`).
 * Run `ls -la <folder>` via Bash.
-* Validate `WHITE_BOARD.md` exists.
+* Validate `CHART.md` exists.
 * Validate `board.json` either exists OR will be created on first save (the editor lazy-creates it).
 
 ### C3: Frontmatter id (minted at create)
-* The whiteboard's identity carrier is WHITE_BOARD.md's frontmatter (`identity_carrier=frontmatter_identity()`; the folder capsule is not used). The id is minted at create, so right after the first save `cat <folder>/WHITE_BOARD.md` → frontmatter MUST contain `id:` (a valid v4/v5 UUID) equal to the entity id returned by the create, and the BEGIN/END mermaid markers MUST be present in the body.
-* Trigger an index: POST `${API_URL}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`.
-* `cat <folder>/WHITE_BOARD.md` → the frontmatter `id:` MUST be unchanged, and the BEGIN/END mermaid markers MUST survive.
+* The whiteboard's identity carrier is CHART.md's frontmatter (`identity_carrier=frontmatter_identity()`; the folder capsule is not used). The id is minted at create, so right after the first save `cat <folder>/CHART.md` → frontmatter MUST contain `id:` (a valid v4/v5 UUID) equal to the entity id returned by the create, and the BEGIN/END mermaid markers MUST be present in the body.
+* Trigger an index: POST `${API_URL}/api/v1/graph/compute_node/@local/fs-records/index?type=chart`.
+* `cat <folder>/CHART.md` → the frontmatter `id:` MUST be unchanged, and the BEGIN/END mermaid markers MUST survive.
 
 ### C4: Draw + autosave + thumbnail
 * In the editor tab, run via `browser_evaluate`:
@@ -48,7 +48,7 @@ tags: [whiteboard, create, persistence]
   ```
 * Wait 1500ms past debounce.
 * Validate `<folder>/board.json` mtime updated AND parses as JSON with `kind: "excalidraw"` and `data.elements.length >= 2`.
-* Validate `<folder>/thumbnail.svg` exists (size > 200 bytes). Note: the thumbnail is the LAST write in the persist sequence (board.json → WHITE_BOARD.md → exportToSvg → thumbnail.svg), so poll for it for a few seconds after board.json appears rather than checking once.
+* Validate `<folder>/thumbnail.svg` exists (size > 200 bytes). Note: the thumbnail is the LAST write in the persist sequence (board.json → CHART.md → exportToSvg → thumbnail.svg), so poll for it for a few seconds after board.json appears rather than checking once.
 
 ### C5: Reload preserves content
 * Navigate away (`${APP_URL}/`), then back to the editor URL.
@@ -65,4 +65,4 @@ C1–C5 all pass. C2's "board.json missing right after create" is acceptable (FI
 * `rm -rf <folder>` after the test completes.
 
 ## Teardown
-* Every board created above (including C1's) is deleted — `DELETE ${API_URL}/api/v1/graph/whiteboard/<id>` and its folder removed — whether the test passed or failed.
+* Every board created above (including C1's) is deleted — `DELETE ${API_URL}/api/v1/graph/chart/<id>` and its folder removed — whether the test passed or failed.

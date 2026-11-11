@@ -42,7 +42,7 @@ SESSION_ID = "a1a1a1a1-0000-4000-8000-00000000c001"
 def test_lifecycle_happy_path():
     assert can_transition(S.DRAFT, S.PENDING)
     assert can_transition(S.PENDING, S.IDLE)          # host approve
-    assert can_transition(S.PENDING, S.RUNNING)       # pre-granted approve+run fast path
+    assert not can_transition(S.PENDING, S.RUNNING)   # a pending session runs only after Approve
     assert can_transition(S.IDLE, S.RUNNING)
     assert can_transition(S.RUNNING, S.IDLE)
     assert can_transition(S.PENDING, S.DECLINED)
@@ -265,16 +265,14 @@ from flow_sdk.builtin.remote_worker_session import (  # noqa: E402, I001
 )
 
 
-@pytest.mark.parametrize("status,grant,expected", [
-    (S.ENDED, False, D.IGNORE), (S.ENDED, True, D.IGNORE),
-    (S.DECLINED, False, D.IGNORE), (S.DECLINED, True, D.IGNORE),
-    (S.IDLE, False, D.RUN), (S.RUNNING, False, D.RUN), (S.ERROR, False, D.RUN),
-    (S.PENDING, False, D.PARK_PENDING), (S.PENDING, True, D.RUN),
-    (S.DRAFT, False, D.PARK_PENDING), (S.DRAFT, True, D.RUN),
-    (None, False, D.PARK_PENDING), (None, True, D.RUN),
+@pytest.mark.parametrize("status,expected", [
+    (S.ENDED, D.IGNORE), (S.DECLINED, D.IGNORE),
+    (S.IDLE, D.RUN), (S.RUNNING, D.RUN), (S.ERROR, D.RUN),
+    # Nothing but the host's Approve leaves these: no input makes them RUN.
+    (S.PENDING, D.PARK_PENDING), (S.DRAFT, D.PARK_PENDING), (None, D.PARK_PENDING),
 ])
-def test_decide_inbound_prompt_matrix(status, grant, expected):
-    assert decide_inbound_prompt(status=status, standing_grant=grant) is expected
+def test_decide_inbound_prompt_matrix(status, expected):
+    assert decide_inbound_prompt(status=status) is expected
 
 
 # ── session settings ride the snapshot ───────────────────────────────────────
@@ -327,8 +325,8 @@ def test_cap_counts_from_approval_else_start():
 
 
 def test_live_session_expires_at_the_cap_terminal_never_does():
-    before = datetime(2026, 10, 7, 11, 59, 59, tzinfo=timezone.utc)
-    at_cap = datetime(2026, 10, 7, 12, 0, 0, tzinfo=timezone.utc)
+    before = datetime(2026, 10, 7, 13, 59, 59, tzinfo=timezone.utc)
+    at_cap = datetime(2026, 10, 7, 14, 0, 0, tzinfo=timezone.utc)
     for status in (S.PENDING, S.IDLE, S.RUNNING, S.ERROR):
         row = _capped(status)
         assert not row.is_expired(before), status
@@ -383,7 +381,6 @@ async def test_expire_on_an_ended_session_writes_and_announces_nothing(monkeypat
 
 def test_gate_expires_before_any_other_live_decision():
     for status in (S.PENDING, S.IDLE, S.RUNNING, S.ERROR):
-        for grant in (True, False):
-            assert decide_inbound_prompt(status=status, standing_grant=grant, expired=True) is D.EXPIRE
+        assert decide_inbound_prompt(status=status, expired=True) is D.EXPIRE
     for status in TERMINAL_STATUSES:
-        assert decide_inbound_prompt(status=status, standing_grant=False, expired=True) is D.IGNORE
+        assert decide_inbound_prompt(status=status, expired=True) is D.IGNORE

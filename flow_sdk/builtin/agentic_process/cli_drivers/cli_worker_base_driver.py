@@ -40,7 +40,7 @@ import sys
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Mapping, Protocol, Sequence
 
 import psutil
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -56,6 +56,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
     quote_powershell_literal,
     quote_shell_arg,
 )
+from flow_sdk.builtin.agentic_process.model_tiers import VENDOR_DEFAULT_TIERS
 from flow_sdk.builtin.compute_node import ComputeNode
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 from flow_sdk.flowpad_types.vendors import default_vendor, vendor_or_none
@@ -66,6 +67,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agent_hook import HookEventType
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchErrorCode
     from flow_sdk.builtin.agentic_process.naming.providers import NamingAdapter
     from flow_sdk.builtin.hooks.types import AgentHookResponse, HookCapabilities, HookOutcome
     from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
@@ -400,10 +402,13 @@ class WorkerSpawnError(RuntimeError):
     resolved on the spawn PATH. Turn runners route it into the standard
     failure path — ``status=FAILED`` + the ``start_failure`` latch — via
     :func:`latch_spawn_failure` instead of leaving the process spinning.
+    ``code`` names the verdict when the CLI is there but the spawn is refused
+    for another reason (``MODEL_UNAVAILABLE``: the budget lacks the model size).
     """
 
-    def __init__(self, worker_type: str, message: str) -> None:
+    def __init__(self, worker_type: str, message: str, code: LaunchErrorCode | None = None) -> None:
         self.worker_type = worker_type
+        self.code = code
         super().__init__(message)
 
 
@@ -446,10 +451,6 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
       absolute path is the only form immune to both.
     * ``PATH`` — pinned to this backend's `flow` CLI (version-skew guard,
       see :func:`flow_cli_env_path`).
-    * ``CLOUDSDK_CORE_PROJECT`` / ``GOOGLE_CLOUD_PROJECT`` / ``GCLOUD_PROJECT``
-      — gcloud/client-library default project, pinned to the isolated
-      deployment project (``gcp_deployment_project_id``) so agent-improvised
-      GCP deployments never land in the production project.
     * ``CLAUDE_CONFIG_DIR`` — for explicitly configured Claude roots, pinned
       to the same canonical root Flowpad uses for transcript discovery. The
       native default stays unset because Claude keeps ``~/.claude.json`` beside
@@ -475,6 +476,13 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
         "FLOWPAD_EXECUTION_SCOPE",
         _json.dumps([{"type": process.get_type(), "id": process.id}]),
     )
+    # FLOWPAD-2112: the worker-only signal the self-protection gate reads. Set HERE (the one spawn
+    # chokepoint) and nowhere else, so it marks a worker and everything under it — never the FlowPad
+    # desktop terminal, which does not pass through this function. Assigned, not setdefault-ed: it is
+    # not launch config a caller may override.
+    from flow_sdk.utils.environment import WORKER_ENV  # noqa: PLC0415
+
+    env[WORKER_ENV] = "1"
     env["FLOWPAD_PYTHON"] = sys.executable
     # The FlowCall run this worker serves (``runner._agent`` / a process call stamp it on
     # ``context_data``): its own `flow op run` calls join that run, under the call that spawned it.
@@ -494,16 +502,6 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
     from flow_sdk.core.compute.exec import flow_env  # noqa: PLC0415
 
     env.update(flow_env())
-    from flow_sdk.config import default_service_config  # noqa: PLC0415
-
-    deploy_project = default_service_config.gcp_deployment_project_id
-    if deploy_project:
-        # Agent-driven GCP deployments must land in the isolated playground
-        # project, never in the production project a user's ambient gcloud
-        # login defaults to. setdefault: an explicit per-process override wins.
-        env.setdefault("CLOUDSDK_CORE_PROJECT", deploy_project)
-        env.setdefault("GOOGLE_CLOUD_PROJECT", deploy_project)
-        env.setdefault("GCLOUD_PROJECT", deploy_project)
     if process.driver.name == "claude":
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.base_settings import (  # noqa: PLC0415
@@ -631,14 +629,8 @@ async def resolve_worker_language(process: "AgenticProcess") -> str | None:
     return name
 
 
-async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
-    """Resolve declared credentials (user scope + the process's project) into
-    this transient worker env.
-
-    This must only be called on spawn-time env dicts. It must not mutate
-    AgentOptions.env_vars because those are persisted and rendered.
-    """
-    from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
+async def _process_project(process: "AgenticProcess"):
+    """The process's project: its ``project_id``, else the project above it; None when there is none."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
     project = None
@@ -650,6 +642,37 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
             project = await Project.get_ancestor(process.typeid)
         except Exception:
             project = None
+    return project
+
+
+async def credentials_prompt_block(process: "AgenticProcess") -> str | None:
+    """The "Credentials:" block a worker's system-prompt file carries: ``flow credentials list`` for the
+    process's project — names, variables, available — and where the values are (this machine's environment).
+    None when the project declares no credential. Never a value."""
+    from flow_sdk.builtin.credential_listing import listing, prompt_block  # noqa: PLC0415
+    from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
+
+    project = await _process_project(process)
+    if project is None:
+        return None
+    try:
+        status = await credentials_status(project, str(getattr(process, "deployment_id", "") or ""), sign_ins=False)
+    except Exception:
+        logger.exception("AgenticProcess %s: could not list the project's credentials", process.id)
+        return None
+    return prompt_block(listing(status.model_dump(mode="json"), scope="project"))
+
+
+async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
+    """Resolve declared credentials (user scope + the process's project) into
+    this transient worker env.
+
+    This must only be called on spawn-time env dicts. It must not mutate
+    AgentOptions.env_vars because those are persisted and rendered.
+    """
+    from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
+
+    project = await _process_project(process)
 
     # Node attachment gates the worker too, not only the connector's commands.
     # None = nothing curated on this node, i.e. every declared variable. With no
@@ -856,6 +879,9 @@ class AgenticWorker(ABC):
     workers override what makes sense for their CLI.
     """
 
+    def turn_failure(self):  # (LaunchError, evidence) a turn ended with — taken once per turn; None by default
+        return None
+
     #: The process-local JSONL tee this worker writes, when it keeps one.
     #: Declared here (not just on the workers that have one) so callers can ask
     #: every worker without a hasattr dance — claude has no tee and leaves it
@@ -924,9 +950,8 @@ class AgentOptions:
     model name is always passed through.
     """
 
-    # Per-worker tier→model/auto map; empty in the base (pass-through). See
-    # ``flow_sdk/builtin/agentic_process/model_tiers.py``.
-    MODEL_TIERS: dict[str, str | None] = {}
+    # Native aliases. Other tiers must be resolved by the source binding before emission.
+    MODEL_TIERS: Mapping[str, str | None] = VENDOR_DEFAULT_TIERS
 
     # ── Vendor spec (declarative; overridden per worker) ─────────────────────
     # The bare executable name (claude/codex/copilot). ``_resolve_binary`` may
@@ -980,6 +1005,9 @@ class AgentOptions:
 
     def add_env(self, key: str, value: str) -> None:
         self.env_vars[key] = value
+
+    def prepare_launch(self, workdir: "str | None") -> None:
+        """Adjust this argv for a real launch in ``workdir`` (a check the pure argv must not make). No-op here."""
 
     def apply_instruction_assets(self, assets: "Any") -> None:
         """Route FlowPad's generated instruction/skill assets into this argv.
@@ -1193,9 +1221,6 @@ def restart_payload_from_cli_options(options: AgentOptions) -> dict[str, Any]:
     env_vars = dict(data.get("env_vars") or {})
     env_vars.pop("FLOWPAD_EXECUTION_SCOPE", None)
     env_vars.pop("FLOWPAD_PYTHON", None)
-    env_vars.pop("CLOUDSDK_CORE_PROJECT", None)
-    env_vars.pop("GOOGLE_CLOUD_PROJECT", None)
-    env_vars.pop("GCLOUD_PROJECT", None)
     data["env_vars"] = env_vars
     data.pop("resume", None)
     data.pop("fork_session_id", None)
@@ -1496,15 +1521,38 @@ async def latch_spawn_failure(process: "AgenticProcess", error: WorkerSpawnError
     ``start_failure`` latch, so the UI surfaces the message and auto-recovery
     stops relaunching until an explicit user retry (``open(retry=True)``).
     """
-    from flow_sdk.builtin.process_lifecycle import ProcessStatus
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError  # noqa: PLC0415
 
     logger.error("AgenticProcess %s: worker spawn failed — %s", process.id, error)
-    process.status = ProcessStatus.FAILED.value
-    process.start_failure = str(error)
+    process.latch_launch_failure(LaunchError.classify(error, error.worker_type), evidence=str(error))
     try:
         await process.save()
     except Exception:
         logger.exception("AgenticProcess %s: failed to persist spawn-failure latch", process.id)
+
+
+async def latch_turn_failure(process: "AgenticProcess", worker, fd) -> None:
+    """At a turn's END frame (so the UI sees it first): latch what the turn failed with, if anything."""
+    if fd.attributes.get("element-type") == "end" and (failure := worker.turn_failure()):
+        await latch_credential_failure(process, *failure)
+
+
+async def latch_credential_failure(process: "AgenticProcess", error, evidence: str) -> None:
+    """Latch a first-turn failure; a refused credential is key_rejected (marked) only for a stored key, else signed_out."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchErrorCode  # noqa: PLC0415
+    from flow_sdk.cli.auth.lm_api_keys import mark_key_rejected  # noqa: PLC0415
+
+    facts = {}
+    if error.code is LaunchErrorCode.KEY_REJECTED:
+        endpoint, source = await resolve_llm_endpoint(process)
+        if endpoint.kind != "api_key":
+            error = LaunchError.of(LaunchErrorCode.SIGNED_OUT, error.detail, error.worker_type)
+        else:
+            mark_key_rejected(endpoint.provider, error.detail, source.detail)
+            facts = {"provider": endpoint.provider, "key_hint": source.detail}
+    process.latch_launch_failure(error, phase="first_turn", evidence=evidence, facts=facts)
+    await process.save()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1691,6 +1739,12 @@ class WorkerDriver(Protocol):
     # (QA C09b). None → no grounded marker; delivery keeps the legacy
     # settle-then-type behaviour. Matched via ``pump_composer_ready``.
     pty_composer_ready_pattern: "re.Pattern[str] | None"
+    # Module with classify / trust_prompt_folder / apply_launch_fix (claude), or None.
+    launch_screen: Any
+    # The key that switches this vendor's interactive TUI into its own shell mode (claude's
+    # ``!``), or None. ``AgenticProcess.run_shell_command`` types it, then the command: the
+    # command runs in the session's shell and its output joins the conversation.
+    pty_shell_escape: str | None = None
     # True iff, on resume/fork, this vendor pins the worker's launch cwd
     # (``CLAUDE_PROJECT_DIR`` + ``workdir``) to the recorded cwd of the source
     # session's transcript (claude). Codex/copilot don't rewrite the launch cwd
@@ -1738,8 +1792,13 @@ class WorkerDriver(Protocol):
         assets: "AssetDir",
         process_id: str,
         events: Sequence["HookEventType"],
+        *,
+        app_launch: bool = False,
     ) -> ProcessHookRuntime:
-        """Materialize launch artifacts once and return their runtime inputs."""
+        """Materialize launch artifacts once and return their runtime inputs.
+
+        ``app_launch`` marks a launch from the Flowpad app, which may add hooks of its own.
+        """
         ...
 
     def prepare_process_mcp(self, specs: Sequence["McpSpec"]) -> ProcessMcpRuntime:

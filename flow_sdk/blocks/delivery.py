@@ -153,7 +153,7 @@ class Delivered(Generic[T]):
             ExpressionNode(op=QueryOp.GT, operands=["created_date", ingest_order.bind(since)]),
             ExpressionNode(op=QueryOp.EQ, operands=["thread_key", thread]),
         ])))
-        return any(str(r.id) != str(self._row.id) and not r.is_ours(source) for r in rows)
+        return any(str(r.id) != str(self._row.id) and not r.is_echo(source) for r in rows)
 
     async def reply(self, spec: "MessageSpec | str") -> "SendOutcome | None":
         """Send *spec* as the answer to this item, then ack — the piggybacked ack.

@@ -18,7 +18,7 @@ import pytest
 
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.ingestor import ingest_items
-from flow_sdk.ingest.legacy_lift import origin_of
+from flow_sdk.ingest.envelope_lift import origin_of
 from flow_sdk.ingest.models import IngestMode
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.server.routes.ingest import MAX_ITEMS_PER_REQUEST, _to_item

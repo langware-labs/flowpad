@@ -19,6 +19,7 @@ Logger namespace: ``flow_sdk.builtin.agentic_process.cli_drivers.codex.session_h
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 from datetime import datetime, timezone
@@ -75,8 +76,32 @@ def find_codex_resumable_session(thread_id: str) -> Path | None:
     return path
 
 
+# A rollout's leading ``session_meta`` is written once and never rewritten, so a header read
+# is good for the life of the file; a cwd lookup walks every rollout on disk, on the event loop.
+_meta_by_path: dict[str, dict] = {}
+_MAX_META = 50_000
+
+
+@functools.lru_cache(maxsize=4096)
+def _normalized_cwd(cwd: object) -> str | None:
+    """``normalize_path`` resolves on disk; the few cwds thousands of rollouts share resolve once."""
+    return normalize_path(cwd)
+
+
 def read_codex_rollout_meta(path: Path) -> dict:
     """Return the leading rollout ``session_meta`` payload plus timestamp."""
+    key = str(path)
+    meta = _meta_by_path.get(key)
+    if meta is None:
+        meta = _read_rollout_meta(path)
+        if meta:  # an empty read may be a header still being written: read it again next time
+            if len(_meta_by_path) >= _MAX_META:
+                _meta_by_path.pop(next(iter(_meta_by_path)))
+            _meta_by_path[key] = meta
+    return dict(meta)
+
+
+def _read_rollout_meta(path: Path) -> dict:
     try:
         with path.open("r", encoding="utf-8") as f:
             for line in f:
@@ -123,7 +148,7 @@ def find_latest_codex_session_jsonl(
     matches: list[tuple[datetime, Path]] = []
     for path in sessions_root.rglob("rollout-*.jsonl"):
         meta = read_codex_rollout_meta(path)
-        if normalize_path(meta.get("cwd")) != normalized_cwd:
+        if _normalized_cwd(meta.get("cwd")) != normalized_cwd:
             continue
         if thread_source_of(meta) == "subagent":
             continue

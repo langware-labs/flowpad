@@ -16,7 +16,11 @@ vi.mock('@src/contexts/view-mode-context', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@src/contexts/view-mode-context')>();
   return { ...actual, useViewMode: () => mocks.mode };
 });
-const mocks = vi.hoisted(() => ({ mode: 'vibe' as string }));
+vi.mock('@src/contexts/locale-context', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@src/contexts/locale-context')>();
+  return { ...actual, useLocale: () => mocks.locale };
+});
+const mocks = vi.hoisted(() => ({ mode: 'vibe' as string, locale: 'he' as string }));
 
 describe('AgentIntroMessage', () => {
   it('renders nothing without an agent or without an intro', () => {
@@ -40,5 +44,21 @@ describe('AgentIntroMessage', () => {
     expect(row).toHaveTextContent('Greeter');
     expect(row).toHaveTextContent('Hi there');
     expect(row.querySelector('strong')).toHaveTextContent('there');
+  });
+
+  it('shows the active locale translation instead of the default intro', () => {
+    mocks.locale = 'ar';
+    const agent = new Agent({ name: 'g', intro: 'שלום', intro_translations: { ar: 'مرحبا', 'en-US': 'Hi' } });
+    render(<AgentIntroMessage agent={agent} />);
+    expect(screen.getByTestId('agent-intro-message')).toHaveTextContent('مرحبا');
+    mocks.locale = 'he';
+  });
+
+  it('falls back to the default intro when the active locale has no (or a blank) translation', () => {
+    mocks.locale = 'en-US';
+    const agent = new Agent({ name: 'g', intro: 'שלום', intro_translations: { ar: 'مرحبا', 'en-US': '  ' } });
+    render(<AgentIntroMessage agent={agent} />);
+    expect(screen.getByTestId('agent-intro-message')).toHaveTextContent('שלום');
+    mocks.locale = 'he';
   });
 });

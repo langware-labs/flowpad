@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.capsules.atomic import atomic_write
-from flow_sdk.ingest.legacy_lift import envelope_of
+from flow_sdk.ingest.envelope_lift import envelope_of
 from flow_sdk.sources.base import Family, Source
 from flow_sdk.sources.binding import Persona, SourceBinding
 from flow_sdk.sources.config import SourceConfig
@@ -320,6 +320,8 @@ def binding_of(row: Any, *, credentials: Optional[ResolvedSecrets] = None, perso
         credentials=credentials,
         persona=persona or Persona(),
         read_only=bool(getattr(row, "read_only", False)),
+        holds_rows=bool(getattr(row, "holds_rows", False)),
+        rate_limit_retries=getattr(row, "rate_limit_retries", 0) or 0,
     )
 
 
@@ -512,7 +514,10 @@ class DriverRuntime:
         key = self.cls.local_tree_key
         if not key:
             return self.cache_root(row)
-        raw = str((getattr(row, "config", None) or {}).get(key) or "")
+        # The tree as the source is built with it: what the row names, or what ``configure`` derives
+        # (a mounted drive works its folder out on this computer instead of storing it).
+        config = {**(getattr(row, "config", None) or {}), **(self.cls.configure(row) or {})}
+        raw = str(config.get(key) or "")
         return Path(raw).expanduser().resolve() if raw else None
 
     def origin_for(self, row: Any) -> Any:
@@ -551,7 +556,9 @@ class DriverRuntime:
             cursor = position.cursor if cls.durable_cursor else None
             complete = cursor is None
             started_at = cursor
-            floor = iso_to_utc(position.window_start) if position.window_start else None
+            # A source with no window (``windowed = False``: open PRs, however quiet) is never floored —
+            # neither its first read nor what that read hands back.
+            floor = iso_to_utc(position.window_start) if position.window_start and cls.windowed else None
             query = source.query()
             narrow = None
             if cursor is None and floor is not None and isinstance(query, MessageQuery) and query.since is None:
@@ -772,8 +779,11 @@ class DriverRuntime:
         in_reply_to: str = "",
         files: tuple[FileItem, ...] = (),
         quote: bool = True,
+        cc: str = "",
+        html: str = "",
     ) -> SendOutcome:
-        """One message into the channel, recorded. A refused message is a ``ValueError`` — one failed
+        """One message into the channel, recorded. ``cc`` (comma-separated) and ``html`` are email's: a channel
+        whose messages carry neither refuses them rather than dropping them. A refused message is a ``ValueError`` — one failed
         reply must never become source health.
 
         ``files`` are local files (``sources.files.local_file``), checked against the channel's
@@ -800,6 +810,10 @@ class DriverRuntime:
                     )
                     if part.files or part.text is None:
                         data = data.model_copy(update={"text": part.text, "attachments": part.files})
+                    if cc or html:
+                        if "html" not in type(data).model_fields:
+                            raise ValueError(f"{self.provider} sends no Cc or HTML")
+                        data = data.model_copy(update={"cc": source.people(cc) if cc else (), "html": html or None})
                     sents.append(await (source.reply(answered, data) if answered is not None else source.send(data)))  # type: ignore[attr-defined]
         except SourceError as exc:
             if not sents:
@@ -962,7 +976,8 @@ class DriverRuntime:
         try:
             source = await self.open(row)
         except Rejected as exc:
-            return Verdict(ready=False, detail=str(exc))
+            # The setup step's own words: the person acts on them, without the "Data source error" label.
+            return Verdict(ready=False, detail=exc.message)
         verdict = await source.verify()  # type: ignore[attr-defined]
         if (verdict.ready or verdict.pending) and isinstance(source, Identified):
             await self._stamp(row, source)

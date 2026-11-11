@@ -489,6 +489,31 @@ def _use_shell(
     _emit_exports(binding, workers)
 
 
+@llm_app.command(
+    "size",
+    help="Show or set the model size (sm/md/lg) workers run when none is named. "
+    "Each endpoint says which model that size is.",
+)
+def size_cmd(
+    size: Annotated[Optional[str], typer.Argument(help="sm, md or lg. Omit to show the current one.")] = None,
+) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import default_size  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.model_tiers import is_model_tier  # noqa: PLC0415
+    from flow_sdk.preferences import PREF_LLM_DEFAULT_SIZE, write_instance_pref  # noqa: PLC0415
+
+    if size is None:
+        typer.echo(default_size())
+        return
+    size = size.strip().lower()
+    if not is_model_tier(size):
+        typer.echo(f"unknown size {size!r}: use sm, md or lg", err=True)
+        raise typer.Exit(2)
+    if not write_instance_pref(PREF_LLM_DEFAULT_SIZE, size):
+        typer.echo("could not write the preference", err=True)
+        raise typer.Exit(1)
+    typer.echo(size)
+
+
 @llm_app.command("clear", help="Print unsets that undo `flow llm use` in this shell.")
 def _clear_shell() -> None:
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import managed_env_vars
@@ -502,9 +527,19 @@ def _clear_shell() -> None:
 @llm_app.command("test", help="Spend one live call through a source and report the verdict.")
 def _test(
     ref: Annotated[str, typer.Argument(help="Row number, endpoint id, or name prefix.")],
+    harness: Annotated[
+        str, typer.Option("--harness", help="Test the model this harness would spend (claude/codex/…).")
+    ] = "claude",
+    model: Annotated[Optional[str], typer.Option("--model", "-m", help="Test this model slug instead.")] = None,
 ) -> None:
     row = _pick(_rows(_status()), ref)
-    verdict = _op("test", {"endpoint_typeid": row.typeid})
+    if not model and row.kind == "endpoint":
+        # The model the harness would actually spend, so a green verdict is about that model
+        # rather than whichever one the hub finds cheapest.
+        binding = _op("binding", {"endpoint_typeid": row.typeid, "harness": harness})
+        entry = (binding.get("harnesses") or {}).get(harness) or {}
+        model = entry.get("model")
+    verdict = _op("test", {"endpoint_typeid": row.typeid, "model": model or ""})
     _ok({"source": row.name, **verdict})
 
 
@@ -676,7 +711,11 @@ def _project_for_cwd(*, required: bool = True) -> str:
                 EXIT_NOT_FOUND, "NO_INSTANCE", "Project scope needs a running instance. Start one, or pass --project."
             )
         return ""
-    rows = _call("GET", f"http://127.0.0.1:{port}/api/v1/graph/project", params={"limit": 500})
+    rows = _call(
+        "GET",
+        f"http://127.0.0.1:{port}/api/v1/graph/project",
+        params={"filter": json.dumps({"match": {}, "limit": 500})},
+    )
     best_mount, best_id = "", ""
     for row in rows if isinstance(rows, list) else []:
         mount = str(row.get("fs_storage_mount_path") or "")
@@ -790,25 +829,11 @@ def _report(row: Row, *, json_output: bool) -> None:
 
 
 def _chooser_url(port: int) -> str:
-    """The chooser's address, carrying a system-door ticket when the instance is armed.
+    """The chooser's address, entered through ``/auth/gate``: the browser's first contact is
+    necessarily cookie-less, so a bare URL would open onto a 403 page instead of the chooser."""
+    from flow_sdk.cli.auth.cloud_urls import wrap_url_auth_gate_if_desktop
 
-    The browser's FIRST contact is necessarily cookie-less, and the gate exempts no path --
-    so on a gated instance a bare URL would open onto a 403 page instead of the chooser. The
-    ticket is what a browser carries once (the hub mints them; this CLI holds the same secret
-    and may too); the secret itself never rides a URL.
-    """
-    import time
-    from urllib.parse import urlencode
-
-    from flow_sdk.instance_settings.cookie_gate import get_cookie_gate, is_gated
-    from flow_sdk.server.grants import GATE_PATH, TICKET_PARAM
-    from flow_sdk.server.service_proxy import SYSTEM_AUDIENCE, SYSTEM_ENDPOINT, Grant, sign_grant
-
-    url = f"http://127.0.0.1:{port}{_CHOOSER_PATH}"
-    if not is_gated():
-        return url
-    ticket = sign_grant(Grant("local-cli", SYSTEM_AUDIENCE, SYSTEM_ENDPOINT), get_cookie_gate(), now=int(time.time()))
-    return f"http://127.0.0.1:{port}{GATE_PATH}?{urlencode({TICKET_PARAM: ticket, 'next': _CHOOSER_PATH})}"
+    return wrap_url_auth_gate_if_desktop(_CHOOSER_PATH, f"http://127.0.0.1:{port}")
 
 
 def _serve_chooser_here() -> int:
@@ -976,6 +1001,17 @@ def _is_auto(ref: str) -> bool:
     return ref.strip().lower() == "auto"
 
 
+def _resolve(project_id: str = "") -> Row | None:
+    """The source that funds LLM calls here, or None -- never opening anything."""
+    status = _status(project_id)
+    row = _auto_source(status)
+    if row is None:
+        # Nothing has EVIDENCE yet -- but on a box with no backend nothing has ever been asked,
+        # so ask before sending the user to a browser.
+        row = _auto_source(_check_unchecked_logins(status, project_id))
+    return row
+
+
 def _resolve_or_choose(*, no_browser: bool = False, project_id: str | None = None) -> Row:
     """The source that funds LLM calls — obtaining one, via the chooser, if the box has none.
 
@@ -990,12 +1026,7 @@ def _resolve_or_choose(*, no_browser: bool = False, project_id: str | None = Non
     # the box, so the box-wide question would report a source a spawn here would not get.
     if project_id is None:
         project_id = _project_for_cwd(required=False)
-    status = _status(project_id)
-    row = _auto_source(status)
-    if row is None:
-        # Nothing has EVIDENCE yet -- but on a box with no backend nothing has ever been asked,
-        # so ask before sending the user to a browser.
-        row = _auto_source(_check_unchecked_logins(status, project_id))
+    row = _resolve(project_id)
     if row is not None:
         return row
 

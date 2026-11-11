@@ -6,7 +6,7 @@ import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Plus, Webhook, Trash2, Edit, Zap, ChevronDown, ChevronRight, Power } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { HookForm } from './HookForm';
 import { HooksBrowser } from '../hooks-view/HooksBrowser';
 import { TriggerForm } from './TriggerForm';
@@ -389,7 +389,7 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
                           </span>
                           {triggers.length > 0 && (
                             <span className="rounded-full bg-yellow-500/10 px-2 py-0.5 text-xs font-medium text-yellow-600">
-                              {triggers.length} trigger{triggers.length !== 1 ? 's' : ''}
+                              <Plural value={triggers.length} one="# trigger" other="# triggers" />
                             </span>
                           )}
                         </div>
@@ -411,22 +411,30 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
                         <div className="space-y-2 p-4 text-sm">
                           <div className="grid grid-cols-2 gap-4">
                             <div>
-                              <span className="font-semibold text-muted-foreground">Provider:</span>{' '}
+                              <span className="font-semibold text-muted-foreground">
+                                <Trans>Provider:</Trans>
+                              </span>{' '}
                               <span>{hook.provider}</span>
                             </div>
                             <div>
-                              <span className="font-semibold text-muted-foreground">Event:</span>{' '}
+                              <span className="font-semibold text-muted-foreground">
+                                <Trans>Event:</Trans>
+                              </span>{' '}
                               <span>{hook.event}</span>
                             </div>
                             {hook.command && (
                               <div className="col-span-2">
-                                <span className="font-semibold text-muted-foreground">Command:</span>{' '}
+                                <span className="font-semibold text-muted-foreground">
+                                  <Trans>Command:</Trans>
+                                </span>{' '}
                                 <code className="rounded bg-muted px-1 py-0.5">{hook.command}</code>
                               </div>
                             )}
                             {hook.matcher && (
                               <div className="col-span-2">
-                                <span className="font-semibold text-muted-foreground">Matcher:</span>
+                                <span className="font-semibold text-muted-foreground">
+                                  <Trans>Matcher:</Trans>
+                                </span>
                                 <pre className="mt-1 rounded bg-muted p-2 text-xs">
                                   {JSON.stringify(hook.matcher, null, 2)}
                                 </pre>

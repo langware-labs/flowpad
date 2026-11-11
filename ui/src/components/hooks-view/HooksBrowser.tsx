@@ -253,6 +253,8 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
       return modB - modA;
     });
   }, [filteredHooks, sortSnapshot]);
+  const shownCount = sortedHooks.length;
+  const totalCount = hooks.length;
 
   const clearFilters = () => {
     setQuery('');
@@ -667,7 +669,9 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
           {/* Scope selector for create mode */}
           {isCreating && (
             <div className="mb-3 flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground">Scope:</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                <Trans>Scope:</Trans>
+              </span>
               <div className="flex rounded-md border">
                 {(['user', 'project'] as const).map((scope, i) => (
                   <Button
@@ -768,7 +772,9 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
 
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
-          Showing {sortedHooks.length} of {hooks.length} hooks
+          <Trans>
+            Showing {shownCount} of {totalCount} hooks
+          </Trans>
         </span>
         {error && <span className="text-destructive">{error}</span>}
       </div>

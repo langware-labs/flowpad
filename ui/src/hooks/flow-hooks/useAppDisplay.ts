@@ -1,8 +1,8 @@
-import { QueryRequest, ServedApp, ServiceEndpoint, TypeId, WEB_AUDIENCES } from '@sdk';
+import { dataManager, QueryRequest, ServedApp, ServiceEndpoint, TypeId, WEB_AUDIENCES } from '@sdk';
 import { useTheme } from 'next-themes';
 import { useViewMode } from '@src/contexts/view-mode-context';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { AppDockAddress } from '@src/navigation/app-dock';
 import { useEntitiesQuery, useEntity } from '../entity-hooks';
 
@@ -48,9 +48,8 @@ export interface AppDisplay {
   /** What the active runtime is served by — the app's route on its placement's audience proxy;
    *  what the display probes and the repair agent is pointed at. Null when nothing serves the app. */
   endpoint: ServedApp | null;
-  /** The host's CURRENT appearance — colour scheme and view mode. The frame is
-   *  addressed with the skin it had at mount, so a later change is pushed to the
-   *  guest rather than re-addressed; see the `initialSkin` note below. */
+  /** The host's CURRENT appearance — colour scheme and view mode. Never in `src`:
+   *  it is pushed to the guest (`flowpad:theme`) by `AppDisplayViewer`. */
   theme: 'light' | 'dark';
   view: string;
 
@@ -72,6 +71,29 @@ function servedBy(proxies: ServiceEndpoint[], field: 'artifact_id' | 'webapp_id'
   return proxies.flatMap((proxy) => proxy.served()).filter((app) => app.mount !== null && app[field] === id);
 }
 
+/** This machine's dev server and served files among `rows` — a cloud placement of the same app is not served here. */
+function localRuntimes(rows: ServedApp[]): { dev: ServedApp | null; served: ServedApp | null } {
+  const local = rows.filter((app) => !app.remote);
+  return {
+    dev: local.find((app) => app.backend?.type === 'proxy') ?? null,
+    served: local.find((app) => app.backend?.type === 'static') ?? null,
+  };
+}
+
+/**
+ * The address the system browser opens an app at, asked once at click time (no live rows held):
+ * its dev server's own address when it answers, else the files this backend serves; '' when nothing
+ * serves it on this machine yet.
+ */
+export async function appBrowserUrl(webappId: string): Promise<string> {
+  const proxies = (await Promise.all(AUDIENCE_PROXIES.map((request) => dataManager.query<ServiceEndpoint>(request))))
+    .reverse()
+    .flat();
+  const { dev, served } = localRuntimes(servedBy(proxies, 'webapp_id', webappId));
+  const devUrl = dev ? await dev.directUrl().catch(() => '') : '';
+  return devUrl || (served?.serviceUrl() ?? '');
+}
+
 /**
  * Every audience proxy's rows, `app` first (its route wins over `admin`'s), and whether any is still loading.
  * One query per audience: `AUDIENCE_PROXIES` is a module constant, so the hook count never changes.
@@ -86,13 +108,24 @@ function useServedApps(enabled: boolean): { proxies: ServiceEndpoint[]; loading:
 }
 
 /**
- * The webapp asset an app address names: the micro_app itself, or — for an artifact — the
- * `webapp_id` of a route serving it. `loading` until the proxies answer; null when the artifact is
- * served by no webapp asset. What a setup gate scopes its load to, so an app waits only for itself.
+ * The webapp asset an app address names: the micro_app itself, or — for an artifact or an addressed
+ * endpoint's route — the `webapp_id` of the route serving it. `loading` until the rows answer; null
+ * when no webapp asset serves it. What a setup gate scopes its load to, so an app waits only for itself.
  */
-export function useAppWebappId(artifactId: string | null, microAppId: string | null): { webappId: string | null; loading: boolean } {
-  const { proxies, loading } = useServedApps(!microAppId && !!artifactId);
+export function useAppWebappId(
+  artifactId: string | null,
+  microAppId: string | null,
+  endpointId: string | null = null,
+  route: string | null = null,
+): { webappId: string | null; loading: boolean } {
+  const { proxies, loading } = useServedApps(!microAppId && !endpointId && !!artifactId);
+  const endpointTypeId = useMemo(
+    () => (endpointId && !microAppId ? new TypeId(ServiceEndpoint.type, endpointId) : null),
+    [endpointId, microAppId],
+  );
+  const { data: addressed, isLoading: addressedLoading } = useEntity<ServiceEndpoint>(endpointTypeId);
   if (microAppId) return { webappId: microAppId, loading: false };
+  if (endpointId) return { webappId: addressed?.servedAt(route)?.webapp_id ?? null, loading: addressedLoading };
   if (!artifactId) return { webappId: null, loading: false };
   const served = servedBy(proxies, 'artifact_id', artifactId);
   return { webappId: served.find((app) => app.webapp_id)?.webapp_id ?? null, loading };
@@ -108,7 +141,8 @@ function useDirectUrl(endpoint: ServedApp | null): { url: string; pending: boole
   const { data, isPending } = useQuery({
     // The port too: a restarted server keeps its mount and moves its address.
     queryKey: ['service_endpoint', endpoint?.id ?? null, 'direct-url', endpoint?.mount ?? null, port],
-    queryFn: () => endpoint!.directUrl().catch(() => ''),
+    // A failure is not an answer: it is asked again (react-query's own retry), never kept as '' for good.
+    queryFn: () => endpoint!.directUrl(),
     enabled: !!endpoint,
     staleTime: Infinity,
   });
@@ -142,35 +176,15 @@ export function useAppDisplay(
   const microAppId = address?.microAppId ?? null;
   const endpointId = address?.endpointId ?? null;
   const route = address?.route ?? null;
-  // A cross-origin guest cannot see the `.dark` class the host writes on its own
-  // <html>, so the theme rides the iframe URL and the guest's first paint is
-  // already correct. Deliberately NOT a dock option: the theme is not part of the
-  // address, and putting it there would spell it into the user's URL bar.
-  //
-  // FROZEN at mount, and that is the whole point. `src` is the React key AND the
-  // iframe registry's key, so changing it builds a NEW guest document — the app
-  // reloads and re-establishes its subscriptions, while the outgoing frame stays
-  // in the registry (nothing calls its cleanup) with its watches still live. A
-  // theme toggle must not cost that, and with `enableSystem` an OS light/dark
-  // schedule would trigger it unattended. Later changes are pushed to the guest
-  // instead — see `AppDisplayViewer`.
-  // Two axes, because the app's appearance is two: the colour scheme and the
-  // view mode. Vibe is not a tint — it changes the primary colour, the corner
-  // radius and the ring — so a guest given only the scheme renders the desk skin
-  // inside a vibe window.
+  // The skin (theme, view mode, brand) is NOT in the URL: `src` is the frame's identity, and a
+  // skin baked into it either forks a view per theme or goes stale. The host pushes the skin to
+  // the guest instead (`flowpad:theme`, answered on `flowpad:skin-please`) — see `AppDisplayViewer`.
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === 'dark' ? 'dark' : 'light';
   const view = useViewMode();
-  const initialSkin = useRef({ theme, view, ...hostBrand() }).current;
   // A string, so the result memo below compares it by VALUE — the caller may
   // hand us a fresh options object every render without remounting the frame.
-  const appQuery = new URLSearchParams({
-    ...(address?.options ?? {}),
-    theme: initialSkin.theme,
-    view: initialSkin.view,
-    ...(initialSkin.primary ? { primary: initialSkin.primary } : {}),
-    ...(initialSkin.primaryInk ? { primaryInk: initialSkin.primaryInk } : {}),
-  }).toString();
+  const appQuery = new URLSearchParams(address?.options ?? {}).toString();
 
   // A new app re-derives its runtime rather than inheriting the last choice.
   useEffect(() => setOverride(null), [artifactId, microAppId, endpointId, route]);
@@ -194,13 +208,12 @@ export function useAppDisplay(
       : microAppId
         ? servedBy(proxies, 'webapp_id', microAppId)
         : [];
-  // This machine's rows only: a cloud placement of the same app is not served here.
-  const local = rows.filter((app) => !app.remote);
-  const devFound = local.find((app) => app.backend?.type === 'proxy') ?? null;
-  const servedFound = local.find((app) => app.backend?.type === 'static') ?? null;
+  const { dev: devFound, served: servedFound } = localRuntimes(rows);
   // Held by VALUE (the proxy and the mount): `served()` builds a fresh view per render, and everything
   // downstream — the direct-url query, the frame's key — must not see a new app each time.
-  const held = `${devFound?.id ?? ''}/${devFound?.mount ?? ''}|${servedFound?.id ?? ''}/${servedFound?.mount ?? ''}`;
+  // The dev server's PORT too: a server that comes up on another port (a first start, a moved one) is a new address.
+  const devPort = devFound?.backend?.type === 'proxy' ? devFound.backend.port : '';
+  const held = `${devFound?.id ?? ''}/${devFound?.mount ?? ''}:${devPort}|${servedFound?.id ?? ''}/${servedFound?.mount ?? ''}`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const [devEndpoint, servedEndpoint] = useMemo(() => [devFound, servedFound], [held]);
   // An address not answered yet is not an idle app: until it is, nothing is chosen (no setup gate).

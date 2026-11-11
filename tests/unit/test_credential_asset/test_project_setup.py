@@ -132,10 +132,11 @@ async def test_the_collector_reads_the_project_and_its_sources_drivers(project, 
     by = {(r.kind, r.name): r for r in reqs}
 
     assert [r.kind for r in reqs] == sorted((r.kind for r in reqs), key=[REQUIREMENT_PACK, REQUIREMENT_GAP].index)
-    # A connection the sources act through IS a credential of the project (kind: oauth), declared with the
-    # union of their scopes — an indexed asset with a row, listed like any other credential.
+    # A connection the sources act through is listed with the union of their scopes; collecting declares
+    # nothing (the setup step or the source's create does), so with no template it is the project's need.
     google = by[(REQUIREMENT_PACK, "google")]
-    assert google.is_oauth and google.provider == "google" and google.typeid.startswith("credential-")
+    assert google.is_oauth and google.provider == "google" and not google.declared
+    assert [r.kind for r in google.roots] == ["data_source", "data_source"], "the sources are its roots"
     assert google.used_by == ["gdrive source", "gcs source"], "one connection, every requester"
     assert set(google.scopes) == {
         "https://www.googleapis.com/auth/drive.readonly",
@@ -144,8 +145,7 @@ async def test_the_collector_reads_the_project_and_its_sources_drivers(project, 
         "https://www.googleapis.com/auth/drive",
     }
     assert google.satisfied is False and google.vars == [], "no grant here; nothing to type"
-    declared = await Credential.get("google", project)
-    assert declared.scope == "project" and declared.is_oauth and set(declared.scopes) == set(google.scopes)
+    assert await credential_service.credential_named("google", project) is None, "collect is read-only"
 
     stripe = by[(REQUIREMENT_PACK, "stripe")]
     assert stripe.used_by == ["project"] and stripe.declared and [v.env_var for v in stripe.missing] == ["STRIPE_KEY"]
@@ -206,6 +206,23 @@ async def test_a_credential_compiles_to_asks_with_ai_assist_then_a_store_on_one_
 
     _no_ai, plain = project_setup.compile_setup(project.id, reqs, ai=False)
     assert plain["ask-telegram-TELEGRAM_BOT_TOKEN"].exe_data.assist_agent == ""
+
+
+async def test_with_a_secret_manager_the_values_are_fetched_before_anyone_is_asked(project, templates, monkeypatch):
+    _sources(monkeypatch, "telegram")
+    reqs = await project_setup.collect_requirements(project)
+
+    wizard, ops = project_setup.compile_setup(project.id, reqs, vaults=("team",))
+
+    assert [s.id for s in wizard.steps] == ["fetch-telegram", "ask-telegram-TELEGRAM_BOT_TOKEN", "store-telegram"]
+    fetch = ops["fetch-telegram"]
+    assert "secrets fetch telegram --project" in fetch.exe_data.command_for("linux")
+    assert fetch.completion_check == ops["ask-telegram-TELEGRAM_BOT_TOKEN"].completion_check, "a full fetch skips the asks"
+
+    _w, at_deployment = project_setup.compile_setup(project.id, reqs, vaults=("team",), deployment_id="d-1")
+    assert "fetch-telegram" not in at_deployment, "a fetch writes this computer's store only"
+    _w, none = project_setup.compile_setup(project.id, reqs)
+    assert "fetch-telegram" not in none
 
 
 async def test_a_credentials_own_setup_timeout_rides_its_questions(project, templates):

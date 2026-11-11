@@ -132,16 +132,19 @@ describe('destinationOptions', () => {
       name: 'WhatsApp',
       provider: 'whatsapp',
       ownerName: 'Sales agent',
+      instanceId: 'inst-1',
       places: [
-        { key: 'this', label: 'This computer' },
+        { key: 'this', label: 'This computer', instance_id: 'inst-1' },
         { key: 'dep-1', label: 'production · gcp_vm', node_typeid: 'compute_node-n1' },
       ],
     },
     { id: 'ds-t', name: 'Telegram', provider: 'telegram' },
   ];
+  // The hub page has no local channel, so none names an instance.
+  const hubChannels = channels.map((c) => ({ ...c, instanceId: undefined }));
 
   it('lists the default, this computer and each cloud placement of a channel of the same vendor', () => {
-    const options = destinationOptions('whatsapp', channels, 'inst-1', LABELS);
+    const options = destinationOptions('whatsapp', channels, LABELS);
     expect(options.map((o) => o.testId)).toEqual([
       'inbound-dest-default',
       'inbound-dest-this-ds-a',
@@ -154,12 +157,12 @@ describe('destinationOptions', () => {
   });
 
   it('offers no "this computer" on the hub page and no default for a number', () => {
-    const options = destinationOptions('whatsapp', channels, null, LABELS, { withDefault: false });
+    const options = destinationOptions('whatsapp', hubChannels, LABELS, { withDefault: false });
     expect(options.map((o) => o.key)).toEqual(['node:dep-1:ds-a']);
   });
 
   it('finds the option a claim already points at, by place', () => {
-    const options = destinationOptions('whatsapp', channels, 'inst-1', LABELS);
+    const options = destinationOptions('whatsapp', channels, LABELS);
     expect(optionFor({ kind: 'desktop', instance_id: 'inst-1', data_source_id: 'ds-a' }, options)?.key).toBe(
       'this:ds-a',
     );

@@ -193,7 +193,14 @@ CONVERGED_TO_PRIVATE = {
 # APIField for security". Born private: fields added since, which were PRIVATE
 # from their first line — `published` is a cache of the project manifest row,
 # reconciled from a local FILE that no receiver has.
-NEWLY_DECLARED_PRIVATE = {"fs_storage_provider", "published", "visitor_role"}
+NEWLY_DECLARED_PRIVATE = {
+    "fs_storage_provider",
+    "published",
+    "visitor_role",
+    "public_roles",
+    "authenticated_roles",
+    "visitor_roles",
+}
 BASE_LOCAL_ONLY = ["asset_occurrences", "asset_ref", "fetched_at", "remote", "system"]
 HUB_AUTHORITATIVE = ["updated_date"]
 
@@ -222,6 +229,12 @@ def test_the_two_egress_seams_now_agree():
 
     assert bundle - hub == set(), "a bundle-private field is still pushed to the hub"
     assert sorted(hub - bundle) == ["created_date", "updated_date"], "HUB_READ, by design"
+
+
+# Fields a type takes FROM the hub under the hub's own name (HUB_READ): not private, never sent,
+# owned by the hub — the conversation's owner (``initiated_by``), its roster (``members``) and who
+# picked a ticket up.
+HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "members", "picked_up_by", "staffed"}}
 
 
 @pytest.mark.parametrize(
@@ -299,7 +312,21 @@ def test_the_two_egress_seams_now_agree():
             # `mark`: what a channel message did (a review's verdict), projected from the SourceItem.
             # `outbound` / `delivery_failure`: this machine's outbox — "I wrote this to send" and why
             # the hub does not have it yet. Facts about this machine's sending, nowhere else.
-            ["origin_local", "source_item_id", "sent_at", "envelope", "sender", "reactions", "mark", "outbound", "delivery_failure"],
+            [
+                "origin_local",
+                "source_item_id",
+                "sent_at",
+                "envelope",
+                "sender",
+                "reactions",
+                "mark",
+                "outbound",
+                "delivery_failure",
+                # `it_reply`: re-derived from the hub-written metadata on every arrival, never sent back.
+                "it_reply",
+                # `it_request`: the ids of an IT send this machine made, kept here to match its answers.
+                "it_request",
+            ],
             # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",
@@ -320,6 +347,7 @@ def test_the_two_egress_seams_now_agree():
             # the cloud record this message caches, absent on Flowpad-native ones.
             # `delivery_failure` is a nested HubFailure, None until a send fails.
             # `mark` is a nested MessageMarkSpec, None on a message that did nothing.
+            # `invite` is a nested MessageInvite, None on every message but an invite.
             [
                 "attachment",
                 "body_status",
@@ -328,6 +356,7 @@ def test_the_two_egress_seams_now_agree():
                 "expand",
                 "fs_storage_provider",
                 "envelope",
+                "invite",
                 "kind",
                 "last_active_at",
                 "last_edited_at",
@@ -396,9 +425,34 @@ def test_the_two_egress_seams_now_agree():
             # `awaits_hub`/`origin_project_id`: an ask for help captured here for the hub, and the
             # project it was asked from — this machine's bookkeeping until delivery.
             # `channel_answered`: whether anything here answers the channel — stamped by the local projection.
-            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "unread_count", "archived",
-             "channel_spec", "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id",
-             "channel_answered"],
+            # `updated_date`: local recency (the hub clock is `hub_updated_date`).
+            # `archived_at`/`dismissed_at`: this viewer's own archive/dismiss — never travel.
+            # `marks`: the chips a local source puts on the whole conversation — local.
+            # `plan_sessions_indexed_at`: when this machine last linked plan sessions — local.
+            # `attachment_count`: a projection of the messages' files, like `message_count`.
+            [
+                "hub_updated_date",
+                "message_ids",
+                "attachment_count",
+                "owner",
+                "channel_source_id",
+                "is_unread",
+                "unread_count",
+                "archived",
+                "channel_spec",
+                "address",
+                "started_at",
+                "ended_at",
+                "channel_provider",
+                "awaits_hub",
+                "origin_project_id",
+                "channel_answered",
+                "updated_date",
+                "archived_at",
+                "dismissed_at",
+                "marks",
+                "plan_sessions_indexed_at",
+            ],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
@@ -415,8 +469,11 @@ def test_the_two_egress_seams_now_agree():
                 "status",
                 "last_active_at",
                 "last_edited_at",
+                # A list of mark values: the harness fills strings, not specs.
+                "marks",
                 "message_count",
                 "message_ids",
+                "attachment_count",
                 # A projection like `message_count`: only `recompute_unread` may write it.
                 "is_unread",
                 "unread_count",
@@ -440,7 +497,8 @@ def test_seam_policy_per_type(module, name, kwargs, extra_private, local_only, u
     # ignores `exclude` entries a model doesn't have, which is why the literal
     # could carry `path`/`cwd`/`installed_root` for types that never had them —
     # so assert the difference is exactly the undeclared names, not a loosening.
-    literal = set(BASE_BUNDLE_EXCLUDE + extra_private) | NEWLY_DECLARED_PRIVATE
+    hub_read = HUB_READ_BY_TYPE.get(name, set())
+    literal = (set(BASE_BUNDLE_EXCLUDE + extra_private) | NEWLY_DECLARED_PRIVATE) - hub_read
     declared = set(cls.model_fields) | set(cls.model_computed_fields)
     assert set(inst._local_fields()) == literal & declared
     assert (literal - set(inst._local_fields())) <= (literal - declared)
@@ -449,15 +507,15 @@ def test_seam_policy_per_type(module, name, kwargs, extra_private, local_only, u
     # `extra_private` is a per-type PRIVATE re-declaration, which withholds from
     # BOTH seams — so it narrows the hub set exactly as it narrows the bundle one.
     hub_expected = (
-        set(BASE_HUB_EXCLUDE) | CONVERGED_TO_PRIVATE | NEWLY_DECLARED_PRIVATE | set(extra_private)
+        set(BASE_HUB_EXCLUDE) | CONVERGED_TO_PRIVATE | NEWLY_DECLARED_PRIVATE | set(extra_private) | hub_read
     ) & declared
     assert set(_base_hub_exclude(cls, inst)) == hub_expected
     # Ingress protection is now derived: PRIVATE ∪ HUB_WRITE. It is a superset
     # of the old hand-written LOCAL_ONLY_FIELDS (which listed only the fields
     # someone remembered), so assert containment plus the type's own additions.
     blocked = cls.fields_not_accepted_from_hub()
-    assert set(local_only) & declared <= blocked
-    assert cls.fields_owned_by_hub() == {"created_date", "updated_date"} & declared
+    assert set(local_only) & declared - hub_read <= blocked
+    assert cls.fields_owned_by_hub() == ({"created_date", "updated_date"} - set(extra_private) | hub_read) & declared
     # Coverage honesty: a new field the filler can't populate must be handled,
     # not silently excluded from every assertion above.
     assert could_not_fill == sorted(unfillable)
@@ -510,18 +568,16 @@ def test_project_hub_body_override_strips_local_project_state():
     # `fs_storage_mount_path` has dropped off this list: the base seam now
     # withholds it, so the override's pop is a no-op. The override is shrinking
     # toward the remainder that genuinely is not per-field policy.
+    # The local project state (presence overlay, session counters, `last_mode`, …) is withheld by
+    # its declarations now, so the override pops only what is not a declared field.
     assert popped == [
         "context_dir_infos",
         # Local absolute paths — the same reason `include_dirs` is here. The
         # frontend reads it from the local API; it must never reach the hub.
         "context_roots",
-        "host_member_id",
         "include_dirs",
-        "last_mode",
-        "last_session_at",
-        "presence",
-        "session_code",
-        "session_count",
+        # This machine's project status (core/project_status): read from its instance file, never sent.
+        "local_status",
     ]
     assert added == []
     assert "name" in inst._hub_body(), "the hub hosts a project's name verbatim"

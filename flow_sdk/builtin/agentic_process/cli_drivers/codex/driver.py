@@ -145,6 +145,7 @@ class CodexDriver:
     # interstitial is up (that screen has no banner — and paints its own ``›``
     # cursor, so a prompt-glyph marker would false-positive). The banner text
     # is painted contiguously, so it survives ``strip_pty_controls``.
+    launch_screen = None
     pty_composer_ready_pattern = re.compile(r">_ OpenAI Codex")
     # A PTY launch drops the prompt (codex reads it from stdin); prompt() types it.
     pty_launch_drops_prompt = True
@@ -228,6 +229,8 @@ class CodexDriver:
         assets: AssetDir,
         process_id: str,
         events: Sequence[HookEventType],
+        *,
+        app_launch: bool = False,
     ) -> ProcessHookRuntime:
         normalized = normalize_process_hook_events(events, provider=self.name)
         if not normalized:

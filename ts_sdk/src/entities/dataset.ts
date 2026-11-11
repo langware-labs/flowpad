@@ -79,8 +79,6 @@ export interface CheckDetail {
   /** `code: "rule"` / `"unique"`: the rule broken — both ends (`same`) or the fields no two rows
    *  share (`unique`), and why. */
   rule?: { same?: [string, string]; unique?: string[]; description: string };
-  /** `code: "owned"`: the outside system that owns the field (the schema's `owned_by`). */
-  owned_by?: string;
 }
 
 /** A row that does not fit: by key, with everything wrong, its version (to repair it with `put`
@@ -219,7 +217,8 @@ export interface DatasetRowsChange {
 }
 
 /** Who a write is made for, as the row actions read it. `by` names the outside system the writer
- *  writes as (`"crm"`): only that writer sets a field the schema marks `owned_by` it — anyone else
+ *  writes as: `"soc"` writes as the dataset's system of record — only that writer sets a field
+ *  the schema holds there (its `truth`, when the data source is a system of record); anyone else
  *  changing one is refused (400, `details[].code === 'owned'`). An app editing its own fields
  *  leaves it out. A guard against mistakes between cooperating writers, not a permission. */
 function writer(options: { by?: string }): { by?: string } {
@@ -257,6 +256,16 @@ export interface IDataset extends IEntity {
   kind_counts?: Record<string, number>;
   num_annotated?: number;
   asset_ref?: string;
+  /** The kind each row is, resolved by the backend (`Dataset.row_kind`) — named specs too. */
+  row_kind?: string;
+  /** The data source the rows live in, by name — null/absent is the project's data store (out of
+   *  the project, never in git). */
+  data_source?: string | null;
+  /** The folder inside that source. */
+  path?: string | null;
+  /** Where the rows are, as a person reads it (`project data store`, `gtm-drive · Sales Desk/gtm-personas`,
+   *  or just the source name for a system of record). */
+  rows_at?: string;
 }
 
 // `implements IDataset` only checks the class; it contributes no members, so every
@@ -320,9 +329,10 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return typeof this.spec === 'string' ? this.spec : null;
   }
 
-  /** The kind each row is — its `input` — for a named spec too (`kindForm(specKind).slots.input`);
-   *  an inline spec answers here directly. A row is one instance: `<rowKind>.id.<row id>`. */
+  /** The kind each row is — its `input` — for a named spec too: the backend resolves it
+   *  (`row_kind`); an inline spec answers here directly. A row is one instance: `<rowKind>.id.<row id>`. */
   get rowKind(): string | null {
+    if (this.row_kind) return this.row_kind;
     const input = typeof this.spec === 'object' ? this.spec?.rows?.[0]?.input : null;
     return typeof input === 'string' ? input.replace(/^\?/, '') : null;
   }
@@ -472,13 +482,13 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.get(`eval/${encodeURIComponent(runId)}`);
   }
 
-  /** Run this dataset's eval now; answers the new run. */
   /** How one row's answer was reached in a run (its `trace`), fetched only when it is opened. */
   async evalTrace(runId: string, rowId: string): Promise<EvalTrace | null> {
     const found = (await this.get(`eval/${encodeURIComponent(runId)}/${encodeURIComponent(rowId)}`)) as { trace?: EvalTrace | null };
     return found?.trace ?? null;
   }
 
+  /** Run this dataset's eval now; answers the new run. */
   async runEval(options: { eval?: string; kinds?: string[] } = {}): Promise<EvalRun> {
     return this.post('run-eval', options);
   }
@@ -549,23 +559,17 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('rename-row', { key: keyOrId, new_key: newKey, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
-  /** Make this dataset the typed MIRROR of a data source: each of the source's items becomes one
-   *  row of this dataset's kind, and the dataset is made to hold exactly those (as `sync`). `map`
-   *  says how an item becomes a row, in the path grammar — `{key: 'external_id', input: {name:
-   *  'name', stage: 'data.stage'}}` (`{value: x}` is a constant). `by` is the outside system the
-   *  rows are written as (default: the source's provider). */
-  async mirror(
-    sourceId: string,
-    map: { key: string; input: Record<string, unknown> },
-    options: { by?: string; prune?: boolean; match?: DatasetRowQuery['match'] } = {},
-  ): Promise<DatasetSyncResult> {
-    return this.post('mirror', {
-      source_id: sourceId,
-      map,
-      ...writer(options),
-      ...(options.prune === undefined ? {} : { prune: options.prune }),
-      ...(options.match ? { match: matchJson(options.match) } : {}),
-    });
+  /** Bring the rows of a data source (Drive, S3, a system of record) up to date now — what every
+   *  read does first. `moved` names the rows that changed, `gone` the rows no longer there. */
+  async pull(): Promise<{ moved: string[]; gone: string[]; num_rows: number }> {
+    return this.post('pull', {});
+  }
+
+  /** Copy every row into a data source (`{ data_source, path? }`), or back to the project's data
+   *  store (`{}`), then make it where this dataset's rows live. 503 when the source is not set up
+   *  here, 400 for a system of record. */
+  async moveRows(target: { data_source?: string; path?: string } = {}): Promise<{ from: string; to: string; rows: number }> {
+    return this.post('move-rows', target);
   }
 
   /** Would this row fit — its shape, its links, its schema's rules across rows (a `unique` value

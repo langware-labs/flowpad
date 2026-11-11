@@ -16,6 +16,7 @@ directly.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -25,15 +26,44 @@ if TYPE_CHECKING:  # pragma: no cover
 #: A cloud placement's credential environment when the caller names none.
 DEFAULT_CLOUD_ENVIRONMENT = "production"
 
+
+def default_cloud_environment() -> str:
+    """The credential environment a deploy dialog starts on: ``staging`` when this instance is signed in to
+    a staging hub, so a test machine does not read the production values by default."""
+    from urllib.parse import urlparse  # noqa: PLC0415
+
+    from flow_sdk.config import default_service_config  # noqa: PLC0415
+
+    host = urlparse(default_service_config.flowpad_hub_url or "").hostname or ""
+    return "staging" if "staging" in host else DEFAULT_CLOUD_ENVIRONMENT
+
+
 #: The hub compute provider a cloud placement lands on when the caller names none. Which providers
 #: exist is the hub's to say: it refuses one it does not offer.
 DEFAULT_CLOUD_PROVIDER = "e2b"
 
+#: How long a deploy whose answer was lost waits for the hub to push its machine. The load balancer in front of
+#: the hub drops a request it has held for minutes while the hub goes on placing the machine: a dropped answer is
+#: not a failure.
+PLACED_WITHIN_S = 8 * 60
+
 
 async def deploy_entity_to_cloud(
-    entity: "Entity", environment: str | None = None, *, provider: str | None = None, require: list[str] | None = None
+    entity: "Entity",
+    environment: str | None = None,
+    *,
+    provider: str | None = None,
+    require: list[str] | None = None,
+    deployment_id: str | None = None,
+    machine_size: str | None = None,
+    main_agent_id: str | None = None,
+    identity: str | None = None,
+    source_kind: str | None = None,
+    source_ref: str | None = None,
+    mode_fields: dict | None = None,
 ) -> dict[str, Any]:
-    """POST ``<entity>/deploy`` on the hub and adopt the placement it returns.
+    """POST ``<entity>/deploy`` on the hub and adopt the placement it returns. ``main_agent_id`` names the
+    agent that answers on the box (the box logs in as it unless ``identity`` says otherwise).
 
     Deliberately takes no node and no principal. Were either passable from here
     they would be passable from anywhere, which is the exact hole the hub's
@@ -41,12 +71,12 @@ async def deploy_entity_to_cloud(
     ``provider`` (the hub's name; none: :data:`DEFAULT_CLOUD_PROVIDER`), and
     which credential ``environment`` the placement reads (``production`` by
     default) — a name, never a value. ``require`` names the variables the hub must already hold for
-    the placement; it refuses (``not_ready``) before paying for a machine otherwise.
+    the placement; it refuses (``not_ready``) before paying for a machine otherwise. ``deployment_id`` names
+    the placement this deploy is for (the one a plan made); without it the hub makes a new one.
     """
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
     from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-    from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-    from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import DEPLOY_TIMEOUT, HubProxy  # noqa: PLC0415
     from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
 
     environment = normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT)
@@ -54,16 +84,26 @@ async def deploy_entity_to_cloud(
     if not creds or not creds.api_key:
         raise RuntimeError("Cloud login required before deploy")
 
-    path = build_hub_url(entity, action="deploy")
-    async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-        # `post` already unwraps the envelope, and raises on a non-success one —
-        # so a hub-side refusal surfaces here rather than returning {}.
-        body = {
-            "environment": environment,
-            "provider": provider or DEFAULT_CLOUD_PROVIDER,
-            **({"require": require} if require else {}),
-        }
-        data = await client.post(path, body)
+    # `strict` unwraps the envelope and raises on a refusing one —
+    # so a hub-side refusal surfaces here rather than returning {}.
+    source = await deploy_source(entity)
+    body = {
+        "environment": environment,
+        "provider": provider or DEFAULT_CLOUD_PROVIDER,
+        **({"require": require} if require else {}),
+        **({"deployment_id": deployment_id} if deployment_id else {}),
+        **({"machine_size": machine_size} if machine_size else {}),
+        **({"main_agent_id": main_agent_id} if main_agent_id else {}),
+        **({"identity": identity} if identity else {}),
+        **({"source_kind": source_kind} if source_kind else {}),
+        **({"source_ref": source_ref} if source_ref else {}),
+        **(mode_fields or {}),
+        # A GitHub-backed checkout: the hub clones GitHub at this exact commit for the machine.
+        **({"source": source} if source else {}),
+    }
+    data = await HubProxy.call(
+        "POST", entity.type, entity.id, "deploy", payload=body, strict=True, timeout=DEPLOY_TIMEOUT
+    )
     data = data if isinstance(data, dict) else {}
     await Deployment.adopt_from_hub(data.get("deployment"), element=entity)
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
@@ -74,4 +114,48 @@ async def deploy_entity_to_cloud(
     return data
 
 
-__all__ = ["DEFAULT_CLOUD_PROVIDER", "deploy_entity_to_cloud"]
+async def deploy_source(entity: "Entity") -> dict[str, Any] | None:
+    """The GitHub repo + pushed commit the machine runs (``github_deploy_source``) when the project
+    holding ``entity`` (or ``entity`` itself, a Project) is a checkout with a GitHub ``origin``;
+    ``None`` otherwise, and the hub deploys from the project's hub repo."""
+    from pathlib import Path  # noqa: PLC0415
+
+    from flow_sdk.assets.hub_repo_sync import github_deploy_source  # noqa: PLC0415
+    from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    project = entity if isinstance(entity, Project) else await owning_project(entity)
+    mount = getattr(project, "fs_storage_mount_path", None) if project is not None else None
+    return await asyncio.to_thread(github_deploy_source, Path(mount)) if mount else None
+
+
+async def wait_until_placed(deployment_id: str) -> None:
+    """Wait for the placement's local row to have its machine — for a deploy whose answer never came back. The hub
+    pushes the placement as it gives it its machine and the bridge mirrors each push into that row, which announces
+    itself on the bus once written: the row is read again on each announcement, never asked of the hub. Raises
+    ``TimeoutError`` after :data:`PLACED_WITHIN_S` with none."""
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.tags import on_tag, target_of  # noqa: PLC0415
+
+    changed = asyncio.Event()
+
+    async def placed() -> None:
+        while True:
+            changed.clear()  # before the read: a write that lands during it wakes the next wait
+            row = await Deployment.get_by_id(deployment_id)
+            if row is not None and row.origin and row.origin.external_id and row.status.provider_state == "running":
+                return
+            await changed.wait()
+
+    unsubscribe = on_tag("entity.*", lambda _event: changed.set(), target=target_of("deployment", deployment_id))
+    try:
+        await asyncio.wait_for(placed(), PLACED_WITHIN_S)
+    except TimeoutError:
+        raise TimeoutError(
+            f"the hub sent no machine for it within {PLACED_WITHIN_S // 60} minutes of losing its answer"
+        ) from None
+    finally:
+        unsubscribe()
+
+
+__all__ = ["DEFAULT_CLOUD_PROVIDER", "deploy_entity_to_cloud", "deploy_source", "wait_until_placed"]

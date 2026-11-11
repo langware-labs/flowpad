@@ -28,7 +28,7 @@ vi.mock('@src/components/terminal/interactive-terminal/use-worktree-actions', ()
 }));
 vi.mock('@src/components/terminal/interactive-terminal/EntityShareDialog', () => ({ EntityShareDialog: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/SessionSurfaceSwitch', () => ({
-  SessionSurfaceSwitch: () => null,
+  SessionSurfaceSwitch: () => <div data-testid="session-surface-switch" />,
 }));
 vi.mock('@src/components/asset-manager', () => ({ AssetManagerButton: () => null }));
 // The surface on screen — the debug menu is offered on the terminal one only.
@@ -185,6 +185,20 @@ describe('ProcessToolbar — one bar for every surface', () => {
     },
   );
 
+  it.each(['advanced', 'standard', 'vibe'])(
+    '%s: the switch and the menu are the last two controls, after Fork — the anchor never moves',
+    (mode) => {
+      standalone(mode);
+      const bar = screen.getByTestId('process-toolbar');
+      const order = [...bar.querySelectorAll('[data-testid]')]
+        .map((el) => el.getAttribute('data-testid'))
+        .filter((id) => ['process-toolbar-fork', 'session-surface-switch', 'process-toolbar-menu'].includes(id!));
+      expect(order).toEqual(['process-toolbar-fork', 'session-surface-switch', 'process-toolbar-menu']);
+      // Nothing after the anchor: it is the row's last child.
+      expect(bar.lastElementChild?.getAttribute('data-testid')).toBe('session-anchor');
+    },
+  );
+
   it('the session actions menu carries every action the old icon row had', async () => {
     standalone('standard');
 
@@ -194,10 +208,13 @@ describe('ProcessToolbar — one bar for every surface', () => {
     expect(items).toEqual([
       'session-action-info',
       'session-action-transcript',
+      'session-action-command-options',
       'session-action-assets',
       'process-toolbar-restart',
+      'session-action-side-tab-analysis',
       'session-action-terminal',
       'session-action-worktree',
+      'session-action-chain',
       'entity-actions-export',
     ]);
   });
@@ -212,8 +229,10 @@ describe('ProcessToolbar — one bar for every surface', () => {
     expect(items).toEqual([
       'session-action-info',
       'session-action-transcript',
+      'session-action-command-options',
       'session-action-assets',
       'process-toolbar-restart',
+      'session-action-side-tab-analysis',
     ]);
   });
 

@@ -6,10 +6,13 @@ const { promisify } = require('util');
 const https = require('https');
 const crypto = require('crypto');
 const { SEMVER_RE, isNewer } = require('./semver');
+const engineCompat = require('./engine-compat');
+const { readWheelMember } = require('./wheel-compat');
 const updateTest = require('./update-test');
 const { createProgressWatchdog } = require('./progress-watchdog');
 const { showFailureDialog } = require('./failure-dialog');
 const runtimeRepair = require('./runtime-repair');
+const engineOwnership = require('./engine-ownership');
 // The dependencies that ship native wheels (scripts/native_deps_from_lock.py): the only ones Windows
 // application control can refuse, so the only ones that get the reputation margin (see EXCLUDE_NEWER_MARGIN_DAYS).
 const NATIVE_DEPS = Object.freeze(require('./native-deps.json').packages);
@@ -17,6 +20,16 @@ const NATIVE_DEPS = Object.freeze(require('./native-deps.json').packages);
 const execFileAsync = promisify(execFile);
 
 const IS_WIN = process.platform === 'win32';
+// The throwaway tool dirs an engine prepare stages into (prepareEngine), next to uv's cache.
+const STAGE_PREFIX = 'flowpad-staging-';
+// A staging dir this old is a leftover whoever its owner: no prepare runs this long, so a live pid in its
+// name is a reused one. Also the only test for a dir with no owner pid in its name (an older build's).
+const STAGE_LEFTOVER_AGE_MS = 24 * 60 * 60 * 1000;
+// Removing a staging dir: a file Windows still holds is tried this many times in all, retryDelay apart
+// (Node's rm backs off linearly: 250 ms, then 500 ms). A retry budget the user approved for this lock only —
+// it never holds anything (see _removeStageRoot); do not grow it.
+const STAGE_RM_ATTEMPTS = 3;
+const STAGE_RM_RETRY_DELAY_MS = 250;
 const IS_MAC = process.platform === 'darwin';
 const PATH_SEP = IS_WIN ? ';' : ':';
 
@@ -477,12 +490,36 @@ class QuitInProgressError extends Error {
   }
 }
 
+// Bounds on reading a candidate release's compat.json BEFORE the backend can start. Approved by the repository
+// owner (2026-10-20, review of PR #663), who asked that these steps not be unbounded:
+//   - a ranged GET moves a few KB; one that has not finished in this long is abandoned (the fallback below, or the
+//     post-install check, decides);
+//   - the fallback unpacks a WHOLE wheel (tens of MB). Behind a proxy that strips Range headers every candidate
+//     would fall back to it, so at most this many per resolution -- the rest are "unknown" and the post-install
+//     verification is the authoritative gate.
+const RANGE_FETCH_TIMEOUT_MS = 20 * 1000;
+const MAX_WHOLE_WHEEL_READS = 2;
+
+// Every `flow` the desktop runs carries this, as `flow start` does: the CLI-use stamp
+// (flow_sdk/cli/cli_use.py) must not count the desktop's own calls as someone else's use of
+// the engine, or the uninstaller would treat every desktop engine as shared.
+const DESKTOP_CLI_ENV = { FLOWPAD_DESKTOP: '1' };
+
 class UvManager {
-  constructor(log, { stateDir = null } = {}) {
+  constructor(log, { stateDir = null, appVersion = null } = {}) {
     this.log = log;
     // Where the "install in progress" marker lives. null → marker disabled
     // (unit tests, tools that must not touch the user's home).
     this._stateDir = stateDir;
+    // The desktop app's own version (app.getVersion(), passed by main.js) — one side of the
+    // desktop <-> engine compatibility contract (engine-compat.js). null in unit tests and
+    // tools, which disables the contract the way a legacy pair would be.
+    this._appVersion = appVersion;
+    // Per-session cache of engine releases' min_desktop_version (version → {minDesktopVersion}
+    // or 'invalid'); indeterminate reads are NOT cached so a transient failure can heal.
+    this._minDesktopCache = new Map();
+    this._wholeWheelReadsLeft = MAX_WHOLE_WHEEL_READS;
+    this._rangeIgnored = false; // a server answered a Range request with the whole file: stop asking it
     // Lets native failure dialogs offer "Send Report" (set by main.js; null in tests → "OK" only).
     this._failureSharer = null;
     this._installing = false;
@@ -529,8 +566,14 @@ class UvManager {
 
   /** The venv's python.exe (Windows), or null when it is not there. */
   _venvPython() {
-    const py = path.join(this._toolVenvDir(), 'Scripts', 'python.exe');
+    const py = this._pythonIn(this._toolVenvDir());
     return fs.existsSync(py) ? py : null;
+  }
+
+  /** The interpreter of the venv at `venvDir` — THE place that knows Scripts\python.exe from bin/python. */
+  _pythonIn(venvDir) {
+    const win = this._isWin !== undefined ? this._isWin : IS_WIN;
+    return win ? path.join(venvDir, 'Scripts', 'python.exe') : path.join(venvDir, 'bin', 'python');
   }
 
   /**
@@ -570,7 +613,7 @@ class UvManager {
     // 'ok' | 'slow' (timed out: it runs) | 'blocked' | 'failed' (some other error)
     const attempt = async (launcher, cmd, args, shell) => {
       try {
-        await this._run(cmd, args, { timeout: 2000, ...(shell === undefined ? {} : { shell }) });
+        await this._run(cmd, args, { timeout: 2000, env: DESKTOP_CLI_ENV, ...(shell === undefined ? {} : { shell }) });
         return 'ok';
       } catch (err) {
         if (isPolicyBlockError(err)) { tried.push({ launcher, path: cmd, detail: String(err.stderr || err.message).split('\n')[0] }); return 'blocked'; }
@@ -1102,62 +1145,353 @@ class UvManager {
    * Returns version string (e.g., "0.1.32") or null.
    */
   getInstalledVersionSync(flowBin) {
-    const _readVersion = (dir) => {
-      const versionFile = path.join(dir, 'flow_sdk', '_version.py');
-      if (!fs.existsSync(versionFile)) return null;
-      const content = fs.readFileSync(versionFile, 'utf8');
-      const match = content.match(/__version__\s*=\s*["']([^"']+)["']/);
-      return match ? match[1] : null;
+    const version = this._readSitePackagesFileSync(flowBin, path.join('flow_sdk', '_version.py'));
+    if (!version) return null;
+    const match = version.match(/__version__\s*=\s*["']([^"']+)["']/);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * Read `relPath` out of the installed engine's site-packages, as text. The same discovery
+   * getInstalledVersionSync always used: follow the flow binary's realpath into its venv, then
+   * fall back to uv's canonical tool venv. Returns null when not found (or unreadable) — no
+   * Python is ever run.
+   */
+  _readSitePackagesFileSync(flowBin, relPath) {
+    const _read = (dir) => {
+      const file = path.join(dir, relPath);
+      try { return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null; } catch { return null; }
+    };
+    const _readVenv = (venvRoot) => {
+      // Windows: Lib/site-packages/ (no python3.X subdirectory)
+      const winText = _read(path.join(venvRoot, 'Lib', 'site-packages'));
+      if (winText !== null) return winText;
+      // Unix: lib/python3.X/site-packages/
+      const libDir = path.join(venvRoot, 'lib');
+      if (fs.existsSync(libDir)) {
+        for (const entry of fs.readdirSync(libDir)) {
+          if (entry.startsWith('python')) {
+            const text = _read(path.join(libDir, entry, 'site-packages'));
+            if (text !== null) return text;
+          }
+        }
+      }
+      return null;
     };
 
     try {
-      // Strategy 1: follow the flow binary symlink to find site-packages
+      // Strategy 1: follow the flow binary symlink to find its venv
       const bin = flowBin || this._flowBin;
       if (bin) {
         let binDir = path.dirname(bin);
         // Resolve symlinks (e.g., ~/.local/bin/flow -> ~/.local/share/uv/tools/flowpad/bin/flow)
         try { binDir = path.dirname(fs.realpathSync(bin)); } catch { /* use original */ }
-        // bin/ -> lib/python3.X/site-packages/
-        const venvRoot = path.dirname(binDir);
-        const libDir = path.join(venvRoot, 'lib');
-        if (fs.existsSync(libDir)) {
-          for (const entry of fs.readdirSync(libDir)) {
-            if (entry.startsWith('python')) {
-              const ver = _readVersion(path.join(libDir, entry, 'site-packages'));
-              if (ver) return ver;
-            }
-          }
-        }
-        // Windows: Lib/site-packages/ (no python3.X subdirectory)
-        const winSitePackages = path.join(venvRoot, 'Lib', 'site-packages');
-        const ver = _readVersion(winSitePackages);
-        if (ver) return ver;
+        const text = _readVenv(path.dirname(binDir));
+        if (text !== null) return text;
       }
-
-      // Strategy 2: fallback to known uv tool venv paths
-      const home = os.homedir();
-      const uvToolDir = IS_WIN
-        ? path.join(home, 'AppData', 'Roaming', 'uv', 'tools', PYPI_PACKAGE)
-        : path.join(home, '.local', 'share', 'uv', 'tools', PYPI_PACKAGE);
-      const venvCandidates = [uvToolDir];
-
-      for (const venv of venvCandidates) {
-        // Windows: Lib/site-packages/
-        const winVer = _readVersion(path.join(venv, 'Lib', 'site-packages'));
-        if (winVer) return winVer;
-        // Unix: lib/python3.X/site-packages/
-        const libDir = path.join(venv, 'lib');
-        if (fs.existsSync(libDir)) {
-          for (const entry of fs.readdirSync(libDir)) {
-            if (entry.startsWith('python')) {
-              const ver = _readVersion(path.join(libDir, entry, 'site-packages'));
-              if (ver) return ver;
-            }
-          }
-        }
-      }
+      // Strategy 2: fallback to the canonical uv tool venv
+      return _readVenv(this._toolVenvDir());
     } catch { /* ignore */ }
     return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Desktop <-> engine version compatibility (engine-compat.js is the pure logic;
+  // flow_sdk/utils/compat.py is the Python twin)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The INSTALLED engine's own desktop floor, read as plain data from its site-packages.
+   * @returns {{minDesktopVersion: string|null}|'invalid'} — a missing compat.json is the
+   *   legacy policy (a release older than the contract: no constraint), unparseable
+   *   metadata is 'invalid'.
+   */
+  getInstalledMinDesktopSync(flowBin) {
+    const text = this._readSitePackagesFileSync(flowBin, path.join('flow_sdk', 'compat.json'));
+    if (text === null) return { minDesktopVersion: null };
+    try {
+      return engineCompat.parseEngineCompat(text);
+    } catch (err) {
+      this.log.warn(`[compat] the installed engine's compat.json is invalid: ${err.message}`);
+      return 'invalid';
+    }
+  }
+
+  /**
+   * Is the INSTALLED (desktop, engine) pair compatible in both directions?
+   * @returns {null | {message: string, reasons: string[], engineVersion: string|null, minDesktopVersion: string|null, desktopTooOld: boolean}}
+   *   null when compatible, unknowable (no app version / no engine), or legacy.
+   */
+  installedPairIssue(flowBin, { strict = false } = {}) {
+    if (!this._appVersion) return null;
+    const engineVersion = this.getInstalledVersionSync(flowBin);
+    if (!engineVersion) return null; // no engine (or unreadable) — the install/repair paths own that
+    const compat = this.getInstalledMinDesktopSync(flowBin);
+    if (compat === 'invalid' && strict) {
+      // Verifying an engine we JUST installed: a candidate with invalid metadata is refused before the
+      // install (_assertCandidateCompatible), so one that arrives anyway is refused after it too.
+      const reasons = [`FlowPad Backend ${engineVersion} ships invalid compatibility metadata (flow_sdk/compat.json)`];
+      return {
+        message: engineCompat.incompatibleMessage({ desktopVersion: this._appVersion, engineVersion, reasons }),
+        reasons,
+        engineVersion,
+        minDesktopVersion: null,
+        desktopTooOld: false,
+      };
+    }
+    // Invalid metadata in an ALREADY-INSTALLED engine must not brick startup — it was refused (or never
+    // seen) at install time, but here we warn and treat it as legacy.
+    const minDesktopVersion = compat === 'invalid' ? null : compat.minDesktopVersion;
+    const verdict = engineCompat.checkPair({
+      desktopVersion: this._appVersion,
+      engineVersion,
+      minDesktopVersion,
+      minBackendVersion: engineCompat.desktopMinBackendVersion(),
+    });
+    if (verdict.compatible) return null;
+    return {
+      message: engineCompat.incompatibleMessage({
+        desktopVersion: this._appVersion, engineVersion, reasons: verdict.reasons,
+      }),
+      reasons: verdict.reasons,
+      engineVersion,
+      minDesktopVersion,
+      // The engine demands a newer desktop than this one: the DESKTOP is the old side, so "repairing"
+      // means moving the engine BACKWARD -- main.js asks before doing that. (The other direction, an
+      // engine below the desktop's floor, is a plain upgrade and needs no question.)
+      desktopTooOld: minDesktopVersion !== null && engineCompat.meetsFloor(this._appVersion, minDesktopVersion) === false,
+    };
+  }
+
+  /**
+   * A CANDIDATE release's desktop floor, before anything touches the working install, read as plain
+   * data -- no package code runs. Two ways, cheapest first:
+   *   1. HTTP Range requests for just flow_sdk/compat.json inside the release's wheel (wheel-compat.js:
+   *      tens of KB, so the pre-start update check never waits on a whole-wheel download);
+   *   2. when that cannot be done (no range support, ZIP64, an unexpected wheel URL): unpack the wheel with
+   *      `uv pip install --no-deps --target <tmp>` -- the wheel lands in uv's cache, so the real
+   *      `uv tool install flowpad==X` that follows does not download it again.
+   *
+   * @returns {Promise<{minDesktopVersion: string|null}|'invalid'|null>} null = indeterminate
+   *   (offline, uv failure) -- the caller treats that as legacy and the post-install
+   *   verification (installedPairIssue + rollback) stays the authoritative gate.
+   */
+  async _readCandidateMinDesktop(version) {
+    if (!engineCompat.isInstallableVersion(version)) return 'invalid'; // never becomes an argument
+    if (this._minDesktopCache.has(version)) return this._minDesktopCache.get(version);
+    let result = await this._readCandidateViaRange(version);
+    if (result === null) {
+      if (this._wholeWheelReadsLeft <= 0) {
+        this.log.info(`[compat] not unpacking ${PYPI_PACKAGE} ${version} to read its floor: ${MAX_WHOLE_WHEEL_READS} whole-wheel reads already used this time`);
+        return null; // unknown, and not cached: the post-install verification decides
+      }
+      this._wholeWheelReadsLeft -= 1;
+      result = await this._readCandidateViaUv(version);
+    }
+    if (result !== null) this._minDesktopCache.set(version, result);
+    return result;
+  }
+
+  /** The wheel URL of `version` from PyPI's own document -- https://files.pythonhosted.org only (the
+   *  update-cycle harness serves its stub PyPI from anywhere). null = unknown. */
+  async _wheelUrl(version) {
+    let files = this._pypiDoc && this._pypiDoc.releases && this._pypiDoc.releases[version];
+    if (!Array.isArray(files)) {
+      try {
+        const res = await fetch(`https://pypi.org/pypi/${PYPI_PACKAGE}/${encodeURIComponent(version)}/json`, { headers: { Accept: 'application/json' } });
+        files = res.ok ? (await res.json()).urls : null;
+      } catch { files = null; }
+    }
+    const wheel = (files || []).find((f) => f && f.packagetype === 'bdist_wheel' && f.yanked !== true && typeof f.url === 'string');
+    if (!wheel) return null;
+    if (!updateTest.isEnabled() && !/^https:\/\/files\.pythonhosted\.org\//.test(wheel.url)) {
+      this.log.warn(`[compat] not reading ${PYPI_PACKAGE} ${version} from an unexpected host: ${wheel.url}`);
+      return null;
+    }
+    return wheel.url;
+  }
+
+  /** One ranged GET. A server that ignores Range answers 200 with the whole file: dropped unread. */
+  async _fetchRange(url, rangeHeader) {
+    const res = await fetch(url, { headers: { Range: rangeHeader }, signal: AbortSignal.timeout(RANGE_FETCH_TIMEOUT_MS) });
+    if (res.status !== 206) {
+      if (res.status === 200) this._rangeIgnored = true; // the whole file is coming: this server (or proxy) ignores Range
+      try { await res.body.cancel(); } catch { /* best effort */ }
+      return { status: res.status };
+    }
+    return { status: 206, contentRange: res.headers.get('content-range'), body: Buffer.from(await res.arrayBuffer()) };
+  }
+
+  async _readCandidateViaRange(version) {
+    if (this._rangeIgnored) return null;
+    try {
+      const url = await this._wheelUrl(version);
+      if (!url) return null;
+      const got = await readWheelMember({ url, member: 'flow_sdk/compat.json', fetchRange: (u, r) => this._fetchRange(u, r) });
+      if (!got) return null;
+      if (!got.found) return { minDesktopVersion: null, missing: true }; // older than the contract: declares nothing
+      try {
+        return engineCompat.parseEngineCompat(got.data.toString('utf8'));
+      } catch (err) {
+        this.log.warn(`[compat] ${PYPI_PACKAGE} ${version} ships invalid compat.json: ${err.message}`);
+        return 'invalid';
+      }
+    } catch (err) {
+      this.log.info(`[compat] range read of ${PYPI_PACKAGE} ${version} failed (${String(err.message).split('\n')[0]}) -- unpacking it with uv instead`);
+      return null;
+    }
+  }
+
+  async _readCandidateViaUv(version) {
+    const pin = tryPythonVersion();
+    if (!pin) return null;
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-compat-'));
+    let result = null;
+    try {
+      await this._runStreaming('uv', [
+        // --only-binary: an sdist-only release must not run its build code just so we can read one JSON file
+        'pip', 'install', '--no-deps', '--only-binary', ':all:', '--target', target, '--python', pin,
+        `${PYPI_PACKAGE}==${version}`,
+      ], {});
+      const file = path.join(target, 'flow_sdk', 'compat.json');
+      if (!fs.existsSync(file)) {
+        result = { minDesktopVersion: null, missing: true }; // older than the contract: declares nothing
+      } else {
+        try {
+          result = engineCompat.parseEngineCompat(fs.readFileSync(file, 'utf8'));
+        } catch (err) {
+          this.log.warn(`[compat] ${PYPI_PACKAGE} ${version} ships invalid compat.json: ${err.message}`);
+          result = 'invalid';
+        }
+      }
+    } catch (err) {
+      this.log.warn(`[compat] could not read ${PYPI_PACKAGE} ${version} metadata: ${String(err.message).split('\n')[0]}`);
+    } finally {
+      try { fs.rmSync(target, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+    return result;
+  }
+
+  /**
+   * The newest PyPI release compatible with THIS desktop in both directions, or null when it
+   * cannot be decided (no app version, PyPI unreachable). Throws a user-readable error when
+   * PyPI answered and NO release is compatible — installing anything would be wrong.
+   * `requireMetadata` (an UPDATE of a working engine — the default): a release whose compatibility
+   * metadata cannot be read, or that ships none, is not picked — fail closed, the working engine stays.
+   * Only a first install / a repair, where no engine works, passes false: there the post-install check
+   * (_verifyInstalledPairOrRollback) is the gate, as before.
+   * @returns {Promise<{version: string, minDesktopVersion: string|null}|null>}
+   */
+  async resolveCompatibleEngineVersion({ requireMetadata = true } = {}) {
+    if (!this._appVersion) return null;
+    // Update-cycle harness: a forced engine spec wins over resolution (engineSpec()), so don't
+    // spend staged metadata reads on a scenario that has already decided what to install.
+    if (updateTest.isEnabled() && process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC) return null;
+    this._wholeWheelReadsLeft = MAX_WHOLE_WHEEL_READS;
+    const data = await this._getPypiData();
+    if (!data || !data.releases) return null;
+    this._pypiDoc = data;
+    const releases = Object.entries(data.releases).map(([version, files]) => ({
+      version,
+      // Same rule as the backend's release list (routes/version.py): a release with no files left, or only
+      // yanked ones, is withdrawn -- there is nothing to install.
+      yanked: Array.isArray(files) && files.every((f) => f && f.yanked === true),
+    }));
+    const minBackendVersion = engineCompat.desktopMinBackendVersion();
+    const stats = {};
+    const picked = await engineCompat.selectCompatibleRelease({
+      releases,
+      desktopVersion: this._appVersion,
+      minBackendVersion,
+      readEngineCompat: (v) => this._readCandidateMinDesktop(v),
+      requireMetadata,
+      log: (msg) => this.log.info(`[uv] ${msg}`),
+      stats,
+    });
+    if (!picked && stats.unverifiable) {
+      throw installFailure(
+        `Could not verify which FlowPad engine release is compatible with Desktop ${this._appVersion}: ` +
+        `the compatibility metadata of ${stats.unverifiable} release(s) could not be read (offline, or blocked). ` +
+        'Not updating the engine. Your existing installation has been preserved.'
+      );
+    }
+    if (!picked) {
+      throw installFailure(
+        `No compatible FlowPad engine release found for Desktop ${this._appVersion} ` +
+        `(the desktop requires engine ${minBackendVersion || 'any'} or newer; ` +
+        `${stats.checked ? `checked the newest ${stats.checked}${stats.stoppedAtLimit ? ', older ones were not looked at' : ''}` : 'none was eligible'}). ` +
+        'Update the desktop app, then try again. Your existing installation has been preserved.'
+      );
+    }
+    const latest = data.info && data.info.version;
+    if (latest && picked.version !== latest) {
+      this.log.warn(`[compat] latest ${PYPI_PACKAGE} ${latest} is not compatible with Desktop ${this._appVersion} — using ${picked.version}`);
+    }
+    return picked;
+  }
+
+  /**
+   * The spec install/upgrade/repair should ask uv for: `flowpad==<newest compatible>` when the
+   * contract can be evaluated, else `fallbackSpec` (the pre-contract behaviour — no app version
+   * to hold against, or PyPI unreachable, where the install itself decides/fails).
+   * Throws when PyPI answered and no compatible release exists.
+   */
+  async _compatibleEngineSpec(fallbackSpec) {
+    // Install / repair: no engine works, so an unreadable release is not refused here (the post-install check is).
+    const picked = await this.resolveCompatibleEngineVersion({ requireMetadata: false });
+    if (!picked) return fallbackSpec;
+    return `${PYPI_PACKAGE}==${picked.version}`;
+  }
+
+  /**
+   * After an install/upgrade wrote a new engine: the pair must hold. When it does not (the
+   * selection ran on indeterminate metadata, or a pinned version was forced), put
+   * `previousVersion` back and throw the user-readable incompatibility — an incompatible pair
+   * must never be started.
+   */
+  async _verifyInstalledPairOrRollback(previousVersion, { onProgress } = {}) {
+    const issue = this.installedPairIssue(undefined, { strict: true });
+    if (!issue) return;
+    this.log.error(`[compat] installed pair is incompatible: ${issue.reasons.join('; ')}`);
+    const restorable = previousVersion && previousVersion !== issue.engineVersion && engineCompat.isInstallableVersion(previousVersion);
+    // What the user is told when the old engine could not be put back (or there was none): the "existing
+    // installation has been preserved" line would be false, and the app repairs the pair at its next launch.
+    const unrestored = (why) => installFailure(
+      engineCompat.incompatibleMessage({ desktopVersion: this._appVersion, engineVersion: issue.engineVersion, reasons: issue.reasons, preserved: false }) +
+      `\n\n${why} FlowPad will install a compatible engine the next time it starts.`
+    );
+    if (!restorable) throw unrestored('There was no earlier engine to restore.');
+    this.log.warn(`[compat] rolling the engine back to ${previousVersion}`);
+    if (onProgress) onProgress(`Restoring FlowPad engine ${previousVersion}`);
+    try {
+      await this._restoreEngine(previousVersion, { onProgress });
+    } catch (restoreErr) {
+      const reason = String((restoreErr && restoreErr.message) || restoreErr).split('\n')[0];
+      throw unrestored(`Restoring FlowPad engine ${previousVersion} failed (${reason}). To do it by hand, run: uv tool install ${PYPI_PACKAGE}==${previousVersion} --force.`);
+    }
+    throw installFailure(issue.message);
+  }
+
+  /**
+   * Put `previousVersion` back. uv's cache still holds the wheel it installed, and the network may be exactly what
+   * just failed (a dropped connection mid-install) or never have had the version at all (a local build): so the
+   * cache is asked first (`--offline`), the network second.
+   */
+  async _restoreEngine(previousVersion, { onProgress } = {}) {
+    const pin = await this._pythonPinForUpgrade();
+    const args = ['tool', 'install', `${PYPI_PACKAGE}==${previousVersion}`, '--python', pin, '--force'];
+    let lastErr = null;
+    for (const mode of ['offline', 'online']) {
+      try {
+        await this._uvToolInstallForce(mode === 'offline' ? [...args, '--offline'] : args, { onProgress });
+        this._flowBin = await this._resolveFlowBin();
+        return;
+      } catch (err) {
+        lastErr = err;
+        this.log.warn(`[compat] restoring ${previousVersion} (${mode}) failed: ${String((err && err.message) || err).split('\n')[0]}`);
+      }
+    }
+    throw lastErr;
   }
 
   /**
@@ -1216,11 +1550,15 @@ class UvManager {
     if (IS_WIN) {
       try {
         const escaped = venvDir.replace(/'/g, "''");
+        // Get-Process, not Get-CimInstance: the WMI scan of every process took >8s cold on a busy
+        // machine (log 2026-10-05 22:23: the drain timed out, nothing was killed, and uv then hit
+        // "failed to remove directory …\Scripts: Access is denied"). Get-Process reads the same
+        // Path without the WMI service; both returned identical pids on a real Windows (VM-verified).
         const { stdout } = await execFileAsync('powershell.exe', [
           '-NoProfile', '-Command',
-          `Get-CimInstance Win32_Process | ` +
-          `Where-Object { $_.ExecutablePath -like '${escaped}\\*' } | ` +
-          `Select-Object -ExpandProperty ProcessId`,
+          `Get-Process | ` +
+          `Where-Object { $_.Path -like '${escaped}\\*' } | ` +
+          `Select-Object -ExpandProperty Id`,
         ], { timeout: 8000, windowsHide: true, env: { ...process.env, PSModulePath: windowsPowerShellModulePath() } });
         const pids = stdout.split(/\r?\n/)
           .map((s) => parseInt(s.trim(), 10))
@@ -1315,15 +1653,18 @@ class UvManager {
    *     RCA fad616fc). We quarantine the corrupt dir aside (renamed, not deleted,
    *     so it survives for diagnosis) and retry, which rebuilds the env clean.
    */
-  async _uvToolInstallForce(installArgs, { onProgress } = {}) {
+  async _uvToolInstallForce(installArgs, { onProgress, strategies = null, compileBytecode = true } = {}) {
     this._assertOpen('install flowpad');
     this._installing = true;
     this._installAborted = false;
     this._keepMarker = false;
     this._spawned = false;
     this._writeInstallMarker(installArgs);
+    const venvBefore = this._ownershipSnapshotBeforeInstall();
     try {
-      return await this._uvToolInstallForceAttempts(installArgs, { onProgress });
+      const result = await this._uvToolInstallForceAttempts(installArgs, { onProgress, strategies, compileBytecode });
+      this._recordEngineOwnership(venvBefore);
+      return result;
     } catch (err) {
       // uv killed from outside (a signal: OOM, AV, Task Manager), or given up on a locked /
       // half-written tool dir: the venv may be half-replaced, so keep the marker.
@@ -1342,7 +1683,163 @@ class UvManager {
     }
   }
 
-  async _uvToolInstallForceAttempts(installArgs, { onProgress } = {}) {
+  // ── Engine ownership record (engine-ownership.js; read by the Windows uninstaller) ──────────
+
+  /** `%LOCALAPPDATA%\Flowpad\engine-ownership.json`; null off Windows and when state is disabled (tests, tools). */
+  _engineOwnershipPath() {
+    if (!IS_WIN || !this._stateDir) return null;
+    const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    return engineOwnership.ownershipRecordPath(local);
+  }
+
+  _ownershipFs() {
+    return {
+      statBigint: (p) => fs.statSync(p, { bigint: true }),
+      readBytes: (p) => fs.readFileSync(p),
+      exists: (p) => fs.existsSync(p),
+    };
+  }
+
+  /**
+   * The venv as it is before an install. During a runtime repair the live venv has just been
+   * renamed to `<venv>.pre-repair`, so that copy stands in for it: a rename keeps the directory's
+   * identity and receipt, so an adopted engine is not mistaken for one the desktop made. Outside a
+   * repair a `.pre-repair` folder is only a leftover (finalize is best effort) and says nothing.
+   */
+  _ownershipSnapshotBeforeInstall() {
+    if (!this._engineOwnershipPath()) return null;
+    const io = this._ownershipFs();
+    const live = engineOwnership.snapshotVenv(io, this._toolVenvDir());
+    // A repair after a blocked FIRST install set aside that install's half-built venv, not an engine.
+    if (live.exists || !this._repairSetAside || this._hadEngineBeforeRepair === false) return live;
+    return engineOwnership.snapshotVenv(io, this._preRepairVenvDir());
+  }
+
+  /** After a successful install: record its origin. Never throws — a missing record only means "uncertain". */
+  _recordEngineOwnership(venvBefore) {
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath || !venvBefore) return;
+    try {
+      const venvDir = this._toolVenvDir();
+      const prior = engineOwnership.readRecord((p) => fs.readFileSync(p, 'utf8'), recordPath);
+      const origin = engineOwnership.classifyEngineOrigin({ prior, before: venvBefore });
+      const snapshot = engineOwnership.snapshotVenv(this._ownershipFs(), venvDir);
+      if (!snapshot.exists) return;
+      const record = engineOwnership.buildRecord({
+        origin, venv: venvDir, snapshot, desktopVersion: this._appVersion, now: () => new Date().toISOString(),
+      });
+      this._writeOwnershipRecord(recordPath, record);
+      this.log.info(`[uv] engine ownership recorded: origin=${origin}`);
+    } catch (e) {
+      this.log.warn(`[uv] could not record engine ownership: ${e.message}`);
+    }
+  }
+
+  /** `engine-ownership.pre-repair.json`: the record of the venv set aside by a repair. */
+  _asideRecordPath() {
+    const recordPath = this._engineOwnershipPath();
+    return recordPath && path.join(path.dirname(recordPath), engineOwnership.ASIDE_RECORD_FILE);
+  }
+
+  /**
+   * Before the repair sets the venv aside: its record goes aside with it, byte for byte. Remembers
+   * what was there — 'saved', 'none' (no record: none to put back) or 'unknown' (the copy failed) —
+   * so the rollback never deletes a record it could not set aside. Never throws.
+   */
+  _setAsideOwnershipRecord() {
+    this._asideRecordState = undefined;
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath || !fs.existsSync(this._toolVenvDir())) return; // nothing is set aside
+    const aside = this._asideRecordPath();
+    try {
+      if (!fs.existsSync(recordPath)) {
+        fs.rmSync(aside, { force: true });
+        this._asideRecordState = 'none';
+        return;
+      }
+      const tmp = `${aside}.${process.pid}.tmp`;
+      try {
+        fs.copyFileSync(recordPath, tmp);
+        fs.renameSync(tmp, aside);
+      } finally {
+        try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+      }
+      this._asideRecordState = 'saved';
+    } catch (e) {
+      this._asideRecordState = 'unknown';
+      try { fs.rmSync(aside, { force: true }); } catch { /* best effort */ }
+      this.log.warn(`[runtime-repair] could not set the engine ownership record aside: ${e.message}`);
+    }
+  }
+
+  /**
+   * The set-aside venv is back in place: so is its record. Without a set-aside record the live one
+   * is deleted only when there was none before the repair; otherwise it stays (it no longer matches
+   * the venv, so the uninstaller keeps the engine — never a guess that removes it). Never throws.
+   */
+  _restoreAsideOwnershipRecord() {
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath) return;
+    try {
+      const aside = this._asideRecordPath();
+      if (fs.existsSync(aside)) {
+        fs.renameSync(aside, recordPath);
+      } else if (this._asideRecordState === 'none') {
+        fs.rmSync(recordPath, { force: true });
+      } else {
+        this.log.warn('[runtime-repair] the engine ownership record was not set aside: the restored engine keeps the current one');
+        return;
+      }
+      this.log.info('[runtime-repair] engine ownership record restored with the engine');
+    } catch (e) {
+      this.log.warn(`[runtime-repair] could not restore the engine ownership record: ${e.message}`);
+    }
+  }
+
+  _dropAsideOwnershipRecord() {
+    const aside = this._asideRecordPath();
+    if (aside) fs.rmSync(aside, { force: true });
+  }
+
+  _writeOwnershipRecord(recordPath, record) {
+    engineOwnership.writeRecord({
+      mkdir: (d) => fs.mkdirSync(d, { recursive: true }),
+      writeText: (p, t) => fs.writeFileSync(p, t, 'utf8'),
+      rename: (a, b) => fs.renameSync(a, b),
+    }, recordPath, record);
+  }
+
+  /**
+   * Once, for an engine installed before ownership records existed: infer its origin from the
+   * receipt's desktop install signature plus the instance's `.desktop_managed` marker. Must run
+   * before this launch's first install, or that install would classify the venv as adopted.
+   */
+  backfillEngineOwnership() {
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath) return;
+    try {
+      if (fs.existsSync(recordPath)) return;
+      const venvDir = this._toolVenvDir();
+      const snapshot = engineOwnership.snapshotVenv(this._ownershipFs(), venvDir);
+      if (!snapshot.exists) return;
+      let receiptText = null;
+      try { receiptText = fs.readFileSync(path.join(venvDir, engineOwnership.RECEIPT_FILE), 'utf8'); } catch { /* no receipt: adopted */ }
+      const instance = process.env.FLOW_INSTANCE || 'prod';
+      const desktopManaged = fs.existsSync(path.join(this._stateDir, 'instances', instance, '.desktop_managed'));
+      const origin = engineOwnership.inferLegacyOrigin({ receiptText, desktopManaged });
+      this._writeOwnershipRecord(recordPath, engineOwnership.buildRecord({
+        origin, venv: venvDir, snapshot, desktopVersion: this._appVersion, now: () => new Date().toISOString(),
+      }));
+      // `adopted` covers every engine not proven the desktop's: one installed separately, or one an
+      // earlier install left half-written (no receipt). Both are kept on uninstall.
+      const why = origin === 'adopted' ? (receiptText == null ? ' (no receipt: installed separately, or an interrupted install)' : ' (not the desktop\'s install signature)') : '';
+      this.log.info(`[uv] engine ownership backfilled for an existing engine: origin=${origin}${why}`);
+    } catch (e) {
+      this.log.warn(`[uv] engine ownership backfill failed: ${e.message}`);
+    }
+  }
+
+  async _uvToolInstallForceAttempts(installArgs, { onProgress, strategies: fixedStrategies = null, compileBytecode = true } = {}) {
     // Compile the venv's bytecode here, in the install, not on the first boot.
     // uv leaves .py files uncompiled by default, so the first boot after an
     // install compiles ~2,000 modules while importing them — the slowest phase
@@ -1357,11 +1854,13 @@ class UvManager {
     // has no wheel for this machine and settles on the newest one that has. (pyproject.toml also
     // bounds it on Intel Mac; this covers the next platform to lose its wheel.)
     const baseArgs = [...installArgs];
-    if (!baseArgs.includes('--compile-bytecode')) baseArgs.push('--compile-bytecode');
+    if (compileBytecode && !baseArgs.includes('--compile-bytecode')) baseArgs.push('--compile-bytecode');
     if (!baseArgs.includes('--no-build-package')) baseArgs.push('--no-build-package', 'cryptography');
     // Dependencies frozen in time (see EXCLUDE_NEWER_MARGIN_DAYS): strictest cut-off first, the next
     // one when uv finds no solution under it. A caller that already chose a cut-off keeps it.
-    const strategies = baseArgs.includes('--exclude-newer')
+    // `fixedStrategies`: a PREPARED install replays exactly the cut-off its staging run won with — the
+    // ladder's margin moves with the clock, and a different cut-off resolves wheels the cache lacks.
+    const strategies = fixedStrategies ? fixedStrategies : baseArgs.includes('--exclude-newer')
       ? [{ label: 'caller', flags: [] }]
       : await this._excludeNewerStrategies(baseArgs);
     for (let s = 0; s < strategies.length; s++) {
@@ -1647,6 +2146,17 @@ class UvManager {
     this._closed = true;
     this.log.info('[uv] closed — nothing new will be started');
     this.abortInstall();
+    this.cancelBackgroundWork('quit');
+  }
+
+  /**
+   * Stop what runs beside the live engine — the background prepare and the background bytecode compile —
+   * without closing the manager: "Restart now" calls it before the restart (its quit skips close()), and a
+   * restart that fails keeps the app working. Nothing live is touched.
+   */
+  cancelBackgroundWork(why = 'cancelled') {
+    this.cancelPrepare(why);
+    if (this._bytecodeChild) this._killChildTree(this._bytecodeChild, `background bytecode compile ${why} — stopping it`);
   }
 
   isClosed() {
@@ -1767,14 +2277,20 @@ class UvManager {
 
   async installLatest({ onProgress } = {}) {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
-    const pin = await this._pythonPinForUpgrade();
+    // The newest release compatible with this desktop in BOTH directions — "latest" is never
+    // assumed compatible. null → the contract cannot be evaluated (no app version, PyPI down):
+    // install unpinned as before, and the post-install verification below has the last word.
+    const picked = await this.resolveCompatibleEngineVersion({ requireMetadata: false }); // first install: see above
+    const spec = picked ? `${PYPI_PACKAGE}==${picked.version}` : PYPI_PACKAGE;
+    const pin = await this._pythonPinForUpgrade(picked ? await this._getPypiVersionInfo(picked.version) : undefined);
     await this._uvToolInstallForce(
-      ['tool', 'install', engineSpec(PYPI_PACKAGE), '--python', pin, '--force'],
+      ['tool', 'install', engineSpec(spec), '--python', pin, '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();
 
     this._flowBin = await this._resolveFlowBin();
+    await this._verifyInstalledPairOrRollback(null, { onProgress });
     this.log.info(`[uv] ${PYPI_PACKAGE} installed, binary at ${this._flowBin}`);
   }
 
@@ -1916,6 +2432,12 @@ class UvManager {
         // consumes the variable; nothing it spawns inherits it.
         FLOWPAD_BOOT_PROGRESS: '1',
       };
+      // The desktop side of the compatibility contract (flow_sdk/utils/compat.py reads these):
+      // the backend's own self-update (`flow upgrade`, POST /version/install) refuses targets
+      // below the desktop's floor and rolls back a release that demands a newer desktop.
+      if (this._appVersion) env.FLOWPAD_DESKTOP_VERSION = this._appVersion;
+      const minBackend = engineCompat.desktopMinBackendVersion();
+      if (minBackend) env.FLOWPAD_DESKTOP_MIN_BACKEND_VERSION = minBackend;
       cleanPythonEnv(env, this.log);
       if (sodKey) {
         // Matches flow_sdk/instance_settings/base_settings.py:ENV_SOD_ENC_KEY.
@@ -2082,7 +2604,7 @@ class UvManager {
       ? this._flowCmd(['stop'])
       : { cmd: 'flow', args: ['stop'] };
     try {
-      await this._run(cmd, args, { timeout: 10000, ...(shell === undefined ? {} : { shell }) });
+      await this._run(cmd, args, { timeout: 10000, env: DESKTOP_CLI_ENV, ...(shell === undefined ? {} : { shell }) });
       this.log.info('[uv] flow stop completed');
       return { busy: false };
     } catch (error) {
@@ -2202,7 +2724,7 @@ class UvManager {
   async _getUpgradeInfo() {
     try {
       const { cmd, args, shell } = this._flowCmd(['upgrade', '--info']);
-      const { stdout } = await this._run(cmd, args, { timeout: 15000, ...(shell === undefined ? {} : { shell }) });
+      const { stdout } = await this._run(cmd, args, { timeout: 15000, env: DESKTOP_CLI_ENV, ...(shell === undefined ? {} : { shell }) });
       return JSON.parse(stdout);
     } catch (err) {
       this.log.warn(`[uv] _getUpgradeInfo failed: ${err.message}`);
@@ -2231,6 +2753,12 @@ class UvManager {
 
   /** `info` block of the latest flowpad release on PyPI, or null on any failure. */
   async _getLatestPypiInfo() {
+    const data = await this._getPypiData();
+    return (data && data.info) || null;
+  }
+
+  /** The whole PyPI JSON document for flowpad (`info` + `releases` map), or null on any failure. */
+  async _getPypiData() {
     try {
       // Update-cycle harness (FLOWPAD_UPDATE_TEST=1): "latest" comes from a local stub, so a scenario controls the verdict.
       const url = (updateTest.isEnabled() && process.env.FLOWPAD_PYPI_JSON_URL)
@@ -2240,12 +2768,18 @@ class UvManager {
       });
       if (!res.ok) {
         this.log.warn(`[uv] PyPI version lookup failed: HTTP ${res.status}`);
+        // "No update" and "PyPI down" both answer null — the COUNTER tells them apart. A counter,
+        // not a flag: concurrent lookups (the offer's own status call, the launch path) can only
+        // add failures, never mask one that happened during the caller's window.
+        this.pypiLookupFailures = (this.pypiLookupFailures || 0) + 1;
         return null;
       }
-      const data = await res.json();
-      return (data && data.info) || null;
+      const data = (await res.json()) || null;
+      if (data === null) this.pypiLookupFailures = (this.pypiLookupFailures || 0) + 1;
+      return data;
     } catch (err) {
       this.log.warn(`[uv] PyPI version lookup failed: ${err.message}`);
+      this.pypiLookupFailures = (this.pypiLookupFailures || 0) + 1;
       return null;
     }
   }
@@ -2286,8 +2820,13 @@ class UvManager {
   async _resolveEngineTarget(version) {
     const info = await this._getPypiVersionInfo(version);
     if (info && info.yanked === true) {
-      this.log.warn(`[uv] ${PYPI_PACKAGE} ${version} was yanked on PyPI${info.yanked_reason ? ` (${info.yanked_reason})` : ''} — installing the latest release instead`);
-      const latest = await this._getLatestPypiInfo();
+      this.log.warn(`[uv] ${PYPI_PACKAGE} ${version} was yanked on PyPI${info.yanked_reason ? ` (${info.yanked_reason})` : ''} — installing the newest compatible release instead`);
+      // "Latest" is not necessarily compatible with this desktop (it may need a newer one): the replacement is the
+      // newest release passing both directions -- the same pick every other install makes. Throws, with the
+      // existing engine untouched, when PyPI answered and none does.
+      const picked = await this.resolveCompatibleEngineVersion();
+      if (picked) return { version: picked.version, info: await this._getPypiVersionInfo(picked.version) };
+      const latest = await this._getLatestPypiInfo(); // the contract cannot be evaluated (offline, no app version)
       if (latest && latest.version) return { version: latest.version, info: latest };
     }
     return { version, info };
@@ -2370,15 +2909,41 @@ class UvManager {
       });
       if (!res.ok) return null;
       const data = await res.json();
-      return {
+      return await this._applyCompatToStatus({
         currentVersion: upgradeInfo.version,
         latestVersion: data.latest_version || null,
         required: data.status === UpdateStatus.REQUIRED,
-      };
+      });
     } catch (err) {
       this.log.warn(`[uv] update check failed: ${err.message}`);
       return null;
     }
+  }
+
+  /**
+   * The cloud names ITS latest release; the dialog must name the one the install will actually put on disk, which
+   * is the newest release compatible with this desktop. Without this the dialog offered X and `upgrade()` then
+   * installed an older compatible release -- a silent downgrade that skipped the downgrade warning, offered again
+   * on every launch. null = nothing worth offering.
+   */
+  async _applyCompatToStatus(status) {
+    if (!status || !status.required || !this._appVersion) return status;
+    let picked;
+    try {
+      picked = await this.resolveCompatibleEngineVersion();
+    } catch (err) {
+      this.log.warn(`[compat] not offering an engine update: ${String(err.message).split('\n')[0]}`);
+      return null; // PyPI answered and nothing is compatible
+    }
+    if (!picked) return status; // cannot evaluate (offline): keep the cloud's verdict, the post-install check decides
+    if (status.currentVersion && !isNewer(status.currentVersion, picked.version)) {
+      this.log.info(`[compat] newest compatible release is ${picked.version}, installed is ${status.currentVersion} — no update offered`);
+      return null;
+    }
+    if (picked.version !== status.latestVersion) {
+      this.log.info(`[compat] the cloud's latest ${status.latestVersion} is not what this desktop can run — offering ${picked.version}`);
+    }
+    return { ...status, latestVersion: picked.version };
   }
 
   /**
@@ -2403,18 +2968,34 @@ class UvManager {
     const currentVersion = this.getInstalledVersionSync() || null;
     const required = !currentVersion || isNewer(currentVersion, latestVersion);
     if (!required) return null;
+    // The newest release may require a newer desktop than this one: offer the newest release
+    // compatible in BOTH directions, so the dialog names the version the upgrade will install.
+    let offered = latestVersion;
+    if (this._appVersion) {
+      let picked;
+      try {
+        picked = await this.resolveCompatibleEngineVersion();
+      } catch (err) {
+        // PyPI answered and NO release is compatible: there is nothing installable to offer.
+        this.log.warn(`[compat] not offering an engine update: ${String(err.message).split('\n')[0]}`);
+        return null;
+      }
+      if (picked) {
+        offered = picked.version;
+        // The best compatible release is what is already installed (or older): nothing to offer.
+        if (currentVersion && !isNewer(currentVersion, offered)) {
+          this.log.info(`[compat] latest ${latestVersion} is incompatible with Desktop ${this._appVersion}; best compatible is ${offered} (installed: ${currentVersion}) — no update offered`);
+          return null;
+        }
+      }
+    }
     this.log.info(
       `[uv] Pre-start update check: installed=${currentVersion || 'unknown'}, ` +
-      `latest=${latestVersion} → offering upgrade`
+      `latest=${latestVersion}${offered !== latestVersion ? `, newest compatible=${offered}` : ''} → offering upgrade`
     );
-    return { currentVersion, latestVersion, required: true };
+    return { currentVersion, latestVersion: offered, required: true };
   }
 
-  /**
-   * Run a background update check after the UI is loaded.
-   * Non-blocking — failures are logged and silently ignored.
-   * Shows a native OS dialog if an update is required.
-   */
   /**
    * Remember that the user answered "Later" to `version` (from any dialog), so
    * the periodic check does not re-offer it this session.
@@ -2423,24 +3004,27 @@ class UvManager {
     if (version) this._deferredPackageVersion = version;
   }
 
+  /** The version the user answered "Later" to this session, or null. */
+  deferredPackageVersion() {
+    return this._deferredPackageVersion || null;
+  }
+
   /** @param {((text: string) => Promise<{ok: boolean, error?: string}>)|null} fn */
   setFailureSharer(fn) {
     this._failureSharer = typeof fn === 'function' ? fn : null;
   }
 
-  /** Version offered by the package dialog currently on screen, or null. */
-  openPackageDialogVersion() {
-    return this._packageDialog ? this._packageDialog.version : null;
-  }
-
-  /** Close the open package dialog as if the user chose "Later" (a newer release supersedes it). */
-  supersedePackageDialog() {
-    if (this._packageDialog) this._packageDialog.abort.abort();
-  }
-
+  /**
+   * Run a background update check. Post-boot (the app is up): a newer release is prepared in the background —
+   * downloaded, staged and checked while the running engine keeps serving — and `onReady()` is called once it is
+   * (main.js announces it as "Update Ready"; the user installs it from there). Nothing is asked before it is
+   * ready, and a failed prepare is only logged (the next check prepares it again). Pre-start (recovery only:
+   * main.js calls it when the last start failed or the install is broken): the native dialog offers the
+   * install before the backend starts. Failures are logged and swallowed.
+   */
   async checkForUpdatesInBackground(
     mainWindow,
-    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null }
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null, engineChangeAllowed = () => true, onReady = null }
   ) {
     try {
       // Pre-start: the backend is down and the install may even be broken, so
@@ -2466,16 +3050,41 @@ class UvManager {
       }
       this.log.info(`[uv] Update available: ${status.currentVersion || 'unknown'} → ${latest}`);
 
+      if (!beforeBackendStart && onReady) {
+        // Post-boot: download, stage and check the release while the running engine keeps serving, and offer it
+        // only once it is ready — the install the user then asks for is a short offline swap. A failed prepare
+        // is not offered: the running engine is untouched, and the next check prepares it again.
+        try {
+          await this.prepareEngine();
+        } catch (err) {
+          if (err && err.cancelled) return false;
+          this.log.warn(`[uv] preparing the update failed — not offered; the next check prepares it again: ${String((err && err.message) || err).split('\n')[0]}`);
+          return false;
+        }
+        // What was prepared is the newest release THIS desktop can run — `latest` itself, or an older one when
+        // `latest` needs a newer desktop. Either is offered, as long as it is newer than the installed engine.
+        const prepared = this.preparedEngine();
+        const now = this.getInstalledVersionSync() || null;
+        if (!prepared || (now && !isNewer(now, prepared.version))) { // none newer, or upgraded meanwhile (the panel)
+          this.log.info(`[uv] no engine newer than ${now || 'the installed one'} was prepared for this desktop — nothing offered`);
+          return false;
+        }
+        // The prepare can take minutes: a newer desktop found meanwhile goes first (the engine follows it).
+        if (!(await engineChangeAllowed())) { // may look at the desktop feed again first (main.js)
+          this.log.info(`[uv] not offering engine ${prepared.version} now: a desktop update came first while it was prepared`);
+          return false;
+        }
+        this.log.info(`[uv] engine ${prepared.version} is prepared and checked — offered as ready${prepared.version !== latest ? ` (${latest} needs a newer desktop)` : ''}`);
+        onReady(prepared.version);
+        return false;
+      }
+
       if (!mainWindow || mainWindow.isDestroyed()) return false;
 
-      // Abortable: a newer release found while this is on screen closes it (as
-      // "Later") via supersedePackageDialog(), so only one dialog, for the latest
-      // version, is ever shown.
-      this._packageDialog = { version: latest, abort: new AbortController() };
-      let response;
-      try {
-        response = updateTest.answerFor('engine', { engine: status.currentVersion || null, engineLatest: latest });
-        if (response === null) ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
+      // The install the recovery offers before the start (no prepared release to announce as ready instead).
+      let response = updateTest.answerFor('engine', { engine: status.currentVersion || null, engineLatest: latest });
+      if (response === null) {
+        ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
           type: 'info',
           title: 'Update Available',
           message: `A new version of FlowPad is available (${latest}).`,
@@ -2485,10 +3094,7 @@ class UvManager {
           buttons: ['Upgrade', 'Later'],
           defaultId: 0,
           cancelId: 1, // Esc / close = Later, never an implicit Upgrade
-          signal: this._packageDialog.abort.signal,
         }));
-      } finally {
-        this._packageDialog = null;
       }
       if (response !== 0) this._deferredPackageVersion = latest;
       if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
@@ -2506,7 +3112,9 @@ class UvManager {
       }
 
       if (sendStatus) sendStatus('Upgrading Flowpad');
-      await this.upgrade();
+      // Exactly the release the dialog named: the prepared one when it is that release (the swap then asks
+      // the network nothing with the backend down), a download of it otherwise.
+      await this.upgrade({ version: latest });
 
       // Pre-start: hand back to startApp's normal start path to boot the
       // upgraded backend — calling start()/loadURL here would double-start the
@@ -2526,9 +3134,11 @@ class UvManager {
         throw new Error('upgraded backend did not become healthy');
       }
 
+      this.markEngineHealthy(); // the new engine came up: nothing to roll back any more
       if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
         mainWindow.loadURL(backendUrl);
       }
+      void this.compileBytecodeInBackground(); // after a prepared (bytecode-less) upgrade; else a no-op
       return true;
     } catch (err) {
       this.log.warn(`[uv] Background update/upgrade failed: ${err.message}`);
@@ -2584,6 +3194,13 @@ class UvManager {
   async _recoverRunningBackendAfterFailedUpgrade(mainWindow, { waitForBackend, backendUrl, sendStatus }) {
     try {
       if (sendStatus) sendStatus('Update failed — restoring Flowpad');
+      // The upgrade installed but its engine did not come up: stop it and put back the one that worked — starting
+      // the new one again is what left the app on "restoring Flowpad" with the same broken engine.
+      if (this.hasUnconfirmedActivation()) {
+        try { await this.stop(); } catch (stopErr) { this.log.warn(`[uv] stopping the upgraded engine failed: ${stopErr.message}`); }
+        this.isShuttingDown = false;
+        await this.restorePreviousEngine({ why: 'did not become healthy' });
+      }
       this.isShuttingDown = false;
       // The failed `--force` may have left the tool dir partially removed.
       this._flowBin = this.getInstalledFlowBin() || this._flowBin;
@@ -2619,16 +3236,40 @@ class UvManager {
    */
   async upgrade({ onProgress, version } = {}) {
     // `version`: the exact release the user agreed to (update offered earlier) instead of "whatever is latest now".
+    const previousVersion = this.getInstalledVersionSync() || null;
+    if (await this._upgradeFromPrepared({ version, previousVersion, onProgress })) return;
     let spec = engineSpec(`${PYPI_PACKAGE}@latest`);
     let pin;
     if (version) {
+      if (!engineCompat.isInstallableVersion(version)) {
+        throw installFailure(`Refusing to install the engine: ${JSON.stringify(version)} is not a release version. Your existing installation has been preserved.`);
+      }
       const target = await this._resolveEngineTarget(version);
+      if (!engineCompat.isInstallableVersion(target.version)) {
+        throw installFailure(`Refusing to install the engine: PyPI named ${JSON.stringify(target.version)}, which is not a release version. Your existing installation has been preserved.`);
+      }
+      // The agreed release must still satisfy the contract — a desktop downgraded since the
+      // offer, or a floor it never met, is caught here with the working engine untouched.
+      await this._assertCandidateCompatible(target.version);
       spec = `${PYPI_PACKAGE}==${target.version}`;
       pin = await this._pythonPinForUpgrade(target.info); // that release's own requires_python
       this.log.info(`[uv] Upgrading flowpad to ${target.version}${target.version !== version ? ` (${version} was withdrawn)` : ''}...`);
     } else {
-      pin = await this._pythonPinForUpgrade();
-      this.log.info('[uv] Upgrading flowpad...');
+      // Newest release compatible in BOTH directions; null → the contract could not be evaluated (refused below).
+      const picked = await this.resolveCompatibleEngineVersion();
+      if (picked) {
+        spec = engineSpec(`${PYPI_PACKAGE}==${picked.version}`);
+        pin = await this._pythonPinForUpgrade(await this._getPypiVersionInfo(picked.version));
+        this.log.info(`[uv] Upgrading flowpad to ${picked.version}...`);
+      } else if (this._appVersion && engineSpec(PYPI_PACKAGE) === PYPI_PACKAGE) {
+        // The contract could not be evaluated (PyPI did not answer): an update never installs a release it could
+        // not check — the working engine stays (fail closed).
+        throw installFailure('Could not check which FlowPad engine release is compatible with this desktop (PyPI did not answer). Not updating the engine. Your existing installation has been preserved.');
+      } else {
+        // No desktop version to check against, or the update-cycle harness forced the spec (engineSpec()).
+        pin = await this._pythonPinForUpgrade();
+        this.log.info('[uv] Upgrading flowpad...');
+      }
     }
     await this._uvToolInstallForce(
       ['tool', 'install', spec, '--python', pin, '--force'],
@@ -2636,8 +3277,385 @@ class UvManager {
     );
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
+    await this._verifyInstalledPairOrRollback(previousVersion, { onProgress });
+    this._noteActivated(previousVersion);
     this.log.info('[uv] Upgrade complete');
     updateTest.event('engine-upgraded', { engine: this.getInstalledVersionSync() || null, spec });
+  }
+
+  /**
+   * The upgrade from a prepared download (prepareEngine): the wheels are already in uv's cache, so it
+   * installs OFFLINE with the cut-off the staging run won with — seconds, not a download with the
+   * backend down. Without bytecode: compiling every file is the swap's biggest cost; the boot compiles
+   * what it imports and compileBytecodeInBackground() the rest. Used only when the prepared release is
+   * the one this upgrade targets; anything that keeps it from applying (a pruned cache, a different
+   * Python) returns false and the caller downloads as before. The pair check stays the authority.
+   */
+  async _upgradeFromPrepared({ version, previousVersion, onProgress }) {
+    const prepared = this.preparedEngine();
+    if (!prepared) return false;
+    // No network from here: the caller has usually stopped the backend already. With no version asked
+    // for, the target is the prepared release — the newest compatible one when it was prepared, checked
+    // against this desktop then (preparedEngine() keeps only this desktop's record); a newer release
+    // since is offered by the next check. The pair check after the install stays the authority.
+    if (version && version !== prepared.version) {
+      this.log.info(`[uv] the prepared ${prepared.version} is not the upgrade target (${version}) — downloading instead`);
+      return false;
+    }
+    // The pin THIS desktop picks for that release, from what was recorded (its floor, this build's pin).
+    const pin = await this._pythonPinForUpgrade(prepared.requiresPython !== undefined ? { requires_python: prepared.requiresPython } : null);
+    if (pin !== prepared.pin) {
+      this.log.info(`[uv] the prepared ${prepared.version} was staged on Python ${prepared.pin}; this desktop pins ${pin} — downloading instead`);
+      return false;
+    }
+    try {
+      this.log.info(`[uv] Upgrading flowpad to ${prepared.version} from the prepared download (offline)...`);
+      await this._uvToolInstallForce(
+        ['tool', 'install', prepared.spec, '--python', prepared.pin, '--force', '--offline'],
+        { onProgress, strategies: [{ label: 'prepared', flags: prepared.flags }], compileBytecode: false },
+      );
+    } catch (err) {
+      if (err && (err.signal || err.killedByGuard || err.quitInProgress)) throw err; // a download would not fix that
+      this.log.warn(`[uv] the prepared install did not apply (${String((err && err.message) || err).split('\n')[0]}) — downloading instead`);
+      return false;
+    }
+    this._bytecodePending = true;
+    await this._ensureShimOnPath();
+    this._flowBin = await this._resolveFlowBin();
+    await this._verifyInstalledPairOrRollback(previousVersion, { onProgress });
+    this._noteActivated(previousVersion);
+    this._clearPrepared();
+    this.log.info('[uv] Upgrade complete (prepared)');
+    updateTest.event('engine-upgraded', { engine: this.getInstalledVersionSync() || null, spec: prepared.spec, prepared: true });
+    return true;
+  }
+
+  /**
+   * Download, stage and check an engine release WHILE the running engine keeps serving, so the upgrade
+   * the user agrees to later is a short offline swap (upgrade() picks it up). The whole install runs into
+   * a throwaway tool dir — which puts every wheel in uv's shared cache — then the staged engine must
+   * import (server stack, SDK) and report exactly that version. Never touches the live install: not its
+   * tool dir, its marker, its lock or the processes running from it. The record survives a restart
+   * (prepared-engine.json), so "Later" today is a fast upgrade at the next launch.
+   * `desktopVersion`: the desktop the engine will run on — a desktop update being downloaded prepares the
+   * engine its NEW desktop installs after the restart (only that desktop uses the record).
+   * Resolves the prepared record, or null when there is nothing newer; rejects on failure (nothing to undo).
+   */
+  async prepareEngine({ version = null, desktopVersion = null } = {}) {
+    if (!this._preparedPath()) return null; // nowhere to keep the record (tests, tools): nothing to prepare for
+    const key = `${version || 'latest'}@${desktopVersion || this._appVersion || ''}`;
+    if (this._preparing && this._preparing.key === key) return this._preparing.promise;
+    // One prepare at a time (they share the record): a different target runs after the current one.
+    const before = this._preparing ? this._preparing.promise.catch(() => {}) : Promise.resolve();
+    const run = async () => {
+      await before;
+      this._assertOpen('prepare the engine update');
+      this._prepareCancelled = false;
+      const installed = this.getInstalledVersionSync() || null;
+      const forDesktop = desktopVersion || this._appVersion || null;
+      const target = await this._resolvePrepareTarget(version, { desktopVersion: forDesktop });
+      if (installed && !isNewer(installed, target.version)) return null;
+      const current = this._readPrepared();
+      if (current && current.version === target.version && current.forDesktop === forDesktop) return current;
+      await this._removeStaleStageRoots();
+      const stageRoot = await this._newStageRoot();
+      try {
+        this.log.info(`[uv] preparing flowpad ${target.version} in the background (the running engine keeps serving)`);
+        const t0 = Date.now();
+        const flags = await this._stageInstall(target.spec, target.pin, stageRoot);
+        await this._validateStaged(stageRoot, target.version);
+        const prepared = {
+          version: target.version, spec: target.spec, pin: target.pin, flags,
+          // The release's own Python floor: the desktop that installs it recomputes the pin offline from
+          // it and ITS bundled pin (another desktop may pin another Python) — see _upgradeFromPrepared.
+          requiresPython: target.requiresPython,
+          forDesktop, preparedAt: new Date().toISOString(),
+        };
+        this._writePrepared(prepared);
+        this.log.info(`[uv] flowpad ${target.version} is prepared in ${Math.round((Date.now() - t0) / 1000)}s — the upgrade installs it offline`);
+        updateTest.event('engine-prepared', { engine: target.version });
+        return prepared;
+      } finally {
+        // Not awaited: the record is ready, and a locked file retried on Windows must not hold the offer.
+        this._stageCleanup = this._removeStageRoot(stageRoot);
+      }
+    };
+    const promise = run().finally(() => { if (this._preparing && this._preparing.promise === promise) this._preparing = null; });
+    this._preparing = { key, promise };
+    return promise;
+  }
+
+  /** Is a background prepare running? It never holds isInstalling(): nothing live moves. */
+  isPreparing() { return !!this._preparing; }
+
+  /** Stop the background prepare (quit): kill its uv and make it reject. Nothing live is touched. */
+  cancelPrepare(why = 'cancelled') {
+    if (!this._preparing) return false;
+    this._prepareCancelled = true;
+    if (this._prepareChild) this._killChildTree(this._prepareChild, `engine prepare ${why} — stopping its uv`);
+    return true;
+  }
+
+  /**
+   * The prepared release still worth installing — newer than what is installed, prepared by THIS desktop
+   * (another desktop may pin another Python) — or null. A stale record is removed.
+   */
+  preparedEngine() {
+    const rec = this._readPrepared();
+    if (!rec) return null;
+    const app = this._appVersion || null;
+    // Prepared for the desktop update being installed: kept for it, not used by this one.
+    if (app && rec.forDesktop && isNewer(app, rec.forDesktop)) return null;
+    const installed = this.getInstalledVersionSync() || null;
+    const usable = engineCompat.isInstallableVersion(rec.version) && typeof rec.spec === 'string'
+      && typeof rec.pin === 'string' && Array.isArray(rec.flags) && rec.forDesktop === app
+      && (!installed || isNewer(installed, rec.version));
+    if (!usable) { this._clearPrepared(); return null; }
+    return rec;
+  }
+
+  _readPrepared() {
+    const file = this._preparedPath();
+    if (!file) return null;
+    try { const rec = JSON.parse(fs.readFileSync(file, 'utf8')); return rec && typeof rec === 'object' ? rec : null; } catch { return null; }
+  }
+
+  _preparedPath() {
+    return this._stateDir ? path.join(this._stateDir, 'prepared-engine.json') : null;
+  }
+
+  _writePrepared(rec) {
+    const file = this._preparedPath();
+    if (!file) return;
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const tmp = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(rec));
+      fs.renameSync(tmp, file);
+    } catch (err) {
+      this.log.warn(`[uv] could not save the prepared engine record: ${err.message}`);
+    }
+  }
+
+  _clearPrepared() {
+    const file = this._preparedPath();
+    if (file) { try { fs.rmSync(file, { force: true }); } catch { /* best effort */ } }
+  }
+
+  /**
+   * After an upgrade installed without bytecode (a prepared one): compile the rest of the engine's venv
+   * in the background, with the engine already serving, so the NEXT boot is fast again. Python writes
+   * .pyc files atomically, so compiling beside a running interpreter is safe. Best effort, once.
+   */
+  async compileBytecodeInBackground() {
+    if (!this._bytecodePending) return false;
+    this._bytecodePending = false;
+    try {
+      const venv = this._toolVenvDir();
+      const python = this._pythonIn(venv);
+      if (!fs.existsSync(python)) return false;
+      const t0 = Date.now();
+      // -I: isolated — with -m, Python puts the CURRENT DIR first on sys.path, so a compileall.py there
+      // would run instead of the stdlib's; cwd is the venv anyway. -j 1: one worker, in the background.
+      try {
+        await this._runStreaming(python, ['-I', '-m', 'compileall', '-q', '-j', '1', venv], { shell: false, cwd: venv, onChild: (child) => { this._bytecodeChild = child; } });
+      } finally {
+        this._bytecodeChild = null;
+      }
+      this.log.info(`[uv] engine bytecode compiled in the background (${Math.round((Date.now() - t0) / 1000)}s)`);
+      return true;
+    } catch (err) {
+      this.log.warn(`[uv] background bytecode compile failed (the engine compiles on import instead): ${String(err.message).split('\n')[0]}`);
+      return false;
+    }
+  }
+
+  /** Where staging dirs live: next to uv's cache (same volume; not %TEMP%'s long path or a tmpfs /tmp). */
+  async _stageBase() {
+    let base = null;
+    try { const dirs = await this._uvDirs(); if (dirs && dirs.cache) base = path.dirname(dirs.cache); } catch { /* fall back */ }
+    return base || os.tmpdir();
+  }
+
+  /** A fresh staging dir per run, named for this process (`flowpad-staging-<pid>-…`): its owner is known. */
+  async _newStageRoot() {
+    const base = await this._stageBase();
+    try { fs.mkdirSync(base, { recursive: true }); } catch { /* mkdtemp reports it */ }
+    return fs.mkdtempSync(path.join(base, `${STAGE_PREFIX}${process.pid}-`));
+  }
+
+  /**
+   * Staging dirs a run never removed: the app was killed (Task Manager, a logout, the installer taking
+   * the process tree) before its `finally` ran, leaving a whole venv behind. Called before a prepare.
+   * Only a dir whose owner is gone: one of THIS process (its prepares are one at a time, and none runs
+   * now), or of a pid that no longer runs. Another live process's (a dev build beside the app, another
+   * user's /tmp) is left alone — until it is a day old (the pid was reused); so is a dir with no pid in its name.
+   */
+  async _removeStaleStageRoots() {
+    const base = await this._stageBase();
+    let names = [];
+    try { names = await fs.promises.readdir(base); } catch { return; }
+    for (const name of names.filter((n) => n.startsWith(STAGE_PREFIX))) {
+      const dir = path.join(base, name);
+      const owner = /^(\d+)-/.exec(name.slice(STAGE_PREFIX.length));
+      const pid = owner ? Number(owner[1]) : null;
+      const ownerGone = pid === process.pid || (pid !== null && !this._pidAlive(pid));
+      if (!ownerGone) {
+        let mtime = Date.now();
+        try { mtime = (await fs.promises.stat(dir)).mtimeMs; } catch { continue; }
+        if (Date.now() - mtime < STAGE_LEFTOVER_AGE_MS) continue;
+      }
+      this.log.info(`[uv] removing a leftover staging dir: ${name}`);
+      await this._removeStageRoot(dir);
+    }
+  }
+
+  _pidAlive(pid) {
+    try { process.kill(pid, 0); return true; } catch (err) { return !!(err && err.code === 'EPERM'); }
+  }
+
+  /**
+   * Asynchronous: a staged venv is thousands of files, and a sync rm froze the main process (IPC, windows).
+   * Windows holds a just-run python.exe for a moment (seen right after the validation, with Defender on), so a
+   * locked file is tried STAGE_RM_ATTEMPTS times, briefly apart; still locked, the dir is left to the next
+   * sweep (_removeStaleStageRoots) — nothing waits for this.
+   */
+  async _removeStageRoot(dir) {
+    try {
+      await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: STAGE_RM_ATTEMPTS - 1, retryDelay: STAGE_RM_RETRY_DELAY_MS });
+    } catch (err) {
+      this.log.info(`[uv] staging dir ${path.basename(dir)} is still locked (${err.code || err.message}) — the next sweep removes it`);
+    }
+  }
+
+  /** The release upgrade() would install — { version, spec, pin } — checked against the desktop it runs on. */
+  async _resolvePrepareTarget(version, { desktopVersion = null } = {}) {
+    let target;
+    if (version) {
+      target = (await this._resolveEngineTarget(version)).version;
+    } else {
+      const picked = await this.resolveCompatibleEngineVersion();
+      target = picked ? picked.version : null;
+    }
+    if (!engineCompat.isInstallableVersion(target)) {
+      throw installFailure('Could not determine which FlowPad engine release to prepare. Your existing installation has been preserved.');
+    }
+    await this._assertCandidateCompatible(target, { desktopVersion });
+    const info = await this._getPypiVersionInfo(target);
+    return {
+      version: target, spec: `${PYPI_PACKAGE}==${target}`, pin: await this._pythonPinForUpgrade(info),
+      requiresPython: (info && info.requires_python) || null,
+    };
+  }
+
+  _cancelledError() {
+    return Object.assign(new Error('the engine update download was cancelled'), { cancelled: true });
+  }
+
+  /**
+   * One staging install into `stageRoot` (its own UV_TOOL_DIR / UV_TOOL_BIN_DIR): the same arguments and
+   * cut-off ladder as a live install minus what only a live venv needs (bytecode, the drain, the marker).
+   * Returns the winning cut-off flags.
+   */
+  async _stageInstall(spec, pin, stageRoot) {
+    const env = { UV_TOOL_DIR: path.join(stageRoot, 'tools'), UV_TOOL_BIN_DIR: path.join(stageRoot, 'bin') };
+    fs.mkdirSync(env.UV_TOOL_DIR, { recursive: true });
+    fs.mkdirSync(env.UV_TOOL_BIN_DIR, { recursive: true });
+    const baseArgs = ['tool', 'install', spec, '--python', pin, '--force', '--no-build-package', 'cryptography', '--refresh-package', PYPI_PACKAGE];
+    const strategies = await this._excludeNewerStrategies(baseArgs);
+    for (let s = 0; s < strategies.length; s++) {
+      if (this._prepareCancelled) throw this._cancelledError();
+      try {
+        await this._runStreaming('uv', [...baseArgs, ...strategies[s].flags], { env, onChild: (child) => { this._prepareChild = child; } });
+        return strategies[s].flags;
+      } catch (err) {
+        if (this._prepareCancelled) throw this._cancelledError();
+        const next = strategies[s + 1];
+        if (next && strategies[s].flags.length && isUnknownFlagError(err)) { s = strategies.length - 2; continue; }
+        if (next && strategies[s].flags.length && isResolutionError(err)) continue;
+        throw err;
+      } finally {
+        this._prepareChild = null;
+      }
+    }
+    throw new Error('unreachable: no staging strategy ran');
+  }
+
+  /**
+   * The staged engine must be able to do what this desktop asks of an engine, checked in its own throwaway venv —
+   * nothing here starts a server, so the working engine, its data, port and singleton are never touched:
+   *   1. the release and its server stack import (uvicorn, flow_sdk), and it IS the release;
+   *   2. the desktop/engine contract: `flow start` runs flow_sdk.server.launch (the monitor), the desktop waits on
+   *      GET /health/status — the launch module must import and the health router must serve /status;
+   *   3. the console entry point the desktop calls (`flow --help`, the same probe as an installed engine's) runs.
+   * A real start and readiness are checked at activation, where a failure restores the previous engine
+   * (restorePreviousEngine) — a server started here would share the working engine's database, lock and port.
+   */
+  async _validateStaged(stageRoot, version) {
+    const venv = path.join(stageRoot, 'tools', PYPI_PACKAGE);
+    const check = 'import sys, uvicorn, multiprocessing.connection, flow_sdk; from importlib.metadata import version; '
+      + `v = version(${JSON.stringify(PYPI_PACKAGE)}); `
+      + `v == ${JSON.stringify(version)} or sys.exit('staged ' + v + ' instead of ${version}'); `
+      + 'import flow_sdk.server.launch; from flow_sdk.server.routes.health import health_router; '
+      + "'/status' in [getattr(r, 'path', None) for r in health_router.routes] or sys.exit('no /health/status route')";
+    const shim = path.join(stageRoot, 'bin', (this._isWin !== undefined ? this._isWin : IS_WIN) ? 'flow.exe' : 'flow');
+    const run = async (what, cmd, args) => {
+      if (this._prepareCancelled) throw this._cancelledError();
+      try {
+        // -I: isolated, so nothing from the current directory or the user's site-packages answers for the venv.
+        await this._runStreaming(cmd, args, { shell: false, cwd: venv, onChild: (child) => { this._prepareChild = child; } });
+      } catch (err) {
+        if (this._prepareCancelled) throw this._cancelledError();
+        throw new Error(`the staged engine ${version} did not pass its check (${what}): ${String((err && err.message) || err).split('\n')[0]}`);
+      } finally {
+        this._prepareChild = null;
+      }
+    };
+    await run('imports, version, start contract', this._pythonIn(venv), ['-I', '-c', check]);
+    await run('`flow --help`', shim, ['--help']);
+    this.log.info(`[uv] staged flowpad ${version} passed its check (imports, version, start contract, flow --help)`);
+  }
+
+  /**
+   * Both directions of the contract for a SPECIFIC release the caller wants, before anything
+   * touches the working install. Throws a user-readable error when it fails — and when the candidate's
+   * metadata cannot be read or is missing (fail closed: an update never installs a release it could
+   * not check). A no-op only without an app version (nothing to hold the release against).
+   */
+  async _assertCandidateCompatible(version, { desktopVersion = null } = {}) {
+    const desktop = desktopVersion || this._appVersion;
+    if (!desktop) return;
+    this._wholeWheelReadsLeft = MAX_WHOLE_WHEEL_READS;
+    const compat = await this._readCandidateMinDesktop(version);
+    if (compat === 'invalid') {
+      throw installFailure(
+        `FlowPad engine ${version} ships invalid compatibility metadata — not installing it. ` +
+        'Your existing installation has been preserved.'
+      );
+    }
+    if (compat === null || (compat && compat.missing)) {
+      const why = compat === null ? 'could not be read (offline, or blocked)' : 'is missing from the release';
+      this.log.warn(`[compat] refusing engine ${version}: its compatibility metadata ${why}`);
+      throw installFailure(
+        `FlowPad engine ${version}: its compatibility metadata ${why}, so it cannot be checked against this desktop — ` +
+        'not installing it. Your existing installation has been preserved.'
+      );
+    }
+    const minDesktopVersion = compat.minDesktopVersion;
+    // The reverse direction (the desktop's minimum engine) is baked into each desktop build: this one
+    // knows only its own. For another desktop (the update being downloaded) it is not checked here —
+    // that desktop picks its own target and checks the installed pair itself.
+    const otherDesktop = !!(desktopVersion && desktopVersion !== this._appVersion);
+    const verdict = engineCompat.checkPair({
+      desktopVersion: desktop,
+      engineVersion: version,
+      minDesktopVersion,
+      minBackendVersion: otherDesktop ? null : engineCompat.desktopMinBackendVersion(),
+    });
+    if (!verdict.compatible) {
+      this.log.warn(`[compat] refusing engine ${version}: ${verdict.reasons.join('; ')}`);
+      throw installFailure(`${verdict.reasons.join('\n')}\n\nYour existing installation has been preserved.`);
+    }
   }
 
   /**
@@ -2649,9 +3667,12 @@ class UvManager {
    */
   async reinstall({ onProgress } = {}) {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
+    // A repair must not quietly jump to an incompatible "latest": resolve the newest release
+    // compatible with this desktop (unpinned only when the contract cannot be evaluated).
+    const spec = await this._compatibleEngineSpec(PYPI_PACKAGE);
     const pin = await this._pythonPinForUpgrade();
     await this._uvToolInstallForce(
-      ['tool', 'install', engineSpec(PYPI_PACKAGE), '--python', pin, '--reinstall', '--force'],
+      ['tool', 'install', engineSpec(spec), '--python', pin, '--reinstall', '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();
@@ -2735,6 +3756,10 @@ class UvManager {
       startBackend: () => startBackend(),
       healthCheck: () => healthCheck(),
       remove: async (p) => this._removePath(p),
+      markOwned: async (dirs, token) => {
+        const text = runtimeRepair.ownershipSentinelText(token, new Date().toISOString());
+        for (const d of dirs) fs.writeFileSync(path.join(d, runtimeRepair.OWNERSHIP_SENTINEL), text, 'utf8');
+      },
     };
     return runtimeRepair.performRuntimeRepair({
       io,
@@ -2979,25 +4004,82 @@ class UvManager {
     // `markFirstInstallBlocked()`: the app knows the blocked install was the FIRST — whatever is in the venv
     // (a block during --compile-bytecode comes after it was populated, and `_version.py` is readable) is not an engine.
     this._hadEngineBeforeRepair = this._firstInstallBlocked ? false : (!!installed || fs.existsSync(this._toolVenvDir()));
-    try {
-      this._setAsidePreRepairVenv();
-    } catch (e) {
-      // The rename failed (a file held open — an antivirus scan, a lingering process): the venv is
-      // still in place and intact, so NOTHING changed. Say so; the rollback below recognises it.
-      const err = new Error(`could not set the current engine aside (${e.message}); the engine was not changed`);
-      err.nothingChanged = true;
-      throw err;
+    // The venv's ownership record goes aside with it: the rollback puts both back, and the
+    // uninstaller removes a leftover set-aside venv only when its record proves it was the desktop's.
+    if (this._hadEngineBeforeRepair === false) {
+      // A blocked FIRST install's half-built venv is not an engine: delete it, never set it aside
+      // (a leftover `.pre-repair` of it would only be hundreds of MB nothing can prove or use).
+      // A delete that fails part-way HAS changed the venv: never "nothing changed" here.
+      try {
+        fs.rmSync(this._toolVenvDir(), { recursive: true, force: true });
+      } catch (e) {
+        throw new Error(`could not delete the blocked first install's environment (${e.message})`);
+      }
+    } else {
+      try {
+        this._setAsideOwnershipRecord();
+        this._setAsidePreRepairVenv();
+      } catch (e) {
+        this._dropAsideOwnershipRecord();
+        // The rename failed (a file held open — an antivirus scan, a lingering process): the venv is
+        // still in place and intact, so NOTHING changed. Say so; the rollback below recognises it.
+        const err = new Error(`could not set the current engine aside (${e.message}); the engine was not changed`);
+        err.nothingChanged = true;
+        throw err;
+      }
     }
     this.log.info(`[runtime-repair] installing ${spec} on ${python}`);
-    await this._uvToolInstallForce(
-      ['tool', 'install', spec, '--python', python, '--reinstall', '--force'],
-    );
+    this._repairSetAside = true;
+    try {
+      await this._uvToolInstallForce(
+        ['tool', 'install', spec, '--python', python, '--reinstall', '--force'],
+      );
+    } finally {
+      this._repairSetAside = false;
+    }
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
   }
 
   /** The blocked install was the first one: a repair that follows has no previous engine to put back. */
   markFirstInstallBlocked() { this._firstInstallBlocked = true; }
+
+  /**
+   * The engine answered its health check: there IS a working engine now, so a later repair has one
+   * to put back. Only a healthy engine clears the "first install blocked" mark — an install that
+   * merely finished (a repair's, a rollback's) proves nothing.
+   */
+  markEngineHealthy() { this._firstInstallBlocked = false; this._activation = null; }
+
+  /**
+   * This session's upgrade replaced `previousVersion`: remembered until the new engine is seen healthy
+   * (markEngineHealthy) — so only an engine that never came up is ever rolled back, never one that worked.
+   */
+  _noteActivated(previousVersion) {
+    const to = this.getInstalledVersionSync() || null;
+    this._activation = previousVersion && to && previousVersion !== to && engineCompat.isInstallableVersion(previousVersion)
+      ? { from: previousVersion, to } : null;
+  }
+
+  /** An upgrade of this session whose engine has not been seen healthy yet. */
+  hasUnconfirmedActivation() { return !!this._activation; }
+
+  /**
+   * The upgraded engine did not start (or never became healthy): put back the engine it replaced — uv's cache
+   * first (no network needed, the wheel is still there), PyPI second (_restoreEngine) — so the app runs again on
+   * the engine that worked. The caller stops the backend first. False when there is nothing to put back: no
+   * unconfirmed upgrade this session, or the engine in place is no longer the one it installed.
+   */
+  async restorePreviousEngine({ why = 'it did not start', onProgress } = {}) {
+    const a = this._activation;
+    if (!a) return false;
+    if ((this.getInstalledVersionSync() || null) !== a.to) { this._activation = null; return false; }
+    this._activation = null;
+    this.log.warn(`[uv] the upgraded engine ${a.to} ${why} — restoring ${a.from}, the engine that worked`);
+    updateTest.event('engine-restored', { from: a.to, to: a.from, why });
+    await this._restoreEngine(a.from, { onProgress });
+    return true;
+  }
 
   _preRepairVenvDir() {
     return `${this._toolVenvDir()}.pre-repair`;
@@ -3016,8 +4098,11 @@ class UvManager {
   /** The repair held: drop the set-aside environment. Best effort; a leftover is harmless. */
   async _finalizeEngine() {
     const aside = this._preRepairVenvDir();
+    // The repair held (the engine is healthy): a later repair has an engine to put back.
+    this.markEngineHealthy();
     try {
       fs.rmSync(aside, { recursive: true, force: true });
+      this._dropAsideOwnershipRecord();
       this.log.info('[runtime-repair] previous engine removed (repair finalized)');
     } catch (e) {
       this.log.warn(`[runtime-repair] could not remove ${aside}: ${e.message}`);
@@ -3044,12 +4129,14 @@ class UvManager {
       // environment of that install, not an engine), and reinstalling one on the blocked interpreter would only fail again.
       this.log.warn('[runtime-repair] there was no engine before the repair: nothing to roll back');
       fs.rmSync(aside, { recursive: true, force: true });
+      this._dropAsideOwnershipRecord();
       return;
     }
     if (fs.existsSync(aside)) {
       this.log.warn('[runtime-repair] restoring the set-aside engine');
       fs.rmSync(venvDir, { recursive: true, force: true });
       fs.renameSync(aside, venvDir);
+      this._restoreAsideOwnershipRecord();
       this._flowBin = await this._resolveFlowBin();
       return;
     }

@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
+import { RolesPicker } from './RolesPicker';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Check, Link as LinkIcon, Loader2, Plus, UserPlus, UsersRound, X } from 'lucide-react';
 import {
@@ -41,21 +42,21 @@ import { isGroupMember, memberPrincipalId } from '@src/components/organization/m
 import { useLocalUser } from './useLocalUser';
 import { nestTeamMembers, useTeamRosters } from './team-member-nesting';
 import { avatarColorForParticipant } from './avatar-color';
-import { ContactPermissionsDialog } from './ContactPermissionsDialog';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
 import {
   assignableRoles,
+  CONFERRABLE_ROLES,
   canInviteMembers,
-  contactFromParticipant,
   grantableRoles,
   participantInitials,
   participantIsUser,
   participantLabel,
   participantName,
-  participantRank,
+  participantIsOwner,
+  participantRoles,
   participantRoleLabel,
   participantSubtitle,
-  type ContactIdentity,
+  personName,
 } from './participant-display';
 
 const MAX_INLINE_AVATARS = 4;
@@ -70,7 +71,7 @@ type DraftPick = { kind: 'contact'; participant: ConversationParticipant } | { k
 interface PendingInvite {
   participant: ConversationParticipant;
   /** Unset on a surface with no ``inviteRoles`` (the entity's default applies). */
-  role?: string;
+  role?: string[];
 }
 
 interface MembersAvatarStackProps {
@@ -158,7 +159,6 @@ export function MembersAvatarStack({
   const [linkCopied, setLinkCopied] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [changingId, setChangingId] = useState<string | null>(null);
-  const [permissionsContact, setPermissionsContact] = useState<ContactIdentity | null>(null);
 
   // My roster row drives every affordance gate: rank for the role selector
   // (mirrors the hub's ``can_assign`` ceiling), editor+ for invite and — on
@@ -167,7 +167,7 @@ export function MembersAvatarStack({
   const teamRosters = useTeamRosters(members);
   const roster = useMemo(() => nestTeamMembers(members, teamRosters), [members, teamRosters]);
   const me = members.find((m) => !!m.user_id && !!localUser?.id && m.user_id === localUser.id) ?? null;
-  const iAmOwner = participantRank(me) === 0;
+  const iAmOwner = participantIsOwner(me);
   // Invite gate applies only when my roster row resolved. A local-only /
   // not-yet-shared conversation has an empty roster (no ``me``) — keep the
   // form there, since this popover is also the first-share entry point and
@@ -175,36 +175,30 @@ export function MembersAvatarStack({
   // project, any member on a DIRECT conversation, admin+ on a HELPDESK ticket.
   const isConversation = typeId.type === Conversation.type;
   const isHelpdesk = isConversation && isHelpdeskKind((entity as Conversation | null | undefined)?.kind);
-  const lowestInviter = isHelpdesk ? 'admin' : isConversation ? 'member' : 'editor';
-  const mayInvite = me === null || canInviteMembers(me, lowestInviter);
+  const inviteEntityType = isHelpdesk ? undefined : typeId.type;
+  const mayInvite = me === null || canInviteMembers(me, inviteEntityType);
   // Who to ask when I can't invite: the owner, when the roster shows one.
-  const owner = members.find((m) => participantRank(m) === 0 && m.user_id !== me?.user_id);
+  const owner = members.find((m) => participantIsOwner(m) && m.user_id !== me?.user_id);
   const ownerName = owner ? participantName(owner) : null;
   // Remove mirrors the hub's ``delete_membership``: on a conversation only its
   // owner may remove anyone; elsewhere anyone who may manage members may
   // remove a member ranked strictly below them (the ``can_assign`` ceiling —
   // peers, those above, an unranked role and myself are untouchable).
-  const myRank = participantRank(me);
   const mayRemove = (p: ConversationParticipant) => {
-    // A team row carries its principal in ``id``, not ``user_id``; the same rank
-    // ceiling applies (the hub's group removal checks it too).
-    if (isGroupMember(p)) {
-      const theirRank = participantRank(p);
-      return mayInvite && myRank !== null && theirRank !== null && theirRank > myRank;
-    }
-    if (!p.user_id || p.user_id === me?.user_id) return false;
-    if (isConversation) return iAmOwner && (p.role ?? '').toLowerCase() !== 'owner';
-    const theirRank = participantRank(p);
-    return mayInvite && myRank !== null && theirRank !== null && theirRank > myRank;
+    if (!memberPrincipalId(p) || p.user_id === me?.user_id) return false;
+    if (isConversation) return iAmOwner && !participantIsOwner(p);
+    return assignableRoles(me, { ...p, user_id: memberPrincipalId(p) }).length > 0;
   };
   // Invite roles capped by my rank (the hub refuses a grant at or above it).
   // No roster row yet = first share, which makes me the owner: offer them all.
   const offeredRoles = useMemo(() => {
-    if (!inviteRoles?.length) return [];
-    if (me === null) return [...inviteRoles];
-    const grantable = grantableRoles(me);
-    return inviteRoles.filter((r) => grantable.includes(r));
-  }, [inviteRoles, me]);
+    const grantable = me === null ? CONFERRABLE_ROLES : grantableRoles(me, inviteEntityType);
+    return inviteRoles?.length
+      ? inviteRoles.filter((r) => grantable.includes(r))
+      : isConversation
+        ? [...grantable]
+        : [];
+  }, [inviteRoles, me, inviteEntityType, isConversation]);
   // A member row's role options: what the ladder lets me assign that member,
   // narrowed to ``inviteRoles`` when the surface passes them — so changing a
   // role offers exactly what inviting does (a project's ``share-roles``).
@@ -218,12 +212,14 @@ export function MembersAvatarStack({
   // shows when Add is clicked is the role that recipient joins the list with;
   // each listed row can still be changed individually (a project invite is one
   // ``MembershipRequest`` per person, and each may carry a different role).
-  const [inviteRole, setInviteRole] = useState('member');
-  const effectiveInviteRole: string | undefined = offeredRoles.includes(inviteRole) ? inviteRole : offeredRoles[0];
+  const [inviteRole, setInviteRole] = useState<string[]>(isConversation ? ['reader', 'runner'] : ['reader']);
+  const effectiveInviteRole = offeredRoles.length
+    ? inviteRole.filter((role) => offeredRoles.includes(role))
+    : undefined;
   // A listed row's role, re-checked against the offer (it can shrink when the
   // roster refreshes my rank) so Apply never sends a grant the hub would 403.
   const roleOf = (invite: PendingInvite) =>
-    invite.role && offeredRoles.includes(invite.role) ? invite.role : effectiveInviteRole;
+    invite.role?.filter((role) => offeredRoles.includes(role)) ?? effectiveInviteRole;
 
   // Contacts + groups feed the add row's suggestions — only queried while the
   // form is actually on screen (every conversation header renders this stack).
@@ -271,7 +267,7 @@ export function MembersAvatarStack({
     }
   };
 
-  const handleRoleChange = async (userId: string, role: string) => {
+  const handleRoleChange = async (userId: string, role: string[]) => {
     setChangingId(userId);
     setMemberError(null);
     try {
@@ -305,7 +301,7 @@ export function MembersAvatarStack({
   const isInvitable = (p: ConversationParticipant) => !!(p.email || p.user_id) && !isMember(p);
 
   /** Put people on the list at `role`; someone already listed just takes the new role. */
-  const addToList = (people: ConversationParticipant[], role: string | undefined) => {
+  const addToList = (people: ConversationParticipant[], role: string[] | undefined) => {
     setPending((prev) => {
       const next = [...prev];
       for (const participant of people) {
@@ -407,7 +403,6 @@ export function MembersAvatarStack({
     setLinking(true);
     setLinkError(null);
     try {
-      if (!(entity as { remote?: boolean }).remote) await entity.share();
       const link = await mintInviteLink(typeId);
       await navigator.clipboard.writeText(link.url);
       setLinkCopied(true);
@@ -435,9 +430,9 @@ export function MembersAvatarStack({
       const p = invite.participant;
       const role = roleOf(invite);
       const email = (p.email ?? '').trim().toLowerCase();
-      if (email) return existingEmails.has(email) ? [] : [{ idOrEmail: email, role }];
+      if (email) return existingEmails.has(email) ? [] : [{ idOrEmail: email, roles: role }];
       const userId = (p.user_id ?? '').trim();
-      if (userId) return existingUserIds.has(userId) ? [] : [{ idOrEmail: userId, role }];
+      if (userId) return existingUserIds.has(userId) ? [] : [{ idOrEmail: userId, roles: role }];
       return [];
     });
     // Picked teams travel as teams (``team-<id>``) in the same one share action.
@@ -497,7 +492,6 @@ export function MembersAvatarStack({
     const roles = nested ? [] : rowRoles(p);
     const group = isGroupMember(p);
     const principalId = memberPrincipalId(p);
-    const contact = group || participantIsUser(p, localUser) ? null : contactFromParticipant(p);
     const identity = (
       <>
         <Avatar className="h-6 w-6">
@@ -522,46 +516,17 @@ export function MembersAvatarStack({
         className={`flex items-center gap-2 text-xs ${nested ? 'ms-6' : ''}`}
         data-testid={nested ? 'member-nested' : undefined}
       >
-        {contact ? (
-          <button
-            type="button"
-            className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-start transition-colors hover:bg-muted"
-            onClick={() => {
-              setPermissionsContact(contact);
-              setOpen(false);
-            }}
-            aria-label={`Open permissions for ${participantLabel(p)}`}
-            data-testid={`member-contact-${p.user_id || p.email || i}`}
-          >
-            {identity}
-          </button>
-        ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{identity}</div>
-        )}
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{identity}</div>
         {roles.length > 0 ? (
-          <select
-            aria-label={`Change role of ${participantLabel(p)}`}
-            data-testid="member-role-select"
-            value={(p.role ?? '').toLowerCase()}
+          <RolesPicker
+            ariaLabel={`Change role of ${participantLabel(p)}`}
+            testId="member-role-select"
+            roles={roles}
+            value={participantRoles(p)}
             disabled={changingId === p.user_id}
-            onChange={(e) => void handleRoleChange(p.user_id as string, e.target.value)}
-            className="rounded border border-transparent bg-transparent text-[10px] uppercase tracking-wide text-muted-foreground outline-none transition-colors hover:border-border focus:border-primary disabled:opacity-40"
-          >
-            {/* Current role stays selectable when it's outside the
-        offered menu (a rankable-but-not-assignable role like
-        ``guest``, or a comma-joined multi-role value) so the
-        select never shows a blank value. */}
-            {!roles.includes((p.role ?? '').toLowerCase()) && (
-              <option value={(p.role ?? '').toLowerCase()} disabled>
-                {role}
-              </option>
-            )}
-            {roles.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => void handleRoleChange(p.user_id as string, next)}
+            className="h-6 border-transparent bg-transparent text-[10px] uppercase tracking-wide text-muted-foreground hover:border-border"
+          />
         ) : (
           role && <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{role}</span>
         )}
@@ -599,7 +564,7 @@ export function MembersAvatarStack({
       clearDraft();
       setShareOutcome(null);
       setMemberError(null);
-      setInviteRole('member');
+      setInviteRole(isConversation ? ['reader', 'runner'] : ['reader']);
       setInviteError(null);
       setInviting(false);
       setLinkError(null);
@@ -848,10 +813,7 @@ export function MembersAvatarStack({
                                       {participantInitials(participant)}
                                     </AvatarFallback>
                                   </Avatar>
-                                  <NameWithSubtitle
-                                    name={u.name || u.email || 'unknown'}
-                                    subtitle={participantSubtitle(u)}
-                                  />
+                                  <NameWithSubtitle name={personName(u)} subtitle={participantSubtitle(u)} />
                                 </button>
                               );
                             })}
@@ -867,20 +829,15 @@ export function MembersAvatarStack({
                         testId="members-address-book"
                       />
                       {offeredRoles.length > 0 && (
-                        <select
-                          aria-label={t`Role`}
-                          data-testid="members-invite-role"
-                          value={effectiveInviteRole}
+                        <RolesPicker
+                          ariaLabel={t`Role`}
+                          testId="members-invite-role"
+                          roles={offeredRoles}
+                          value={effectiveInviteRole ?? []}
                           disabled={inviting}
-                          onChange={(e) => setInviteRole(e.target.value)}
-                          className="h-9 shrink-0 rounded-md border border-input bg-background px-2 text-xs capitalize text-foreground outline-none transition-colors hover:border-primary/60 focus:border-primary disabled:opacity-40"
-                        >
-                          {offeredRoles.map((r) => (
-                            <option key={r} value={r}>
-                              {r}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={setInviteRole}
+                          className="h-9 text-xs"
+                        />
                       )}
                       <button
                         type="button"
@@ -950,7 +907,7 @@ export function MembersAvatarStack({
                           const key = participantKey(p);
                           const label = p.name || key;
                           // The team entry's own role (set when it was picked), shown locked.
-                          const teamRole = p.role ?? TEAM_INVITE_ROLE;
+                          const teamRole = p.roles?.join(', ') || TEAM_INVITE_ROLE;
                           return (
                             <li
                               key={key}
@@ -1010,25 +967,19 @@ export function MembersAvatarStack({
                               </Avatar>
                               <NameWithSubtitle name={label} subtitle={participantSubtitle(p)} />
                               {offeredRoles.length > 0 && (
-                                <select
-                                  aria-label={t`Invite ${label} as`}
-                                  data-testid={`members-invite-role-${key}`}
-                                  value={roleOf(invite)}
+                                <RolesPicker
+                                  ariaLabel={t`Invite ${label} as`}
+                                  testId={`members-invite-role-${key}`}
+                                  roles={offeredRoles}
+                                  value={roleOf(invite) ?? []}
                                   disabled={inviting}
-                                  onChange={(e) => {
-                                    const role = e.target.value;
+                                  onChange={(role) =>
                                     setPending((prev) =>
                                       prev.map((x) => (participantKey(x.participant) === key ? { ...x, role } : x)),
-                                    );
-                                  }}
-                                  className="h-6 shrink-0 rounded border border-transparent bg-background px-1 text-[11px] capitalize text-muted-foreground outline-none transition-colors hover:border-border focus:border-primary disabled:opacity-40"
-                                >
-                                  {offeredRoles.map((r) => (
-                                    <option key={r} value={r}>
-                                      {r}
-                                    </option>
-                                  ))}
-                                </select>
+                                    )
+                                  }
+                                  className="h-6 border-transparent text-[11px] text-muted-foreground hover:border-border"
+                                />
                               )}
                               <button
                                 type="button"
@@ -1094,9 +1045,6 @@ export function MembersAvatarStack({
           </PopoverContent>
         </Popover>
       </div>
-      {permissionsContact && (
-        <ContactPermissionsDialog open onClose={() => setPermissionsContact(null)} contact={permissionsContact} />
-      )}
       {/* Sign-in popup for the unauthenticated case (handleOpenChange routes here
         instead of opening the roster). */}
       <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />

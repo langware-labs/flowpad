@@ -3,11 +3,11 @@ import urllib.error
 import urllib.request
 from unittest.mock import patch
 
+import psutil
 import pytest
 from filelock import FileLock
 
 from flow_sdk.server import launch
-from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
 
 
 class StopMonitor(Exception):
@@ -52,7 +52,13 @@ def set_infos(monkeypatch) -> list[dict]:
 
 
 class _Answer:
-    """`urlopen` is used as a context manager and its body is never read."""
+    """A 200 from the network layer: used as a context manager, body never read."""
+
+    code = 200
+    msg = "OK"
+
+    def info(self):
+        return {}
 
     def __enter__(self):
         return self
@@ -68,38 +74,43 @@ def _headers(req):
 
 
 def _probe(secret, response=None):
-    """Run ``check_server_health`` against a stubbed urlopen, and return the
-    Request it built so the caller can assert on its headers."""
+    """Run ``check_server_health`` with the network stubbed below urllib's
+    handlers (so the cookie-gate handler still runs), and return the Request as
+    it would have gone out, so the caller can assert on its headers."""
     sent = {}
 
-    def fake_urlopen(req, timeout=None):
+    def fake_http_open(_handler, req):
         sent["req"] = req
         if response is not None:
             raise response
         return _Answer()
 
+    from flow_sdk.instance_settings.cookie_gate import install_gate_opener
+
     with (
         patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value=secret),
-        patch.object(urllib.request, "urlopen", fake_urlopen),
+        patch.object(urllib.request.HTTPHandler, "http_open", fake_http_open),
+        patch.object(urllib.request, "_opener", None),
     ):
+        install_gate_opener()  # the supervisor runs under the CLI, which installs it
         healthy = launch.check_server_health(9007)
     return healthy, sent.get("req")
 
 
 def test_health_probe_carries_the_gate_secret_when_gated():
-    """Without this header the monitor is refused by the instance it supervises."""
+    """Without the token the monitor is refused by the instance it supervises."""
     healthy, req = _probe("s3cret-gate")
 
     assert healthy is True
-    assert _headers(req).get(HEADER_NAME) == "s3cret-gate"
+    assert "s3cret-gate" in _headers(req).get("cookie", "")
 
 
 def test_health_probe_sends_no_gate_header_when_ungated():
-    """Every desktop install. The probe must be byte-identical to what it was."""
+    """No local token (the gate is off). The probe must be byte-identical to what it was."""
     healthy, req = _probe(None)
 
     assert healthy is True
-    assert HEADER_NAME not in _headers(req)
+    assert "cookie" not in _headers(req)
 
 
 def test_health_probe_reports_a_refusal_as_unhealthy_without_raising():
@@ -116,7 +127,7 @@ def test_health_probe_survives_an_unreadable_gate():
     """Being unable to read the secret is a reason to probe without it, never a
     reason to stop supervising."""
     with (
-        patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", side_effect=RuntimeError("sod is gone")),
+        patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", side_effect=RuntimeError("token unreadable")),
         patch.object(urllib.request, "urlopen", lambda req, timeout=None: _Answer()),
     ):
         assert launch.check_server_health(9007) is True
@@ -532,8 +543,8 @@ def test_launch_monitor_kills_the_stale_server_pid_read_fresh_from_disk(monkeypa
 
 
 def test_ensure_monitor_singleton_writes_only_its_own_keys(monkeypatch, set_infos):
-    """The monitor merges port/monitor_pid/launch_iso_time and nothing else --
-    in particular never server_pid, which belongs to the backend."""
+    """The monitor merges port/monitor_pid/monitor_create_time/launch_iso_time and
+    nothing else -- in particular never server_pid, which belongs to the backend."""
     killed: list[int] = []
     written = set_infos
 
@@ -546,8 +557,10 @@ def test_ensure_monitor_singleton_writes_only_its_own_keys(monkeypatch, set_info
 
     assert killed == [111]
     assert len(written) == 1
-    assert set(written[0]) == {"port", "monitor_pid", "launch_iso_time"}
+    assert set(written[0]) == {"port", "monitor_pid", "monitor_create_time", "launch_iso_time"}
     assert written[0]["monitor_pid"] == os.getpid()
+    # With monitor_pid, identifies this monitor (the Windows uninstaller rejects a reused pid).
+    assert written[0]["monitor_create_time"] == psutil.Process(os.getpid()).create_time()
     assert written[0]["port"] == 9007
 
 

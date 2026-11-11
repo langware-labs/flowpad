@@ -6,21 +6,21 @@ automatically. Outbound, exposes thin convenience methods for the realtime
 conversation actions (start_guest_conversation, add_message, mark_received)
 that callers route through the bridge instead of HTTP.
 
-The hub side reaches participants by user id (notify_user_through_websocket),
-so this bridge does NOT subscribe to entity watches on connect — membership
-in Conversation.participants IS the subscription.
+The hub side reaches members by user id (notify_user_through_websocket),
+so this bridge does NOT subscribe to entity watches on connect — being in a
+conversation's ``members`` IS the subscription.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 from typing import Any, Optional
 
 from flow_sdk import stream_inbox
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
-from flow_sdk.fs_store.serializer.hub import HubSerializer
 from flow_sdk.preferences import message_status_sharing_enabled
 from flow_sdk.tags.envelope import parse_target
 
@@ -117,6 +117,10 @@ def _attachment_only_body(payload: dict) -> str:
             return "Sent you a prompt to run"
         if entity_type == "returned_value":
             return "Ran your prompt"
+        if entity_type == "message_form":
+            return "Sent you questions"
+        if entity_type == "form_answers":
+            return "Answered your questions"
         if entity_type and entity_type not in ("conversation", "flow_message"):
             return f"Sent you: {entity_type}"
     filename = (payload.get("attachment_filename") or "").strip()
@@ -217,10 +221,10 @@ async def _fill_empty_blobs(cls: Any, entity_type: str, entity_id: str, data: An
     if not blob_fields or not isinstance(data, dict) or any(data.get(f) for f in blob_fields):
         return data
     try:
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-        from flow_sdk.utils.hub import hub_get  # noqa: PLC0415
 
-        expanded = await hub_get(BuiltinEntityType(entity_type), entity_id, params={"expand": "blobs"})
+        expanded = await HubProxy.try_call("GET", BuiltinEntityType(entity_type), entity_id, params={"expand": "blobs"})
         if isinstance(expanded, dict) and any(expanded.get(f) for f in blob_fields):
             return {**data, **{f: expanded[f] for f in blob_fields if expanded.get(f)}}
     except Exception:  # noqa: BLE001
@@ -239,12 +243,12 @@ async def _conversation_allows_inbound_materialization(conversation_id: str) -> 
     inaccessible parents reject the stale child.
     """
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-    from flow_sdk.utils.hub import hub_get  # noqa: PLC0415
 
     if await Conversation.get_one({"id": conversation_id}) is not None:
         return True
-    hub_conv = await hub_get(BuiltinEntityType.CONVERSATION, conversation_id)
+    hub_conv = await HubProxy.try_call("GET", BuiltinEntityType.CONVERSATION, conversation_id)
     return bool(isinstance(hub_conv, dict) and hub_conv.get("id") == conversation_id and not hub_conv.get("deleted_at"))
 
 
@@ -286,7 +290,53 @@ class HubWsBridge:
         # A desktop webhook's delivery (the hub's public URL for this laptop): replayed here, then acked.
         self.manager.register_handler("webhook_delivery", webhook_relay.on_delivery)
         self.manager.register_handler("source_nudge", self._on_source_nudge)
+        self.manager.register_handler("open_message", self._on_open_message)
         self._installed = True
+
+    async def _on_open_message(self, message: dict) -> None:
+        """Hub → this desktop: "open this message" (its email landing page, the person
+        asked to open it here). Resolved exactly as the deep link is (fetch, unpack,
+        sync the conversation), then the active tab is sent there and brought forward."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+        from flow_sdk.core.navigate import pick_connection  # noqa: PLC0415
+        from flow_sdk.notifications.ui_command import send_ui_command  # noqa: PLC0415
+
+        fm_id = str((message or {}).get("flow_message_id") or "")
+        if not fm_id:
+            logger.warning("[hub-bridge] open_message without a flow_message_id: %s", message)
+            return
+        local_user = await User.get_local()
+        link = await FlowMessage.resolve_open(fm_id, local_user.typeid if local_user else None)
+        tab = pick_connection(None)
+        if isinstance(tab, tuple):
+            # macOS never lets a background app put itself in front: the banner is how a window
+            # left behind gets the person there (its click raises the window on the conversation).
+            # Sent first — the open reloads the page, and a command after it would be lost.
+            conversation_id = getattr(link, "conversation_id", "") or ""
+            if conversation_id:
+                from flow_sdk.notifications.desktop import notify_desktop  # noqa: PLC0415
+
+                await notify_desktop(
+                    "message",
+                    title=getattr(link, "sender_name", "") or "Message",
+                    body="Opened in FlowPad",
+                    click_target={"view_type": "conversation", "pointer": f"{conversation_id}/message/{fm_id}"},
+                )
+            await send_ui_command(tab[1], "open_link", query=link.to_query())
+            return
+        # No Flowpad tab is open: open one at the message, as an ask does (`ask_window._open_a_window`).
+        # Never under Electron (it has its own window) or a test (`FLOWPAD_NO_BROWSER`).
+        if os.environ.get("FLOWPAD_NO_BROWSER"):
+            logger.info("[hub-bridge] open_message %s: no Flowpad tab is open", fm_id)
+            return
+        import webbrowser  # noqa: PLC0415
+        from urllib.parse import urlencode  # noqa: PLC0415
+
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        url = f"http://localhost:{get_instance_settings().ui_port}/dock/home?{urlencode(link.to_query())}"
+        await asyncio.to_thread(webbrowser.open, url)
 
     async def _on_source_nudge(self, message: dict) -> None:
         """The hub holds something new for a driver's sources here (a message waiting for them): poll
@@ -466,6 +516,8 @@ class HubWsBridge:
                     await DiagnosisRequest.take_hub_update(eid, data)
             elif etype in MEMBERSHIP_MIRROR_TYPES:
                 await self._handle_membership_container_op(op, etype, eid, data)
+            elif etype == "compute_node":
+                await self._handle_shared_machine_op(op, eid, data)
             else:
                 logger.debug("hub_bridge: no handler for data_op_msg type=%s op=%s", etype, op)
         except Exception:
@@ -654,7 +706,14 @@ class HubWsBridge:
                         )
                         return
                     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
+                    from flow_sdk.builtin.flow_message import FlowMessageKind  # noqa: PLC0415
 
+                    if FlowMessageKind.hub_only(str(payload.get("kind") or "")):
+                        # Never a local row (materialize refuses it); the conversation's sealed-values card re-reads.
+                        from flow_sdk.secrets.sealed_transfer import on_sealed_arrival  # noqa: PLC0415
+
+                        await on_sealed_arrival(conversation_id)
+                        return
                     materialized = await materialize_flow_message(
                         payload,
                         conversation_id=conversation_id,
@@ -721,25 +780,14 @@ class HubWsBridge:
                         and not _is_session_traffic(payload)
                     ):
                         try:
-                            from flow_sdk.notifications import notify_desktop
+                            from flow_sdk.notifications import notify_message_arrival
 
-                            text = " ".join((payload.get("text") or "").split())
-                            preview = text if len(text) <= 80 else text[:77] + "..."
-                            if not preview:
-                                preview = _attachment_only_body(payload)
-                            # Message → generic payload flattening lives HERE
-                            # (the Layer-2 consumer); the notification service
-                            # renders it blind. The click target is the same
-                            # /conversation/<id>/message/<id> pointer an in-app
-                            # bubble click navigates to.
-                            await notify_desktop(
-                                "message",
-                                title=payload.get("sender_name") or "New message",
-                                body=preview,
-                                click_target={
-                                    "view_type": "conversation",
-                                    "pointer": f"{conversation_id}/message/{fm_id}",
-                                },
+                            await notify_message_arrival(
+                                conversation_id,
+                                fm_id,
+                                sender_name=payload.get("sender_name") or "",
+                                text=payload.get("text") or "",
+                                fallback=_attachment_only_body(payload),
                             )
                         except Exception as _notify_err:
                             logger.warning(
@@ -749,7 +797,7 @@ class HubWsBridge:
                             )
 
                     # Route a contact's prompt through the session gate (the
-                    # session's state — and a standing grant — decide). Cheap
+                    # session's state decides; only the host's Approve starts it). Cheap
                     # pre-check on the raw payload so a plain text message never
                     # spawns the task (and its DB fetch). Detached so a slow/failed run never blocks persist
                     # or the auto-ack below; failure-isolated inside the hook.
@@ -781,7 +829,7 @@ class HubWsBridge:
                             asyncio.create_task(process_inbound_prompt(fm_id, conversation_id))
                     elif _is_session_request(payload.get("attachment")):
                         # A session opened before any prompt: the host's own
-                        # identity on the row, and a standing grant's approval.
+                        # identity on the row; it waits for the host's Approve.
                         from flow_sdk.app.actions.execute_prompt import process_session_request
 
                         asyncio.create_task(process_session_request(fm_id, conversation_id))
@@ -874,9 +922,14 @@ class HubWsBridge:
                 "delivery_status",
                 "delivered_at",
                 "received_at",
+                "handling_at",
                 "body_status",
                 "attachment_filename",
             ):
+                # The hub leaves a cleared field out of a full message: no ``handling_at`` on a message that is
+                # otherwise whole means "not working any more".
+                if field == "handling_at" and field not in data and ("sender_id" in data or "delivery_status" in data):
+                    data = {**data, "handling_at": None}
                 if field not in data:
                     continue
                 if (
@@ -987,23 +1040,9 @@ class HubWsBridge:
             existing = await FlowMessage.get_one({"id": fm_id})
             conv_id = parent_conv_id or (getattr(existing, "conversation_id", None) if existing is not None else None)
             if existing is not None:
-                # Detach the child edge first — membership is the edge, so the
-                # pointer prune below is not enough on its own, and after
-                # ``destroy()`` the child no longer resolves for the detach to
-                # find. Announces CHILD_DELETED to watchers of the conversation.
-                if conv_id:
-                    try:
-                        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
-
-                        parent = await Conversation.get_one({"id": conv_id})
-                        if parent is not None:
-                            await parent.detach_child(existing.typeid, notify=True)
-                    except Exception:
-                        logger.exception("hub_bridge: child detach failed fm=%s conv=%s", fm_id, conv_id)
-                # Erase the message's entire existence — DB row + relationships
-                # AND the on-disk record folder (body bundle, metadata, .hash).
-                # ``delete_by_id`` would leave the folder behind.
-                await existing.destroy()
+                # Child edge, then the row and its record folder (``delete_by_id`` would
+                # leave the folder behind). Announces CHILD_DELETED to the conversation's watchers.
+                await existing.erase_local(conv_id)
             # Drop the dangling conversation pointer so an open conversation view
             # removes the bubble instead of rendering a permanent "Loading
             # message…" placeholder for the now-deleted FlowMessage.
@@ -1020,102 +1059,28 @@ class HubWsBridge:
             return
 
     async def _handle_conversation_op(self, op: str, conv_id: str, data: dict) -> None:
-        """Passive upsert of Conversation lifecycle changes so the local entity
-        stays in sync.
-
-        ``title`` is included so a peer's rename (sent over HTTP or WS and reflected
-        to the hub) fans out and lands on the local row here — otherwise a renamed
-        conversation would never update on the other side.
-
-        Drops projection-guarded fields (``message_count``, ``message_ids``)
-        before save — those are owned by ``ConversationRecord.sync_to_db``."""
+        """A hub conversation changed: land it here through the one mirror
+        (``Conversation.mirror_from_hub``) — the fields the hub owns, a hub ``null`` never clearing a
+        local value, the row marked ``remote``. A delete drops the local copy and keeps later frames
+        for it from re-creating it."""
         from flow_sdk.builtin.conversation import Conversation, conversation_row_lock
         from flow_sdk.builtin.user import User
 
-        local_user = await User.get_local()
-        someone_typeid = local_user.typeid if local_user else None
-
         if op == "delete" or data.get("deleted_at"):
             self.suppress_conversation_materialization(conv_id)
-            await Conversation.delete_by_id(conv_id)
+            await Conversation.drop_hub_deleted(conv_id)
             return
         if self.conversation_materialization_suppressed(conv_id):
             return
-
-        # Strip fields not on the local model. Projection-owned fields are
-        # deliberately absent from this allowlist.
-        _LOCAL_FIELDS = {
-            "id",
-            "type",
-            "title",
-            # Hub-authoritative, and the reason the close reaches the OTHER side:
-            # `_set_settlement` fans out over this path, so a `status` missing
-            # from the allowlist is silently dropped and the desk's app keeps
-            # showing a settled ticket as open until some HTTP sync re-reads it.
-            "status",
-            "remote_project_id",
-            "remote_project_name",
-            "participants",
-            "git_sharing_enabled",
-            "shared_context_entities",
-        }
-        clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS}
-        clean["id"] = conv_id
-        # A Conversation arriving over the hub bridge is, by definition, a
-        # hub-backed local mirror. Manual invitation acceptance used to repair
-        # this bit later; immediate assignment has no accept transition, so the
-        # bridge must establish the invariant at the ingest boundary.
-        clean["remote"] = True
-        # Wire adapter: the roster's hub key (``participants``) → the local
-        # ``members`` cache, from the one declaration on ``Conversation``.
-        clean = HubSerializer.unwire(Conversation, clean)
-
         self.remember_hub_conversation(conv_id)
-
+        local_user = await User.get_local()
+        someone_typeid = local_user.typeid if local_user else None
         # One writer at a time per row — see ``conversation_row_lock``.
         async with conversation_row_lock(conv_id):
-            existing = await Conversation.get_one({"id": conv_id})
-            if existing is None:
-                # Identity mirror — a remote row is a pure reflection of the hub
-                # row. The hub's owner field (``initiated_by``) is the only
-                # legitimate creator; when the hub doesn't carry one, fall back to
-                # the neutral 'system' sentinel — NEVER the local user (the driver
-                # would otherwise stamp the request-context user, surfacing
-                # received conversations as created by the recipient).
-                clean["created_by"] = data.get("initiated_by") or data.get("created_by") or "system"
-                try:
-                    new_conv = Conversation.model_validate(clean)
-                except Exception:
-                    logger.exception("hub_bridge: conversation validate failed conv=%s data=%s", conv_id, clean)
-                    return
-                if not new_conv.id:
-                    new_conv.id = conv_id
-                await new_conv.save(someone_typeid, notify=True)
-                return
-
-            for field in (
-                "title",
-                "status",
-                "git_sharing_enabled",
-                "members",
-                "remote_project_id",
-                "remote_project_name",
-                "shared_context_entities",
-            ):
-                # A hub ``None`` is "the hub has nothing", not "clear it": a guest
-                # ticket carries no title on the hub while the local row titles it
-                # from the opening line. Same rule as the HTTP twin
-                # (``_upsert_hub_conversation_metadata``'s update path).
-                if field in clean and clean[field] is not None:
-                    setattr(existing, field, clean[field])
-            existing.remote = True
-            # Adopt the hub's owner when it carries one — keeps the local mirror
-            # converged with the hub row (same rule as the HTTP sync path in
-            # ``_upsert_hub_conversation_metadata``).
-            hub_owner = data.get("initiated_by")
-            if hub_owner and existing.created_by != hub_owner:
-                existing.created_by = hub_owner
-            await existing.save(someone_typeid, notify=True)
+            try:
+                await Conversation.mirror_from_hub({**data, "id": conv_id}, someone_typeid)
+            except Exception:
+                logger.exception("hub_bridge: conversation mirror failed conv=%s", conv_id)
 
     async def _handle_llm_endpoint_op(self, op: str, eid: str, data: dict) -> None:
         """A budget this user holds a role on changed on the hub.
@@ -1184,6 +1149,23 @@ class HubWsBridge:
             return
         await handle_invitation_sync(local_user.typeid)
 
+    async def _handle_shared_machine_op(self, op: str, entity_id: str, data: dict) -> None:
+        """A machine someone shared with this user: the hub grants it at invite time and pushes the
+        row, so it is mirrored here as ``remote`` — the Machine page and the invite's Open read it.
+        A machine this box holds as its own (not ``remote``) is never touched by a push."""
+        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+        from flow_sdk.core.entity.entity_model import mirror_delete  # noqa: PLC0415
+
+        local = await ComputeNode.get_by_id(entity_id)
+        if local is not None and not getattr(local, "remote", False):
+            return
+        if op == "delete" or data.get("deleted_at"):
+            if local is not None:
+                with mirror_delete():  # the hub already deleted it
+                    await ComputeNode.delete_by_id(entity_id)
+            return
+        await ComputeNode.mirror_from_hub({**data, "id": entity_id}, None, notify=True)
+
     async def _handle_membership_container_op(
         self,
         op: str,
@@ -1209,7 +1191,10 @@ class HubWsBridge:
             logger.debug("hub_bridge: membership op for unknown type %s", entity_type)
             return
         if op == "delete" or data.get("deleted_at"):
-            await cls.delete_by_id(entity_id)
+            from flow_sdk.core.entity.entity_model import mirror_delete  # noqa: PLC0415
+
+            with mirror_delete():  # the hub already deleted it
+                await cls.delete_by_id(entity_id)
             return
 
         local_user = await User.get_local()
@@ -1289,28 +1274,14 @@ class HubWsBridge:
         """
         from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
-        existing = await Deployment.get_one({"id": deployment_id})
-        if op == "delete":
-            if existing is not None:
-                existing.remote = False  # the hub already deleted it: nothing to ask the hub
-                await existing.delete()
-            return
-
         payload = {**(data or {}), "id": deployment_id}
-        if existing is None:
-            await Deployment.adopt_from_hub(payload)
-            logger.info("[bridge] deployment op %s materialized %s", op, deployment_id)
-            return
-
-        # The sender receives its OWN op too, so check staleness before doing any
-        # work — an echo would otherwise re-save and re-broadcast every time.
-        if not Deployment.is_stale(existing, payload):
-            return
-        merged = Deployment.merge_hub_payload(existing, payload)
-        refreshed = Deployment(**merged)
-        refreshed.remote = True
-        await refreshed.save()
-        logger.info("[bridge] deployment op %s refreshed %s", op, deployment_id)
+        # A delete carries no row: the parent the list is under is the local copy's.
+        existing = await Deployment.get_one({"id": deployment_id}) if op == "delete" else None
+        if await Deployment.mirror_hub_row(payload, op):
+            logger.info("[bridge] deployment op %s mirrored %s", op, deployment_id)
+            parent = payload.get("parent_type_id") or getattr(existing, "parent_type_id", None)
+            if parent:
+                Deployment.announce_synced(str(parent))
 
     # ------------------------------------------------------------------
     # Outbound helpers — thin wrappers around send_request for callers that
@@ -1369,26 +1340,21 @@ class HubWsBridge:
 
     async def _fetch_conversation_id(self, fm_id: str) -> Optional[str]:
         """Walk the ownership chain via HTTP /flow_message/<id>/parents_path
-        and return the conversation entry, or None."""
-        import httpx
+        and return the conversation entry, or None (no hub, or this box is signed out)."""
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
-        from flow_sdk.cli.auth.credentials import load_credentials
-        from flow_sdk.cloud_client.client import ApiConfig
-
-        creds = load_credentials()
-        if not creds or not creds.api_key:
-            return None
-        api = ApiConfig.from_env()
-        url = api._get_full_url(f"/graph/flow_message/{fm_id}/parents_path")
-        headers = {"Authorization": f"Bearer {creds.api_key}", "Accept": "application/json"}
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(url, headers=headers)
-            r.raise_for_status()
-            body = r.json()
-            chain = (body or {}).get("data") or []
-            for ent in chain:
-                if isinstance(ent, dict) and ent.get("type") == "conversation":
-                    return ent.get("id")
+        try:
+            # strict: refuse to send without a login (SIGNED_OUT), as the old hand-built call did.
+            chain = await HubProxy.call("GET", "flow_message", fm_id, "parents_path", strict=True, timeout=5.0)
+        except HubError as e:
+            if e.kind in (HubFailureKind.NOT_CONFIGURED, HubFailureKind.SIGNED_OUT):
+                return None
+            raise
+        for ent in chain or []:
+            if isinstance(ent, dict) and ent.get("type") == "conversation":
+                return ent.get("id")
         return None
 
     async def mark_received(self, *, flow_message_ids: list[str], timeout: float = 5.0) -> dict:

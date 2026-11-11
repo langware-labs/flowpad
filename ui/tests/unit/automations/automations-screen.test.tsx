@@ -10,13 +10,22 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import type { AutomationRun, AutomationSummary } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const nav = vi.hoisted(() => ({ openDock: vi.fn(), openFolder: vi.fn(), openMachinePath: vi.fn() }));
+const nav = vi.hoisted(() => ({ openDock: vi.fn() }));
 const dock = vi.hoisted(() => ({ current: null as null | { pointer?: string; options?: Record<string, string> } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: nav, currentDock: dock.current }),
+  useCurrentDock: () => dock.current,
+}));
+vi.mock('@src/hooks/use-default-scope-filter', () => ({
+  useDefaultScopeFilter: () => [{ mode: 'all' }, vi.fn(), 'p1'],
 }));
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: { id: 'p1' } }) }));
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
+const gate = vi.hoisted(() => ({ fn: vi.fn(() => Promise.resolve({ ok: true as const })) }));
+vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => gate.fn }));
+vi.mock('@src/components/assets/editor/agent-profile/use-agent-places', () => ({
+  useAgentPlaces: () => ({ places: [], reload: async () => undefined }),
+}));
 vi.mock('@src/hooks/entity-hooks', () => ({
   // One answer for every entity query the screen makes: an agent to pick, and (as a data source) a channel.
   useEntitiesQuery: () => ({ data: [{ id: 'a1', name: 'Chief of Staff', channel: 'gmail' }] }),
@@ -27,9 +36,11 @@ const state = vi.hoisted(() => ({
   runs: [] as AutomationRun[],
   run: null as AutomationRun | null,
   tries: [] as Array<Record<string, unknown>>,
+  cloudWarning: null as null | { error_code: string; message: string },
   mutate: {
     runOnce: vi.fn(),
     setEnabled: vi.fn(),
+    setPackage: vi.fn(),
     save: vi.fn(),
     check: vi.fn(),
     remove: vi.fn(),
@@ -47,7 +58,7 @@ const mutation = (fn: ReturnType<typeof vi.fn>) => ({
   variables: undefined,
 });
 vi.mock('@src/hooks/automations/useAutomations', () => ({
-  useAutomations: () => ({ data: state.automations, isLoading: false, error: null }),
+  useAutomations: () => ({ data: state.automations, isLoading: false, error: null, cloudWarning: state.cloudWarning }),
   useAutomation: (id: string | null) => ({ automation: state.automations.find((a) => a.id === id) ?? null }),
   useAutomationTrigger: (id: string | null) => ({
     data:
@@ -87,6 +98,7 @@ vi.mock('@src/hooks/automations/useAutomations', () => ({
   useAutomationSamples: () => ({ data: [], isFetching: false }),
   useRunOnce: () => mutation(state.mutate.runOnce),
   useSetAutomationEnabled: () => mutation(state.mutate.setEnabled),
+  useSetPackageEnabled: () => mutation(state.mutate.setPackage),
   useSaveAutomation: () => mutation(state.mutate.save),
   useAutomationCheck: () => mutation(state.mutate.check),
   useDeleteAutomation: () => mutation(state.mutate.remove),
@@ -147,6 +159,7 @@ beforeEach(() => {
   state.runs = [];
   state.run = null;
   state.tries = [];
+  state.cloudWarning = null;
 });
 afterEach(() => {
   cleanup();
@@ -170,21 +183,32 @@ describe('My automations', () => {
     expect(screen.getByTestId('automation-row-b')).toBeTruthy();
   });
 
+  it('Flowpad’s own are locked, except one it ships off: that switch is the person’s', () => {
+    state.automations = [
+      automation({ id: 'b', group: 'builtin', read_only: true, switchable: false }),
+      automation({ id: 'u', group: 'builtin', read_only: true, switchable: true }),
+    ];
+    render(<AutomationsView />);
+    fireEvent.click(screen.getByTestId('automations-builtin-toggle'));
+    expect((screen.getByTestId('automation-toggle-b') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId('automation-toggle-u') as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('a starter opens the builder prefilled', () => {
     render(<AutomationsView />);
     fireEvent.click(screen.getByTestId('automation-recipe-morning-briefing'));
     expect(nav.openDock.mock.calls[0][0].options).toEqual({ creating: 'schedule', recipe: 'morning-briefing' });
   });
 
-  it('each row reads as the rule, with its last result and next run', () => {
+  it('each row is one line: IF its when, THEN what it does — its facts live on its page', () => {
     state.automations = [
-      automation({ id: 'a1', last_run: run({ status: 'succeeded' }), next_run: '2026-10-06T06:00:00+00:00' }),
+      automation({ id: 'a1', description: 'Weekday triage', last_run: run({ status: 'succeeded' }), next_run: '2026-10-06T06:00:00+00:00' }),
     ];
     render(<AutomationsView />);
     const row = screen.getByTestId('automation-row-a1');
-    expect(row.textContent).toContain('Every weekday at 09:00');
-    expect(row.textContent).toContain('run Chief of Staff');
-    expect(within(screen.getByTestId('automation-last-a1')).getByText('Succeeded')).toBeTruthy();
+    expect(row.textContent).toMatch(/If\s*Every weekday at 09:00\s*Then\s*run Chief of Staff/);
+    expect(row.getAttribute('title')).toBe('Weekday triage');
+    expect(screen.queryByTestId('automation-last-a1')).toBeNull();
   });
 
   it('groups by whose it is and folds Flowpad’s own into one healthy line', () => {
@@ -214,12 +238,6 @@ describe('My automations', () => {
     expect([pointer.pointer, pointer.options]).toEqual(['runs', { status: 'failed' }]);
   });
 
-  it('an untested rule says so instead of its next run', () => {
-    state.automations = [automation({ id: 'u', tested: false })];
-    render(<AutomationsView />);
-    expect(screen.getByTestId('automation-untested-u').textContent).toContain('Not tested yet');
-  });
-
   it('kind chips filter, and only kinds that exist are offered', () => {
     state.automations = [
       automation({ id: 's' }),
@@ -247,6 +265,74 @@ describe('My automations', () => {
   });
 });
 
+describe('where each automation runs', () => {
+  it('a hub row groups by its project like a local one, says Flowpad cloud, and its actions go to the hub', () => {
+    state.automations = [
+      automation({
+        id: 'cloud1',
+        group: 'project',
+        project_id: 'p1',
+        source: 'hub',
+        place: { kind: 'hub', label: 'Flowpad cloud' },
+        agent_type_id: 'agent-a1',
+      }),
+    ];
+    render(<AutomationsView />);
+    const group = screen.getByTestId('automations-group-project');
+    expect(within(group).getByTestId('automation-row-cloud1')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('automation-toggle-cloud1'));
+    expect(state.mutate.setEnabled).toHaveBeenCalledWith(
+      { triggerId: 'cloud1', enabled: false },
+      expect.anything(),
+    );
+    fireEvent.click(screen.getByTestId('automation-run-once-cloud1'));
+    expect(state.mutate.runOnce).toHaveBeenCalledWith({ triggerId: 'cloud1', source: 'hub' }, expect.anything());
+  });
+
+  it('says in one line when the cloud automations could not be read', () => {
+    state.automations = [automation({ id: 'a1' })];
+    state.cloudWarning = { error_code: 'CLOUD_SIGNED_OUT', message: 'Sign in to Flowpad cloud to see them.' };
+    render(<AutomationsView />);
+    expect(screen.getByTestId('automations-cloud-warning').textContent).toContain('Cloud automations not shown: Sign in to Flowpad cloud to see them.');
+  });
+
+  it('no warning, no line', () => {
+    state.automations = [automation({ id: 'a1' })];
+    render(<AutomationsView />);
+    expect(screen.queryByTestId('automations-cloud-warning')).toBeNull();
+  });
+
+  it('a new schedule offers Flowpad cloud once it runs an agent with a prompt, and saves it on the hub', async () => {
+    dock.current = { options: { creating: 'schedule' } };
+    state.mutate.save.mockResolvedValue({ id: 'hub-1' });
+    render(<AutomationsView />);
+    const picker = () => screen.getByTestId<HTMLSelectElement>('runs-on-picker');
+    const options = () => Array.from(picker().options).map((o) => o.value);
+    expect(options()).toEqual(['local']);
+    expect(screen.getByTestId('runs-on-cloud-hint')).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId('then-agent'), { target: { value: 'agent-a1' } });
+    fireEvent.change(screen.getByTestId('then-prompt'), { target: { value: 'Brief me' } });
+    expect(options()).toEqual(['local', 'hub']);
+    fireEvent.change(picker(), { target: { value: 'hub' } });
+    fireEvent.click(screen.getByTestId('automation-save'));
+
+    await waitFor(() => expect(state.mutate.save).toHaveBeenCalledTimes(1));
+    expect(gate.fn).toHaveBeenCalled();
+    const [args] = state.mutate.save.mock.calls[0];
+    expect(args.cloud).toMatchObject({ agent: 'agent-a1', prompt: 'Brief me', project_id: 'p1' });
+    expect(args.triggerId).toBeNull();
+    expect(args.fields).toMatchObject({
+      trigger_type: 'schedule',
+      expr: '0 9 * * 1-5',
+      // Always explicit: the hub reads an empty zone as UTC.
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      actions: [{ action_type: 'run_agent', target_type_id: 'agent-a1', prompt: 'Brief me' }],
+      project_id: 'p1',
+    });
+  });
+});
+
 describe('the builder', () => {
   it('a new schedule starts on presets, shows the next runs, and names what is missing', () => {
     dock.current = { options: { creating: 'schedule' } };
@@ -270,21 +356,27 @@ describe('the builder', () => {
     expect(state.mutate.save).not.toHaveBeenCalled();
   });
 
-  it('time zone, the saved expression and JSON are one click away, not in the way', () => {
+  it('the time zone is a button by the time — a chip only when it is not this computer\'s — and JSON is one click away', () => {
     dock.current = { options: { creating: 'schedule' } };
     render(<AutomationsView />);
-    expect(screen.queryByTestId('when-schedule-timezone')).toBeNull();
-    fireEvent.click(screen.getByTestId('when-schedule-advanced'));
-    expect(screen.getByTestId('when-schedule-timezone')).toBeTruthy();
+    expect(screen.queryByTestId('when-schedule-advanced')).toBeNull();
+    expect(screen.getByTestId('when-schedule-timezone-open')).toBeTruthy();
+    expect(screen.queryByTestId('when-schedule-timezone-chip')).toBeNull();
     expect(screen.queryByTestId('automation-json-toggle')).toBeNull();
     fireEvent.click(screen.getByTestId('automation-advanced-toggle'));
     expect(screen.getByTestId('automation-json-toggle')).toBeTruthy();
   });
 
-  it('a saved automation loads into the presets it was made with', () => {
+  it('a saved automation opens folded to three lines and unfolds into the presets it was made with', () => {
     state.automations = [automation({ id: 'a1', tested: false })];
     dock.current = { options: { trigger: 'a1' } };
     render(<AutomationsView />);
+    // A saved automation opens as three lines; each unfolds to the form it was made with.
+    expect(screen.queryByTestId('when-schedule-preset')).toBeNull();
+    for (const block of ['automation-when', 'automation-runs-on', 'automation-then'])
+      expect(screen.getByTestId(`${block}-summary`).textContent).not.toBe('');
+    fireEvent.click(screen.getByTestId('automation-when-toggle'));
+    fireEvent.click(screen.getByTestId('automation-then-toggle'));
     expect(screen.getByTestId('when-schedule-preset-weekdays').getAttribute('aria-checked')).toBe('true');
     expect((screen.getByTestId('then-prompt') as HTMLTextAreaElement).value).toBe('Go');
     expect(screen.getByTestId('automation-untested').textContent).toContain('Not tested yet');
@@ -382,33 +474,31 @@ describe('what ran, and what it did', () => {
   });
 });
 
-describe('browsing what an automation is made of', () => {
-  const watcher = () =>
-    automation({
-      id: 'w',
-      kind: 'file',
-      name: 'Claude Code chats',
-      when: { kind: 'file', text: '', file: { path: '/Users/me/.claude/projects', glob: '*.jsonl', recursive: true, is_folder: true } },
-    });
+describe('a package', () => {
+  const AGENT = 'agent-8caeb94a-84d7-4d78-9f4b-0e41226380f4';
+  const member = (id: string, whenText: string, kind: AutomationSummary['kind']) =>
+    automation({ id, kind, group: 'project', parent_type_id: AGENT, parent_name: 'Team code review',
+                 when: { kind, text: whenText } as AutomationSummary['when'] });
 
-  it('the watched folder can be browsed from the list, without opening the automation', () => {
-    state.automations = [watcher()];
+  it('is one line with one switch: IF the first condition +1 → THEN the agent; +1 lists them, a click shows the parts', async () => {
+    state.automations = [member('answer', 'a message arrives', 'event'), member('pick', 'every 30 minutes', 'schedule')];
     render(<AutomationsView />);
-    fireEvent.click(screen.getByTestId('automation-browse-w'));
-    expect(nav.openFolder).toHaveBeenCalledWith('/Users/me/.claude/projects');
-    expect(nav.openDock).not.toHaveBeenCalled();
-  });
+    const line = screen.getByTestId(`package-row-${AGENT}`);
+    expect(line.textContent).toMatch(/If\s*a message arrives\s*\+1\s*Then\s*Team code review/);
+    expect(screen.queryByTestId('automation-row-answer')).toBeNull();
 
-  it('the name opens the trigger.json it is defined in, else its page', () => {
-    state.automations = [automation({ id: 'f', asset_ref: '/w/agentic-assets/trigger/morning' }), watcher()];
-    render(<AutomationsView />);
-    fireEvent.click(screen.getByTestId('automation-name-f'));
-    expect(nav.openMachinePath.mock.calls[0][0]).toBe('/w/agentic-assets/trigger/morning/trigger.json');
-    fireEvent.click(screen.getByTestId('automation-name-w'));
-    expect(nav.openDock.mock.calls[0][0].options).toEqual({ trigger: 'w' });
+    fireEvent.click(screen.getByTestId(`package-toggle-${AGENT}`));
+    expect(state.mutate.setPackage).toHaveBeenCalledWith({ parentTypeId: AGENT, on: false }, expect.anything());
+
+    fireEvent.click(screen.getByTestId(`package-conditions-${AGENT}`));
+    expect((await screen.findByTestId('package-condition-pick')).textContent).toBe('every 30 minutes');
+
+    fireEvent.click(line);
+    const parts = screen.getByTestId(`package-members-${AGENT}`);
+    expect(within(parts).getAllByText(/^If$/)).toHaveLength(2);
+    expect(parts.querySelector('[role="switch"]')).toBeNull();
   });
 });
-
 
 describe('a rule on messages arriving', () => {
   it('is the first card, and its starters open the two-box screen', () => {

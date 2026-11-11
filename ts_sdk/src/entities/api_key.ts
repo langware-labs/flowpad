@@ -78,10 +78,10 @@ export class ApiKey extends APIEntity<ApiKey> implements IApiKey {
    * into `ApiKeyCredentials`. The full key value is returned ONCE; the masking
    * rule lives here rather than in each screen that shows it.
    */
-  static async generateSelfKey(userTypeId: TypeId): Promise<ApiKeyCredentials> {
+  static async generateSelfKey(userTypeId: TypeId, name = 'FLOWPAD_API_KEY'): Promise<ApiKeyCredentials> {
     const info = new ActionInfo('api-keys', userTypeId.type, userTypeId.id, 'POST');
     info.bodyParameters = {
-      name: 'FLOWPAD_API_KEY',
+      name,
       description: ApiKey.SELF_KEY_DESCRIPTION,
       bind_typeid: userTypeId.toString(),
     };

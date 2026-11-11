@@ -1,7 +1,19 @@
 import { t } from '@lingui/core/macro';
 import type { LucideIcon } from 'lucide-react';
-import { Archive, ArchiveRestore, CheckSquare, LifeBuoy, Trash2 } from 'lucide-react';
+import {
+  Archive,
+  ArchiveRestore,
+  CheckSquare,
+  CircleCheck,
+  Clock,
+  LifeBuoy,
+  Trash2,
+  UserCheck,
+  Wrench,
+} from 'lucide-react';
 import { Conversation, FlowMessage, FlowMessageKind, Invitation, isHelpdeskKind } from '@sdk';
+import type { EntityMember } from '@sdk/APIEntity';
+import { isClosedConversation, isItKind } from '@sdk/entities/conversation';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 
 // ── Conversation category — the single source of truth ──────────────────────
@@ -31,10 +43,77 @@ export interface CategoryInputs {
    *  Both ids are needed: a message's `sender_id` is stamped with the cloud
    *  user id when logged in, the local desktop user id otherwise. */
   viewer: { email: string; cloudUserId: string | null; localUserId: string | null };
+  /** Force the staff perspective — a row delivered by a help desk SOURCE is staff's by
+   *  construction. Omitted: derived from `initiated_by` against the viewer. */
+  staffView?: boolean;
+  /** Staff user ids in the ticket, from the desk pool row (`picked_up_by`). Supplements
+   *  the roster, which a staff-side row may not carry. */
+  pickedUpBy?: string[] | null;
+  /** The live roster, when the caller holds a fresher one than `conv.members`. */
+  members?: EntityMember[] | null;
+}
+
+// ── Ticket state — waiting / picked / closed ─────────────────────────────────
+// Closed wins (a reply to a closed ticket keeps it closed). Otherwise a ticket is
+// picked once someone OTHER than the requester is in it — on a help desk ticket the
+// roster is the requester plus the staff who picked it up.
+
+export type TicketState = 'waiting' | 'picked' | 'closed';
+
+export interface TicketStateInputs {
+  status?: string | null;
+  /** The requester's user id (the hub's `initiated_by`). */
+  initiatedBy?: string | null;
+  members?: EntityMember[] | null;
+  /** Staff ids from the desk pool row, when the caller has one. */
+  pickedUpBy?: string[] | null;
+  /** The hub's word that someone picked it up — all a requester gets: their roster is masked. */
+  staffed?: boolean | null;
+}
+
+/** The staff members of a ticket: everyone on the roster who is not the requester. */
+export function ticketStaff(inp: TicketStateInputs): EntityMember[] {
+  const requester = inp.initiatedBy || null;
+  const staff = (inp.members ?? []).filter(
+    (m) => !!m?.user_id && m.user_id !== requester && !m.roles?.includes('owner'),
+  );
+  for (const id of inp.pickedUpBy ?? []) {
+    if (id && id !== requester && !staff.some((m) => m.user_id === id)) staff.push({ user_id: id });
+  }
+  return staff;
+}
+
+/** Pure: the state chip a help desk ticket wears. */
+export function ticketState(inp: TicketStateInputs): TicketState {
+  if (isClosedConversation(inp.status)) return 'closed';
+  return inp.staffed || ticketStaff(inp).length > 0 ? 'picked' : 'waiting';
+}
+
+export interface TicketFacet {
+  state: TicketState;
+  perspective: 'requester' | 'staff';
+  /** Staff view of a picked ticket: `'you'` when the viewer picked it, else the picker's
+   *  name (null when the roster names nobody). */
+  pickedBy: string | null;
+}
+
+/** A conversation a help desk SOURCE delivered: the viewer is desk staff on it, whatever its messages say. */
+export function isDeskTicket(conv: Pick<Conversation, 'channel'> | null | undefined): boolean {
+  return conv?.channel === 'helpdesk';
+}
+
+/** The desk chip's label from the desk (source) name: "GTM Studio" → "GTM Studio help desk",
+ *  "Flowpad Support" → "Flowpad help desk". */
+export function deskChipLabel(deskName: string): string {
+  const base = deskName
+    .trim()
+    .replace(/\s+(support|help\s*desk|helpdesk)$/i, '')
+    .trim();
+  return base ? t`${base} help desk` : t`Help desk`;
 }
 
 export interface ConversationFacets {
-  kind: 'direct' | 'helpdesk';
+  kind: 'direct' | 'helpdesk' | 'it';
   /** Viewer is the pending recipient of an unaccepted invitation. */
   isInvitation: boolean;
   /** `archived_at` is set and not yet revived by newer activity. */
@@ -42,6 +121,8 @@ export interface ConversationFacets {
   /** Latest RECEIVED message is unread (invitation rows count as unread).
    *  Viewer-relative: a self-sent latest message never makes the row unread. */
   isUnread: boolean;
+  /** Help desk tickets only: the waiting / picked / closed state, viewer-relative label inputs. */
+  ticket?: TicketFacet;
 }
 
 /** Derive the category facets for a conversation row. Pure — no hooks, safe to
@@ -49,7 +130,7 @@ export interface ConversationFacets {
 export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const { conv, firstMessage, latestMessage, latestPtrTs, invitation, viewer } = inp;
 
-  const kind = isHelpdeskKind(conv.kind) ? 'helpdesk' : 'direct';
+  const kind = isHelpdeskKind(conv.kind) ? 'helpdesk' : isItKind(conv.kind) ? 'it' : 'direct';
 
   // Invitation — viewer-relative. The first message stays `kind === invitation`
   // forever, so the sender (and everyone post-accept) must see a normal row;
@@ -80,7 +161,30 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
     : false;
   const isUnread = isInvitation || (conv.is_unread ?? hubUnread);
 
-  return { kind, isInvitation, isArchived, isUnread };
+  let ticket: TicketFacet | undefined;
+  if (kind === 'helpdesk' || inp.staffView) {
+    const tin: TicketStateInputs = {
+      status: conv.status,
+      initiatedBy: conv.initiated_by ?? null,
+      members: inp.members ?? conv.members ?? [],
+      // The hub computes these on the ticket itself. A requester's `picked_up_by` is masked empty,
+      // so `staffed` is how their side learns a staffer joined; a pool row may supplement the ids.
+      pickedUpBy: inp.pickedUpBy ?? conv.picked_up_by ?? null,
+      staffed: conv.staffed ?? null,
+    };
+    const state = ticketState(tin);
+    const staffView = inp.staffView ?? (!!conv.initiated_by && !isViewer(conv.initiated_by, viewer));
+    let pickedBy: string | null = null;
+    if (staffView && state !== 'waiting') {
+      const staff = ticketStaff(tin);
+      const mine = staff.find((m) => isViewer(m.user_id, viewer));
+      const other = staff.find((m) => m.name || m.email);
+      pickedBy = mine ? 'you' : other?.name || other?.email || null;
+    }
+    ticket = { state, perspective: staffView ? 'staff' : 'requester', pickedBy };
+  }
+
+  return { kind, isInvitation, isArchived, isUnread, ticket };
 }
 
 // ── Recency sort — shared by StreamInboxView + RecentConversationsStrip ────────────
@@ -109,8 +213,9 @@ export interface ChipSpec {
   className: string;
 }
 
-const VIOLET_CHIP = 'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400';
-const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
+export const VIOLET_CHIP = 'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400';
+export const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
+const SKY_CHIP = 'border-sky-500/40 bg-sky-500/15 text-sky-700 dark:text-sky-300';
 
 /** Whether `senderId` is the viewer. BOTH ids count: a locally written row is
  *  stamped with the desktop user id, a hub-mirrored row with the cloud user id,
@@ -120,11 +225,34 @@ export function isViewer(senderId: string | null | undefined, viewer: CategoryIn
   return !!senderId && (senderId === viewer.cloudUserId || senderId === viewer.localUserId);
 }
 
+export const AMBER_CHIP = 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300';
+export const EMERALD_CHIP = 'border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+
+/** The state chip for a ticket facet, or none. Pick-up is the desk's own business: the requester sees a
+ *  conversation someone answers, so their side shows only that a ticket was closed. */
+export function ticketChip(tk: TicketFacet): ChipSpec | null {
+  if (tk.state === 'closed')
+    return { key: 'ticket-closed', icon: CircleCheck, label: t`Closed`, className: MUTED_CHIP };
+  if (tk.perspective !== 'staff') return null;
+  if (tk.state === 'waiting') return { key: 'ticket-waiting', icon: Clock, label: t`Not picked up`, className: AMBER_CHIP };
+  const by = tk.pickedBy;
+  const label = !by ? t`Picked up` : by === 'you' ? t`Picked up by you` : t`Picked up by ${by}`;
+  return { key: 'ticket-picked', icon: UserCheck, label, className: EMERALD_CHIP };
+}
+
 export function chipsFor(f: ConversationFacets): ChipSpec[] {
   const chips: ChipSpec[] = [];
   if (f.kind === 'helpdesk') {
-    chips.push({ key: 'helpdesk', icon: LifeBuoy, label: t`Support`, className: VIOLET_CHIP });
+    // The asker reads it as the help desk answering them; the desk's own rows name it Support.
+    const label = f.ticket?.perspective === 'staff' ? t`Support` : t`Help desk`;
+    chips.push({ key: 'helpdesk', icon: LifeBuoy, label, className: VIOLET_CHIP });
   }
+  if (f.kind === 'it') {
+    chips.push({ key: 'it', icon: Wrench, label: t`IT`, className: SKY_CHIP });
+  }
+  // The asker's side is just a conversation: the queue state is the desk's to show, not theirs.
+  const state = f.ticket && f.ticket.perspective === 'staff' ? ticketChip(f.ticket) : null;
+  if (state) chips.push(state);
   if (f.isArchived) {
     chips.push({ key: 'archived', icon: Archive, label: t`Archived`, className: MUTED_CHIP });
   }

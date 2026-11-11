@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable
+from flow_sdk.schema.data_spec.activity_spec import ActivityErrorSpec
 
 if TYPE_CHECKING:
     from flow_sdk.activity import Activity
@@ -72,21 +73,36 @@ def mirror_table(node: "Activity", table: IndexProgressTable) -> None:
             done=row.done,
             skipped=row.skipped,
             errors=row.errors,
-            # The table carries a count and no messages, so the sample can only say that
-            # the producer has not been migrated yet. The count is the part that was
-            # always true.
+            # A producer that names its errors (the indexer: file + parser message) is
+            # shown by them; one that only counts can say no more than that.
+            # Built only when the count grew — the indexer emits on every file.
+            error_samples=[
+                ActivityErrorSpec(message=f"{e.ref}: {e.message}", ref=e.ref, code=e.code or None)
+                for e in row.error_samples
+            ]
+            if row.errors > child.errors_count
+            else (),
             error_message="(legacy producer reported an error without detail)",
         )
         # A type whose count reached its known total is finished — end it now, so the
         # parent's "n/m" counts it. Needed only because legacy rows carry no end signal;
         # it goes with this module.
-        if row_total is not None and row.done >= row_total and not child.is_terminal:
+        if (row.finished or (row_total is not None and row.done >= row_total)) and not child.is_terminal:
             child.done()
+
+    # A step the producer stopped reporting is over — e.g. a type the scan phase counted
+    # that the index table does not carry. Left running, the chip would name it as the
+    # step at work.
+    if table.rows:
+        _close_open_steps(node, keep={str(row.type_name) for row in table.rows})
 
     node.set_progress(done=table.done)
 
-    # `complete` is a state, not something to say.
+    # `complete` is a state, not something to say. Legacy rows carry no end signal, so a
+    # step still open here finished with the job — end it as done, or the root's done()
+    # would record it as interrupted.
     if table.text == PROGRESS_TEXT_COMPLETE:
+        _close_open_steps(node)
         node.done()
     elif table.text and table.text != node.message_text:
         node.message(table.text)
@@ -95,6 +111,13 @@ def mirror_table(node: "Activity", table: IndexProgressTable) -> None:
         where = ", ".join(table.roots)
         if where != node.message_text:
             node.message(where)
+
+
+def _close_open_steps(node: "Activity", keep: "set[str]" = frozenset()) -> None:
+    """End every still-open step of ``node`` as done, except those named in ``keep``."""
+    for step in list(node._children.values()):
+        if step.name not in keep and not step.is_terminal:
+            step.done()
 
 
 __all__ = ["mirror_table"]

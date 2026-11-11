@@ -4,15 +4,18 @@ id: 96d65f94-d9b2-4104-92e6-c306db206dee
 
 # Agent deployment — snippets
 
-An `Agent` is the definition (`agent.md` and its folder). A `Deployment` is
-one placement of it: *this agent runs on that machine*. The two verbs that
-start a session (`run`, `use`) go through a placement, and today every caller
-resolves the `local` one — the seam for choosing another is `deployment=`.
+An `Agent` is the definition (`agent.json` and its folder). A `Deployment` places its whole
+PROJECT on a machine, with one optional **main agent** (`main_agent_id`) answering every call
+there. The two verbs that start a session (`run`, `use`) go through a deployment, and by default
+the project's one local deployment — the seam for choosing another is `deployment=`.
 
-    Agent.deploy(provider)  -> Deployment        parent = the agent, identity "agent"
-    Deployment.launch(...)  -> PromptResult      executor: the AgenticProcess
+    Project.deploy(actor, provider=..., main_agent=...)   the deployment API (cloud: DEPLOYMENT_STEPS)
+    Agent.deploy("local")  -> Deployment        shortcut: its project's local one, the agent as main
+    Deployment.launch(...) -> PromptResult      executor: the AgenticProcess
 
-A placement stores no kind: what it places is its PARENT (`element_type`), and what it serves is its
+The project recommends its main agent in git (`flow.json` `"mainAgent": "<name>"`); a new deployment
+copies it and may name another — stored on the row, never in git, with the agent's launch overrides
+(`main_agent_overrides`). What a deployment places is its PARENT (a project), and what it serves is its
 endpoints' `subkind` (`system`, `admin`, `app`, `agent`, `service` — `service-endpoints.md`). The machine it runs on
 is a `ComputeNode` (a box): this computer hosts many deployments, a cloud box one. `identity` says who
 the box logs in as for it: `agent`, `user` (its owner) or `none`.
@@ -21,8 +24,7 @@ A deployment is also where the agent ANSWERS. A running local deployment **is a 
 machine running the agent loop** (`python -m flow_sdk.builtin.agent_loop`, §7): plain SDK code in the
 same instance, pulling from the channels it answers and replying on them — its `chat` endpoint
 (`service-endpoints.md` §6) is one more channel. A source's `answer_place` names the deployment that
-answers it; with none set, each running deployment holding the source may answer (email also
-checks the agent's `email_place`). Incoming webhook routing is separate: see
+answers it; with none set, each running deployment holding the source may answer. Incoming webhook routing is separate: see
 [channel webhook routing](channel-webhook-routing.md). Every turn goes through one
 turn engine (`flow_sdk/builtin/agent_serve.py`): one process per conversation, one turn at a time, a
 redelivered message answered from its record. The app only keeps those processes running.
@@ -41,25 +43,35 @@ agent = Agent(
     name="researcher",
     model="sm",
     system_prompt="You research; you do not summarize.",
+    project_id=PROJECT,                        # a deployment places a project
 )
 await agent.save()
 
-here = await agent.deploy("local")             # "This computer" — nothing is placed until you ask
+here = await agent.deploy("local")             # the project's ONE local deployment, the agent as main
 again = await agent.deploy("local")
 assert again.id == here.id                     # converges by lookup, never a derived id
 
-assert here.element_type == "agent"            # what it places is its parent — no stored kind
-assert here.identity == "agent"                # a box it runs on logs in as the agent
+assert here.element_type == "project"          # what it places is its parent: the project
+assert here.main_agent_id == str(agent.typeid)
+assert here.identity == "agent"                # a box with a main agent logs in as it
 assert here.target.provider == "local"
 assert here.is_local                           # an id comparison, not a provider test
 ```
 
-`deploy()` is idempotent **per provider** (and environment): `find_existing` matches
-`(parent_type_id, target.provider, environment)`, so a second provider is a second
-row, and re-deploying the same one converges on the row it already has.
+A cloud deployment is the project's (`Project.deploy`, §5); the hub's row is adopted here at
+its id. A project may be deployed any number of times; `agent.deployments()` lists those whose
+main agent it is.
 
 ```python
-there = await agent.deploy("e2b")
+from flow_sdk.builtin.deployment import Deployment
+
+there = Deployment(                            # what the hub's plan adopts here (§5)
+    name="researcher (e2b)",
+    parent_type_id=f"project-{PROJECT}",
+    main_agent_id=str(agent.typeid),
+    target={"provider": "e2b", "scope": "machine"},
+)
+await there.save()
 assert there.id != here.id
 assert {d.id for d in await agent.deployments()} == {here.id, there.id}
 
@@ -119,8 +131,8 @@ draft.context_data["instructions"]             # the system prompt travels here,
 ```python
 from flow_sdk.builtin.deployment import Deployment
 
-d = await Deployment.find_existing(str(agent.typeid), "local")
-await d.agent()                                # the placed Agent, or None
+d = await Deployment.find_existing(f"project-{PROJECT}", "local")
+await d.main_agent()                           # its main Agent, or None
 d.compute_node_id                              # the machine, for a node-backed provider
 await d.endpoints()                            # where it is reached: one ServiceEndpoint per service (service-endpoints.md)
 await d.health()                               # as healthy as its least healthy service (their last checks)
@@ -150,23 +162,32 @@ this fence as written with the hub's three legs (publish, plan the placement, de
 
 ```python
 import flow_sdk
+from flow_sdk.activity import Activity
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.user import User
 
 await flow_sdk.auth.login()
 agent = await Agent.by_name("researcher")
+project = await Project.get_by_id(agent.project_id)
 actor = (await User.get_local()).typeid        # the caller
-receipt = await agent.deploy_to_cloud(actor, provider="e2b")   # publishes through git first
+receipt = await project.deploy(actor, provider="e2b", main_agent=agent)   # publishes through git first
+deploy = Activity.get(receipt["activity"]["path"], receipt["activity"]["subject_entity"])
+await deploy.wait_released()                   # the machine starts after the answer: a script waits for it
 ```
 
 Deliberately no node and no principal: "were either passable from here they
-would be passable from anywhere." The hub mints the ComputeNode, provisions the
-Identity, logs the box in as the agent, and the returned row is adopted **at
-the hub's id** (`Deployment.adopt_from_hub`) — never re-minted. The deploy is
-refused (`NotReady`, naming each missing value) until the placement's store —
-the hub — holds every value the agent needs: `use_mine(deployment_id)` copies
-this computer's; the hub places them on the machine when it starts. Live only; the
-unit tier stops at the refusal in §2.
+would be passable from anywhere." The answer comes once the placement is planned
+and ready: where the project's `deploy` activity reports, and the placement's id.
+The hub then mints the ComputeNode, provisions the Identity and logs the box in
+as the agent, and the row is adopted **at the hub's id**
+(`Deployment.adopt_from_hub`) — never re-minted; the activity says when the
+machine is up. The machine step runs in this process after the answer, so a script
+that exits right after `project.deploy` cuts it off: wait for the activity to
+end (`wait_released`), then read its state (`deploy.spec().state`). A missing secret does not refuse the deploy — the readiness
+step warns (`Secret <name> missing`); `use_mine(deployment_id)` copies this
+computer's values and the hub places them on the machine when it starts or when
+they are re-placed. Live only.
 
 ## 6. Serve it your way — you pick the channels and the routing
 
@@ -210,7 +231,8 @@ async with workflow("acme-support"):                          # names the durabl
   `answer(engine, m, process=p)` runs the turn on a live process you already hold instead.
 - **The routing is yours; the gates are not.** `answer` still drops the agent's own echoes,
   senders the source does not admit, empty and quiet messages, and leaves a
-  `replies_explicitly` channel to reply by itself. A message it does not answer is acked; a turn
+  `replies_explicitly` channel to reply by itself, and a channel that `answers_once` (a help desk) after the
+  agent has written in the conversation. A message it does not answer is acked; a turn
   the process refused is not.
 - **`workflow(name)` is the cursor.** A restart resumes after the last acked message; without it
   the position lives only as long as the loop.
@@ -220,7 +242,7 @@ async with workflow("acme-support"):                          # names the durabl
 
 ## 7. Run it on this computer — a process per deployment
 
-"This computer" under New deployment is `run_locally()`: the agent's ONE local deployment, as its own
+"This computer" under New deployment is `run_locally()`: the project's ONE local deployment with the agent as main, as its own
 process. It answers every channel that names no place (and those that name it). Running it again —
 after a pause — starts the same deployment, never a second. It gets its `chat` endpoint — an HTTP
 message channel (`subkind` `agent`) — at launch.
@@ -231,7 +253,7 @@ from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name("researcher")
 here = await agent.run_locally()                # a process on this computer running the agent loop
-again = await agent.run_locally()               # the same deployment — one per agent here
+again = await agent.run_locally()               # the same deployment — one per project here
 assert again.id == here.id and here.serving
 
 chat = await ServiceEndpoint.find_existing(str(here.typeid), "chat")
@@ -274,7 +296,7 @@ answering its own chat) and live in a browser by `tests/e2e/deployment_process_v
 | --- | --- | --- |
 | run once | `agent.run(prompt)` → `{process_id, deployment_id, compute_node_id}` | `POST /agent/<id>/run {prompt}` |
 | open a session | `agent.use(projectId?)` | `POST /agent/<id>/use {project_id}` |
-| own machine | `agent.deploy()` | `POST /agent/<id>/deploy` |
+| own machine | `project.deploy({mainAgentId})` | `POST /project/<id>/deploy {provider, main_agent_id}` |
 | stop the machine | `deployment.pause()` | `POST /deployment/<id>/pause` |
 
 `examples/deployed-agent-chat/index.html` is the whole TS surface in one page —

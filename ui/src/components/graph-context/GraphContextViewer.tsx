@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useMemo, useState } from 'react';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { APIEntity, GraphContext, QueryRequest, TypeId, isTypeId, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -59,6 +59,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
 
   // ── Selection + delete state ──────────────────────────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selectedCount = selected.size;
   const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
 
   // ── Inline rename. Renaming the entity's `name` propagates to the tab chip
@@ -169,7 +170,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                 disabled={selected.size === 0}
                 onSelect={() => setPendingDelete([...selected])}
               >
-                Delete selected{selected.size > 0 ? ` (${selected.size})` : ''}
+                {selectedCount > 0 ? <Trans>Delete selected ({selectedCount})</Trans> : <Trans>Delete selected</Trans>}
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
@@ -333,7 +334,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                 <div className="mx-auto max-w-3xl p-6">
                   <div className="mb-1 text-lg font-semibold">{ctx.displayName}</div>
                   <div className="mb-4 text-sm text-muted-foreground">
-                    {rows.length} {rows.length === 1 ? 'entity' : 'entities'} in this context
+                    <Plural value={rows.length} one="# entity in this context" other="# entities in this context" />
                   </div>
                   {rows.length === 0 ? (
                     <div className="text-sm text-muted-foreground">

@@ -6,6 +6,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { AP_OPENER } from './_ap_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
@@ -14,15 +15,15 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 }
 
 test('clicking shell tab from agentic process view updates URL to shell session', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(adjusted(60_000));
   await dismissSetupModal(page);
 
   // Navigate to shell
   await page.goto('/dock/shell/new_terminal');
   const skipBtn = page.getByRole('button', { name: 'Skip' });
-  if (await skipBtn.isVisible({ timeout: 2_000 }).catch(() => false)) await skipBtn.click();
-  await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 60_000 });
-  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
+  if (await skipBtn.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skipBtn.click();
+  await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: adjusted(60_000) });
+  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(10_000) });
   await page.waitForTimeout(2_000);
 
   // Capture shell session ID from URL
@@ -36,17 +37,17 @@ test('clicking shell tab from agentic process view updates URL to shell session'
   // Start the vendor under test via the always-present "+" tab-opener menu.
   await page.locator('[data-testid="opener-plus-button"]').click();
   await page.locator(`[data-testid="opener-menu-row-${AP_OPENER}"]`).click();
-  await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 20_000 });
+  await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: adjusted(20_000) });
 
   // Wait for PTY tab to appear (confirms agentic process PTY started)
-  await expect(page.locator('[data-testid^="tab-shell|"]')).toHaveCount(initialTabCount + 1, { timeout: 30_000 });
+  await expect(page.locator('[data-testid^="tab-shell|"]')).toHaveCount(initialTabCount + 1, { timeout: adjusted(30_000) });
 
   // We're now in agentic_process view — click the original shell tab
   const shellTab = page.locator(`[data-testid="tab-shell|${shellSessionId}"]`);
-  await shellTab.waitFor({ state: 'visible', timeout: 5_000 });
+  await shellTab.waitFor({ state: 'visible', timeout: adjusted(5_000) });
   await shellTab.click();
 
   // URL must navigate to the shell session
-  await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 10_000 });
+  await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: adjusted(10_000) });
   expect(page.url()).toContain(shellSessionId);
 });

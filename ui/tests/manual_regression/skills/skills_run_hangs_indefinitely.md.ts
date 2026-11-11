@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Skills view', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,7 +9,7 @@ test.describe('Skills view', () => {
   });
 
   test('Skills view is responsive and does not hang indefinitely (FLOWPAD-1667)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -27,7 +28,7 @@ test.describe('Skills view', () => {
     const hasButton = await page
       .locator('button')
       .first()
-      .isVisible({ timeout: 5_000 })
+      .isVisible({ timeout: adjusted(5_000) })
       .catch(() => false);
     expect(hasButton, 'No button found — skills view may be stuck loading').toBe(true);
 

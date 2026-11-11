@@ -160,12 +160,10 @@ def test_the_shipped_gmail_definition_is_valid():
     manifest = CredentialSpec.model_validate(json.loads((SHIPPED["gmail"] / "credential.json").read_text()))
 
     assert manifest.name == "gmail"
-    assert list(manifest.vars) == ["GMAIL_GOOGLE", "GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
-    # Two ways: a Google sign-in covering full mail access (IMAP/SMTP over XOAUTH2, as the account that
-    # signed in), or an address with its app password, given together.
-    assert ways(manifest.vars) == {"google": ["GMAIL_GOOGLE"], "app_password": ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]}
-    google = manifest.vars["GMAIL_GOOGLE"]
-    assert google.is_oauth and (google.provider, google.scopes) == ("google", ["https://mail.google.com/"])
+    # An address with its app password — no Google sign-in until Google verifies the mail scope.
+    assert list(manifest.vars) == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
+    assert not any(var.is_oauth for var in manifest.vars.values()) and ways(manifest.vars) == {}
+    assert all(var.required == "MUST" for var in manifest.vars.values())
     assert manifest.vars["GMAIL_ADDRESS"].secret is False and manifest.vars["GMAIL_APP_PASSWORD"].secret is True
     # The app-password page belongs to the password alone, not the address beside it.
     assert manifest.vars["GMAIL_APP_PASSWORD"].help_url and not manifest.vars["GMAIL_ADDRESS"].help_url
@@ -187,12 +185,18 @@ def test_a_credential_never_says_where_its_values_live():
         ({"vars": {}}, "no variables"),
         ({"vars": {"9BAD": {"label": "x"}}}, "invalid env var name"),
         ({"name": "has space"}, "a name is a folder name"),
-        ({"unknown_key": 1}, "unknown key"),
     ],
 )
 def test_authoring_rules_are_load_errors(override, why):
     with pytest.raises(Exception):
         CredentialSpec.model_validate({**TWILIO, **override})
+
+
+def test_a_key_a_newer_version_wrote_still_loads():
+    """Every version that opens the project reads its credentials: a key added later is ignored, never a
+    load error — an older app must not break on a newer file."""
+    spec = CredentialSpec.model_validate({**TWILIO, "added_in_a_later_version": {"x": 1}})
+    assert spec.name == TWILIO["name"]
 
 
 SHIPPED_LM = {

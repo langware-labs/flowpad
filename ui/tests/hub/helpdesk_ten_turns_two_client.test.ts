@@ -44,7 +44,9 @@ import {
   postApi,
   queryConversationMessages,
   type ResolvedInstance,
+  heldDeskSourceId,
 } from './_instances';
+import { adjusted } from '../adjustableTimeout';
 
 const TURNS = 10;
 const KEEP = process.env.HELPDESK_KEEP === '1';
@@ -105,7 +107,7 @@ beforeAll(async () => {
   await hubJson(helperToken, `/graph/project/${deskId}/helpdesk_conversations`).catch(() => {
     skipReason = `${helper.email} is not a member of the canonical desk (HELPDESK_STAFF_EMAILS)`;
   });
-}, 30_000);
+}, adjusted(30_000));
 
 beforeEach((context: any) => {
   if (skipReason) context.skip();
@@ -113,14 +115,16 @@ beforeEach((context: any) => {
 
 const rowsOf = queryConversationMessages;
 
-const hubMessages = (convId: string): Promise<any[]> => hubJson(helperToken, `/graph/conversation/${convId}/flow_message`);
+const hubMessages = (convId: string): Promise<any[]> => hubJson(helperToken, `/graph/conversation/${convId}/messages`);
 
 const fromRequester = (m: any): boolean => [requesterUserId, `helpdesk:${requesterUserId}`].includes(m.sender_id);
 
 let source: any = null;
+/** False when the helper already held the desk's source: it is theirs, not this file's to delete. */
+let ownSource = false;
 afterAll(async () => {
   if (KEEP) return;
-  if (source) await source.delete();
+  if (source && ownSource) await source.delete();
   // A settled ticket leaves the desk's queue. An open one stays in every later run's first pass,
   // which backfills the whole queue before turn 1's ticket is placed.
   if (convId) await hubJson(helperToken, `/graph/conversation/${convId}/close`, {});
@@ -143,7 +147,11 @@ describe('a ten-turn support conversation', () => {
       config: { desk_project_id: deskId },
       status: 'new',
     });
-    await source.save();
+    // Staff already hold their desk's source (ensure_sources, f87389e80): the create answers with
+    // that row, under its own id — keep the answer, not the id this object was minted with.
+    const heldId = await heldDeskSourceId(helper.apiUrl, deskId);
+    ownSource = !heldId;
+    source = heldId ? ((await helper.sdk.DataSource.getById(heldId)) ?? source) : ((await source.save()) ?? source);
     expect(source.id).toBeTruthy();
   });
 

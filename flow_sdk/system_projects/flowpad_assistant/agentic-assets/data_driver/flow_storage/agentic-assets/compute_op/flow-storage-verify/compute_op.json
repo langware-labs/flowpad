@@ -1,0 +1,26 @@
+{
+  "type": "compute_op",
+  "id": "ba8340ea-6cce-49d9-92bc-90d8ba7b364d",
+  "name": "flow-storage-verify",
+  "label": "Check",
+  "description": "The data store answers and you can write in it.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" verify --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" verify --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE verify --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 60,
+    "source_step": "verify"
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" verify --check --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" verify --check --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE verify --check --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30,
+    "source_step": "verify"
+  }
+}

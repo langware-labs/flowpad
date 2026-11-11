@@ -18,7 +18,7 @@ export interface IUser extends IEntity {
   /** Optional cloud organization the user belongs to (hub-authoritative). */
   organization_id?: string;
   /** The user's role on that organization. Defaults to "member". */
-  organization_role?: string;
+  organization_roles?: string[];
   /** Whether the user finished onboarding. Backend `onboarded: bool` (default
    *  false) — see `flow_sdk/builtin/user.py`. */
   onboarded?: boolean;

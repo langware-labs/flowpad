@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 import { AgentTraceView } from '@src/components/assets/editor/agent-trace/AgentTraceView';
 import { useAgentTraceDoc } from '@src/components/assets/editor/agent-trace/useAgentTraceDoc';
@@ -47,14 +48,14 @@ export function ExecutionView({
         <AnalysisToolbarButtons controls={controls} />
         {!annotatedDoc && doc && (
           <span className="text-[11px] text-muted-foreground/70">
-            Showing the raw execution trace — run analysis to add goals &amp; verdict.
+            <Trans>Showing the raw execution trace — run analysis to add goals &amp; verdict.</Trans>
           </span>
         )}
       </div>
 
       {error && !doc ? (
         <div className="flex flex-1 items-center justify-center text-sm text-destructive">
-          Failed to build execution trace: {error}
+          <Trans>Failed to build execution trace: {error}</Trans>
         </div>
       ) : !doc ? (
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">

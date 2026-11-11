@@ -27,7 +27,9 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.assets.layout import Layout, LayoutKind
+from flow_sdk.fs_store.gitignore import flowignored
 from flow_sdk.fs_store.indexer.reconcile import reconcile
+from flow_sdk.fs_store.path_utils import disk_spelling
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 
 
@@ -98,7 +100,7 @@ async def resolve_asset(
     ``workflow_run``) that share an extension and so classify to nothing from a
     bare path. Without it the registry classifies. Either way the type must
     claim the path, must not be keyed on its walk ref, and the asset must exist
-    on disk, else ``NotAnAsset``. ``strict`` makes a failed owner lookup raise instead of
+    on disk and not be excluded by a ``.flowignore``, else ``NotAnAsset``. ``strict`` makes a failed owner lookup raise instead of
     reading as "unowned" (pass it whenever a miss leads to a write);
     ``known_unowned`` says the caller has ALREADY proved no row owns this
     asset, so the lookup is skipped rather than repeated. ``placed_only`` is for a
@@ -108,7 +110,9 @@ async def resolve_asset(
     p = Path(path).expanduser()
     if not p.is_absolute():
         p = Path("/") / p
-    p = p.resolve()
+    p = disk_spelling(p)  # one asset, one path key, however the caller typed it
+    if flowignored(p):
+        raise NotAnAsset(f"{p} is excluded by a .flowignore")
     if type_name is None:
         type_name = SchemaRegistry.type_for(p, placed_only=placed_only)
     info = SchemaRegistry.get(type_name) if type_name else None

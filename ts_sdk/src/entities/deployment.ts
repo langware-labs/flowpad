@@ -1,5 +1,7 @@
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { EntityEnv, EnvVarType } from '../models/env_var';
+import { ExpressionNode, QueryFilter, QueryRequest } from '../FlowSync/query';
 import type { CloudDeployProvider } from './agent';
 import type { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
@@ -24,8 +26,18 @@ export type DeploymentSyncState = 'current' | 'stale' | 'partial' | 'error';
 export type DeploymentObservationKind = 'cost' | 'size' | 'activity';
 export type ObservationCoverage = 'available' | 'unavailable' | 'unattributed' | 'stale';
 
-/** Who a box logs in as for a deployment: nobody, the placed agent itself, or its owner. */
+/** Who a box logs in as for a deployment: nobody, its main agent, or its owner (only when asked for). */
 export type DeploymentIdentity = 'none' | 'agent' | 'user';
+
+/** What a deployment's source names: a tag, a release, or a commit (the default, the project's HEAD). */
+export type DeploymentSourceKind = 'tag' | 'release' | 'commit';
+
+/** The main agent's launch overrides on one deployment — `PLACE_OVERRIDABLE_FIELDS` in the backend. */
+export const MAIN_AGENT_OVERRIDE_FIELDS = ['worker_type', 'model', 'permission_mode', 'effort', 'mcp_servers'] as const;
+export type MainAgentOverrideField = (typeof MAIN_AGENT_OVERRIDE_FIELDS)[number];
+export type MainAgentOverrides = Partial<Record<Exclude<MainAgentOverrideField, 'mcp_servers'>, string | null>> & {
+  mcp_servers?: string[] | null;
+};
 
 /**
  * Providers that place a resource on a ComputeNode, so `origin.external_id`
@@ -96,8 +108,14 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
   name: string;
   /** Every service this deployment declares it exposes; its endpoint rows serve the declaration. */
   exposes?: EndpointDeclaration[];
-  /** Who the box logs in as for this placement. What it places is its PARENT (`elementType`). */
+  /** Who the box logs in as for this placement. What it places is its PARENT — the project. */
   identity?: DeploymentIdentity;
+  /** The agent (`agent-<uuid>`) that answers every call on this box; null = no agent (web only). */
+  main_agent_id?: string | null;
+  main_agent_overrides?: MainAgentOverrides;
+  source_kind?: DeploymentSourceKind;
+  /** The tag / release name, or the commit, this deployment follows. */
+  source_ref?: string | null;
   artifact_id?: string | null;
   artifact_link_source?: ArtifactLinkSource | null;
   target: DeploymentTarget;
@@ -110,6 +128,13 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
   /** Credential environment: `development` (this computer) or a named one (`production`, `staging`, …). */
   environment?: string;
   llm_endpoint_typeid?: string;
+  /** `private`: a template; each person who talks to the agent gets their own placement of it. */
+  agent_mode?: 'shared' | 'private';
+  channels?: string[];
+  idle_pause_seconds?: number | null;
+  /** On a person's placement: the private template it was made from, and whose it is. */
+  template_deployment_id?: string | null;
+  person_key?: string | null;
 }
 
 // `implements IDeployment` only checks the class; it contributes no members, so every
@@ -176,6 +201,13 @@ export interface DeploymentCode {
   text: string;
 }
 
+/** The project page that lists and opens a project's deployments. */
+export const PROJECT_DEPLOYMENTS_PAGE = 'project-deployments';
+/** Option on that page: the deployment it opens. */
+export const PROJECT_DEPLOYMENT_PARAM = 'deployment';
+/** Option on that page: open the create dialog with this agent id preset as the main agent. */
+export const PROJECT_DEPLOY_MAIN_AGENT_PARAM = 'deploy_main_agent';
+
 /** The tag a deployment's process emits when its timeline moved (relayed to the app). */
 export const DEPLOYMENT_TIMELINE_TAG = 'deployment.timeline';
 
@@ -207,9 +239,28 @@ export interface DeploymentSecretsInventory {
   authorizations: DeploymentAuthorizationRow[];
 }
 
+/** What pays for a deployment's turns and whether it can pay for one now (hub `deployment/<id>/funding`). */
+export interface DeploymentFunding {
+  /** `allocation` (its own sub-endpoint), `shared`, `default` (its owner's capped default) or `none`. */
+  kind: 'allocation' | 'shared' | 'default' | 'none' | string;
+  endpoint_typeid: string;
+  name: string;
+  /** The size the agent asks for (`sm`/`md`/`lg`), when it names one. */
+  size?: string | null;
+  /** The model that size — or the pinned model — resolves to. */
+  model?: string | null;
+  /** Why the next turn would be refused; empty = it can be paid for. */
+  exhausted: string;
+}
+
 @registerEntity
 export class Deployment extends APIEntity<Deployment> implements IDeployment {
   static type: string = 'deployment';
+
+  /** What pays for THIS deployment's turns, asked without spending. */
+  async funding(): Promise<DeploymentFunding> {
+    return this.get<DeploymentFunding>('funding');
+  }
 
   /**
    * The cloud compute providers a deployment may be placed on — the hub's list (`deployment/providers`,
@@ -225,6 +276,10 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
 
   name: string;
   identity: DeploymentIdentity;
+  main_agent_id: string | null;
+  main_agent_overrides: MainAgentOverrides;
+  source_kind: DeploymentSourceKind;
+  source_ref: string | null;
   exposes: EndpointDeclaration[];
   artifact_id: string | null;
   artifact_link_source: ArtifactLinkSource | null;
@@ -238,12 +293,21 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   environment: string;
   /** Its own token allocation on the hub (an `llm_endpoint` typeid); '' = its agent spends its owner's default. */
   llm_endpoint_typeid: string;
+  agent_mode: 'shared' | 'private';
+  channels: string[];
+  idle_pause_seconds: number | null;
+  template_deployment_id: string | null;
+  person_key: string | null;
 
   constructor(entity: Partial<IDeployment> | IEntity = {}) {
     super(entity);
     const deployment = entity as Partial<IDeployment>;
     this.name = deployment.name ?? '';
-    this.identity = deployment.identity ?? 'user';
+    this.main_agent_id = deployment.main_agent_id ?? null;
+    this.main_agent_overrides = deployment.main_agent_overrides ?? {};
+    this.source_kind = deployment.source_kind ?? 'commit';
+    this.source_ref = deployment.source_ref ?? null;
+    this.identity = deployment.identity ?? (this.main_agent_id ? 'agent' : 'none');
     this.exposes = deployment.exposes ?? [];
     this.artifact_id = deployment.artifact_id ?? null;
     this.artifact_link_source = deployment.artifact_link_source ?? null;
@@ -272,29 +336,84 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     this.project_id = deployment.project_id ?? null;
     this.environment = deployment.environment || DEFAULT_CREDENTIAL_ENVIRONMENT;
     this.llm_endpoint_typeid = deployment.llm_endpoint_typeid ?? '';
+    this.agent_mode = deployment.agent_mode ?? 'shared';
+    this.channels = deployment.channels ?? [];
+    this.idle_pause_seconds = deployment.idle_pause_seconds ?? null;
+    this.template_deployment_id = deployment.template_deployment_id ?? null;
+    this.person_key = deployment.person_key ?? null;
     this.validateStructure();
   }
 
   override get dockPointer(): DockPointerData {
+    return Deployment.dockPointerFor(this.id);
+  }
+
+  /** This deployment's own page, in its project's Deployments tab — or `null` when it is not a project's. */
+  get projectPagePointer(): DockPointerData | null {
+    const project = this.projectTypeId;
+    return project ? Deployment.projectPagePointerFor(project.id, this.id) : null;
+  }
+
+  /**
+   * The project's Deployments page (`/dock/project/<projectId>/project-deployments`), on deployment *id* when
+   * given, or with *mainAgentId* preset as the main agent of a new one ("Deploy this agent").
+   */
+  static projectPagePointerFor(projectId: string, id?: string | null, mainAgentId?: string | null): DockPointerData {
+    const options: Record<string, string> = {};
+    if (id) options[PROJECT_DEPLOYMENT_PARAM] = id;
+    if (mainAgentId) options[PROJECT_DEPLOY_MAIN_AGENT_PARAM] = mainAgentId;
+    return new DockPointerData(ViewType.PROJECT, `${projectId}/${PROJECT_DEPLOYMENTS_PAGE}`, options);
+  }
+
+  /** Where deployment *id* opens, without loading it — an issue's "Open the deployment" names only the id. */
+  static dockPointerFor(id: string): DockPointerData {
     return new DockPointerData(ViewType.WORLDVIEW, WorldViewProjection.DEPLOYMENT, {
-      focus: `${Deployment.type}-${this.id}`,
-      selected: `${Deployment.type}-${this.id}`,
+      focus: `${Deployment.type}-${id}`,
+      selected: `${Deployment.type}-${id}`,
     });
   }
 
-  /** What this places — its parent's type (`agent`, `project`, `compute_node`, …), or null. */
-  get elementType(): string | null {
-    const parent = this.parent_type_id;
-    if (!parent || !isTypeId(parent)) return null;
-    return new TypeId(parent).type;
-  }
-
-  /** The Agent this places, or null when the deployed element is something else. */
-  get agentTypeId(): TypeId | null {
+  /** The project this places, or null (this computer's own row, a hub micro app). */
+  get projectTypeId(): TypeId | null {
     const parent = this.parent_type_id;
     if (!parent || !isTypeId(parent)) return null;
     const typeId = new TypeId(parent);
+    return typeId.type === 'project' ? typeId : null;
+  }
+
+  /** The agent that answers every call on this box, or null when it runs none. */
+  get mainAgentTypeId(): TypeId | null {
+    const main = this.main_agent_id;
+    if (!main || !isTypeId(main)) return null;
+    const typeId = new TypeId(main);
     return typeId.type === 'agent' ? typeId : null;
+  }
+
+  /** The id half of `mainAgentTypeId`. */
+  get mainAgentId(): string | null {
+    return this.mainAgentTypeId?.id ?? null;
+  }
+
+  /** Every deployment whose main agent is *agentId* (any project, any machine). */
+  static async forMainAgent(agentId: string): Promise<Deployment[]> {
+    return dataManager.query<Deployment>(Deployment.forMainAgentQuery(agentId));
+  }
+
+  /** The query behind {@link forMainAgent}, for a live list (`useEntitiesQuery`). */
+  static forMainAgentQuery(agentId: string): QueryRequest {
+    return new QueryRequest({
+      type: Deployment.type,
+      query: new QueryFilter({
+        type: Deployment.type,
+        match: new ExpressionNode({ main_agent_id: `agent-${agentId}` }),
+      }),
+      name: 'Deployment.forMainAgent',
+    });
+  }
+
+  /** Whether this is this computer's own placement (`target.provider == 'local'`). */
+  get isLocal(): boolean {
+    return this.target.provider === 'local';
   }
 
   /** The id of the machine this runs on, or null when there is none or the stored id is not a typeid. */
@@ -328,9 +447,23 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     return new Deployment((await this.post('resume')) as IDeployment);
   }
 
-  /** Bring a cloud machine to the published definition (the hub re-clones and re-indexes it). */
-  async update(): Promise<Record<string, unknown>> {
-    return ((await this.post('update')) ?? {}) as Record<string, unknown>;
+  /** Bring the machine to a source — the same one again when omitted (the hub re-clones and re-indexes it). */
+  async update(source: { kind?: DeploymentSourceKind; ref?: string | null } = {}): Promise<Record<string, unknown>> {
+    const body = {
+      ...(source.kind ? { source_kind: source.kind } : {}),
+      ...(source.ref ? { source_ref: source.ref } : {}),
+    };
+    return ((await this.post('update', Object.keys(body).length ? body : undefined)) ?? {}) as Record<string, unknown>;
+  }
+
+  /** Change (or clear, with null) the agent that answers on this box. */
+  async setMainAgent(mainAgentId: string | null): Promise<Deployment> {
+    return new Deployment((await this.post('set_main_agent', { main_agent_id: mainAgentId })) as IDeployment);
+  }
+
+  /** Set one launch override of the main agent here; `null` resets it to the agent's definition. */
+  async setMainAgentOverride(field: MainAgentOverrideField, value: string | string[] | null): Promise<void> {
+    await this.post('set_main_agent_override', { field, value });
   }
 
   /** What the hub holds for this cloud placement — each value's name, last write and last placement
@@ -338,6 +471,23 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   async secretsInventory(): Promise<DeploymentSecretsInventory> {
     const data = await this.get<Partial<DeploymentSecretsInventory> | null>('secrets');
     return { secrets: data?.secrets ?? [], authorizations: data?.authorizations ?? [] };
+  }
+
+  /** This deployment's own store on the hub (`deployment/<id>/env-var`): values that override the project's. */
+  private overrideStore(): EntityEnv {
+    return new EntityEnv(new TypeId(this.getType(), this.id), { hubReflect: true });
+  }
+
+  /** Override the project's value for `name` on this deployment only — write-only. `exists`: it already overrides. */
+  async setOverride(name: string, value: string, exists: boolean): Promise<void> {
+    const store = this.overrideStore();
+    if (exists) await store.update(name, { value, var_type: EnvVarType.API_KEY });
+    else await store.create({ name, value, var_type: EnvVarType.API_KEY });
+  }
+
+  /** Forget this deployment's own value for `name`: the project's value applies again. */
+  async resetToProject(name: string): Promise<void> {
+    await this.overrideStore().delete(name);
   }
 
   /** Let this placement's machine use your `provider` connection: it asks the hub for a fresh token
@@ -401,6 +551,50 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   /** The conversations it holds, the active ones first (`GET deployment/<id>/threads`). */
   async threads(): Promise<DeploymentThread[]> {
     const data = await this.get<{ threads?: DeploymentThread[] } | null>('threads');
+    return data?.threads ?? [];
+  }
+
+  /**
+   * Read on the hub, not held here (a private deployment's person placement, `fromHub`): this row's own actions --
+   * threads, funding, health -- go to the hub too, which answers them off that person's machine.
+   */
+  hubHeld = false;
+
+  /** A deployment this computer does not hold, read on the hub (`GET deployment/<id>`); null when it has none. */
+  static async fromHub(deploymentId: string): Promise<Deployment | null> {
+    const info = new ActionInfo('', Deployment.type, deploymentId, 'GET');
+    info.hubReflect = true;
+    const data = await dataManager.callAction<unknown, IDeployment | null>(info);
+    if (!data || !(data as { id?: string }).id) return null;
+    const row = new Deployment(data);
+    row.hubHeld = true;
+    return row;
+  }
+
+  protected override get<R>(action: string, query?: Record<string, unknown>): Promise<R> {
+    if (!this.hubHeld) return super.get<R>(action, query);
+    const info = new ActionInfo(action, this.getType(), this.id, 'GET');
+    if (query && Object.keys(query).length) info.queryParameters = query;
+    info.hubReflect = true;
+    return dataManager.callAction<undefined, R>(info);
+  }
+
+  protected override post<R>(action: string, body?: Record<string, unknown>): Promise<R> {
+    if (!this.hubHeld) return super.post<R>(action, body);
+    const info = new ActionInfo(action, this.getType(), this.id, 'POST');
+    if (body) info.bodyParameters = body;
+    info.hubReflect = true;
+    return dataManager.callAction<undefined, R>(info);
+  }
+
+  /**
+   * The threads of a deployment this computer does not hold (a private deployment's person placement): read on
+   * the hub, which forwards to that person's machine (`GET deployment/<id>/threads`).
+   */
+  static async hubThreads(deploymentId: string): Promise<DeploymentThread[]> {
+    const info = new ActionInfo('threads', Deployment.type, deploymentId, 'GET');
+    info.hubReflect = true;
+    const data = await dataManager.callAction<unknown, { threads?: DeploymentThread[] } | null>(info);
     return data?.threads ?? [];
   }
 

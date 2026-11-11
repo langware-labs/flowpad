@@ -1,6 +1,7 @@
 /**
  * The apps and agents button: a lone app opens directly; otherwise a list
- * opens each entry by URL with its registered type icon.
+ * opens each entry with its registered type icon — an app as its own top-level
+ * tab, an agent in Vibe (`useAgentLauncher`).
  */
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -8,12 +9,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const openDock = vi.hoisted(() => vi.fn());
+const launch = vi.hoisted(() => vi.fn());
+vi.mock('@src/components/agents/use-agent-launcher', () => ({ useAgentLauncher: () => ({ launch, busyId: null }) }));
 const dock = vi.hoisted(() => ({ current: null as unknown }));
 const agents = vi.hoisted(() => ({ current: [] as unknown[] }));
 vi.mock('@src/hooks/use-project-agents', () => ({ useProjectAgents: () => ({ agents: agents.current }) }));
 const apps = vi.hoisted(() => ({ current: [] as unknown[] }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock }, currentDock: dock.current }),
+}));
+const browserUrl = vi.hoisted(() => ({ current: '' }));
+const openExternal = vi.hoisted(() => vi.fn());
+vi.mock('@src/lib/open-external', () => ({ openExternal }));
+vi.mock('@src/hooks/flow-hooks/useAppDisplay', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/hooks/flow-hooks/useAppDisplay')>()),
+  appBrowserUrl: async () => browserUrl.current,
 }));
 vi.mock('@src/components/top-nav-bar/use-project-apps', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@src/components/top-nav-bar/use-project-apps')>()),
@@ -30,7 +40,7 @@ const ADMIN = '22222222-2222-4222-8222-222222222222';
 const DEP = '33333333-3333-4333-8333-333333333333';
 const project = { id: 'p1', name: 'Trips' } as unknown as Project;
 const entry = (id: string, name: string, audience = 'app', providerProjectId = 'p1') =>
-  ({ app: { id, name, audience, type: 'micro_app' }, providerProjectId }) as unknown as ProjectApp;
+  ({ app: { id, name, displayName: name, audience, type: 'micro_app', typeId: new TypeId(`micro_app-${id}`) }, providerProjectId }) as unknown as ProjectApp;
 const shop = entry(SHOP, 'shop');
 const admin = entry(ADMIN, 'back-office', 'admin');
 const docs = entry(DEP, 'docs', 'app', 'dep');
@@ -44,6 +54,7 @@ const mount = () =>
 
 beforeEach(() => {
   openDock.mockClear();
+  launch.mockClear();
   dock.current = DockPointer.forAutomations();
   apps.current = [];
   agents.current = [];
@@ -68,7 +79,54 @@ describe('the apps button', () => {
     expect(item.querySelector('svg')).not.toBeNull();
     if (withApps) expect(screen.getByTestId('top-nav-app-shop').querySelector('svg')).not.toBeNull();
     await user.click(item);
-    expect(openDock).toHaveBeenCalledWith(agent.dockPointer);
+    expect(launch).toHaveBeenCalledWith(agent, 'p1');
+    expect(openDock).not.toHaveBeenCalled();
+  });
+
+  it("draws an agent's own avatar and an app's own icon when they have one", async () => {
+    agents.current = [new Agent({ id: SHOP, name: 'helper', avatar: '🩺' })];
+    shop.app.icon = '🛒';
+    apps.current = [shop];
+    try {
+      mount();
+      await userEvent.setup().click(screen.getByTestId('top-nav-apps'));
+      expect(screen.getByTestId('top-nav-agent-helper').textContent).toContain('🩺');
+      expect(screen.getByTestId('top-nav-app-shop').textContent).toContain('🛒');
+    } finally {
+      shop.app.icon = null;
+    }
+  });
+
+  describe('an app set to open in the browser', () => {
+    afterEach(() => {
+      shop.app.open_in = null;
+      browserUrl.current = '';
+      openExternal.mockClear();
+      openDock.mockClear();
+    });
+
+    it('opens its address in the browser, not a tab', async () => {
+      shop.app.open_in = 'browser';
+      browserUrl.current = 'http://localhost:3300/';
+      apps.current = [shop, admin];
+      mount();
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId('top-nav-apps'));
+      await user.click(screen.getByTestId('top-nav-app-shop'));
+      expect(openExternal).toHaveBeenCalledWith('http://localhost:3300/');
+      expect(openDock).not.toHaveBeenCalled();
+    });
+
+    it('opens in a tab while nothing serves it yet', async () => {
+      shop.app.open_in = 'browser';
+      apps.current = [shop, admin];
+      mount();
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId('top-nav-apps'));
+      await user.click(screen.getByTestId('top-nav-app-shop'));
+      expect(openExternal).not.toHaveBeenCalled();
+      expect(openDock).toHaveBeenCalled();
+    });
   });
 
   describe('with one app', () => {
@@ -76,14 +134,14 @@ describe('the apps button', () => {
       apps.current = [shop];
     });
 
-    it('opens it in place, by URL alone', async () => {
+    it('opens it as its own top-level tab, by URL alone', async () => {
       mount();
       const button = screen.getByTestId('top-nav-app');
       expect(button.getAttribute('aria-label')).toBe('Apps and agents');
       await userEvent.setup().click(button);
       expect(openDock).toHaveBeenCalledTimes(1);
       expect(openDock.mock.calls[0][0].toUrl('/')).toBe(projectAppDock(shop, 'p1').toUrl('/'));
-      expect(openDock.mock.calls[0][2]).toBeUndefined();
+      expect(openDock.mock.calls[0][2]).toEqual({ topLevel: true });
     });
 
     it('rests while that app is the one on screen', () => {
@@ -110,14 +168,14 @@ describe('the apps button', () => {
       expect(openDock).not.toHaveBeenCalled();
     });
 
-    it('opens the chosen app in place', async () => {
+    it('opens the chosen app as its own top-level tab', async () => {
       mount();
       const user = userEvent.setup();
       await user.click(screen.getByTestId('top-nav-apps'));
       await user.click(screen.getByTestId('top-nav-app-back-office'));
       expect(openDock).toHaveBeenCalledTimes(1);
       expect(openDock.mock.calls[0][0].toUrl('/')).toBe(projectAppDock(admin, 'p1').toUrl('/'));
-      expect(openDock.mock.calls[0][2]).toBeUndefined();
+      expect(openDock.mock.calls[0][2]).toEqual({ topLevel: true });
     });
 
     it('marks the app on screen', async () => {
@@ -130,4 +188,29 @@ describe('the apps button', () => {
       expect(shown('shop')).toBe('true');
     });
   });
+
+  describe('the pencil', () => {
+    const editorUrl = (id: string) =>
+      DockPointer.forAssetEditorByTypeId('micro_app', new TypeId(`micro_app-${id}`)).toUrl('/');
+
+    it('opens the app editor of its row, not the running app', async () => {
+      apps.current = [shop, admin];
+      mount();
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId('top-nav-apps'));
+      await user.click(screen.getByTestId('top-nav-app-edit-back-office'));
+      expect(openDock).toHaveBeenCalledTimes(1);
+      expect(openDock.mock.calls[0][0].toUrl('/')).toBe(editorUrl(ADMIN));
+      expect(editorUrl(ADMIN)).toContain('/editor/app/typeid/micro_app-');
+      expect(screen.queryByTestId('top-nav-app-shop')).toBeNull(); // the menu closed
+    });
+
+    it('sits beside a lone app', async () => {
+      apps.current = [shop];
+      mount();
+      await userEvent.setup().click(screen.getByTestId('top-nav-app-edit-shop'));
+      expect(openDock.mock.calls[0][0].toUrl('/')).toBe(editorUrl(SHOP));
+    });
+  });
 });
+

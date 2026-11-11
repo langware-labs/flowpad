@@ -2,7 +2,7 @@
 
 Real local git repositories over ``file://`` stand in for remotes (cloning is the step
 under test; a stubbed clone would pin nothing). The hub is the one thing stubbed, at
-``hub_get_or_raise``. Each test gets its own workspace, so a clone from one test can
+``HubProxy.call``. Each test gets its own workspace, so a clone from one test can
 never be "reused" by the next.
 
 # do not increase timeout without approval
@@ -21,6 +21,7 @@ from flow_sdk.assets import flow_json
 from flow_sdk.builtin import project_dependencies
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.data_spec.flow_json_spec import FlowJsonSpec, parse_source
 from flow_sdk.schema.type_info import register_all
@@ -232,7 +233,7 @@ async def test_a_checkout_you_made_is_never_pulled(tmp_path):
 
 
 async def test_a_clone_flowpad_made_is_fast_forwarded_on_update(tmp_path, monkeypatch):
-    monkeypatch.setattr("flow_sdk.utils.git.find_local_repo_for_url", lambda _url: None)
+    monkeypatch.setattr("flow_sdk.utils.git.find_local_repo_for_url", lambda _url, **_: None)
     remote = tmp_path / "remote"
     url = _repo(remote)
     site = await _project(tmp_path, "site")
@@ -366,6 +367,19 @@ async def test_a_local_package_is_used_here_and_recorded_nowhere_in_the_project(
     assert project_dependencies.warnings_for(str(site.id), await site.dependencies()) == []
 
 
+async def test_adding_a_local_package_leaves_an_existing_flow_json_untouched(tmp_path):
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    site = await _project(tmp_path, "site")
+    root = Path(site.fs_storage_mount_path)
+    _declare(root, {"dependencies": {}})
+    before = (root / "flow.json").read_bytes()
+    await site.add_dependency(str(notes), local=True)
+    await site.dependencies()
+    assert (root / "flow.json").read_bytes() == before
+    assert [p.name for p in root.iterdir()] == ["flow.json"], "nothing else is written into the project"
+
+
 async def test_removing_a_local_package_leaves_its_folder_and_the_project_files(tmp_path):
     notes = tmp_path / "notes"
     notes.mkdir()
@@ -471,7 +485,7 @@ async def test_a_hub_dependency_that_cannot_be_read_says_why(tmp_path, monkeypat
     async def refuse(*_a, **_k):
         raise HubError(status, "no")
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", refuse)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(refuse))
     site = await _project(tmp_path, "site")
     _declare(Path(site.fs_storage_mount_path), {"dependencies": {"policies": f"hub:{HUB_ID}"}})
     state = _state(await site.resolve_dependencies(), "policies")
@@ -486,7 +500,7 @@ async def test_a_hub_dependency_already_on_this_machine_uses_its_folder(tmp_path
     async def refuse(*_a, **_k):
         raise HubError(0, "no")
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", refuse)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(refuse))
     policies = await _project(tmp_path, "policies")
     site = await _project(tmp_path, "site")
     _declare(Path(site.fs_storage_mount_path), {"dependencies": {"policies": f"hub:{policies.id}"}})
@@ -501,7 +515,7 @@ async def test_a_hub_project_backed_by_git_resolves(tmp_path, monkeypatch):
     async def row(*_a, **_k):
         return {"id": HUB_ID, "git_origin": {"kind": "git", "provider": "file", "owner": str(tmp_path), "name": "remote-policies", "branch": "main"}}
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", row)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(row))
     site = await _project(tmp_path, "site")
     _declare(Path(site.fs_storage_mount_path), {"dependencies": {"policies": {"source": f"hub:{HUB_ID}", "path": "policies"}}})
     state = _state(await site.resolve_dependencies(), "policies")
@@ -524,7 +538,6 @@ async def test_dismissing_a_warning_lasts_until_restart(tmp_path):
 
 
 async def test_opening_a_project_resolves_in_the_background_and_says_so(tmp_path):
-    import asyncio
 
     url = _repo(tmp_path / "remote")
     site = await _project(tmp_path, "site")

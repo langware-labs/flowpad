@@ -242,3 +242,13 @@ describe('parseWikiPointer — the SDK-side entry to the same rule', () => {
     expect(parseWikiPointer(null)).toBeNull();
   });
 });
+
+describe('targetTypeId — conversation docks', () => {
+  const conv = '59ca5c97-5d18-4d22-94d0-424f4f179e12';
+  it('targets the conversation, including from a message deep link', () => {
+    expect(String(DockPointer.fromUrl(`/dock/conversation/${conv}`)!.targetTypeId)).toBe(`conversation-${conv}`);
+    expect(
+      String(DockPointer.fromUrl(`/dock/conversation/${conv}/message/6c34622f-a599-405e-8546-73ce8a011b94`)!.targetTypeId),
+    ).toBe(`conversation-${conv}`);
+  });
+});

@@ -26,7 +26,14 @@ logger = logging.getLogger(__name__)
 COS_MARKER = "<!-- chief-of-staff -->"
 DEFAULT_STAFF = "general-worker"
 
-_SKILL_DIR = Path(__file__).resolve().parent.parent / "system_projects" / "flowpad_assistant" / ".claude" / "skills" / "task-management"
+_SKILL_DIR = (
+    Path(__file__).resolve().parent.parent
+    / "system_projects"
+    / "flowpad_assistant"
+    / ".claude"
+    / "skills"
+    / "task-management"
+)
 _SPAWNS = (
     "run it yourself on one of your staff with your native subagent tool (the Agent tool), in this same "
     "turn, then answer with what it found."
@@ -83,8 +90,9 @@ def native_roster(agent, project_dir: Optional[str] = None) -> dict:
     return out
 
 
-def apply_to_launch(agent, *, context_data: dict, cli_config: dict, worker_type: Any,
-                    project_dir: Optional[str] = None) -> dict:
+def apply_to_launch(
+    agent, *, context_data: dict, cli_config: dict, worker_type: Any, project_dir: Optional[str] = None
+) -> dict:
     """Make a launch a Chief of Staff launch. Returns the process options it changes. A no-op when off."""
     if not getattr(agent, "chief_of_staff", False):
         return {}
@@ -100,7 +108,12 @@ def apply_to_launch(agent, *, context_data: dict, cli_config: dict, worker_type:
         roster = native_roster(agent, project_dir)
         if roster:
             cli_config["agents_json"] = roster
-    return {"load_flowpad_assistant": True}
+    from flow_sdk.builtin.agentic_process.assistant_view import including  # noqa: PLC0415
+
+    return {
+        "load_flowpad_assistant": True,
+        "assistant_skills": including(getattr(agent, "assistant_skills", None), _SKILL_DIR.name),
+    }
 
 
 async def sync_tasks_channel(agent):
@@ -109,7 +122,9 @@ async def sync_tasks_channel(agent):
     from flow_sdk.tasks.identity import agent_ref  # noqa: PLC0415
 
     return await _ensure_principal_channel(
-        agent_ref(agent.id), name=f"{agent.name or agent.id} · tasks", owner=agent.typeid,
+        agent_ref(agent.id),
+        name=f"{agent.name or agent.id} · tasks",
+        owner=agent.typeid,
         active=bool(getattr(agent, "chief_of_staff", False)),
     )
 
@@ -130,7 +145,6 @@ async def _ensure_principal_channel(principal: str, *, name: str, owner=None, ac
 
     "The Tasks channel" is whichever bus-fed driver carries ``task.*`` as one channel per principal —
     found by what it declares (:func:`flow_sdk.ingest.bus_sources.principal_channel_for`), not by name."""
-    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
     from flow_sdk.ingest.bus_sources import principal_channel_for  # noqa: PLC0415
 
@@ -146,19 +160,37 @@ async def _ensure_principal_channel(principal: str, *, name: str, owner=None, ac
             await existing.save()
         return existing
     if existing is None:
-        driver = DataDriver.loaded(provider)
-        existing = driver.create_source(driver.create_config(**{key: principal}), name=name)
-        if owner is not None:
-            existing.owner = owner
+        existing = await _adopt_unindexed(provider, key, principal, name=name, owner=owner)
     # The principal's own address on this channel: its own task moves are never news to it.
-    wanted = {"status": SourceStatus.ACTIVE.value, "allowed_senders": [], "account_key": principal,
-              "account_identities": [principal]}
+    wanted = {
+        "status": SourceStatus.ACTIVE.value,
+        "allowed_senders": [],
+        "account_key": principal,
+        "account_identities": [principal],
+    }
     changed = [f for f, v in wanted.items() if getattr(existing, f, None) != v]
     if not changed and existing.exist_in_db:
         return existing
     for field in changed:
         setattr(existing, field, wanted[field])
     return await existing.save()
+
+
+async def _adopt_unindexed(provider: str, key: str, principal: str, *, name: str, owner=None):
+    """A new principal channel row — or, when its file is already on disk but not in the index (a
+    lost row), that file indexed and found again. Creating over it would collide on every start."""
+    from flow_sdk.assets.creation import AssetPathCollisionError, adopt_unindexed  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+    driver = DataDriver.loaded(provider)
+    fresh = driver.create_source(driver.create_config(**{key: principal}), name=name)
+    if owner is not None:
+        fresh.owner = owner
+    try:
+        return await fresh.save()
+    except AssetPathCollisionError as collision:
+        return await adopt_unindexed(collision, lambda: DataSource.find_for_account(provider, key, principal))
 
 
 async def open_tasks_block(process) -> str:
@@ -172,9 +204,24 @@ async def open_tasks_block(process) -> str:
         return "# Your open tasks\nNone."
     lines = ["# Your open tasks", "(the ledger right now — quote it; `flow task show <id>` for the log)"]
     for task in tasks:
-        here = " · this conversation" if caller.conversation_id and task.origin_conversation == caller.conversation_id else ""
+        here = (
+            " · this conversation"
+            if caller.conversation_id and task.origin_conversation == caller.conversation_id
+            else ""
+        )
         lines.append(f"- {task.id} · {task.status} · {task.owner} · {task.title}{here}")
     return "\n".join(lines)
 
 
-__all__ = ["COS_MARKER", "DEFAULT_STAFF", "apply_to_launch", "ensure_user_tasks_channel", "sync_tasks_channel", "instructions_for", "native_roster", "open_tasks_block", "staff_dir", "staff_of"]
+__all__ = [
+    "COS_MARKER",
+    "DEFAULT_STAFF",
+    "apply_to_launch",
+    "ensure_user_tasks_channel",
+    "sync_tasks_channel",
+    "instructions_for",
+    "native_roster",
+    "open_tasks_block",
+    "staff_dir",
+    "staff_of",
+]

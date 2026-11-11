@@ -121,7 +121,7 @@ The `remote` flag no longer drives the predicate, and `sender_id` is never used 
 - login (the LOGGED_IN transition);
 - WS (re)connect;
 - `resend`;
-- the **reachability edge**: the first successful `hub_request` after a recorded failure drains the outbox once. This is
+- the **reachability edge**: the first successful `HubProxy.call` after a recorded failure drains the outbox once. This is
   event-driven, not a timer.
 
 **SENT heal path.** The hub's `_fanout_status_update` push marks SENT on helpdesk rows too.
@@ -146,7 +146,7 @@ The `remote` flag no longer drives the predicate, and `sender_id` is never used 
   `invalidate_hub_login(...)` so the UI flips.
 - It never sends an unauthenticated request.
 
-**`hub_request(...)`** runs on the shared `FlowpadClient`, so the hooks apply. It raises `HubError(.failure: HubFailure)`. HTTP
+**`HubProxy.call(...)`** runs on the shared `FlowpadClient`, so the hooks apply. It raises `HubError(.failure: HubFailure)`. HTTP
 status is classified first and the envelope is used as detail:
 
 | What came back | `HubFailureKind` |
@@ -182,6 +182,49 @@ status is classified first and the envelope is used as detail:
 - A test pins the policy that a guest may call `start_guest_conversation` on the default desk.
 
 ## 6. UI — renders and calls actions only
+
+> **Superseded for the dialog itself (2026-11-07):** Ask for help is now a conversation + attachments + one action.
+> See "The help request message" below; the rest of this section still describes delivery and the load dialog.
+
+### The help request message (2026-11-07)
+
+To the person it is just a conversation. `ask-for-help` writes ONE `FlowMessage` of kind `help_request`
+(`FlowMessageKind.HELP_REQUEST`). Its attachments are ordinary files: `diagnosis.value.json` (the `run_diagnose`
+answer, `flow_sdk/diagnose`), `screen.value.json`, `session.value.json`, `logs.txt`, plus the person's own files — and
+`help_request.value.json` (`HelpRequestCarrier`), the carrier that marks the message on every machine, since the hub
+drops the `kind` field (`derive_help_request_kind` re-derives it on arrival). The carrier is plumbing and never shown.
+
+- **The wizard** (`AskForHelpDialog`): 1 · what is wrong (one box; the Help desk chip moved here from the footer)
+  → 2 · Run diagnosis / Share context + **Review content** → 3 · the computed title (`help-request-preview`), the desk
+  chip (removable), people. Nobody picked: a private conversation that never leaves this computer.
+- **Recipients:** people share one conversation; a desk gets its own ticket. Both carry the same request, diagnosed once.
+- **Send once diagnosed** delivers now. **Review before sending** (and Share context off) keeps the context in
+  `<instance>/help_requests/<conversation id>/`; the message then shows `Context: Not shared → Share | Open`
+  (`help-request-context`, `help-request-share`, which sends the context as a help request message of its own).
+- **One review, both directions:** `ReviewShell` is the message review frame. The receiver's `AssetReviewDialog`
+  (review before installing) and the sender's `ContentReviewDialog` (review before sending: Share / Leave out) are both it.
+- **The asker's side is a conversation:** no ticket state chip ("Waiting for pickup") and no Close ticket; those are the desk's.
+
+### One backbone: minimal input → background → the conversation (2026-11-07)
+
+**Diagnose & fix** and **Ask for help** are the same request; the diagnosis never holds it up.
+
+- `ask-for-help` writes the conversation and the person's `help_request` message at once and answers; the diagnosis
+  runs in the background (`_diagnose_then_deliver`) and lands as a `diagnosis` message of its own — its text the one
+  bottom line (`bottom_line`), `diagnosis.value.json` the details (held here unless the context is shared). Only then is
+  the request delivered.
+- **Diagnose & fix** (warnings popover, error toasts, the error screen, Error details — `diagnoseAndFix`) is one click,
+  no window: `recipients: []`, `purpose: repair` (the repairing agent, told it was asked to fix and which folders are
+  the project's dependencies). Private by design: nothing reaches the hub until **Report it**.
+- **Whose problem it is** is `DiagnosisSpec.cause` (`flowpad | dependency | project | machine | unknown`, plus
+  `cause_asset`), set by `report.py --cause`. A report is offered only for `flowpad`, `dependency`, `unknown`
+  (`reportable`) — on the diagnosis message, as one button: **Report it** (Flowpad support), **Report it to <the
+  dependency's desk>** (an adopted desk whose root is that dependency), or **Report it for me** (no desk: Flowpad
+  support with `pass_on`). `help-request-report` turns the private conversation into that desk's ticket and sends
+  what was held, in the same conversation; `help-request-diagnosis` says what the message offers.
+- **Ask for help** keeps its three steps; Send opens the conversation at once and the same diagnosis message follows.
+- Removed with this: the Diagnose window and its people picker, "Send report once done", `diagnose-send`, the
+  `/graph/diagnose` stream and `flow_sdk/diagnose/share.py`.
 
 **`AskForHelpDialog`** (the renamed `VibeAssignTaskDialog`; it keeps the `vibe-assign-*` testids)
 - **Recipients:** desk chips from `help-recipients`, plus `ContactPicker`.
@@ -220,7 +263,7 @@ Each phase lands green before the next starts. The hub ships first.
 | Phase | Repo | Work | Closes |
 |---|---|---|---|
 | P0 | hub | `add_message` replay/409 · `start_guest_conversation` ids + global collision check + capability flag · membership same-role no-op · `UNAUTHENTICATED` · `fs/upload target_not_found` · BodyStatus from `flow_sdk` · guest body upload (D5) · policy pin + security tests | prerequisites for 1, 2, 8, 9, 10, 12 |
-| P1 | desk | `HubFailure` + `hub_request` + `hub_auth` + `hub_fail_response` + reachability edge; delete `_hub_action`; classification table test | 11, 12 |
+| P1 | desk | `HubFailure` + `HubProxy.call` + `hub_auth` + `hub_fail_response` + reachability edge; delete `_hub_action`; classification table test | 11, 12 |
 | P2 | desk | `BodyStatus.FAILED`, `outbound`, `delivery_failure` (D1); `Conversation.deliver()` stages 0a/0/1/2; outbox predicate; triggers; receiver FAILED; deletions from section 3 | 2, 3 |
 | P3 | desk | `ask-for-help` capture; `help-recipients`, `help-requests`, `resend`; `helpdesk-ensure` new semantics; `resolve_desk` + `helpdesk.default`; explicit context only | 1, 8, 9, 10, 13 |
 | P4 | ui | `AskForHelpDialog` everywhere; the portal button; load hand-off; ingest; receipt; rows; delete `HelpdeskRequestDialog` and the `Task.assign` chain; active-process callback | 4, 5, 6, 7, 13 |
@@ -236,7 +279,7 @@ Each phase lands green before the next starts. The hub ships first.
 - **D3 — deploy order.** The hub goes first. The desk gates the ticket stage on the hub capability flag, and the rest on hub
   idempotency.
 - **D4 — test ports.** These keep their strength but change their fault seam or expectation:
-  - the Vibe retry matrix: the fault moves to the backend `hub_request`, per stage;
+  - the Vibe retry matrix: the fault moves to the backend `HubProxy.call`, per stage;
   - closed dialog: (i) a real hub rejection after capture, (ii) Escape during capture;
   - `says_why[502]` and `[signed-out]`: `ask-for-help` returns SUCCESS with `delivery.failure`;
   - the opening line: the fault moves to `mark_sent`;
@@ -247,6 +290,6 @@ Each phase lands green before the next starts. The hub ships first.
   upload the body of their own ticket message (recommended, since screenshots are what support needs), or refusing files on a
   desk ask.
 - **D6 — no context guessing.** Footer tickets no longer attach the latest session silently. The user ticks it.
-- **D7 — scope of `hub_request`.** Only the help paths now; the other ~25 hand-built hub callers follow later.
+- **D7 — scope of `HubProxy.call`.** Only the help paths now; the other ~25 hand-built hub callers follow later.
 - **D8 — FYI.** A signed-out request is captured and held, not refused. That overrules the fail-fast alternative. And when the
   credential store can't be read, the user is signed out locally.

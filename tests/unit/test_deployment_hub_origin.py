@@ -62,6 +62,7 @@ async def test_bridge_first_cloud_placement_keeps_credentials_in_hub():
 
 async def test_late_bridge_materialization_preserves_adopted_private_binding(monkeypatch):
     import asyncio
+
     from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec
     from flow_sdk.secrets import SecretStoreRef
 
@@ -109,3 +110,80 @@ async def test_bridge_local_placement_inherits_this_computer_binding():
     stored = await Deployment.get_by_id(deployment_id)
     assert stored.is_local
     assert stored.secrets is None
+
+
+async def test_hub_refresh_keeps_the_box_serving_its_agent():
+    """`serving` is this machine's own flag: the hub never holds it, so a hub refresh must not reset it.
+    It did -- every resume pushed the row, `serving` came back False, and the box stopped its agent."""
+    deployment_id = '5b1c7a52-8d0e-4c1f-9a77-3f0f6b2d9e11'
+    body = {'id': deployment_id, 'name': 'Agent on its box',
+            'target': {'provider': 'gcp_vm', 'scope': 'agent-11111111-1111-4111-8111-111111111111'}}
+    row = await Deployment.adopt_from_hub(body)
+    row.serving = True
+    await row.save()
+    body.update(status={'provider_state': 'running'},
+                updated_date=(datetime.now(UTC) + timedelta(seconds=1)).isoformat())
+    await HubWsBridge()._on_data_op({'op': 'update', 'to_entity': f'deployment-{deployment_id}', 'data': body})
+    assert (await Deployment.get_by_id(deployment_id)).serving is True
+    assert "serving" in Deployment.fields_not_sent_to_hub()
+
+
+def test_a_placement_running_on_this_machine_keeps_its_local_target_across_hub_refresh():
+    """The box that runs a cloud placement holds it as local. A hub refresh carried the hub's view of the
+    target (`gcp_vm`), the row stopped being local here, and the box's supervisor dropped its agent."""
+    row = Deployment(name="On this box", target={"provider": "local", "scope": "agent-test"}, serving=True)
+    hub = {"name": "On this box", "target": {"provider": "gcp_vm", "scope": "agent-test", "location": "https://hub/compute_node/x/open"},
+           "origin": {"kind": "gcp_vm", "provider": "gcp_vm", "external_id": "compute_node-x"}}
+    merged = Deployment.merge_hub_payload(row, hub)
+    assert merged["target"] == row.target
+    assert merged["origin"] == row.origin
+    assert Deployment(**merged).is_local
+
+
+async def test_a_cloud_machines_own_placement_reads_its_local_store(monkeypatch):
+    """On the box a deployment runs on, its values are placed LOCALLY (``place_values``): a process under that
+    deployment must read them there, not from the write-only hub store a desktop binds the same row to.
+    Seen live: an invite box's agent reported its approved env vars unset while the box's env file held them."""
+    import flow_sdk.instance_settings.runtime as runtime
+    from flow_sdk.builtin.credential_store import Placement
+    from flow_sdk.schema.data_spec.deployment_secrets_spec import hub_store
+
+    deployment_id = 'a1b2c3d4-0000-4000-8000-000000000001'
+    node = 'a5cf8b08-8954-4123-8464-94e89ae9233c'
+    body = {
+        'id': deployment_id, 'name': 'Invite box',
+        'target': {'provider': 'e2b', 'scope': 'agent-11111111-1111-4111-8111-111111111111'},
+        'origin': {'external_id': f'compute_node-{node}'},
+    }
+    await HubWsBridge()._on_data_op({'op': 'update', 'to_entity': f'deployment-{deployment_id}', 'data': body})
+    stored = await Deployment.get_by_id(deployment_id)
+
+    # A desktop looking at that cloud deployment: the hub keeps its values.
+    monkeypatch.setattr(runtime, 'get_assigned_compute_node', lambda: None)
+    assert (await Placement.of(stored)).secrets.store == hub_store(deployment_id)
+
+    # The box itself: its own placement reads this machine's store, where the hub put the values.
+    monkeypatch.setattr(runtime, 'get_assigned_compute_node', lambda: f'compute_node-{node}')
+    here = await Placement.of(stored)
+    assert here.secrets.store != hub_store(deployment_id)
+    assert here.deployment_id == str((await Deployment.this_computer()).id)
+
+
+async def test_a_project_deployed_on_this_machine_reads_the_placed_environment(monkeypatch):
+    """Seen live on an invite box: the agent's process runs under a provider-``local`` project deployment whose node is
+    the box's OWN local node (not the hub-assigned id) and whose stored environment is ``development``. The values were
+    placed in the box's default environment, so the process must resolve as this computer."""
+    import flow_sdk.instance_settings.runtime as runtime
+    from flow_sdk.builtin.credential_store import Placement
+    from flow_sdk.builtin.faas.compute_node import ComputeNode
+
+    deployment_id = 'a1b2c3d4-0000-4000-8000-000000000002'
+    body = {
+        'id': deployment_id, 'name': 'Project here', 'environment': 'development',
+        'target': {'provider': 'local', 'scope': 'project-11111111-1111-4111-8111-111111111111'},
+        'origin': {'external_id': ComputeNode._local_id()},
+    }
+    await HubWsBridge()._on_data_op({'op': 'update', 'to_entity': f'deployment-{deployment_id}', 'data': body})
+    monkeypatch.setattr(runtime, 'get_assigned_compute_node', lambda: 'compute_node-dad8871a-0000-4000-8000-000000000000')
+    here = await Placement.of(await Deployment.get_by_id(deployment_id))
+    assert here.deployment_id == str((await Deployment.this_computer()).id)

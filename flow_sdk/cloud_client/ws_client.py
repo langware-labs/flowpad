@@ -8,6 +8,7 @@ import json
 import logging
 import secrets
 import ssl
+import time
 import uuid
 from contextlib import asynccontextmanager
 from functools import lru_cache
@@ -22,6 +23,7 @@ from websockets.exceptions import (
     InvalidStatus,
 )
 
+from flow_sdk import toplog
 from flow_sdk.cloud_client.auth_state import invalidate_hub_login, set_connection_status
 from flow_sdk.cloud_client.auth_status import HubConnectionStatus
 from flow_sdk.cloud_client.client import ApiConfig
@@ -222,7 +224,7 @@ async def connect_hub_websocket(
                     reason = (
                         "expired" if (current_creds and current_creds.is_expired(EXPIRY_LEEWAY_SECONDS)) else "rejected"
                     )
-                    await invalidate_hub_login(reason)
+                    await invalidate_hub_login(reason, detail=f"WS handshake close {exc.code}: {exc.reason}")
                     raise HubWebSocketAuthError("hub websocket auth rejected") from exc
                 raise
             yield websocket
@@ -426,11 +428,14 @@ class HubWebSocketManager:
         message["message_id"] = message_id
         future: asyncio.Future[dict] = asyncio.Future()
         self._pending_requests[message_id] = future
+        t0 = time.monotonic()
         try:
             self.send(message)
             response = await asyncio.wait_for(future, timeout=timeout)
         finally:
             self._pending_requests.pop(message_id, None)
+        kind = message.get("action") or message.get("message_type")
+        toplog.log("hub", "ws %s ms=%.0f", kind, (time.monotonic() - t0) * 1000)
         return response
 
     def _fail_pending(self, exc: BaseException) -> None:
@@ -609,6 +614,8 @@ class HubWebSocketManager:
         attempts_at_level = 0
         try:
             while not self._stop_requested:
+                # Set once a socket is up: its drop is a normal one, redialed at once.
+                lived = False
                 try:
                     # ``verified`` is left alone on a reconnect: the same credentials can only
                     # name the same user, and a refused key ends this loop as AUTH_REJECTED
@@ -625,6 +632,7 @@ class HubWebSocketManager:
                         connection_id=self._connection_id,
                         credentials=connection_credentials,
                     ) as websocket:
+                        lived = True
                         backoff = self.reconnect_initial_seconds
                         attempts_at_level = 0
                         await self._set_state(
@@ -721,7 +729,9 @@ class HubWebSocketManager:
                     logger.info("Hub WS listener disconnected: %s", exc)
                     await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error=str(exc))
 
-                if not self._stop_requested:
+                # A socket that lived and dropped redials immediately; only a dial
+                # that keeps failing (hub down) waits out the backoff.
+                if not self._stop_requested and not lived:
                     await asyncio.sleep(backoff)
                     attempts_at_level += 1
                     if attempts_at_level >= self.reconnect_attempts_per_level:
@@ -751,7 +761,7 @@ class HubWebSocketManager:
             # Hub-side auth close — treat as canonical credential loss whether
             # the local clock agrees or not. If the hub said no, the token is
             # no longer valid; reason just disambiguates the cause for telemetry.
-            await invalidate_hub_login(reason)
+            await invalidate_hub_login(reason, detail=f"WS close {exc.code}: {exc.reason}")
             await self._set_state(
                 HubConnectionStatus.DISCONNECTED,
                 connected=False,
@@ -834,6 +844,9 @@ class HubWebSocketManager:
         self._last_error = None
         if self.is_connected:
             await self._set_state(HubConnectionStatus.VERIFIED, connected=True, verified=True, error=None)
+        # Signed in and verified: publish (or rotate, or withdraw) this install's secured-transfer key, so members
+        # can send it values. Detached and best effort — a hub that refuses it leaves receiving off, nothing else.
+        asyncio.create_task(_publish_device_key(), name="sealed-device-key-publish")
         return {
             "verified": True,
             "local_user_id": local_user_id,
@@ -875,3 +888,13 @@ class HubWebSocketManager:
 
 
 hub_ws_manager = HubWebSocketManager()
+
+
+async def _publish_device_key() -> None:
+    try:
+        from flow_sdk.secrets.sealed_transfer import answer_pending, publish_device_key  # noqa: PLC0415
+
+        await publish_device_key()
+        await answer_pending()  # values members asked for while this install was offline
+    except Exception as e:  # noqa: BLE001
+        logger.info("[sealed] device key not published: %s", type(e).__name__)

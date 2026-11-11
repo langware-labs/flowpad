@@ -1,5 +1,5 @@
 import type { TypeId } from '@sdk';
-import { PageId, ViewType } from '@sdk';
+import { PageId, ViewType, isHubOnly } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 function trimHubHost(hubHost: string): string {
@@ -25,6 +25,14 @@ export const HUB_HOME_PATH = '/dock/hub/home';
 export function hubHomeUrl(hubAppUrl: string | null | undefined): string | null {
   if (!hubAppUrl) return null;
   return `${trimHubHost(hubAppUrl)}${HUB_HOME_PATH}`;
+}
+
+/** The page this app serves its screens on: the hub page on the hub, the desk on a desktop. */
+export const servedPage = (): PageId => (isHubOnly() ? PageId.HUB : PageId.DESK);
+
+/** Any entity's single-item page on whichever page this app serves (an issue's own page on both). */
+export function entityDock(type: string, id: string): DockPointer {
+  return new DockPointer(ViewType.HUB_ENTITY, `${type}/${id}`, undefined, undefined, servedPage());
 }
 
 /** The hub page's generic view of any entity: `/dock/hub/entity/<type>/<id>`. */
@@ -63,7 +71,8 @@ export function hubProjectAssetDock(projectId: string, assetTypeId: TypeId): Doc
  * page rather than a 404, so guessing a URL would look like it worked — we link
  * only what we know resolves.
  */
-const HUB_PAGE_TYPES = new Set(['page', 'flow', 'task', 'agent', 'knowledge_base', 'workspace']);
+// `compute_node/<id>` is the sandbox landing: it signs the visitor in and opens the box (`OpenSandboxLanding`).
+const HUB_PAGE_TYPES = new Set(['page', 'flow', 'task', 'agent', 'knowledge_base', 'workspace', 'compute_node']);
 
 /**
  * The hub page for an entity: hub host + the hub's own dock pointer for it.

@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { BookUser, IdCard, Loader2, RefreshCw } from 'lucide-react';
+import { BookUser } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ActionInfo, dataManager, type ConversationParticipant, type User } from '@sdk';
+import { type ConversationParticipant, type User } from '@sdk';
 import { Button } from '@src/components/ui/button';
-import { Checkbox } from '@src/components/ui/checkbox';
 import { Input } from '@src/components/ui/input';
-import { ContactPermissionsDialog } from '@src/components/conversation/ContactPermissionsDialog';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { ContactDialog } from '@src/components/conversation/ContactDialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader } from '@src/components/ui/dialog';
+import { ContactRows, ContactsTitle } from './ContactRows';
 import { filterContacts, participantFromContact, participantKey, useContacts } from './use-contacts';
 
 interface AddressBookButtonProps {
@@ -41,24 +41,9 @@ export function AddressBookButton({
   const [query, setQuery] = useState('');
   // The contact whose detail dialog is open (null = closed).
   const [detailFor, setDetailFor] = useState<User | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
   const { contacts, refetch } = useContacts(excludeUserId, enabled && open);
 
   const filtered = useMemo(() => filterContacts(contacts, query), [contacts, query]);
-
-  // Rule 5: scan every local conversation and upsert its members into the
-  // address book, then refetch the list. The scanned contacts also stream in
-  // live via the entity-query watch, so this is belt-and-suspenders.
-  const refresh = async () => {
-    setRefreshing(true);
-    try {
-      const action = new ActionInfo('address-book-scan', null, null, 'POST');
-      await dataManager.callAction<null, unknown>(action);
-      refetch();
-    } finally {
-      setRefreshing(false);
-    }
-  };
 
   const selectedKeys = useMemo(() => new Set(value.map(participantKey).filter(Boolean)), [value]);
 
@@ -92,25 +77,7 @@ export function AddressBookButton({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-sm" data-testid={`${testId}-modal`}>
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-2">
-                <BookUser className="h-4 w-4 text-primary" />
-                <Trans>Contacts</Trans>
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 px-2 text-xs"
-                onClick={() => void refresh()}
-                disabled={refreshing}
-                data-testid={`${testId}-refresh`}
-                title={t`Scan conversations for new contacts`}
-              >
-                {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                <Trans>Refresh</Trans>
-              </Button>
-            </DialogTitle>
+            <ContactsTitle refetch={refetch} testId={testId} />
           </DialogHeader>
 
           <Input
@@ -120,46 +87,12 @@ export function AddressBookButton({
             data-testid={`${testId}-search`}
           />
 
-          <div className="max-h-72 overflow-y-auto rounded-md border border-border">
-            {filtered.length === 0 ? (
-              <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-                <Trans>No contacts found.</Trans>
-              </p>
-            ) : (
-              filtered.map((u) => {
-                const key = participantKey(participantFromContact(u));
-                const checked = !!key && selectedKeys.has(key);
-                // Rule 1: a contact known only by hub user_id (no email) still
-                // belongs in the book — flag it so it reads as intentional.
-                const idOnly = !u.email && !!u.user_id;
-                return (
-                  <div
-                    key={u.id}
-                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted"
-                    data-testid={`${testId}-row-${u.id}`}
-                  >
-                    <Checkbox checked={checked} onCheckedChange={() => toggle(u)} />
-                    <button
-                      type="button"
-                      onClick={() => setDetailFor(u)}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-start"
-                      title={t`View contact details`}
-                      data-testid={`${testId}-open-${u.id}`}
-                    >
-                      <span className="flex-1 truncate">{u.name || u.email || 'unknown'}</span>
-                      {idOnly && (
-                        <IdCard
-                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                          aria-label={t`Known by user id only`}
-                        />
-                      )}
-                      {u.name && u.email && <span className="truncate text-xs text-muted-foreground">{u.email}</span>}
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </div>
+          <ContactRows
+            contacts={filtered}
+            testId={testId}
+            onOpen={setDetailFor}
+            selection={{ keys: selectedKeys, onToggle: toggle }}
+          />
 
           <DialogFooter>
             <Button type="button" onClick={() => setOpen(false)}>
@@ -169,7 +102,7 @@ export function AddressBookButton({
         </DialogContent>
       </Dialog>
 
-      {detailFor && <ContactPermissionsDialog open onClose={() => setDetailFor(null)} user={detailFor} />}
+      {detailFor && <ContactDialog open onClose={() => setDetailFor(null)} user={detailFor} />}
     </>
   );
 }

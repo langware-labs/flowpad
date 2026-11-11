@@ -29,13 +29,14 @@ function renderCard(props: Partial<Parameters<typeof SessionCard>[0]> = {}) {
       replyCount={props.replyCount ?? 1}
       onOpen={props.onOpen ?? onOpen}
       onApprove={props.onApprove}
-      onApproveOnce={props.onApproveOnce}
       onDecline={props.onDecline}
       onDisconnect={props.onDisconnect}
       lastPromptFailed={props.lastPromptFailed}
       onRetry={props.onRetry}
       runningPrompt={props.runningPrompt}
       chatProcessId={props.chatProcessId}
+      onRun={props.onRun}
+      resultText={props.resultText}
     />,
   );
   return { onOpen };
@@ -78,25 +79,21 @@ describe("SessionCard — the session's one line in the conversation", () => {
     expect(screen.queryByTestId('session-card-disconnect')).toBeNull();
   });
 
-  it('host + pending: Approve (remembers), Approve once, Decline — each its own action', async () => {
+  it('host + pending: Approve (this session only) and Decline', async () => {
     const onApprove = vi.fn().mockResolvedValue(undefined);
-    const onApproveOnce = vi.fn().mockResolvedValue(undefined);
     const onDecline = vi.fn().mockResolvedValue(undefined);
     renderCard({
       session: session(RemoteWorkerSessionStatus.PENDING),
       role: 'host',
       onApprove,
-      onApproveOnce,
       onDecline,
     });
     expect(screen.getByTestId('session-card-approve').textContent).toBe('Approve');
     expect(screen.getByTestId('session-card-approve').className).toContain('bg-blue-600');
-    expect(screen.getByTestId('session-card-approve-once').textContent).toBe('Approve once');
-    fireEvent.click(screen.getByTestId('session-card-approve-once'));
+    fireEvent.click(screen.getByTestId('session-card-approve'));
     await Promise.resolve();
     await Promise.resolve();
-    expect(onApproveOnce).toHaveBeenCalledTimes(1);
-    expect(onApprove).not.toHaveBeenCalled();
+    expect(onApprove).toHaveBeenCalledTimes(1);
     expect(onDecline).not.toHaveBeenCalled();
   });
 
@@ -105,10 +102,8 @@ describe("SessionCard — the session's one line in the conversation", () => {
       session: session(RemoteWorkerSessionStatus.PENDING),
       role: 'guest',
       onApprove: vi.fn(),
-      onApproveOnce: vi.fn(),
     });
     expect(screen.queryByTestId('session-card-approve')).toBeNull();
-    expect(screen.queryByTestId('session-card-approve-once')).toBeNull();
   });
 
   it.each(['host', 'guest'] as const)('%s + live: message count, time since approval, red Disconnect', async (role) => {
@@ -206,7 +201,7 @@ describe("SessionCard — the session's one line in the conversation", () => {
   });
 });
 
-describe('SessionCard — the 2-hour length cap', () => {
+describe('SessionCard — the 4-hour length cap', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
@@ -216,7 +211,7 @@ describe('SessionCard — the 2-hour length cap', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-07T11:59:00Z'));
     renderCard({
-      session: session(RemoteWorkerSessionStatus.IDLE, { approved_at: '2026-10-07T10:00:00Z' }),
+      session: session(RemoteWorkerSessionStatus.IDLE, { approved_at: '2026-10-07T08:00:00Z' }),
       onDisconnect: async () => {},
     });
     expect(screen.getByTestId('session-card').dataset.status).toBe('active');
@@ -227,5 +222,45 @@ describe('SessionCard — the 2-hour length cap', () => {
     });
     expect(screen.getByTestId('session-card').dataset.status).toBe('ended');
     expect(screen.queryByTestId('session-card-disconnect')).toBeNull();
+  });
+});
+
+describe('SessionCard — a prompt request (prompt_limit = 1)', () => {
+  afterEach(() => cleanup());
+  const pr = (status: string, over: Partial<RemoteWorkerSession> = {}) => session(status, { prompt_limit: 1, ...over });
+
+  it('host, pending: "Prompt request · <guest>" with Run & Update / Run / Decline, no live-session words', async () => {
+    const onRun = vi.fn(async (_policy: string) => {});
+    renderCard({ session: pr(RemoteWorkerSessionStatus.PENDING), role: 'host', onRun, onDecline: vi.fn(async () => {}) });
+    expect(screen.getByTestId('session-card-name').textContent).toBe('Prompt request · Dana');
+    expect(screen.getByTestId('session-card-status').textContent).toBe('not run yet');
+    expect(screen.getByTestId('session-card-run-update').textContent).toBe('Run & Update Dana');
+    expect(screen.getByTestId('session-card-run')).toBeTruthy();
+    expect(screen.getByTestId('session-card-decline')).toBeTruthy();
+    expect(screen.queryByTestId('session-card-approve')).toBeNull();
+    expect(screen.queryByText(/Live session|Needs your approval/)).toBeNull();
+    await act(async () => fireEvent.click(screen.getByTestId('session-card-run')));
+    expect(onRun).toHaveBeenLastCalledWith('review');
+    await act(async () => fireEvent.click(screen.getByTestId('session-card-run-update')));
+    expect(onRun).toHaveBeenLastCalledWith('auto');
+  });
+
+  it('guest, running: Open and Cancel', () => {
+    renderCard({ session: pr(RemoteWorkerSessionStatus.RUNNING), role: 'guest', onDisconnect: vi.fn(async () => {}) });
+    expect(screen.getByTestId('session-card-status').textContent).toBe('running');
+    expect(screen.getByTestId('session-card-open')).toBeTruthy();
+    expect(screen.getByTestId('session-card-disconnect').textContent).toBe('Cancel');
+  });
+
+  it('done: the guest gets the update under the row; the host sees it was sent (auto only)', () => {
+    renderCard({ session: pr(RemoteWorkerSessionStatus.ENDED, { prompts_used: 1 }), role: 'guest', resultText: 'Darwin' });
+    expect(screen.getByTestId('session-card').dataset.status).toBe('done');
+    expect(screen.getByTestId('session-card-update').textContent).toContain('Darwin');
+    cleanup();
+    renderCard({ session: pr(RemoteWorkerSessionStatus.ENDED, { prompts_used: 1, reply_policy: 'auto' }), role: 'host' });
+    expect(screen.getByTestId('session-card-update-sent').textContent).toBe('✓ Update sent to Dana');
+    cleanup();
+    renderCard({ session: pr(RemoteWorkerSessionStatus.ENDED, { prompts_used: 1, reply_policy: 'review' }), role: 'host' });
+    expect(screen.queryByTestId('session-card-update-sent')).toBeNull(); // Run: nothing went back
   });
 });

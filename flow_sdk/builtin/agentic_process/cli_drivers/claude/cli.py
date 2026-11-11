@@ -8,6 +8,7 @@ Auto-injects CLAUDE_PROJECT_DIR from workdir.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from flow_sdk.api.api_types.identifier import mint_uuid
@@ -17,7 +18,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import CLAUDE_MODEL_TIERS
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.trust import claude_trusts
 from flow_sdk.config import PLATFORM_WIN32
+
+logger = logging.getLogger(__name__)
 
 
 class ClaudeAgentOptions(AgentOptions):
@@ -133,17 +137,40 @@ class ClaudeAgentOptions(AgentOptions):
     # ------------------------------------------------------------------
 
     def _resolve_binary(self) -> list[str]:
-        """Resolve the ``claude`` argv prefix on PATH; wrap a win32 ``.cmd``/
-        ``.bat`` launcher through COMSPEC so PtyProcess can exec it."""
+        """The ``claude`` argv prefix — the bare executable name, as the base does.
+
+        Do NOT ``shutil.which`` here: that resolves against THIS process's PATH
+        at argv-build time, which on a box where the backend's service PATH
+        carries its own ``claude`` (or a developer/CI image with one in
+        ``/usr/bin``) bakes an absolute path that is NOT the discovered one, and
+        then ``resolve_worker_argv0`` — which exists to pin argv[0] to the
+        DISCOVERED bin folder (D02) — can only re-confirm the already-absolute
+        path it was handed. Leaving the name bare lets ``resolve_worker_argv0``
+        resolve it against the spawn env PATH (discovered folder first), exactly
+        as codex/copilot do.
+
+        The win32 ``.cmd``/``.bat`` COMSPEC wrap still needs a resolved path, but
+        it must resolve against the same discovered folder. Only win32 ever has a
+        ``.cmd``/``.bat`` launcher, so this branch is a no-op elsewhere.
+        """
         import os
         import shutil
         import sys
 
-        resolved = shutil.which("claude")
-        if sys.platform == PLATFORM_WIN32 and resolved and resolved.lower().endswith((".cmd", ".bat")):
-            comspec = os.environ.get("COMSPEC") or "cmd.exe"
-            return [comspec, "/c", resolved]
-        return [resolved or "claude"]
+        if sys.platform == PLATFORM_WIN32:
+            folder = self.env_vars.get("PATH")
+            resolved = shutil.which("claude", path=folder) or shutil.which("claude")
+            if resolved and resolved.lower().endswith((".cmd", ".bat")):
+                comspec = os.environ.get("COMSPEC") or "cmd.exe"
+                return [comspec, "/c", resolved]
+        return ["claude"]
+
+    def prepare_launch(self, workdir: str | None) -> None:
+        """Claude exits on --worktree in a folder whose workspace trust it has not been given: launch it plainly
+        there so its own trust prompt shows (accepting it is the person's step); then Open in Worktree works."""
+        if self.worktree and not claude_trusts(workdir):
+            logger.info("claude: %s is not trusted yet, launching without --worktree", workdir)
+            self.worktree = False
 
     def _emit_flags(self) -> list[str]:
         """Claude's argv flags (after the binary, before the ``-- <instruction>``).

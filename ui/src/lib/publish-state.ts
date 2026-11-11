@@ -70,8 +70,8 @@ export function publishCopy(state: PublishState, mode: ViewMode): PublishLabels 
   };
 }
 
-/** Which way a one-click sync went: Publish (push) or Pull. */
-export type GitSyncOp = 'push' | 'pull';
+/** Which way a one-click sync went: Publish (push), Pull, or bringing a shared commit in (cherry-pick). */
+export type GitSyncOp = 'push' | 'pull' | 'cherry-pick';
 
 export interface GitOutcomeToast {
   level: 'success' | 'error';
@@ -184,6 +184,13 @@ function pullCopy(kind: PullKind, mode: ViewMode, opts: CopyOpts): GitOutcomeToa
         title: t`Updated`,
         message:
           advanced && opts.branch ? `Pulled ${opts.branch}.` : t`You now have the latest changes from the cloud.`,
+        resolvable: false,
+      };
+    case 'picked':
+      return {
+        level: 'success',
+        title: t`Brought in`,
+        message: t`The shared changes are now in your project.`,
         resolvable: false,
       };
     case 'nothing':

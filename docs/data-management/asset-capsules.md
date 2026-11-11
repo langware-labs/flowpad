@@ -123,7 +123,9 @@ fails the build on that shape.
 `write=False` for a read-only root and for a source whose driver declares
 `stamps_identity = False` (git, whose files are tracked — the reason a git
 working tree is clean after an index pass); identity for such a source
-converges through an `Entity.origin_id` lookup instead. A carrier id that is not
+converges through an `Entity.origin_id` lookup instead. Whatever `write` says, no
+id is written into a file a `.flowignore` excludes (`mint` and the step-2 re-stamp
+both check), and `resolve_asset` refuses such a path as `NotAnAsset`. A carrier id that is not
 a valid v4/v5 reads as `Foreign`: it is logged as a `foreign_id` scan issue and
 the asset indexes under a stable path-derived v5 without its bytes being
 touched; a carrier that cannot be parsed raises `MalformedCarrier`. A file

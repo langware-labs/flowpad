@@ -46,7 +46,6 @@ class Task(Entity):
     # the hub, and the owner (authorized on the child) pulls it during
     # ``sync-group`` — see ``group_task_action._sync_group_owner``.
     priority: Optional[str] = APIField(None)
-    tags: List[str] = APIField([], sharing=Sharing.PRIVATE)
     shared_by_id: Optional[str] = APIField(None)
     spec_type: Optional[str] = APIField(None)
     my_process_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
@@ -103,6 +102,14 @@ class Task(Entity):
         if before is not None:
             await task_changes.record(saved, before)
         return saved
+
+    async def after_own_hub_update(self, before: "Task") -> None:
+        """An edit made here but held by the hub (an assignee's move) is still a local change: its history."""
+        from flow_sdk.builtin import task_changes  # noqa: PLC0415
+
+        if self.owner:
+            return
+        await task_changes.record(self, {field: getattr(before, field, None) for field in task_changes.TRACKED})
 
     async def find_existing_for_create(self) -> "Task | None":
         """One message, at most one task: a create for a message already made a task ("Task it")

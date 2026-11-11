@@ -1,8 +1,11 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 
+/** The variant of an annotation — a closed set, one per annotation. */
+export type AnnotationSubkind = 'note' | 'quick_prompt' | 'comment' | 'prompt' | 'plan' | 'lock_break';
+
 export interface IAnnotation extends IEntity {
-  labels?: string[];
+  subkind?: AnnotationSubkind;
   target_type?: string;
   target_id?: string;
   content?: string;
@@ -19,7 +22,7 @@ export interface Annotation extends EntityMerge<IAnnotation> {}
 
 @registerEntity
 export class Annotation extends APIEntity<Annotation> implements IAnnotation {
-  labels?: string[];
+  subkind?: AnnotationSubkind;
   target_type?: string;
   target_id?: string;
   content?: string;
@@ -30,7 +33,7 @@ export class Annotation extends APIEntity<Annotation> implements IAnnotation {
 
   constructor(entity: Partial<IAnnotation> = {}) {
     super(entity);
-    this.labels = entity.labels;
+    this.subkind = entity.subkind;
     this.target_type = entity.target_type;
     this.target_id = entity.target_id;
     this.content = entity.content;

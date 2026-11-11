@@ -27,6 +27,7 @@ from tests.utils.fake_cli import (
     make_fake_cli_bin,
     patch_build_spawn,
     seed_harness_capability,
+    suppress_on_path_binary,
 )
 
 # ``_build_spawn`` takes ``(context, prompt)`` and returns a 3-tuple
@@ -178,6 +179,10 @@ async def test_missing_binary_writes_terminal_error_and_raises(tmp_path: Path, m
     empty_dir = tmp_path / "empty-bin"
     empty_dir.mkdir()
     monkeypatch.setenv("PATH", os.pathsep.join(["/usr/bin", "/bin"]))
+    # The empty discovered folder must be the only place copilot could resolve;
+    # suppress any host copilot (this sandbox ships /usr/bin/copilot) so
+    # resolve_worker_argv0 can't rescue the spawn off the service PATH.
+    suppress_on_path_binary(monkeypatch, "copilot")
     seed_harness_capability(monkeypatch, "copilot", empty_dir)
     transcript = tmp_path / "copilot.jsonl"
     worker = CopilotCLIStreamWorker(transcript_path=transcript)
@@ -212,6 +217,26 @@ def test_build_spawn_uses_absolute_discovered_copilot_path(tmp_path: Path, monke
 
     assert argv[0] == str(copilot)
     assert env["PATH"].split(os.pathsep)[0] == str(bin_dir)
+
+
+@pytest.mark.asyncio
+async def test_a_stop_while_the_process_is_spawning_still_ends_the_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Stop before the CLI process exists (it is still being spawned): the turn must still end, not run on."""
+    transcript = tmp_path / "copilot.jsonl"
+    worker = CopilotCLIStreamWorker(transcript_path=transcript)
+    patch_build_spawn(monkeypatch, CopilotCLIStreamWorker, ["bash", "-c", "sleep 60"], stdin="")
+    ctx = AgenticContext(workdir=str(tmp_path))
+
+    async def _run():
+        async for _ in worker.execute(prompt="hi", context=ctx):
+            pass
+
+    task = asyncio.create_task(_run())
+    await asyncio.sleep(0)  # the turn has started; its process has not been spawned yet
+    assert worker._proc is None
+    await worker.close_session()
+    await asyncio.wait_for(task, timeout=CANCEL_GRACE_SECONDS + 2)
+    assert '"type":"flowpad.interrupted"' in transcript.read_text(encoding="utf-8")
 
 
 @pytest.mark.asyncio

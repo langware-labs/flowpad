@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { apiContext, apiOrigin } from '../_shared/api';
 import { dismissSetupModal } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const FIRE_AHEAD_MS = 20_000;
 
@@ -36,7 +37,7 @@ function localInputValue(d: Date): string {
 }
 
 test('a scheduled agent run: create, fire, open trigger, edit, disable, delete', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(adjusted(120_000));
   const errors: string[] = [];
   page.on('pageerror', (err) => errors.push(err.message));
   const api = await apiContext();
@@ -56,14 +57,19 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
 
   await dismissSetupModal(page);
   await page.goto(`/dock/assets/editor/agent/typeid/agent-${agent.id}`);
+  // The agent's editor, whether it renders under /dock/assets or project-rebased (/dock/project/<id>/editor/…)
+  // once opening it switched the app into its project.
+  const agentEditorUrl = new RegExp(`/dock/(assets|project/${project.id})/editor/agent/typeid/agent-${agent.id}`);
   // Opening an agent of another project switches the app into that project, which
   // re-mounts the editor; act only once the switch has landed, or an open dialog is lost.
   await expect(page.getByRole('button', { name: 'Open project list' })).toContainText(project.name);
 
   // ── deploy to this computer: a schedule runs on a deployment ──────────────
-  await page.getByTestId('agent-new-deployment').click();
-  await page.getByTestId('new-deployment-type-local').click();
-  await page.getByTestId('new-deployment-launch').click();
+  // This computer is the Summary tab's switch, not a New deployment choice.
+  await page.getByTestId('agent-tab-summary').click();
+  await page.getByTestId('agent-local-toggle-switch').click();
+  await expect(page.getByTestId('agent-local-toggle-switch')).toBeChecked();
+  await page.getByTestId('agent-tab-deployments').click();
   await expect(page.getByTestId('agent-places-list')).toBeVisible();
 
   // The schedules manager for this computer: the menu section's `+`.
@@ -103,18 +109,18 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
   await expect.poll(async () => {
     const runs = (await (await api.get(`/api/v1/runs?trigger_id=${trigger!.id}`)).json()).data.runs;
     return runs.map((r: { badge: string }) => r.badge).join(',');
-  }, { timeout: 60_000 }).toBe('done');
+  }, { timeout: adjusted(60_000) }).toBe('done');
 
   // ── clicking the schedule in the menu opens the trigger, which links back ──
   await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`/dock/assets/editor/agent/typeid/agent-${agent.id}`));
+  await expect(page).toHaveURL(agentEditorUrl);
   const section = page.getByTestId('navigator-section-schedules');
   if ((await section.getAttribute('aria-expanded')) !== 'true') await section.click();
   await page.getByTestId(`agent-resource-schedule-${trigger!.id}`).click();
   await expect(page).toHaveURL(new RegExp(`/child/schedule/trigger-${trigger!.id}`));
   await expect(page.getByTestId('agent-schedule-detail')).toContainText('Runs agent');
   await page.getByTestId('trigger-runs-agent').click();
-  await expect(page).toHaveURL(new RegExp(`/dock/assets/editor/agent/typeid/agent-${agent.id}`));
+  await expect(page).toHaveURL(agentEditorUrl);
   await expect(page).not.toHaveURL(/\/child\//);
 
   // ── edit keeps the trigger ─────────────────────────────────────────────────

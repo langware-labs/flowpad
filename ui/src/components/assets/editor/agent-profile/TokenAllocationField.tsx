@@ -1,4 +1,13 @@
-import { TypeId, type Agent, type AgentTokenAllocation, type CloudDeployProvider } from '@sdk';
+import {
+  LLM_MODEL_SIZES,
+  TypeId,
+  type Agent,
+  type AgentTokenAllocation,
+  type CloudDeployProvider,
+  type DeploymentFunding,
+  type LLMChain,
+  type Project,
+} from '@sdk';
 import { useDebounceCallback } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
@@ -14,9 +23,16 @@ import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { endpointTypeId, openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
-import { useLlmEndpointModels } from '@src/components/llm-endpoints/use-llm-endpoints';
-import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
+import {
+  endpointIdFromTypeId,
+  endpointTypeId,
+  openLlmEndpoint,
+} from '@src/components/llm-endpoints/llm-endpoints-pointer';
+import {
+  useLlmEndpointChain,
+  useLlmEndpointModels,
+  useLlmEndpoints,
+} from '@src/components/llm-endpoints/use-llm-endpoints';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 /** What a new cloud deployment gets per day when nobody changes it. */
@@ -25,11 +41,16 @@ const DEFAULT_COST_USD_PER_DAY = 5;
 const MODEL_FILTER_DEBOUNCE_MS = 120;
 
 export interface TokenAllocationFieldProps {
-  agent: Agent;
+  /** The project the deployment places (Configure plans it there). */
+  project: Project;
+  /** The deployment's main agent — its model is the allocation's first guess. */
+  mainAgent?: Agent | null;
   /** The environment the deployment is planned in (Configure plans it first). */
   environment: string;
   /** The hub provider the deployment lands on — its placement is per provider. */
   provider: CloudDeployProvider;
+  /** The existing deployment whose allocation this changes; `null` = a new deployment (Configure plans a new one). */
+  deploymentId: string | null;
   /** `null` = unchecked: the agent spends its owner's capped default. */
   value: AgentTokenAllocation | null;
   onChange: (next: AgentTokenAllocation | null) => void;
@@ -43,21 +64,21 @@ export interface TokenAllocationFieldProps {
  * rest of its limits.
  */
 export function TokenAllocationField({
-  agent,
+  project,
+  mainAgent,
   environment,
   provider,
+  deploymentId,
   value,
   onChange,
   disabled,
 }: TokenAllocationFieldProps) {
   const { t } = useLingui();
-  // The hub endpoints offered to this person, as the desk's funding view knows them; allocating from one
-  // takes administering it (the hub checks the same right).
-  const { status, isLoading } = useLlmSources();
-  const sources = useMemo(
-    () => (status?.available ?? []).filter((e) => e.kind === 'hub' && e.can_administer === true),
-    [status],
-  );
+  // The hub's own list of the budgets this person may carve a sub-budget from (its `allocate` right: an
+  // admin's pools, and their own allowance as its holder). Read from the HUB, not the desktop's funding
+  // view, so the hub page works with no desktop attached.
+  const { endpoints, isLoading } = useLlmEndpoints();
+  const sources = useMemo(() => endpoints.filter((e) => e.canAllocate), [endpoints]);
   const checked = value !== null;
 
   // A source picked, or the only one there is: fill what the user has not chosen yet.
@@ -73,7 +94,7 @@ export function TokenAllocationField({
         ? {
             source: '',
             cost_usd_per_day: DEFAULT_COST_USD_PER_DAY,
-            model: agent.model || '',
+            model: mainAgent?.model || '',
           }
         : null,
     );
@@ -93,6 +114,12 @@ export function TokenAllocationField({
         <Label htmlFor="token-allocation" className="text-xs">
           <Trans>Token allocation</Trans>
         </Label>
+        {noSources && (
+          // Never a silently disabled box: say why it cannot be checked.
+          <span className="text-xs text-destructive" data-testid="token-allocation-no-sources">
+            <Trans>No budget you can allocate from — ask its admin for an allowance.</Trans>
+          </span>
+        )}
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -149,9 +176,11 @@ export function TokenAllocationField({
             />
             <ModelField value={value} onChange={onChange} disabled={disabled} />
             <ConfigureButton
-              agent={agent}
+              project={project}
+              mainAgentId={mainAgent ? `agent-${mainAgent.id}` : null}
               environment={environment}
               provider={provider}
+              deploymentId={deploymentId}
               value={value}
               disabled={disabled}
             />
@@ -162,7 +191,7 @@ export function TokenAllocationField({
   );
 }
 
-/** The one model: picked from the models the chosen source offers, as the hub lists them. */
+/** The model: a SIZE (sm/md/lg — the source's chain says which model each is) or one model the source offers. */
 function ModelField({
   value,
   onChange,
@@ -178,14 +207,22 @@ function ModelField({
   const [typed, setTyped] = useState('');
   const [needle, setNeedle] = useState('');
   const filterBy = useDebounceCallback(setNeedle, MODEL_FILTER_DEBOUNCE_MS, []);
-  const models = useLlmEndpointModels(value.source ? new TypeId(value.source).id : undefined);
+  const sourceId = value.source ? new TypeId(value.source).id : undefined;
+  const models = useLlmEndpointModels(sourceId);
+  const chain = useLlmEndpointChain(sourceId);
   const ids = useMemo(() => [...new Set((models.data ?? []).map((m) => m.id))].sort(), [models.data]);
-  // The only model the source offers: nothing to choose, so it is the one.
+  // The sizes the source's chain declares, each with the model it resolves to.
+  const sizes = LLM_MODEL_SIZES.flatMap((size) => {
+    const model = chain.data?.effective_tiers?.[size]?.model;
+    return model ? [{ size, model }] : [];
+  });
+  // The only model the source offers and no size to choose instead: nothing to choose, so it is the one.
   useEffect(() => {
-    if (ids.length === 1 && value.model !== ids[0]) onChange({ ...value, model: ids[0] });
-  }, [ids, value, onChange]);
+    if (!sizes.length && ids.length === 1 && value.model !== ids[0]) onChange({ ...value, model: ids[0] });
+  }, [ids, sizes.length, value, onChange]);
+  const sizeOf = (model: string) => sizes.find((s) => s.size === model);
   // Until the source's models are known (none picked, loading, or the hub refused), the model is typed.
-  if (ids.length === 0) {
+  if (ids.length === 0 && sizes.length === 0) {
     return (
       <Input
         className="h-8 min-w-0 flex-1 font-mono text-xs"
@@ -199,7 +236,7 @@ function ModelField({
     );
   }
   // The agent's own model, kept selectable when the source does not list it under that name.
-  const offered = value.model && !ids.includes(value.model) ? [value.model, ...ids] : ids;
+  const offered = value.model && !ids.includes(value.model) && !sizeOf(value.model) ? [value.model, ...ids] : ids;
   const q = needle.trim().toLowerCase();
   const rows = q ? offered.filter((id) => id.toLowerCase().includes(q)) : offered;
   return (
@@ -216,7 +253,7 @@ function ModelField({
           data-testid="token-allocation-model"
         >
           <span className={cn('truncate', !value.model && 'text-muted-foreground')}>
-            {value.model || t`Choose a model…`}
+            {sizeOf(value.model) ? `${value.model} · ${sizeOf(value.model)?.model}` : value.model || t`Choose a model…`}
           </span>
           <ChevronsUpDown className="ms-1 h-3.5 w-3.5 shrink-0 opacity-50" />
         </Button>
@@ -235,6 +272,22 @@ function ModelField({
             <CommandEmpty>
               <Trans>No models.</Trans>
             </CommandEmpty>
+            {!q &&
+              sizes.map(({ size, model }) => (
+                <CommandItem
+                  key={size}
+                  value={size}
+                  onSelect={() => {
+                    onChange({ ...value, model: size });
+                    setOpen(false);
+                  }}
+                  data-testid={`token-allocation-size-${size}`}
+                >
+                  <Check className={cn('me-2 h-3.5 w-3.5', value.model === size ? 'opacity-100' : 'opacity-0')} />
+                  <span className="w-6 font-mono text-xs font-medium">{size}</span>
+                  <span className="truncate font-mono text-xs text-muted-foreground">{model}</span>
+                </CommandItem>
+              ))}
             {rows.map((id) => (
               <CommandItem
                 key={id}
@@ -261,15 +314,19 @@ function ModelField({
  * component: it navigates, and only a checked allocation shows it.
  */
 function ConfigureButton({
-  agent,
+  project,
+  mainAgentId,
   environment,
   provider,
+  deploymentId,
   value,
   disabled,
 }: {
-  agent: Agent;
+  project: Project;
+  mainAgentId: string | null;
   environment: string;
   provider: CloudDeployProvider;
+  deploymentId: string | null;
   value: AgentTokenAllocation;
   disabled?: boolean;
 }) {
@@ -280,7 +337,13 @@ function ConfigureButton({
   const configure = async () => {
     setConfiguring(true);
     try {
-      const planned = await agent.planDeployment(environment, provider, value);
+      const planned = await project.planDeployment({
+        environment,
+        provider,
+        tokenAllocation: value,
+        deploymentId: deploymentId ?? undefined,
+        mainAgentId,
+      });
       const allocation = planned.deployment?.llm_endpoint_typeid;
       if (allocation) openLlmEndpoint(navigation, allocation);
     } catch (e) {
@@ -308,4 +371,26 @@ function ConfigureButton({
 /** Whether a checked allocation says enough to deploy with. */
 export function tokenAllocationComplete(value: AgentTokenAllocation | null): boolean {
   return value === null || (!!value.source && !!value.model);
+}
+
+/**
+ * The allocation a deployment already has, read back from its endpoint's chain: the entry hop is the
+ * deployment's own sub-endpoint (its daily cap and the one model it allows), the next hop on the first path
+ * is the budget it was carved from (the source). `null` when the deployment runs on no allocation of its
+ * own — that is what "unchecked" means, and saving it drops the allocation.
+ */
+export function allocationFromChain(
+  chain: LLMChain | null | undefined,
+  funding: DeploymentFunding | null | undefined,
+): AgentTokenAllocation | null {
+  if (!funding || funding.kind !== 'allocation') return null;
+  const same = (a: string, b: string) => endpointIdFromTypeId(a) === endpointIdFromTypeId(b);
+  const entry = chain?.hops.find((hop) => same(hop.id, chain.entry.id));
+  const path = chain?.paths[0] ?? [];
+  const parentId = path[path.findIndex((id) => same(id, chain?.entry.id ?? '')) + 1];
+  return {
+    source: parentId ? endpointTypeId(endpointIdFromTypeId(parentId)) : '',
+    cost_usd_per_day: entry?.limits?.cost_usd_per_day ?? null,
+    model: entry?.effective_filters?.models_allow?.[0] ?? funding.model ?? '',
+  };
 }

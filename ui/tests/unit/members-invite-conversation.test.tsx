@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Conversation, TypeId } from '@sdk';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
 
-let myRole = 'member';
+let myRole = 'reader';
 let conversationKind: string | undefined = 'direct';
 
 vi.mock('@sdk/react/hooks', () => ({
@@ -22,8 +22,8 @@ vi.mock('@src/hooks/use-members', () => ({
   useMembers: () => ({
     entity: { kind: conversationKind },
     members: [
-      { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: myRole },
-      { user_id: 'alice-id', email: 'alice@example.com', name: 'Alice', role: 'owner' },
+      { user_id: 'me-id', email: 'me@example.com', name: 'Me', roles: myRole ? [myRole] : [] },
+      { user_id: 'alice-id', email: 'alice@example.com', name: 'Alice', roles: ['owner'] },
     ],
     addMembers: vi.fn(),
     removeMember: vi.fn(),
@@ -43,7 +43,6 @@ vi.mock('@src/components/login-required-dialog', () => ({ ActionType: { MEMBERS:
 vi.mock('@src/components/conversation/useLocalUser', () => ({
   useLocalUser: () => ({ localUser: { id: 'me-id', email: 'me@example.com' } }),
 }));
-vi.mock('@src/components/conversation/ContactPermissionsDialog', () => ({ ContactPermissionsDialog: () => null }));
 vi.mock('@src/components/contact-picker/use-contacts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@src/components/contact-picker/use-contacts')>()),
   useContacts: () => ({ contacts: [], refetch: vi.fn() }),
@@ -63,17 +62,17 @@ function openFromHeaderButton() {
 
 describe('MembersAvatarStack on a conversation', () => {
   beforeEach(() => {
-    myRole = 'member';
+    myRole = 'reader';
     conversationKind = 'direct';
   });
 
-  it('a member of a DIRECT conversation gets the invite form', () => {
+  it('a reader of a DIRECT conversation gets the invite form', () => {
     openFromHeaderButton();
     expect(screen.getByTestId('members-invite-form')).toBeTruthy();
     expect(screen.queryByTestId('members-invite-not-allowed')).toBeNull();
   });
 
-  it('a member of a HELPDESK ticket is told to ask the owner, with no form', () => {
+  it('a reader of a HELPDESK ticket is told to ask the owner, with no form', () => {
     conversationKind = 'helpdesk';
     openFromHeaderButton();
     expect(screen.queryByTestId('members-invite-form')).toBeNull();
@@ -87,8 +86,8 @@ describe('MembersAvatarStack on a conversation', () => {
     expect(screen.queryByTestId('members-invite-form')).toBeNull();
   });
 
-  it('a reader of a DIRECT conversation cannot invite', () => {
-    myRole = 'reader';
+  it('a user without conversation access cannot invite', () => {
+    myRole = '';
     openFromHeaderButton();
     expect(screen.queryByTestId('members-invite-form')).toBeNull();
     expect(screen.getByTestId('members-invite-not-allowed')).toBeTruthy();

@@ -54,10 +54,17 @@ class DeclaredVar:
 
 async def credentials_in_scope(project: Optional["Project"]) -> CredentialPairs:
     """The credentials a process in ``project`` sees: user first, then project."""
+    from dataclasses import replace  # noqa: PLC0415
+
+    from flow_sdk.assets.placement import AssetClass, Scope  # noqa: PLC0415
+    from flow_sdk.builtin.asset_placement import root_for_scope  # noqa: PLC0415
     from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
     user = user_scope()
+    # Credential folders are REPO assets, written under the REPO user root (the instance dir on
+    # non-prod, $HOME on prod); check containment there. Secrets (.env.local) stay at ``user.root``.
+    user_assets = replace(user, root=root_for_scope(Scope.USER, asset_class=AssetClass.REPO))
     proj = project_scope(project) if project is not None else None
     wanted = [ExpressionNode(op=QueryOp.EQ, operands=["scope", SCOPE_USER])]
     if proj is not None:
@@ -68,7 +75,7 @@ async def credentials_in_scope(project: Optional["Project"]) -> CredentialPairs:
     projects: CredentialPairs = []
     for spec in await Credential.get_all(QueryFilter(match=match)):
         name = spec_scope_name(spec)
-        if name == SCOPE_USER and _declared_under(spec, user):
+        if name == SCOPE_USER and _declared_under(spec, user_assets):
             users.append((spec, user))
         elif (name == SCOPE_PROJECT and proj is not None
               and str(spec.project_id or "") == proj.project_id and _declared_under(spec, proj)):
@@ -156,11 +163,25 @@ async def resolve_project_secrets(
     targets = [(d.spec, d.scope, d.env_var) for d in declared.values() if allowed is None or d.env_var in allowed]
     if not targets:
         return {}
+    placement = placement or await placement_for_deployment()
     try:
-        return await read_values(targets, placement or await placement_for_deployment())
+        values = await read_values(targets, placement)
     except Exception as e:  # noqa: BLE001
         logger.debug("[credentials] could not resolve values: %s", type(e).__name__)
         return {}
+    # A project declaration overrides a user one's DECLARATION, not its value: a name the project declares but holds
+    # no value for is read from the user scope. On an invite box the hub places before the project is cloned, so the
+    # value lands in the user scope and the project's empty declaration would otherwise hide it.
+    unvalued = {t[2] for t in targets if t[1].scope == SCOPE_PROJECT and t[2] not in values}
+    if unvalued:
+        users = declare([pair for pair in await credentials_in_scope(None) if pair[1].scope == SCOPE_USER])
+        fallback = [(d.spec, d.scope, d.env_var) for d in users.values() if d.env_var in unvalued]
+        if fallback:
+            try:
+                values = {**await read_values(fallback, placement), **values}
+            except Exception as e:  # noqa: BLE001
+                logger.debug("[credentials] could not resolve user-scope values: %s", type(e).__name__)
+    return values
 
 
 async def placement_for(process: Any = None) -> Placement:

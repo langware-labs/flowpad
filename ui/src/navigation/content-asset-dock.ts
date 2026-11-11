@@ -1,4 +1,4 @@
-import { TypeId, VFSPath, editorForPath } from '@sdk';
+import { type TypeId, VFSPath } from '@sdk';
 import { AssetDocPointer } from './AssetDocPointer';
 import { DockPointer, normalizeRel } from './DockPointer';
 import { AssetMode, AssetRoutingMethod, LOCAL_COMPUTE_NODE, hasOwnChat, isFilelessEditor, isPreviewEditor } from './asset-doc-types';
@@ -72,18 +72,24 @@ export function isOwnChatAssetDock(dock: DockPointer): boolean {
   return pointer?.mode === AssetMode.EDITOR && hasOwnChat(pointer.editor);
 }
 
-/** The first prompt of a session started to review a document. The kind is the
- *  file's own (html, markdown, …) or the entity's type name — never a translated
- *  label, since this sentence is read by the agent, not the user. */
-export function reviewPromptFor(target: ContentAssetTarget): string {
-  const kind = target.path ? editorForPath(target.path) : target.typeId ? new TypeId(target.typeId).type : 'document';
-  return `Review the ${kind} on ${target.path ?? target.label}:`;
+/** How a viewer takes part in "chat with this doc" — the ONE table every chat
+ *  control reads (the viewer toggle, `enterChat`):
+ *  - `beside`  — editors: the chat opens beside the doc (`AssetVibeWorkspace`).
+ *  - `display` — passive previews (html, image, pdf…): shown in the Vibe Display.
+ *  - `own`     — the subject is itself a chat (agent): no doc chat.
+ *  - `none`    — not a single content doc (lists, shells, fileless editors). */
+export type DocChatMode = 'beside' | 'display' | 'own' | 'none';
+
+export function chatModeOfDock(dock: DockPointer): DocChatMode {
+  if (!isContentAssetDock(dock)) return 'none';
+  if (isOwnChatAssetDock(dock)) return 'own';
+  return isPreviewAssetDock(dock) ? 'display' : 'beside';
 }
 
-/** A dock showing ONE document an agent could review — a file or a file-backed
- *  asset, not one with a chat of its own. */
-export function isReviewableDocDock(dock: DockPointer): boolean {
-  return isContentAssetDock(dock) && !isOwnChatAssetDock(dock);
+/** The dock shows one doc you can chat about (`beside` or `display`). */
+export function offersDocChat(dock: DockPointer): boolean {
+  const mode = chatModeOfDock(dock);
+  return mode === 'beside' || mode === 'display';
 }
 
 /**

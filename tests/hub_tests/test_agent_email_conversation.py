@@ -376,7 +376,7 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server):
 
         # The reply names its own identity: Gmail scopes origins under the mailbox
         # (`<account>/INBOX`), so re-deriving one from the row's account alone
-        # (`legacy_lift.origin_of`) names a row that was never written.
+        # (`envelope_lift.origin_of`) names a row that was never written.
         assert reply.origin is not None, "Gmail reply carries no origin"
         stored_reply = await SourceItem.find_existing(str(gmail.id), reply.origin)
         assert stored_reply is not None, "Gmail reply was returned but not ingested"

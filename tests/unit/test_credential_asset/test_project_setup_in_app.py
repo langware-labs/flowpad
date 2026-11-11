@@ -87,7 +87,7 @@ async def test_a_file_value_can_name_a_file_to_read(project, tmp_path):
     key = tmp_path / "key.json"
     key.write_text(SA_KEY)
 
-    await credential_service.set_credential_values(str(spec.typeid), {"GOOGLE_APPLICATION_CREDENTIALS": f"@{key}"})
+    await credential_service.set_credential_values(str(spec.typeid), {"GOOGLE_APPLICATION_CREDENTIALS": f"@{key}"}, read_files=True)
 
     assert Path(_stored(project, "GOOGLE_APPLICATION_CREDENTIALS")).read_text() == SA_KEY
 
@@ -225,9 +225,11 @@ async def test_always_is_refused_for_what_is_not_this_projects_own(project, temp
     monkeypatch.setattr(project_setup, "project_sources", of_project)
     reqs = {r.name: r for r in await project_setup.collect_requirements(project)}
     telegram = reqs["telegram"]
-    assert not telegram.declared and not telegram.can_skip_always and "template" in telegram.why_not_always
+    # The need is the source's (its root), never the template's; a source outside the project is not its to remove.
+    assert [r.name for r in telegram.roots] == ["telegram source"]
+    assert not telegram.declared and not telegram.can_skip_always and "not declared" in telegram.why_not_always
 
-    with pytest.raises(project_setup.SkipRefused, match="template"):
+    with pytest.raises(project_setup.SkipRefused, match="not declared"):
         await project_setup.skip_requirement(project, telegram.typeid, scope="always")
     assert (await credential_service.template_named("telegram")) is not None, "the shipped template is untouched"
 

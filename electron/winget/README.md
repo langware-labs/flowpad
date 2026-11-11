@@ -18,7 +18,7 @@ for production releases only (not dry runs, not `test_release`):
    the release itself gets them.
 2. Renders `template/*.yaml` with `render.sh` into `manifests/l/Langware/Flowpad/<version>/`.
    The template is the manifest that was validated with `winget validate` (winget 1.29,
-   schema 1.12) and whose Apps & Features entry (ProductCode
+   schema 1.28) and whose Apps & Features entry (ProductCode
    `01ea153f-315f-5cd5-8810-48807d21bb7d`, Publisher `Langware Labs`) was read from a real
    install.
 3. Syncs the org fork `langware-labs/winget-pkgs` from `microsoft/winget-pkgs`, creates a

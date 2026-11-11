@@ -1,12 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 /**
- * New deployment: pick a type (this computer, or a cloud machine size), see what launching that
- * type needs, Launch. Only a cloud machine asks for the publish checklist and an environment.
+ * New deployment — a cloud machine in two steps: billing + size (price shown once picked), Next,
+ * then the setup (checklist, environment, values, tokens) and Launch. This computer is not offered.
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Agent } from '@sdk';
+import { Agent, Project } from '@sdk';
+import { notify } from '@src/notifications';
 
 vi.mock('@src/components/assets/editor/agent-profile/AgentDeployChecklist', () => ({
   AgentDeployChecklist: () => <div data-testid="mock-checklist" />,
@@ -16,6 +17,9 @@ vi.mock('@src/notifications', () => ({
 }));
 // What the hub publishes (`deployment/providers`); each test may narrow it.
 const published = vi.hoisted(() => ({ providers: ['e2b', 'gcp_vm'] as string[], isLoading: false }));
+// The project's agents for the main-agent pick-list.
+const projectAgents = vi.hoisted(() => ({ rows: [] as unknown[] }));
+vi.mock('@src/hooks/entity-hooks', () => ({ useEntitiesQuery: () => ({ data: projectAgents.rows }) }));
 vi.mock('@src/hooks/use-deploy-providers', () => ({ useDeployProviders: () => published }));
 
 import { NewDeploymentDialog } from '@src/components/assets/editor/agent-profile/NewDeploymentDialog';
@@ -32,112 +36,177 @@ afterEach(() => {
   published.isLoading = false;
 });
 
-const radios = () => screen.getAllByRole('radio').map((r) => r.getAttribute('data-testid'));
+/** Step 1: billing and size, then Next into step 2. */
+function pick(billing: 'hourly' | 'monthly', size: 'sm' | 'md' | 'lg') {
+  fireEvent.click(screen.getByTestId(`new-deployment-billing-${billing}`));
+  fireEvent.click(screen.getByTestId(`new-deployment-size-${size}`));
+  fireEvent.click(screen.getByTestId('new-deployment-next'));
+}
 
-function renderDialog() {
-  const agent = new Agent({ id: '33333333-3333-4333-8333-333333333333', name: 'brief', enabled: true });
-  const deploy = vi.spyOn(agent, 'deploy').mockResolvedValue({ deployment: { id: 'dep-1' } } as never);
-  const onMachineSize = vi.fn().mockResolvedValue(true);
+const AGENT_ID = '33333333-3333-4333-8333-333333333333';
+
+function renderDialog(presetMainAgentId: string | null = null, recommended: string | null = null) {
+  const project = new Project({ id: '66666666-6666-4666-8666-666666666666', name: 'proj' } as never);
+  projectAgents.rows = [new Agent({ id: AGENT_ID, name: 'brief', enabled: true })];
+  const deploy = vi.spyOn(project, 'deploy').mockResolvedValue({ deployment: { id: 'dep-1' } } as never);
+  vi.spyOn(project, 'deployDefaults').mockResolvedValue({
+    environment: 'production',
+    environments: ['production'],
+    main_agent_id: recommended,
+    source_ref: 'abc123',
+  });
+  const requirements = vi.spyOn(project, 'requirements').mockResolvedValue([]);
   const onLaunched = vi.fn();
   const onOpenChange = vi.fn();
   renderInQuery(
     <NewDeploymentDialog
-      agent={agent}
+      project={project}
+      presetMainAgentId={presetMainAgentId}
       open
       onOpenChange={onOpenChange}
-      onMachineSize={onMachineSize}
       onLaunched={onLaunched}
     />,
   );
-  return { deploy, onMachineSize, onLaunched, onOpenChange };
+  return { project, deploy, requirements, onLaunched, onOpenChange };
 }
 
 describe('New deployment', () => {
-  it('offers this computer, then every size billed hourly, then every size billed monthly', () => {
+  it('step 1 offers hourly and monthly, three plain sizes, and the price only once a size is picked', () => {
     renderDialog();
-    const types = screen.getAllByRole('radio').map((r) => r.getAttribute('data-testid'));
-    expect(types).toEqual([
-      'new-deployment-type-local',
-      'new-deployment-type-e2b-sm',
-      'new-deployment-type-e2b-md',
-      'new-deployment-type-e2b-lg',
-      'new-deployment-type-gcp_vm-sm',
-      'new-deployment-type-gcp_vm-md',
-      'new-deployment-type-gcp_vm-lg',
-    ]);
-    expect(screen.getByTestId('new-deployment-type-local')).toHaveAttribute('aria-checked', 'true');
-    // A monthly row shows the machine's strength and its monthly price, never which provider runs it.
-    expect(screen.getByTestId('new-deployment-type-gcp_vm-sm')).toHaveTextContent('2 CPU · 2 GB · $21/mo');
-    expect(screen.getByTestId('new-deployment-type-gcp_vm-sm')).not.toHaveTextContent(/gcp/i);
+    expect(screen.queryByTestId('new-deployment-type-local')).toBeNull();
+    expect(screen.getByTestId('new-deployment-billing-hourly')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('new-deployment-size-md')).toHaveTextContent('Medium');
+    expect(screen.getByTestId('new-deployment-size-md')).toHaveAttribute('title', '2 CPU · 4 GB');
+    expect(screen.getByTestId('new-deployment-next')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('new-deployment-size-md'));
+    expect(screen.getByTestId('new-deployment-price')).toHaveTextContent('$0.28 / hour');
+    fireEvent.click(screen.getByTestId('new-deployment-billing-monthly'));
+    // Switching billing clears the size: its price would be another machine's.
+    expect(screen.getByTestId('new-deployment-next')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('new-deployment-size-lg'));
+    expect(screen.getByTestId('new-deployment-price')).toHaveTextContent('$336 / month');
+    expect(screen.getByTestId('new-deployment-size-lg')).toHaveAttribute('title', '8 CPU · 32 GB');
   });
 
-  it('offers cloud machines only on the providers the hub publishes', () => {
+  it('offers only the billings whose provider the hub publishes', () => {
     published.providers = ['e2b'];
     renderDialog();
-    expect(radios()).toEqual([
-      'new-deployment-type-local',
-      'new-deployment-type-e2b-sm',
-      'new-deployment-type-e2b-md',
-      'new-deployment-type-e2b-lg',
-    ]);
+    expect(screen.getByTestId('new-deployment-billing-hourly')).toBeInTheDocument();
+    expect(screen.queryByTestId('new-deployment-billing-monthly')).toBeNull();
   });
 
-  it('with no published provider (signed out) only this computer is offered, and says why', () => {
+  it('with no published provider (signed out) it says why; while loading it says so', () => {
     published.providers = [];
     renderDialog();
-    expect(radios()).toEqual(['new-deployment-type-local']);
     expect(screen.getByTestId('new-deployment-no-cloud')).toBeInTheDocument();
-  });
-
-  it('while the providers load, this computer is offered and the cloud rows are pending', () => {
-    published.providers = [];
+    cleanup();
     published.isLoading = true;
     renderDialog();
-    expect(radios()).toEqual(['new-deployment-type-local']);
     expect(screen.getByTestId('new-deployment-providers-loading')).toBeInTheDocument();
     expect(screen.queryByTestId('new-deployment-no-cloud')).toBeNull();
   });
 
-  it('this computer needs no publish checklist and no environment — Launch deploys it here', async () => {
-    const { deploy, onMachineSize, onLaunched } = renderDialog();
-    expect(screen.getByTestId('new-deployment-local-details')).toBeInTheDocument();
+  it('step 2 shows the checklist and environment, and Launch sends the provider and size', async () => {
+    const { deploy } = renderDialog();
     expect(screen.queryByTestId('mock-checklist')).toBeNull();
-    expect(screen.queryByTestId('new-deployment-environment')).toBeNull();
-    fireEvent.click(screen.getByTestId('new-deployment-launch'));
-    await waitFor(() => expect(deploy).toHaveBeenCalledWith(undefined, 'local'));
-    expect(onMachineSize).not.toHaveBeenCalled();
-    await waitFor(() => expect(onLaunched).toHaveBeenCalledWith('dep-1'));
-  });
-
-  it('a cloud machine shows the checklist and environment, and saves its size before deploying', async () => {
-    const order: string[] = [];
-    const { deploy, onMachineSize } = renderDialog();
-    onMachineSize.mockImplementation(async () => order.push('size'));
-    deploy.mockImplementation(async () => {
-      order.push('deploy');
-      return { deployment: { id: 'dep-2' } } as never;
-    });
-    fireEvent.click(screen.getByTestId('new-deployment-type-e2b-md'));
+    pick('hourly', 'md');
+    expect(screen.getByTestId('new-deployment-steps')).toHaveTextContent('Medium · $0.28 / hour');
     expect(screen.getByTestId('mock-checklist')).toBeInTheDocument();
-    expect(screen.getByTestId('new-deployment-environment')).toHaveValue('production');
+    expect(screen.getByTestId('new-deployment-environment')).toHaveTextContent('production');
+    await waitFor(() => expect(screen.getByTestId('new-deployment-source-ref')).toHaveAttribute('placeholder', 'abc123'));
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
-    // Unchecked "Token allocation" = the owner's default: `null` releases any earlier allocation.
-    await waitFor(() => expect(deploy).toHaveBeenCalledWith('production', 'e2b', null));
-    expect(onMachineSize).toHaveBeenCalledWith('md');
-    expect(order).toEqual(['size', 'deploy']);
+    // The size travels with the deploy; nothing is written into agent.json (it would dirty the checkout).
+    await waitFor(() =>
+      expect(deploy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          environment: 'production',
+          provider: 'e2b',
+          tokenAllocation: null,
+          machineSize: 'md',
+          sourceKind: 'commit',
+          sourceRef: 'abc123', // the project's HEAD, when no source is typed
+          mainAgentId: null,
+        }),
+      ),
+    );
   });
 
-  it('a monthly machine deploys on its own provider, at its size', async () => {
-    const { deploy, onMachineSize } = renderDialog();
-    fireEvent.click(screen.getByTestId('new-deployment-type-gcp_vm-lg'));
+  it('a monthly machine deploys on its own provider; taken on, the dialog closes and says background', async () => {
+    const { deploy, onLaunched, onOpenChange } = renderDialog();
+    deploy.mockResolvedValue({ deployment_id: 'dep-3' } as never);
+    pick('monthly', 'lg');
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
-    await waitFor(() => expect(deploy).toHaveBeenCalledWith('production', 'gcp_vm', null));
-    expect(onMachineSize).toHaveBeenCalledWith('lg');
+    await waitFor(() => expect(onLaunched).toHaveBeenCalledWith('dep-3'));
+    expect(deploy).toHaveBeenCalledWith(expect.objectContaining({ provider: 'gcp_vm', machineSize: 'lg' }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(notify.info).toHaveBeenCalledWith({ title: 'Deployment running in the background' });
   });
 
-  it('this computer can always be launched again — each launch is one more process here', () => {
+  it('Back returns to step 1 with the pick kept', () => {
     renderDialog();
-    expect(screen.getByTestId('new-deployment-type-local')).toBeEnabled();
-    expect(screen.getByTestId('new-deployment-type-local')).toHaveAttribute('aria-checked', 'true');
+    pick('hourly', 'sm');
+    fireEvent.click(screen.getByTestId('new-deployment-back'));
+    expect(screen.getByTestId('new-deployment-size-sm')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('a value typed before Launch travels with the deploy, so one Launch is enough', async () => {
+    const { deploy, requirements } = renderDialog();
+    requirements.mockResolvedValue([
+      {
+        kind: 'credential',
+        name: 'support_team',
+        vars: ['SUPPORT_TEAM_EMAILS'],
+        scopes: [],
+        on: '',
+        why: '',
+        derived: true,
+        used_by: [],
+      },
+    ]);
+    pick('hourly', 'sm');
+    fireEvent.change(await screen.findByTestId('new-deployment-value-SUPPORT_TEAM_EMAILS'), {
+      target: { value: 'a@b.c' },
+    });
+    fireEvent.click(screen.getByTestId('new-deployment-launch'));
+    await waitFor(() =>
+      expect(deploy).toHaveBeenCalledWith(
+        expect.objectContaining({ values: { support_team: { SUPPORT_TEAM_EMAILS: 'a@b.c' } } }),
+      ),
+    );
+  });
+
+  it('the main agent is the preset, else the project recommendation, and can be none', async () => {
+    const { deploy } = renderDialog(AGENT_ID);
+    pick('hourly', 'sm');
+    expect(screen.getByTestId('new-deployment-main-agent')).toHaveTextContent('brief');
+    fireEvent.click(screen.getByTestId('new-deployment-launch'));
+    await waitFor(() => expect(deploy).toHaveBeenCalledWith(expect.objectContaining({ mainAgentId: `agent-${AGENT_ID}` })));
+    cleanup();
+    const second = renderDialog(null, `agent-${AGENT_ID}`);
+    pick('hourly', 'sm');
+    await waitFor(() => expect(screen.getByTestId('new-deployment-main-agent')).toHaveTextContent('brief'));
+    cleanup();
+    const none = renderDialog();
+    pick('hourly', 'sm');
+    expect(screen.getByTestId('new-deployment-main-agent')).toHaveTextContent('No agent');
+    void second;
+    void none;
+  });
+
+  it('a tag source names its ref; Launch waits for one', async () => {
+    const { deploy } = renderDialog();
+    pick('hourly', 'sm');
+    Element.prototype.hasPointerCapture = vi.fn(() => false);
+    Element.prototype.releasePointerCapture = vi.fn();
+    Element.prototype.scrollIntoView = vi.fn();
+    const { default: userEvent } = await import('@testing-library/user-event');
+    await userEvent.click(screen.getByTestId('new-deployment-source-kind'));
+    await userEvent.click(screen.getByRole('option', { name: 'Tag' }));
+    expect(screen.getByTestId('new-deployment-launch')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('new-deployment-source-ref'), { target: { value: 'v1.2' } });
+    fireEvent.click(screen.getByTestId('new-deployment-launch'));
+    await waitFor(() =>
+      expect(deploy).toHaveBeenCalledWith(expect.objectContaining({ sourceKind: 'tag', sourceRef: 'v1.2' })),
+    );
   });
 });

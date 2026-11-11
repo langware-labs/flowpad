@@ -235,16 +235,6 @@ class DatasetLayout:
         reading the payloads. Only a per-row layout can answer."""
         raise NotImplementedError("index is io_folder only — a CSV dataset has no per-row dirs")
 
-    def count_annotated(self, folder, rows: Sequence[Any]) -> int:
-        """How many of the parsed ``rows`` carry gold. THE definition of
-        ``num_annotated``, for every layout — the indexer's extractor and the
-        entity's post-label recount both read it. A row is annotated when its
-        gold slot is present, and ``FolderLayout.read_row`` emits that slot
-        on exactly the scan result ``has_ground_truth`` reports, so the
-        per-row ``index`` flag and this count are one rule without a second
-        pass over the directories."""
-        return sum(1 for ex in rows if getattr(ex, "ground_truth", None) is not None)
-
     def read(self, folder: Path, spec: type, *, dataset_id: str,
              field_spec: Optional[dict[str, str]] = None, delimiter: str = ",") -> list[Any]:
         raise NotImplementedError
@@ -716,12 +706,18 @@ class FolderLayout(DatasetLayout):
         out = []
         for ex_dir in _row_dirs(folder):
             meta, _ = _load_row_meta(ex_dir)
+            data, _ = self._scan(ex_dir)
+            inputs = data[INPUT]
+            first_input = inputs[min(inputs, key=lambda k: (k is not None, k or 0))] if inputs else None
             out.append({
                 "row_id": row_id(ex_dir, dataset_id, meta),
                 "key": ex_dir.name,
                 "item_id": (meta.get("source") or {}).get("item_id"),
                 "kind": str(coerce_dataset_enum(meta.get("kind"), RowKind, RowKind.TRAIN).value),
-                "annotated": self.has_ground_truth(ex_dir),
+                "annotated": bool(data[GROUND_TRUTH] or data[EXPECTED_LEGACY]),  # == has_ground_truth
+                # The same facts `read_row` would give `derive_counts`, from the one scan.
+                "multi_output": len(data[OUTPUT]) > 1,
+                "binary_input": first_input is not None and is_binary(_build_node(ex_dir, first_input)),
             })
         return out
 

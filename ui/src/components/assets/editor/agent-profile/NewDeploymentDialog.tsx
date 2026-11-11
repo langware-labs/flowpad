@@ -1,16 +1,22 @@
 import {
   Agent,
   ComputeNodeSize,
+  QueryRequest,
   ComputeProviderType,
+  TypeId,
   Deployment,
   type AgentReadiness,
+  type AgentRequirement,
   type AgentTokenAllocation,
   type CloudDeployProvider,
+  type DeploymentSourceKind,
   type IDeployment,
+  type Project,
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useEffect, useState } from 'react';
-import { Cloud, Laptop, Loader2, Rocket } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAttachedChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
+import { ChevronLeft, ChevronRight, Loader2, Rocket } from 'lucide-react';
 
 import { describeApiError, errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
@@ -19,17 +25,32 @@ import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { useDeployProviders } from '@src/hooks/use-deploy-providers';
+import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
+import { AgentModeFields, DEFAULT_AGENT_MODE, type AgentModeValue } from './AgentModeFields';
 import { AgentDeployChecklist } from './AgentDeployChecklist';
-import { DeploymentSecretsGate } from './DeploymentSecretsGate';
+import { DeploymentSecretsGate, DeploySecretsLine } from './DeploymentSecretsGate';
 import { TokenAllocationField, tokenAllocationComplete } from './TokenAllocationField';
-import { AGENT_MACHINE_SIZE_LABELS, AGENT_MACHINE_SIZES, AGENT_MONTHLY_MACHINE_SIZE_LABELS } from './agent-vocabularies';
+import { AGENT_MACHINE_SIZES, MACHINE_SIZE_PRICE, MACHINE_SIZE_SPECS, type MachineBilling } from './agent-vocabularies';
+import { machineSizeName } from './MachineSizeChips';
 
 /** A cloud machine's credential environment when nobody names one. */
 const DEFAULT_CLOUD_ENVIRONMENT = 'production';
 const ENVIRONMENT_RE = /^[a-z][a-z0-9_-]{0,39}$/;
 const RESERVED_ENVIRONMENTS = new Set(['project', 'user', 'development']);
+/** The pick-list row that opens a field for a name of one's own. */
+const OTHER_ENVIRONMENT = '__other__';
+
+/** What was typed, by credential; a blank field is left out, so it keeps the value already stored. */
+function typedValues(needs: AgentRequirement[], typed: Record<string, string>) {
+  const entries = needs.flatMap((need) => {
+    const given = need.vars.filter((name) => typed[name]).map((name) => [name, typed[name]]);
+    return need.kind === 'credential' && given.length ? [[need.name, Object.fromEntries(given)]] : [];
+  });
+  return entries.length ? (Object.fromEntries(entries) as Record<string, Record<string, string>>) : undefined;
+}
 
 /** What a deploy refused by the readiness gate carries (409 `not_ready`). */
 interface NotReadyData {
@@ -37,107 +58,168 @@ interface NotReadyData {
   deployment?: IDeployment;
 }
 
-/** A cloud machine: the hub provider it lands on and its size, e.g. `e2b-sm`. */
-type CloudMachine = `${CloudDeployProvider}-${ComputeNodeSize}`;
-
-/** `local`, or a cloud machine. */
-type DeploymentType = 'local' | CloudMachine;
-
-function cloudMachine(type: CloudMachine): { provider: CloudDeployProvider; size: ComputeNodeSize } {
-  // The size is the last segment: a provider is the hub's name and may itself hold a '-'.
-  const cut = type.lastIndexOf('-');
-  return { provider: type.slice(0, cut), size: type.slice(cut + 1) as ComputeNodeSize };
-}
-
-/**
- * How each provider's machines read: billed hourly, or monthly with the machine's strength. A provider
- * the hub offers that is missing here still gets its rows, hinted by its bare name.
- */
-const PROVIDER_HINTS: Partial<Record<CloudDeployProvider, Record<ComputeNodeSize, string>>> = {
-  [ComputeProviderType.E2B]: AGENT_MACHINE_SIZE_LABELS,
-  [ComputeProviderType.GCP_VM]: AGENT_MONTHLY_MACHINE_SIZE_LABELS,
+/** The hub provider behind each billing: hourly sandboxes, or monthly always-on VMs. */
+const BILLING_PROVIDER: Record<MachineBilling, CloudDeployProvider> = {
+  hourly: ComputeProviderType.E2B,
+  monthly: ComputeProviderType.GCP_VM,
 };
+const BILLINGS: MachineBilling[] = ['hourly', 'monthly'];
+
+/** The pick-list row for "no main agent" — a web-only deployment. */
+const NO_AGENT = '__none__';
+const SOURCE_KINDS: DeploymentSourceKind[] = ['commit', 'tag', 'release'];
 
 interface NewDeploymentDialogProps {
-  agent: Agent;
+  /** The project being deployed — the whole of it, at one source. */
+  project: Project;
+  /** An agent id to preset as the main agent ("Deploy this agent"); else the project's recommendation. */
+  presetMainAgentId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Saves the cloud machine size into agent.json (the hub sizes the box from it). Resolves once written. */
-  onMachineSize?: (size: string) => Promise<unknown>;
   /** Called with the new deployment's id once launched. */
   onLaunched: (deploymentId?: string) => void | Promise<void>;
 }
 
 /**
- * New deployment: pick where the agent runs — this computer, or a cloud machine of a size — see
- * what launching that type needs, and Launch. Only a cloud machine needs the publish checklist
- * (it runs the published definition) and a credential environment; this computer needs neither.
+ * New deployment of a project — a cloud machine, in two steps: (1) how it bills and its size, with the price;
+ * (2) what launching it needs: its main agent (the project's recommendation unless changed, or none), its
+ * source (a commit — the project's HEAD by default — a tag or a release), the publish checklist,
+ * environment, values and tokens, then Launch. Running on this computer is the Deployments page's switch.
  */
 export function NewDeploymentDialog({
-  agent,
+  project,
+  presetMainAgentId,
   open,
   onOpenChange,
-  onMachineSize,
   onLaunched,
 }: NewDeploymentDialogProps) {
   const { t } = useLingui();
-  const [type, setType] = useState<DeploymentType>('local');
+  // The project's agents, for the main-agent pick-list.
+  const agentsRequest = useMemo(
+    () => new QueryRequest({ type: Agent.type, scope: [project.typeId], name: 'NewDeploymentDialog.agents' }),
+    [project.typeId],
+  );
+  const { data: agents = [] } = useEntitiesQuery<Agent>(agentsRequest, { enabled: open });
+  // `undefined`: not chosen yet — the preset, else the project's recommendation, once read.
+  const [mainChoice, setMainChoice] = useState<string | undefined>(
+    presetMainAgentId ? `${Agent.type}-${presetMainAgentId}` : undefined,
+  );
+  const [recommended, setRecommended] = useState<string | null>(null);
+  const mainAgentId = mainChoice === undefined ? recommended : mainChoice === NO_AGENT ? null : mainChoice;
+  const mainAgent = agents.find((a) => `${Agent.type}-${a.id}` === mainAgentId) ?? null;
+  const [sourceKind, setSourceKind] = useState<DeploymentSourceKind>('commit');
+  const [sourceRef, setSourceRef] = useState('');
+  const [headCommit, setHeadCommit] = useState('');
+  const [step, setStep] = useState<'machine' | 'setup'>('machine');
+  const [billing, setBilling] = useState<MachineBilling>('hourly');
+  const [size, setSize] = useState<ComputeNodeSize | null>(null);
   const [launching, setLaunching] = useState(false);
   // Tri-state from the checklist: `null` (still checking) never disables Launch.
   const [ready, setReady] = useState<boolean | null>(null);
+  // Required credentials with no value in the project yet: Launch still goes ahead.
+  const [secretsMissing, setSecretsMissing] = useState(0);
   const [environment, setEnvironment] = useState(DEFAULT_CLOUD_ENVIRONMENT);
+  const [environments, setEnvironments] = useState([DEFAULT_CLOUD_ENVIRONMENT]);
+  const [environmentChosen, setEnvironmentChosen] = useState(false);
+  const [namingEnvironment, setNamingEnvironment] = useState(false);
+  // What the agent needs on a machine, by name: said before Launch rather than only in its refusal.
+  const [needs, setNeeds] = useState<AgentRequirement[]>([]);
+  // Typed here, sent with Launch: nothing is stored, and no row exists, until then. Blank keeps what is there.
+  const [typed, setTyped] = useState<Record<string, string>>({});
   // `null`: unchecked — the deployed agent spends its owner's capped default.
   const [tokenAllocation, setTokenAllocation] = useState<AgentTokenAllocation | null>(null);
+  const [agentMode, setAgentMode] = useState<AgentModeValue>(DEFAULT_AGENT_MODE);
+  // The Setup step by topic. Every section stays mounted — the checklist reports readiness for Launch
+  // from whichever tab is showing — only the one in view is drawn.
+  const [setupTab, setSetupTab] = useState<SetupTab>('agent');
+  // An agent with its built-in email starts Shared (one machine writes to everyone it may); Private would
+  // refuse a scheduled send to anyone but the machine's own person. Only until the person picks a mode.
+  const mainAgentTypeId = useMemo(() => (mainAgent ? new TypeId(Agent.type, mainAgent.id) : null), [mainAgent]);
+  const { rows: mainAgentChannels, specFor: channelSpecFor } = useAttachedChannels(mainAgentTypeId);
+  // A provisioned channel is the agent's own address (its built-in email) — asked of the driver, never by name.
+  const sendsEmail = mainAgentChannels.some((s) => channelSpecFor(s.provider)?.provisioned);
+  const modeChosen = useRef(false);
+  useEffect(() => {
+    if (sendsEmail && !modeChosen.current) setAgentMode((m) => ({ ...m, mode: 'shared' }));
+  }, [sendsEmail]);
   const environmentValid = ENVIRONMENT_RE.test(environment) && !RESERVED_ENVIRONMENTS.has(environment);
   // The deploy's own refusal (409 `not_ready`): what that placement's machine still lacks. Never
   // asked ahead of a Launch — planning mints the hub's row for an environment, so it waits for one.
   const [refused, setRefused] = useState<{ readiness: AgentReadiness; deployment: Deployment } | null>(null);
-  const machine = type === 'local' ? null : cloudMachine(type);
-  const cloud = machine !== null;
-  // The hub publishes which providers a deployment may use; only those get rows.
-  const { providers, isLoading: providersLoading } = useDeployProviders();
+  // A refusal is about values: show the tab that can fix it.
   useEffect(() => {
-    for (const provider of providers) {
-      if (!PROVIDER_HINTS[provider]) console.log(`[NewDeploymentDialog] no display for hub provider '${provider}'`);
-    }
-  }, [providers]);
+    if (refused) setSetupTab('values');
+  }, [refused]);
+  // The hub publishes which providers a deployment may use; only their billings are offered.
+  const { providers, isLoading: providersLoading } = useDeployProviders();
+  const billings = BILLINGS.filter((b) => providers.includes(BILLING_PROVIDER[b]));
+  const shownBilling = billings.includes(billing) ? billing : (billings[0] ?? billing);
+  const machine = size ? { provider: BILLING_PROVIDER[shownBilling], size } : null;
+  const cloud = step === 'setup' && machine !== null;
+  const price = size ? MACHINE_SIZE_PRICE[shownBilling][size] : null;
 
-  // Every cloud row reads "Cloud machine"; which provider runs it is not the user's concern — only how it
-  // bills: hourly, or monthly with the machine's strength.
-  const cloudRows = (provider: CloudDeployProvider) =>
-    AGENT_MACHINE_SIZES.map((size) => ({
-      value: `${provider}-${size}` satisfies CloudMachine,
-      label: t`Cloud machine`,
-      hint: PROVIDER_HINTS[provider]?.[size] ?? provider,
-      Icon: Cloud,
-    }));
-  const choices: { value: DeploymentType; label: string; hint: string; Icon: typeof Cloud }[] = [
-    // One more each time: every local deployment is its own process on this computer.
-    { value: 'local', label: t`This computer`, hint: t`Free · runs while this computer is awake`, Icon: Laptop },
-    ...providers.flatMap(cloudRows),
-  ];
+  useEffect(() => {
+    if (!cloud) return;
+    let alive = true;
+    // Neither answer is needed to deploy: without them the defaults above stand.
+    void project
+      .deployDefaults()
+      .then((defaults) => {
+        if (!alive) return;
+        setEnvironments(defaults.environments);
+        setEnvironment((current) => (environmentChosen ? current : defaults.environment));
+        setRecommended(defaults.main_agent_id ?? null);
+        setHeadCommit(defaults.source_ref ?? '');
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [project, cloud, environmentChosen]);
+
+  // What the machine needs follows the main agent: the project's credentials plus that agent's.
+  useEffect(() => {
+    if (!cloud) return;
+    let alive = true;
+    void project
+      .requirements(mainAgentId)
+      .then((wanted) => alive && setNeeds(wanted.filter((r) => r.kind !== 'funding')))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [project, cloud, mainAgentId]);
+
+  const chooseEnvironment = (next: string) => {
+    setEnvironmentChosen(true);
+    setRefused(null);
+    setNamingEnvironment(next === OTHER_ENVIRONMENT);
+    if (next !== OTHER_ENVIRONMENT) setEnvironment(next);
+  };
 
   const launch = async () => {
     setLaunching(true);
     try {
-      let data;
-      if (!machine) {
-        data = await agent.deploy(undefined, 'local');
-        notify.success({ title: t`${agent.name} now runs on this computer` });
-      } else {
-        // The hub sizes the box from the PUBLISHED definition, so the size is written before the deploy publishes.
-        await onMachineSize?.(machine.size);
-        data = await agent.deploy(environment, machine.provider, tokenAllocation);
-        if (data.agent_definition_error) {
-          notify.warning({ title: t`Deployed without its definition`, message: data.agent_definition_error });
-        } else if (data.reused) {
-          notify.info({ title: t`${agent.name} already has a cloud machine` });
-        } else {
-          notify.success({ title: t`${agent.name} now runs on a cloud machine` });
-        }
-      }
+      if (!machine) return;
+      // The size travels with the deploy: writing it into a definition would dirty the checkout being deployed.
+      const data = await project.deploy({
+        environment,
+        provider: machine.provider,
+        tokenAllocation,
+        machineSize: machine.size,
+        sourceKind,
+        sourceRef: sourceRef.trim() || (sourceKind === 'commit' ? headCommit || null : null),
+        mainAgentId,
+        deploymentId: refused?.deployment.id,
+        values: typedValues(needs, typed),
+        ...(mainAgentId
+          ? { agentMode: agentMode.mode, channels: agentMode.channels, idlePauseSeconds: agentMode.idleSeconds }
+          : {}),
+      });
+      // Taken on: the machine is placed in the background, after this answer.
+      notify.info({ title: t`Deployment running in the background` });
       onOpenChange(false);
-      await onLaunched(data.deployment?.id);
+      await onLaunched(data.deployment?.id ?? data.deployment_id);
     } catch (e) {
       if (describeApiError(e).code === 'not_ready') {
         // The refusal names the planned placement and what it lacks; its fixes go there.
@@ -150,6 +232,7 @@ export function NewDeploymentDialog({
       notify.error({
         title: t`Could not launch the deployment`,
         message: errorMessage(e, t`Launch failed.`),
+        error: e,
         forceToast: true,
       });
     } finally {
@@ -158,13 +241,20 @@ export function NewDeploymentDialog({
   };
 
   const blocked =
-    !agent.enabled ||
+    mainAgent?.enabled === false ||
+    (sourceKind !== 'commit' && !sourceRef.trim()) ||
     launching ||
-    (cloud &&
-      (ready === false ||
-        !environmentValid ||
-        !tokenAllocationComplete(tokenAllocation) ||
-        refused?.readiness.ready === false));
+    !cloud ||
+    ready === false ||
+    !environmentValid ||
+    !tokenAllocationComplete(tokenAllocation) ||
+    refused?.readiness.ready === false;
+
+  const segment = (on: boolean) =>
+    cn(
+      'flex-1 rounded px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+      on ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+    );
 
   return (
     <Dialog open={open} onOpenChange={(next) => !launching && onOpenChange(next)}>
@@ -175,119 +265,399 @@ export function NewDeploymentDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-1.5" role="radiogroup" aria-label={t`Deployment type`}>
-          {choices.map(({ value, label, hint, Icon }) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={type === value}
-              disabled={launching}
-              onClick={() => {
-                setType(value);
-                setRefused(null);
-              }}
-              className={cn(
-                'flex items-center gap-3 rounded-md border px-3 py-2 text-start transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-                type === value ? 'border-primary bg-primary/5' : 'hover:bg-muted/60',
-              )}
-              data-testid={`new-deployment-type-${value}`}
-            >
-              <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 text-sm">{label}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">{hint}</span>
-            </button>
-          ))}
-          {providersLoading ? (
-            <p className="px-3 text-xs text-muted-foreground" data-testid="new-deployment-providers-loading">
-              <Trans>Loading cloud machines…</Trans>
-            </p>
-          ) : (
-            providers.length === 0 && (
-              <p className="px-3 text-xs text-muted-foreground" data-testid="new-deployment-no-cloud">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="new-deployment-steps">
+          <span className={cn(step === 'machine' && 'font-medium text-foreground')}>
+            {step === 'setup' && size ? (
+              <Trans>
+                1 Machine · {t(machineSizeName[size])} · {price}
+              </Trans>
+            ) : (
+              <Trans>1 Machine</Trans>
+            )}
+          </span>
+          <ChevronRight className="h-3 w-3" />
+          <span className={cn(step === 'setup' && 'font-medium text-foreground')}>
+            <Trans>2 Setup</Trans>
+          </span>
+        </div>
+
+        {step === 'machine' ? (
+          <div className="flex flex-col gap-4" data-testid="new-deployment-machine">
+            {providersLoading ? (
+              <p className="text-xs text-muted-foreground" data-testid="new-deployment-providers-loading">
+                <Trans>Loading cloud machines…</Trans>
+              </p>
+            ) : billings.length === 0 ? (
+              <p className="text-xs text-muted-foreground" data-testid="new-deployment-no-cloud">
                 <Trans>Sign in to the hub to deploy to a cloud machine.</Trans>
               </p>
-            )
-          )}
-        </div>
-
-        <div className="flex flex-col gap-3 border-t pt-3" data-testid="new-deployment-details">
-          {machine ? (
-            <>
-              <AgentDeployChecklist agent={agent} onReadinessChange={setReady} />
-              <div className="flex flex-wrap items-center gap-2">
-                <Label htmlFor="new-deployment-environment" className="text-xs">
-                  <Trans>Environment</Trans>
-                </Label>
-                <Input
-                  id="new-deployment-environment"
-                  className="h-8 w-40 font-mono text-xs"
-                  value={environment}
-                  disabled={launching}
-                  onChange={(e) => {
-                    setEnvironment(e.target.value.trim().toLowerCase());
-                    setRefused(null);
-                  }}
-                  aria-invalid={!environmentValid}
-                  data-testid="new-deployment-environment"
-                />
-                <span className="text-xs text-muted-foreground">
-                  {environmentValid ? (
-                    <Trans>The machine reads this environment's credentials.</Trans>
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <Label className="w-14 text-xs text-muted-foreground">
+                    <Trans>Billing</Trans>
+                  </Label>
+                  <div className="flex gap-1 rounded-md bg-muted p-1" role="radiogroup" aria-label={t`Billing`}>
+                    {billings.map((b) => (
+                      <button
+                        key={b}
+                        type="button"
+                        role="radio"
+                        aria-checked={shownBilling === b}
+                        className={segment(shownBilling === b)}
+                        onClick={() => {
+                          setBilling(b);
+                          setSize(null);
+                          setRefused(null);
+                        }}
+                        data-testid={`new-deployment-billing-${b}`}
+                      >
+                        {b === 'hourly' ? <Trans>Hourly</Trans> : <Trans>Monthly</Trans>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Label className="w-14 text-xs text-muted-foreground">
+                    <Trans>Size</Trans>
+                  </Label>
+                  <div className="flex flex-1 gap-2" role="radiogroup" aria-label={t`Size`}>
+                    {AGENT_MACHINE_SIZES.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        role="radio"
+                        aria-checked={size === s}
+                        title={MACHINE_SIZE_SPECS[shownBilling][s]}
+                        className={cn(
+                          'flex-1 rounded-md border py-2.5 text-sm transition-colors',
+                          size === s ? 'border-primary bg-primary/5' : 'hover:bg-muted/60',
+                        )}
+                        onClick={() => {
+                          setSize(s);
+                          setRefused(null);
+                        }}
+                        data-testid={`new-deployment-size-${s}`}
+                      >
+                        {t(machineSizeName[s])}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="text-center" data-testid="new-deployment-price">
+                  {price ? (
+                    <span className="text-xl font-semibold">{price}</span>
                   ) : (
-                    <Trans>Lowercase letters, digits, - and _ (not development).</Trans>
+                    <span className="text-xs text-muted-foreground">
+                      <Trans>Pick a size to see the price</Trans>
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {shownBilling === 'hourly' ? (
+                    <Trans>Pay only while it runs.</Trans>
+                  ) : (
+                    <Trans>Always on · billed once a month.</Trans>
+                  )}
+                </p>
+              </>
+            )}
+          </div>
+        ) : (
+          machine && (
+            <div className="flex flex-col gap-3" data-testid="new-deployment-details">
+              <SetupTabs value={setupTab} onChange={setSetupTab} ready={ready} />
+              <div
+                className={cn('flex flex-col gap-3', setupTab !== 'agent' && 'hidden')}
+                data-testid="new-deployment-tab-agent"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label htmlFor="new-deployment-main-agent" className="text-xs">
+                    <Trans>Main agent</Trans>
+                  </Label>
+                  <Select
+                    value={mainAgentId ?? NO_AGENT}
+                    disabled={launching}
+                    onValueChange={(next) => {
+                      setMainChoice(next);
+                      setRefused(null);
+                    }}
+                  >
+                    <SelectTrigger
+                      id="new-deployment-main-agent"
+                      className="h-8 w-56 text-xs"
+                      data-testid="new-deployment-main-agent"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_AGENT} className="text-xs">
+                        <Trans>No agent</Trans>
+                      </SelectItem>
+                      {agents.map((a) => (
+                        <SelectItem key={a.id} value={`${Agent.type}-${a.id}`} className="text-xs">
+                          {a.name}
+                          {`${Agent.type}-${a.id}` === recommended ? ` · ${t`recommended`}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="basis-full text-xs text-muted-foreground">
+                    <Trans>The agent that answers every call on this machine.</Trans>
+                  </span>
+                </div>
+                {mainAgentId && (
+                  <AgentModeFields
+                    value={agentMode}
+                    onChange={(next) => {
+                      modeChosen.current = true;
+                      setAgentMode(next);
+                    }}
+                    disabled={launching}
+                    sendsEmail={sendsEmail}
+                  />
+                )}
+              </div>
+              <div
+                className={cn('flex flex-col gap-3', setupTab !== 'code' && 'hidden')}
+                data-testid="new-deployment-tab-code"
+              >
+                <div className="flex flex-wrap items-center gap-2" data-testid="new-deployment-source">
+                  <Label htmlFor="new-deployment-source-kind" className="text-xs">
+                    <Trans>Source</Trans>
+                  </Label>
+                  <Select
+                    value={sourceKind}
+                    disabled={launching}
+                    onValueChange={(next) => setSourceKind(next as DeploymentSourceKind)}
+                  >
+                    <SelectTrigger
+                      id="new-deployment-source-kind"
+                      className="h-8 w-28 text-xs"
+                      data-testid="new-deployment-source-kind"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SOURCE_KINDS.map((kind) => (
+                        <SelectItem key={kind} value={kind} className="text-xs">
+                          {kind === 'commit' ? t`Commit` : kind === 'tag' ? t`Tag` : t`Release`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    className="h-8 w-44 font-mono text-xs"
+                    value={sourceRef}
+                    placeholder={sourceKind === 'commit' ? headCommit.slice(0, 12) || 'HEAD' : ''}
+                    aria-label={t`Source`}
+                    disabled={launching}
+                    onChange={(e) => setSourceRef(e.target.value)}
+                    data-testid="new-deployment-source-ref"
+                  />
+                </div>
+              </div>
+              <div
+                className={cn('flex flex-col gap-3', setupTab !== 'values' && 'hidden')}
+                data-testid="new-deployment-tab-values"
+              >
+                {mainAgent && <DeploySecretsLine key={mainAgent.id} agent={mainAgent} onMissing={setSecretsMissing} />}
+                <AgentDeployChecklist project={project} agent={mainAgent} onReadinessChange={setReady} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label htmlFor="new-deployment-environment" className="text-xs">
+                    <Trans>Environment</Trans>
+                  </Label>
+                  <Select
+                    value={namingEnvironment ? OTHER_ENVIRONMENT : environment}
+                    disabled={launching}
+                    onValueChange={chooseEnvironment}
+                  >
+                    <SelectTrigger
+                      id="new-deployment-environment"
+                      className="h-8 w-40 font-mono text-xs"
+                      data-testid="new-deployment-environment"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[...new Set([...environments, environment])].map((name) => (
+                        <SelectItem key={name} value={name} className="font-mono text-xs">
+                          {name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value={OTHER_ENVIRONMENT} className="text-xs">
+                        <Trans>Another name…</Trans>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {namingEnvironment && (
+                    <Input
+                      className="h-8 w-32 font-mono text-xs"
+                      value={environment}
+                      disabled={launching}
+                      onChange={(e) => {
+                        setEnvironment(e.target.value.trim().toLowerCase());
+                        setRefused(null);
+                      }}
+                      aria-invalid={!environmentValid}
+                      data-testid="new-deployment-environment-name"
+                    />
+                  )}
+                  <span className="basis-full text-xs text-muted-foreground">
+                    {environmentValid ? (
+                      <Trans>
+                        Which set of values the machine reads. It joins the hub you are signed in to either way.
+                      </Trans>
+                    ) : (
+                      <Trans>Lowercase letters, digits, - and _ (not development).</Trans>
+                    )}
+                  </span>
+                </div>
+                {needs.length > 0 && !refused && (
+                  <div className="flex flex-col gap-1" data-testid="new-deployment-needs">
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>What the machine needs. Leave a field empty to keep the value it already has.</Trans>
+                    </p>
+                    {needs.flatMap((need) =>
+                      need.kind === 'credential' && need.vars.length > 0
+                        ? need.vars.map((name) => (
+                            <Input
+                              key={name}
+                              type="password"
+                              autoComplete="off"
+                              className="h-7 font-mono text-xs"
+                              placeholder={name}
+                              aria-label={name}
+                              value={typed[name] ?? ''}
+                              disabled={launching}
+                              onChange={(e) => setTyped((prev) => ({ ...prev, [name]: e.target.value }))}
+                              data-testid={`new-deployment-value-${name}`}
+                            />
+                          ))
+                        : [
+                            <p key={need.name} className="font-mono text-xs text-muted-foreground">
+                              {need.name}
+                            </p>,
+                          ],
+                    )}
+                  </div>
+                )}
+                <TokenAllocationField
+                  project={project}
+                  mainAgent={mainAgent}
+                  environment={environment}
+                  provider={machine.provider}
+                  deploymentId={null}
+                  value={tokenAllocation}
+                  onChange={setTokenAllocation}
+                  disabled={launching}
+                />
+                {refused && (
+                  <DeploymentSecretsGate
+                    project={project}
+                    deployment={refused.deployment}
+                    readiness={refused.readiness}
+                    onChange={(readiness) => setRefused({ ...refused, readiness })}
+                  />
+                )}
+              </div>
+            </div>
+          )
+        )}
+
+        <DialogFooter className="items-center gap-2 border-t pt-3">
+          {step === 'machine' ? (
+            <Button disabled={!size} onClick={() => setStep('setup')} data-testid="new-deployment-next">
+              <Trans>Next</Trans>
+              <ChevronRight className="ms-1.5 h-4 w-4" />
+            </Button>
+          ) : (
+            <>
+              {launching ? (
+                <span className="me-auto text-xs text-muted-foreground" data-testid="new-deployment-starting">
+                  {/* A monthly machine is a full VM: creating and enrolling it takes longer than a sandbox. */}
+                  {shownBilling === 'monthly' ? (
+                    <Trans>Starting a machine — this takes a couple of minutes.</Trans>
+                  ) : (
+                    <Trans>Starting a machine — this takes a minute.</Trans>
                   )}
                 </span>
-              </div>
-              <TokenAllocationField
-                agent={agent}
-                environment={environment}
-                provider={machine.provider}
-                value={tokenAllocation}
-                onChange={setTokenAllocation}
+              ) : ready === false ? (
+                <span className="me-auto text-xs text-muted-foreground" data-testid="new-deployment-blocked">
+                  <Trans>Finish the setup above first.</Trans>
+                </span>
+              ) : mainAgent && secretsMissing > 0 ? (
+                <span className="me-auto text-xs text-muted-foreground" data-testid="new-deployment-secrets-missing">
+                  {secretsMissing === 1
+                    ? t`1 credential missing — it can be set later on the Env tab.`
+                    : t`${secretsMissing} credentials missing — they can be set later on the Env tab.`}
+                </span>
+              ) : null}
+              <Button
+                variant="ghost"
                 disabled={launching}
-              />
-              {refused && (
-                <DeploymentSecretsGate
-                  agent={agent}
-                  deployment={refused.deployment}
-                  readiness={refused.readiness}
-                  onChange={(readiness) => setRefused({ ...refused, readiness })}
-                />
-              )}
+                onClick={() => setStep('machine')}
+                data-testid="new-deployment-back"
+              >
+                <ChevronLeft className="me-1.5 h-4 w-4" />
+                <Trans>Back</Trans>
+              </Button>
+              <Button disabled={blocked} onClick={() => void launch()} data-testid="new-deployment-launch">
+                {launching ? (
+                  <Loader2 className="me-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Rocket className="me-1.5 h-4 w-4" />
+                )}
+                {mainAgent && secretsMissing > 0 ? <Trans>Launch anyway</Trans> : <Trans>Launch</Trans>}
+              </Button>
             </>
-          ) : (
-            <p className="text-xs text-muted-foreground" data-testid="new-deployment-local-details">
-              <Trans>
-                Runs as a process on this computer with your own credentials, only while it is awake. Nothing is
-                published.
-              </Trans>
-            </p>
           )}
-        </div>
-
-        <DialogFooter className="items-center gap-2">
-          {launching && machine && (
-            <span className="me-auto text-xs text-muted-foreground" data-testid="new-deployment-starting">
-              {/* A monthly machine is a full VM: creating and enrolling it takes longer than a sandbox. */}
-              {machine.provider === ComputeProviderType.GCP_VM ? (
-                <Trans>Starting a machine — this takes a couple of minutes.</Trans>
-              ) : (
-                <Trans>Starting a machine — this takes a minute.</Trans>
-              )}
-            </span>
-          )}
-          <Button
-            disabled={blocked}
-            title={cloud && ready === false ? t`Finish the setup above first` : undefined}
-            onClick={() => void launch()}
-            data-testid="new-deployment-launch"
-          >
-            {launching ? <Loader2 className="me-1.5 h-4 w-4 animate-spin" /> : <Rocket className="me-1.5 h-4 w-4" />}
-            <Trans>Launch</Trans>
-          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type SetupTab = 'agent' | 'code' | 'values';
+
+/** The Setup step's topics: who answers (Agent), what runs (Code), what it needs (Values) — the last one
+ *  wears a ✓ once the checklist is ready. */
+function SetupTabs({
+  value,
+  onChange,
+  ready,
+}: {
+  value: SetupTab;
+  onChange: (next: SetupTab) => void;
+  ready: boolean | null;
+}) {
+  const { t } = useLingui();
+  const tabs: [SetupTab, string][] = [
+    ['agent', t`Agent`],
+    ['code', t`Code`],
+    ['values', t`Values`],
+  ];
+  return (
+    <div className="inline-flex gap-0.5 self-start rounded-md border border-border bg-muted/40 p-0.5" role="tablist">
+      {tabs.map(([tab, label]) => (
+        <button
+          key={tab}
+          type="button"
+          role="tab"
+          aria-selected={value === tab}
+          onClick={() => onChange(tab)}
+          className={cn(
+            'flex h-7 items-center gap-1 rounded-sm px-3 text-xs transition-colors',
+            value === tab
+              ? 'bg-accent text-primary ring-1 ring-primary/40'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+          data-testid={`new-deployment-tab-${tab}-button`}
+        >
+          {label}
+          {tab === 'values' && ready === true && <span className="text-green-500">✓</span>}
+        </button>
+      ))}
+    </div>
   );
 }

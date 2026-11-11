@@ -1,4 +1,4 @@
-"""A process in the instance that is not the app hands its client-facing tags to the app.
+"""A process in the instance that is not the app hands its tags to the app.
 
 The tag bus is per process, and only the app has clients: its WebSocket forwards the tags in
 ``FORWARDED_TAG_PATTERNS``. A local agent deployment runs its turns in its own process
@@ -7,6 +7,11 @@ reached anyone. Here that process subscribes to what its watchers need (``RELAYE
 all of them forwarded to clients by the app) and posts each tag to the app
 (``POST /api/v1/tags/relay``), which emits it on its own bus: every client-facing subscriber there,
 the WebSocket included, then sees it exactly as if the app had emitted it.
+
+The same route is the way in for any other process of the instance, outside Flowpad's own code — a
+project's server, a trigger's ``run_script``. It posts its own events as ``user_app.*``, and a TAG
+trigger or any other subscriber on the app's bus acts on them. The app takes only the patterns
+listed here (``emit_relayed``).
 
 Best-effort like the bus itself: a tag the app cannot take (not up, restarting) is dropped. The
 durable record of what happened is the rows; a tag only says "look again now".
@@ -27,12 +32,15 @@ MESSAGE_PROJECTED_PATTERN = "stream_inbox.*.message.projected"
 #: What such a process emits that the app's clients watch: a deployment's timeline, a message placed
 #: (its reply landing), a task's news, a live call. Not its channels' per-poll ``ingest.*.sync.*``
 #: pair — a polled channel runs that every second, and nothing watching a deployment reads it.
+#: ``user_app.*`` is the one family Flowpad never emits: the events of a process outside its code
+#: (a project's server, a trigger's ``run_script``), posted to the route by name.
 RELAYED_TAG_PATTERNS: list[str] = [
     "deployment.timeline",
     MESSAGE_PROJECTED_PATTERN,
     # Where a message is on its way to an answer (``emit_message_status``): an agent picking it up here.
     "stream_inbox.*.message.status",
     "task.*",
+    "user_app.*",
     "voice.call.*",
 ]
 
@@ -60,13 +68,14 @@ async def _relay(event: FlowEvent) -> None:
     import httpx  # noqa: PLC0415
 
     if _client is None:
-        _client = httpx.AsyncClient(timeout=5.0)
-    from flow_sdk.instance_settings.cookie_gate import gate_headers  # noqa: PLC0415
+        from flow_sdk.instance_settings.cookie_gate import CookieGateAuthHttpx  # noqa: PLC0415
 
-    try:
         # The app of a gated instance (a cloud box) refuses a relay without its secret -- and a refused relay
         # is a deployment page that never updates while its loop answers.
-        await _client.post(url, json=event.model_dump(mode="json"), headers=gate_headers(url))
+        _client = httpx.AsyncClient(timeout=5.0, auth=CookieGateAuthHttpx())
+
+    try:
+        await _client.post(url, json=event.model_dump(mode="json"))
     except (httpx.HTTPError, asyncio.CancelledError) as exc:
         if isinstance(exc, asyncio.CancelledError):
             raise

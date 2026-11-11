@@ -8,6 +8,7 @@
  * docs/flow-events.md phase 8 Tier B, which retired the private WS dialect.
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { GraphWorkflow, FSRef, TypeId } from '@sdk';
 import {
   graphWorkflows,
@@ -34,11 +35,7 @@ type PanelTab = (typeof PANEL_TABS)[number];
 const PERSIST_DEBOUNCE_MS = 750;
 
 /** Debounced last-write-wins persister for one folder file (chart pattern). */
-function useFilePersister(
-  ref: FSRef | null,
-  onWritten?: (ref: FSRef) => void,
-  onEdit?: () => void,
-) {
+function useFilePersister(ref: FSRef | null, onWritten?: (ref: FSRef) => void, onEdit?: () => void) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastWritten = useRef<string | null>(null);
   const lastObserved = useRef<string | null>(null);
@@ -75,6 +72,7 @@ function useFilePersister(
 }
 
 export function GraphWorkflowsView() {
+  const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   const pointer = currentDock?.pointer;
   // Which panel is open and which run is expanded are URL state, not store
@@ -150,10 +148,7 @@ export function GraphWorkflowsView() {
     let cancelled = false;
     void (async () => {
       try {
-        const [graphRaw, displayRaw] = await Promise.all([
-          graphRef.read(),
-          displayRef.read().catch(() => '{}'),
-        ]);
+        const [graphRaw, displayRaw] = await Promise.all([graphRef.read(), displayRef.read().catch(() => '{}')]);
         if (cancelled) return;
         const parsedDoc = JSON.parse(graphRaw || '{}') as GraphWorkflowDoc;
         parsedDoc.nodes ??= [];
@@ -255,9 +250,15 @@ export function GraphWorkflowsView() {
     return (
       <div className="graph-workflows">
         <div className="afl-empty">
-          <div className="eye">graph workflows</div>
-          <h2>No flow selected</h2>
-          <p>Pick a flow from the left menu, or create one with “+ New flow”.</p>
+          <div className="eye">
+            <Trans>graph workflows</Trans>
+          </div>
+          <h2>
+            <Trans>No flow selected</Trans>
+          </h2>
+          <p>
+            <Trans>Pick a flow from the left menu, or create one with “+ New flow”.</Trans>
+          </p>
         </div>
       </div>
     );
@@ -267,7 +268,9 @@ export function GraphWorkflowsView() {
     return (
       <div className="graph-workflows">
         <div style={{ padding: 40, fontFamily: 'var(--mono)', fontSize: 12 }}>
-          <b>Flow failed to load</b>
+          <b>
+            <Trans>Flow failed to load</Trans>
+          </b>
           <pre>{bootError}</pre>
         </div>
       </div>
@@ -278,12 +281,19 @@ export function GraphWorkflowsView() {
     return (
       <div className="graph-workflows">
         <div className="afl-empty">
-          <div className="eye">graph workflows</div>
-          <h2>Loading…</h2>
+          <div className="eye">
+            <Trans>graph workflows</Trans>
+          </div>
+          <h2>
+            <Trans>Loading…</Trans>
+          </h2>
         </div>
       </div>
     );
   }
+
+  const nodeCount = doc.nodes.length;
+  const edgeCount = doc.edges.length;
 
   return (
     <div className="graph-workflows">
@@ -295,26 +305,32 @@ export function GraphWorkflowsView() {
           <div>
             <b>{flowName}</b>
             <span>
-              {doc.nodes.length} nodes · {doc.edges.length} edges
+              <Trans>
+                {nodeCount} nodes · {edgeCount} edges
+              </Trans>
             </span>
           </div>
         </div>
         <div className="spacer" />
         <button
           className={`chip ${flowEnabled ? 'on' : ''}`}
-          title={flowEnabled ? 'Flow is active — click to deactivate' : 'Flow is inactive — click to activate'}
+          title={flowEnabled ? t`Flow is active — click to deactivate` : t`Flow is inactive — click to activate`}
           onClick={toggleEnabled}
         >
           <span className={`dot ${flowEnabled ? 'ok' : ''}`} />
-          {flowEnabled ? 'active' : 'inactive'}
+          {flowEnabled ? t`active` : t`inactive`}
         </button>
-        <div className="chip" style={{ cursor: 'default' }} title="live stream connection">
+        <div className="chip" style={{ cursor: 'default' }} title={t`live stream connection`}>
           <span className={`dot ${connected ? 'ok' : ''}`} />
-          live
+          <Trans>live</Trans>
         </div>
-        {PANEL_TABS.map((t) => (
-          <button key={t} className={`chip ${panelTab === t ? 'on' : ''}`} onClick={() => openFlowDock({ panel: t })}>
-            {t}
+        {PANEL_TABS.map((tab) => (
+          <button
+            key={tab}
+            className={`chip ${panelTab === tab ? 'on' : ''}`}
+            onClick={() => openFlowDock({ panel: tab })}
+          >
+            {tab}
           </button>
         ))}
       </div>
@@ -325,7 +341,9 @@ export function GraphWorkflowsView() {
         {panelTab === 'runs' && <RunsPanel onSelectRun={(id) => openFlowDock({ panel: 'runs', run: id })} />}
       </div>
 
-      <div className="hint">drag from the palette to add · connect handles to route events · ⌫ deletes</div>
+      <div className="hint">
+        <Trans>drag from the palette to add · connect handles to route events · ⌫ deletes</Trans>
+      </div>
 
       <div className={`drawer-scrim ${selectedNode ? 'open' : ''}`} onClick={() => selectNode(null)} />
       <div className={`drawer ${selectedNode ? 'open' : ''}`}>
@@ -334,7 +352,7 @@ export function GraphWorkflowsView() {
             <div className="drawer-head">
               <div>
                 <div className="eye">{selectedNode.node_type.replace('_', ' ')}</div>
-                <h2>{selectedNode.name || '(unnamed)'}</h2>
+                <h2>{selectedNode.name || t`(unnamed)`}</h2>
               </div>
               <button className="drawer-x" onClick={() => selectNode(null)}>
                 ✕

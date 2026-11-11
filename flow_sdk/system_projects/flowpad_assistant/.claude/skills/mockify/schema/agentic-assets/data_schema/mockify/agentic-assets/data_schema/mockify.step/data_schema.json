@@ -27,13 +27,35 @@
     },
     "next": {
       "shape": "?string",
-      "description": "Where this screen goes on, when not the next main-path screen (a branch's Try again)."
+      "description": "Where this screen goes on, when not the next screen depth-first (a branch's Try again)."
     },
     "decisions": {
       "shape": [
         "mockify.decision"
       ],
       "description": "Open questions this screen asks."
+    },
+    "scenario": {
+      "shape": "?string",
+      "description": "Phase 1: what the user sees and does on this screen, in a sentence or two \u2014 the brief the screen is built from."
+    },
+    "source": {
+      "shape": "?string",
+      "description": "'capture' (a live-app state the builder reaches and captures) or 'built: <why>' (drawn from the component source because the live app cannot reach it)."
+    },
+    "controls": {
+      "shape": [
+        "mockify.control"
+      ],
+      "description": "Every clickable thing on the screen and its outcome; those with next become data-next, the rest data-dead."
+    },
+    "url": {
+      "shape": "?string",
+      "description": "Test mode: the app route the test navigates to on this screen (the path after {APP_URL}); required on the first step."
+    },
+    "expect": {
+      "shape": "?[string]",
+      "description": "Test mode: what must be true on this screen. Each one becomes a 'validate' line in the test .md. Write it from the captured screen (label, data-testid, state); it may also be a check no screen can show (no 401, no console error, still there after refresh)."
     }
   }
 }

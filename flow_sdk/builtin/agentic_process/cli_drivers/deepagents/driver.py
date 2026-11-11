@@ -117,6 +117,7 @@ class DeepAgentsDriver:
 
     # No TUI (``Vendor.interactive`` is False); the PTY facts are inert defaults.
     pty_submits_on_paste = False
+    launch_screen = None
     pty_composer_ready_pattern = None
     pins_resume_cwd = False
 
@@ -162,6 +163,8 @@ class DeepAgentsDriver:
         assets: "AssetDir",
         process_id: str,
         events: "Sequence[HookEventType]",
+        *,
+        app_launch: bool = False,
     ) -> ProcessHookRuntime:
         if events:
             raise NotImplementedError("the deepagents worker has no process hook channel")

@@ -37,8 +37,10 @@ export function useAgentMcpSync(
   /** What `agent.md` currently declares. */
   value: string[] | null | undefined,
   onCommit: (ids: string[]) => void,
+  /** False where the agent is not edited here (a published copy): nothing is read or written. */
+  enabled: boolean = true,
 ): void {
-  const { descriptors, isLoading } = useStagedAssets(Mcp.type);
+  const { descriptors, isLoading } = useStagedAssets(Mcp.type, { enabled });
 
   // Deduped by typeid and sorted, in that order. `useStagedAssets` returns one
   // row per (typeid, source) — the pane wants that distinction, a declaration
@@ -67,7 +69,7 @@ export function useAgentMcpSync(
     // Committing while the read is still in flight would declare an empty list
     // and then immediately correct it — two writes, and a window where the
     // agent genuinely has none.
-    if (isLoading) return;
+    if (!enabled || isLoading) return;
     if (desired === committed) {
       sentRef.current = null;
       return;
@@ -75,5 +77,5 @@ export function useAgentMcpSync(
     if (sentRef.current === desired) return;
     sentRef.current = desired;
     onCommit(ids);
-  }, [committed, desired, ids, isLoading, onCommit]);
+  }, [committed, desired, enabled, ids, isLoading, onCommit]);
 }

@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, ClassVar, Literal, Optional, Union
 
-from pydantic import ConfigDict, Field
+from pydantic import Field
 
 from flow_sdk._compat import UTC
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -35,7 +35,6 @@ STATE_ORDER: tuple[HealthState, ...] = ("failing", "unknown", "starting", "alive
 class HttpCheck(DataSpec):
     """Alive when a GET on ``path`` at the service's loopback port answers below 400."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     type: Literal["http"] = "http"
     path: str = "/"
@@ -44,7 +43,6 @@ class HttpCheck(DataSpec):
 class CommandCheck(DataSpec):
     """Alive when ``cmd`` exits 0 on the machine the service runs on."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     type: Literal["command"] = "command"
     cmd: str
@@ -53,7 +51,6 @@ class CommandCheck(DataSpec):
 class BuiltinCheck(DataSpec):
     """The backend knows: a static root exists; a channel's answering loop is running."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     type: Literal["builtin"] = "builtin"
 
@@ -69,7 +66,6 @@ class EndpointHealth(DataSpec):
     """What one check of one service found."""
 
     spec_kind: ClassVar[str] = "health.endpoint"
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     endpoint_id: str
     name: str
@@ -83,7 +79,6 @@ class NodeHealth(DataSpec):
     """Every service on one machine, checked together."""
 
     spec_kind: ClassVar[str] = "health.node"
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     node_id: str
     observed_at: str = Field(default_factory=now_iso)

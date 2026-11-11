@@ -112,7 +112,7 @@ async def test_not_ready_body_makes_no_hub_download(
     # Chokepoint (the implicit-caller seam) skips before any hub GET, even with
     # live creds present.
     with patch(
-        "flow_sdk.app.actions.flow_message_action.hub_get", AsyncMock()
+        "flow_sdk.cloud_client.hub_proxy.HubProxy.download", AsyncMock()
     ) as mock_get:
         ok = await _download_and_unpack_bundle(
             fm.id, fm.attachment_filename, body_status="na",

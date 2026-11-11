@@ -19,6 +19,8 @@ from __future__ import annotations
 import os
 import signal
 
+from flow_sdk import toplog
+
 #: POSIX-only; on Windows the command is spawned and killed as a lone child.
 CAN_KILLPG = hasattr(os, "killpg")
 
@@ -27,9 +29,12 @@ def kill_process_tree(proc) -> None:
     """SIGKILL the process and its whole group, falling back to the process."""
     if CAN_KILLPG:
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            pgid = os.getpgid(proc.pid)
+            os.killpg(pgid, signal.SIGKILL)
+            toplog.log("shell_exec", "killpg pid=%s pgid=%s sent", proc.pid, pgid)
             return
-        except OSError:
+        except OSError as exc:
+            toplog.log("shell_exec", "killpg pid=%s failed: %s", proc.pid, exc)
             # Group already gone, or we never got one — fall through.
             pass
     try:

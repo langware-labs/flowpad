@@ -209,6 +209,11 @@ class JsonlTeeStreamWorker(AgenticWorker):
                 yield fd
             raise WorkerSpawnError(self.vendor, str(event["message"])) from exc
 
+        if self._interrupted:
+            # A Stop that landed while the process was still spawning found nothing to terminate: honour it now,
+            # or the turn runs to its end.
+            await self._terminate_process()
+
         if self.prompt_on_stdin:
             try:
                 assert self._proc.stdin is not None

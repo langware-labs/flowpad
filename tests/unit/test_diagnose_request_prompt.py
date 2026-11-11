@@ -13,6 +13,7 @@ import pytest
 
 from flow_sdk.cli.commands import diagnose_cmd
 from flow_sdk.cli.commands.diagnose_cmd import _STEP_PROMPT, _request_context, _request_prompt_extra
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 OUT = Path("/tmp/run/to-send")
 STEPS = ("check where git is", "print the attached file")
@@ -57,7 +58,7 @@ async def test_the_steps_run_before_the_diagnosis_whichever_way_they_were_approv
         seen["extra"] = prompt_extra
         return 1  # stop before the result is loaded -- the order is what is under test
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_anonymous_request", hub)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(hub))
     monkeypatch.setattr(diagnose_cmd, "_ask", lambda q, **_: next(answers))
     monkeypatch.setattr(diagnose_cmd, "_run_diagnose", run_diagnose)
 

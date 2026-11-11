@@ -1,0 +1,1053 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
+import {
+  Agent,
+  type ChannelSetupResult,
+  type CreatedAgent,
+  type DeployedAgent,
+  type InboundClaim,
+  InboundWebhooks,
+  Onboarding,
+  type OnboardingChannel,
+  type OnboardingMethod,
+  accountChainBody,
+  linkChainBody,
+  TypeId,
+} from '@sdk';
+import { CheckCircle2, ExternalLink, Loader2, Mail, X } from 'lucide-react';
+import { Button } from '@src/components/ui/button';
+import { CopyButton } from '@src/components/ui/copy-button';
+import { Input } from '@src/components/ui/input';
+import { Textarea } from '@src/components/ui/textarea';
+import { AllowedSendersEditor } from '@src/components/agents/AllowedSendersEditor';
+import { PROVIDER_TITLE } from '@src/components/inbound/inbound-model';
+import { FlowIcon } from '@sdk/react/FlowIcon';
+import { errorMessage } from '@src/lib/error-message';
+import { cn } from '@src/lib/utils';
+import flowpadIcon from '@src/assets/flowpad-icon.png';
+import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
+import { deployedMachine } from './deployed-machine';
+
+/** One way to connect a channel: Flowpad's own bot/number/app, or the person's own. */
+type Option = { id: string; method: OnboardingMethod; title: string; hint: string; disabled?: boolean };
+
+/** In picker order: email first. */
+const OPTIONS: Record<OnboardingChannel, Option[]> = {
+  email: [
+    {
+      id: 'agent_email',
+      method: 'flowpad',
+      title: 'Agent email address',
+      hint: 'Flowpad gives it its own address. It answers from there.',
+    },
+    { id: 'own_gmail', method: 'own', title: 'Your Gmail', hint: '', disabled: true },
+  ],
+  slack: [
+    {
+      id: 'flowpad_app',
+      method: 'flowpad',
+      title: 'Flow Slack bot',
+      hint: 'Add the Flowpad bot to Slack. It replies as the bot.',
+    },
+    { id: 'own_bot', method: 'own', title: 'Your own bot', hint: 'A Slack app you create. It replies as your bot.' },
+    {
+      id: 'own_app',
+      method: 'own',
+      title: 'Me agent',
+      hint: 'It replies as you, with your Slack login, in one channel.',
+    },
+  ],
+  whatsapp: [
+    { id: 'flowpad_bot', method: 'flowpad', title: 'Flow WhatsApp bot', hint: 'Message our number from your phone.' },
+    { id: 'meta_api', method: 'own', title: 'Meta API', hint: 'Your own WhatsApp Business number on Meta Cloud API.' },
+    { id: 'custom_api', method: 'own', title: 'Custom API', hint: 'Any Meta-compatible API, e.g. WAHA.' },
+  ],
+  telegram: [
+    { id: 'flowpad_bot', method: 'flowpad', title: 'Flow bot', hint: 'Open our bot and press Start.' },
+    { id: 'own_bot', method: 'own', title: 'Your own bot', hint: 'Paste the token BotFather gave you.' },
+  ],
+};
+
+/** The channels' names: the Channels screen's provider titles, plus email (no provider). */
+const CHANNEL_TITLE: Record<OnboardingChannel, string> = { email: 'Email', ...PROVIDER_TITLE } as Record<
+  OnboardingChannel,
+  string
+>;
+const SUPPORT_EMAIL = 'support@langware.ai';
+
+/** A channel's mark: its brand icon, or a mail glyph for email (no brand). */
+function ChannelIcon({ channel, className }: { channel: OnboardingChannel; className: string }) {
+  if (channel === 'email') return <Mail aria-hidden className={cn(className, 'text-primary')} />;
+  return <FlowIcon icon={`brands.${channel}`} className={className} />;
+}
+/** Throws unless the channel set-up's last step (verify) reports the channel ready. */
+const assertReady = (answer: ChannelSetupResult) => {
+  const last = answer.results.at(-1);
+  const verdict = last?.data as { ready?: boolean; detail?: string } | undefined;
+  if (!answer.ok || !verdict?.ready) throw new Error(verdict?.detail || last?.message || 'not ready');
+};
+const EXAMPLES = [
+  'Summarize the last 24 hours on Slack.',
+  'Answer like a pirate.',
+  'Remind me of my tasks every morning.',
+  'Answer questions about our opening hours.',
+];
+const POLL_MS = 3000;
+
+const WIZARD = ['channel', 'instructions', 'type'] as const;
+type WizardStep = (typeof WIZARD)[number];
+type Step = WizardStep | 'connect' | 'live';
+type LiveMessage = {
+  id: string;
+  author_external_id?: string | null;
+  body?: string | null;
+  occurred_at?: string | null;
+};
+
+type CardProps = { onActiveChange?: (active: boolean) => void };
+
+/** The hub home's first-agent card. × closes the wizard by remounting it: nothing carries over. */
+export function FirstAgentCard({ onActiveChange }: CardProps = {}) {
+  const [run, setRun] = useState(0);
+  return <FirstAgentWizard key={run} onActiveChange={onActiveChange} onClose={() => setRun((n) => n + 1)} />;
+}
+
+/** Pick a channel → say what it does → pick how it connects → its own sandbox + connect a channel → talk to it. */
+function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: () => void }) {
+  const { t } = useLingui();
+  const [step, setStep] = useState<Step>('channel');
+  useEffect(() => onActiveChange?.(step !== 'channel'), [step, onActiveChange]);
+  const [prompt, setPrompt] = useState('');
+  const [channel, setChannel] = useState<OnboardingChannel>('slack');
+  const [option, setOption] = useState<Option | null>(null);
+  const [made, setMade] = useState<CreatedAgent | null>(null);
+  const [deployed, setDeployed] = useState<DeployedAgent | null>(null);
+  const [phases, setPhases] = useState<Record<string, number>>({});
+  const [started, setStarted] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Option fields.
+  const [claim, setClaim] = useState<InboundClaim | null>(null);
+  const [phoneId, setPhoneId] = useState('');
+  const [token, setToken] = useState('');
+  const [appSecret, setAppSecret] = useState('');
+  const [graphUrl, setGraphUrl] = useState('');
+  const [wabaId, setWabaId] = useState('');
+  const [appId, setAppId] = useState('');
+  const [slackChannel, setSlackChannel] = useState('');
+  // Me agent: the person names and creates a private channel, then pastes its link (the link carries its id).
+  const [slackName, setSlackName] = useState('#flow-test');
+  const [slackLink, setSlackLink] = useState('');
+  const slackLinkId = /(?:\/archives\/|\/client\/T[A-Z0-9]+\/|^\s*)([CG][A-Z0-9]{8,})/.exec(slackLink)?.[1] ?? '';
+  const [slackConnected, setSlackConnected] = useState(false);
+  const deploying = useRef<Promise<DeployedAgent> | null>(null);
+
+  useEffect(() => {
+    if (!started || step === 'live') return;
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [started, step]);
+
+  const mark = (name: string) => setPhases((p) => ({ ...p, [name]: Date.now() }));
+  const secs = (at?: number) => (at && started ? `${((at - started) / 1000).toFixed(1)}s` : '');
+
+  const create = async () => {
+    setBusy(true);
+    setError(null);
+    const t0 = Date.now();
+    setStarted(t0);
+    setPhases({});
+    try {
+      const agent = await Onboarding.createAgent(prompt.trim(), channel, option?.method ?? 'flowpad');
+      setMade(agent);
+      mark('saved');
+      if (agent.mailbox?.address) mark('linked'); // the address exists the moment the agent does
+      setStep('connect');
+      deploying.current = deployedMachine(agent.project.id, agent.agent.id).then((d) => {
+        setDeployed(d);
+        mark('sandbox');
+        return d;
+      });
+      deploying.current.catch((e) => setError(errorMessage(e, 'failed')));
+    } catch (e) {
+      setError(errorMessage(e, 'failed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sandbox = async () => deployed ?? (await deploying.current!);
+
+  // Gone before the agent is live (×, or leaving the page): its machine is removed once it exists. A live one stays.
+  const stepRef = useRef(step);
+  stepRef.current = step;
+  useEffect(
+    () => () => {
+      if (stepRef.current === 'live') return;
+      void deploying.current
+        ?.then((d) => d.deployment?.id && Onboarding.removeDeployment(d.deployment.id))
+        .catch(() => undefined);
+    },
+    [],
+  );
+
+  const target = (d: DeployedAgent) =>
+    ({ kind: 'node', node_typeid: d.node_typeid, data_source_id: made!.data_source_id ?? undefined }) as const;
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError(errorMessage(e, 'failed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const goLive = () => {
+    mark('live');
+    setStep('live');
+  };
+  const linked = () => {
+    mark('linked');
+    goLive();
+  };
+
+  // Flowpad bot: the person connects while the machine boots. The claim is made at once with no place, proven by the
+  // install (or the code), and pointed at the agent's machine when it is up — the hub hands it over then.
+  const startLink = () =>
+    run(async () => {
+      setClaim(await InboundWebhooks.chain(linkChainBody(channel)));
+    });
+  const [pointed, setPointed] = useState(false);
+  useEffect(() => {
+    if (!claim || !deployed || pointed) return;
+    setPointed(true);
+    InboundWebhooks.setTarget(claim.id, target(deployed)).catch((e) => {
+      setPointed(false);
+      setError(errorMessage(e, 'failed'));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claim, deployed, pointed]);
+
+  // Flowpad bot: one click goes to the vendor. The tab opens on that click (a browser only allows it there) and
+  // moves to the install link once the agent's code exists.
+  const vendorTab = useRef<Window | null>(null);
+  const openVendorTab = () => {
+    const tab = window.open('', '_blank');
+    tab?.document.write(`<p style="font:16px system-ui;margin:2rem">${t`Opening ${CHANNEL_TITLE[channel]}…`}</p>`);
+    vendorTab.current = tab;
+  };
+  useEffect(() => {
+    const tab = vendorTab.current;
+    if (!claim?.deep_link || !tab) return;
+    vendorTab.current = null;
+    if (!tab.closed) tab.location.href = claim.deep_link;
+  }, [claim]);
+
+  // Flowpad bot: ask for the code as soon as the connect step opens — nothing for the person to press.
+  const askedCode = useRef(false);
+  useEffect(() => {
+    if (step !== 'connect' || option?.method !== 'flowpad' || channel === 'email' || claim || askedCode.current) return;
+    askedCode.current = true;
+    void startLink();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, option, claim]);
+
+  useEffect(() => {
+    if (!claim || step !== 'connect') return;
+    if (claim.status === 'active') {
+      if (pointed) linked();
+      return;
+    }
+    const id = setInterval(() => {
+      void InboundWebhooks.mine().then((all) => {
+        const fresh = all.find((c) => c.id === claim.id);
+        if (fresh) setClaim(fresh);
+      });
+    }, POLL_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claim, step, pointed]);
+
+  const connectOwnNumber = () =>
+    run(async () => {
+      const d = await sandbox();
+      // The webhook handshake secret between the vendor and the hub: the person never needs to see it.
+      const verifyToken = crypto.randomUUID().replace(/-/g, '');
+      const baseUrl = graphUrl.trim().replace(/\/+$/, '');
+      // The hub proves the number and routes its deliveries to the agent's sandbox …
+      await InboundWebhooks.chain(
+        accountChainBody({
+          provider: 'whatsapp',
+          phoneNumberId: phoneId,
+          credential: token,
+          appSecret,
+          verifyToken,
+          graphUrl: baseUrl ? `${baseUrl}/v23.0` : '',
+          target: target(d),
+        }),
+      );
+      // … and the sandbox's channel source sends the answers from that number.
+      const answer = await Onboarding.channelSetup(d.node_typeid, {
+        source: made!.data_source_id!,
+        config: { base_url: baseUrl, verify_token: verifyToken },
+        access: { open_to_all: true },
+        steps: [
+          { step: 'app', values: { app_id: appId.trim(), app_secret: appSecret.trim() } },
+          {
+            step: 'number',
+            values: { phone_number_id: phoneId.trim(), waba_id: wabaId.trim(), access_token: token.trim() },
+          },
+        ],
+        verify: true,
+      });
+      assertReady(answer);
+      linked();
+    });
+
+  const connectOwnBot = () =>
+    run(async () => {
+      const d = await sandbox();
+      const answer = await Onboarding.channelSetup(d.node_typeid, {
+        source: made!.data_source_id!,
+        credential: { name: 'telegram', values: { TELEGRAM_BOT_TOKEN: token.trim() } },
+        access: { open_to_all: true },
+        exclusive: true,
+        verify: true,
+      });
+      assertReady(answer);
+      linked();
+    });
+
+  // Your own Slack bot: its bot token on the agent's sandbox, reading and replying in one channel as the bot.
+  const connectSlackBot = () =>
+    run(async () => {
+      const d = await sandbox();
+      const answer = await Onboarding.channelSetup(d.node_typeid, {
+        source: made!.data_source_id!,
+        config: { channel: slackChannel.trim() },
+        credential: { name: 'slack_channel', values: { SLACK_BOT_TOKEN: token.trim() } },
+        access: { open_to_all: true },
+        exclusive: true,
+        verify: true,
+      });
+      assertReady(answer);
+      linked();
+    });
+
+  // Me agent: the person's Slack connection (once, on the hub), used by this agent's sandbox in one channel.
+  const refreshSlack = async () => {
+    if (!made) return false;
+    const s = await Onboarding.connectionStatus(made.project.id, 'slack');
+    setSlackConnected(!!s.has_token);
+    return !!s.has_token;
+  };
+  const flowSlackBot = option?.method === 'flowpad' && channel === 'slack';
+  useEffect(() => {
+    const readsSlack = option?.id === 'own_app' || flowSlackBot;
+    if (!readsSlack || slackConnected || (step !== 'connect' && step !== 'live')) return;
+    void refreshSlack();
+    const id = setInterval(() => void refreshSlack(), POLL_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [option, slackConnected, step, made]);
+
+  // Flow Slack bot: the bot is the chat line; the person's Slack sign-in is how the agent READS Slack (a 24h
+  // summary). Once the machine is up and the sign-in exists, the deployment is allowed to use it — the hub then
+  // places it on the machine. Nothing to press when the person already linked Slack on the hub.
+  const [slackReadGranted, setSlackReadGranted] = useState(false);
+  useEffect(() => {
+    if (!flowSlackBot || !slackConnected || slackReadGranted) return;
+    if (!made || !deployed?.deployment?.id) return;
+    setSlackReadGranted(true);
+    const deploymentId = deployed.deployment.id;
+    void (async () => {
+      try {
+        await Onboarding.attachConnection(made.project.id, 'slack');
+        await Onboarding.authorize(deploymentId, 'slack');
+      } catch (e) {
+        setSlackReadGranted(false);
+        setError(errorMessage(e, 'failed'));
+      }
+    })();
+  }, [flowSlackBot, slackConnected, slackReadGranted, made, deployed]);
+
+  const openSlackConsent = () => run(async () => void window.open(await Onboarding.startConnection('slack'), '_blank'));
+
+  const connectOwnSlack = () =>
+    run(async () => {
+      const d = await sandbox();
+      await Onboarding.attachConnection(made!.project.id, 'slack');
+      if (d.deployment?.id) await Onboarding.authorize(d.deployment.id, 'slack');
+      const answer = await Onboarding.channelSetup(d.node_typeid, {
+        source: made!.data_source_id!,
+        config: { channel: { id: slackLinkId, name: slackName.replace(/^#/, '').trim() } },
+        credential: { name: 'slack_channel', values: {}, choice: 'signin' },
+        access: { open_to_all: true },
+        exclusive: true,
+        verify: true,
+      });
+      assertReady(answer);
+      linked();
+    });
+
+  // Email: the agent behind the allowed-senders editor (the hub made it; this page holds no row of it), and
+  // the list as the hub last stored it — seeded from the create answer, then each save's answer.
+  const mailAgent = useMemo(() => (made ? Agent.onHub({ ...made.agent }) : null), [made]);
+  const [saved, setSaved] = useState<string[] | null>(null);
+  const senders = saved ?? made?.mailbox?.allowed_senders ?? [];
+
+  // Live: the channel's latest messages, read from the sandbox through the hub every few seconds. Held in this page
+  // only — nothing here is stored.
+  const [live, setLive] = useState<LiveMessage[]>([]);
+  useEffect(() => {
+    if (step !== 'live' || !deployed || !made?.data_source_id) return;
+    const read = () =>
+      void Onboarding.channelSetup(deployed.node_typeid, { source: made.data_source_id!, items: true })
+        .then((answer) => {
+          const items = (answer.results.at(-1)?.data as { items?: LiveMessage[] } | undefined)?.items ?? [];
+          setLive(
+            [...items]
+              // Since the agent took the channel: older history is not this conversation.
+              .filter((i) => i.body && (!i.occurred_at || Date.parse(i.occurred_at) >= (phases.linked ?? 0) - 5000))
+              .reverse()
+              .slice(-8),
+          );
+        })
+        .catch(() => undefined);
+    read();
+    const id = setInterval(read, POLL_MS);
+    return () => clearInterval(id);
+  }, [step, deployed, made, phases.linked]);
+
+  const at = WIZARD.indexOf(step as WizardStep);
+  const inWizard = at >= 0;
+  const elapsed = started ? ((step === 'live' ? (phases.live ?? now) : now) - started) / 1000 : 0;
+
+  return (
+    <section data-testid="first-agent-card" className="w-full rounded-xl border bg-card p-5 text-left shadow-sm">
+      <div data-testid="first-agent-top" className="mb-2 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          {inWizard && (
+            <nav data-testid="first-agent-crumbs" className="flex flex-wrap items-center gap-1.5 text-xs">
+              {WIZARD.map((s, i) => {
+                const label = [t`Channel`, t`Instructions`, t`Launch bot`][i];
+                return (
+                  <span key={s} className="flex items-center gap-1.5">
+                    {i > 0 && <span className="text-muted-foreground">›</span>}
+                    {i < at ? (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
+                        onClick={() => setStep(s)}
+                      >
+                        ✓ {label}:{s === 'channel' && <ChannelIcon channel={channel} className="h-3 w-3 shrink-0" />}
+                        <span className="text-foreground">
+                          {s === 'channel' ? CHANNEL_TITLE[channel] : prompt.trim()}
+                        </span>
+                      </button>
+                    ) : (
+                      <span className={i === at ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
+                        {i + 1}. {label}
+                      </span>
+                    )}
+                  </span>
+                );
+              })}
+            </nav>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {inWizard && (
+            <span className="text-xs text-muted-foreground">
+              <Trans>
+                Step {at + 1} of {WIZARD.length}
+              </Trans>
+            </span>
+          )}
+          {started > 0 && (
+            <span data-testid="first-agent-timer" className="font-mono text-xs text-muted-foreground">
+              {elapsed.toFixed(1)}s
+            </span>
+          )}
+          {step !== 'channel' && (
+            <Button
+              data-testid="first-agent-close"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              aria-label={t`Close`}
+              title={t`Close`}
+              onClick={onClose}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+      <div className="mb-3">
+        <h2 className="text-base font-semibold">
+          {step === 'channel' && <Trans>Make an agent in 60 seconds — where will you talk to it?</Trans>}
+          {step === 'instructions' && <Trans>What should it do?</Trans>}
+          {step === 'type' && <Trans>How should it connect to {CHANNEL_TITLE[channel]}?</Trans>}
+          {step === 'connect' && <Trans>Connect {CHANNEL_TITLE[channel]}</Trans>}
+          {step === 'live' && <Trans>Your agent is live</Trans>}
+        </h2>
+      </div>
+
+      {step === 'channel' && (
+        <div className="flex gap-3">
+          {(Object.keys(OPTIONS) as OnboardingChannel[]).map((c) => (
+            <button
+              key={c}
+              type="button"
+              data-testid={`first-agent-channel-${c}`}
+              onClick={() => {
+                if (c !== channel) setOption(null);
+                setChannel(c);
+                setStep('instructions');
+              }}
+              className="flex flex-1 flex-col items-start gap-2 rounded-lg border border-border bg-background p-4 text-left hover:bg-accent"
+            >
+              <ChannelIcon channel={c} className="h-7 w-7 shrink-0" />
+              <span className="text-sm font-semibold text-foreground">{CHANNEL_TITLE[c]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {step === 'instructions' && (
+        <div className="flex flex-col gap-3">
+          <Textarea
+            data-testid="first-agent-prompt"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={t`What should your agent do? One line is enough.`}
+            rows={3}
+          />
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Trans>Try:</Trans>
+            {EXAMPLES.map((ex) => (
+              <button
+                key={ex}
+                type="button"
+                className={cn(
+                  'rounded-full border px-3 py-1 text-xs transition-colors',
+                  prompt === ex
+                    ? 'border-primary/50 bg-primary/10 text-primary'
+                    : 'border-border bg-secondary text-foreground hover:bg-accent',
+                )}
+                onClick={() => setPrompt(ex)}
+              >
+                {ex}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => setStep('channel')}>
+              ← <Trans>Back</Trans>
+            </Button>
+            <Button data-testid="first-agent-next" disabled={!prompt.trim()} onClick={() => setStep('type')}>
+              <Trans>Next</Trans>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {step === 'type' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex gap-3">
+            {OPTIONS[channel].map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                data-testid={`first-agent-option-${o.id}`}
+                disabled={o.disabled}
+                aria-disabled={o.disabled}
+                onClick={() => setOption(o)}
+                className={cn(
+                  'flex flex-1 flex-col gap-1 rounded-lg border p-3 text-left',
+                  o.disabled
+                    ? 'cursor-not-allowed border-border bg-background opacity-60'
+                    : option?.id === o.id
+                      ? 'border-primary/50 bg-primary/10'
+                      : 'border-border bg-background hover:bg-accent',
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  {o.method === 'flowpad' ? (
+                    // Flowpad's own bot: the Flow logo with the channel as a sub icon.
+                    <span className="relative h-6 w-6 shrink-0">
+                      <img src={flowpadIcon} alt="" className="h-6 w-6 rounded-sm" />
+                      <ChannelIcon
+                        channel={channel}
+                        className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full bg-card"
+                      />
+                    </span>
+                  ) : o.id === 'own_gmail' ? (
+                    <FlowIcon icon="brands.gmail" className="h-6 w-6 shrink-0" />
+                  ) : (
+                    <ChannelIcon channel={channel} className="h-6 w-6 shrink-0" />
+                  )}
+                  <span
+                    className={cn('text-sm font-semibold', option?.id === o.id ? 'text-primary' : 'text-foreground')}
+                  >
+                    {o.title}
+                  </span>
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {o.disabled ? (
+                    <Trans>
+                      Contact{' '}
+                      <a
+                        className="text-primary underline"
+                        href={`mailto:${SUPPORT_EMAIL}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {SUPPORT_EMAIL}
+                      </a>{' '}
+                      to enable
+                    </Trans>
+                  ) : (
+                    o.hint
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => setStep('instructions')}>
+              ← <Trans>Back</Trans>
+            </Button>
+            <Button
+              data-testid="first-agent-create"
+              disabled={!prompt.trim() || !option || busy}
+              onClick={() => {
+                if (option?.method === 'flowpad' && channel !== 'email') openVendorTab();
+                void create();
+              }}
+            >
+              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {channel === 'email' ? (
+                <Trans>Get its address</Trans>
+              ) : option?.method === 'flowpad' ? (
+                <Trans>Connect Flow to {CHANNEL_TITLE[channel]}</Trans>
+              ) : (
+                <Trans>Try it</Trans>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {(step === 'connect' || step === 'live') && (
+        <ol
+          data-testid="first-agent-phases"
+          className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"
+        >
+          <Phase state={phases.saved ? 'done' : 'now'} label={t`Saved to My project`} at={secs(phases.saved)} />
+          <Phase
+            state={phases.sandbox ? 'done' : phases.saved ? 'now' : 'later'}
+            label={phases.sandbox ? t`Agent machine ready` : t`Preparing the agent machine`}
+            at={secs(phases.sandbox)}
+          />
+          <Phase
+            state={phases.linked ? 'done' : 'later'}
+            label={t`${CHANNEL_TITLE[channel]} connected`}
+            at={secs(phases.linked)}
+          />
+        </ol>
+      )}
+
+      {step === 'connect' && option && (
+        <div className="flex flex-col gap-3 text-sm">
+          {channel === 'email' && (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-muted-foreground">
+                  <Trans>Its address</Trans>
+                </span>
+                <p className="flex items-center gap-2">
+                  <code data-testid="first-agent-address" className="rounded bg-muted px-1">
+                    {made?.mailbox?.address}
+                  </code>
+                  {made?.mailbox?.address && <CopyButton value={made.mailbox.address} />}
+                </p>
+              </div>
+              <AllowedSendersEditor
+                agent={mailAgent}
+                allowedSenders={senders}
+                onSaved={(next) => setSaved(next)}
+                testId="first-agent-mailbox"
+              />
+              <p className="text-xs text-muted-foreground">
+                <Trans>Only these people can make it act. Anyone else's mail is kept but not answered.</Trans>
+              </p>
+              <div>
+                <Button data-testid="first-agent-done" disabled={!deployed} onClick={goLive}>
+                  {!deployed && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Trans>Done</Trans>
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {option.method === 'flowpad' && channel !== 'email' && (
+            <>
+              <div className="flex flex-col gap-2">
+                {error && !claim ? (
+                  <div>
+                    <Button variant="outline" size="sm" disabled={busy} onClick={() => void startLink()}>
+                      <Trans>Try again</Trans>
+                    </Button>
+                  </div>
+                ) : (
+                  <div>
+                    <Button
+                      data-testid="first-agent-deep-link"
+                      disabled={!claim?.deep_link}
+                      onClick={() => claim?.deep_link && window.open(claim.deep_link, '_blank', 'noopener')}
+                    >
+                      {!claim && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      <Trans>Connect Flow to {CHANNEL_TITLE[channel]}</Trans>
+                      {claim && <ExternalLink className="ml-2 h-3 w-3" />}
+                    </Button>
+                    {!claim && (
+                      <p className="mt-1 text-xs text-muted-foreground" data-testid="first-agent-get-code">
+                        <Trans>Getting your {CHANNEL_TITLE[channel]} link…</Trans>
+                      </p>
+                    )}
+                  </div>
+                )}
+                {claim?.status === 'active' && (
+                  <p className="text-muted-foreground" data-testid="first-agent-proven">
+                    <CheckCircle2 className="mr-1 inline h-3 w-3 text-green-600" />
+                    <Trans>
+                      {CHANNEL_TITLE[channel]} is linked. Your agent goes live as soon as its machine is ready.
+                    </Trans>
+                  </p>
+                )}
+                {claim && claim.status !== 'active' && (
+                  <>
+                    <p className="flex flex-wrap items-center gap-1 text-muted-foreground">
+                      <Trans>Then send this to the Flowpad bot:</Trans>{' '}
+                      <code data-testid="first-agent-code" className="rounded bg-muted px-1">
+                        link {claim.code}
+                      </code>{' '}
+                      <CopyButton value={`link ${claim.code}`} />
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+                      <Trans>Waiting for your message…</Trans>
+                    </p>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+
+          {channel === 'whatsapp' && option.method === 'own' && (
+            <div className="grid gap-2">
+              <Input
+                data-testid="first-agent-phone-id"
+                placeholder={t`Phone number ID`}
+                value={phoneId}
+                onChange={(e) => setPhoneId(e.target.value)}
+              />
+              <Input
+                data-testid="first-agent-token"
+                placeholder={t`Access token`}
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+              />
+              <Input
+                data-testid="first-agent-waba-id"
+                placeholder={t`WhatsApp Business account ID`}
+                value={wabaId}
+                onChange={(e) => setWabaId(e.target.value)}
+              />
+              <Input
+                data-testid="first-agent-app-id"
+                placeholder={t`App ID`}
+                value={appId}
+                onChange={(e) => setAppId(e.target.value)}
+              />
+              <Input
+                data-testid="first-agent-app-secret"
+                placeholder={t`App secret`}
+                value={appSecret}
+                onChange={(e) => setAppSecret(e.target.value)}
+              />
+              {option.id === 'custom_api' && (
+                <Input
+                  data-testid="first-agent-api-url"
+                  placeholder={t`API URL`}
+                  value={graphUrl}
+                  onChange={(e) => setGraphUrl(e.target.value)}
+                />
+              )}
+              <div>
+                <Button
+                  data-testid="first-agent-connect"
+                  disabled={
+                    busy ||
+                    !phoneId.trim() ||
+                    !token.trim() ||
+                    !wabaId.trim() ||
+                    !appId.trim() ||
+                    !appSecret.trim() ||
+                    (option.id === 'custom_api' && !graphUrl.trim())
+                  }
+                  onClick={() => void connectOwnNumber()}
+                >
+                  {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Trans>Connect</Trans>
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {channel === 'telegram' && option.method === 'own' && (
+            <div className="grid gap-2">
+              <ol className="list-decimal pl-5 text-xs text-muted-foreground">
+                <li>
+                  <Trans>In Telegram, message @BotFather and send /newbot.</Trans>
+                </li>
+                <li>
+                  <Trans>Paste the token it gives you here.</Trans>
+                </li>
+              </ol>
+              <Input
+                data-testid="first-agent-token"
+                type="password"
+                placeholder={t`Bot token`}
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+              />
+              <div>
+                <Button
+                  data-testid="first-agent-connect"
+                  disabled={busy || !token.trim()}
+                  onClick={() => void connectOwnBot()}
+                >
+                  {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Trans>Connect</Trans>
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {channel === 'slack' && option.id === 'own_bot' && (
+            <div className="grid gap-2">
+              <ol className="list-decimal pl-5 text-xs text-muted-foreground">
+                <li>
+                  <Trans>
+                    At{' '}
+                    <a
+                      className="text-primary underline"
+                      href="https://api.slack.com/apps"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      api.slack.com/apps
+                    </a>{' '}
+                    create an app from scratch.
+                  </Trans>
+                </li>
+                <li>
+                  <Trans>
+                    Under OAuth &amp; Permissions add the bot scopes channels:history, groups:history, channels:read,
+                    chat:write and channels:join, then install it to your workspace.
+                  </Trans>
+                </li>
+                <li>
+                  <Trans>Paste its Bot User OAuth Token (xoxb-…) and the channel ID here.</Trans>
+                </li>
+                <li>
+                  <Trans>Invite the bot to a private channel with /invite @your-bot.</Trans>
+                </li>
+              </ol>
+              <Input
+                data-testid="first-agent-token"
+                type="password"
+                placeholder={t`Bot token (xoxb-…)`}
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+              />
+              <Input
+                data-testid="first-agent-slack-channel"
+                placeholder={t`Channel ID (C0123456789)`}
+                value={slackChannel}
+                onChange={(e) => setSlackChannel(e.target.value)}
+              />
+              <div>
+                <Button
+                  data-testid="first-agent-connect"
+                  disabled={busy || !token.trim().startsWith('xoxb-') || !slackChannel.trim()}
+                  onClick={() => void connectSlackBot()}
+                >
+                  {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Trans>Connect</Trans>
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {channel === 'slack' && option.id === 'own_app' && (
+            <div className="grid gap-2">
+              {!slackConnected ? (
+                <div>
+                  <Button
+                    data-testid="first-agent-connect-slack"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void openSlackConsent()}
+                  >
+                    <Trans>Connect Slack</Trans> <ExternalLink className="ml-1 h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  <CheckCircle2 className="mr-1 inline h-3 w-3 text-green-600" />
+                  <Trans>Your Slack account is linked. The agent will post as you.</Trans>
+                </p>
+              )}
+              <ol className="ml-4 list-decimal space-y-2 text-xs text-muted-foreground">
+                <li>
+                  <Trans>In Slack, create a private channel named</Trans>
+                  <Input
+                    data-testid="first-agent-slack-name"
+                    className="mt-1 h-8 w-48"
+                    value={slackName}
+                    onChange={(e) => setSlackName(e.target.value)}
+                  />
+                </li>
+                <li>
+                  <Trans>
+                    In that channel, type /invite @Flowpad and send it, so the agent can read and answer there.
+                  </Trans>
+                </li>
+                <li>
+                  <Trans>Right-click the channel → Copy → Copy link, and paste it here:</Trans>
+                  <Input
+                    data-testid="first-agent-slack-link"
+                    className="mt-1 h-8"
+                    placeholder="https://your-team.slack.com/archives/C0123456789"
+                    value={slackLink}
+                    onChange={(e) => setSlackLink(e.target.value)}
+                  />
+                </li>
+                <li>
+                  <Trans>Ask a teammate to join it and write there. The agent answers as you.</Trans>
+                </li>
+              </ol>
+              <div>
+                <Button
+                  data-testid="first-agent-connect"
+                  disabled={busy || !slackConnected || !slackLinkId}
+                  onClick={() => void connectOwnSlack()}
+                >
+                  {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Trans>Connect</Trans>
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {step === 'live' && (
+        <div className="flex flex-col gap-3 text-sm">
+          <p data-testid="first-agent-live">
+            {channel === 'email' ? (
+              <Trans>
+                Set up in {elapsed.toFixed(0)}s. Email it at{' '}
+                <code className="rounded bg-muted px-1">{made?.mailbox?.address}</code> — it answers there.
+              </Trans>
+            ) : (
+              <Trans>
+                Set up in {elapsed.toFixed(0)}s. Message it on {CHANNEL_TITLE[channel]} — it answers there.
+              </Trans>
+            )}
+          </p>
+          {flowSlackBot && (
+            <p data-testid="first-agent-slack-read" className="flex items-center gap-2 text-xs text-muted-foreground">
+              {slackReadGranted ? (
+                <>
+                  <CheckCircle2 className="h-3 w-3 text-green-600" />
+                  <Trans>It can read your Slack channels.</Trans>
+                </>
+              ) : (
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => void openSlackConsent()}>
+                  <Trans>Let it read your Slack</Trans> <ExternalLink className="ml-1 h-3 w-3" />
+                </Button>
+              )}
+            </p>
+          )}
+          <div data-testid="first-agent-conversation" className="flex flex-col gap-1 rounded-lg border bg-muted/30 p-3">
+            {live.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+                <Trans>Waiting for the first message…</Trans>
+              </p>
+            ) : (
+              live.map((m) => (
+                <div key={m.id} data-testid="first-agent-message" className="text-xs">
+                  <span className="font-mono text-muted-foreground">{m.author_external_id || t`agent`}</span> {m.body}
+                </div>
+              ))
+            )}
+            <p className="text-[10px] text-muted-foreground">
+              <Trans>Live only — this page does not store the conversation.</Trans>
+            </p>
+          </div>
+          <div className="flex gap-2">
+            {deployed && (
+              <Button asChild variant="outline" size="sm">
+                <a
+                  data-testid="first-agent-open-bot"
+                  href={workspaceServiceUrl(new TypeId(deployed.node_typeid).id)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Trans>Customize response</Trans>
+                </a>
+              </Button>
+            )}
+            {option?.id === 'own_app' && slackLinkId && (
+              <Button asChild variant="outline" size="sm">
+                <a data-testid="first-agent-open-slack" href={slackLink.trim()} target="_blank" rel="noreferrer">
+                  <Trans>Open {slackName.trim()} in Slack</Trans> <ExternalLink className="ml-1 h-3 w-3" />
+                </a>
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <p data-testid="first-agent-error" className="mt-3 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** One setup stage: done (✓), happening now (the card's ONE spinner), or still ahead (a plain dot). */
+function Phase({ state, label, at }: { state: 'done' | 'now' | 'later'; label: string; at: string }) {
+  return (
+    <li className={cn('flex items-center gap-1', state !== 'later' && 'text-foreground')}>
+      {state === 'done' && <CheckCircle2 className="h-3 w-3 text-green-600" />}
+      {state === 'now' && <Loader2 className="h-3 w-3 animate-spin" />}
+      {state === 'later' && <span className="mx-1 h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />}
+      {label}
+      {at && <span className="font-mono">{at}</span>}
+    </li>
+  );
+}

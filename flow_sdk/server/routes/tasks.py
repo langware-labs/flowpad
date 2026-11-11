@@ -26,7 +26,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1")
 
 #: CLI verb → ledger event.
-VERBS = {"start": "started", "note": "note", "ask": "asked", "reply": "replied", "done": "done", "fail": "failed", "cancel": "canceled"}
+VERBS = {
+    "start": "started",
+    "note": "note",
+    "ask": "asked",
+    "reply": "replied",
+    "done": "done",
+    "fail": "failed",
+    "cancel": "canceled",
+}
 
 
 async def _body(request: Request) -> dict:
@@ -49,10 +57,15 @@ async def create_task(request: Request):
     origin_session = str(getattr(caller.process, "target_typeid_str", "") or "") if caller.process is not None else ""
     try:
         task = await ledger.create(
-            title=str(body.get("title") or ""), brief=str(body.get("brief") or ""), creator=caller.principal,
-            owner=str(body.get("owner") or ""), origin_conversation=origin_conversation,
+            title=str(body.get("title") or ""),
+            brief=str(body.get("brief") or ""),
+            creator=caller.principal,
+            owner=str(body.get("owner") or ""),
+            origin_conversation=origin_conversation,
             origin_session=origin_session if thread in ("", "current") else "",
-            project_id=caller.project_id, budget_usd=body.get("budget_usd"), budget_turns=body.get("budget_turns"),
+            project_id=caller.project_id,
+            budget_usd=body.get("budget_usd"),
+            budget_turns=body.get("budget_turns"),
             parent_id=str(body.get("parent_id") or caller.owned_task_id or ""),
         )
     except ledger.TaskLedgerError as exc:
@@ -67,7 +80,9 @@ async def list_tasks(request: Request, caller: str = "", mine: bool = False, thr
 
     who = await caller_of(caller)
     conversation = who.conversation_id if thread == "current" else thread
-    rows = await ledger.open_tasks(principal=who.principal if (mine or not all) else "", origin_conversation=conversation)
+    rows = await ledger.open_tasks(
+        principal=who.principal if (mine or not all) else "", origin_conversation=conversation
+    )
     return ApiSuccessResponse(data={"principal": who.principal, "tasks": [ledger.summary(t) for t in rows]})
 
 
@@ -79,8 +94,15 @@ async def show_task(task_id: str):
     task = await Task.get_by_id(task_id)
     if task is None:
         return ApiFailResponse(message=f"no task {task_id}")
-    log = [{"event": c.data.get("task_event"), "author": c.data.get("author"), "text": c.data.get("text"), "at": str(c.created_date or "")}
-           for c in await ledger.comments(task)]
+    log = [
+        {
+            "event": c.data.get("task_event"),
+            "author": c.data.get("author"),
+            "text": c.data.get("text"),
+            "at": str(c.created_date or ""),
+        }
+        for c in await ledger.comments(task)
+    ]
     return ApiSuccessResponse(data={**ledger.summary(task), "brief": await ledger.brief_of(task), "log": log})
 
 
@@ -116,8 +138,12 @@ async def task_event(task_id: str, verb: str, request: Request):
         return ApiFailResponse(message=f"this run owns task {caller.owned_task_id}, not {task_id}")
     try:
         task = await ledger.record(
-            task_id, event, author=caller.principal, text=str(body.get("text") or ""),
-            result=body.get("result"), artifacts=list(body.get("artifacts") or []) or None,
+            task_id,
+            event,
+            author=caller.principal,
+            text=str(body.get("text") or ""),
+            result=body.get("result"),
+            artifacts=list(body.get("artifacts") or []) or None,
         )
     except ledger.TaskLedgerError as exc:
         return ApiFailResponse(message=str(exc))
@@ -136,7 +162,18 @@ async def conversation_reply(conversation_id: str, request: Request):
     if not text and not files:
         return ApiFailResponse(message="nothing to say")
     reply_to = str(body.get("reply_to_id") or "").strip() or None
-    return await dispatch_channel_reply(conversation_id, text=text, reply_to=reply_to, files=files)
+    from flow_sdk.app.ticket_approval import unapproved_reason  # noqa: PLC0415
+
+    if reason := await unapproved_reason(conversation_id):
+        return ApiFailResponse(message=reason)
+    response = await dispatch_channel_reply(conversation_id, text=text, reply_to=reply_to, files=files)
+    # The send runs in the background (no message id yet): only the conversation learns its session.
+    origin_process = str(body.get("origin_process") or "").strip()
+    if origin_process and isinstance(response, ApiSuccessResponse):
+        from flow_sdk.app.actions.notification_action import link_origin_session  # noqa: PLC0415
+
+        await link_origin_session(conversation_id, None, origin_process, None)
+    return response
 
 
 __all__ = ["VERBS", "router"]

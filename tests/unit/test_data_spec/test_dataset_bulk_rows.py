@@ -16,6 +16,13 @@ crm = test_row_links.crm   # the same project tree: two schemas that link, two d
 pytestmark = pytest.mark.timeout(5)
 
 
+def _rows(root, name):
+    """The rows folder of dataset ``name`` in the project at ``root`` (its data store, not the asset folder)."""
+    from flow_sdk.datasets.stores import rows_root_of
+
+    return rows_root_of(root / "agentic-assets/dataset" / name) / "rows"
+
+
 def _lead(name, **more):
     return {"input": {"name": name, "past": [], "notes": [], **more}}
 
@@ -123,7 +130,7 @@ async def test_sync_repairs_a_row_that_no_longer_fits_and_prunes_one_too(crm):
     root, companies, _ = crm
     await companies.put_many([{"key": "acme", "input": {"name": "Acme"}}, {"key": "bolt", "input": {"name": "Bolt"}}])
     for key in ("acme", "bolt"):
-        doc = next((root / f"agentic-assets/dataset/companies/rows/{key}/input").glob("*.json"))
+        doc = next((_rows(root, "companies") / f"{key}/input").glob("*.json"))
         doc.write_text('{"name": 7}')
     assert len(companies.rows_and_problems()[1]) == 2
     done = await companies.sync([{"key": "acme", "input": {"name": "Acme"}}])

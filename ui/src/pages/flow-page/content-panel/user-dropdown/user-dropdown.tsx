@@ -10,7 +10,18 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { SettingsPane } from '@src/components/ui/settings-pane';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { Cloud, HelpCircle, KeyRound, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
+import {
+  Building2,
+  Cloud,
+  Globe,
+  HelpCircle,
+  KeyRound,
+  LogIn,
+  LogOut,
+  Settings,
+  User as UserIcon,
+  Wrench,
+} from 'lucide-react';
 import { notify } from '@src/notifications';
 
 import { AccountInfo } from '@src/components/account/account-info';
@@ -32,9 +43,12 @@ import {
   navigator,
   Page,
   PAGE_TYPE,
+  PageId,
   QueryFilter,
   QueryRequest,
   TypeId,
+  ViewType,
+  WorldViewProjection,
 } from '@sdk';
 import {
   useAuth,
@@ -48,6 +62,8 @@ import {
 import { getIconPacks, resolveIcon } from '@sdk/icons';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
+import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
+import { useMembershipAvailability } from '@src/hooks/use-membership-availability';
 import { guardCloudAction } from '@src/services/privacy-guard';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SerializedElementNode, SerializedLexicalNode, SerializedTextNode } from 'lexical';
@@ -203,11 +219,16 @@ export function UserDropdown() {
   // In Local (private) data-privacy mode the cloud is off-limits, so no login
   // affordance is shown at all.
   const { isLocal } = usePrivacyMode();
+  const { available: membershipAvailable } = useMembershipAvailability();
   // App-settings dock viewer — relocated here from the footer (which now hosts
   // the data-privacy control in place of the old gear).
   const { navigation } = useDockNavigation();
   const { login, connection, cloudUrl } = useCloudStatus();
   const dotClass = statusDotClass(login.status, connection.status);
+  // The avatar needs a hub sign-in, not just the local desktop user (always set) —
+  // otherwise a dropped login keeps drawing the local initials and no Sign in button.
+  const cloudAuthed = useCloudAuthed();
+  const showAvatar = isLocal ? Boolean(user) : cloudAuthed;
   // Derive up-to-2-char initials from whatever identity we have. `currentUser`
   // is `cloudUser ?? localUser`, so after cloud logout it falls back to the
   // local desktop user — we still show those initials rather than blanking the
@@ -422,7 +443,7 @@ export function UserDropdown() {
       </Dialog>
 
       <div className="flex flex-col items-center gap-2">
-        {user ? (
+        {showAvatar ? (
           <>
             <TooltipProvider>
               <Tooltip>
@@ -436,7 +457,10 @@ export function UserDropdown() {
                       {/* The fire ring marks developer mode — unless the box is
                           unreachable, whose orange pulse must not be mistaken for it. */}
                       <div
-                        className={cn('relative cursor-pointer rounded-full', devMode && isConnected && 'dev-fire-ring')}
+                        className={cn(
+                          'relative cursor-pointer rounded-full',
+                          devMode && isConnected && 'dev-fire-ring',
+                        )}
                         data-dev-mode={devMode ? 'true' : undefined}
                       >
                         <Avatar
@@ -506,6 +530,16 @@ export function UserDropdown() {
                           </DropdownMenuItem>
                         </>
                       )}
+                      {isHubOnly() && (
+                        <DropdownMenuItem
+                          onClick={() => navigation.openPage(PageId.HUB, ViewType.WORLDVIEW, WorldViewProjection.WORLD)}
+                          className="cursor-pointer"
+                          data-testid="app-worldview-button"
+                        >
+                          <Globe className="me-2 h-4 w-4" />
+                          <Trans>World view</Trans>
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
                         onClick={() => navigation.openPreferences()}
                         className="cursor-pointer"
@@ -530,6 +564,16 @@ export function UserDropdown() {
                         <UserIcon className="me-2 h-4 w-4" />
                         <Trans>Settings</Trans>
                       </DropdownMenuItem>
+                      {membershipAvailable && (
+                        <DropdownMenuItem
+                          onClick={() => navigation.openPage(PageId.HUB, ViewType.ORGANIZATION)}
+                          className="cursor-pointer"
+                          data-testid="app-organization-button"
+                        >
+                          <Building2 className="me-2 h-4 w-4" />
+                          <Trans>Organization</Trans>
+                        </DropdownMenuItem>
+                      )}
                       {/* Logout below = *cloud* logout. A local-only user (no cloud
                     login) is anonymous — the Login branch should fire. If you
                     see Logout without being cloud-logged-in, cloudLoginAvailable
@@ -540,13 +584,17 @@ export function UserDropdown() {
                             <Cloud className="me-2 h-4 w-4" />
                             <Trans>Flowpad Cloud</Trans>
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => void handleLogout()}
-                            className="cursor-pointer text-red-500 focus:text-red-500"
-                          >
-                            <LogOut className="me-2 h-4 w-4" />
-                            <Trans>Logout</Trans>
-                          </DropdownMenuItem>
+                          {/* A cloud box's sign-in was set up by the hub; signing out here would
+                              strand it. The box's card on the hub has its own sign-out. */}
+                          {!dataContext.caps.hubOwnsAccount && (
+                            <DropdownMenuItem
+                              onClick={() => void handleLogout()}
+                              className="cursor-pointer text-red-500 focus:text-red-500"
+                            >
+                              <LogOut className="me-2 h-4 w-4" />
+                              <Trans>Logout</Trans>
+                            </DropdownMenuItem>
+                          )}
                         </>
                       ) : isLocal ? null : (
                         <DropdownMenuItem
@@ -565,26 +613,31 @@ export function UserDropdown() {
             </TooltipProvider>
           </>
         ) : isLocal ? null : (
-          // Logged-out: a round, avatar-sized icon button in the rail's icon language
-          // (not a filled CTA pill — de-emphasized per NN/g). Reuses the shared Button
-          // for focus-ring/disabled a11y; className carries the round/dashed look.
+          // Logged-out: the avatar's slot becomes a filled Sign in button with a red dot
+          // and a label, so a dropped login is visible without hovering.
           <TooltipProvider>
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={t`Sign in`}
-                  data-testid="user-login-button"
-                  onClick={() => {
-                    trackEvent({ event: 'login_clicked', event_source: 'page_header' });
-                    void navigator.navigateToLogin();
-                  }}
-                  className="h-8 w-8 rounded-full border border-dashed border-border text-muted-foreground hover:border-solid hover:text-foreground"
-                >
-                  <LogIn className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
+              <div className="flex flex-col items-center gap-1">
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="default"
+                    size="icon"
+                    aria-label={t`Sign in`}
+                    data-testid="user-login-button"
+                    onClick={() => {
+                      trackEvent({ event: 'login_clicked', event_source: 'page_header' });
+                      void navigator.navigateToLogin();
+                    }}
+                    className="relative h-8 w-8 rounded-full shadow-sm ring-2 ring-primary/40"
+                  >
+                    <LogIn className="h-4 w-4" />
+                    <span aria-hidden className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-destructive" />
+                  </Button>
+                </TooltipTrigger>
+                <span aria-hidden className="text-[10px] font-medium leading-none text-primary">
+                  <Trans>Sign in</Trans>
+                </span>
+              </div>
               <TooltipContent side="top">{cloudLoginTooltip('logged_out', 'disconnected', cloudUrl)}</TooltipContent>
             </Tooltip>
           </TooltipProvider>

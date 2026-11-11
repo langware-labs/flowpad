@@ -83,3 +83,40 @@ describe('WarningsPopover — a warning with a button', () => {
     expect(screen.queryByTestId('warnings-popover-warning-action')).toBeNull();
   });
 });
+
+describe('WarningsPopover — dismissing a warning', () => {
+  beforeEach(() => {
+    dataContext.bootstrapInfo = { env: { env_name: 'desktop' } };
+  });
+
+  afterEach(() => {
+    cleanup();
+    dataContext.bootstrapInfo = null;
+    dataContext.setWarnings([]);
+  });
+
+  it('hides it until it says something else, and Dismiss all clears every row', async () => {
+    const stalled: UserWarning = {
+      id: 'setup-incomplete',
+      icon: 'AlertTriangle',
+      color: 'yellow',
+      message: 'Setup stalled',
+      description: 'An install failed.',
+      targetView: ViewType.HOME,
+    };
+    h.warning = stalled;
+    const user = userEvent.setup();
+    const { rerender } = render(<WarningsPopover />);
+    await user.click(await screen.findByTestId('warnings-popover-trigger'));
+
+    await user.click(screen.getByLabelText('Dismiss Setup stalled'));
+    await waitFor(() => expect(screen.queryByText('Setup stalled')).toBeNull());
+
+    h.warning = { ...stalled, description: 'A different install failed.' };
+    rerender(<WarningsPopover />);
+    expect(await screen.findByText('Setup stalled')).toBeTruthy();
+
+    await user.click(screen.getByTestId('warnings-popover-dismiss-all'));
+    await waitFor(() => expect(screen.queryByTestId('warnings-popover-trigger')).toBeNull());
+  });
+});

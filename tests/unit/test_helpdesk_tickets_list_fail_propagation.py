@@ -20,6 +20,7 @@ import pytest
 
 from flow_sdk.app.actions import flow_message_action as fma
 from flow_sdk.app.actions.flow_message_action import HelpdeskTarget
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.responses.response import ApiResponseStatus
 
@@ -45,7 +46,7 @@ async def test_hub_fail_envelope_propagates_as_failure() -> None:
     with (
         patch.object(fma, "get_current_request_info", return_value=_request_info_with_user()),
         patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
-        patch.object(fma, "hub_request", AsyncMock(side_effect=refused)),
+        patch.object(HubProxy, "call", AsyncMock(side_effect=refused)),
     ):
         resp = await fma.helpdesk_tickets_list()
 
@@ -63,7 +64,7 @@ async def test_hub_transport_failure_propagates_as_failure() -> None:
     with (
         patch.object(fma, "get_current_request_info", return_value=_request_info_with_user()),
         patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
-        patch.object(fma, "hub_request", AsyncMock(side_effect=HubError(0, "connection refused"))),
+        patch.object(HubProxy, "call", AsyncMock(side_effect=HubError(0, "connection refused"))),
     ):
         resp = await fma.helpdesk_tickets_list()
 
@@ -79,7 +80,7 @@ async def test_hub_success_returns_tickets() -> None:
     with (
         patch.object(fma, "get_current_request_info", return_value=_request_info_with_user()),
         patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
-        patch.object(fma, "hub_request", AsyncMock(return_value=rows)),
+        patch.object(HubProxy, "call", AsyncMock(return_value=rows)),
     ):
         resp = await fma.helpdesk_tickets_list()
 
@@ -94,9 +95,31 @@ async def test_hub_success_non_list_data_coerced_empty() -> None:
     with (
         patch.object(fma, "get_current_request_info", return_value=_request_info_with_user()),
         patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
-        patch.object(fma, "hub_request", AsyncMock(return_value={"unexpected": "shape"})),
+        patch.object(HubProxy, "call", AsyncMock(return_value={"unexpected": "shape"})),
     ):
         resp = await fma.helpdesk_tickets_list()
 
     assert resp.status == ApiResponseStatus.SUCCESS.value
     assert resp.data == {"tickets": [], "project_id": "proj-helpdesk"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("body", "expected"), [({"include_closed": True}, {"include_closed": "true"}), ({}, None)])
+async def test_include_closed_is_forwarded_to_the_hub(body, expected) -> None:
+    """D7: the staff queue asks the hub for closed tickets only when the caller does."""
+    asked: list = []
+
+    async def _hub(*args, **kwargs):
+        asked.append(kwargs.get("params"))
+        return [{"conversation_id": "c1", "status": "closed"}]
+
+    info = SimpleNamespace(someone_typeid="user-aaaaaaaa-0000-4000-8000-000000000001", get_post_data=AsyncMock(return_value=body))
+    with (
+        patch.object(fma, "get_current_request_info", return_value=info),
+        patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
+        patch.object(HubProxy, "call", _hub),
+    ):
+        resp = await fma.helpdesk_tickets_list()
+
+    assert resp.status == ApiResponseStatus.SUCCESS.value
+    assert asked == [expected]

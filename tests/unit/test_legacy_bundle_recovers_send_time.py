@@ -156,7 +156,9 @@ async def _seed_sender_pointer_index(fm_id: str, conv_id: str, prior_id: str) ->
     append_message_pointer(rec, fm_id, _SENT_AT.isoformat())
 
 
-async def _receive_legacy_bundle(n: int, tmp_path, monkeypatch, *, with_pointer_index: bool = True):
+async def _receive_legacy_bundle(
+    n: int, tmp_path, monkeypatch, *, with_pointer_index: bool = True, hub_updated: str | None = None
+):
     """Pack a pre-fix bundle and receive it through the real unpack path.
 
     ``with_pointer_index=False`` models the sender whose conversation has no local
@@ -212,7 +214,7 @@ async def _receive_legacy_bundle(n: int, tmp_path, monkeypatch, *, with_pointer_
         else:
             assert not jsonl_name, "fixture was meant to carry no pointer index"
 
-    await unpack_bundle(zip_path, "local-user-id")
+    await unpack_bundle(zip_path, "local-user-id", hub_updated=hub_updated)
     return fm_id, conv_id, str(zip_path)
 
 
@@ -233,6 +235,29 @@ async def test_legacy_bundle_message_keeps_its_send_time(tmp_path, monkeypatch):
         f"a legacy bundle's message landed stamped {fm.created_date!r} instead of its "
         f"real send-time {_SENT_AT!r} — the send-time was inside the bundle "
         f"(conversation.jsonl pointer) and was ignored"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_unrecoverable_bundle_takes_the_hub_clock(tmp_path, monkeypatch):
+    """A bundle with neither a header send-time nor a pointer index still has one
+    clock to go on: the hub's ``updated_date``, which the download caller passes in.
+    Without it the row is born ``now()`` and its conversation tops the stream inbox
+    although nothing happened in it (prod: a June diagnostic message, re-pulled in
+    October, sat at #1)."""
+    hub_updated = _SENT_AT.isoformat()
+    fm_id, conv_id, _ = await _receive_legacy_bundle(
+        31, tmp_path, monkeypatch, with_pointer_index=False, hub_updated=hub_updated
+    )
+
+    fm = await FlowMessage.get_one({"id": fm_id})
+    conv = await Conversation.get_one({"id": conv_id})
+    assert Conversation._as_datetime(fm.updated_date) == _SENT_AT, (
+        f"the message was born stamped {fm.updated_date!r} instead of the hub clock {hub_updated!r}"
+    )
+    assert Conversation._as_datetime(conv.updated_date) == _SENT_AT, (
+        f"the conversation floated to {conv.updated_date!r} instead of the hub clock {hub_updated!r}"
     )
 
 

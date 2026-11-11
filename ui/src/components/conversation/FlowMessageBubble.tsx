@@ -1,3 +1,5 @@
+import { InviteCard, inviteFromMessage } from '@src/components/conversation/InviteCard';
+import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { automationLineage, automationState } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { openableValue } from './ConversationAutomationChip';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -14,6 +16,7 @@ import {
   dataManager,
   FlowMessage,
   gitOriginCloneUrl,
+  fsStore,
   isImagePath,
   launchWizard,
   MessageAttachment,
@@ -39,26 +42,43 @@ import {
   AttachmentType,
   BodyStatus,
   FlowMessageKind,
+  DIAGNOSIS_FILE,
+  HELP_REQUEST_FILE,
   forwardMessage,
   isAttachmentMissing,
 } from '@sdk/entities/flow-message';
 import { Download, File, Loader2, Play, X } from 'lucide-react';
+import { valueKindMeta } from '@src/components/value-viewer/useValueKind';
 import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageRunStatus } from './MessageRunStatus';
-import { MessageSessionChip } from './MessageSessionChip';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
+import { isLightboxMedia } from '@src/components/ui/media-lightbox';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
+import { basename } from '@src/components/asset-manager/asset-row-helpers';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
+import { CredentialValueLock } from './CredentialValueLock';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
+import { AutomationMessageActions } from './AutomationMessageActions';
+import { DiagnosisMessageActions } from './DiagnosisMessageActions';
+import { HelpRequestLine } from './HelpRequestLine';
+import { ItReplyLine } from './ItReplyLine';
+import { ItSendTable } from './ItSendTable';
+import type { ItSend } from './it-sends';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
 import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
-import { participantLabelByUserId, UNRESOLVED_SENDER_LABEL, warnUnresolvedSender } from './participant-display';
+import {
+  participantLabelByUserId,
+  personName,
+  unresolvedSenderLabel,
+  warnUnresolvedSender,
+} from './participant-display';
 import { useAttachments, type AttachmentTypeChipView } from './useAttachments';
 import { AttachmentDownloadWarning } from './AttachmentDownloadWarning';
 import { dockPointerForLocalFile } from './attachment-url';
@@ -70,10 +90,20 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
-import { useOpenGitShare } from './asset-review/use-open-git-share';
+import { useOpenGitShare, type OpenShareOutcome } from './asset-review/use-open-git-share';
+import { ShareReplyCard } from './ShareReplyCard';
 import type { WorkerType } from './conversation-session-constants';
 import { PromptCallCard } from './PromptCallCard';
+import { MessageFormCard } from './MessageFormCard';
+import { FormAnswersCard } from './FormAnswersCard';
+import type { AnswersEntry, MessageForm } from './message-form';
 import type { ProcessCall, ReturnedValue } from '@sdk';
+import { messageDirection } from './message-direction';
+
+/** How long a sender may delete their own message on a hub conversation — the backend's
+ *  `OWN_MESSAGE_DELETE_WINDOW`; the hub enforces it. */
+const OWN_MESSAGE_DELETE_WINDOW_MS = 15 * 60 * 1000;
+const NO_IDS: ReadonlyArray<string> = [];
 
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
@@ -188,13 +218,16 @@ interface FlowMessageBubbleProps {
   isSelected?: boolean;
   /** Click on the bubble fires this so the parent can mark this message selected. */
   onSelect?: () => void;
-  /** True when the local user owns the parent conversation (created_by). The
-   *  conversation owner may delete ANY message; everyone may delete their own.
-   *  Together with `isCurrentUser` this gates the delete affordance. */
+  /** True when the local user owns the parent conversation (initiated_by). The
+   *  conversation owner may delete ANY message, at any time. */
   isConversationOwner?: boolean;
-  /** Delete this message everywhere. The bubble only wires it through when the
-   *  local user is allowed (sender of this message OR conversation owner). */
+  /** Delete this message everywhere. The bubble only wires it through when the local user is
+   *  allowed: the conversation owner, or the message's sender for `OWN_MESSAGE_DELETE_WINDOW_MS`. */
   onDeleteMessage?: (messageId: string) => void;
+  /** The conversation lives on the hub, so a delete removes the message for everyone in it. */
+  deleteForEveryone?: boolean;
+  /** Every id this account sends under (cloud user, local user) — the backend's `User.self_ids`. */
+  selfIds?: ReadonlyArray<string | null | undefined>;
   participants?: ConversationParticipant[];
   /** True once the parent has resolved the canonical hub roster (success
    *  OR explicit failure). The bubble only escalates to the UNRESOLVED
@@ -242,9 +275,17 @@ interface FlowMessageBubbleProps {
   onLaunchWorker?: (messageId: string, worker: WorkerType) => void;
   /** A prompt call riding this message (parsed once by the parent): its answer once the receiver
    *  replied, and whether it is running on this machine right now. */
+  /** The form this message carries, with its answers (oldest → newest). */
+  messageForm?: { form: MessageForm; answers: AnswersEntry[] } | null;
+  /** The answers this message carries; `latest`: the newest for its form. */
+  formAnswers?: { entry: AnswersEntry; form: MessageForm | null; latest: boolean } | null;
   promptCall?: { call: ProcessCall; answer: ReturnedValue | null; running: boolean } | null;
+  /** An IT request's send: each machine's answer to it, drawn as a table under the request. */
+  itSend?: ItSend | null;
   /** The conversation's other participant — the machine a prompt call I send runs on. */
   callPeerName?: string | null;
+  /** Same sender as the bubble above, moments later — drawn without avatar and name. */
+  continuation?: boolean;
 }
 
 export function FlowMessageBubble({
@@ -264,6 +305,8 @@ export function FlowMessageBubble({
   onSelect,
   isConversationOwner = false,
   onDeleteMessage,
+  deleteForEveryone = false,
+  selfIds = NO_IDS,
   participants,
   rosterReady = false,
   isHelpdesk = false,
@@ -275,7 +318,11 @@ export function FlowMessageBubble({
   taskPeople,
   onLaunchWorker,
   promptCall = null,
+  itSend = null,
+  messageForm = null,
+  formAnswers = null,
   callPeerName = null,
+  continuation = false,
   showEmailHeaders = false,
   channelTraits = null,
   lifecycle = null,
@@ -312,8 +359,11 @@ export function FlowMessageBubble({
   // the invitation-kind placeholder, whose author is the inviter.
   // `created_by` can be a non-entity sentinel (e.g. "system") for hub-authored
   // messages — guard so the TypeId constructor doesn't throw on those.
+  // A message names its sender (``sender_name``, stamped by the hub); the creator's user record is
+  // only the fallback label — and another user's record need not be readable.
+  const needsCreator = !fm?.sender_name?.trim();
   const { data: creator } = useEntity<User>(
-    fm?.created_by && isValidIdentifier(fm.created_by) ? new TypeId(User.type, fm.created_by) : null,
+    needsCreator && fm?.created_by && isValidIdentifier(fm.created_by) ? new TypeId(User.type, fm.created_by) : null,
   );
   // An agent's own sent copies are authored by the Agent (never a roster member,
   // so the roster tiers below cannot name it). Resolve the Agent so an empty
@@ -404,7 +454,7 @@ export function FlowMessageBubble({
     fm.sender_id &&
     rosterReady &&
     !participantLabelByUserId(participants, fm.sender_id) &&
-    !(localUser?.id && fm.sender_id === localUser.id) &&
+    messageDirection(fm, localUser?.id) !== 'sent' &&
     !fm.sender_name?.trim() &&
     (creatorIsLocalArtifact || !(creator?.name?.trim() || creator?.email?.trim()))
       ? fm.sender_id
@@ -447,7 +497,14 @@ export function FlowMessageBubble({
     cloudUserId: viewerCloudUserId,
     localUserId: localUser?.id ?? null,
   });
-  const creatorLabel = creatorIsLocalArtifact ? null : creator?.name?.trim() || creator?.email?.trim() || null;
+  // The conversation owner deletes any message; its sender, their own — on a hub conversation only
+  // while it is fresh. `selfIds`, not `isCurrentUser`: a message a channel projected as ours names
+  // the backend's local user, which `localUser` is not while signed in.
+  const sentByMe = isCurrentUser || (!!fm.sender_id && selfIds.includes(fm.sender_id));
+  const fresh = Date.now() - new Date(fm.occurredAt ?? 0).getTime() < OWN_MESSAGE_DELETE_WINDOW_MS;
+  const canDelete = isConversationOwner || (sentByMe && (!deleteForEveryone || fresh));
+  const hasCreator = !!(creator?.name?.trim() || creator?.email?.trim());
+  const creatorLabel = !creatorIsLocalArtifact && hasCreator ? personName(creator) : null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
   // glyph on legitimate gaps (cold-load before roster fetch returns,
   // departed members, cross-instance bundle imports). Tiered chain:
@@ -468,7 +525,7 @@ export function FlowMessageBubble({
   //      confirmed loaded (rosterReady) AND none of the cushions matched.
   //      That's the "the hub roster says no, no other signal" case worth
   //      alerting on.
-  //   7b. otherwise the benign 'unknown' string (roster still loading, no
+  //   7b. otherwise a short name from the sender id (roster still loading, no
   //      sender_id at all, etc.)
   const rosterLabel = fm.sender_id ? participantLabelByUserId(participants, fm.sender_id) : null;
   const wireSenderName = fm.sender_name?.trim() || null;
@@ -489,9 +546,9 @@ export function FlowMessageBubble({
   } else if (creatorLabel) {
     displayName = creatorLabel;
   } else if (fm.sender_id && rosterReady && !isHelpdesk) {
-    displayName = UNRESOLVED_SENDER_LABEL;
+    displayName = unresolvedSenderLabel(fm.sender_id);
   } else {
-    displayName = t`unknown`;
+    displayName = personName({ user_id: fm.sender_id });
   }
 
   // When task is present, role tracks the original task initiator (sender) vs
@@ -532,6 +589,9 @@ export function FlowMessageBubble({
   const hasAttachments = attachmentItems.length > 0 || entities.length > 0;
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
   const hasBody = bodyStatus !== BodyStatus.NA;
+  // The hub marked a received body FAILED (e.g. its stored copy was lost): say why
+  // instead of offering a download that can only 404.
+  const bodyFailed = bodyStatus === BodyStatus.FAILED && !downloaded && !fm.outbound;
 
   // A transcript-only share renders a fully blank bubble without this note:
   // an attachment-only send has no text, and the structural TYPE_ID self-refs
@@ -559,15 +619,29 @@ export function FlowMessageBubble({
   // is staged as a MessageAttachment (asset_type='file') and rides the same
   // download→review→install lifecycle as asset entities — no project gate:
   // review/install resolve their own target. Images never get a staged row.
-  const fileAttachments = (messageAttachments ?? []).filter((ma) => ma.asset_type === 'file');
+  // What the review lists: everything the message carries except a help request's own carrier (plumbing).
+  const reviewAttachments = (messageAttachments ?? []).filter((ma) => ma.name !== HELP_REQUEST_FILE);
+  const fileAttachments = reviewAttachments.filter((ma) => ma.asset_type === 'file');
   const stagedFileNames = new Set(fileAttachments.map((ma) => ma.name ?? ''));
   // The SENDER's own downloaded files have no staged MA row (staging happens on
   // receive/unpack). Render them ungated so the sender sees their file
   // immediately — open/reveal work off the local path, no project needed.
   const senderLocalFileItems = attachmentItems.filter(
     (i) =>
-      i.state === AttachmentChipState.Downloaded && !localImageItems.includes(i) && !stagedFileNames.has(i.filename),
+      i.state === AttachmentChipState.Downloaded &&
+      !localImageItems.includes(i) &&
+      !stagedFileNames.has(i.filename) &&
+      i.filename !== HELP_REQUEST_FILE,
   );
+  // Ask for help: the message names itself, and -- while its context waits on this computer -- says so. The
+  // carrier counts too: a desk ticket's echo from the hub can come back without ``kind`` on a path that does
+  // not re-derive it.
+  const isHelpRequest =
+    fm.kind === FlowMessageKind.HELP_REQUEST || attachmentItems.some((i) => i.filename === HELP_REQUEST_FILE);
+  // Its diagnosis, posted when the background run ends: the text is the bottom line, the details fold away.
+  const isDiagnosis =
+    !isHelpRequest &&
+    (fm.kind === FlowMessageKind.DIAGNOSIS || attachmentItems.some((i) => i.filename === DIAGNOSIS_FILE));
   // The "Download N" button must not re-count what's already surfaced without a
   // download: images shown inline above, and prompt entities (previewed in the
   // prompt row, materialized on Approve & Execute).
@@ -596,19 +670,12 @@ export function FlowMessageBubble({
         {/* Locally-available images always render as image cards — no project
             gate, no download step. The sender sees them immediately. */}
         {localImageItems.map((item) => (
-          <AttachmentChip
+          <LocalAttachmentChip
             key={item.key}
             url={item.url ?? ''}
             filename={item.filename}
             state={item.state}
-            onOpenInEditor={
-              item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
-            }
-            onRevealInFolder={
-              item.localPath
-                ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
-                : undefined
-            }
+            localPath={item.localPath}
           />
         ))}
         {/* Entity chips render as soon as the entity resolves locally — no
@@ -633,7 +700,7 @@ export function FlowMessageBubble({
                 )}
                 // The whole message's attachments — the review modal lists them
                 // all on the left, with the clicked chip pinned + selected.
-                siblingAttachments={messageAttachments}
+                siblingAttachments={reviewAttachments}
               />
             ))}
           </div>
@@ -647,26 +714,19 @@ export function FlowMessageBubble({
                 key={`file:${ma.id}`}
                 attachment={ma}
                 projectId={attachmentProjectId}
-                siblingAttachments={messageAttachments}
+                siblingAttachments={reviewAttachments}
               />
             ))}
           </div>
         )}
         {/* Sender's own local files (no staged row): open/reveal off local_path. */}
         {senderLocalFileItems.map((item) => (
-          <AttachmentChip
+          <LocalAttachmentChip
             key={item.key}
             url={item.url ?? ''}
             filename={item.filename}
             state={item.state}
-            onOpenInEditor={
-              item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
-            }
-            onRevealInFolder={
-              item.localPath
-                ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
-                : undefined
-            }
+            localPath={item.localPath}
           />
         ))}
         {senderLocalFileItems.length > 1 && (
@@ -679,15 +739,21 @@ export function FlowMessageBubble({
             <Trans>Download all attachments</Trans>
           </a>
         )}
-        {(missingAttachments.length > 0 || downloadError) && (
+        {(missingAttachments.length > 0 || downloadError || bodyFailed) && (
           <div
             data-testid={downloaded ? 'partial-attachments-status' : 'attachment-download-error'}
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
           >
-            {downloaded ? <Trans>Downloaded</Trans> : <Trans>Could not download</Trans>}
+            {downloaded ? (
+              <Trans>Downloaded</Trans>
+            ) : bodyFailed ? (
+              fm.body_error || <Trans>The attachments of this message could not be delivered.</Trans>
+            ) : (
+              <Trans>Could not download</Trans>
+            )}
             <AttachmentDownloadWarning
               attachments={missingAttachments}
-              error={downloadError}
+              error={downloadError ?? (bodyFailed ? fm.body_error : null)}
               info={{
                 messageTime: fm?.sent_at ?? timestamp,
                 deliveredAt: fm?.delivered_at,
@@ -712,7 +778,7 @@ export function FlowMessageBubble({
         {/* Download button ONLY while bytes are still remote. Once downloaded,
             files render as staged chips above and entities as chips — nothing
             left to pull, so no project-less dead-end button (the SAPAK bug). */}
-        {hasBody && !downloaded && pendingAssetCount > 0 ? (
+        {!bodyFailed && hasBody && !downloaded && pendingAssetCount > 0 ? (
           <DownloadAttachmentsButton
             count={pendingAssetCount}
             labels={assetLabels}
@@ -744,6 +810,33 @@ export function FlowMessageBubble({
           otherName={(isCurrentUser ? callPeerName : fm.sender_name) || t`the other participant`}
         />
       )}
+      {messageForm && (
+        <MessageFormCard
+          form={messageForm.form}
+          answers={messageForm.answers}
+          messageId={messageId}
+          conversationId={fm.conversation_id ?? ''}
+          isMine={isCurrentUser}
+          otherName={(isCurrentUser ? callPeerName : fm.sender_name) || t`the other participant`}
+        />
+      )}
+      {formAnswers && (
+        <FormAnswersCard
+          entry={formAnswers.entry}
+          form={formAnswers.form}
+          answererName={fm.sender_name || t`They`}
+          canChange={isCurrentUser && formAnswers.latest}
+        />
+      )}
+      {fm.it_reply && (
+        <ItReplyLine reply={fm.it_reply} agentId={fm.sender_id ?? ''} conversationId={fm.conversation_id ?? ''} />
+      )}
+      {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
+      {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
+      {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
+      {fm.kind === FlowMessageKind.AUTOMATION_RESULT && (
+        <AutomationMessageActions conversationId={fm.conversation_id ?? ''} entities={entities} />
+      )}
       {attachmentFooter}
       {lostChannelFiles.map((a) => (
         <p
@@ -756,9 +849,6 @@ export function FlowMessageBubble({
         </p>
       ))}
       <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />
-      {session && fm.conversation_id && (
-        <MessageSessionChip session={session} messageId={messageId} conversationId={fm.conversation_id} />
-      )}
     </>
   );
 
@@ -808,11 +898,15 @@ export function FlowMessageBubble({
               }
             : undefined
         }
-        onDeleteMessage={
-          onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
-        }
+        onDeleteMessage={onDeleteMessage && canDelete ? () => onDeleteMessage(messageId) : undefined}
+        deleteLocalCopyOnly={!!fm.origin && !deleteForEveryone}
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
         onLaunchWorker={onLaunchWorker && !fm.is_draft ? (worker) => onLaunchWorker(messageId, worker) : undefined}
+        messageSession={
+          session
+            ? { name: resolveProcessDisplayName(session), onOpen: () => void navigation.openShellProcess(session.id) }
+            : null
+        }
         taskIt={
           messageTask
             ? { onClick: () => navigation.openDock(messageTask.dockPointer), task: messageTask, people: taskPeople }
@@ -842,7 +936,18 @@ export function FlowMessageBubble({
         onReact={channelTraits?.reacts && fm?.origin ? handleReact : undefined}
         onReply={onReply && fm && (channelTraits?.native ? !fm.is_draft : fm.origin) ? () => onReply(fm) : undefined}
         replyInThread={!channelTraits?.quotes}
+        continuation={continuation}
       />
+      {fm.invite && (
+        <div className="ms-10" data-testid="message-invite">
+          <InviteCard
+            invite={inviteFromMessage(fm.invite, displayName, fm.created_date)}
+            layout="card"
+            mine={isCurrentUser}
+          />
+        </div>
+      )}
+      <ShareReplyCard fm={fm} isMine={isCurrentUser} onForward={canForward ? () => setForwardOpen(true) : undefined} />
       {lifecycle && <MessageLifecycle lifecycle={lifecycle} />}
       {reactError && (
         <p className="ms-10 text-xs text-destructive" role="alert" data-testid="reaction-error">
@@ -891,6 +996,8 @@ function MessageFileChip({
 }) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const typeId = new TypeId('file', String(attachment.asset_id ?? ''));
+  // A value of a kind (`*.value.json`) is named by its kind, not shown as a bare file.
+  const value = attachment.value_kind ? valueKindMeta(attachment.value_kind) : null;
   return (
     <>
       <EntityChip
@@ -898,8 +1005,8 @@ function MessageFileChip({
           typeId,
           type: 'file',
           id: String(attachment.asset_id ?? ''),
-          name: attachment.name ?? 'file',
-          icon: File,
+          name: value?.label ?? attachment.name ?? 'file',
+          icon: value?.Icon ?? File,
         }}
         staged={!attachment.installed}
         onClick={() => setReviewOpen(true)}
@@ -1006,7 +1113,6 @@ function ProjectMessageChip({
         <ContextEntityChip
           typeId={typeId}
           inside={{ type: 'conversation', id: conversationId }}
-          projectId={projectId}
           onClick={() => setReviewOpen(true)}
         />
       ) : (
@@ -1030,6 +1136,29 @@ function ProjectMessageChip({
   );
 }
 
+/** A file card for bytes on this machine: open opens it in the editor, reveal shows it in Finder/Explorer. */
+function LocalAttachmentChip({
+  localPath,
+  ...chip
+}: {
+  url: string;
+  filename: string;
+  state?: AttachmentChipState;
+  localPath: string | null;
+}) {
+  const { navigation } = useDockNavigation();
+  return (
+    <AttachmentChip
+      {...chip}
+      localPath={localPath}
+      onOpenInEditor={localPath ? () => navigation.openDock(dockPointerForLocalFile(localPath)) : undefined}
+      onRevealInFolder={
+        localPath ? () => void openExternalFromComputeNode('@local', localPath, { select: true }) : undefined
+      }
+    />
+  );
+}
+
 export function MessageEntityChip({
   typeId,
   conversationId,
@@ -1050,9 +1179,11 @@ export function MessageEntityChip({
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
   const { run: openGitShare } = useOpenGitShare(attachment, projectId);
-  const [openError, setOpenError] = useState<string | null>(null);
-   
-  const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
+  const [openOutcome, setOpenOutcome] = useState<OpenShareOutcome | null>(null);
+
+  // Installed here, the asset may answer to its own id (a webapp or a document is keyed on its path).
+  const hereTypeId = (attachment?.installed && attachment.localTypeId) || typeId;
+  const { data, notFound, isError } = useEntity<AnyEntity>(hereTypeId);
   // A project the message staged (its bundle carried it) is an ordinary
   // attachment chip below. A project reference with no staged attachment — an
   // invite sent before projects rode the bundle — keeps the project chip,
@@ -1113,6 +1244,11 @@ export function MessageEntityChip({
   // session (see useRunReceivedSkill). Only for skills with a staged/installed
   // attachment — not artifacts or plain shares.
   const runnable = !!attachment && TESTABLE_TYPES.has(typeId.type);
+  // A shared credential whose value travelled too (secured transfer or a project vault) carries a lock.
+  const valueLock =
+    typeId.type === 'credential' ? (
+      <CredentialValueLock typeId={typeId} name={attachment?.name} conversationId={conversationId} />
+    ) : null;
   const runButton = runnable ? (
     <button
       type="button"
@@ -1132,25 +1268,28 @@ export function MessageEntityChip({
       open={reviewOpen}
       onClose={() => {
         setReviewOpen(false);
-        setOpenError(null);
+        setOpenOutcome(null);
       }}
       attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
       initialAttachmentId={attachment.id}
       attachmentProjectId={projectId ?? null}
-      initialError={openError}
+      initialOutcome={openOutcome}
     />
   );
-  // A git share is a pointer that never touches the receiver's own checkout:
-  // one click installs AND opens it; a failure (said in a toast) opens the review.
+  // A git share (or Git + copy) opens in one click, in the right project; a failure
+  // or a question (which project? clone or copy?) opens the review.
   // A whole project is not a pointer: its review asks where it lands (Clone & Open, a taken name).
-  const gitShare = attachment?.transfer_mode === 'git' && attachment.asset_type !== 'project' && !handleFolderPull;
+  const gitShare =
+    (attachment?.transfer_mode === 'git' || attachment?.transfer_mode === 'both') &&
+    attachment.asset_type !== 'project' &&
+    !handleFolderPull;
   const onStagedClick =
     handleFolderPull ??
     (gitShare
       ? async () => {
-          const failed = await openGitShare();
-          if (failed) {
-            setOpenError(failed);
+          const out = await openGitShare();
+          if (out.error || out.needs) {
+            setOpenOutcome(out);
             setReviewOpen(true);
           }
         }
@@ -1166,18 +1305,29 @@ export function MessageEntityChip({
             onClick={() => void onStagedClick()}
           />
           {runButton}
+          {valueLock}
         </span>
         {dialog}
         {runPicker}
       </>
     );
   }
-  const artifact =
-    typeId.type === Artifact.type && data
-      ? data instanceof Artifact
-        ? data
-        : new Artifact(data as unknown as Partial<Artifact>)
-      : null;
+  // Built on click, not in render: constructing an entity while rendering notifies the cache
+  // (eslint-rules/no-entity-construct-in-render.js).
+  const artifactData = typeId.type === Artifact.type && data ? data : null;
+  // An artifact that stands for one local picture or video (a shared screen
+  // recording) shows the media itself, like a raw media attachment does.
+  const artifactFile = artifactData as { path?: string | null; asset_ref?: string } | null;
+  const mediaPath = artifactFile?.path || artifactFile?.asset_ref || null;
+  if (mediaPath && isLightboxMedia(mediaPath)) {
+    return (
+      <LocalAttachmentChip
+        url={fsStore.getState().getServeUrl(LOCAL_COMPUTE_NODE, mediaPath)}
+        filename={basename(mediaPath)}
+        localPath={mediaPath}
+      />
+    );
+  }
   // Installed via a MessageAttachment: behavior splits by view mode.
   //  • Advanced (or Dev): the chip KEEPS opening the review modal, where
   //    uninstall / test live and an "Open" button jumps to the entity view.
@@ -1192,20 +1342,26 @@ export function MessageEntityChip({
     <>
       <span className="inline-flex items-center gap-1">
         <ContextEntityChip
-          typeId={typeId}
+          typeId={hereTypeId}
           inside={{ type: 'conversation', id: conversationId }}
           onClick={
-            artifact
-              ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null })
+            artifactData
+              ? () =>
+                  void openArtifact(
+                    artifactData instanceof Artifact
+                      ? artifactData
+                      : new Artifact(artifactData as unknown as Partial<Artifact>),
+                    { navigation, currentProjectId: projectId ?? null },
+                  )
               : handleFolderPull
                 ? () => void handleFolderPull()
                 : attachment && !autoInstalled && isAdvanced
                   ? () => setReviewOpen(true)
                   : undefined
           }
-          projectId={projectId}
         />
         {runButton}
+        {valueLock}
       </span>
       {dialog}
       {runPicker}

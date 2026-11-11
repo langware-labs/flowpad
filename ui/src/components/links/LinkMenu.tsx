@@ -1,10 +1,20 @@
-import type { AgenticProcess } from '@sdk';
+import { dataContext, instancePreferences, PrefKey, type AgenticProcess } from '@sdk';
 import { t } from '@lingui/core/macro';
-import { AppWindow, Copy, ExternalLink, Monitor, PanelTop, Sparkles } from 'lucide-react';
+import {
+  AppWindow,
+  Check,
+  Copy,
+  ExternalLink,
+  MessageSquare,
+  Monitor,
+  PanelTop,
+  Sparkles,
+  SquareTerminal,
+  TerminalSquare,
+} from 'lucide-react';
 import {
   forwardRef,
   useCallback,
-  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -25,12 +35,16 @@ import {
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { MediaLightbox } from '@src/components/ui/media-lightbox';
-import { BrowserProfileItems } from './BrowserProfileItems';
-import { fetchBrowserProfiles, type Browser } from '@src/lib/browser-profiles';
-import { lightboxMediaName, linkKind } from '@src/lib/link-kind';
-import { linkActions, type LinkActionId, type LinkSurface } from './link-actions';
+import { Checkbox } from '@src/components/ui/checkbox';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@src/components/ui/select';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { BrowserProfileItems, ProfileLabel } from './BrowserProfileItems';
+import { browserProfileManager, useBrowserProfiles } from '@src/lib/browser-profiles';
+import { BrowserProfileMenu } from './BrowserProfileMenu';
+import { commandOf, lightboxMediaName, linkKind } from '@src/lib/link-kind';
+import { COMMAND_MODES, linkActions, type CommandMode, type LinkActionId, type LinkSurface } from './link-actions';
 import type { LinkHandlers, LinkSource } from './link-events';
-import { runLinkAction, type LinkAction, type LinkMedia } from './link-handlers';
+import { plainShell, runLinkAction, type CommandBrowser, type LinkAction, type LinkMedia } from './link-handlers';
 import { useDockNavigation } from '@src/navigation';
 
 export interface Links {
@@ -43,10 +57,33 @@ export interface Links {
 export interface LinkOptions {
   /** `vibe` only for the surface whose process owns the vibe Display it sits beside. */
   surface?: LinkSurface;
+  /** False when the text was written by another person: a command then opens its menu instead of running. */
+  trusted?: boolean;
+}
+
+const lastMode = (): CommandMode => {
+  const mode = instancePreferences.get(PrefKey.COMMAND_LINK_MODE) as CommandMode;
+  return COMMAND_MODES.includes(mode) ? mode : 'run-here';
+};
+const DEFAULT_BROWSER = 'default';
+/** A Select value per profile; the default is its own key. */
+const browserKeyOf = (choice: CommandBrowser): string => (choice ? `${choice.browser}/${choice.profile}` : DEFAULT_BROWSER);
+const commandBrowser = (): CommandBrowser => browserProfileManager.selected;
+
+/** The source's machine is the user's own (or it names none): its windows and browsers are on this screen. */
+function onLocalNode(source: { computeNodeTypeId?: { id: string } | null } | null): boolean {
+  const node = source?.computeNodeTypeId?.id;
+  return !node || node === '@local' || node === dataContext.computeNode?.id;
 }
 
 interface LinkMenuHandle {
-  open: (link: string, x: number, y: number, items: LinkActionId[]) => void;
+  /** `primary` is what a click does, marked as the default in the menu. */
+  open: (link: string, x: number, y: number, items: LinkActionId[], primary: LinkActionId | null) => void;
+}
+
+interface CommandConfirmHandle {
+  /** Resolves true when the user approves running `command` in `mode`. */
+  ask: (command: string, mode: CommandMode) => Promise<boolean>;
 }
 
 interface LinkPreviewHandle {
@@ -62,7 +99,7 @@ interface LinkPreviewHandle {
 export function useLinks(
   source: RefObject<LinkSource | null>,
   process?: AgenticProcess | null,
-  { surface = 'tab' }: LinkOptions = {},
+  { surface = 'tab', trusted = true }: LinkOptions = {},
 ): Links {
   const { navigation } = useDockNavigation();
   // Read the current navigation/process without retaining a surface render's closure.
@@ -72,6 +109,7 @@ export function useLinks(
   processRef.current = process ?? null;
   const menuRef = useRef<LinkMenuHandle>(null);
   const previewRef = useRef<LinkPreviewHandle>(null);
+  const confirmRef = useRef<CommandConfirmHandle>(null);
 
   return useMemo(() => {
     const plan = (link: string) =>
@@ -80,28 +118,143 @@ export function useLinks(
         media: lightboxMediaName(link) !== null,
         surface,
         host: processRef.current !== null,
+        here: !!processRef.current?.supports_shell_command || plainShell(source.current) !== null,
+        localNode: onLocalNode(source.current),
+        trusted,
+        lastMode: lastMode(),
       });
-    const run = (action: LinkAction, link: string) =>
+    const run = async (action: LinkAction, link: string) => {
+      const mode = isMode(action.id) ? action.id : null;
+      // Nothing runs on this machine without the user's approval, unless they said not to ask again.
+      if (mode && instancePreferences.get(PrefKey.COMMAND_LINK_CONFIRM) !== false) {
+        if (!(await confirmRef.current?.ask(commandOf(link), mode))) return;
+      }
       void runLinkAction(action, link, {
         navigation: navRef.current,
         source: source.current,
         host: processRef.current,
         preview: (media) => previewRef.current?.show(media),
+        commandBrowser: commandBrowser(),
       });
+    };
     return {
       handlers: {
-        activate: (_event, link) => run({ id: plan(link).primary } as LinkAction, link),
-        openMenu: (link, x, y) => menuRef.current?.open(link, x, y, plan(link).menu),
+        activate: (event, link) => {
+          const { primary, menu } = plan(link);
+          if (primary) void run({ id: primary } as LinkAction, link);
+          else menuRef.current?.open(link, event.clientX, event.clientY, menu, primary);
+        },
+        openMenu: (link, x, y) => {
+          const { menu, primary } = plan(link);
+          menuRef.current?.open(link, x, y, menu, primary);
+        },
       },
       menu: (
         <>
-          <LinkMenu ref={menuRef} onRun={run} />
+          <LinkMenu
+            ref={menuRef}
+            onRun={(action, link) => {
+              // A mode picked from the menu is what the next click does.
+              if (isMode(action.id)) instancePreferences.set(PrefKey.COMMAND_LINK_MODE, action.id);
+              void run(action, link);
+            }}
+          />
+          <CommandConfirm ref={confirmRef} />
           <LinkPreview ref={previewRef} />
         </>
       ),
     };
-  }, [source, surface]);
+  }, [source, surface, trusted]);
 }
+
+const isMode = (id: LinkActionId): id is CommandMode => COMMAND_MODES.includes(id as CommandMode);
+
+const WHERE: Record<CommandMode, () => string> = {
+  'run-here': () => t`in this chat's session`,
+  'run-flowpad': () => t`in a new Flowpad terminal`,
+  'run-external': () => t`in an external terminal window`,
+};
+
+/** "Run this command?" with Don't ask again — owns its state, so asking re-renders only this. */
+const CommandConfirm = forwardRef<CommandConfirmHandle>(function CommandConfirm(_props, ref) {
+  const [state, setState] = useState<{ command: string; mode: CommandMode; resolve: (ok: boolean) => void } | null>(null);
+  const [dontAsk, setDontAsk] = useState(false);
+  // The browser the command's pages open in: the same remembered choice as the link menu's "Browser ▸".
+  const browsers = useBrowserProfiles(state !== null);
+  const [browserKey, setBrowserKey] = useState(DEFAULT_BROWSER);
+  useImperativeHandle(
+    ref,
+    () => ({
+      ask: (command, mode) =>
+        new Promise<boolean>((resolve) => {
+          setDontAsk(false);
+          setBrowserKey(browserKeyOf(commandBrowser()));
+          setState({ command, mode, resolve });
+        }),
+    }),
+    [],
+  );
+  // A promise settles once, so the close that follows a confirm leaves its answer standing.
+  const answer = (ok: boolean) => {
+    if (ok && dontAsk) instancePreferences.set(PrefKey.COMMAND_LINK_CONFIRM, false);
+    if (ok) {
+      // A key no listed profile has (the remembered one is gone) is the system default.
+      const choice = browsers
+        .flatMap((b) => b.profiles.map((p) => ({ browser: b.id, profile: p.id })))
+        .find((c) => browserKeyOf(c) === browserKey);
+      browserProfileManager.select(choice ?? null);
+    }
+    state?.resolve(ok);
+    setState(null);
+  };
+  return (
+    <ConfirmDialog
+      open={state !== null}
+      onOpenChange={(open) => !open && answer(false)}
+      title={t`Run this command?`}
+      description={state ? t`It will run ${WHERE[state.mode]()}.` : ''}
+      confirmLabel={t`Run`}
+      cancelLabel={t`Cancel`}
+      onConfirm={() => answer(true)}
+      testId="command-confirm"
+    >
+      <pre dir="ltr" className="whitespace-pre-wrap break-all rounded bg-muted p-2 text-xs" data-testid="command-confirm-command">
+        {state?.command}
+      </pre>
+      {browsers.length > 0 && (
+        <label className="flex items-center gap-2 text-sm">
+          <span className="shrink-0">{t`Browser`}</span>
+          <Select value={browserKey} onValueChange={setBrowserKey}>
+            <SelectTrigger className="h-8" data-testid="command-confirm-browser">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DEFAULT_BROWSER}>{t`System default`}</SelectItem>
+              {browsers.map((browser) => (
+                <SelectGroup key={browser.id}>
+                  <SelectLabel>{browser.name}</SelectLabel>
+                  {browser.profiles.map((profile) => (
+                    <SelectItem
+                      key={profile.id}
+                      value={browserKeyOf({ browser: browser.id, profile: profile.id })}
+                      data-testid={`command-confirm-browser-${browser.id}-${profile.id}`}
+                    >
+                      <ProfileLabel profile={profile} />
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+      )}
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox checked={dontAsk} onCheckedChange={(v) => setDontAsk(v === true)} data-testid="command-confirm-dont-ask" />
+        {t`Don't ask again`}
+      </label>
+    </ConfirmDialog>
+  );
+});
 
 /** Owns the preview state, so showing and closing re-renders only this. */
 const LinkPreview = forwardRef<LinkPreviewHandle>(function LinkPreview(_props, ref) {
@@ -111,7 +264,7 @@ const LinkPreview = forwardRef<LinkPreviewHandle>(function LinkPreview(_props, r
   return media ? <MediaLightbox url={media.url} name={media.name} onClose={close} /> : null;
 });
 
-type MenuItemId = Exclude<LinkActionId, 'browser-profile' | 'preview'>;
+type MenuItemId = Exclude<LinkActionId, 'browser-profile' | 'preview' | 'command-browser'>;
 
 /** How each action reads in the menu. `browser-profile` is the "Open in ▸" submenu. */
 const ITEMS: Record<MenuItemId, { label: () => string; icon: typeof Copy }> = {
@@ -120,6 +273,9 @@ const ITEMS: Record<MenuItemId, { label: () => string; icon: typeof Copy }> = {
   open: { label: () => t`Open in Flowpad`, icon: PanelTop },
   vibe: { label: () => t`Vibe`, icon: Sparkles },
   browser: { label: () => t`Open in browser`, icon: ExternalLink },
+  'run-here': { label: () => t`Run in chat`, icon: MessageSquare },
+  'run-flowpad': { label: () => t`Run in Flowpad terminal`, icon: SquareTerminal },
+  'run-external': { label: () => t`Run in external terminal`, icon: TerminalSquare },
 };
 
 /** Owns the menu state, so opening and closing re-renders only this. */
@@ -128,30 +284,27 @@ const LinkMenu = forwardRef<LinkMenuHandle, { onRun: (action: LinkAction, link: 
   ref,
 ) {
   // `id` remounts the menu so a right-click on another link re-anchors it.
-  const [state, setState] = useState<{ link: string; x: number; y: number; items: LinkActionId[]; id: number } | null>(
-    null,
-  );
+  const [state, setState] = useState<{
+    link: string;
+    x: number;
+    y: number;
+    items: LinkActionId[];
+    primary: LinkActionId | null;
+    id: number;
+  } | null>(null);
   useImperativeHandle(
     ref,
     () => ({
-      open: (link, x, y, items) => setState((prev) => ({ link, x, y, items, id: (prev?.id ?? 0) + 1 })),
+      open: (link, x, y, items, primary) => setState((prev) => ({ link, x, y, items, primary, id: (prev?.id ?? 0) + 1 })),
     }),
     [],
   );
   // Refetched on every open; the last list stays shown meanwhile, so only the first right-click waits.
-  const [browsers, setBrowsers] = useState<Browser[]>([]);
-  const opened = state !== null;
-  useEffect(() => {
-    if (!opened) return;
-    let live = true;
-    void fetchBrowserProfiles().then((list) => live && setBrowsers(list));
-    return () => {
-      live = false;
-    };
-  }, [opened]);
+  const browsers = useBrowserProfiles(state !== null);
 
   if (!state) return null;
-  const { link, x, y, items, id } = state;
+  const { link, x, y, items, primary, id } = state;
+  const command = linkKind(link, window.location.origin) === 'command';
   return (
     <DropdownMenu key={id} open modal={false} onOpenChange={(open) => !open && setState(null)}>
       <DropdownMenuTrigger asChild>
@@ -159,11 +312,16 @@ const LinkMenu = forwardRef<LinkMenuHandle, { onRun: (action: LinkAction, link: 
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-w-sm" data-testid="link-menu">
         <DropdownMenuLabel className="truncate text-xs font-normal text-muted-foreground" title={link}>
-          {link}
+          {commandOf(link)}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {items.map((item) => {
           if (item === 'preview') return null;
+          if (item === 'command-browser') {
+            return (
+              <BrowserProfileMenu key={item} browsers={browsers} testIdPrefix="link-menu-command-browser" />
+            );
+          }
           if (item === 'browser-profile') {
             return browsers.length > 0 ? (
               <DropdownMenuSub key={item}>
@@ -184,10 +342,17 @@ const LinkMenu = forwardRef<LinkMenuHandle, { onRun: (action: LinkAction, link: 
             ) : null;
           }
           const { label, icon: Icon } = ITEMS[item];
+          const isDefault = isMode(item) && item === primary;
           return (
-            <DropdownMenuItem key={item} onSelect={() => onRun({ id: item }, link)} data-testid={`link-menu-${item}`}>
+            <DropdownMenuItem
+              key={item}
+              onSelect={() => onRun({ id: item }, link)}
+              data-testid={`link-menu-${item}`}
+              data-default={isDefault ? 'true' : undefined}
+            >
               <Icon className="mr-2 h-4 w-4" />
-              {label()}
+              {item === 'copy' && command ? t`Copy command` : label()}
+              {isDefault ? <Check className="ml-auto h-4 w-4" aria-label={t`Default`} /> : null}
             </DropdownMenuItem>
           );
         })}

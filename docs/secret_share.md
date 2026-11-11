@@ -136,6 +136,112 @@ deleting the deployment revokes every authorization. `Deployment.secrets_invento
 (`GET deployment/<id>/secrets`) lists each stored name with its last write and placement and
 the authorizations — names only; the cloud place's **Secrets** tab shows it.
 
+## An agent's project — one secret store, every placement
+
+The **names** are the project's Credential assets (`agentic-assets/credential/<name>/credential.json`, value-free);
+an agent requires them by name in `agent.json` `requirements`. The **values** live in one place: the project's
+secret store on the hub (the Project row's env vars, `project/<id>/env-var`, `builtin/project_secrets.py`) —
+write-only, read back as names; the owner and project admins write it. A deployment may override a value on top
+(its **Secrets**: Override here / Reset to project).
+
+Every placement of the agent — deployments, private placements, invite and visitor boxes — gets the project's
+values for its required credentials plus its own overrides. On the machine, `credential_service.place_values` files
+them under the project that declares them: the hub's project id when this machine knows it, else the deployment's
+main agent's project, else the one local project whose Credentials declare the names. A deployment on this
+machine's own node resolves as this computer (`Placement.of`). Processes read the values at spawn.
+
+The agent's **Env** tab (also on the hub page, which finds the project from the agent's hub repo) lists each required
+credential — Credential / Variables / Status / Placed — with Declare, a write-only Set and Use mine
+(`POST project/<id>/secrets_use_mine`); changing a placed value asks **Update all machines** or **Only new machines**
+(`project/<id>/credentials-changed`). A required credential the project does not declare is a project setup issue.
+
+The agent knows its credentials by name only: `flow credentials list [--text]` (name, variables, available) and a
+**Credentials:** block in the worker's system prompt — never a value.
+
+Limitation: a new invite box is placed before its project is cloned, so its values land in the catch-all
+`deployment-secrets` project until they are re-placed (Update all machines).
+
+## Between people — the project's vaults
+
+A credential's values travel from one person to another ONLY through one of the project's **vaults**:
+`secret_vaults` in `project_manifest.json`, each a named group of secrets in one **secret manager**
+(`{manager, config}` — an installed `agentic-assets/secret_manager/<name>/`, e.g. `gcp` or
+`onepassword`; the hub vault is not offered yet). A vault names a place, never a value, and travels
+with every clone; `credential_store.vaults_of(project)` is the one reader. Each variable may carry a
+**secret ref** (`vars.<VAR>.secret_ref` = `{vault, key}`) — where its value lives. It is not where
+any process reads: a process still reads its deployment's binding (above).
+
+- **Publish** (`credential_service.publish`, `flow secrets publish`,
+  `POST …/credentials/publish`): this computer's values into a vault; a variable with no ref gets `{vault, key: VAR}`.
+- **Fetch** (`credential_service.fetch`, `flow secrets fetch`, `POST …/credentials/fetch`): each variable's value from the vault
+  its ref names into this computer's store, through the same writer as `set` (so the `.env.local`
+  rules apply). Answers `{fetched, missing, denied, vaults}`; refuses with `no_vault`,
+  `unknown_vault` or `needs_connection` (a `denied` vault is reported, the rest still fetched).
+- **Project setup** fetches first: with a vault, every credential pack starts with a
+  `fetch-<name>` step on the pack's own check, so a full fetch skips its questions.
+- **Sharing** — the generic pre-share handler (`GET <type>/<id>/pre_share`, `Entity.pre_share`;
+  `{needed: false}` unless a type says otherwise). A credential that holds values answers `needed`
+  while a stored variable is not published to one of its project's vaults; the share dialog then
+  shows that step first (add a vault, publish), before the standard dialog.
+- **Receiving** — the generic receive handler (`TypeInfo.receive_handler` + the entity's
+  `setup_on_receive`; it runs in Git mode too). A credential refreshes its project (pull, re-read its
+  assets) so the manifest — and its vaults — is current, then opens; its page offers Fetch,
+  or, with no vault its values point into, says so (`no_vault`) with **Report** (the ask-for-help path, `origin: credential`).
+- **Access** is the secret manager's own and is project-wide: a denied fetch offers **Request access**
+  through the same ask-for-help path, and the owner grants it in the store itself (GCP IAM
+  `roles/secretmanager.secretAccessor`; a 1Password vault share). Flowpad grants nothing itself yet.
+
+The `onepassword` secret manager (`agentic-assets/secret_manager/onepassword/store.py`) runs the `op` CLI as whoever is signed in
+on the machine; a value never rides its command line (writes go as a JSON template on stdin).
+
+## Between people — by secured transfer
+
+Sharing a credential shares its description (which keys, how to set them up). Its VALUES go only when the
+sharer checks **Share values** in the share dialog's first step (`Credential.pre_share` → kind `credential_values`)
+and picks **Secured transfer** or **Secret manager** (above). Secured transfer needs no infrastructure:
+
+- **Device keys** — each install holds an Ed25519 (sign) + X25519 (seal) key pair in the OS keychain
+  (`Flowpad.ai.device_key/<instance>`), never in the vault or on the hub. Its signed public advert
+  (`DeviceKeyAdvertSpec`, kind `secrets.device_key`) is published to the hub on every verified sign-in
+  (`<user>/device_key`); preference `preferences.sharing.secure_receiving` (default on) — off withdraws it.
+  Keys rotate every 30 days (or on demand, `credentials/sealed/publish {rotate}`); the new advert is countersigned by
+  the old key, retired keys are kept until what was sealed to them expired (7 days).
+- **Reading a member's key** — ONLY through a members action of an entity both share:
+  `conversation/<id>/list_members/device_keys` (gated like `list_members`). Pinned on first use; a rotation is followed
+  only through its signed chain, any other key change is refused (the member shows as unable to receive).
+- **Send** — `credentials/sealed/seal` (a person's click only: refused with the CLI gate header or from a served app
+  page): values read from this computer's store, sealed in memory for every recipient device
+  (`flow_sdk/secrets/sealed.py`, `SealedValueSpec`), posted as a hub-only `sealed_value` message — names are inside the
+  ciphertext, the hub relays opaque metadata.
+- **Receive** — `credentials/sealed/incoming` lists this device's cards (names only); **Fill in**
+  (`credentials/sealed/fill`) verifies the sender against the hub-stamped sender's pinned key, checks conversation,
+  expiry and replay, decrypts in memory and writes through the credential writer with `literal=True` (a file value
+  is never read as an `@path`) — only variables the receiver's own credential declares. Then a `sealed_ack`
+  (no value); the sender deletes the envelope once every recipient answered.
+
+- **A member with no key yet** (Flowpad not installed, or receiving off) gets no warning on the sender's side: the
+  share posts a hub-only promise (`sealed_pending`: transfer id, recipients, expiry — no names, no values) and the sender
+  records it (`pending.json`). The recipient opens the message → **Get the secret** (`credentials/sealed/get`) publishes
+  their key and asks (`sealed_request`); the sender's Flowpad answers by itself — live, or on its catch-up after
+  sign-in — sealing for the new device (`answers` the promise). Both steps leave a quiet `sealed_note` reply in the
+  share's thread. A promise waits as long as a share (7 days).
+- **Sent → Delivered → Validated, per receiver** — right after the values land (**Fill in**, or **Fetch** on a
+  secret-manager share opened from the conversation: `credentials/fetch {conversation_id}`) the receiver's Flowpad
+  runs the credential's own **test** (`credential_service.test_credential_spec`) and posts a second `sealed_ack`:
+  `{outcome: "validated", test: ok|invalid|error|untested, at}` — the state only, never the detail (it may quote the
+  provider) and never a value. Per receiver the latest stage wins (`filled` → `validated`; `declined` is final). The
+  sender's card shows one line each: `invalid` = the provider refused the key (send a new one), `error` = their
+  machine could not run the test, `untested` = no `test.json`. A secret-manager share is recorded by the sender at
+  share time (`credentials/sealed/track` → `sent.json`, `route: "vault"`); both sides name it by
+  `vault_transfer_id` — a digest of conversation + credential, so the hub never sees the name. A receiver on an
+  older Flowpad sends only `filled`: shown "Delivered · not reported".
+- **CLI**: `flow credentials secure [--on|--off] [--rotate]` — receiving on this install and its key (id only).
+  Sharing, filling in and getting values are clicks in Flowpad, never the CLI.
+
+Code: `flow_sdk/secrets/sealed.py` (crypto, pure), `flow_sdk/secrets/sealed_transfer.py` (keys, hub, writer),
+hub `flowpad/hub/builtin/device_key.py`. Tests: `tests/unit/test_secrets/test_sealed*.py`, hub
+`tests/api/test_device_key.py`, end to end `ui/tests/hub/credential_secure_share_two_client{,.ui}.test.ts`.
+
 ## Resolution — what a process receives
 
 `flow_sdk/builtin/credential_resolver.py`:
@@ -218,7 +324,9 @@ whose value grants it). Raw scopes (`auth.scopes`) stay the wire truth.
 `flow_sdk/permissions.py` collects them — no provider name in generic code.
 
 An agent's **requirements** (`AgentSpec.requirements`, `builtin/readiness.py`)
-are what it needs anywhere: the credentials its data sources read, their
+are what it needs anywhere — a credential is named by an explicit object
+`{"kind": "credential", "name": "MY_API_KEY", "vars": ["MY_API_KEY"]}` (a bare string parses as kind
+`variable`): the credentials its data sources read, their
 permissions, each MCP server's `${VAR}`, and anything authored — written into
 `agent.json` when it is published, so they travel with it. **Readiness**
 (`GET agent/<id>/readiness?deployment_id=`) answers per requirement at one
@@ -231,15 +339,21 @@ A cloud deployment also gets one **funding** item, asked of the hub (`Deployment
 `GET deployment/<id>/funding`). It names what pays for its model turns: its token allocation (the deploy
 dialog's "Token allocation", `TokenAllocationSpec`), else the owner's capped default. A used-up limit makes the
 item `missing`, and the fix names the limit. The item is asked at readiness only and never written into the
-agent's requirements. A hub that cannot answer blocks nothing.
+agent's requirements. Funding is **advisory** (`ADVISORY_KINDS` in `requirement_spec.py`): a `missing` funding
+item never refuses a deploy — the deploy goes ahead, its readiness step ends with the warning, and the app shows
+it once as a toast (the deploy dialog shows the item as a warning, not a cross). A hub that cannot answer blocks
+nothing.
 `flow project setup` folds the same per-source derivation (`--deployment` sets up a
 deployment's values).
 
-Readiness **gates a cloud deploy**: `Agent.deploy_to_cloud` publishes, plans the
+Credentials and variables are advisory too (`ADVISORY_KINDS`): a missing secret never refuses a deploy — the
+readiness step ends with `Secret <name> missing` and the machine gets the value once it is set (Env tab, "Update all
+machines"). The deploy dialog shows one **Secrets** line (✓ / ⚠ missing) with Launch anyway. Readiness still
+**gates a cloud deploy** on the remaining blocking items: `agent_cloud_deploy.run_deployment_steps` publishes, plans the
 placement, and raises `NotReady` (HTTP 409, `code: not_ready`, with the readiness and the
 planned deployment) before any machine is paid for; the hub checks the same names again
 (`require`). The deploy dialog renders that refusal with Use mine / Authorize per item.
-`flow agent deploy <agent> [--environment E]` exits 1 on it; `flow credentials check|set|status
+`flow agent deploy <agent> [--environment E]` exits 1 on it; `flow credentials check|set
 --deployment D` and `flow credentials diff <A|here> <B|here>` (which names each holds) work on
 one deployment's values.
 
@@ -251,3 +365,16 @@ deployment requires) has a value in the store the deployment keeps it in,
 `missing`, `wrong-store` when a value exists in the other local store of the same
 scope — a value the process will not receive — or `unreachable` for a remote store
 that could not be asked.
+
+A present value is not a working one. A credential may declare a **test**:
+`test.json` beside `credential.json` (a `CliOp`, read by `Credential.declared_test`) —
+its own file so a Flowpad that predates tests never reads it — a read-only request run with the values in its
+environment and the credential's folder as its working folder — exit 0 means the
+provider takes them. `flow credentials test <name>` runs it and records the answer
+on the row for this machine only (`test_result`: `ok` / `invalid` / `error`,
+never in the file, every value scrubbed from the reason); `flow credentials check`
+runs it too, so a setup step does not count a rejected key as done. The status row
+carries `has_test` and the last `test_result`. A credential with no test gets one
+written by an agent the first time someone presses Test (`cred-scan test <name>`,
+contract and known endpoints in its `references/tests.md`); every later press runs
+the test directly.

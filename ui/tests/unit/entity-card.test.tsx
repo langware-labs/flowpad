@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 
 import { cleanup, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Conversation, Shell } from '@sdk';
@@ -59,14 +60,18 @@ describe('entity card', () => {
   });
 
   it('a web page tab shows its address', () => {
-    render(<UrlTabCard name="example.com" url="https://example.com/a" />);
+    render(
+      <MemoryRouter>
+        <UrlTabCard name="example.com" url="https://example.com/a" />
+      </MemoryRouter>,
+    );
     expect(screen.getByTestId('url-tab-card-url')).toHaveTextContent('https://example.com/a');
   });
 });
 
 describe('entity card rows', () => {
-  it('a native conversation names the people on its roster when it has no channel address', () => {
+  it('a native conversation names the people on its roster (an email by its short name) when it has no channel address', () => {
     const rows = entityCardRows('conversation', { members: [{ name: 'Dana' }, { email: 'eli@example.com' }] });
-    expect(rows.filter((r) => r.value === 'Dana' || r.value === 'eli@example.com')).toHaveLength(2);
+    expect(rows.filter((r) => r.value === 'Dana' || r.value === 'Eli')).toHaveLength(2);
   });
 });

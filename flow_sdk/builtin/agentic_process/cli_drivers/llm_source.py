@@ -63,6 +63,8 @@ import logging
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
+from flow_sdk.builtin.agentic_process.launch_health import CLI_CRASHES
+from flow_sdk.cli.auth.lm_api_keys import KEY_REJECTIONS
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.llm_source_spec import (
     LLMScope,
@@ -78,13 +80,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: Rank bands: a signed-in device login first, then a stored key, then a hub endpoint.
-_RANK_DEVICE = 0
-_RANK_KEY = 10
-_RANK_ENDPOINT = 20
+def _rank(kind: str) -> int:
+    """The rank band of a source kind (``device`` / ``api_key`` / ``endpoint``) in the user's order
+    (``preferences.llm_source_order``). Only rung 4 (nobody asked) reads it -- a process, project or
+    explicit harness choice still wins."""
+    from flow_sdk.preferences import llm_source_order  # noqa: PLC0415
+
+    return llm_source_order().index(kind) * 10
 
 
-def _hub_stub(typeid: str, *, name: str = "", provider: str = "", public: bool = False) -> "LLMEndpoint":
+def _hub_stub(
+    typeid: str, *, name: str = "", provider: str = "", public: bool = False, tiers: dict | None = None
+) -> "LLMEndpoint":
     """A hub endpoint we know only by typeid.
 
     Used for the two cases where a budget is named before any listing describes it: the
@@ -97,7 +104,9 @@ def _hub_stub(typeid: str, *, name: str = "", provider: str = "", public: bool =
     """
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
 
-    return LLMEndpoint.projection("hub", typeid, name=name, provider=provider, public=public)
+    return LLMEndpoint.projection(
+        "hub", typeid, name=name, provider=provider, public=public, tiers=dict(tiers or {})
+    )
 
 
 class Candidate(NamedTuple):
@@ -161,7 +170,7 @@ def _device_source(worker_type: str, install: "InstallState", login: "LoginState
             LLMSource(
                 endpoint_typeid=typeid,
                 name=name,
-                rank=_RANK_DEVICE,
+                rank=_rank("device"),
                 eligible=eligible,
                 auto=eligible,
                 authority=authority,
@@ -177,6 +186,8 @@ def _device_source(worker_type: str, install: "InstallState", login: "LoginState
             code=LLMSourceRefusal.NOT_INSTALLED,
             authority=LLMSourceAuthority.PROVEN,
         )
+    if crashed := CLI_CRASHES.get(worker_type):
+        return verdict(reason=f"{worker_type} crashed on start: {crashed[:200]}", code=LLMSourceRefusal.CLI_CRASHED)
     if login is LoginState.SIGNED_IN:
         return verdict()
     refusals = {
@@ -225,6 +236,9 @@ def _key_sources(spec, rows: dict, stored: set[str], hints: dict[str, str] | Non
         # An ``OPENROUTER_API_KEY`` in the environment is a convenience for in-process calls,
         # not a statement about what this box is configured to spend, so it is not consulted.
         has_key = provider.value in stored
+        rejected = KEY_REJECTIONS.get(provider.value) if has_key else None
+        reason, code = ((f"{provider.value} rejected the stored key: {rejected['reason']}", "key_rejected")
+                        if rejected else ("", "") if has_key else (f"no {provider.value} key is stored on this machine", "no_key"))
         out.append(
             Candidate(
                 endpoint,
@@ -234,20 +248,20 @@ def _key_sources(spec, rows: dict, stored: set[str], hints: dict[str, str] | Non
                     # Display only: the masked hint of the stored key, so the picker can say
                     # WHICH key funds this; nothing for a slot with no key.
                     detail=(hints or {}).get(provider.value, "") if has_key else "",
-                    rank=_RANK_KEY,
-                    eligible=has_key,
-                    auto=has_key,
+                    rank=_rank("api_key"),
+                    eligible=not reason,
+                    auto=not reason,
                     # CACHED, not PROVEN: a key's NAME was listed, its value was never tried.
                     authority=LLMSourceAuthority.CACHED,
-                    reason="" if has_key else f"no {provider.value} key is stored on this machine",
-                    reason_code="" if has_key else LLMSourceRefusal.NO_KEY.value,
+                    reason=reason,
+                    reason_code=code,
                 ),
             )
         )
     return out
 
 
-def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_authoritative: bool) -> list[Candidate]:
+def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candidate]:
     """The hub endpoints this harness could spend.
 
     Availability is *presumed*: whether a chain ends in a root with a live credential is
@@ -260,22 +274,16 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_autho
         return []
     bound_typeid = bound.endpoint_typeid if bound else ""
     rows: dict[str, "LLMEndpoint"] = {str(e.typeid): e for e in endpoints}
-    if bound_typeid and bound_typeid not in rows and not listing_authoritative:
-        # The push is authoritative even when the listing has not caught up: a freshly
-        # bound (or freshly shared) endpoint must work before any cache has heard of it.
-        #
-        # But only while we have not managed to ask. Once a listing has SUCCEEDED and does not
-        # contain the bound endpoint, its absence is an answer rather than a gap -- the endpoint
-        # was deleted, or the role that made it spendable was revoked -- and synthesising it
-        # anyway is what strands a box: the stub is eligible, a bound endpoint outranks an
-        # unproven device login, and every spawn then posts to an invoke URL that answers
-        # "Entity ... not found" until the harness exhausts its retries. Leaving it out makes
-        # the ladder fall through to whatever the box can actually spend.
+    if bound_typeid and bound_typeid not in rows:
+        # A Reader listing is not invocation authority: Runner-only grants are absent.
+        # Preserve the hub's explicit choice and let invoke enforce current access. Never
+        # silently switch to a personal subscription because the budget was not readable.
         rows[bound_typeid] = _hub_stub(
             bound_typeid,
             name=bound.name if bound else "",
             provider=bound.provider if bound else "",
             public=bool(bound and bound.public),
+            tiers=bound.tiers if bound else None,
         )
     out: list[Candidate] = []
     for typeid, endpoint in rows.items():
@@ -293,8 +301,12 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_autho
                 LLMSource(
                     endpoint_typeid=typeid,
                     name=name,
-                    detail=endpoint.provider,
-                    rank=_RANK_ENDPOINT,
+                    # The listing row's ``provider`` is the entity default for any allowance (a chain has no
+                    # provider of its own); the binding the hub pushed names who actually pays.
+                    detail=(
+                        bound.provider if bound and typeid == bound_typeid and bound.provider else endpoint.provider
+                    ),
+                    rank=_rank("endpoint"),
                     eligible=not reason,
                     auto=(not reason) and typeid == bound_typeid,
                     authority=LLMSourceAuthority.PRESUMED,
@@ -330,7 +342,6 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     from flow_sdk.instance_settings.llm_endpoint import (
         fetch_hub_llm_endpoints,
         get_hub_llm_endpoint,
-        listing_supersedes_binding,
     )
 
     spec = driver_api_auth_spec(worker_type)
@@ -354,7 +365,7 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
         else []
     )
     candidates += _key_sources(spec, rows, stored, hints)
-    candidates += _endpoint_sources(spec, endpoints, bound, _hub_has_token(), listing_supersedes_binding())
+    candidates += _endpoint_sources(spec, endpoints, bound, _hub_has_token())
     if install not in (InstallState.INSTALLED, InstallState.BUILT_IN):
         # Nothing funds a harness that cannot run: a stored key or a hub budget would only be
         # spent by a CLI that is not on this machine. Every source stays LISTED (the picker
@@ -674,6 +685,7 @@ class PickerView(NamedTuple):
     #: effect. Saying it is the difference between "your setting is being ignored, here is
     #: why" and a box that appears to disobey its own configuration.
     note: str = ""
+    blocked_code: str = ""  # ``blocked`` as an LLMSourceRefusal code, for the launch card
 
 
 async def llm_picker_view(worker_type: str, scope: LLMScope = LLMScope()) -> PickerView:
@@ -701,12 +713,29 @@ async def picker_view_for(worker_type: str, constraint: tuple[str, LLMSourceOrig
         return PickerView([], None, "")
     overlaid = _overlay(inventory, cap, worker_type, constraint)
     chosen = pick_llm_candidate(overlaid)
+    top = None if chosen else next((c.source for c in overlaid if c.source.reason), None)
     return PickerView(
         offers=sorted(inventory, key=lambda c: c.source.rank),
         chosen=chosen,
-        blocked="" if chosen else next((c.source.reason for c in overlaid if c.source.reason), ""),
+        blocked=top.reason if top else "",
         note=_ignored_preference_note(worker_type, cap, constraint),
+        blocked_code=_blocked_code(top, overlaid, worker_type) if not chosen else "",
     )
+
+
+def _blocked_code(top: LLMSource | None, overlaid: list[Candidate], worker_type: str) -> str:
+    # The top refusal — but a rejected key wins, and signed in with no budget list yet is budget_not_ready.
+    code, spec = (top.reason_code if top else ""), driver_api_auth_spec(worker_type)
+    if code in ("not_installed", "cli_crashed", "pinned_elsewhere"):
+        return code
+    if any(c.source.reason_code == "key_rejected" for c in overlaid):
+        return "key_rejected"
+    return "budget_not_ready" if spec and spec.hub_endpoint_binding and _hub_budget_pending() else code
+
+
+def _hub_budget_pending() -> bool:  # signed in to the hub, endpoint list never fetched this run
+    from flow_sdk.instance_settings.llm_endpoint import _list_cache, get_instance_settings  # noqa: PLC0415
+    return _hub_has_token() and get_instance_settings().instance_name not in _list_cache
 
 
 def _ignored_preference_note(worker_type: str, cap, constraint) -> str:

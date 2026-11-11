@@ -146,4 +146,52 @@ const eq = (a, b, msg) => { assert.deepStrictEqual(a, b, msg); passed++; };
   ok(/\$\{ifNot\} \$\{isUpdated\}/.test(nsh), '…and skips the delete during an auto-update (uninstall --updated)');
 }
 
+// ── the uninstaller removes only what flow-rs proves is FlowPad's (FLOWPAD-2250) ─────────────
+// installer.nsh is the UI around `flow-rs uninstall`; these pin the safety rules of that UI.
+{
+  const fs = require('fs');
+  const nsh = fs.readFileSync(path.join(__dirname, committed.nsis.include), 'utf8');
+  const code = nsh.split(/\r?\n/).filter((l) => !/^\s*;/.test(l)).join('\n');
+  const macro = (name) => (code.match(new RegExp(`!macro ${name}\\b[\\s\\S]*?!macroend`)) || [''])[0];
+
+  ok(!/REBOOTOK/i.test(code), 'no /REBOOTOK: per-user reboot deletion fails silently; flow-rs schedules and verifies its own');
+  ok(!/RMDir\s+\/r/i.test(code) && !/rmdir\s+\/s/i.test(code), 'no recursive delete in NSIS: only flow-rs deletes, by handle');
+  ok(!/powershell|Get-CimInstance/i.test(code.replace(/!insertmacro (IS_POWERSHELL_AVAILABLE|_CHECK_APP_RUNNING)/g, '')),
+    'no PowerShell/WMI of our own (it hung on the VM)');
+
+  const uninstall = macro('customUnInstall');
+  ok(/\$\{ifNot\} \$\{isUpdated\}[\s\S]*flow-rs\.exe|FLOWPAD_RS\}" uninstall[\s\S]*\$\{endIf\}/.test(uninstall)
+    && uninstall.indexOf('${ifNot} ${isUpdated}') < uninstall.indexOf('" uninstall --install-dir'),
+    'customUnInstall runs flow-rs uninstall only outside an update');
+  ok(/--delete-app-data/.test(uninstall) && /--delete-instance-data/.test(uninstall) && /--remove-engine/.test(uninstall),
+    'data and engine flags are passed only from the user\'s choices');
+  ok(!/Sign out or restart to finish"[\s\S]*\$\{If\} \$1 == 0/.test(uninstall) && /\$\{If\} \$1 == 0/.test(uninstall),
+    'the finish title follows flow-rs\'s exit code');
+  ok(!/StrCpy \$FlowpadFinishTitle "FlowPad was uninstalled"\s*\n\s*\$\{EndIf\}/.test(uninstall),
+    'no unconditional success title');
+
+  const page = macro('flowpadOptionsPage');
+  ok(/\$FlowpadUpdating == 1[\s\S]*\$\{OrIf\} \$\{Silent\}[\s\S]*Abort/.test(page), 'the options page is skipped during an update and in silent mode');
+  ok(!/NSD_Check\b|BST_CHECKED\}\s*$/m.test(page.replace(/\$\{If\} \$0 == \$\{BST_CHECKED\}/g, '')), 'nothing on the page starts checked');
+  ok(/MB_YESNO\|[^"]*MB_DEFBUTTON2[^"]*"This permanently deletes/.test(page), 'deleting data needs a confirmation whose default is No');
+  ok(/IDYES flowpad_confirmed[\s\S]*StrCpy \$FlowpadDeleteAppData 0[\s\S]*StrCpy \$FlowpadDeleteData 0/.test(page), 'answering No deletes nothing');
+  ok(/IDYES flowpad_confirmed[\s\S]*\bAbort\b[\s\S]*flowpad_confirmed:/.test(page), 'answering No keeps the page open (the uninstall does not start)');
+  const leave = (page.match(/Function un\.flowpadOptionsLeave[\s\S]*?FunctionEnd/) || [''])[0];
+  ok(['RemoveEngine', 'DeleteAppData', 'DeleteData'].every((v) => new RegExp(`StrCpy \\$Flowpad${v} 0\\s*\\n\\s*\\$\\{NSD_GetState\\}`).test(leave)),
+    'each choice is reset before its box is read: a box unticked after "No" does not keep an earlier tick');
+  ok(/--classify-only/.test(page), 'the page shows what flow-rs classified, read-only');
+
+  ok(/app-running --install-dir/.test(macro('customCheckAppRunning')), 'the uninstaller checks the app with flow-rs (bounded), not electron-builder\'s WMI call');
+  const install = macro('customInstall');
+  ok(/deferred-cleanup --trigger installer/.test(install), 'a new install finishes a pending cleanup before the first launch');
+  ok(/\$FlowpadWasInstalled == 1[\s\S]*--trigger reinstall[\s\S]*\$\{Else\}[\s\S]*--trigger installer/.test(install)
+    && /ReadRegStr \$R0 SHELL_CONTEXT "\$\{UNINSTALL_REGISTRY_KEY\}"/.test(macro('customInit')),
+    'over an installed FlowPad the pending cleanup is only dropped: its folders may be that install\'s');
+  ok(/\$\{IfNot\} \$\{FileExists\} \$FlowpadIni\s*\n\s*StrCpy \$FlowpadAppOnly 1/.test(page)
+    && /\$FlowpadAppOnly == 1\s*\n\s*StrCpy \$0 "\$0 --app-only"/.test(uninstall),
+    'a page that could not classify says "only the app is removed", and the run removes only the app');
+  const init = macro('customUnInit');
+  ok(['/REMOVEENGINE', '/DELETEAPPDATA', '/DELETEDATA'].every((s) => init.includes(`"${s}"`)), 'silent switches are documented and parsed');
+}
+
 console.log(`${path.basename(__filename)}: ${passed} assertions passed`);

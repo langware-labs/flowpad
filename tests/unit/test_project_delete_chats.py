@@ -18,7 +18,7 @@ from flow_sdk.instance_settings import get_instance_settings, reset_instance_set
 async def test_project_delete_chat_history_option(tmp_path, monkeypatch, delete_chats):
     monkeypatch.setenv("FLOWPAD_CLAUDE_HOME", str(tmp_path / ".claude"))
     reset_instance_settings()
-    project = await Project(name=str(tmp_path / "project")).save()
+    project = await Project(name=str(tmp_path / f"project-{tmp_path.name}")).save()
     session_id = mint_uuid()
     history = get_instance_settings().claude_projects_dir / "project-with-underscores"
     history.mkdir(parents=True)
@@ -39,7 +39,7 @@ async def test_project_delete_chat_history_option(tmp_path, monkeypatch, delete_
 
 
 async def test_delete_stops_a_headless_writer_before_removing_history(tmp_path):
-    project = await Project(name=str(tmp_path / "project")).save()
+    project = await Project(name=str(tmp_path / f"project-{tmp_path.name}")).save()
     chat = await AgenticProcess(project_id=project.id, pty_mode=False).save()
     worker = chat.driver.stream_worker(chat)
     child = await asyncio.create_subprocess_exec(sys.executable, "-c", "import time; time.sleep(60)")
@@ -52,3 +52,40 @@ async def test_delete_stops_a_headless_writer_before_removing_history(tmp_path):
         assert await AgenticProcess.get_by_id(chat.id) is None
     finally:
         await worker.close_session()
+
+
+async def test_delete_clears_child_rows_search_and_disk_only_records(tmp_path):
+    """Children come from one DB query; their search rows go with them, and a record
+    that exists only on disk is swept after the delete answers."""
+    from flow_sdk.db import get_db_driver
+    from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
+    from flow_sdk.fs_store.record_paths import shadow_dir_for
+
+    project = await Project(name=str(tmp_path / f"project-{tmp_path.name}")).save()
+    from flow_sdk.builtin.bookmark import Bookmark
+
+    chat = await Bookmark(project_id=project.id, title="zebra").save()
+    driver = get_db_driver()
+    from sqlalchemy import text
+
+    async def search_rows() -> int:
+        async with driver._session_ctx(write=False) as session:
+            q = text("SELECT count(*) FROM entities_fts WHERE entity_id = :i")
+            return (await session.execute(q, {"i": str(chat.id)})).scalar()
+
+    await driver.fts_upsert(FtsEntry(entity_id=str(chat.id), entity_type="bookmark",
+                                     name="zebra", content="zebra findme"))
+    assert await search_rows() == 1
+    orphan_id = mint_uuid()
+    orphan = shadow_dir_for("markdown", orphan_id)
+    orphan.mkdir(parents=True)
+    (orphan / "metadata.json").write_text(json.dumps({"type": "markdown", "id": orphan_id, "project_id": project.id}))
+
+    result = await project._delete_with_children(delete_chats=False)
+
+    assert result["deleted_children"] >= 1
+    assert await Bookmark.get_by_id(chat.id) is None
+    assert await search_rows() == 0
+    sweep = next(t for t in asyncio.all_tasks() if t.get_name() == f"project-orphans-{project.id}")
+    assert await sweep == 1
+    assert not orphan.exists()

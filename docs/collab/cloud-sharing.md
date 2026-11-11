@@ -9,9 +9,19 @@ title: Cloud sharing — what leaves your machine
 
 Sharing selected assets can publish their content into the project's hub-hosted repository. **Send files to cloud** is a separate action that publishes the project folder. Linking, sharing assets, and sending the whole folder are different operations.
 
-After linking, sharing offers a [project role](./project-roles.md) for each recipient who is not already a member. Guest is the default; None sends without a new membership. Existing roles remain unchanged. Guest does not allow opening the project under the current permissions. Choose Member when the recipient needs to see the project. Membership is added only when you click Share, not Link.
+The Share dialog opens with **To** empty unless the surface that opened it names recipients; it never refills the previous share's recipients.
 
-**Don't ask again** skips the link reminder on this instance; it neither links projects automatically nor changes permissions. Reset it in Preferences → Notifications → Cloud link prompt when sharing.
+When the project is not linked, Share first asks to link it. **Link** links silently and goes straight on to the Share dialog; **Skip** shares without linking, so recipients get a copy. Sharing from an unlinked project shows an amber warning icon next to the title; clicking it links the project.
+
+After linking, each recipient who is not a project member gets a line under **To**: "*name* is not a member · Fix · Learn more". **Fix** swaps the line for a [project role](./project-roles.md) picker set to Member. Nothing is chosen until you press Fix, and an unfixed recipient is shared with no new membership. Existing roles remain unchanged. Membership is added only when you click Share, not Link.
+
+**One share carries the Git pointer and a copy.** When the shared file is committed and pushed, the message carries both — its repo, branch, commit and path, and its bytes — whoever the recipients are; each receiver opens it by Git if they can, else from the copy. A file with uncommitted or unpushed changes is asked about first, before anything else: "*X* has changes. Commit before share?" — **Commit & share** commits and pushes just that file; **Share as is** sends the copy only. Fix still invites (the send invites first, then sends); it no longer decides Git or copy.
+
+**The receiver opens it in the right project.** The message names the sender's project, and the receiver's conversation keeps it as `remote_project_id`. Opening a share picks, in order: the conversation's project; the local project already chosen for the sender's project; the local project that is a checkout of the shared repo. Two or more checkouts → asked once; none → **Clone as project** or **Open the copy**. The answer is kept (the conversation's project, and sender project → local project), so it is not asked again. A share opens by Git only inside the receiver's own checkout of its repo, and comes into it the way any change does: when the checkout already holds the shared version of the file it opens in place; otherwise the receiver is shown the plan first — **Pull** when they are behind on the shared branch, **Bring it in** (a `cherry-pick -x` of the commits that changed the file, listing any other files those commits touch) anywhere else — and nothing is written until they say yes. A clash is left in the checkout for **Resolve**. There is no second copy: no hidden clone, no frozen worktree; anywhere else it opens from the copy (a Git-only share offers **Clone as project**). A newer version on the shared branch shows as **Update (N newer)** above the file and comes in the same way.
+
+**When Git cannot open it** (no access, the branch or commit is gone), the copy opens and the receiver is told why, with **Request access**: a structured "Git request access" message to the sharer, naming the repo, branch and file. The sharer gives access outside Flowpad, then **Done** tells the requester to open it again — or **Forward**s it to someone who can. When the conversation's project is not a checkout of the shared repo, the receiver is warned and **Tell sender** sends the sharer a "Please check" message.
+
+**Don't show again** skips the link reminder on this instance; it neither links projects automatically nor changes permissions. Reset it in Preferences → Notifications → Cloud link prompt when sharing.
 
 > This page is load-bearing. `tests/unit/test_cloud_share_contract.py` asserts
 > that the lists below match what the code actually sends; adding a field to
@@ -36,7 +46,7 @@ After linking, sharing offers a [project role](./project-roles.md) for each reci
 if you have given them one:
 
 <!-- pinned:when-set -->
-`created_through`, `env_vars`, `group_id`, `helpdesk`, `hub_published_at`, `key`, `labels`, `last_active_at`, `last_edited_at`, `locale`, `namespace`, `origin`, `parent_type_id`, `root_vfs_path`, `schema_version`, `title`, `uname`, `updated_through`
+`created_through`, `env_vars`, `group_id`, `helpdesk`, `hub_published_at`, `key`, `last_active_at`, `last_edited_at`, `locale`, `namespace`, `origin`, `parent_type_id`, `root_vfs_path`, `schema_version`, `title`, `uname`, `updated_through`
 <!-- pinned:/when-set -->
 
 **Never sent.** Two different mechanisms, which fail differently — a
@@ -44,7 +54,7 @@ declaration-withheld field stays hidden even if `_hub_body()` is rewritten,
 while a popped one is hidden only for as long as that line survives:
 
 <!-- pinned:withheld -->
-`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `llm_endpoint_typeid`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `published`, `remote`, `scope`, `session_code`, `session_count`, `setup_skipped`, `shared_context_entity_data`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
+`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `llm_endpoint_typeid`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `published`, `remote`, `scope`, `session_code`, `session_count`, `setup_skipped`, `shared_context_entity_data`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_roles`, `authenticated_roles`, `public_roles`
 <!-- pinned:/withheld -->
 
 Note what is in that list: `fs_storage_mount_path` and `fs_storage_provider` —

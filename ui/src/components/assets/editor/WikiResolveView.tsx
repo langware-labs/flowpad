@@ -1,5 +1,15 @@
 import { t } from '@lingui/core/macro';
-import { dataContext, FSRef, Markdown, PageId, TypeId, Chart, type APIEntity, type WikiResolveResult, type AnyEntity } from '@sdk';
+import {
+  dataContext,
+  FSRef,
+  Markdown,
+  PageId,
+  TypeId,
+  Chart,
+  type APIEntity,
+  type WikiResolveResult,
+  type AnyEntity,
+} from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -108,9 +118,12 @@ export function WikiResolveView({
   }
 
   if (error) {
+    const errorText = String(error);
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Failed to resolve [[{name}]]: {String(error)}
+        <Trans>
+          Failed to resolve [[{name}]]: {errorText}
+        </Trans>
       </div>
     );
   }
@@ -320,7 +333,7 @@ function WikiPlainMarkdown({
           {authority === 'local' ? (
             <Button variant="ghost" size="sm" onClick={openFull} title={t`Open full page`} className="gap-1.5">
               <ExternalLink className="h-3.5 w-3.5" />
-              Open
+              <Trans>Open</Trans>
             </Button>
           ) : null}
           {share}

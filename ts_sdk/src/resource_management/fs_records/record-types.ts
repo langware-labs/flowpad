@@ -69,6 +69,7 @@ export enum RecordType {
   DECK_TEMPLATE = 'deck_template',
   DECK = 'deck',
   SPREADSHEET = 'spreadsheet',
+  DOCUMENT_FILE = 'document_file',
   AGENT_TRACE = 'agent_trace',
   DYNAMIC_WORKFLOW = 'dynamic_workflow',
   USAGE_REPORT = 'usage_report',
@@ -84,4 +85,6 @@ export enum RecordType {
   DIAGNOSIS_REQUEST = 'diagnosis_request',
   ASSET_SETUP = 'asset_setup',
   COMPUTE_OP = 'compute_op',
+  // A web app (agentic-assets/webapp/<name>/webapp.json); its editor is the app editor.
+  MICRO_APP = 'micro_app',
 }

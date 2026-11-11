@@ -36,4 +36,10 @@ export interface UseEntitiesQueryResult<T> {
   isError: boolean;
   isSuccess: boolean;
   refetch: () => Promise<void>;
+  /** A paged query (`limit` in its filter) has more rows on the server past those in `data`. */
+  hasMore?: boolean;
+  /** Ask the next page (after the server's `next_cursor`, else at its `next_offset`) and append it to `data`. */
+  loadMore?: () => Promise<void>;
+  /** A `loadMore` is in flight. */
+  isLoadingMore?: boolean;
 }

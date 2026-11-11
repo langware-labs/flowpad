@@ -82,6 +82,21 @@
       "aliases": [
         "HelpDesk"
       ]
+    },
+    {
+      "kind": "sticky-note",
+      "asset": "sticky-note.svg",
+      "tintable": false,
+      "source": "Flowpad's own sticky note (folded corner)"
+    },
+    {
+      "kind": "message",
+      "asset": "message.svg",
+      "sub": {
+        "sent": "lucide.circle-arrow-up",
+        "received": "lucide.circle-arrow-down"
+      },
+      "source": "lucide `message-square` / `circle-arrow-up` / `circle-arrow-down` (ISC)"
     }
   ]
 }

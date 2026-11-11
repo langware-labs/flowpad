@@ -26,6 +26,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional
 
+from flow_sdk.builtin.source_item import MessageSpec
 from flow_sdk.sources import http
 from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
@@ -84,11 +85,43 @@ SEND_METHOD: dict[FileKind, tuple[str, str]] = {
 _CAPTIONED = frozenset({FileKind.IMAGE, FileKind.VIDEO, FileKind.AUDIO, FileKind.VOICE, FileKind.DOCUMENT})
 
 
+class TelegramMessageSpec(MessageSpec):
+    """Outbound Telegram message: the generic shape, chat-targeted replies.
+
+    No extra fields — Telegram has no subject; parse modes and media are
+    explicit non-goals for now (the driver sends plain text).
+    """
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, files=()) -> "TelegramMessageSpec":
+        """A reply to inbound message ``m`` — a pure constructor, no I/O.
+
+        Telegram replies target the CHAT, not the author: ``to`` carries the
+        chat id (the leading component of ``thread_key``), and the replied-to
+        message's ``external_id`` (``"<chat_id>/<message_id>"``) rides
+        ``reply_to_external_id`` for the driver's ``reply_to_message_id``.
+        """
+        thread_key = str(getattr(m, "thread_key", "") or "")
+        chat_id = thread_key.split("/", 1)[0]
+        return cls(
+            to=[chat_id],
+            body=body,
+            thread_key=thread_key,
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            files=list(files),
+        )
+
+
 class TelegramMessageData(MessageData):
     spec_kind: ClassVar[str] = "ingest.message.telegram"
 
     #: The chat's own name — a group's title, a direct partner's name.
     title: Optional[str] = None
+
+    @property
+    def item_title(self) -> str:
+        return self.title or ""
+
 
 
 class TelegramConfig(SourceConfig):
@@ -138,8 +171,6 @@ class TelegramSource(MessageSource):
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
     def outbound_spec(cls) -> type:
-        from flow_sdk.builtin.source_item import TelegramMessageSpec  # noqa: PLC0415
-
         return TelegramMessageSpec
 
     def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):

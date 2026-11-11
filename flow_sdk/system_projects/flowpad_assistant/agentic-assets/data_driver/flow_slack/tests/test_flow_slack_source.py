@@ -65,3 +65,46 @@ async def test_a_send_goes_to_the_persons_dm_through_the_claim():
     async with _source(hub, claim_id="C1", sender=ME) as source:
         sent = await source.send(MessageData(text="On it.", conversation=source.conversation_origin(ME)))
     assert hub.replies == [("C1", "On it.", "")] and sent.data.conversation.key == ME
+
+
+async def test_a_private_machine_takes_whoever_the_hub_delivers_and_only_answers_what_it_was_delivered():
+    """An agent's own Slack app, private: each person's machine is handed that person alone (the hub routes by
+    sender), so no sender is linked -- and it speaks only as a reply to a delivered message, never unprompted
+    (the hub checks the same: ``webhook_chain.reply``)."""
+    from flow_sdk.sources.errors import NotFound
+
+    hub = _Hub()
+    async with _source(hub, claim_id="C1", answers_delivered=True) as source:
+        (asked,) = [e.item for e in source.events_from_webhook(_dm("hi", user="U0BOB"))]
+        answered = await source.reply(asked.origin, MessageData(text="Hi Bob."))
+        with pytest.raises(NotFound):
+            await source.send(MessageData(text="unprompted", conversation=source.conversation_origin("U0BOB")))
+    assert asked.data.conversation.key == "U0BOB"
+    assert hub.replies == [("C1", "Hi Bob.", "D1:1700000000.000100")] and answered.data.conversation.key == "U0BOB"
+
+
+async def test_a_private_channel_is_connected_by_naming_its_claim_with_no_hub_lookup():
+    """The person's machine never reads the provider's claim (it may not): the claim it names is its connection."""
+    hub = _Hub()
+    named = await _source(hub, claim_id="C1", answers_delivered=True).verify()
+    unnamed = await _source(hub, answers_delivered=True).verify()
+    assert named.ready and not unnamed.ready
+
+
+def test_a_private_channel_naming_its_claim_starts_set_up():
+    """On a person's machine nobody presses Verify: a private channel that names its claim starts ACTIVE."""
+    assert FlowSlackSource.set_up_by_config({"answers_delivered": True, "claim_id": "C1"})
+    assert not FlowSlackSource.set_up_by_config({"answers_delivered": True})
+    assert not FlowSlackSource.set_up_by_config({"claim_id": "C1"}), "a person's channel still waits for its link"
+
+
+async def test_the_source_row_of_a_private_channel_is_created_active():
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus
+
+    await DataDriver.find("flow_slack")
+    private = DataSource(name="slack", provider="flow_slack", config={"answers_delivered": True, "claim_id": "C1"})
+    linked = DataSource(name="slack", provider="flow_slack", config={})
+    private._apply_create_rules()
+    linked._apply_create_rules()
+    assert private.status == SourceStatus.ACTIVE.value and linked.status == SourceStatus.SETUP.value

@@ -27,7 +27,7 @@ def running(monkeypatch):
     async def apps(_q):
         return state.apps
 
-    async def step(webapp, which, *, check):
+    async def step(webapp, which, *, check, display=""):
         held = webapp in state.up
         return ReturnedValue(exit_code=ExitCode.OK if held else ExitCode.NOT_YET, detail="" if held else "site is not running")
 

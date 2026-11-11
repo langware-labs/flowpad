@@ -23,6 +23,8 @@ from uuid import uuid4
 import httpx
 import pytest
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
+
 
 @pytest.mark.asyncio
 async def test_handle_invitation_accept_302_to_login_fails_and_skips_cleanup(monkeypatch):
@@ -32,10 +34,9 @@ async def test_handle_invitation_accept_302_to_login_fails_and_skips_cleanup(mon
 
     monkeypatch.setattr(flow_message_action, "hub_base_url", lambda: "https://hub.test", raising=False)
     monkeypatch.setattr(
-        flow_message_action,
-        "hub_get",
-        AsyncMock(side_effect=AssertionError("hub_get must not be called on a login redirect")),
-        raising=False,
+        HubProxy,
+        "try_call",
+        AsyncMock(side_effect=AssertionError("the hub must not be read on a login redirect")),
     )
 
     location = (
@@ -47,14 +48,10 @@ async def test_handle_invitation_accept_302_to_login_fails_and_skips_cleanup(mon
     mock_resp.headers = {"location": location}
     mock_resp.text = ""
 
-    mock_client = MagicMock()
-    mock_client.request = AsyncMock(return_value=mock_resp)
-    mock_client.post = AsyncMock(side_effect=AssertionError("hub.post must not be called on a login redirect"))
-    mock_client.get = AsyncMock(side_effect=AssertionError("hub.get must not be called on a login redirect"))
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
+    send = AsyncMock(return_value=mock_resp)
+    call = AsyncMock(side_effect=AssertionError("hub calls must not be made on a login redirect"))
 
-    with patch("flow_sdk.cloud_client.FlowpadClient", return_value=mock_client):
+    with patch.object(HubProxy, "send", send), patch.object(HubProxy, "call", call):
         result = await flow_message_action.handle_invitation_accept(
             {"invitation_id": "deadbeef-dead-beef-dead-beefdeadbeef"},
             someone_typeid="user-1",
@@ -63,8 +60,7 @@ async def test_handle_invitation_accept_302_to_login_fails_and_skips_cleanup(mon
     assert isinstance(result, ApiFailResponse)
     assert "login" in result.message.lower()
     assert "login.html" in result.message
-    mock_client.post.assert_not_called()
-    mock_client.get.assert_not_called()
+    call.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -79,15 +75,15 @@ async def test_handle_invitation_accept_302_to_flow_message_runs_cleanup(monkeyp
 
     monkeypatch.setattr(flow_message_action, "hub_base_url", lambda: "https://hub.test", raising=False)
 
-    # Capture what hub_get is called with — confirms Location parsing yielded
+    # Capture what HubProxy.try_call is called with — confirms Location parsing yielded
     # the right FM id and that the cleanup path proceeded past the rejection.
     fm_lookups = []
 
-    async def fake_hub_get(entity_type, entity_id, *args, **kwargs):
+    async def fake_hub_get(_method, entity_type, entity_id, *args, **kwargs):
         fm_lookups.append((entity_type, entity_id))
         return {}  # Empty dict; further cleanup will no-op.
 
-    monkeypatch.setattr(flow_message_action, "hub_get", fake_hub_get, raising=False)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_hub_get))
 
     fm_id = "c48e18bf-617c-4da9-a5a0-7c517c17fd50"
     mock_resp = MagicMock(spec=httpx.Response)
@@ -95,20 +91,16 @@ async def test_handle_invitation_accept_302_to_flow_message_runs_cleanup(monkeyp
     mock_resp.headers = {"location": f"https://hub.test/flow_message/{fm_id}"}
     mock_resp.text = ""
 
-    mock_client = MagicMock()
-    mock_client.request = AsyncMock(return_value=mock_resp)
-    mock_client.post = AsyncMock(return_value={})
-    mock_client.get = AsyncMock(return_value={})
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("flow_sdk.cloud_client.FlowpadClient", return_value=mock_client):
+    with (
+        patch.object(HubProxy, "send", AsyncMock(return_value=mock_resp)),
+        patch.object(HubProxy, "call", AsyncMock(return_value={})),
+    ):
         result = await flow_message_action.handle_invitation_accept(
             {"invitation_id": "deadbeef-dead-beef-dead-beefdeadbeef"},
             someone_typeid="user-1",
         )
 
-    # The Location parser fed the FM id into hub_get to resolve the parent conv.
+    # The Location parser fed the FM id into HubProxy.try_call to resolve the parent conv.
     assert fm_lookups and fm_lookups[0][1] == fm_id
     # Action returned the resolved typeids in its success payload.
     assert getattr(result, "status", None) != "fail"
@@ -151,7 +143,7 @@ async def test_learn_address_book_accepts_hub_member_keys(monkeypatch):
 @pytest.mark.asyncio
 async def test_handle_invitation_accept_learns_conversation_participants(monkeypatch):
     """Accepting a conversation invitation learns every roster email as a contact."""
-    import flow_sdk.utils.hub as hub_utils
+    import flow_sdk.cloud_client.transport.hub_http as hub_utils
     from flow_sdk.app.actions import flow_message_action
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.invitation import Invitation
@@ -174,23 +166,21 @@ async def test_handle_invitation_accept_learns_conversation_participants(monkeyp
     accept_resp.text = '{"data": "conversation-11111111-1111-4111-8111-111111111111"}'
     accept_resp.json.return_value = {"data": f"conversation-{conv_id}"}
 
-    accept_client = MagicMock()
-    accept_client.request = AsyncMock(return_value=accept_resp)
-    accept_client.__aenter__ = AsyncMock(return_value=accept_client)
-    accept_client.__aexit__ = AsyncMock(return_value=False)
-
-    conversation_client = MagicMock()
-    conversation_client.post = AsyncMock(return_value={})
-    conversation_client.get = AsyncMock(side_effect=[
+    hub_gets = [
         {
             "id": conv_id,
             "title": "accepted",
-            "participants": embedded_participants,
+            "members": embedded_participants,
         },
         authoritative_members,
-    ])
-    conversation_client.__aenter__ = AsyncMock(return_value=conversation_client)
-    conversation_client.__aexit__ = AsyncMock(return_value=False)
+    ]
+    get_urls: list[str] = []
+
+    async def fake_call(method, entity_type, entity_id=None, action=None, sub_path=None, **_kwargs):
+        if method == "POST":
+            return {}
+        get_urls.append("/graph/" + "/".join(str(getattr(p, "value", p)) for p in (entity_type, entity_id, action) if p))
+        return hub_gets.pop(0)
 
     learned = AsyncMock()
     monkeypatch.setattr(flow_message_action, "_learn_address_book", learned)
@@ -207,8 +197,8 @@ async def test_handle_invitation_accept_learns_conversation_participants(monkeyp
     monkeypatch.setattr(Invitation, "get_one", fake_get_one)
     monkeypatch.setattr(Conversation, "get_one", fake_get_one)
 
-    with patch("flow_sdk.cloud_client.FlowpadClient", return_value=accept_client), \
-            patch("flow_sdk.cloud_client.client.FlowpadClient", return_value=conversation_client):
+    with patch.object(HubProxy, "send", AsyncMock(return_value=accept_resp)), \
+            patch.object(HubProxy, "call", staticmethod(fake_call)):
         result = await flow_message_action.handle_invitation_accept(
             {"invitation_id": "deadbeef-dead-beef-dead-beefdeadbeef"},
             someone_typeid="user-1",
@@ -217,7 +207,7 @@ async def test_handle_invitation_accept_learns_conversation_participants(monkeyp
     assert getattr(result, "status", None) != "fail"
     assert result.data.get("conversation_id") == conv_id
     learned.assert_any_await(authoritative_members)
-    conversation_client.get.assert_any_await(f"/graph/conversation/{conv_id}/members")
+    assert any(u.endswith(f"/graph/conversation/{conv_id}/members") for u in get_urls), get_urls
 
 
 @pytest.mark.asyncio
@@ -228,9 +218,9 @@ async def test_handle_invitation_accept_project_fetches_payload_and_materializes
     from an older hub is ignored, not turned into Folder rows."""
     from flow_sdk.app.actions import flow_message_action
     from flow_sdk.builtin.folder import Folder
-    from flow_sdk.fs_store.origin.git_origin import GitOrigin
     from flow_sdk.builtin.invitation import Invitation
     from flow_sdk.builtin.project import Project
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin
 
     monkeypatch.setattr(flow_message_action, "hub_base_url", lambda: "https://hub.test", raising=False)
     monkeypatch.setattr("flow_sdk.cli.auth.credentials.load_credentials", lambda: MagicMock(api_key="test-key"))
@@ -260,23 +250,15 @@ async def test_handle_invitation_accept_project_fetches_payload_and_materializes
     accept_resp.text = f'{{"data": "project-{project_id}"}}'
     accept_resp.json.return_value = {"data": f"project-{project_id}"}
 
-    accept_client = MagicMock()
-    accept_client.request = AsyncMock(return_value=accept_resp)
-    accept_client.__aenter__ = AsyncMock(return_value=accept_client)
-    accept_client.__aexit__ = AsyncMock(return_value=False)
-
-    project_client = MagicMock()
-    project_client.get = AsyncMock(return_value={
+    project_get = AsyncMock(return_value={
         "id": project_id,
         "name": "Shared Project",
         "shared_context_entities": [folder_tid],
         "shared_context_origins": {folder_tid: origin.model_dump(mode="json")},
     })
-    project_client.__aenter__ = AsyncMock(return_value=project_client)
-    project_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("flow_sdk.cloud_client.FlowpadClient", return_value=accept_client), \
-            patch("flow_sdk.cloud_client.client.FlowpadClient", return_value=project_client):
+    with patch.object(HubProxy, "send", AsyncMock(return_value=accept_resp)), \
+            patch.object(HubProxy, "call", project_get):
         result = await flow_message_action.handle_invitation_accept(
             {"invitation_id": inv_id},
             someone_typeid=f"user-{uuid4()}",
@@ -288,7 +270,9 @@ async def test_handle_invitation_accept_project_fetches_payload_and_materializes
     assert project.remote is True
     assert project.include_dirs == []
     assert await Folder.get_by_id(origin.key()) is None, "accept must not mint context Folder rows"
-    project_client.get.assert_awaited_once_with(f"/graph/project/{project_id}")
+    project_get.assert_awaited_once()
+    method, entity_type, entity_id = project_get.await_args.args
+    assert (method, str(getattr(entity_type, "value", entity_type)), entity_id) == ("GET", "project", project_id)
 
 
 @pytest.mark.asyncio
@@ -304,12 +288,7 @@ async def test_handle_invitation_accept_non_2xx_non_302_returns_failure(monkeypa
     mock_resp.headers = {}
     mock_resp.text = '{"detail": "boom"}'
 
-    mock_client = MagicMock()
-    mock_client.request = AsyncMock(return_value=mock_resp)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("flow_sdk.cloud_client.FlowpadClient", return_value=mock_client):
+    with patch.object(HubProxy, "send", AsyncMock(return_value=mock_resp)):
         result = await flow_message_action.handle_invitation_accept(
             {"invitation_id": "deadbeef-dead-beef-dead-beefdeadbeef"},
             someone_typeid="user-1",

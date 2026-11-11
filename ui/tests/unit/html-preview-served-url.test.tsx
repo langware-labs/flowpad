@@ -17,7 +17,7 @@
  * and there is nothing left to intercept or inline. What is pinned here instead
  * is the small set of properties that whole class now depends on.
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const FILE = '/home/user/Flowpad workspace/Course Project/clouds-site/index.html';
@@ -29,6 +29,8 @@ let shownBeside: string | null = null;
 vi.mock('@src/components/agent-layout/agent-layout', () => ({
   useAgentContext: () => ({ computeNode: { typeId: { toString: () => 'compute_node-@local' } }, flowId: shownBeside }),
 }));
+const opened: string[] = [];
+vi.mock('@src/lib/open-external', () => ({ openExternal: (url: string) => opened.push(url) }));
 vi.mock('@src/hooks/useFS', () => ({
   useFS: () => ({
     revision: () => revision,
@@ -46,6 +48,7 @@ describe('HtmlPreview', () => {
   afterEach(() => {
     revision = 0;
     shownBeside = null;
+    opened.length = 0;
     cleanup();
   });
 
@@ -106,15 +109,71 @@ describe('HtmlPreview', () => {
     expect(sandbox).toContain('allow-popups');
   });
 
-  it('changes src when the file changes, so an edit reaches the screen', () => {
+  it("keeps the page's short sandbox and asks for no browser features, though its frame is an app's", () => {
+    render(<HtmlPreview path={FILE} />);
+    const sandbox = frame().getAttribute('sandbox') ?? '';
+
+    // The parked frame is the app mechanism; an app's powers are not part of it.
+    expect(sandbox).not.toContain('allow-popups-to-escape-sandbox');
+    expect(sandbox).not.toContain('allow-storage-access-by-user-activation');
+    expect(frame().getAttribute('allow')).toBeNull();
+  });
+
+  it('reloads the same frame when the file changes, so an edit reaches the screen', () => {
     const { rerender } = render(<HtmlPreview path={FILE} />);
-    const before = frame().getAttribute('src');
+    const before = frame();
+    const navigations = vi.spyOn(before, 'src', 'set');
 
     revision = 1;
     rerender(<HtmlPreview path={FILE} />);
 
     // The response is no-store, but a frame keeps the document it already has
-    // until its src actually changes — hence the revision in the query.
-    expect(frame().getAttribute('src')).not.toBe(before);
+    // until it is navigated again. The SAME frame is navigated: a revision in the
+    // url would park a new frame per edit and keep every old one.
+    expect(frame()).toBe(before);
+    expect(navigations).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the page it already loaded when its session is shown again, without reloading it', () => {
+    shownBeside = '3f2a1b4c-0000-4000-8000-0000000000bb';
+    const first = render(<HtmlPreview path={FILE} />);
+    const loaded = frame();
+    const navigations = vi.spyOn(loaded, 'src', 'set');
+    first.unmount();
+
+    render(<HtmlPreview path={FILE} />);
+
+    expect(frame()).toBe(loaded);
+    expect(navigations).not.toHaveBeenCalled();
+  });
+
+  it("gives another session's page a frame of its own", () => {
+    shownBeside = '3f2a1b4c-0000-4000-8000-0000000000cc';
+    const first = render(<HtmlPreview path={FILE} />);
+    const mine = frame();
+    first.unmount();
+
+    shownBeside = '3f2a1b4c-0000-4000-8000-0000000000dd';
+    render(<HtmlPreview path={FILE} />);
+
+    expect(frame()).not.toBe(mine);
+    expect(mine.isConnected).toBe(true);
+  });
+
+  it("opens a share link its own page asks for, and nothing else's", () => {
+    render(<HtmlPreview path={FILE} />);
+    const page = frame().contentWindow;
+    const send = (url: string, source: MessageEventSource | null) =>
+      act(() => {
+        window.dispatchEvent(new MessageEvent('message', { data: { type: 'flowpad:open-external', url }, source }));
+      });
+
+    send('https://wa.me/?text=hi', page);
+    send('https://example.com/', page);
+    send('https://api.whatsapp.com/send/?text=other', window);
+
+    // WhatsApp and Gmail refuse a window the sandboxed frame opens itself, so the host opens
+    // its own page's share link — and only a share link (`previewShareUrl`).
+    expect(opened).toEqual(['https://wa.me/?text=hi']);
   });
 });

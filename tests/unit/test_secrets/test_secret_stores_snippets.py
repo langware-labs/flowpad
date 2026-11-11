@@ -209,7 +209,7 @@ async def test_6_a_data_source_binds_a_connection(in_project, monkeypatch, conne
 
 
 async def test_6_an_external_store_is_a_consumer_of_both_kinds(in_project, monkeypatch):
-    """The real ``gcp_secret_manager`` store, against a loopback Secret Manager v1."""
+    """The real ``gcp`` store, against a loopback Secret Manager v1."""
     await _session_free("agentmail", monkeypatch)
     _catalogue(monkeypatch, connected=True, scopes=("https://www.googleapis.com/auth/cloud-platform",))
     await _saved("agentmail", "agent mailbox", config={"inbox": "agent@agentmail.to"})
@@ -221,6 +221,6 @@ async def test_6_an_external_store_is_a_consumer_of_both_kinds(in_project, monke
 
         assert ns["remote"].connection == "google"
         bound = (await DataSource.get("agent mailbox")).secret_store
-        assert (bound.type, bound.config["gcp_project"], bound.connection) == ("gcp_secret_manager", "acme-prod", "google")
+        assert (bound.type, bound.config["project"], bound.connection) == ("gcp", "acme-prod", "google")
         live = (await (await DataSource.get("agent mailbox")).open()).source  # the row alone: what the heartbeat's sync has
         assert live.credentials.values["api_key"].get_secret_value() == "am-key"

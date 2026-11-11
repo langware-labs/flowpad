@@ -4,6 +4,7 @@ import { ProjectNameChip } from '@src/components/assets/ProjectNameChip';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { useLingui } from '@lingui/react/macro';
 import { AssetCollisionBadge, useAssetCollisionEntity } from './AssetCollisionUI';
+import { ViewerChatSlot, useViewerChatAvailable } from './ViewerChatToggle';
 
 export interface AssetEditorHeaderProps {
   /** Filename or folder name used to resolve the owning project. */
@@ -56,7 +57,8 @@ export function AssetEditorHeader({
   const collisionEntity = useAssetCollisionEntity();
   const resolvedPath = sourcePath ?? (dirPath ? `${dirPath}/${fileName}` : fileName);
   const hasCollision = (collisionEntity?.duplicate_count ?? 0) > 0;
-  const hasControls = advanced || dirty || hasCollision || !!onDelete || !!actions;
+  const chat = useViewerChatAvailable();
+  const hasControls = advanced || dirty || hasCollision || !!onDelete || !!actions || chat;
   if (!hasControls) return null;
   return (
     <div className="flex h-10 flex-shrink-0 items-center gap-2 border-b px-3" data-testid="asset-editor-header">
@@ -113,6 +115,7 @@ export function AssetEditorHeader({
           </button>
         )}
         {actions}
+        <ViewerChatSlot />
       </div>
     </div>
   );

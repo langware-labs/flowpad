@@ -11,6 +11,13 @@ import pytest
 pytestmark = pytest.mark.timeout(10)
 
 
+def _rows(root, name):
+    """The rows folder of dataset ``name`` in the project at ``root`` (its data store, not the asset folder)."""
+    from flow_sdk.datasets.stores import rows_root_of
+
+    return rows_root_of(root / "agentic-assets/dataset" / name) / "rows"
+
+
 def _schema(root, ns, kind, fields, rules=None):
     folder = root / "agentic-assets/data_schema" / kind
     folder.mkdir(parents=True)
@@ -110,7 +117,7 @@ async def test_a_row_written_by_hand_that_breaks_a_rule_is_reported_on_read(gtm)
     root, _, ds = gtm
     ref = await _seed(ds)
     await ds["deal"].put("d", {"input": {"name": "D", "icp": ref("icp", "a"), "persona": ref("persona", "pa")}})
-    doc = next((root / "agentic-assets/dataset/deal/rows/d/input").glob("*.json"))
+    doc = next((_rows(root, "deal") / "d/input").glob("*.json"))
     doc.write_text(doc.read_text().replace(ref("icp", "a"), ref("icp", "b")))      # a writer that skips the SDK
     rows, (problem,) = ds["deal"].rows_and_problems()
     assert rows == [] and problem["details"][0]["code"] == "rule"

@@ -43,7 +43,7 @@ def _make_conversation_bundle_bytes(msg_data: dict, conv_id: str, participants: 
         zf.writestr("header.json", json.dumps(msg_data, ensure_ascii=False))
         zf.writestr(
             f"attachment/conversation-{conv_id}/header.json",
-            json.dumps({"type": "conversation", "id": conv_id, "participants": participants}, ensure_ascii=False),
+            json.dumps({"type": "conversation", "id": conv_id, "members": participants}, ensure_ascii=False),
         )
         zf.writestr(
             f"attachment/conversation-{conv_id}/conversation.jsonl",

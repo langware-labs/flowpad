@@ -1,16 +1,18 @@
 """Decisions through the hub ``APIEndpoint`` marked ``decision``: spec, dialect, discovery, decide.
 
-The hub is doubled at its two seams (``hub_get`` for discovery, ``hub_invoke_raw`` for the
-call). The Jev bodies are recorded from the live API (``jev-1.13.0``), not invented.
+The hub is doubled at its two seams (``HubProxy.try_call`` for discovery, ``HubProxy.send`` — the invoke
+passthrough — for the call). The Jev bodies are recorded from the live API (``jev-1.13.0``), not invented.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 from cryptography.fernet import Fernet
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.external_apis.decision import DecisionError, jev
 from flow_sdk.schema.data_spec.decision_spec import (
     ChoiceAnswer,
@@ -159,20 +161,23 @@ def _login() -> None:
 
 
 def _hub(monkeypatch, *, listing, catalog, invoke=None):
-    import flow_sdk.cloud_client.transport.hub_http as hub_http
 
     asked: list = []
 
-    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+    async def _hub_get(_method, entity_type, entity_id=None, action=None, **kwargs):
         asked.append((entity_type, action))
         return listing if action is None else catalog
 
-    async def _invoke(entity_type, entity_id, sub_path, payload, **kwargs):
-        asked.append(("invoke", entity_id, sub_path, payload))
-        return invoke
+    async def _send(method, url, *, json=None, **kwargs):
+        # .../api/v1/graph/api_endpoint/<id>/invoke/<sub_path>
+        head, _, sub_path = str(url).partition("/invoke/")
+        assert method == "POST" and sub_path, url
+        asked.append(("invoke", head.rsplit("/", 1)[-1], sub_path, json))
+        status, body = invoke
+        return httpx.Response(status, json=body, request=httpx.Request(method, str(url)))
 
-    monkeypatch.setattr(hub_http, "hub_get", _hub_get)
-    monkeypatch.setattr(hub_http, "hub_invoke_raw", _invoke)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "send", staticmethod(_send))
     return asked
 
 
@@ -292,3 +297,21 @@ async def test_the_llm_sources_status_says_why_there_is_no_decision_api(env, mon
     _hub(monkeypatch, listing={"data": [OTHER]}, catalog=[])
     none_marked = await _decision_api(refresh=True)
     assert not none_marked.available and "marked as a decision API" in none_marked.reason
+
+
+async def test_a_hub_transport_error_is_unavailable_not_a_crash(env, monkeypatch) -> None:
+    """The hub dropping the connection mid-call (HubError, status_code 0) must come out as the closed
+    ``unavailable`` reason, so the caller takes its ordinary path -- not as an AttributeError."""
+    from flow_sdk.cloud_client.shared.errors import HubError
+    from flow_sdk.decision import decide
+
+    _login()
+    _hub(monkeypatch, listing={"data": [DECIDER]}, catalog=[], invoke=(200, {}))
+
+    async def _dropped(method, url, *, json=None, **kwargs):
+        raise HubError(0, "connection reset")
+
+    monkeypatch.setattr(HubProxy, "send", staticmethod(_dropped))
+    with pytest.raises(DecisionError) as e:
+        await decide(SPEC)
+    assert (e.value.reason, e.value.wire.status) == ("unavailable", 0)

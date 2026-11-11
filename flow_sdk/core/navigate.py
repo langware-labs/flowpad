@@ -170,6 +170,19 @@ async def _probe_endpoint(endpoint_id: str, route: Optional[str] = None) -> tupl
     backend = endpoint.proxy_of(route)
     if backend is None or endpoint.remote:
         return ExitCode.OK, None, ""  # nothing on this machine to probe
+    placed = endpoint.route(route or "")
+    webapp_id = (placed.webapp_id if placed is not None else None) or endpoint.webapp_id
+    if webapp_id:
+        # A web app's endpoint: its record is the one answer (``core/webapp/readiness``), never a probe's rule.
+        from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+        from flow_sdk.core.webapp import readiness, record  # noqa: PLC0415
+
+        app = await WebApp.get_by_id(str(webapp_id).removeprefix("micro_app-"))
+        if app is not None and app.asset_ref:
+            rec = record.read(str(app.id), str(app.project_id or ""))
+            if await readiness.quick(app, rec):
+                return ExitCode.OK, "ok", ""
+            return ExitCode.NOT_YET, "not_running", rec.detail or f"{app.name} is not up."
     health = "/" + str(backend.health or "/").lstrip("/")
     found = await probe_webapp(f"http://127.0.0.1:{backend.port}{health}", backend.port)
     verdict = _NAV_VERDICT.get(found.get("nav_error") or "")
@@ -288,6 +301,15 @@ async def _send_to_tab(connection: tuple[str, Any], target: dict[str, Any]) -> N
         )
 
 
+def where_shown(placement: dict[str, Any]) -> str:
+    """Where a show landed, in words for the agent — a show never switches the person's view,
+    so "delivered" alone does not say they can see it."""
+    if placement.get("host"):
+        return "Shown in the session's Display pane."
+    where = "Opened as a tab beside the session's tab" if placement.get("tab_id") else "Opened as a new tab"
+    return where + "; the person's view was not switched — tell them where to find it."
+
+
 async def deliver(
     pointer: str,
     target: dict[str, Any],
@@ -298,8 +320,8 @@ async def deliver(
     """Hand a resolved target to a session's display or a browser tab. ``OK`` when
     delivered, else why not; the target's health is ``probe_target``'s question."""
     if process is not None:
-        await process.on_show(target)
-        return NavigateResult.satisfied(pointer=pointer, delivered=True)
+        placement = await process.on_show(target)
+        return NavigateResult.satisfied(where_shown(placement), pointer=pointer, delivered=True)
     connection = pick_connection(connection_id)
     if isinstance(connection, NavigateResult):
         return connection.model_copy(update={"pointer": pointer})
@@ -312,7 +334,9 @@ def _verdict(delivered: NavigateResult, probed: tuple[ExitCode, Optional[str], s
     if delivered.exit_code is not ExitCode.OK:
         return delivered
     code, verdict, detail = probed
-    return delivered.model_copy(update={"exit_code": code, "verdict": verdict, "detail": detail})
+    # Where it went (a show's placement) and what the probe found are both worth saying.
+    said = " ".join(part for part in (delivered.detail, detail) if part)
+    return delivered.model_copy(update={"exit_code": code, "verdict": verdict, "detail": said})
 
 
 # ── the call ──────────────────────────────────────────────────────────────────

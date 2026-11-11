@@ -15,16 +15,18 @@ behavior, never crashes.
 
 To add a new schema:
     1. Subclass an existing shape (``PathContextData`` for file-backed
-       entities) or define a new ``BaseModel`` here.
+       entities) or define a new ``DataSpec`` subclass here.
     2. Assign it to ``context_data_schema`` on the target Entity class.
 """
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import ConfigDict
+
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 
-class PathContextData(BaseModel):
+class PathContextData(DataSpec):
     """Sidecar shape for file-backed context entries.
 
     Carries the absolute filesystem path of the entity's backing asset
@@ -33,7 +35,12 @@ class PathContextData(BaseModel):
 
     Used by: ClaudePlan, Markdown (and its subclasses Docs / ClaudeMemory
     / ClaudeRules), ClaudeMd, Skill, ClaudeCommand.
+
+    ``extra="ignore"``: the sidecar arrives from a client (``context-share``) and
+    is a hint — a key nobody models is dropped, not a reason to refuse the hint.
     """
+
+    model_config = ConfigDict(extra="ignore")
 
     path: str
 

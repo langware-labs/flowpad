@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/component
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Badge } from '@src/components/ui/badge';
 import { Check, ClipboardList, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, X, Zap } from 'lucide-react';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import type { Shell } from '@sdk';
 
 interface PtyEventFire {
@@ -136,7 +136,7 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
 
   const handleCopyLog = useCallback(() => {
     if (!shell) return;
-    navigator.clipboard.writeText(buildLogText(shell.id, filtered)).then(() => {
+    void navigator.clipboard.writeText(buildLogText(shell.id, filtered)).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -159,6 +159,9 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }, []);
+
+  const fireCount = fires.length;
+  const selectedShortId = selected?.id.slice(0, 8);
 
   return (
     <Dialog
@@ -205,13 +208,19 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
         {/* Stats row */}
         <div className="flex gap-4 border-b pb-2 text-xs text-muted-foreground">
           <span>
-            fires: <b className="text-foreground">{fires.length}</b>
+            <Trans>
+              fires: <b className="text-foreground">{fireCount}</b>
+            </Trans>
           </span>
           <span>
-            unique patterns: <b className="text-foreground">{uniquePatternCount}</b>
+            <Trans>
+              unique patterns: <b className="text-foreground">{uniquePatternCount}</b>
+            </Trans>
           </span>
           <span>
-            registered watchers: <b className="text-foreground">{registeredCount}</b>
+            <Trans>
+              registered watchers: <b className="text-foreground">{registeredCount}</b>
+            </Trans>
           </span>
           <input
             type="text"
@@ -236,7 +245,7 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
             </span>
             {registeredCount > 0 && (
               <span className="text-xs">
-                {registeredCount} watcher{registeredCount === 1 ? '' : 's'} active.
+                <Plural value={registeredCount} one="# watcher active." other="# watchers active." />
               </span>
             )}
           </div>
@@ -310,7 +319,9 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
                   {filtered.length === 0 && filter && (
                     <tr>
                       <td colSpan={4} className="px-2 py-4 text-center text-muted-foreground">
-                        No fires match "<span className="font-medium">{filter}</span>".
+                        <Trans>
+                          No fires match "<span className="font-medium">{filter}</span>".
+                        </Trans>
                       </td>
                     </tr>
                   )}
@@ -331,8 +342,14 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
               <div className="flex min-h-0 flex-1 flex-col ps-2">
                 <div className="mb-1 flex items-center justify-between border-b pb-1 text-xs text-muted-foreground">
                   <span>
-                    Fire <b className="font-mono text-foreground">{selected.id.slice(0, 8)}</b>
-                    {selected.duringReplay && <span className="ms-2 text-yellow-400">(replay)</span>}
+                    <Trans>
+                      Fire <b className="font-mono text-foreground">{selectedShortId}</b>
+                    </Trans>
+                    {selected.duringReplay && (
+                      <span className="ms-2 text-yellow-400">
+                        <Trans>(replay)</Trans>
+                      </span>
+                    )}
                   </span>
                   <div className="flex items-center gap-2">
                     <button

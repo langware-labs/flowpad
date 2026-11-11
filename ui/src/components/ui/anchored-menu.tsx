@@ -1,7 +1,9 @@
+import { useLingui } from '@lingui/react/macro';
 import { cn } from '@src/lib/utils';
 import { useIdleAutoClose } from '@src/hooks/use-idle-auto-close';
 import { X } from 'lucide-react';
 import { useEffect, useRef, useState, type PointerEventHandler, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 /** Where the menu sits when the owner passes no anchor. */
 const ANCHOR_FALLBACK_TOP = 8;
@@ -99,6 +101,7 @@ export function AnchoredMenu({
   onPointerLeave?: PointerEventHandler;
   children: ReactNode;
 }) {
+  const { t } = useLingui();
   const panelRef = useRef<HTMLDivElement>(null);
   // Two-phase mount so the open/close slide animates: mount first, then flip
   // `shown` on the next frame; on close, unmount after the transition ends.
@@ -141,7 +144,10 @@ export function AnchoredMenu({
 
   if (!mounted) return null;
 
-  return (
+  // Portaled to <body>: a `fixed` overlay belongs outside its trigger's subtree,
+  // where no ancestor's styles, transforms or clipping can reach it (the top
+  // bar's action cluster, for one, sizes every descendant `button` to h-8 w-8).
+  return createPortal(
     <div
       ref={panelRef}
       role="dialog"
@@ -182,7 +188,7 @@ export function AnchoredMenu({
         // pointer is really on the trigger, reopen, slide away, get pointerleave,
         // close, slide back under the pointer — an oscillation that never
         // settles. Only a shown panel takes the pointer.
-        shown ? 'translate-x-0' : 'translate-x-full rtl:-translate-x-full pointer-events-none',
+        shown ? 'translate-x-0' : 'pointer-events-none translate-x-full rtl:-translate-x-full',
       )}
     >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
@@ -192,7 +198,7 @@ export function AnchoredMenu({
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            aria-label="Close"
+            aria-label={t`Close`}
             className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <X className="h-4 w-4" />
@@ -200,6 +206,7 @@ export function AnchoredMenu({
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">{children}</div>
-    </div>
+    </div>,
+    document.body,
   );
 }

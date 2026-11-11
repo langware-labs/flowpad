@@ -1,5 +1,6 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
-import { Paperclip, FileUp, Boxes, X, ChevronDown } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
+import { Paperclip, FileUp, Boxes, X, ChevronDown, Terminal } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import type { AssetDescriptor } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -39,8 +40,10 @@ interface AttachMenuProps {
   /** Suppress the inline asset-chip list (parent renders chips externally
    *  via {@link AssetRefChips} — used by composer rows in flex layouts). */
   hideAssetList?: boolean;
-  /** Which assets the picker offers. Default: everything. */
-  assetFilter?: (descriptor: AssetDescriptor) => boolean;
+  /** Which asset types the picker offers, asked of the server. Default: everything. */
+  assetTypes?: readonly string[];
+  /** When set, the menu offers "Prompt" — a one-shot prompt the receiver approves and runs. */
+  onPromptPicked?: () => void;
 }
 
 /**
@@ -58,7 +61,8 @@ export function AttachMenu({
   onFilesPicked,
   disabled,
   hideAssetList,
-  assetFilter,
+  assetTypes,
+  onPromptPicked,
 }: AttachMenuProps) {
   const inputId = useId();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -82,7 +86,9 @@ export function AttachMenu({
             data-testid="attach-menu-trigger"
           >
             <Paperclip className="h-3.5 w-3.5" />
-            <span>Attach</span>
+            <span>
+              <Trans>Attach</Trans>
+            </span>
             <ChevronDown className="h-3 w-3" />
           </PopoverTrigger>
           <PopoverContent align="start" className="w-40 p-1">
@@ -96,7 +102,7 @@ export function AttachMenu({
               data-testid="attach-menu-file"
             >
               <FileUp className="h-3.5 w-3.5" />
-              File
+              <Trans>File</Trans>
             </button>
             <button
               type="button"
@@ -105,8 +111,22 @@ export function AttachMenu({
               data-testid="attach-menu-asset"
             >
               <Boxes className="h-3.5 w-3.5" />
-              Asset
+              <Trans>Asset</Trans>
             </button>
+            {onPromptPicked && (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-start text-sm hover:bg-accent"
+                onClick={() => {
+                  setOpen(false);
+                  onPromptPicked();
+                }}
+                data-testid="attach-menu-prompt"
+              >
+                <Terminal className="h-3.5 w-3.5" />
+                <Trans>Prompt</Trans>
+              </button>
+            )}
           </PopoverContent>
         </Popover>
 
@@ -122,7 +142,7 @@ export function AttachMenu({
               setView('menu');
             }
           }}
-          filter={assetFilter}
+          types={assetTypes}
           {...selection}
           // Attach lives in forms (a message, a diagnosis request): looking at an asset must not
           // leave the screen and throw away what was typed.

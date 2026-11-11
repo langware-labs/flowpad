@@ -5,8 +5,7 @@ import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { openNewChat } from '@src/navigation/open-new-chat';
-import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
+import { openNewChatOrExplain } from '@src/navigation/open-new-chat';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useOpenTabTargetIds } from '@src/tabs/use-tab-manager';
 import { useProject } from '@src/hooks/useProject';
@@ -21,6 +20,8 @@ import { InputDialog } from '@src/components/ui/input-dialog';
 import { useChatHistory } from './useChatHistory';
 import { ChatsFilterBar } from './ChatsFilterBar';
 import { ChatsList } from './ChatsList';
+
+const exampleSessionId = '0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa';
 
 /**
  * Chats left-menu — the navigator (Zone B) for the Shell/chat view. Lists past
@@ -151,10 +152,7 @@ export function ChatsNavigator() {
       // Opens in the user's chat mode (their last pick), like every other
       // front-face open-chat action. This used to key on the View mode alone,
       // so a Standard user who had chosen `terminal` still got a chat pane.
-      void openNewChat(navigation, { workerType }).catch((err) => {
-        console.error('[ChatsNavigator] new chat failed', err);
-        openCapabilitiesForWorker(navigation, workerType);
-      });
+      void openNewChatOrExplain(navigation, { workerType });
     },
     [navigation],
   );
@@ -229,7 +227,7 @@ export function ChatsNavigator() {
         onOpenChange={setResumeByIdOpen}
         title={t`Resume session by id`}
         description={t`Paste a session id (UUID) to restore it in a new tab.`}
-        placeholder="e.g. 0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa"
+        placeholder={t`e.g. ${exampleSessionId}`}
         confirmLabel={t`Resume`}
         onConfirm={(sessionId) => resumeInTerminal(sessionId)}
       />

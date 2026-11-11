@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize2, ExternalLink, Presentation } from 'lucide-react';
 import { FSRef, type Deck } from '@sdk';
@@ -120,7 +121,11 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
   const srcDoc = useMemo(() => html ?? '', [html]);
 
   if (error) {
-    return <div className="p-6 text-sm text-destructive">Failed to load deck: {error}</div>;
+    return (
+      <div className="p-6 text-sm text-destructive">
+        <Trans>Failed to load deck: {error}</Trans>
+      </div>
+    );
   }
 
   return (
@@ -129,7 +134,9 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
         <span className="truncate text-sm font-medium text-neutral-100">{title}</span>
         <AssetCollisionBadge />
         {numSlides && numSlides > 0 ? (
-          <span className="shrink-0 text-xs text-neutral-500">{numSlides} slides</span>
+          <span className="shrink-0 text-xs text-neutral-500">
+            <Trans>{numSlides} slides</Trans>
+          </span>
         ) : null}
         <div className="ms-auto flex items-center gap-1">
           {templateVpath ? (
@@ -140,7 +147,9 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
             >
               <Presentation className="h-3.5 w-3.5" />
-              <span>Template</span>
+              <span>
+                <Trans>Template</Trans>
+              </span>
             </button>
           ) : null}
           <button
@@ -166,7 +175,9 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
           Reveal always sees a 16:9 container (fills it, no white letterbox). */}
       <div ref={deckAreaRef} className="flex min-h-0 flex-1 items-center justify-center bg-black p-2">
         {html === null ? (
-          <div className="text-sm text-neutral-500">Loading deck…</div>
+          <div className="text-sm text-neutral-500">
+            <Trans>Loading deck…</Trans>
+          </div>
         ) : (
           <div className="aspect-video max-h-full max-w-full" style={{ width: '100%' }}>
             <iframe

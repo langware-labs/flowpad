@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { useMemo, useState } from 'react';
 import { Check, Languages, Loader2 } from 'lucide-react';
 import { cn } from '@src/lib/utils';
@@ -51,7 +52,7 @@ export function DocLanguageSwitcher({
   const [open, setOpen] = useState(false);
 
   const available = useMemo(() => availableTargets(translations, targets), [translations, targets]);
-  const currentLabel = activeLang ? targetLabel(activeLang, targets).native : 'Original';
+  const currentLabel = activeLang ? targetLabel(activeLang, targets).native : t`Original`;
 
   const switchTo = (lang: string | null) => {
     setOpen(false);
@@ -81,10 +82,14 @@ export function DocLanguageSwitcher({
         <Command>
           <CommandInput placeholder={t`Search languages…`} />
           <CommandList>
-            <CommandEmpty>No languages found.</CommandEmpty>
+            <CommandEmpty>
+              <Trans>No languages found.</Trans>
+            </CommandEmpty>
             <CommandGroup heading={t`This document`}>
               <CommandItem value="original Original" onSelect={() => switchTo(null)} className="cursor-pointer gap-2">
-                <span className="flex-1">Original</span>
+                <span className="flex-1">
+                  <Trans>Original</Trans>
+                </span>
                 {activeLang === null && <Check className="h-4 w-4" />}
               </CommandItem>
               {translations.map((tr) => {

@@ -42,6 +42,7 @@ from flow_sdk.core.oauth.provider_registry import (
     token_request,
     user_credentials_name,
 )
+from flow_sdk.core.project_status import changes_status
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -125,14 +126,20 @@ class DesktopOAuthSession:
         sent on to ``/auth/oauth/callback`` with the same query, lands on the one landing
         page, and the listener closes itself once it has forwarded.
         """
+        from starlette.datastructures import URL  # noqa: PLC0415
+
         from flow_sdk.cli.auth.cloud_urls import _desktop_base_url  # noqa: PLC0415
+        from flow_sdk.instance_settings import cookie_gate  # noqa: PLC0415
 
         app = FastAPI()
 
         @app.get("/callback")
         async def callback(request: Request):
             server.should_exit = True
-            return RedirectResponse(f"{_desktop_base_url()}/auth/oauth/callback?{request.url.query}", status_code=302)
+            # With the token: the browser that brings the provider's redirect may never
+            # have opened Flowpad, and the gate refuses it without the cookie.
+            landing = cookie_gate.add_query_param(URL(f"{_desktop_base_url()}/auth/oauth/callback?{request.url.query}"))
+            return RedirectResponse(str(landing), status_code=302)
 
         config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
         server = uvicorn.Server(config)
@@ -241,7 +248,9 @@ def _build_authorize_url(
     return f"{provider.endpoints.authorize_url}?{urlencode(params)}"
 
 
-async def get_desktop_oauth_auth_url(provider: str, user_id: str, initiator_connection_id: str = "") -> ApiResponse:
+async def get_desktop_oauth_auth_url(
+    provider: str, user_id: str, initiator_connection_id: str = "", *, extra_scopes: "list[str] | None" = None
+) -> ApiResponse:
     """Start a desktop OAuth flow for ``provider``, driven by its descriptor.
 
     Which grant runs comes from ``LocalOAuthProvider.kind``; where it goes comes
@@ -256,11 +265,11 @@ async def get_desktop_oauth_auth_url(provider: str, user_id: str, initiator_conn
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
     if p.kind is OAuthFlowKind.DEVICE:
         return await _start_device_flow(p, user_id)
-    return await _start_loopback_flow(p, user_id, initiator_connection_id)
+    return await _start_loopback_flow(p, user_id, initiator_connection_id, extra_scopes or [])
 
 
 async def _start_loopback_flow(
-    provider: LocalOAuthProvider, user_id: str, initiator_connection_id: str = ""
+    provider: LocalOAuthProvider, user_id: str, initiator_connection_id: str = "", extra_scopes: "list[str] | None" = None
 ) -> ApiResponse:
     """Authorization code (+ PKCE when the descriptor asks) against a loopback port.
 
@@ -272,9 +281,8 @@ async def _start_loopback_flow(
         return ApiFailResponse(message=f"No client id configured for {provider.display_name}")
     from dataclasses import replace  # noqa: PLC0415
 
-    from flow_sdk.core.oauth.wanted_scopes import wanted_extra_scopes  # noqa: PLC0415
-
-    if extra := await wanted_extra_scopes(provider.name):
+    # The use point's own extra scopes, within what the provider may add.
+    if extra := [s for s in (extra_scopes or []) if s in provider.optional_scopes and s not in provider.scopes]:
         provider = replace(provider, scopes=(*provider.scopes, *extra))
 
     code_verifier = ""
@@ -838,6 +846,7 @@ def flow_result_response(result: Optional["AuthFlowResult"]) -> ApiResponse:
     return ApiFailResponse(message=result.detail or f"Authorization {result.status.value}")
 
 
+@changes_status
 async def complete_loopback_flow(state: str, code: str = "", error: str = "") -> tuple[Optional["AuthFlowResult"], bool]:
     """Finish a grant this instance runs itself: loopback, pasted manual code, sandbox callback.
 

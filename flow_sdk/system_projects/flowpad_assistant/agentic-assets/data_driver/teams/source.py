@@ -29,6 +29,7 @@ from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, 
 
 from pydantic import StringConstraints
 
+from flow_sdk.builtin.source_item import ChannelMessageSpec
 from flow_sdk.sources import http
 from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
@@ -66,13 +67,28 @@ _TAG = re.compile(r"<[^>]+>")
 _BREAK = re.compile(r"(?i)<br\s*/?>|</p\s*>|</div\s*>")
 
 
+class TeamsMessageSpec(ChannelMessageSpec):
+    """Outbound Microsoft Teams message: ``thread_key`` is the ROOT message id.
+
+    Teams' own model is two levels — a root and its replies — so a reply to a
+    reply is still a reply to the root, and ``thread_key`` already names it.
+    """
+
+    container_parts: ClassVar[int] = 2
+
+
 class TeamsMessageData(MessageData):
     spec_kind: ClassVar[str] = "ingest.message.teams"
-    volatile: ClassVar[frozenset[str]] = frozenset({"raw"})
+    digest_exclude: ClassVar[frozenset[str]] = frozenset({"raw"})
 
     #: A root message's subject; a reply has none.
     subject: Optional[str] = None
     raw: Optional[dict] = None
+
+    @property
+    def item_title(self) -> str:
+        return self.subject or ""
+
 
 
 class TeamsConfig(SourceConfig):
@@ -125,9 +141,13 @@ class TeamsSource(MessageSource):
 
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
-    def outbound_spec(cls) -> type:
-        from flow_sdk.builtin.source_item import TeamsMessageSpec  # noqa: PLC0415
+    def connection_probe_url(cls, config):
+        """A configured Graph base is verified there (its ``/me``), not on Microsoft's own host."""
+        base = str((config or {}).get("base_url") or "").rstrip("/")
+        return f"{base}/me" if base else None
 
+    @classmethod
+    def outbound_spec(cls) -> type:
         return TeamsMessageSpec
 
     def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):

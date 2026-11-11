@@ -17,6 +17,7 @@ import { useTaskSpecText } from '@src/hooks/use-task-spec-text';
 import { TaskAttachments } from '@src/components/assets/editor/task/TaskAttachments';
 import { normalizeAttachments } from '@src/components/assets/editor/task/task-attachments-utils';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { personName } from '@src/components/conversation/participant-display';
 
 /** Read-only attachments never persist. */
 const NOOP_SAVE = async () => {};
@@ -39,7 +40,7 @@ interface SharedTaskViewProps {
 export function SharedTaskView({ task, conversationId, onClose }: SharedTaskViewProps) {
   const { t } = useLingui();
 
-  const senderName = task.sender_name || task.shared_by_id || 'Unknown';
+  const senderName = personName({ name: task.sender_name, user_id: task.shared_by_id });
 
   // Spec is now a plain `spec.md` file inside the task folder (with a legacy
   // Spec-entity fallback) — resolved by the shared hook.

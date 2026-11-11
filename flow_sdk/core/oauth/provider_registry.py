@@ -285,7 +285,12 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # A restricted scope: a person connecting only to read never consents to it.
         # Full mail access, asked for only while a declared credential offers a sign-in with this provider
         # covering it as one of its ways (``wanted_scopes``).
-        optional_scopes=("https://www.googleapis.com/auth/drive", "https://mail.google.com/"),
+        # Read-write Storage, asked for only while a dataset keeps its rows in a GCS bucket.
+        optional_scopes=(
+            "https://www.googleapis.com/auth/drive",
+            "https://mail.google.com/",
+            "https://www.googleapis.com/auth/devstorage.read_write",
+        ),
         endpoints=OAuthEndpoints(
             authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
             token_url="https://oauth2.googleapis.com/token",
@@ -762,6 +767,13 @@ def user_credentials_name(name: str) -> Optional[str]:
     return provider.user_credentials_name if provider else None
 
 
+def group_credentials_name(base: str, group: str) -> str:
+    """The local SOD name of a provider's NON-default scope group's token, from its default name:
+    ``google_credentials`` + ``gmail`` → ``google_gmail_credentials``. Each group keeps its own token."""
+    stem = base.removesuffix("_credentials")
+    return f"{stem}_{group}_credentials" if stem != base else f"{base}_{group}"
+
+
 def app_credentials_name(name: str) -> Optional[str]:
     """The SOD entry name holding this provider's APP (bot) token, or ``None``.
 
@@ -966,7 +978,9 @@ async def credential_for(
     One copy, because the precedence IS the policy: it lived in six places
     (two ingest drivers, two "current user" action helpers, a publish-side
     resolver and a capability probe) and a new tier reached some of them.
-    Never raises: absence is the normal case for a provider nobody connected.
+    Absence is the normal case for a provider nobody connected, so it answers None — but
+    a hub that cannot be reached raises ``SourceUnavailable``: "could not ask" is not
+    "signed out", and a source polled during an outage must retry, not park.
     """
     # ``name`` reads a NON-default credential for the same provider — Slack's
     # bot token beside the user's. The hub tier is skipped for it: that tier
@@ -977,6 +991,7 @@ async def credential_for(
 
     from flow_sdk.builtin.user import User  # noqa: PLC0415
     from flow_sdk.core.oauth.hub_mirror import HubMirrorUnavailable  # noqa: PLC0415
+    from flow_sdk.sources.errors import SourceUnavailable  # noqa: PLC0415
     from flow_sdk.request_context.methods import (  # noqa: PLC0415
         get_current_request_user_fresh,
         get_user_credentials,
@@ -1016,23 +1031,69 @@ async def credential_for(
                 return value
     except HubMirrorUnavailable:
         return None
+    except SourceUnavailable:
+        raise
     except Exception:  # noqa: BLE001
         logger.debug("%s: no local credential", provider, exc_info=True)
 
-    # An explicit name skips the hub tier: that tier resolves the provider's
-    # USER-token name, which by definition is not the one being asked for.
-    if not hub or name:
+    if not hub:
         return None
     try:
         from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415
+            hub_app_credentials_name_for,
             hub_credential_value,
             hub_credentials_name_for,
         )
 
+        if name:
+            # The provider's APP (bot) token is the one non-default name the hub holds too (Slack's bot beside
+            # the user's grant). The hub does not advertise it, so it is read without the held pre-check. Any
+            # other explicit name is local-only.
+            if name != app_credentials_name(provider):
+                return None
+            return await hub_credential_value(hub_app_credentials_name_for(provider), verify_held=False)
         return await hub_credential_value(hub_credentials_name_for(provider))
+    except SourceUnavailable:
+        raise
     except Exception:  # noqa: BLE001
         logger.debug("%s: no hub credential", provider, exc_info=True)
         return None
+
+
+async def granted_scopes(provider: str, user: Any, *, name: str | None = None) -> tuple[str, ...]:
+    """What the provider GRANTED ``user``'s stored token for ``provider`` (``name``: a scope group's own
+    token), as kept with the copy — a local grant's token response, or the hub's record on a mirror.
+    Empty when unknown or not held. A plain read: no refresh, no hub call."""
+    entry = name or user_credentials_name(provider)
+    if not entry or user is None:
+        return ()
+    from flow_sdk.request_context.methods import stored_user_credentials  # noqa: PLC0415
+
+    try:
+        value = await stored_user_credentials(user, entry, user.id)
+    except KeyError:
+        return ()
+    except Exception:  # noqa: BLE001 — never raises: a status read must not fail on one row
+        logger.debug("%s: granted scopes unreadable", provider, exc_info=True)
+        return ()
+    scopes = value.get("scopes") if isinstance(value, dict) else None
+    return tuple(str(s) for s in scopes) if isinstance(scopes, list) else ()
+
+
+async def missing_granted(provider: str, scopes: "list[str] | tuple[str, ...]", *, name: str | None = None) -> list[str]:
+    """The scopes of ``scopes`` the provider did NOT grant this machine's token (``name``: a group's own).
+    An unrecorded grant (one made before grants were kept) is taken as covering: ``[]``."""
+    if not scopes:
+        return []
+    from flow_sdk.core.connections.specs import _connection_user  # noqa: PLC0415
+
+    granted = await granted_scopes(provider, await _connection_user(), name=name)
+    return [s for s in dict.fromkeys(scopes) if granted and s not in granted]
+
+
+def grant_gap(missing: "list[str] | tuple[str, ...]") -> str:
+    """The one sentence for a sign-in that lacks scopes a use needs."""
+    return f"Connected without {', '.join(missing)} — connect again to grant it"
 
 
 async def token_for(provider: str, *, user: Any = None, hub: bool = True, name: str | None = None) -> Optional[str]:

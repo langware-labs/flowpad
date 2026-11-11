@@ -113,17 +113,6 @@ describe('LaunchDialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('a machine with no model to run on is told that, not the raw error', async () => {
-    h.outcomes = [new LaunchFailure('session', new Error('claude has no usable LLM source: nothing configured'))];
-
-    render(<LaunchDialog plan={WITH_CONTROLLER} onClose={() => {}} />);
-
-    await waitFor(() =>
-      expect(screen.getByTestId('launch-error').textContent).toContain('no model to run the agent on'),
-    );
-    expect(status('session')).toBe('error');
-  });
-
   it('a controller that is not ready opens its own setup', async () => {
     render(<LaunchDialog plan={WITH_CONTROLLER} onClose={() => {}} />);
 

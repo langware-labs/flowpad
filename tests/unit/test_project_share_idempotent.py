@@ -24,10 +24,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from flow_sdk.app.actions.share_action import ShareInvitee
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.hub_proxy import HubProxy
+from flow_sdk.cloud_client.shared.errors import HubError
 
 
 class _FakeResponse:
@@ -65,10 +68,24 @@ def hub(monkeypatch):
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
-        lambda: SimpleNamespace(api_key="test-key", user={"id": "alice"}),
+        lambda: SimpleNamespace(api_key="test-key", user={"id": "alice"}, is_expired=lambda *_a: False),
     )
     monkeypatch.setattr("flow_sdk.cloud_client.client.ApiConfig.from_env", staticmethod(lambda: None))
     monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.request", fake_request)
+    # The shared hub transport (``HubProxy.send``) answers from the same fake.
+
+    async def fake_send(method, url, **kwargs):
+        path = str(url)
+        path = "/graph/" + path.split("/graph/", 1)[1] if "/graph/" in path else path
+        fake = await fake_request(None, method, path, **kwargs)
+        return httpx.Response(
+            fake.status_code,
+            text=fake.text,
+            headers={"content-type": "application/json"},  # the hub answers every failure in JSON
+            request=httpx.Request(method, str(url)),
+        )
+
+    monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))
     return holder
 
 
@@ -121,7 +138,7 @@ async def test_share_refuses_a_409_row_this_account_cannot_reach(hub):
     hub["get"] = _FakeResponse(404, _HIDDEN)
     proj = _project()
 
-    with pytest.raises(RuntimeError, match="cannot reach it"):
+    with pytest.raises(HubError, match="cannot reach it"):
         await proj.share()
 
     assert proj.remote is not True, "an unreachable row must not be claimed as published"
@@ -186,9 +203,9 @@ async def test_resharing_still_invites_the_people_who_are_new(hub):
         invitees=[ShareInvitee(email="alice@example.com"), ShareInvitee(email="grace@example.com")]
     )
     posts = _member_posts(hub)
-    # The new person gets one project invite plus the invite conversation's own
-    # (single-target) invite; the existing member gets neither.
+    # The new person gets one project invite (the hub threads it into the 1:1
+    # conversation); the existing member gets nothing.
     assert [p for p in posts if p.startswith("/graph/project/")] == [
         f"/graph/project/{proj.id}/members"
     ], "exactly one project invite: the new person"
-    assert len([p for p in posts if p.startswith("/graph/conversation/")]) == 1
+    assert not [p for p in posts if p.startswith("/graph/conversation/")]

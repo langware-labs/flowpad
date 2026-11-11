@@ -1,14 +1,34 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FSRef, isHiddenProject, Project, Tab, tabKey, tabManager, TypeId } from '@sdk';
+import {
+  canSetUpProjects,
+  cloudManager,
+  dataContext,
+  FSRef,
+  isHiddenProject,
+  PageId,
+  Project,
+  Tab,
+  tabKey,
+  tabManager,
+  TypeId,
+} from '@sdk';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { canonicalPath } from '@src/components/project-selector';
+import { sharedProjectSetUpOf } from '@src/components/task-receive/use-shared-project-set-up';
+import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
-import type { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dockForGlobalEntry, dockForProjectEntry, globalHomeDock, leaveProjectScope } from '@src/tabs/project-entry';
+import {
+  dockForGlobalEntry,
+  dockForProjectEntry,
+  globalHomeDock,
+  leaveProjectScope,
+  resumeDock,
+} from '@src/tabs/project-entry';
 import {
   useAncestorActiveTab,
   useCurrentTabs,
@@ -19,7 +39,10 @@ import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { ProjectLaunchBar } from './project-launch-bar';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
 import { WikiButton } from '@src/components/wiki-tip/WikiButton';
-import { FolderOpen, Globe, Loader2, RotateCcw, X } from 'lucide-react';
+import { hubProjectUrl } from '@src/lib/hub-page-url';
+import { openExternal } from '@src/lib/open-external';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
+import { Cloud, FolderOpen, Globe, Loader2, RotateCcw, X } from 'lucide-react';
 import React, { useMemo, useRef, useState } from 'react';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 import { WorkspacePickerRow } from '@src/components/workspace/workspace-switcher';
@@ -36,9 +59,18 @@ import { WorkspacePickerRow } from '@src/components/workspace/workspace-switcher
  * manager and copy its path. Reveal goes through the compute node the path
  * belongs to — `localComputeNodeId` is null for a remote one, which hides it.
  */
-function ProjectPathActions({ projectId, projectPath }: { projectId: string; projectPath: string }) {
+function ProjectPathActions({
+  projectId,
+  projectPath,
+  cloudLinked,
+}: {
+  projectId: string;
+  projectPath: string;
+  cloudLinked: boolean;
+}) {
   const { t } = useLingui();
   const fsRef = new FSRef(projectPath, new TypeId('compute_node', '@local'));
+  const cloudUrl = cloudLinked ? hubProjectUrl(cloudManager.cloudAppUrl, projectId) : null;
   return (
     <>
       {fsRef.localComputeNodeId && (
@@ -53,6 +85,18 @@ function ProjectPathActions({ projectId, projectPath }: { projectId: string; pro
           <FolderOpen className="h-3.5 w-3.5 shrink-0" />
         </button>
       )}
+      {cloudUrl && (
+        <button
+          type="button"
+          onClick={() => openExternal(cloudUrl)}
+          title={t`Open project in cloud`}
+          aria-label={t`Open project in cloud`}
+          data-testid={`project-cloud-toolbar-${projectId}`}
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Cloud className="h-3.5 w-3.5 shrink-0" />
+        </button>
+      )}
       <CopyButton
         value={projectPath}
         title={t`Copy project path`}
@@ -63,6 +107,54 @@ function ProjectPathActions({ projectId, projectPath }: { projectId: string; pro
       />
     </>
   );
+}
+
+/** The project list's leading location affordance. A cloud-linked project opens
+ * in Hub; a local-only project opens its folder. It is a sibling of the row's
+ * select button so clicking it never changes the active project. */
+function ProjectLocationButton({
+  projectId,
+  projectPath,
+  cloudLinked,
+  fallback,
+}: {
+  projectId: string;
+  projectPath: string | null;
+  cloudLinked: boolean;
+  fallback: React.ReactNode;
+}) {
+  const { t } = useLingui();
+  const cloudUrl = cloudLinked ? hubProjectUrl(cloudManager.cloudAppUrl, projectId) : null;
+  if (cloudUrl) {
+    return (
+      <button
+        type="button"
+        onClick={() => openExternal(cloudUrl)}
+        title={t`Open project in cloud`}
+        aria-label={t`Open project in cloud`}
+        data-testid={`project-cloud-${projectId}`}
+        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <Cloud className="h-3.5 w-3.5" />
+      </button>
+    );
+  }
+  const fsRef = projectPath ? new FSRef(projectPath, new TypeId('compute_node', '@local')) : null;
+  if (fsRef?.localComputeNodeId) {
+    return (
+      <button
+        type="button"
+        onClick={() => void fsRef.open()}
+        title={t`Open in Finder/Explorer`}
+        aria-label={t`Open in Finder/Explorer`}
+        data-testid={`project-reveal-${projectId}`}
+        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <FolderOpen className="h-3.5 w-3.5" />
+      </button>
+    );
+  }
+  return <span className="shrink-0">{fallback}</span>;
 }
 
 /**
@@ -162,7 +254,7 @@ function CloseRowButton({
       title={label}
       aria-label={label}
       data-testid={testId}
-      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 disabled:opacity-50 group-hover:opacity-100"
+      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 disabled:opacity-50 group-hover:opacity-100"
     >
       {closing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
     </button>
@@ -469,6 +561,12 @@ export function useProjectListMenu({
       await handleRecover(bucket);
       return;
     }
+    // The project already shown: a no-op. Resuming it would re-open its last tab's
+    // stored pointer and drop the current URL's own state (viewMode, scope).
+    if (bucket.projectId === currentProjectId) {
+      setOpen(false);
+      return;
+    }
     if (bucket.state === 'live' && bucket.project) {
       closeForNavigation();
       // A resumed tab is a TOP-LEVEL tab, as its chip is: never a child of the
@@ -530,9 +628,10 @@ export function useProjectListMenu({
   // dock; its loader re-scopes the project, so a tab in another project is a
   // project switch too.
   const handleSelectTab = (tab: Tab) => {
-    if (!tab.dockPointer) return;
+    const dock = resumeDock(tab, tabManager.getSnapshot());
+    if (!dock) return;
     closeForNavigation();
-    navigation.openDock(tab.dockPointer as DockPointer);
+    navigation.openDock(dock);
   };
 
   // The list only switches between projects that already own tabs; opening
@@ -620,15 +719,14 @@ export function ProjectCountsSummary({ menu }: { menu: ProjectListMenu }) {
  */
 export function ProjectCountBadge({ menu }: { menu: ProjectListMenu }) {
   if (menu.projectTotal === 0) return null;
-  const ProjectIcon = iconForType(Project.type);
+  // An outlined ring after the chevron: a count of open projects, not a
+  // notification dot, and light enough not to compete with the chevron.
   return (
     <span
-      className="inline-flex items-center gap-1 tabular-nums"
+      className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-[1.5px] border-current px-1 text-[10.5px] tabular-nums leading-none"
       data-testid="project-count-badge"
       aria-label={menu.projectsLabel}
     >
-      <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-white/40" />
-      <ProjectIcon className="h-3 w-3 shrink-0 opacity-80" />
       {menu.projectTotal}
     </span>
   );
@@ -645,7 +743,103 @@ export function ProjectCountBadge({ menu }: { menu: ProjectListMenu }) {
  * trigger, which opens on focus, so auto-focusing the first row pops its tab
  * submenu unhovered and leaves it stuck behind the row the pointer visits next.
  */
+/**
+ * Projects shared with you that have no files here yet, listed under the open
+ * ones with a "new" chip. A click opens their set-up — the only way it opens;
+ * nothing pops up on its own.
+ */
+function SharedProjectRows() {
+  const { t } = useLingui();
+  const { projects } = useProjects();
+  const setPendingProject = useIncomingProjectStore((s) => s.setPendingProject);
+  const ProjectIcon = iconForType(Project.type);
+  if (!canSetUpProjects(dataContext.caps)) return null;
+  const rows = (projects ?? []).flatMap((project) => {
+    const setUp = sharedProjectSetUpOf(project, t`Shared`);
+    return setUp ? [{ project, setUp }] : [];
+  });
+  if (!rows.length) return null;
+  return (
+    <ul>
+      {rows.map(({ project, setUp }) => (
+        <li key={project.id}>
+          <button
+            type="button"
+            onClick={() => setPendingProject(setUp)}
+            className="flex w-full items-center gap-2 rounded py-1.5 pe-1 ps-2 text-left text-sm hover:bg-muted"
+            data-testid={`project-shared-new-${project.id}`}
+          >
+            <ProjectIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">{project.name}</span>
+            <span className="shrink-0 rounded border border-sky-500/40 px-1 py-0.5 text-[10px] text-sky-600 dark:text-sky-400">
+              <Trans>new</Trans>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The hub project picker is collection-backed, not tab-backed. */
+function HubProjectList({ menu }: { menu: ProjectListMenu }) {
+  const { projects } = useProjects();
+  const { navigation } = useDockNavigation();
+  const [shown, setShown] = useState(10);
+  const ProjectIcon = iconForType(Project.type);
+  // Most recently updated first: the project worked on last is the one most likely wanted.
+  const updatedAt = (p: Project) => new Date(p.updated_date ?? p.created_date ?? 0).getTime() || 0;
+  const hubProjects = (projects ?? []).filter((project) => !project.hidden).sort((a, b) => updatedAt(b) - updatedAt(a));
+  const visibleProjects = hubProjects.slice(0, shown);
+
+  return (
+    <div className="flex flex-col">
+      <ul className="flex flex-col" data-testid="hub-project-list">
+        {visibleProjects.map((project) => (
+          <li key={project.id}>
+            <button
+              type="button"
+              onClick={() => {
+                menu.setOpen(false);
+                navigation.openDock(DockPointer.forProject(project.id).withPage(PageId.HUB));
+              }}
+              className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+              data-testid={`hub-project-list-row-${project.id}`}
+            >
+              <ProjectIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">{project.displayName}</span>
+              <span
+                className="shrink-0 text-xs text-muted-foreground"
+                title={project.updated_date ? new Date(project.updated_date).toLocaleString() : undefined}
+                data-testid="hub-project-list-updated"
+              >
+                {formatTimeAgo(project.updated_date ?? null) ?? ''}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {hubProjects.length === 0 ? (
+        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+          <Trans>No projects yet.</Trans>
+        </div>
+      ) : null}
+      {visibleProjects.length < hubProjects.length ? (
+        <button
+          type="button"
+          onClick={() => setShown((count) => count + 10)}
+          className="mt-1 rounded border border-border px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+          data-testid="hub-project-list-load-more"
+        >
+          <Trans>Load more</Trans>
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
+  if (!dataContext.caps.localFiles) return <HubProjectList menu={menu} />;
   const {
     buckets,
     currentProjectId,
@@ -684,6 +878,7 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
         <div className="px-2 py-1.5 text-xs text-muted-foreground">
           <Trans>No project has open tabs yet.</Trans>
         </div>
+        <SharedProjectRows />
         {openProjectRow}
       </div>
     );
@@ -774,8 +969,6 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
               onClick={() => void handleSelect(bucket)}
               className={selectClass}
             >
-              <RowGuides guides={guides} />
-              {leadingIcon}
               <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
               {folderMismatch ? (
                 <span
@@ -803,6 +996,13 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
             <HoverCard key={bucket.projectId} openDelay={200} closeDelay={100}>
               <HoverCardTrigger asChild>
                 <li className={rowClass}>
+                  <RowGuides guides={guides} />
+                  <ProjectLocationButton
+                    projectId={bucket.projectId}
+                    projectPath={mountPath}
+                    cloudLinked={bucket.project?.remote === true}
+                    fallback={leadingIcon}
+                  />
                   {selectButton}
                   {/* Close-all-in-this-project. Emptying the bucket is what removes
                   the row: the menu is built from open tabs, so a project with
@@ -840,7 +1040,11 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
                   {mountPath ? (
                     <>
                       <ProjectLaunchBar projectPath={mountPath} />
-                      <ProjectPathActions projectId={bucket.projectId} projectPath={mountPath} />
+                      <ProjectPathActions
+                        projectId={bucket.projectId}
+                        projectPath={mountPath}
+                        cloudLinked={bucket.project?.remote === true}
+                      />
                     </>
                   ) : (
                     <span className="truncate text-xs text-muted-foreground">{bucketDisplayName(bucket)}</span>
@@ -858,6 +1062,7 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
           );
         })}
       </ul>
+      <SharedProjectRows />
       {openProjectRow}
     </div>
   );

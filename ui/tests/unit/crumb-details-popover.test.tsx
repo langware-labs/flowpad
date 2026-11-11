@@ -37,11 +37,17 @@ vi.mock('@sdk', async (importOriginal) => {
   };
 });
 
+// The tag control loads its entity; here only its text field matters.
+vi.mock('@src/components/tags/EntityTags', () => ({
+  EntityTags: () => <input data-testid="tag-field" />,
+}));
+
 import { CrumbDetailsPopover } from '@src/components/top-nav-bar/CrumbDetailsPopover';
+import { dataContext, RuntimeKind, TypeId } from '@sdk';
 
 const PATH = '/Users/me/Flowpad workspace/proj/docs/chip_demo.md';
 
-function mount(props: Partial<{ filename: string | null; path: string; directory: boolean }> = {}) {
+function mount(props: Partial<{ filename: string | null; path: string; directory: boolean; typeId: TypeId }> = {}) {
   render(
     <CrumbDetailsPopover label="chip_demo" filename="chip_demo.md" path={PATH} {...props}>
       <button type="button">chip_demo</button>
@@ -123,6 +129,49 @@ describe('the crumb details popover', () => {
     await waitFor(() => expect(screen.queryByTestId('top-nav-crumb-details')).toBeNull());
   });
 
+  it('stays open while its tag field is being typed in, and still closes on a click outside', async () => {
+    // A hover card closes when the pointer leaves it — which would throw away
+    // a half-typed tag the moment the mouse drifted off the card.
+    const user = userEvent.setup();
+    const trigger = mount({ typeId: new TypeId('markdown', '0b6f3c1e-5a52-4f0e-9d0b-6f1f6f0f3a11') });
+    await user.hover(trigger);
+    const field = await screen.findByTestId('tag-field');
+
+    await user.click(field);
+    await user.type(field, 'meeting');
+    await user.hover(document.body);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect((screen.getByTestId('tag-field') as HTMLInputElement).value).toBe('meeting');
+
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(screen.queryByTestId('top-nav-crumb-details')).toBeNull());
+  });
+
+  it('keeps a click on its tag field to itself — the bar holding the crumb never sees it', async () => {
+    // The card is portaled, but React still bubbles its clicks to the address bar, whose
+    // "click on dead space" rule then opened the ask input and took the focus from the field.
+    const onBarClick = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <div onClick={onBarClick}>
+        <CrumbDetailsPopover
+          label="chip_demo"
+          filename="chip_demo.md"
+          path={PATH}
+          typeId={new TypeId('markdown', '0b6f3c1e-5a52-4f0e-9d0b-6f1f6f0f3a11')}
+        >
+          <button type="button">chip_demo</button>
+        </CrumbDetailsPopover>
+      </div>,
+    );
+    await user.hover(screen.getByRole('button', { name: 'chip_demo' }));
+    await user.click(await screen.findByTestId('tag-field'));
+    expect(onBarClick).not.toHaveBeenCalled();
+    expect(screen.getByTestId('tag-field')).toBe(document.activeElement);
+  });
+
   it('closes when the click lands INSIDE an embedded frame', async () => {
     // The html preview, a webapp display and the deck viewer are iframes: a
     // click in one never reaches this document, so the outside-pointerdown
@@ -202,6 +251,19 @@ describe('the crumb details popover', () => {
     // Files still works — it navigates in-app, no local machine involved.
     expect(screen.getByTestId('top-nav-crumb-open-files')).toBeTruthy();
   });
+
+  it.each([RuntimeKind.HUB, RuntimeKind.SANDBOX, RuntimeKind.AGENT])(
+    'hides reveal on %s — no file manager reaches a person there',
+    (kind) => {
+      dataContext.bootstrapInfo = { runtime: { kind } } as never;
+      try {
+        open();
+        expect(screen.queryByTestId('top-nav-crumb-reveal')).toBeNull();
+      } finally {
+        dataContext.bootstrapInfo = null as never;
+      }
+    },
+  );
 
   it('falls back to the crumb label when there is no filename', () => {
     open({ filename: null });

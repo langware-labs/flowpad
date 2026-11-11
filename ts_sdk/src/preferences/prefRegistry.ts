@@ -27,6 +27,9 @@ export enum PrefDataType {
 export enum PrefKey {
   SHOW_SYSTEM_SKILLS = 'preferences.general.show_system_skills',
   DEFAULT_TERMINAL = 'preferences.general.default_terminal',
+  /** IT Sessions: the agent's owner may run IT messages here (never while someone is signed in).
+   *  Mirrored in flow_sdk/core/compute/it_session.py; the hub switches it through the it-session route. */
+  IT_SESSIONS = 'preferences.general.it_sessions',
   BUFFER_SYNC_UPDATES = 'preferences.terminal.buffer_sync_updates',
   SOUND_ENABLED = 'preferences.notifications.sound_enabled',
   SOUND_KEY = 'preferences.notifications.sound_key',
@@ -60,6 +63,9 @@ export enum PrefKey {
   VIEW_MODE = 'preferences.ui.view_mode',
   DEV_MODE = 'preferences.ui.dev_mode',
   VIBE_MODEL_TIER = 'preferences.ui.vibe_model_tier',
+  // Mirrored in flow_sdk/preferences.py: which size a worker runs, and which token source funds it.
+  LLM_DEFAULT_SIZE = 'preferences.llm.default_size',
+  LLM_SOURCE_ORDER = 'preferences.llm.source_order',
   CHAT_SHOW_TOOLS = 'preferences.chat.show_tools',
   // Snippet view (flow show snippet): folded regions and the Run budget.
   SNIPPET_SHOW_INIT = 'preferences.editor.snippet_show_init',
@@ -80,6 +86,9 @@ export enum PrefKey {
   LAST_OPENER = 'preferences.terminal.last_opener',
   LAST_OPENER_MODE = 'preferences.terminal.last_opener_mode',
   PINNED_OPENERS = 'preferences.terminal.pinned_openers',
+  COMMAND_LINK_MODE = 'preferences.terminal.command_link_mode',
+  COMMAND_LINK_BROWSER = 'preferences.terminal.command_link_browser',
+  COMMAND_LINK_CONFIRM = 'preferences.terminal.command_link_confirm',
   // files
   FILES_SHOW_HIDDEN = 'preferences.files.show_hidden',
   // assets / skills
@@ -262,6 +271,15 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
       { value: TerminalType.EXTERNAL_TERMINAL, label: 'Also open sidecar OS Terminal' },
     ],
   },
+  [PrefKey.IT_SESSIONS]: {
+    key: PrefKey.IT_SESSIONS,
+    surfaced: true,
+    category: 'general',
+    label: 'IT Enabled',
+    description: 'Lets the owner of this machine send it IT messages. They never run while someone is signed in.',
+    dataType: PrefDataType.BOOL,
+    defaultValue: false,
+  },
   [PrefKey.BUFFER_SYNC_UPDATES]: {
     key: PrefKey.BUFFER_SYNC_UPDATES,
     surfaced: true,
@@ -316,8 +334,7 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     surfaced: true,
     category: 'notifications',
     label: 'Sign-in prompt for smart navigation',
-    description:
-      'When you are signed out, ask whether to sign in so the search line can open screens directly.',
+    description: 'When you are signed out, ask whether to sign in so the search line can open screens directly.',
     dataType: PrefDataType.STRING,
     defaultValue: 'ask',
     options: [
@@ -451,6 +468,35 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     dataType: PrefDataType.JSON,
     defaultValue: {},
   },
+  [PrefKey.LLM_DEFAULT_SIZE]: {
+    key: PrefKey.LLM_DEFAULT_SIZE,
+    surfaced: true,
+    category: 'llm',
+    label: 'Default model size',
+    description: 'The size a worker runs when none is named. Each token source decides which model that size is.',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'md',
+    options: [
+      { value: 'sm', label: 'Small (sm)' },
+      { value: 'md', label: 'Medium (md)' },
+      { value: 'lg', label: 'Large (lg)' },
+    ],
+  },
+  [PrefKey.LLM_SOURCE_ORDER]: {
+    key: PrefKey.LLM_SOURCE_ORDER,
+    surfaced: true,
+    category: 'llm',
+    label: 'Token source order',
+    description:
+      'Which kind of token source funds a worker when nothing pins one. A project or process pin still wins.',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'device,api_key,endpoint',
+    options: [
+      { value: 'device,api_key,endpoint', label: 'Device login, then API key, then hub endpoint' },
+      { value: 'endpoint,device,api_key', label: 'Hub endpoint first' },
+      { value: 'api_key,endpoint,device', label: 'API key first' },
+    ],
+  },
   [PrefKey.VIBE_MODEL_TIER]: {
     key: PrefKey.VIBE_MODEL_TIER,
     // A build is SENT from the hero the moment the user hits enter, so the stored
@@ -492,7 +538,7 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     label: 'Developer mode',
     description:
       'Shows developer-only tools on top of whichever surface you are on. ' +
-      'A switch, not a view mode: a tab\'s own mode never hides it.',
+      "A switch, not a view mode: a tab's own mode never hides it.",
     dataType: PrefDataType.BOOL,
     defaultValue: false,
   },
@@ -618,6 +664,30 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     label: 'View mode of the last launched session',
     dataType: PrefDataType.JSON,
     defaultValue: null,
+  },
+  [PrefKey.COMMAND_LINK_MODE]: {
+    key: PrefKey.COMMAND_LINK_MODE,
+    category: 'terminal',
+    label: 'Where a clicked command link runs',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'run-here',
+  },
+  [PrefKey.COMMAND_LINK_BROWSER]: {
+    key: PrefKey.COMMAND_LINK_BROWSER,
+    category: 'terminal',
+    label: 'Browser profile for links and sign-in',
+    // `{browser, profile}`; null is the system default browser.
+    dataType: PrefDataType.JSON,
+    defaultValue: null,
+  },
+  [PrefKey.COMMAND_LINK_CONFIRM]: {
+    key: PrefKey.COMMAND_LINK_CONFIRM,
+    surfaced: true,
+    category: 'terminal',
+    label: 'Ask before running a command link',
+    description: 'Show the command and where it will run, and wait for approval, before a command link runs it.',
+    dataType: PrefDataType.BOOL,
+    defaultValue: true,
   },
   [PrefKey.PINNED_OPENERS]: {
     key: PrefKey.PINNED_OPENERS,

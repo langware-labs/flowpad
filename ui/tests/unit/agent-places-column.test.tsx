@@ -1,101 +1,80 @@
 /**
- * Deployments: one plain list — this computer first, then every cloud machine — under a single
- * "New deployment" button. A row says its state and when it was last active, and opens the
- * deployment's own page nested in the agent by navigating.
+ * An agent's Deployments: every deployment it is the main agent of — this computer first — each a link to its
+ * page in the PROJECT's Deployments. "Deploy" opens that page with the agent preset; clicks only navigate.
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Agent, type AgentPlace } from '@sdk';
+import { Agent, Deployment } from '@sdk';
 
-const nav = vi.hoisted(() => ({ openDock: vi.fn(), hub: false }));
-const { AGENT_URL } = vi.hoisted(() => ({ AGENT_URL: '/dock/assets/editor/agent/typeid/agent-33333333-3333-4333-8333-333333333333' }));
-vi.mock('@src/navigation/useDockNavigation', async () => {
-  const { DockPointer } = await import('@src/navigation/DockPointer');
-  const currentDock = DockPointer.fromUrl(AGENT_URL);
-  return { useDockNavigation: () => ({ navigation: nav, currentDock }) };
-});
-vi.mock('@sdk/utils/hub-runtime', () => ({ isHubOnly: () => nav.hub }));
-vi.mock('@src/components/assets/editor/agent-profile/NewDeploymentDialog', () => ({
-  NewDeploymentDialog: () => <div data-testid="mock-new-deployment" />,
+const nav = vi.hoisted(() => ({ openDock: vi.fn(), rows: [] as unknown[] }));
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: nav, currentDock: null }),
+}));
+vi.mock('@src/hooks/entity-hooks', () => ({
+  useEntitiesQuery: () => ({ data: nav.rows, refetch: async () => undefined }),
+}));
+vi.mock('@src/components/agent-resources/AgentWebhooksSection', () => ({
+  providerIcon: () => () => null,
+  useAgentChannels: () => null,
 }));
 
 import { AgentPlacesColumn } from '@src/components/assets/editor/agent-profile/AgentPlacesColumn';
 
+const AGENT_ID = '33333333-3333-4333-8333-333333333333';
+const PROJECT_ID = '44444444-4444-4444-8444-444444444444';
 const LOCAL_ID = '11111111-1111-4111-8111-111111111111';
 const CLOUD_ID = '22222222-2222-4222-8222-222222222222';
 
-function place(id: string, isLocal: boolean, extra: Partial<AgentPlace> = {}): AgentPlace {
-  return {
-    deployment: {
-      id,
-      name: isLocal ? 'brief (local)' : 'brief-1',
-      target: { provider: isLocal ? 'local' : 'e2b', scope: 'machine', location: null },
-      status: { sync_state: 'current', provider_state: 'running' },
-    },
-    is_local: isLocal,
-    overrides: {},
-    schedule_count: 0,
-    answers_email: isLocal,
-    behind: null,
-    enabled: true,
-    ...extra,
-  };
+const deployment = (id: string, local: boolean, state = 'running') =>
+  new Deployment({
+    id,
+    name: local ? 'brief (local)' : 'brief-1',
+    parent_type_id: `project-${PROJECT_ID}`,
+    main_agent_id: `agent-${AGENT_ID}`,
+    target: { provider: local ? 'local' : 'e2b', scope: 'machine' },
+    status: { sync_state: 'current', provider_state: state },
+  } as never);
+
+function renderColumn(rows: Deployment[]) {
+  nav.rows = rows;
+  render(<AgentPlacesColumn agent={new Agent({ id: AGENT_ID, name: 'brief', project_id: PROJECT_ID } as never)} />);
 }
 
 afterEach(() => {
   cleanup();
-  vi.restoreAllMocks();
   nav.openDock.mockReset();
-  nav.hub = false;
 });
 
-function renderColumn(places: AgentPlace[]) {
-  vi.spyOn(Agent.prototype, 'listPlaces').mockResolvedValue(places);
-  const agent = new Agent({ id: '33333333-3333-4333-8333-333333333333', name: 'brief', enabled: true });
-  render(<AgentPlacesColumn agent={agent} />);
-}
-
-describe('Deployments', () => {
-  it('lists every deployment, this computer first, under one New deployment button', async () => {
-    renderColumn([
-      place(LOCAL_ID, true, { last_active: new Date(Date.now() - 5 * 60_000).toISOString() }),
-      place(CLOUD_ID, false, { enabled: false }),
-    ]);
-    expect(await screen.findByTestId(`agent-place-row-${LOCAL_ID}`)).toHaveTextContent('Development · local');
-    expect(screen.getByTestId(`agent-place-row-${CLOUD_ID}`)).toHaveTextContent('Cloud · brief-1');
+describe('Deployments of an agent', () => {
+  it('lists where it is main, this computer first, with each state', () => {
+    renderColumn([deployment(CLOUD_ID, false, 'paused'), deployment(LOCAL_ID, true)]);
+    const rows = screen.getAllByTestId(/^agent-place-row-/);
+    expect(rows[0]).toHaveTextContent('This computer · not in the cloud');
+    expect(rows[1]).toHaveTextContent('Cloud · brief-1');
     expect(screen.getByTestId(`agent-place-state-${LOCAL_ID}`)).toHaveTextContent('On');
-    expect(screen.getByTestId(`agent-place-state-${CLOUD_ID}`)).toHaveTextContent('Off');
-    expect(screen.getByTestId(`agent-place-last-active-${LOCAL_ID}`)).toHaveTextContent('5m ago');
-    expect(screen.getByTestId(`agent-place-last-active-${CLOUD_ID}`)).toHaveTextContent('never');
-
-    expect(screen.queryByTestId('mock-new-deployment')).toBeNull();
-    expect(screen.getByTestId('agent-new-deployment')).toHaveTextContent('New deployment');
-    fireEvent.click(screen.getByTestId('agent-new-deployment'));
-    expect(screen.getByTestId('mock-new-deployment')).toBeInTheDocument();
+    expect(screen.getByTestId(`agent-place-state-${CLOUD_ID}`)).toHaveTextContent('Paused');
   });
 
-  it('a row opens the deployment’s own page nested in the agent — and only navigates', async () => {
-    renderColumn([place(LOCAL_ID, true), place(CLOUD_ID, false)]);
-    fireEvent.click(await screen.findByTestId(`agent-place-row-${CLOUD_ID}`));
+  it('a planned cloud deployment (refused, no machine) is "Not started", never "Running"', () => {
+    renderColumn([deployment(CLOUD_ID, false, 'planned')]);
+    expect(screen.getByTestId(`agent-place-state-${CLOUD_ID}`)).toHaveTextContent('Not started');
+  });
+
+  it('a row opens the deployment on its project — and only navigates', () => {
+    renderColumn([deployment(CLOUD_ID, false)]);
+    fireEvent.click(screen.getByTestId(`agent-place-row-${CLOUD_ID}`));
     expect(nav.openDock).toHaveBeenCalledTimes(1);
-    const pointer = nav.openDock.mock.calls[0][0] as { child: unknown; toUrl(): string };
-    expect(pointer.child).toEqual({ section: 'deployment', typeId: `deployment-${CLOUD_ID}` });
-    expect(pointer.toUrl()).toContain(`${AGENT_URL}/child/deployment/deployment-${CLOUD_ID}`);
+    expect(nav.openDock.mock.calls[0][0]).toMatchObject({
+      viewType: 'project',
+      pointer: `${PROJECT_ID}/project-deployments`,
+      options: { deployment: CLOUD_ID },
+    });
   });
 
-  it('on the hub there is no local deployment and no New deployment', async () => {
-    nav.hub = true;
-    renderColumn([place(LOCAL_ID, true), place(CLOUD_ID, false)]);
-    expect(await screen.findByTestId(`agent-place-row-${CLOUD_ID}`)).toBeInTheDocument();
-    expect(screen.queryByTestId(`agent-place-row-${LOCAL_ID}`)).toBeNull();
-    expect(screen.queryByTestId('agent-new-deployment')).toBeNull();
-  });
-
-  it('an agent deployed nowhere says so — nothing is created by looking at it', async () => {
+  it('with no deployment says it runs nowhere yet (Deploy lives on the editor header)', () => {
     renderColumn([]);
-    expect(await screen.findByTestId('agent-places-empty')).toHaveTextContent('Not deployed yet');
-    fireEvent.click(screen.getByTestId('agent-new-deployment'));
-    expect(screen.getByTestId('mock-new-deployment')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-places-empty')).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-new-deployment')).toBeNull();
   });
 });

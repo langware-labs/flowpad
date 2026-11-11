@@ -5,7 +5,7 @@ import { cn } from '@src/lib/utils';
 import { Trigger, type TriggerLogRow } from '@sdk';
 import { RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-
+import { Trans, useLingui } from '@lingui/react/macro';
 
 function timeAgo(iso: string): string {
   return formatTimeAgo(iso) || 'just now';
@@ -16,6 +16,7 @@ interface Props {
 }
 
 export function TriggerLogViewer({ triggerId }: Props) {
+  const { t } = useLingui();
   const [entries, setEntries] = useState<TriggerLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [triggeredOnly, setTriggeredOnly] = useState(false);
@@ -50,7 +51,9 @@ export function TriggerLogViewer({ triggerId }: Props) {
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <span className="font-mono text-sm font-medium">{ruleName}</span>
-        <span className="text-xs text-muted-foreground">trigger log</span>
+        <span className="text-xs text-muted-foreground">
+          <Trans>trigger log</Trans>
+        </span>
         <Badge variant="secondary" className="text-[10px]">
           {entries.length}
         </Badge>
@@ -65,7 +68,7 @@ export function TriggerLogViewer({ triggerId }: Props) {
                 !triggeredOnly ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
               )}
             >
-              All calls
+              <Trans>All calls</Trans>
             </button>
             <button
               onClick={() => setTriggeredOnly(true)}
@@ -74,7 +77,7 @@ export function TriggerLogViewer({ triggerId }: Props) {
                 triggeredOnly ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
               )}
             >
-              Activations only
+              <Trans>Activations only</Trans>
             </button>
           </div>
           <Button
@@ -94,10 +97,12 @@ export function TriggerLogViewer({ triggerId }: Props) {
       {/* Content */}
       <div className="flex flex-1 flex-col overflow-auto">
         {loading && entries.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading...</div>
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            <Trans>Loading...</Trans>
+          </div>
         ) : entries.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            No log entries. Run or test this trigger to see entries.
+            <Trans>No log entries. Run or test this trigger to see entries.</Trans>
           </div>
         ) : (
           entries.map((entry) => (
@@ -124,7 +129,7 @@ export function TriggerLogViewer({ triggerId }: Props) {
 
               {/* Reason */}
               <span className="flex-1 truncate text-muted-foreground" title={entry.reason}>
-                {entry.reason || (entry.trigger ? 'triggered' : 'not triggered')}
+                {entry.reason || (entry.trigger ? t`triggered` : t`not triggered`)}
               </span>
 
               {/* Actions */}
@@ -144,7 +149,7 @@ export function TriggerLogViewer({ triggerId }: Props) {
                   variant="outline"
                   className="h-4 flex-shrink-0 border-orange-400 px-1 text-[9px] text-orange-500"
                 >
-                  test
+                  <Trans>test</Trans>
                 </Badge>
               )}
             </div>

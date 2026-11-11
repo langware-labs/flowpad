@@ -51,20 +51,41 @@ def digest_over(obj: Any, fields: Iterable[str]) -> str:
     after, read by name so both shapes digest identically. Canonicalised
     through ``canonical_entity_bytes``, which already owns that contract.
 
-    A spec may add to what is hashed with ``digest_extra() -> dict | None`` (a record's own typed
-    fields): None adds NOTHING, so every object that has none keeps exactly the digest it had."""
+    A spec that knows what its content is says so with ``digest_view() -> dict`` (an ingested
+    item: its payload, minus the fields the payload class excludes); that view is hashed INSTEAD
+    of ``fields``."""
+    view = getattr(obj, "digest_view", None)
+    return hash_view(view() if callable(view) else {name: getattr(obj, name, None) for name in fields})
+
+
+def hash_view(view: dict) -> str:
     from flow_sdk.llm_index.core import sha256_bytes  # noqa: PLC0415
     from flow_sdk.semantic_lock.targets import canonical_entity_bytes  # noqa: PLC0415
 
-    payload = {name: getattr(obj, name, None) for name in fields}
-    extra = getattr(obj, "digest_extra", None)
-    more = extra() if callable(extra) else None
-    if more:
-        payload.update(more)
-    return sha256_bytes(canonical_entity_bytes(payload))
+    return sha256_bytes(canonical_entity_bytes(view))
 
 
 UpsertStatus = Literal["created", "updated", "unchanged"]
+
+
+async def _rows_by(cls: type, names: Sequence[str], specs: Sequence[Any]) -> dict[tuple[str, ...], Any]:
+    """Every stored row whose ``names`` tuple one of ``specs`` names — one query per prefix group
+    (every key component but the last), which is ONE query for a real page."""
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+    *prefix, last = names
+    groups: dict[tuple[str, ...], set[str]] = {}
+    for spec in specs:
+        key = _key(spec, tuple(names))
+        groups.setdefault(key[:-1], set()).add(key[-1])
+    known: dict[tuple[str, ...], Any] = {}
+    for head, tails in groups.items():
+        operands = [ExpressionNode(op=QueryOp.EQ, operands=[n, v]) for n, v in zip(prefix, head)]
+        operands.append(ExpressionNode(op=QueryOp.IN, operands=[last, list(tails)]))
+        rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=operands)))
+        for row in rows:
+            known[_key(row, tuple(names))] = row
+    return known
 
 
 def _info(cls: type) -> Any:
@@ -95,7 +116,13 @@ class DbSerializer:
         return await cls.get_one(dict(zip(names, key)))
 
     async def resolve(self, cls: type, spec: Any) -> Any | None:
-        return await self.resolve_key(cls, self.natural_key_of(cls, spec))
+        """The row ``spec`` names: by the natural key, else — for a type whose key moved — by its
+        ``legacy_natural_key``, which is how a row written before the move still resolves."""
+        found = await self.resolve_key(cls, self.natural_key_of(cls, spec))
+        legacy = _info(cls).legacy_natural_key
+        if found is None and legacy:
+            found = await cls.get_one(dict(zip(legacy, _key(spec, legacy))))
+        return found
 
     async def resolve_many(self, cls: type, specs: Sequence[Any]) -> dict[tuple[str, ...], Any]:
         """A page's existing rows, keyed by the full natural key.
@@ -106,23 +133,20 @@ class DbSerializer:
         external id is only unique within a segment (a Slack ``ts`` repeats
         across channels), so a partial key would hand the gate the wrong row.
         """
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-
-        names = _info(cls).natural_key or ()
+        info = _info(cls)
+        names = info.natural_key or ()
         if not specs or not names:
             return {}
-        *prefix, last = names
-        groups: dict[tuple[str, ...], set[str]] = {}
-        for spec in specs:
-            key = _key(spec, names)
-            groups.setdefault(key[:-1], set()).add(key[-1])
-        known: dict[tuple[str, ...], Any] = {}
-        for head, tails in groups.items():
-            operands = [ExpressionNode(op=QueryOp.EQ, operands=[n, v]) for n, v in zip(prefix, head)]
-            operands.append(ExpressionNode(op=QueryOp.IN, operands=[last, list(tails)]))
-            rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=operands)))
-            for row in rows:
-                known[_key(row, names)] = row
+        known = await _rows_by(cls, names, specs)
+        legacy = info.legacy_natural_key
+        missing = [spec for spec in specs if _key(spec, names) not in known] if legacy else []
+        if missing:
+            # Rows written before the key moved: found by the old key, handed back under the new one.
+            old = await _rows_by(cls, legacy, missing)
+            for spec in missing:
+                row = old.get(_key(spec, legacy))
+                if row is not None:
+                    known[_key(spec, names)] = row
         return known
 
     # ── the no-op gate + the write ────────────────────────────────────────
@@ -130,6 +154,17 @@ class DbSerializer:
     def digest_of(self, cls: type, spec: Any) -> str:
         fields = _info(cls).digest_fields
         return digest_over(spec, fields) if fields else ""
+
+    def _unchanged(self, info: Any, spec: Any, existing: Any, digest: str) -> bool:
+        stored = getattr(existing, info.digest_field, None)
+        if not digest or not stored:
+            return False
+        if stored == digest:
+            return True
+        # A row written under the previous digest rule is unchanged when that rule says so: the
+        # switch must not rewrite (and re-announce) every stored row on its next poll.
+        legacy = getattr(spec, "legacy_digest_view", None)
+        return callable(legacy) and stored == hash_view(legacy())
 
     def upsert(self, cls: type, spec: Any, *, existing: Any = None) -> tuple[Any | None, UpsertStatus]:
         """The row to save, or ``(None, "unchanged")``.
@@ -143,11 +178,18 @@ class DbSerializer:
         """
         info = _info(cls)
         digest = self.digest_of(cls, spec)
-        if existing is not None and digest and getattr(existing, info.digest_field, None) == digest:
+        if existing is not None and self._unchanged(info, spec, existing, digest):
             return None, "unchanged"
         row = existing if existing is not None else cls()
-        for name in dict.fromkeys((*type(spec).model_fields, *(info.natural_key or ()))):
-            setattr(row, name, getattr(spec, name))
+        names = dict.fromkeys((*type(spec).model_fields, *(info.natural_key or ()), *(info.legacy_natural_key or ())))
+        derived = set(getattr(row, "derived_fields", ()))
+        for name in names:
+            if name not in derived:
+                setattr(row, name, getattr(spec, name))
+        # A derived field is written here as its deriver (the header is a copy of the payload), so
+        # only writers OUTSIDE this path trip the guard.
+        if derived and hasattr(row, "_write_derived"):
+            row._write_derived(**{name: getattr(spec, name) for name in names if name in derived})
         if digest:
             setattr(row, info.digest_field, digest)
         return row, ("created" if existing is None else "updated")

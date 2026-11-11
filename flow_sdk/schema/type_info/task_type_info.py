@@ -20,6 +20,7 @@ from flow_sdk.schema.view_mode import ViewMode
 
 TASK = TypeInfo(
     type_name=EntityType.TASK,
+    template={"description": "Goal: <what done looks like>.\n"},
     icon="CheckSquare",
     browseable_by=ViewMode.STANDARD,
     creatable=True,

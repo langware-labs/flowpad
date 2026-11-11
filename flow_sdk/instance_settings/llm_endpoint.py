@@ -21,9 +21,10 @@ sod. Memoized per instance NAME like ``runtime.py``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING
 
 from flow_sdk.cli import app_config
@@ -39,6 +40,9 @@ _CONFIG_KEY = "hub_llm_endpoint"
 #: rides on. A short memo keeps that polling off the hub without ever holding a stale answer for
 #: long enough to matter.
 _LIST_TTL_SECONDS = 30.0
+#: The listing read in flight, per instance and event loop. Callers that miss the memo at the same
+#: moment (a WS drop fires several) join it instead of each sending the same two hub reads.
+_inflight: dict[tuple[str, int], asyncio.Future] = {}
 
 
 @dataclass(frozen=True)
@@ -58,6 +62,13 @@ class HubLLMEndpoint:
     #: from ``FLOWPAD_HUB_URL`` at call time. A loginless box has no such relationship to read,
     #: so the origin it was given travels with the binding it belongs to.
     hub_origin: str = ""
+    #: The models the endpoint's whole chain (team, org) permits, in the order the admin wrote
+    #: them. A person's allowance states no filters of its own, so this is where a box learns
+    #: what its default model may be.
+    models_allow: tuple[str, ...] = ()
+    #: ``{sm, md, lg}`` -> model, inherited down the endpoint's chain, as the hub pushed it -- so a
+    #: spawn knows each size's model before any listing has been read.
+    tiers: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -65,9 +76,26 @@ class HubLLMEndpoint:
 
 # ``None`` (unbound -- every desktop install) is a real cached value, hence ``in``.
 _cache: dict[str, HubLLMEndpoint | None] = {}
+#: The ``config.json`` stamp each memo was read at. A box runs several processes (the chat
+#: service, the admin service, the workspace) and the hub's push lands in only one of them,
+#: so a memo that never looked at the file again kept every other process on the old budget
+#: until it restarted -- a deployed agent kept calling a deleted allocation and got 403.
+_stamp: dict[str, tuple[int, int] | None] = {}
 
 
-def _validated(endpoint_typeid, invoke_path, provider="", name="", public=False, hub_origin="") -> HubLLMEndpoint:
+def _config_stamp() -> tuple[int, int] | None:
+    """``(inode, mtime_ns)`` of the instance's ``config.json``; ``None`` when it does not exist.
+    ``app_config`` writes by ``os.replace``, so every write moves at least one of the two."""
+    try:
+        st = app_config._config_file_path().stat()
+    except OSError:
+        return None
+    return (st.st_ino, st.st_mtime_ns)
+
+
+def _validated(
+    endpoint_typeid, invoke_path, provider="", name="", public=False, hub_origin="", models_allow=(), tiers=None
+) -> HubLLMEndpoint:
     """The ONE rule for a usable binding: a non-empty id and a hub-relative path.
     Raises ``ValueError`` -- callers decide whether that is a 400 or "unbound"."""
     endpoint_typeid = str(endpoint_typeid or "").strip()
@@ -86,6 +114,8 @@ def _validated(endpoint_typeid, invoke_path, provider="", name="", public=False,
         name=str(name or ""),
         public=bool(public),
         hub_origin=hub_origin if public else "",
+        models_allow=tuple(str(m) for m in (models_allow or ()) if str(m).strip()),
+        tiers=_clean_tiers(tiers),
     )
 
 
@@ -100,6 +130,8 @@ def _parse(raw) -> HubLLMEndpoint | None:
             raw.get("name"),
             raw.get("public") is True,
             raw.get("hub_origin"),
+            raw.get("models_allow"),
+            raw.get("tiers"),
         )
     except ValueError:
         # A record written by a newer/older build must not brick spawn: unbound.
@@ -109,10 +141,12 @@ def _parse(raw) -> HubLLMEndpoint | None:
 def get_hub_llm_endpoint() -> HubLLMEndpoint | None:
     """The endpoint the hub bound this instance to, or ``None`` when unbound."""
     key = get_instance_settings().instance_name
-    if key in _cache:
+    stamp = _config_stamp()
+    if key in _cache and _stamp.get(key) == stamp:
         return _cache[key]
     bound = _parse(app_config.get_config(_CONFIG_KEY))
     _cache[key] = bound
+    _stamp[key] = stamp
     return bound
 
 
@@ -124,20 +158,19 @@ def set_hub_llm_endpoint(
     name: str = "",
     public: bool = False,
     hub_origin: str = "",
+    models_allow=(),
+    tiers=None,
 ) -> HubLLMEndpoint:
     """Persist the hub's binding for this instance and return it.
 
     Raises ``ValueError`` on an empty id or a path that is not hub-relative. The
     sole writer is the ``llm-endpoint`` box action, which only the hub calls.
     """
-    bound = _validated(endpoint_typeid, invoke_path, provider, name, public, hub_origin)
+    bound = _validated(endpoint_typeid, invoke_path, provider, name, public, hub_origin, models_allow, tiers)
     app_config.set_config(_CONFIG_KEY, bound.to_dict())
     instance = get_instance_settings().instance_name
     _cache[instance] = bound
-    # When this binding was written, so a listing fetched BEFORE it cannot be read as denying
-    # it (see ``listing_supersedes_binding``). Monotonic: only ever compared with the memo's
-    # own clock, never with wall time.
-    _bound_at[instance] = time.monotonic()
+    _stamp[instance] = _config_stamp()
     return bound
 
 
@@ -145,15 +178,18 @@ def clear_hub_llm_endpoint() -> bool:
     """Drop the binding. Returns whether one was set."""
     was_bound = get_hub_llm_endpoint() is not None
     app_config.set_config(_CONFIG_KEY, None)
-    _cache[get_instance_settings().instance_name] = None
+    instance = get_instance_settings().instance_name
+    _cache[instance] = None
+    _stamp[instance] = _config_stamp()
     return was_bound
 
 
 def reset_cache() -> None:
     """Drop the memos. For tests, which move instance dirs under the module's feet."""
     _cache.clear()
+    _stamp.clear()
     _list_cache.clear()
-    _bound_at.clear()
+    _inflight.clear()
 
 
 def hub_origin(endpoint_typeid: str = "") -> str:
@@ -202,48 +238,19 @@ def hub_llm_endpoint_invoke_url() -> str | None:
 _list_cache: dict[str, tuple[float, list["LLMEndpoint"]]] = {}
 
 
-#: instance name -> monotonic time the binding was last WRITTEN in this process.
-#: Absent means the binding was loaded from disk, i.e. it predates everything this process has
-#: done -- which is why the default below is ``0.0`` rather than "now".
-_bound_at: dict[str, float] = {}
-
-
 def invalidate_endpoint_listing() -> None:
-    """Drop the cached listing so the next read asks the hub again.
-
-    Called when the hub says a budget changed. Deliberately does NOT touch
-    ``_bound_at``: the binding did not move, only our picture of what exists, and
-    forgetting when we were bound would let an older listing start denying a newer
-    binding (see ``listing_supersedes_binding``).
-
-    Dropping rather than refetching here keeps this callable from anywhere; the
-    caller decides whether a refresh is worth a round trip.
-    """
-    _list_cache.pop(get_instance_settings().instance_name, None)
-
-
-def listing_supersedes_binding() -> bool:
-    """Whether a successful hub listing is NEWER than the binding, and so may contradict it.
-
-    "Has a listing ever succeeded" is the tempting test and it is wrong. The push is
-    deliberately allowed to run ahead of the cache -- the hub binds a box to an endpoint the
-    listing has not heard of yet, and ``_inventory`` reads the listing ``cached_only`` -- so a
-    STALE-but-successful listing would deny a binding that had just arrived, which is exactly
-    the case the stub in ``_endpoint_sources`` exists to serve.
-
-    Only a listing fetched AFTER the binding was written can be read as "the hub knows about
-    this box's endpoint and did not list it". A binding loaded from disk has no write time in
-    this process, so it predates every listing here and any successful one supersedes it.
-    """
+    """Drop the readable endpoint cache; read visibility never revokes a binding."""
     name = get_instance_settings().instance_name
-    cached = _list_cache.get(name)
-    if cached is None:
-        return False  # nobody has managed to ask; the push stands
-    return cached[0] > _bound_at.get(name, 0.0)
+    _list_cache.pop(name, None)
+    # A read already in flight may predate the change that caused this call: the next caller
+    # starts a fresh one rather than joining it.
+    for key in [k for k in _inflight if k[0] == name]:
+        _inflight.pop(key, None)
 
 
-def _can_administer(row: dict) -> bool | None:
-    """Whether the caller may CHANGE this endpoint, out of the hub's permission expansion.
+def _allows(row: dict, action: str) -> bool | None:
+    """Whether the hub's permission expansion lets the caller run ``action`` on this endpoint --
+    ``update`` (may CHANGE it) or ``allocate`` (may carve a sub-budget from it).
 
     ``None`` when the row carries no expansion at all -- an older hub, or a read that did not ask
     for one. Unknown is not "no": a caller that treated it as "no" would read every row on an
@@ -251,13 +258,25 @@ def _can_administer(row: dict) -> bool | None:
     """
     expand = row.get("expand") if isinstance(row, dict) else None
     actions = expand.get("allowed_actions") if isinstance(expand, dict) else None
-    return ("update" in actions) if isinstance(actions, list) else None
+    return (action in actions) if isinstance(actions, list) else None
+
+
+def _root_provider(row: dict) -> str | None:
+    """Who actually pays for this endpoint, out of the hub's permission expansion.
+
+    A chain row (an allowance, a team or org pool) has no provider of its own: its ``provider``
+    field is the entity default, ``openrouter``, whoever pays. The hub answers the real one beside
+    ``mine`` (``LLMEndpoint.expand_permissions``). ``None`` when the row carries no expansion.
+    """
+    expand = row.get("expand") if isinstance(row, dict) else None
+    provider = expand.get("root_provider") if isinstance(expand, dict) else None
+    return provider if isinstance(provider, str) and provider else None
 
 
 def _is_mine(row: dict) -> bool | None:
     """Whether this endpoint is the caller's OWN to spend, out of the hub's permission expansion.
 
-    The SAME block ``_can_administer`` reads, answering the other question about it: "may I change
+    The SAME block ``_allows`` reads, answering the other question about it: "may I change
     this" and "is this mine" are not the same, and neither implies the other. The hub answers it
     while it holds both the caller and the row (``LLMEndpoint.expand_permissions``), so there is no
     second read and nothing to join here.
@@ -268,6 +287,25 @@ def _is_mine(row: dict) -> bool | None:
     expand = row.get("expand") if isinstance(row, dict) else None
     mine = expand.get("mine") if isinstance(expand, dict) else None
     return mine if isinstance(mine, bool) else None
+
+
+def _clean_tiers(raw) -> dict[str, str]:
+    """``{size: model}`` with every empty or non-string model dropped; ``{}`` for anything not a dict."""
+    if not isinstance(raw, dict):
+        return {}
+    return {str(size): model for size, model in raw.items() if isinstance(model, str) and model}
+
+
+def _row_tiers(row: dict) -> dict[str, str]:
+    """``{sm, md, lg}`` -> model, from the hub's ``expand.tiers`` (sizes inherited down the row's chain).
+
+    A size the chain does not declare is left out, so a spawn asking for it is refused in words
+    rather than handed a guess. A row with no expansion (a catalog row) falls back to its OWN
+    ``tiers`` -- exact for a root, which is what the catalog serves; ``{}`` from an older hub.
+    """
+    expand = row.get("expand") if isinstance(row, dict) else None
+    tiers = expand.get("tiers") if isinstance(expand, dict) else None
+    return _clean_tiers(tiers if isinstance(tiers, dict) else (row.get("tiers") if isinstance(row, dict) else None))
 
 
 async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndpoint"]:
@@ -286,9 +324,7 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     initiates -- binding an endpoint, for one -- where reaching back to the hub mid-request buys
     nothing and makes a hub-side call depend on a second hub-side call completing.
     """
-    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointKind  # noqa: PLC0415
     from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
 
     name = get_instance_settings().instance_name
     cached = _list_cache.get(name)
@@ -326,23 +362,37 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     if not hub_auth_available():
         return stale
 
-    # ``hub_get`` rather than a hand-built client: it is the one chokepoint that honours Local
+    key = (name, id(asyncio.get_running_loop()))
+    pending = _inflight.get(key)
+    if pending is None:
+        pending = asyncio.ensure_future(_read_hub_listing(name, stale))
+        _inflight[key] = pending
+        pending.add_done_callback(lambda done: _inflight.pop(key, None) if _inflight.get(key) is done else None)
+    return await asyncio.shield(pending)
+
+
+async def _read_hub_listing(name: str, stale: list["LLMEndpoint"]) -> list["LLMEndpoint"]:
+    """The two hub reads behind ``fetch_hub_llm_endpoints``, unioned and memoised."""
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointKind  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+    # ``HubProxy.try_call`` rather than a hand-built client: it is the one chokepoint that honours Local
     # privacy mode (nothing may leave the box) and it reuses the pooled client. It answers None on
     # any failure, including logged-out.
     # TWO reads, unioned, because the hub answers "what may I spend" in two places and neither is
     # complete alone. The ordinary type listing is ACCESS-SCOPED: it returns rows this user holds a
     # role edge on. The seeded global root holds no role edge for anybody -- it is stamped
-    # ``authenticated_role: reader`` -- so it appears only in ``catalog``, the deliberately
+    # ``authenticated_roles: reader`` -- so it appears only in ``catalog``, the deliberately
     # un-scoped discovery listing. Reading just the first silently omits the one endpoint EVERY
     # signed-in user can always spend, which is the difference between a picker that offers a
     # fallback and one that tells a logged-in user they have nothing. ``use-llm-endpoints.ts``
     # already unions both; this is the box catching up.
     def _rows(body) -> list | None:
-        """Rows out of a ``hub_get`` answer, or ``None`` when the CALL failed.
+        """Rows out of a ``HubProxy.try_call`` answer, or ``None`` when the CALL failed.
 
         Three shapes, all real, all observed against a live hub: the type listing answers
         the envelope dict; the ``catalog`` ACTION answers a bare list; and a successful but
-        EMPTY listing answers ``{}`` with no ``data`` key at all. Only ``hub_get``'s own
+        EMPTY listing answers ``{}`` with no ``data`` key at all. Only ``HubProxy.try_call``'s own
         ``None`` means failure -- an empty answer means zero rows, and conflating the two
         made the union return early and never read the catalog, which is exactly the row
         this function exists to add."""
@@ -359,13 +409,15 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     # catalog is deliberately asked WITHOUT it: those rows reach every signed-in user through a
     # stamp rather than a role edge, and a "cannot change it" there would read as "it was given to
     # me", turning the shared pool into everybody's personal wallet.
-    rows = _rows(await hub_get("llm_endpoint", params={"expand": "permissions"}))
+    # Cache freshness starts when the read begins, rather than after network latency.
+    requested_at = time.monotonic()
+    rows = _rows(await HubProxy.try_call("GET", "llm_endpoint", params={"expand": "permissions"}, strict=True))
     if rows is None:
         return stale
     held = {str(row.get("id") or "") for row in rows if isinstance(row, dict)}
     # A failed catalog read costs only the fallback: answering with the scoped rows beats
     # answering with nothing.
-    rows = list(rows) + list(_rows(await hub_get("llm_endpoint", action="catalog")) or [])
+    rows = list(rows) + list(_rows(await HubProxy.try_call("GET", "llm_endpoint", action="catalog", strict=True)) or [])
     fields = set(LLMEndpoint.model_fields)
     endpoints: list[LLMEndpoint] = []
     seen: set[str] = set()
@@ -384,13 +436,19 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
             # different meaning cannot turn a hub endpoint into a local one.
             payload["kind"] = LLMEndpointKind.HUB
             # ``None`` unless this row came from the scoped listing WITH an answer -- see the field.
-            payload["can_administer"] = _can_administer(row) if row_id in held else None
+            payload["can_administer"] = _allows(row, "update") if row_id in held else None
+            payload["can_allocate"] = _allows(row, "allocate") if row_id in held else None
             # Off the SAME expansion block as ``can_administer`` above -- one read answers both.
             payload["is_mine"] = _is_mine(row) if row_id in held else None
+            # Name who pays, not the entity default a chain row carries.
+            if root_provider := _root_provider(row):
+                payload["provider"] = root_provider
+            # The model each size runs, inherited down the hub chain.
+            payload["tiers"] = _row_tiers(row)
             endpoints.append(LLMEndpoint(**payload))
             if row_id:
                 seen.add(row_id)
         except Exception as exc:  # noqa: BLE001 -- one malformed row must not lose the rest
             logger.warning("fetch_hub_llm_endpoints: skipped a row: %s: %s", type(exc).__name__, exc)
-    _list_cache[name] = (time.monotonic(), endpoints)
+    _list_cache[name] = (requested_at, endpoints)
     return endpoints

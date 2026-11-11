@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.change_event import ChangeEvent
 from flow_sdk.builtin.trigger import Trigger
+from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
@@ -76,12 +77,10 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
     upserts the trigger, guaranteeing the callback is in the registry when
     the first fire dispatches.
     """
-    from flow_sdk.ingest import flow_functions as _ingest_flow_fns  # noqa: F401  decorator side-effect
     from flow_sdk.ingest import poller as _ingest_poller  # noqa: F401  decorator side-effect
     from flow_sdk.rag import reconcile as _rag_reconcile  # noqa: F401  decorator side-effect
     from flow_sdk.server import system_heartbeat as _heartbeat  # noqa: F401  decorator side-effect
     from flow_sdk.transcript_streamer.triggers import transcript_watcher_trigger_specs
-    from flow_sdk.usage_report import callback as _usage_report_cb  # noqa: F401  decorator side-effect
 
     settings = get_instance_settings()
     specs: list[dict[str, Any]] = [
@@ -90,8 +89,7 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
             name="Log settings",
             # Dev: watches the per-instance toplog.json; re-applies the filter to
             # the tag loggers and broadcasts the state to every UI.
-            description="Applies changes to Flowpad's log settings right away. "
-            "It only touches Flowpad's own settings.",
+            description="Applies changes to Flowpad's log settings right away. It only touches Flowpad's own settings.",
             trigger_type=TriggerType.FSOP,
             watch_path=str(settings.toplog_config_path),
             recursive=False,
@@ -103,31 +101,11 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
             ],
         ),
         dict(
-            uname="builtin_daily_usage_analysis",
-            name="Daily usage summary",
-            # Dev: when enabled, fires the daily-analysis flow (analyze function →
-            # publish) every day at 07:00 local; no direct action, the flow routes it.
-            description="Off unless you turn it on: a short daily summary of how you used Flowpad, "
-            "on your Home page. It stays on this computer.",
-            trigger_type=TriggerType.SCHEDULE,
-            sched_trigger_type="cron",
-            expr="0 7 * * *",
-            # Off by default, and FORCED off: the upsert re-applies every spec
-            # key on each boot, so existing installs flip off on restart and a
-            # user who enables it is reset on the next one.
-            enabled=False,
-            # No direct action: the daily-analysis GraphWorkflow (service_graph_workflows)
-            # routes this trigger's `fired` through analyze → publish —
-            # a direct action here would double-fire the report.
-            actions=[],
-        ),
-        dict(
             uname="builtin_system_heartbeat",
             name="Background upkeep",
             # Dev: fires every minute; tasks register via @register_heartbeat_task and
             # the dispatch callback fans out and isolates per-task failures.
-            description="Keeps Flowpad up to date in the background, using only the sources "
-            "and folders you set up.",
+            description="Keeps Flowpad up to date in the background, using only the sources and folders you set up.",
             trigger_type=TriggerType.SCHEDULE,
             sched_trigger_type="cron",
             expr="* * * * *",
@@ -163,7 +141,8 @@ async def _upsert_one(spec: dict[str, Any], *, existing: "Optional[Trigger]" = N
     """
     # A seed is Flowpad's own: without this the row took its scope from the path
     # it landed under, which reads as "user" and lists every seed as the person's.
-    spec = {"scope": "system", **spec}
+    # Flowpad's own follow their seed (on unless it says off): they are not a project's advice.
+    spec = {"scope": "system", "enabled": True, **spec}
     uname = spec["uname"]
     if existing is None:
         # Only when the caller has not already read it. A reconcile that reads
@@ -187,6 +166,9 @@ async def _upsert_one(spec: dict[str, Any], *, existing: "Optional[Trigger]" = N
     # trigger type (HOOK/SCHEDULE/FSOP) updates correctly across restarts.
     for key, value in spec.items():
         if key in _UPSERT_SKIP_KEYS:
+            continue
+        if key in Trigger.projected_fields:  # the machine's switch — only the sanctioned setter moves it
+            existing._set_projection(key, value, PROJECTION_SENTINEL)
             continue
         setattr(existing, key, value)
     try:
@@ -376,11 +358,24 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
     from flow_sdk.instance_settings.runtime import get_assigned_runtime  # noqa: PLC0415
 
     on_hub_box = get_assigned_runtime() is not None
-    if wizard.popup and person_is_watching() and not on_hub_box:
+    # Funded means silent, on a desktop and on every box: a person with a working LLM source is never
+    # shown setup. The wizard still runs -- off screen, unattended -- for whatever it installs. Asked
+    # only when a popup could show at all: the check probes local logins.
+    from flow_sdk.core.compute.llm_source import llm_source_funded  # noqa: PLC0415
+
+    could_show = wizard.popup and person_is_watching() and not on_hub_box
+    silent = on_hub_box or (could_show and await llm_source_funded())
+    if could_show and not silent:
+        # Everything already installed: nothing to read, nothing to press. Stay quiet — the
+        # nav bar's setup button still glows if something is missing later.
+        check = await wizard.run(check_only=True)
+        if check.ok:
+            _log.info("llm setup trigger %r: every step already validated; not opening the popup", trigger.uname)
+            return
         await navigate_to_wizard(wizard)
         return
 
-    _source, result = await start_wizard(wizard, unattended=True, shown=not on_hub_box)
+    _source, result = await start_wizard(wizard, unattended=True, shown=not silent)
     if result.busy:
         # Replaced by a newer run (or held by one started from the wizard page):
         # that run reports for itself, so this one has nothing to tell the person.

@@ -89,6 +89,11 @@ export function renderDesktopNotification(payload: NotificationPayload): void {
   const href = pointer ? new DockPointer(pointer).toUrl(window.location.pathname) : undefined;
   const level = payload.level ?? 'info';
   notify({
+    // One popup per thing it opens: an id from the title alone (the sender's name) made a second
+    // conversation from the same person replace the first one's popup.
+    id: payload.click_target
+      ? `desktop:${payload.click_target.view_type}:${payload.click_target.pointer ?? ''}`
+      : undefined,
     level,
     title,
     message: body,

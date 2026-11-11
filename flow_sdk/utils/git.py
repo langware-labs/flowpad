@@ -5,7 +5,7 @@ import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Optional, Sequence, Tuple
 
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
@@ -174,12 +174,40 @@ def _url_matches(path: str, clone_url: str) -> bool:
         return False
 
 
-def find_local_repo_for_url(clone_url: str) -> Optional[str]:
+def _in_another_instance(path: str) -> bool:
+    """Is ``path`` inside ANOTHER Flowpad instance's own folder (``<flow_home>/instances/<other>/``)
+    or, on any instance but prod, inside prod's workspace (``~/Flowpad workspace``)?
+    Such a checkout is that instance's (its workspace), never one to adopt here."""
+    from pathlib import Path as _Path
+
+    from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    try:
+        settings = get_instance_settings()
+        resolved = _Path(path).resolve()
+        prod_root = (settings.user_home / "Flowpad workspace").resolve()
+        if resolved.is_relative_to(prod_root) and agent_workspace_root().resolve() != prod_root:
+            return True
+        if not resolved.is_relative_to(settings.instances_root.resolve()):
+            return False
+        return not resolved.is_relative_to(settings.instance_dir.resolve())
+    except Exception:  # noqa: BLE001 — no settings: nothing is known to be foreign
+        return False
+
+
+def find_local_repo_for_url(clone_url: str, within: Optional[Sequence[Path]] = None) -> Optional[str]:
     """Find a local repo whose origin URL matches clone_url.
+
+    ``within``: when given, only a checkout inside one of these roots counts (a
+    candidate elsewhere is skipped and the search goes on).
 
     Pass 1: Claude-registered projects (fast, authoritative).
     Pass 2: Immediate siblings of those projects — covers repos that exist
             on disk but were never opened in Claude.
+
+    ``~/.claude/projects`` is machine-wide, so a checkout inside another Flowpad
+    instance's folder is listed too; it is that instance's and is skipped.
     """
     if not clone_url:
         return None
@@ -188,11 +216,18 @@ def find_local_repo_for_url(clone_url: str) -> Optional[str]:
 
     from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 
-    claude_paths = list(iter_claude_project_paths())
+    roots = [_Path(r).resolve() for r in within] if within is not None else None
+
+    def _eligible(path: str) -> bool:
+        if _in_another_instance(path):
+            return False
+        return roots is None or any(_Path(path).resolve().is_relative_to(r) for r in roots)
+
+    claude_paths = [p for p in iter_claude_project_paths() if not _in_another_instance(str(p))]
 
     # Pass 1: Claude-registered projects
     for project_root in claude_paths:
-        if _url_matches(str(project_root), clone_url):
+        if _eligible(str(project_root)) and _url_matches(str(project_root), clone_url):
             return str(project_root)
 
     # Pass 2: siblings — scan one level inside each unique parent directory
@@ -207,6 +242,8 @@ def find_local_repo_for_url(clone_url: str) -> Optional[str]:
                 if not sibling.is_dir() or sibling == _Path(project_root):
                     continue
                 if (sibling / ".git").exists() and _url_matches(str(sibling), clone_url):
+                    if not _eligible(str(sibling)):
+                        continue
                     return str(sibling)
         except OSError:
             continue

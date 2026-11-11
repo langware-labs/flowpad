@@ -20,6 +20,7 @@ import {
   type LLMEndpointOffer,
   type LLMSource,
   remedyFor,
+  LLMSourceRefusal,
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertCircle, ArrowUpRight, Check, KeyRound, Loader2, Route, Waypoints } from 'lucide-react';
@@ -37,7 +38,7 @@ import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 
-import { LlmEndpointsSection } from './LlmEndpointsSection';
+import { EndpointSponsorLine, LlmEndpointsSection } from './LlmEndpointsSection';
 import { LlmKeysSection } from './LlmKeysSection';
 import { isLlmSourcesSection, openLlmSources, parseLlmSourcesPointer } from './llm-sources-pointer';
 import {
@@ -152,7 +153,16 @@ function SourceRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm">{source.name}</span>
-          {inUse && (
+          {source.reason_code === LLMSourceRefusal.KeyRejected ? (
+            <Badge
+              variant="outline"
+              className="border-destructive/40 text-destructive"
+              title={source.reason || undefined}
+              data-testid={`llm-source-rejected-${worker}`}
+            >
+              <Trans>Rejected</Trans>
+            </Badge>
+          ) : inUse && (
             <Badge variant="outline" className={TONE.emerald}>
               <Check className="mr-1 h-3 w-3" />
               <Trans>in use</Trans>
@@ -191,6 +201,11 @@ function SourceRow({
           <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
             {source.reason && <AlertCircle className="h-3 w-3 text-amber-500" />}
             <span className="truncate">{source.reason || (verdict && !verdict.ok ? '' : source.detail)}</span>
+          </div>
+        )}
+        {endpoint?.kind === LLMFundingKind.Hub && source.endpoint_typeid && (
+          <div className="mt-0.5 flex">
+            <EndpointSponsorLine typeid={source.endpoint_typeid} />
           </div>
         )}
       </div>
@@ -292,9 +307,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const section = isLlmSourcesSection(target) ? target : null;
   // Matched against the kinds the box actually reported rather than rebuilt as
   // `harness.<worker>.cli`: a stale or hand-typed worker then falls back to the first harness
-  // instead of yielding a kind that matches no chip and no source list. (The repo has an
-  // incident on file from exactly that second copy of the vendor mapping — see
-  // `navigation/open-capabilities.ts`.)
+  // instead of yielding a kind that matches no chip and no source list.
   const focused = section ? null : (kinds.find((kind) => workerOf(kind) === target) ?? kinds[0]);
 
   const onSelect = useCallback(

@@ -26,7 +26,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult
@@ -55,6 +55,108 @@ def latest_release(timeout: float = 8.0) -> "str | None":
         logger.warning("[self-update] PyPI fetch failed: %s", exc)
         return None
     return latest if isinstance(latest, str) else None
+
+
+def desktop_compat_block(version: str) -> "str | None":
+    """Reason a desktop-managed backend must not install *version*, or ``None``.
+
+    The pre-install half of the bidirectional contract (``flow_sdk/utils/compat.py``):
+    the desktop's own floor, from the env the Electron shell set on ``flow start``.
+    A backend the desktop does not manage (no env) is never constrained, so
+    CLI/headless installs stay free. The other direction — *version* requiring a
+    newer desktop — needs the target's own metadata and is checked after the
+    install by :func:`verify_installed_against_desktop`.
+    """
+    from flow_sdk.utils import compat  # noqa: PLC0415
+
+    desktop_version, desktop_min_backend = compat.desktop_constraints()
+    if desktop_min_backend is None:
+        return None
+    ok = compat.meets_floor(version, desktop_min_backend)
+    if ok is None:
+        return (
+            f"cannot compare {version!r} with the desktop app's minimum backend "
+            f"version {desktop_min_backend!r} — refusing to install it"
+        )
+    if not ok:
+        return (
+            f"FlowPad Desktop{f' {desktop_version}' if desktop_version else ''} requires "
+            f"Backend {desktop_min_backend} or newer; {version} would be incompatible. "
+            "Update the desktop app first, or pick a newer backend version."
+        )
+    return None
+
+
+def installed_min_desktop() -> "str | None":
+    """``min_desktop_version`` of the flowpad NOW ON DISK.
+
+    Read fresh from the file — after an in-place reinstall the on-disk
+    ``flow_sdk/compat.json`` belongs to the NEW release while this process still
+    runs the old code, and that new floor is exactly what must be checked.
+    Raises ``flow_sdk.utils.compat.CompatError`` on invalid metadata.
+    """
+    import flow_sdk  # noqa: PLC0415
+    from flow_sdk.utils import compat  # noqa: PLC0415
+
+    return compat.backend_min_desktop_version(Path(flow_sdk.__file__).resolve().parent / "compat.json")
+
+
+def verify_installed_against_desktop() -> "str | None":
+    """After an in-place reinstall: ``None`` when the backend now on disk accepts
+    the managing desktop, else the human reason it does not (→ roll back).
+
+    No managing desktop (no ``FLOWPAD_DESKTOP_VERSION`` in the env) → ``None``.
+    """
+    from flow_sdk.utils import compat  # noqa: PLC0415
+
+    desktop_version, _ = compat.desktop_constraints()
+    if desktop_version is None:
+        return None
+    try:
+        floor = installed_min_desktop()
+    except compat.CompatError as exc:
+        return f"the installed backend's compatibility metadata is invalid: {exc}"
+    ok = compat.meets_floor(desktop_version, floor)
+    if ok is None:
+        return (
+            f"cannot compare FlowPad Desktop {desktop_version!r} with the installed "
+            f"backend's minimum desktop version {floor!r}"
+        )
+    if not ok:
+        return (
+            f"the installed backend requires FlowPad Desktop {floor} or newer, "
+            f"but Desktop {desktop_version} is running"
+        )
+    return None
+
+
+class PairRollback(NamedTuple):
+    """An install that left an incompatible pair, and what happened to the previous version."""
+
+    reason: str
+    restored: bool
+    #: What to run by hand when the automatic restore failed.
+    manual_command: str
+
+
+def rollback_if_incompatible(previous_version: str) -> "PairRollback | None":
+    """After an in-place reinstall: ``None`` when the backend now on disk accepts the managing
+    desktop; otherwise put *previous_version* back and say why (the one place ``flow upgrade``,
+    ``POST /version/install`` and the Windows relay agree on what an incompatible result means)."""
+    reason = verify_installed_against_desktop()
+    if reason is None:
+        return None
+    logger.warning("[self-update] the installed release is incompatible with the running desktop: %s -- restoring %s", reason, previous_version)
+    # The wheel being restored is the one uv installed before, so it is in uv's cache: try that first. The
+    # network may be exactly what failed (an install that died half way is often a dropped connection), and a
+    # local/dev build that is not on PyPI can only come back from the cache.
+    restore = None
+    if build_install_command(previous_version, offline=True) != build_install_command(previous_version):
+        restore = reinstall_version(previous_version, offline=True)
+    if restore is None or not restore.ok:
+        restore = reinstall_version(previous_version)
+    manual = " ".join(str(part) for part in build_install_command(previous_version))
+    return PairRollback(reason=reason, restored=restore.ok, manual_command=manual)
 
 
 def is_valid_version(version: str) -> bool:
@@ -111,7 +213,17 @@ def detect_install_method() -> str:
     return "pip"
 
 
-def build_install_command(version: str) -> list[str]:
+def build_install_command(version: str, offline: bool = False) -> list[str]:
+    """The pinned install. ``offline`` asks uv for its cache only -- how a rollback avoids needing the network
+    for a wheel uv already holds. pip has no such mode: there ``offline`` changes nothing."""
+    cmd = _build_install_command(version)
+    uv = shutil.which("uv")
+    if offline and uv and cmd and cmd[0] == uv:
+        cmd.append("--offline")
+    return cmd
+
+
+def _build_install_command(version: str) -> list[str]:
     if detect_install_method() == "uv":
         # No ``--force``: a new pin already moves the tool, in place. ``--force`` rebuilds the
         # environment, and its own callers run inside it (``flow upgrade``, the server) -- on
@@ -204,6 +316,13 @@ def _wait_for_exit(pids: list[int], timeout: float) -> None:
 def upgrade_after_exit(version: str, pids: list[int], log: Path) -> int:
     """The Windows half of ``flow upgrade``: install *version* once *pids* (the ``flow.exe`` that
     asked, and its Python) have exited, writing what happened to *log*. Run detached."""
+    from flow_sdk import __version__ as previous  # noqa: PLC0415 -- read now: the install below replaces it on disk
+
+    # Loaded now for the same reason: the post-install check runs in THIS process, and a first import after the
+    # install would execute the NEW release's compat module. If a later release renamed what the check calls, the
+    # detached relay would die with no log and no rollback. The module loaded here reads the new floor from disk.
+    importlib.import_module("flow_sdk.utils.compat")
+
     _wait_for_exit(pids, timeout=60)
     with launchers_set_aside(wait_s=60) as free:
         if not free:
@@ -215,12 +334,18 @@ def upgrade_after_exit(version: str, pids: list[int], log: Path) -> int:
             return 1
         result = subprocess.run(build_install_command(version), capture_output=True, text=True)
     tail = "\n".join((result.stdout + result.stderr).strip().splitlines()[-15:])
+    if result.returncode == 0:
+        rolled = rollback_if_incompatible(previous)
+        if rolled is not None:
+            kept = f"flowpad {previous} was restored." if rolled.restored else f"restoring {previous} failed -- run: {rolled.manual_command}"
+            log.write_text(f"{tail}\nflowpad {version} is not compatible with the running desktop: {rolled.reason}; {kept}\n", encoding="utf-8")
+            return 1
     verdict = f"flowpad upgraded to {version}." if result.returncode == 0 else f"flow upgrade failed (exit {result.returncode})."
     log.write_text(f"{tail}\n{verdict}\n", encoding="utf-8")
     return result.returncode
 
 
-def reinstall_version(version: str, timeout: float = 180.0) -> "CliResult":
+def reinstall_version(version: str, timeout: float = 180.0, offline: bool = False) -> "CliResult":
     """Run the pinned reinstall — a ``CliResult``, built the one way every
     process record is (``of_process``), so a timeout is ``timed_out`` rather than
     folded into "failed". Never raises.
@@ -229,8 +354,8 @@ def reinstall_version(version: str, timeout: float = 180.0) -> "CliResult":
     """
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
 
-    cmd = build_install_command(version)
-    command = " ".join(cmd)
+    cmd = build_install_command(version, offline=offline)
+    command = " ".join(str(part) for part in cmd)
     logger.info("[self-update] installing %s==%s via: %s", PACKAGE, version, command)
     started = time.monotonic()
     try:

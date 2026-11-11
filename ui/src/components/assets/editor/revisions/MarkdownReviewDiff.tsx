@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
@@ -17,7 +18,7 @@ interface MarkdownReviewDiffProps {
 
 /** Parse the change id off the `rev-N` class we inject in `annotate`. */
 function ridOf(className: unknown): number {
-  const m = /\brev-(\d+)\b/.exec(String(className ?? ''));
+  const m = /\brev-(\d+)\b/.exec(typeof className === 'string' ? className : '');
   return m ? Number(m[1]) : 0;
 }
 
@@ -37,6 +38,7 @@ function ReviewMark({
   children?: React.ReactNode;
   onDecide: (id: number, d: Decision) => void;
 }) {
+  const { t } = useLingui();
   const id = ridOf(className);
   const Tag = kind;
   return (
@@ -56,7 +58,7 @@ function ReviewMark({
             e.preventDefault();
             onDecide(id, kind === 'ins' ? 'accepted' : 'rejected');
           }}
-          title={kind === 'ins' ? 'Keep' : 'Keep text'}
+          title={kind === 'ins' ? t`Keep` : t`Keep text`}
           className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-white"
         >
           <Check className="h-2.5 w-2.5" />
@@ -67,7 +69,7 @@ function ReviewMark({
             e.preventDefault();
             onDecide(id, kind === 'ins' ? 'rejected' : 'accepted');
           }}
-          title={kind === 'ins' ? 'Discard' : 'Confirm deletion'}
+          title={kind === 'ins' ? t`Discard` : t`Confirm deletion`}
           className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-white"
         >
           <X className="h-2.5 w-2.5" />
@@ -129,7 +131,7 @@ export function MarkdownReviewDiff({ oldContent, newContent }: MarkdownReviewDif
             data-active={!final}
             className="px-3 py-1 data-[active=true]:bg-foreground data-[active=true]:text-background"
           >
-            Show changes
+            <Trans>Show changes</Trans>
           </button>
           <button
             type="button"
@@ -137,15 +139,19 @@ export function MarkdownReviewDiff({ oldContent, newContent }: MarkdownReviewDif
             data-active={final}
             className="px-3 py-1 data-[active=true]:bg-foreground data-[active=true]:text-background"
           >
-            Final
+            <Trans>Final</Trans>
           </button>
         </div>
         <span className="ms-auto text-xs text-muted-foreground">
-          {total === 0
-            ? 'No differences'
-            : final
-              ? `${total} change${total === 1 ? '' : 's'}`
-              : `${pending} of ${total} unresolved`}
+          {total === 0 ? (
+            <Trans>No differences</Trans>
+          ) : final ? (
+            <Plural value={total} one="# change" other="# changes" />
+          ) : (
+            <Trans>
+              {pending} of {total} unresolved
+            </Trans>
+          )}
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5" data-testid="markdown-review-diff">

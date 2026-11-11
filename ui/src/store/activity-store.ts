@@ -27,6 +27,8 @@ import { connectionManager } from '@sdk/websocket';
 import { isTerminal, type ActivityProgressSpec } from '@sdk/activity';
 import { useEffect, useSyncExternalStore } from 'react';
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { raiseActivityErrors } from '@src/notifications/activity-errors';
+import { errorsInTree } from '@src/components/footer/activity-one-liner';
 import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 
 /** The FlowData element activity snapshots ride, shared with older progress payloads. */
@@ -114,6 +116,14 @@ export function handleActivitySnapshot(spec: ActivityProgressSpec): void {
   specs.set(k, spec);
   sortKeys.set(k, Date.parse(spec.updated_at ?? spec.started_at ?? '') || 0);
 
+  if (isTerminal(spec) && errorsInTree(spec) > 0) {
+    // Finished with errors: they move to the warnings list, one entry each, and the root
+    // leaves the footer — a red pill that never goes away is not a place to act on them.
+    raiseActivityErrors(spec);
+    forget(k);
+    return;
+  }
+
   if (isTerminal(spec)) {
     receipt = spec;
     evictionTimers.set(
@@ -123,11 +133,7 @@ export function handleActivitySnapshot(spec: ActivityProgressSpec): void {
         const current = specs.get(k);
         // Only drop what is still the finished one: a new activity may have claimed the
         // address while the receipt was on screen.
-        if (current && current.activity_id === spec.activity_id) {
-          specs.delete(k);
-          sortKeys.delete(k);
-          notify();
-        }
+        if (current && current.activity_id === spec.activity_id) forget(k);
       }, RECEIPT_LINGER_MS),
     );
   }
@@ -162,7 +168,27 @@ export async function replay(): Promise<void> {
   // store simply stays empty.
   if (isHubOnly()) return;
   const rows = await lazyAssets.refresh(LazyAsset.Activities);
+  // The list is every live root. A running row it lacks ended while this tab was not listening
+  // (a socket gap, a backend restart): its end will never arrive, so it goes now.
+  const live = new Set(rows.map(key));
+  for (const [k, held] of specs) if (!isTerminal(held) && !live.has(k)) forget(k);
   for (const row of rows) handleActivitySnapshot(row);
+}
+
+/** Forget a root the backend no longer has — a row whose end this tab never heard. */
+export function dropActivity(path: string, subject_entity?: string | null): void {
+  const k = key({ path, subject_entity: subject_entity ?? null });
+  if (specs.has(k)) forget(k);
+}
+
+/** Remove one root and its pending eviction. */
+function forget(k: string): void {
+  const timer = evictionTimers.get(k);
+  if (timer != null) clearTimeout(timer);
+  evictionTimers.delete(k);
+  specs.delete(k);
+  sortKeys.delete(k);
+  notify();
 }
 
 /** Forget the last finished root — the footer's dismiss. */

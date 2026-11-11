@@ -149,8 +149,11 @@ describe('ancestor-active highlight in the global strip', () => {
   it('a Vibe tab keeps its own name while its child shows INSIDE its workspace', () => {
     // The URL names the host: the workspace (with its nested strip showing the
     // child) is on screen, so the global chip is the Vibe tab itself.
-    const { processRow, childRow } = setupStrip();
-    h.currentDock = DockPointer.fromTabHash(childRow.pointer)!.withHost(`agentic_process-${AP}`);
+    const { processRow, childRow, siblingRow } = setupStrip();
+    // A tab of the workspace is its own row, keyed `|@<host>`.
+    const hosted = DockPointer.fromTabHash(childRow.pointer)!.withHost(`agentic_process-${AP}`);
+    tabManager.adoptGlobal([processRow, { ...childRow, pointer: hosted.toJSON() ?? '' }, siblingRow]);
+    h.currentDock = hosted;
     render(<UnifiedTabStrip />);
 
     expect(chipFor(processRow)?.getAttribute('data-active')).toBe('true');

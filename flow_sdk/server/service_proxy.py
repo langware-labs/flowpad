@@ -26,7 +26,7 @@ from typing import Iterable, NamedTuple, Optional
 from urllib.parse import quote
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.cloud_client.transport.proxy import _HOP as _HOP_BYTES
+from flow_sdk.cloud_client.hub_proxy import HOP_BY_HOP as _HOP_BYTES
 from flow_sdk.schema.data_spec.service_endpoint_spec import WEB_AUDIENCES
 
 Headers = list[tuple[str, str]]

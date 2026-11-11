@@ -13,10 +13,11 @@ import { AddressField } from './AddressField';
 import { AddressSearchField } from './AddressSearchField';
 import { AppButton } from './AppButton';
 import { NavIconButton } from './NavIconButton';
-import { NewChatButton } from './NewChatButton';
 import { ProjectSetupButton } from './ProjectSetupButton';
 import { RuntimeChip } from './RuntimeChip';
 import { TopBarActions } from './TopBarActions';
+import { UpdateReadyIndicator } from './UpdateReadyIndicator';
+import { TopBarAskForHelp } from './TopBarAskForHelp';
 import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
 import { NewWorkspaceDialogHost } from '@src/components/workspace/workspace-switcher';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
@@ -81,12 +82,10 @@ export function TopNavBar() {
       {/* A full window reload, the same as the browser's own — no modifier
           gesture and no soft variant. Anything less does not reload. */}
       <NavIconButton icon={RefreshCw} label={t`Reload`} onClick={reload} testId="top-nav-reload" />
-      <NavIconButton
-        icon={Home}
-        label={t`Home`}
-        onClick={() => navigation.goHome()}
-        testId="top-nav-home"
-      />
+      {/* Home is Flowpad's own home page, never a project's home page. */}
+      <NavIconButton icon={Home} label={t`Home`} onClick={() => navigation.goHome()} testId="top-nav-home" />
+      {/* Right after Home, where it is found, rather than at the far edge of the bar. */}
+      <TopBarAskForHelp projectId={project?.id ?? null} />
       {/* Files sat on the rail; same destination, same one-liner, just beside
           the other place-buttons instead of below them. */}
       <NavIconButton
@@ -129,12 +128,8 @@ export function TopNavBar() {
           onAsk={assistant ? () => setMode('ask') : undefined}
         />
       )}
+      <UpdateReadyIndicator />
       <TopBarActions targetTypeId={targetTypeId} targetTitle={targetTitle} dock={currentDock} />
-      {/* Quick launch, last in the row: unlike the actions beside it, it acts
-          on nothing the bar is addressing — it starts somewhere new. One click,
-          no picker; the harness is the last one used and the mode is the
-          current one. */}
-      <NewChatButton />
     </div>
   );
 }

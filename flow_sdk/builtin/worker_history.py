@@ -415,7 +415,6 @@ def _collect_claude_entries_sync(
     cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
     """Blocking body of ``get_claude_worker_history``. Runs on the history lane."""
-    from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
     from flow_sdk.instance_settings import get_instance_settings
 
     projects_dir = get_instance_settings().claude_projects_dir
@@ -469,7 +468,7 @@ def _collect_claude_entries_sync(
     result: list[WorkerHistoryEntry] = []
     seen: set[str] = set()
 
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import ensure_claude_session_stats  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions._claude_session_stats import _parse_jsonl_stats  # noqa: PLC0415
 
     cache = _open_history_cache()
     cached = _cache_lookup(cache, candidates)
@@ -483,22 +482,22 @@ def _collect_claude_entries_sync(
                 # stats and never touches `session.content`, so skip the full
                 # per-file transcript parse (worker_summary_log) that otherwise
                 # dominates this endpoint's latency across all candidates.
-                session = extract_claude_session_from_path(jsonl_path, include_content=False)
-                ensure_claude_session_stats(session)  # populate message_count, last_user_message, git_branch, etc.
+                # One read per file: stats, title and last timestamp in one pass.
+                stats = _parse_jsonl_stats(jsonl_path, with_title=True)
             except Exception as e:
                 logger.debug("[worker_history] from_jsonl failed for %s: %s", jsonl_path, e)
                 continue
-            sd = object.__getattribute__(session, "__dict__")
             payload = {
-                "session_id": session.session_id,
-                "cwd": sd.get("cwd") or None,
-                "project_encoded_name": sd.get("project_encoded_name") or None,
-                "slug": session.slug or None,
-                "custom_title": sd.get("custom_title") or None,
-                "git_branch": sd.get("git_branch") or None,
-                "message_count": sd.get("message_count") or None,
-                "last_user_message": sd.get("last_user_message"),
-                "last_content_ts": _last_content_timestamp(jsonl_path, mtime).isoformat(),
+                "session_id": stats.get("session_id") or jsonl_path.stem,
+                "cwd": stats.get("cwd") or None,
+                "slug": stats.get("slug") or None,
+                "custom_title": stats.get("title"),
+                "git_branch": stats.get("git_branch") or None,
+                "message_count": stats.get("message_count") or None,
+                "last_user_message": stats.get("last_user_message"),
+                "last_content_ts": (
+                    _coerce_datetime(stats.get("last_timestamp")) or _last_content_timestamp(jsonl_path, mtime)
+                ).isoformat(),
             }
             # Cached even when the filters below reject the row — the next
             # request then rejects it from the payload instead of re-parsing.
@@ -1028,16 +1027,40 @@ def _agentic_process_only_entries(
     return extra
 
 
-async def _load_agentic_processes() -> list["AgenticProcess"]:
-    """Best-effort fetch of all AgenticProcess entities. Returns ``[]`` on failure."""
+class _ProcessRow(dict):
+    """A process's stored fields, read as attributes; a field the row lacks reads as None."""
+
+    __getattr__ = dict.get
+
+
+async def _load_agentic_processes() -> list[_ProcessRow]:
+    """Every AgenticProcess as its stored fields — not as entities. Returns ``[]`` on failure.
+
+    History reads a handful of fields from every process on each call, and the UI calls it on
+    every project switch: building all of them (~1,400 on prod) blocked the event loop ~0.4 s
+    per call (perf hunt 2026-11-07). Only the rows a response returns are built, for naming.
+    """
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
     try:
-        return await AgenticProcess.get_all()
+        return [_ProcessRow(row) for row in await AgenticProcess.get_all_rows()]
     except Exception as e:
-        logger.warning("[worker_history] AgenticProcess.get_all failed: %s", e)
+        logger.warning("[worker_history] AgenticProcess.get_all_rows failed: %s", e)
         return []
 
+
+
+async def _load_processes_by_id(ids: set[str]) -> list["AgenticProcess"]:
+    """The named processes as entities (one SQL ``$IN``). Returns ``[]`` on failure."""
+    if not ids:
+        return []
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+
+    try:
+        return await AgenticProcess.get_all({"match": {"op": "$IN", "operands": ["id", sorted(ids)]}})
+    except Exception as e:
+        logger.warning("[worker_history] loading named processes failed: %s", e)
+        return []
 
 async def get_worker_history(
     limit: int = 10, project_ids: ScopeProjectIds = None
@@ -1052,6 +1075,7 @@ async def get_worker_history(
     normalized_ids = None if project_ids is None else tuple(sorted(project_ids))
     key = (limit, normalized_ids)
     task = _WORKER_HISTORY_IN_FLIGHT.get(key)
+    joined = task is not None
     if task is None:
         task = asyncio.create_task(
             _collect_worker_history(
@@ -1066,7 +1090,30 @@ async def get_worker_history(
                 del _WORKER_HISTORY_IN_FLIGHT[key]
 
         task.add_done_callback(forget)
-    return await asyncio.shield(task)
+    entries = await asyncio.shield(task)
+    if not joined:
+        return entries
+    # A joined scan read the processes before this request's latest open (a heal
+    # mints the process, `activate` stamps it): re-read the binding for THIS request.
+    return _rebind_processes(entries, _build_agentic_process_index(await _load_agentic_processes()))
+
+
+def _rebind_processes(entries: list[WorkerHistoryEntry], index: ProcessIndex) -> list[WorkerHistoryEntry]:
+    """Refresh each row's process id, open stamp and process name from ``index``."""
+    out: list[WorkerHistoryEntry] = []
+    for entry in entries:
+        bound = index.get(entry.worker_id)
+        if bound is None:
+            out.append(entry)
+            continue
+        ap_id, ap_name, ap_last_active_at = bound
+        update: dict = {"agentic_process_id": ap_id, "last_active_at": ap_last_active_at}
+        # The process name outranks every transcript-derived name.
+        name = _pick_name(custom_title=ap_name, slug=None, display=None, session_id=entry.worker_id)
+        if name:
+            update["name"] = name
+        out.append(entry.model_copy(update=update))
+    return out
 
 
 async def _collect_worker_history(
@@ -1138,7 +1185,7 @@ async def _collect_worker_history(
             continue
         counts[bucket] = n + 1
         capped.append(entry)
-    await _project_history_names(capped, processes)
+    await _project_history_names(capped)
     return capped
 
 
@@ -1178,14 +1225,14 @@ async def _legacy_name_tabs(processes: list) -> dict[str, list]:
     return grouped
 
 
-async def _project_history_names(entries: list[WorkerHistoryEntry], processes: list) -> None:
-    """One loaded process snapshot plus one batch of unmanaged filesystem reads.
+async def _project_history_names(entries: list[WorkerHistoryEntry]) -> None:
+    """The returned rows' processes, built in one query, plus one batch of unmanaged filesystem reads.
 
     History is a read path. It must not run process/tab writer transactions or
     bind subscriptions once for every row in a listing.
     """
-    by_id = {str(process.id): process for process in processes}
     selected = {entry.agentic_process_id for entry in entries if entry.agentic_process_id}
+    by_id = {str(process.id): process for process in await _load_processes_by_id(selected)}
     legacy_tabs = await _legacy_name_tabs([process for pid, process in by_id.items() if pid in selected])
     unresolved: list[WorkerHistoryEntry] = []
     for entry in entries:

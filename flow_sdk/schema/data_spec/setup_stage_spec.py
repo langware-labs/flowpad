@@ -37,6 +37,10 @@ class SetupStageSpec(DataSpec):
     label: str = ""
     #: The wizard's name.
     wizard: NonBlank
+    #: What this stage sets up ITSELF, so the target does not need it before the stage: ``credential`` — the
+    #: driver's credential, whose values the wizard's steps write (an app the person creates during the stage,
+    #: whose token exists only once it does). Without this, a credential is set up before the first stage.
+    provides: tuple[str, ...] = ()
 
     @property
     def display_label(self) -> str:
@@ -77,6 +81,7 @@ __all__ = [
 #: ``setup``: its driver's own check (a bot not invited, a stage not run).
 NEED_CONNECTION = "connection"
 NEED_SETUP = "setup"
+NEED_CREDENTIAL = "credential"
 
 
 class SetupNeedSpec(DataSpec):
@@ -97,3 +102,5 @@ class SetupNeedSpec(DataSpec):
     #: ``missing``, ``needs_reauth``, ``refused`` — why it is not there yet.
     state: str = ""
     detail: str = ""
+    #: What the sign-in lets the source do, in the driver's own words (its permission's ``why``).
+    why: str = ""

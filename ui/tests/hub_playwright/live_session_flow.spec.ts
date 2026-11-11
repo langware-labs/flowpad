@@ -45,13 +45,14 @@ const SPEC_BUDGET_MS = 90_000;
 const TURN_BUDGET_MS = 60_000;
 
 async function expectNoSessionRowsInThread(page: Page, startingText: string) {
-  // Rule 3 + 4: nothing of the session but its starting message is a thread row.
+  // Rule 3 + 4: nothing of the session is a thread row — not even its opening prompt; the
+  // session is ONE line in the chat (79a2bd67b: "No prompt bubble").
   const bubbles = page.locator('[data-testid^="message-bubble-"]');
   const texts = await bubbles.allInnerTexts();
   const replyRows = texts.filter((t) => /Prompt response:/i.test(t));
   expect(replyRows, `reply rendered in the thread: ${JSON.stringify(replyRows)}`).toHaveLength(0);
   expect(await page.locator('[data-testid="session-event-line"]').count()).toBe(0);
-  expect(texts.some((t) => t.includes(startingText))).toBe(true);
+  expect(texts.some((t) => t.includes(startingText))).toBe(false);
 }
 
 test('live session: alice prompts → bob approves → reply only in the session view', async () => {
@@ -87,7 +88,7 @@ test('live session: alice prompts → bob approves → reply only in the session
     console.log(`[live] both cards active (+${tActive - tPending} ms)`);
 
     // 5. the turn runs on bob; the reply count moves, the thread does not
-    await expect(sessionCard(alice.page).first()).toContainText(/1 repl/, { timeout: TURN_BUDGET_MS });
+    await expect(sessionCard(alice.page).first()).toContainText(/(?<!\d)2 messages/, { timeout: TURN_BUDGET_MS });
     console.log(`[live] reply counted on alice's card (+${Date.now() - tActive} ms)`);
     await expectNoSessionRowsInThread(alice.page, promptText);
     await expectNoSessionRowsInThread(bob.page, promptText);

@@ -13,7 +13,7 @@
  *     instead of flashing through "Loading task context…".
  *   - Writes `dataContext`:
  *       - CurrentProjectTypeId  — from task.project_id, or conv.project_id
- *                                 when there's no task
+ *                                 when there's no task; left as is when neither has one
  *       - CurrentActiveEntityTypeId — to the conversation itself
  *       - workdir              — from task.project_root when known
  *
@@ -97,14 +97,10 @@ export async function loadConversation(conversationId: string): Promise<Conversa
     // Prefetch the Project entity into the cache so the footer label / any
     // useEntity(Project, …) read in the page is warm on first paint.
     await dataManager.getByTypeId<Project>(new TypeId(Project.type, projectId)).catch(() => null);
-  } else {
-    // Conversation has no mapped project (receiver pre-mapping, or
-    // project-scoped conversation that lost its project). Drop the global
-    // active project to null — the StatusBar will render the red
-    // "Select Project" pill until the user picks one (via the gate dialog
-    // or the footer's Switch Project button).
-    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
   }
+  // No mapped project: keep the one the user is in. Clearing it here switched the
+  // whole window to the project-less workspace whenever a project's tab held an
+  // unmapped conversation (e.g. one an agent created from inside the project).
 
   if (projectRoot) {
     dataContext.setWorkdir(projectRoot);

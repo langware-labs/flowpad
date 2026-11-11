@@ -138,7 +138,6 @@ EXPECTED = {
     "AGENT_HOOK": "agent_hook",
     "TRIGGER": "trigger",
     "PROCESS_RESULT": "process_result",
-    "CRON_EVENT": "cron_event",
     "FLOW_MESSAGE": "flow_message",
     # Staged bundle attachment awaiting explicit install (DB-only entity).
     "MESSAGE_ATTACHMENT": "message_attachment",
@@ -188,6 +187,8 @@ EXPECTED = {
     # introducing commits missed this freeze.
     "DECK": "deck",
     "SPREADSHEET": "spreadsheet",
+    # Read-only .docx/.txt in a docs folder — a brand-new type, no value changed.
+    "DOCUMENT_FILE": "document_file",
     # Tag vocabulary consolidation: blessed taxonomy tags are a first-class
     # entity type. Flow-graph v2 added the run model.
     "TAG": "tag",
@@ -222,6 +223,8 @@ EXPECTED = {
     # the Agent action name ("mailbox") so graph paths stay unambiguous —
     # additive member, no existing value changed.
     "AGENT_MAILBOX": "agent_mailbox",
+    "WEBHOOK": "webhook",
+    "ISSUE": "issue",
 }
 
 

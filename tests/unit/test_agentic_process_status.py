@@ -921,6 +921,18 @@ def test_ignored_types_match_meta_types():
                 {"type": "atis-latch", "atis": "", "sessionId": "abc"},
             ],
         ),
+        # Claude 2.1.3xx writes `api-request` rows as a turn re-enters the model (after a
+        # tool result, or after a `!` shell command's output). Unclassified, the tail read
+        # UNKNOWN — not busy — and a command link typed into the TUI mid-answer was lost.
+        (
+            "tool_use",
+            WorkerStatus.TOOL_CALL,
+            [
+                {"type": "api-request-shape", "shapeHash": "x", "shape": {}},
+                {"type": "api-request-blob", "blob": "x"},
+                {"type": "api-request", "request": {}},
+            ],
+        ),
     ],
 )
 def test_tail_status_signal_survives_envelope_epilogue(tmp_path, stop_reason, expected, envelope):
@@ -1407,3 +1419,19 @@ def test_api_json_serializer_skip_context_suppresses_injection(monkeypatch):
     assert "worker_status" not in payload
     assert "busy" not in payload
     assert "ready_for_input" not in payload
+
+
+def test_tail_status_a_compaction_summary_is_not_a_prompt_the_agent_owes_an_answer(tmp_path: Path):
+    """A compacted session (here resumed after a restart) ends on Claude's summary row — type ``user``,
+    ``isCompactSummary`` — and ``last-prompt``, with no reply. Read as a prompt it pinned the worker at
+    ``working``, so queued shell commands (a clicked terminal link) never drained."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f,
+        [
+            *_answered_turn(),
+            {"type": "user", "isCompactSummary": True, "message": {"role": "user", "content": "summary"}},
+            {"type": "last-prompt"},
+        ],
+    )
+    assert _tail_status(f) == WorkerStatus.COMPLETE

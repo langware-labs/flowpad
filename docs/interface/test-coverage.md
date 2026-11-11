@@ -89,7 +89,7 @@ fast api coverage via `test_agentic_process_actions.py` /
 | `worker_alive` / `has_attachable_pty` | ✅ test_shell_io_worker (pid-gone / cmdline match/mismatch / dead-pty raises) | ✅ pty_recovery_on_demand | ◐ L | — |
 | `rename` (entity) | ◐ | ✅ canonical-put + tab_rename.test.ts | — | ◐ |
 | **rename-rules `cleanTitle`/`allowRename`** (e3710f9c) | — | — | — | ✅ rename-rules.test.ts (cleanTitle/allowRename/nextTerminalName/shouldAutoSaveTitleForTarget) |
-| TabbedTerminal / xterm attach | — | — | ◐ | ✅ terminal-tab-switch, state-guards, WorkerToolbar |
+| TabbedTerminal / xterm attach | — | — | ◐ | ✅ terminal-tab-switch, state-guards, ContextWorkerToolbar |
 | PtyConnection | — | — | ◐ pty_test, L pty_event_fire | ◐ pty_corruption |
 
 ## PTY layer ([interface](./pty-layer.md))

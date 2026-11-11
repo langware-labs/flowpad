@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -396,9 +397,10 @@ def as_instance(name: str):
 
 def test_only_prod_places_projects_in_the_users_flowpad_workspace():
     """``~/Flowpad workspace`` is prod's. Any other instance sharing the user's home
-    (``oss``, ``dev-1``, an e2e ``test-*``) gets ``~/Flowpad workspaces/<name>`` — nothing a dev instance or a test
-    run creates lands among real projects, and a project can live there (nothing
-    under ``flow_home`` can)."""
+    (``oss``, ``dev-1``, an e2e ``test-*``) keeps its projects in ``<instance_dir>/workspace`` — nothing a dev
+    instance or a test run creates lands among real projects, removing the instance removes them, and a project
+    can live there (the one exemption from "nothing under ``flow_home`` is a project")."""
+    from flow_sdk.fs_store.path_utils import is_protected_path
     from flow_sdk.instance_settings import get_instance_settings
 
     current = get_instance_settings()
@@ -406,9 +408,13 @@ def test_only_prod_places_projects_in_the_users_flowpad_workspace():
     assert as_instance("prod").workspace_root == users_workspace
     for name in ("oss", "dev-1", "test-4f2a"):
         settings = as_instance(name)
-        assert settings.workspace_root == current.user_home / "Flowpad workspaces" / name
+        assert settings.workspace_root == settings.instance_dir / "workspace"
         assert users_workspace not in (settings.workspace_root, *settings.workspace_root.parents)
-        assert settings.flow_home not in settings.workspace_root.parents
+    settings = as_instance("dev-1")
+    with patch("flow_sdk.instance_settings.get_instance_settings", lambda: settings):
+        assert not is_protected_path(settings.workspace_root / "shop")
+        assert is_protected_path(settings.workspace_root)
+        assert is_protected_path(settings.instance_dir / "records" / "shop")
 
 
 def test_only_prod_keeps_user_docs_in_the_users_home(tmp_path, monkeypatch):
@@ -429,9 +435,8 @@ def test_only_prod_keeps_user_docs_in_the_users_home(tmp_path, monkeypatch):
 
 def test_only_prod_keeps_repo_assets_in_the_users_home(tmp_path, monkeypatch):
     """``~/agentic-assets`` is prod's. Any other instance keeps its user-scope repo
-    assets in its own folder — the hub tiers on ``dev-1``/``dev-2`` had left 188
-    test specs, agents and prompts there for prod to list. Not under ``flow_home``,
-    where nothing may be deleted (``is_protected_path``)."""
+    assets in its own instance dir — the hub tiers on ``dev-1``/``dev-2`` had left 188
+    test specs, agents and prompts there for prod to list."""
     from flow_sdk.fs_store.path_utils import is_protected_path
     from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
     from flow_sdk.instance_settings.base_settings import ENV_FLOW_HOME, BaseInstanceSettings
@@ -443,9 +448,8 @@ def test_only_prod_keeps_repo_assets_in_the_users_home(tmp_path, monkeypatch):
     for name in ("oss", "dev-1", "test-4f2a"):
         settings = BaseInstanceSettings.from_env(name)
         own = settings.user_asset_root
-        assert own == tmp_path / "Flowpad workspaces" / ".home" / name
+        assert own == tmp_path / ".flow" / "instances" / name / "home"
         assert settings.user_home == tmp_path  # harness dirs stay shared
-        assert settings.flow_home not in own.parents
         monkeypatch.setattr("flow_sdk.instance_settings.get_instance_settings", lambda s=settings: s)
         assert not is_protected_path(own / "agentic-assets" / "spec" / "x")
     reset_instance_settings()
@@ -460,8 +464,9 @@ def test_the_bootstrap_offers_this_instances_workspace_not_prods(monkeypatch):
 
     home = str(instance_settings.get_instance_settings().user_home).lstrip("/")
 
-    for name, expected in (("prod", f"{home}/Flowpad workspace"), ("fsvc-7", f"{home}/Flowpad workspaces/fsvc-7")):
+    for name in ("prod", "fsvc-7"):
         settings = as_instance(name)
+        expected = f"{home}/Flowpad workspace" if name == "prod" else str(settings.instance_dir / "workspace").lstrip("/")
         monkeypatch.setattr(instance_settings, "get_instance_settings", lambda s=settings: s)
         paths = build_app_paths()
         assert (paths.workspace, paths.skills) == (expected, f"{expected}/.claude/skills"), name

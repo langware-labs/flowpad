@@ -130,10 +130,16 @@ class WebappManifestSpec(DataSpec):
     """
 
     main_file: ClassVar[str | None] = "webapp.json"
+    #: One plain JSON object, edited by field (``flow_sdk.assets.entity_document``) — the app editor's file.
+    manifest_layout: ClassVar[str | None] = "flat"
 
     #: The app's name AND its folder name. One noun.
     name: str = ""
     title: str = ""
+    #: The app's icon: a lucide icon name or an emoji (what the icon picker stores). Empty = the type's icon.
+    icon: str = ""
+    #: Where a click on the app opens it: ``flowpad`` (a Flowpad tab) or ``browser`` (the system browser).
+    open_in: Literal["flowpad", "browser"] = "flowpad"
     description: str = ""
     #: Dot-path ontology, same vocabulary as ``Artifact.kind``. What the app IS
     #: to whatever contains it: ``application.web.editor`` marks the app a
@@ -157,6 +163,9 @@ class WebappManifestSpec(DataSpec):
     mounts: list[WebappMountSpec] = []
     #: The machine-called services the app brings along (its API), each an endpoint of its own.
     services: list[WebappServiceSpec] = []
+    #: Report the page's JS errors to Flowpad while it loads (``server/reporter_relay.py``): the app opens
+    #: only when its page loads clean, and an error starts recovery. Off: the dev server is loaded directly.
+    report_errors: bool = True
 
 
 def effective_mounts(mounts: list, services: list = ()) -> list:
@@ -164,3 +173,30 @@ def effective_mounts(mounts: list, services: list = ()) -> list:
 
     An app that declares only ``services`` is an API: it has no page, so no mount is implied."""
     return list(mounts) or ([] if services else [WebappMountSpec()])
+
+
+#: What a known page error means for opening the app.
+ErrorAction = Literal["ignore", "recover"]
+
+
+class WebappErrorRule(DataSpec):
+    """One entry of ``setup/webapp_errors.json``: a page error matched by ``pattern`` is decided at once.
+
+    ``ignore`` opens the app despite it; ``recover`` sends the open to recovery with ``fix`` as its hint.
+    The recover agent appends a rule when it learns one, so the next match needs no agent."""
+
+    spec_kind: ClassVar[str] = "webapp.error_rule"
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    #: The error's family: ``js_syntax``, ``js_runtime``, ``console``, ``request``, ``not_answering``.
+    type: str = ""
+    #: Where it comes from: ``page``, ``console``, ``network``, ``server``.
+    source: str = ""
+    #: A Python regex searched in the error's text.
+    pattern: str
+    action: ErrorAction = "recover"
+    #: What fixes it, for the recover step (``restart`` restarts the server without an agent).
+    fix: str = ""
+    learned_at: str = ""
+    seen: int = 0

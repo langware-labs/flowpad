@@ -18,6 +18,13 @@ from flow_sdk.schema.data_spec.value_ref import ref_of
 
 pytestmark = pytest.mark.timeout(5)
 
+
+def _rows(root, name):
+    """The rows folder of dataset ``name`` in the project at ``root`` (its data store, not the asset folder)."""
+    from flow_sdk.datasets.stores import rows_root_of
+
+    return rows_root_of(root / "agentic-assets/dataset" / name) / "rows"
+
 def _schema(root, ns, kind, fields):
     folder = root / "agentic-assets/data_schema" / kind
     folder.mkdir(parents=True)
@@ -60,7 +67,7 @@ async def test_a_row_stores_its_id_and_keeps_it_through_a_rename_and_a_new_datas
 
     root, companies, _ = crm
     (acme,) = await companies.append([{"key": "acme", "input": {"name": "Acme"}}])
-    stored = json.loads((root / "agentic-assets/dataset/companies/rows/acme/row.json").read_text())
+    stored = json.loads((_rows(root, "companies") / "acme/row.json").read_text())
     assert stored["metadata"]["id"] == acme
     assert companies.rename_row("acme", "acme_inc") == acme
     # A fresh clone has no .flow capsule: the dataset gets a new id, the row keeps its own.
@@ -73,7 +80,7 @@ async def test_a_row_written_before_ids_were_stored_adopts_its_legacy_id(crm):
     from flow_sdk.schema.data_spec.layout import derived_row_id
 
     root, companies, _ = crm
-    folder = root / "agentic-assets/dataset/companies/rows/old"
+    folder = _rows(root, "companies") / "old"
     (folder / "input").mkdir(parents=True)
     (folder / "input/company.json").write_text('{"name": "Old Co"}')
     (folder / "row.json").write_text('{"metadata": {"kind": "train"}, "data": {}}')
@@ -90,7 +97,7 @@ async def test_links_by_reference_are_checked_written_inline_and_read_back(crm):
     await leads.append([{"key": "dana", "input": {
         "name": "Dana", "company": ref_acme, "past": [ref_beta, ref_acme], "about": ref_beta,
         "notes": [{"text": "met at a meetup"}]}}])
-    lead_dir = root / "agentic-assets/dataset/leads/rows/dana"
+    lead_dir = _rows(root, "leads") / "dana"
     doc = json.loads((lead_dir / "input/lead.json").read_text())
     assert doc["company"] == ref_acme and doc["past"] == [ref_beta, ref_acme]      # references: inline
     assert (lead_dir / "input/notes/0001/note.json").is_file()                       # values: a folder each
@@ -107,7 +114,7 @@ async def test_a_reference_to_a_missing_row_or_the_wrong_kind_is_refused(crm):
         f"input.company: no {companies.row_kind} row 0b7c8a2e-1f0d-4e5a-9c3b-2d4e6f8a1b3c"]
     with pytest.raises(LinkError):
         await leads.put("x", {"input": {"name": "X", "company": ghost, "past": [], "notes": []}})
-    assert not (leads.asset_ref and (companies._owner() / "agentic-assets/dataset/leads/rows/x").exists())
+    assert not (leads.asset_ref and (_rows(companies._owner(), "leads") / "x").exists())
     note_ref = ref_of(companies.row_kind.replace("crm.company", "crm.note"), "0b7c8a2e-1f0d-4e5a-9c3b-2d4e6f8a1b3c")
     assert "refers to a" in leads.check({"input": {"name": "X", "company": note_ref, "past": [], "notes": []}})[0]
 
@@ -139,7 +146,7 @@ async def test_put_with_a_stale_version_is_refused(crm):
 async def test_one_bad_row_never_hides_the_others(crm):
     root, _, leads = crm
     await leads.append([{"key": "dana", "input": {"name": "Dana", "past": [], "notes": []}}])
-    bad = root / "agentic-assets/dataset/leads/rows/broken"
+    bad = _rows(root, "leads") / "broken"
     (bad / "input").mkdir(parents=True)
     (bad / "input/lead.json").write_text('{"name": 7, "about": "not a reference"}')
     rows, problems = leads.rows_and_problems()
@@ -257,7 +264,7 @@ async def test_a_broken_row_can_be_repaired_and_deleted_with_a_version_check(crm
     from flow_sdk.builtin.dataset import ConflictError
 
     root, companies, _ = crm
-    bad = root / "agentic-assets/dataset/companies/rows/broken"
+    bad = _rows(root, "companies") / "broken"
     (bad / "input").mkdir(parents=True)
     (bad / "input/company.json").write_text('{"name": 7}')
     (problem,) = companies.rows_and_problems()[1]
@@ -269,23 +276,9 @@ async def test_a_broken_row_can_be_repaired_and_deleted_with_a_version_check(crm
     assert companies.delete_row("broken", expected=row.version) == "broken"
 
 
-async def test_store_ids_stamps_the_rows_that_still_have_a_derived_id(crm):
-    from flow_sdk.schema.data_spec.layout import derived_row_id
-
-    root, companies, _ = crm
-    old = root / "agentic-assets/dataset/companies/rows/old"
-    (old / "input").mkdir(parents=True)
-    (old / "input/company.json").write_text('{"name": "Old Co"}')
-    (old / "row.json").write_text('{"metadata": {"kind": "train"}, "data": {}}')
-    await companies.append([{"key": "new", "input": {"name": "New Co"}}])
-    assert companies.store_ids() == 1                                   # only the legacy row
-    assert json.loads((old / "row.json").read_text())["metadata"]["id"] == derived_row_id(companies.id, "old")
-    assert companies.store_ids() == 0
-
-
 async def test_a_problem_carries_the_row_as_stored_so_it_can_be_found_by_a_natural_key(crm):
     root, companies, _ = crm
-    bad = root / "agentic-assets/dataset/companies/rows/broken"
+    bad = _rows(root, "companies") / "broken"
     (bad / "input").mkdir(parents=True)
     (bad / "input/company.json").write_text('{"name": 7}')
     (problem,) = companies.rows_and_problems()[1]
@@ -320,7 +313,7 @@ async def test_a_row_that_no_longer_fits_still_protects_what_it_links_to(crm):
     await companies.append([{"key": "acme", "input": {"name": "Acme"}}])
     (co,) = companies.read_rows()
     await leads.append([{"key": "dana", "input": {"name": "Dana", "company": companies.ref_of(co.id), "past": [], "notes": []}}])
-    doc = next((root / "agentic-assets/dataset/leads/rows/dana/input").glob("*.json"))
+    doc = next((_rows(root, "leads") / "dana/input").glob("*.json"))
     doc.write_text(doc.read_text().replace('"Dana"', "7"))           # dana no longer reads
     assert leads.rows_and_problems()[1]
     with pytest.raises(LinkError, match="dana"):
@@ -346,7 +339,7 @@ async def test_a_hidden_file_dropped_in_a_row_does_not_move_its_version(crm):
     root, companies, _ = crm
     await companies.append([{"key": "acme", "input": {"name": "Acme"}}])
     (before,) = companies.read_rows()
-    (root / "agentic-assets/dataset/companies/rows/acme/.DS_Store").write_bytes(b"finder")
+    (_rows(root, "companies") / "acme/.DS_Store").write_bytes(b"finder")
     (after,) = companies.read_rows()
     assert after.version == before.version
     await companies.put("acme", {"input": {"name": "Acme Inc"}}, expected=before.version)

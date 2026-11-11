@@ -60,10 +60,18 @@ logger = logging.getLogger(__name__)
 # note, asked, replied, done, failed, canceled, stalled) — written by people and runs, never a stream.
 # The Tasks board and a task's thread show its state move without polling.
 #
+# `user_app.*` is an event of a process outside Flowpad's own code (a project's server, a trigger's
+# `run_script`), posted to the relay (`tags/relay.py`) for TAG triggers and the app's subscribers.
+# One frame per event that process posts — Flowpad emits none itself. Forwarded like every relayed
+# family, so a page of that app hears its own events without polling.
+#
 # `deployment.timeline` says a deployment's timeline moved — a message reached one of its channels,
 # a turn started, a reply went out, a sender was refused. One frame per such fact; the timeline
 # itself is read from the rows (`deployment/<id>/timeline`). Emitted by the deployment's own
 # process and relayed to the app (`tags/relay.py`).
+#
+# `deployment.synced` says an element's placements changed from the hub (the list reconcile or a
+# bridge push): one frame per change, naming the parent; the Deployments list re-reads.
 #
 # `app.ready` is an exact tag, not a glob, and fires at most once per boot —
 # the cheapest possible entry on this list. It is forwarded because a client
@@ -88,7 +96,9 @@ FORWARDED_TAG_PATTERNS: list[str] = [
     "agent.status",
     "voice.call.*",
     "task.*",
+    "user_app.*",
     "deployment.timeline",
+    "deployment.synced",
     "dataset.rows.changed",
 ]
 

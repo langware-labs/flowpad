@@ -1,0 +1,26 @@
+{
+  "type": "compute_op",
+  "id": "4971a648-cc5f-4deb-8bb5-32a50822c706",
+  "name": "gdrive-mount-install",
+  "label": "Install Google Drive",
+  "description": "Google Drive for desktop on this computer: Google's installer opens, and asks for your password itself.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" install --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" install --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE install --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 900,
+    "source_step": "install"
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" install --check --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" install --check --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE install --check --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30,
+    "source_step": "install"
+  }
+}

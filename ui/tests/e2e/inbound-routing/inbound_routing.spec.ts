@@ -24,6 +24,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { expect, type Page, test } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 const BE = `http://localhost:${process.env.INB_BE_PORT || '6007'}/api/v1/graph`;
 const CTL = process.env.INB_CONTROL || 'http://127.0.0.1:7391';
@@ -93,10 +94,10 @@ test.describe.serial('inbound routing: waha → UI-configured chain → agent �
     cfg = await json(`${CTL}/ctl/config`);
     group = (await post(`${CTL}/ctl/group`, { chat: GROUP_CHAT, people: [S, T] })).group_id;
     // A clean slate: no claim left on this number from an earlier run.
-    const mine = await json(`${BE}/data_source/inbound/mine`);
+    const mine = await json(`${BE}/webhook/mine`);
     for (const w of mine.data?.webhooks ?? []) {
       if (w.claim?.kind === 'account' && w.claim?.key === cfg.phone_number_id)
-        await fetch(`${BE}/data_source/inbound/${w.id}`, { method: 'DELETE' });
+        await fetch(`${BE}/webhook/${w.id}`, { method: 'DELETE' });
     }
     page = await browser.newPage();
   });
@@ -120,7 +121,7 @@ test.describe.serial('inbound routing: waha → UI-configured chain → agent �
     await dialog.getByTestId(`inbound-dest-this-${src('A')}`).click();
     await shot(page, '0-connect-form');
     await dialog.getByTestId('inbound-connect-submit').click();
-    await expect(dialog.getByTestId('inbound-connected-step')).toBeVisible({ timeout: 60_000 });
+    await expect(dialog.getByTestId('inbound-connected-step')).toBeVisible({ timeout: adjusted(60_000) });
     const url = (await dialog.getByTestId('inbound-connected-url').innerText()).trim();
     await shot(page, '0-connected');
     // "Paste these into your server's webhook settings" — the server side of the step.
@@ -144,7 +145,7 @@ test.describe.serial('inbound routing: waha → UI-configured chain → agent �
     await write(X, say('scenario one'));
     expect(await replyIn(`${X}@c.us`, say('scenario one'))).toContain('AGENT-A');
     // The live counter moves while the page is open (read from the hub's recent deliveries, never stored).
-    await expect(counter).not.toHaveText(before, { timeout: 30_000 });
+    await expect(counter).not.toHaveText(before, { timeout: adjusted(30_000) });
     await expect(card(page).getByTestId('inbound-rule-row-fallback')).toBeVisible();
     await shot(page, '1-fallback');
   });

@@ -8,6 +8,8 @@ hits — no business logic lives here (mirrors ``flow record``). Commands:
     flow conversation show <id> [--last N] [--thread T] — full messages, oldest-first
     flow conversation message <msg-id>           — one message in full
     flow conversation send <id> <message>        — add a text message
+    flow conversation live-session <id>          — start (or show) the live session on the other's machine
+    flow conversation new <who> <message>        — start one with an email / contact (`flow contacts find`)
     flow conversation attach <id> <target> <msg> — add a message + attachment
 
 ``attach`` auto-detects ``<target>``: a ``<type>-<uuid>`` TypeId becomes an
@@ -24,15 +26,21 @@ Every command emits the standard parseable envelope (``ok``/``fail`` from
 
 from __future__ import annotations
 
+import json
 import os
+import re
 from typing import Optional
 
 import requests
 import typer
 from typing_extensions import Annotated
 
+from flow_sdk.builtin.remote_worker_session import ReplyPolicy
 from flow_sdk.cli.commands._common import (
     bad_response_message as _bad_response_message,
+)
+from flow_sdk.cli.commands._common import (
+    current_process_id as _current_process_id,
 )
 from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
@@ -69,6 +77,7 @@ EXIT_ACTION_FAILED = 7
 
 _CONV_ID_HELP = "Conversation id: the bare uuid or its TypeId (conversation-<uuid> / conversation/<uuid>)."
 _MSG_ID_HELP = "Message id: the bare uuid or its TypeId (flow_message-<uuid>)."
+_SIGN_IN_FIRST = "Not signed in to Flowpad: sign in (`flow auth login`) and retry."
 
 
 def _post_json(
@@ -148,7 +157,7 @@ def _conv_summary_row(conv: dict) -> dict:
             "name": p.get("name"),
             "email": p.get("email"),
             "user_id": p.get("user_id"),
-            "role": p.get("role"),
+            "roles": p.get("roles", []),
         }
         for p in (conv.get("members") or [])
     ]
@@ -157,7 +166,7 @@ def _conv_summary_row(conv: dict) -> dict:
         "title": conv.get("title"),
         "kind": conv.get("kind"),
         "message_count": conv.get("message_count"),
-        "participants": parts,
+        "members": parts,
         "created_at": conv.get("created_at"),
         "updated_at": conv.get("modified_at") or conv.get("updated_at"),
     }
@@ -165,7 +174,7 @@ def _conv_summary_row(conv: dict) -> dict:
 
 @conversation_app.command(
     "list",
-    help="List the current user's conversations (title, participants, message count).",
+    help="List the current user's conversations (title, members, message count).",
 )
 def list_conversations() -> None:
     url = _graph_url(_discover_port(), "conversation-list")
@@ -199,6 +208,29 @@ def summary_conversation(
     _ok({"conversation_id": cid, "summary": data.get("summary") or ""})
 
 
+def _form_attachment_line(a: dict) -> Optional[str]:
+    """A form or its answers, as an agent reads them — ``None`` for any other attachment."""
+    from flow_sdk.schema.data_spec.message_form_spec import (  # noqa: PLC0415
+        answers_in,
+        answers_line,
+        form_in,
+        form_summary,
+    )
+
+    raw = [{"attachment_type": a.get("type"), "data": a.get("data"), "prompt_preview": a.get("prompt_preview")}]
+    form = form_in(raw)
+    if form is not None:
+        asks = ", ".join(
+            f"{f.id}:{f.type}" + (f"={f.default}" if f.default is not None else "" if f.optional else "=?")
+            for f in form.fields
+        )
+        return f"  📋 form {form.form_id}: {form_summary(form)} — {asks}"
+    answers = answers_in(raw)
+    if answers is not None:
+        return f"  ✅ answers to form {answers.form_id}: {answers_line(None, answers)}"
+    return None
+
+
 def _render_message(m: dict) -> str:
     """One message as an agent reads it: a header line, the full text, then
     one line per attachment saying where its bytes are — or that they are not
@@ -216,6 +248,10 @@ def _render_message(m: dict) -> str:
     lines.append(text if text else "(no text)")
     for a in m.get("attachments") or []:
         where = a.get("local_path") or ("(not on this machine — body not downloaded)" if not a.get("available") else "")
+        form_line = _form_attachment_line(a)
+        if form_line:
+            lines.append(form_line)
+            continue
         desc = f"  📎 {a.get('type')}: {a.get('data')}"
         if a.get("prompt_preview"):
             desc += f" — {' '.join(a['prompt_preview'].split())[:200]}"
@@ -224,7 +260,7 @@ def _render_message(m: dict) -> str:
 
 
 def _render_transcript(data: dict) -> str:
-    people = ", ".join(data.get("participants") or [])
+    people = ", ".join(data.get("members") or [])
     shown, total = len(data.get("messages") or []), data.get("message_count")
     lines = [
         f"Conversation: {data.get('title') or '(untitled)'}  [conversation-{data.get('id')}]",
@@ -254,9 +290,7 @@ def _render_transcript(data: dict) -> str:
 def show_conversation(
     conversation_id: Annotated[str, typer.Argument(help=_CONV_ID_HELP)],
     last: Annotated[Optional[int], typer.Option("--last", help="Only the newest N messages.")] = None,
-    since: Annotated[
-        Optional[str], typer.Option("--since", help="Only messages at/after this ISO timestamp.")
-    ] = None,
+    since: Annotated[Optional[str], typer.Option("--since", help="Only messages at/after this ISO timestamp.")] = None,
     thread: Annotated[
         Optional[str],
         typer.Option("--thread", help="Only one thread: its id (listed in the header), or any message id in it."),
@@ -307,6 +341,13 @@ def show_message(
     typer.echo("\n".join(lines))
 
 
+def _origin_session() -> dict:
+    """``{"origin_process": <id>}`` when run inside a session: the backend links that session to the
+    conversation and the message (local links only — never an attachment). Empty outside one."""
+    pid = _current_process_id()
+    return {"origin_process": pid} if pid else {}
+
+
 def _add_message_url(port: int, conversation_id: str) -> str:
     return _graph_url(port, f"conversation/{conversation_id}/add_message")
 
@@ -325,8 +366,42 @@ def _emit_send_result(conversation_id: str, data: dict) -> None:
             # Composed offline / not logged in → saved locally, NOT delivered.
             "pending": delivery_status == "pending_send",
             "attachment": data.get("attachment") or [],
+            **({"invited": data["invited"]} if data.get("invited") else {}),
         }
     )
+
+
+_FORM_HELP = (
+    "Questions the receiver answers in place, with one Submit: JSON or @file — "
+    '{"title": "...", "fields": [{"id", "label", "type", "options"?, "default"?, "optional"?, "min"?, "max"?}]}. '
+    "Types: text long_text number date one many yesno buttons select file. A field without a default must be filled."
+)
+
+
+def _form_attachment(arg: str) -> dict:
+    """``--form`` as the attachment it rides on; a bad form stops the send before anything is written."""
+    from pathlib import Path  # noqa: PLC0415
+
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.message_form_spec import MessageForm, form_attachment  # noqa: PLC0415
+
+    raw = arg.strip()
+    try:
+        if raw.startswith("@"):
+            raw = Path(raw[1:]).expanduser().read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, ValueError) as e:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"--form is not readable JSON: {e}")
+    if not isinstance(data, dict):
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--form must be a JSON object")
+    data.setdefault("form_id", mint_uuid())
+    try:
+        return form_attachment(MessageForm.model_validate(data))
+    except ValidationError as e:
+        problems = "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors())
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"--form: {problems}")
 
 
 @conversation_app.command(
@@ -343,20 +418,206 @@ def send_message(
             help="Message id to answer: the reply quotes it and joins the thread rooted at it.",
         ),
     ] = None,
+    prompt: Annotated[
+        Optional[str],
+        typer.Option(
+            "--prompt",
+            help=(
+                "A runnable prompt for the recipient. It rides inline on the message — "
+                "never saved to the prompt library or the project."
+            ),
+        ),
+    ] = None,
+    session: Annotated[
+        Optional[str],
+        typer.Option(
+            "--session",
+            help="Live-session id (remote_worker_session) to send into. Needs --prompt: a session runs prompts.",
+        ),
+    ] = None,
+    form: Annotated[Optional[str], typer.Option("--form", help=_FORM_HELP)] = None,
 ) -> None:
     cid = _conversation_id(conversation_id)
     if not (message or "").strip():
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
     port = _discover_port()
-    body: dict = {"text": message}
+    body: dict = {"text": message, **_origin_session()}
     if reply_to:
         body["reply_to_id"] = _message_id(reply_to)
+    if prompt and prompt.strip():
+        body["prompt_text"] = prompt
+    if session:
+        # Without a prompt the host's machine gets a chat line and runs nothing.
+        if not (prompt and prompt.strip()):
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--session needs --prompt: the text alone is not run")
+        body["remote_worker_session_id"] = session.strip()
+    if form:
+        body["attachment"] = [_form_attachment(form)]
     data = _post_json(
         _add_message_url(port, cid),
         body,
         not_found_hint=f"Conversation not found: {cid}",
     )
     _emit_send_result(cid, data)
+
+
+def _signed_in() -> bool:
+    """Whether a hub request from this instance carries credentials (the UI's cloud-login gate)."""
+    from flow_sdk.cli.auth import hub_login  # noqa: PLC0415
+
+    return hub_login.hub_auth_available()
+
+
+@conversation_app.command(
+    "live-session",
+    help=(
+        "Start a live session on the other person's machine (they approve it), or show the one already "
+        "open. Answers the session id and status; once it is past `pending`, send prompts with "
+        '`flow conversation send <id> "<what they read>" --prompt "<what they run>" --session <session id>`. '
+        "Run it again to re-check the status."
+    ),
+)
+def start_live_session(
+    conversation_id: Annotated[str, typer.Argument(help=_CONV_ID_HELP)],
+    reply_policy: Annotated[
+        Optional[ReplyPolicy],
+        typer.Option(
+            "--reply-policy",
+            help="auto (default): their replies come back as soon as captured; review: kept as their draft first.",
+        ),
+    ] = None,
+) -> None:
+    cid = _conversation_id(conversation_id)
+    # Signed out, the request is saved here as pending and never reaches the host, while the
+    # action still answers success -- refuse up front, as the UI's login gate does.
+    if not _signed_in():
+        _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
+    data = _post_json(
+        _graph_url(_discover_port(), f"conversation/{cid}/live-session"),
+        {"reply_policy": reply_policy.value} if reply_policy else {},
+        not_found_hint=f"Conversation not found: {cid}",
+    )
+    session_fields = ("status", "host_user_id", "host_name", "reply_policy")
+    _ok({"conversation_id": cid, "session_id": data.get("id"), **{k: data.get(k) for k in session_fields}})
+
+
+def _resolve_contact(contacts: list, who: str) -> dict:
+    """``who`` (an email, a hub user id or a name) as one participant
+    ``{name, email, user_id}`` — through the address book, so a name works.
+    An email nobody knows yet is still a valid recipient (the hub invites them)."""
+    from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+    from flow_sdk.cli.commands.contacts_cmd import match  # noqa: PLC0415
+
+    found = match(contacts, who)
+    if len(found) == 1:
+        c = found[0]
+        return {"name": c.get("name"), "email": c.get("email"), "user_id": c.get("user_id")}
+    if "@" in who and not found:
+        return {"name": None, "email": normalize_email(who), "user_id": None}
+    if not found:
+        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No contact matches {who!r}. Ask for their email.")
+    names = ", ".join(f"{c.get('name')} <{c.get('email') or c.get('user_id')}>" for c in found)
+    _fail(EXIT_INVALID_ARG, "AMBIGUOUS", f"{who!r} matches {len(found)} contacts: {names}. Pass the email.")
+
+
+def split_people(who: str) -> list[str]:
+    """``who`` as the people it names: separated by ``,`` or ``;`` (the mail-client habit), trimmed,
+    blanks and repeated spellings dropped, in order."""
+    return list(dict.fromkeys(part.strip() for part in re.split(r"[,;]", who or "") if part.strip()))
+
+
+def _handle(person: dict) -> str:
+    """How the hub is told who a person is: their email, else their hub user id."""
+    return person["email"] or person["user_id"]
+
+
+@conversation_app.command(
+    "new",
+    help=(
+        "Start a conversation with one or more people and send the first message. <who> is an email, "
+        "a hub user id, or a name from `flow contacts find` -- several separated by `,` or `;` "
+        "(`gadi@langware.ai,Tzahi Mazuz`) start ONE group conversation with all of them."
+    ),
+)
+def new_conversation(
+    who: Annotated[str, typer.Argument(help="Email, hub user id, or contact name; separate several with , or ;.")],
+    message: Annotated[str, typer.Argument(help="First message text.")],
+    title: Annotated[Optional[str], typer.Option("--title", help="Conversation title.")] = None,
+    form: Annotated[Optional[str], typer.Option("--form", help=_FORM_HELP)] = None,
+) -> None:
+    if not (message or "").strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
+    form_att = _form_attachment(form) if form else None
+    wanted = split_people(who)
+    if not wanted:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "name at least one person to talk to")
+    port = _discover_port()
+    # The local sign-in check, not `conversation-list`: that route answers the same flag but runs a full
+    # hub sync first (seconds), only for the result to be thrown away.
+    if not _signed_in():
+        _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
+    from flow_sdk.cli.commands.contacts_cmd import load_contacts  # noqa: PLC0415
+
+    # Resolved before anything is written: one unknown or ambiguous name stops the whole call. Two
+    # spellings of one person ("Gadi", "gadi@...") collapse to one member.
+    contacts = load_contacts(port)
+    people = list({_handle(p): p for p in (_resolve_contact(contacts, w) for w in wanted)}.values())
+    invitees = [_handle(p) for p in people]
+
+    default_title = ", ".join(p.get("name") or _handle(p) for p in people)
+    created = _post_json(_graph_url(port, "conversation"), {"title": title or default_title, "members": people})
+    cid = str(created.get("id") or "")
+    if not cid:
+        _fail(EXIT_ACTION_FAILED, "ACTION_FAILED", "conversation was not created")
+    retry = f"conversation {cid} was created; retry with `flow conversation send {cid} <text>`"
+    shown = ", ".join(invitees)
+    try:
+        resp = _local_post(_graph_url(port, f"conversation/{cid}/share"), json={"recipients": invitees}, timeout=30)
+        body = resp.json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        _fail(EXIT_ACTION_FAILED, "SHARE_FAILED", f"inviting {shown} failed ({e}); {retry}")
+    if resp.status_code != 200 or body.get("status") != "SUCCESS":
+        _fail(
+            EXIT_ACTION_FAILED,
+            "SHARE_FAILED",
+            f"inviting {shown} failed ({body.get('message') or resp.status_code}); {retry}",
+        )
+    first: dict = {"text": message, **_origin_session()}
+    if form_att:
+        first["attachment"] = [form_att]
+    data = _post_json(_add_message_url(port, cid), first)
+    data["invited"] = invitees
+    _emit_send_result(cid, data)
+
+
+@conversation_app.command(
+    "team",
+    help=(
+        "Open the private team conversation of a help-desk ticket you work, with your first message. "
+        "The desk makes it and puts its staff in it; one per ticket, so a second call returns the same "
+        "conversation. Use this instead of `new` for a ticket: a deployed agent may not create a "
+        "conversation or choose who is in it."
+    ),
+)
+def team_conversation(
+    ticket_id: Annotated[str, typer.Argument(help="The help-desk ticket (conversation) id.")],
+    message: Annotated[str, typer.Argument(help="First message text, for the team.")],
+    title: Annotated[
+        Optional[str], typer.Option("--title", help="Short title; the desk prefixes the ticket id.")
+    ] = None,
+) -> None:
+    cid = _conversation_id(ticket_id)
+    if not (message or "").strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
+    port = _discover_port()
+    if not _signed_in():
+        _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
+    data = _post_json(
+        _graph_url(port, f"conversation/{cid}/open_team_conversation"),
+        {"title": title or "", "text": message},
+        timeout=60,
+    )
+    _ok({"conversation_id": data.get("conversation_id"), "title": data.get("title"), "ticket_id": cid})
 
 
 def _entity_typeid_or_none(target: str):
@@ -428,7 +689,7 @@ def attach_message(
             _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"Entity not found: {tgt}")
         if probe.status_code != 200:
             _fail(EXIT_ACTION_FAILED, "ACTION_FAILED", f"Could not resolve entity {tgt}: HTTP {probe.status_code}")
-        entity_body = {"text": message, "asset_references": [tgt]}
+        entity_body = {"text": message, "asset_references": [tgt], **_origin_session()}
         if session:
             entity_body["remote_worker_session_id"] = session.strip()
         data = _post_json(
@@ -454,7 +715,7 @@ def attach_message(
     except OSError as e:
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Cannot read file {tgt}: {e}")
         return
-    form_fields = {"text": message}
+    form_fields = {"text": message, **_origin_session()}
     if session:
         form_fields["remote_worker_session_id"] = session.strip()
     try:
@@ -496,7 +757,12 @@ def reply_on_channel(
     missing = [p for p in paths if not os.path.isfile(p)]
     if missing:
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"no such file: {missing[0]}")
-    payload = {"text": text, "files": paths, **({"reply_to_id": reply_to.strip()} if reply_to else {})}
+    payload = {
+        "text": text,
+        "files": paths,
+        **({"reply_to_id": reply_to.strip()} if reply_to else {}),
+        **_origin_session(),
+    }
     url = f"http://127.0.0.1:{_discover_port()}/api/v1/conversations/{cid}/reply"
     body = local_request("POST", url, json=payload, timeout=30).json()
     if body.get("status") != "SUCCESS":

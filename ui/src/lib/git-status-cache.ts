@@ -72,3 +72,36 @@ export function invalidateGitStatus(computeNodeId: string | null, workdir: strin
   if (!computeNodeId || !workdir) return;
   cache.delete(keyFor(computeNodeId, workdir));
 }
+
+/** How long an unforced ``git fetch`` answer is reused: the footer's own poll interval, so a
+ *  project switch never fetches more often than the poll already does. */
+export const FETCH_REUSE_MS = 10 * 60 * 1000;
+
+const fetches = new Map<string, Promise<GitStatus | null>>();
+
+/**
+ * ``git-ops fetch`` (a NETWORK round-trip, 2-3 s) for a working tree, single-flight and reused
+ * for ``FETCH_REUSE_MS`` after it settles. Without it every project switch fetched again — the
+ * footer remounts per switch (perf hunt 2026-11-07, B2/B4). Poll and explicit refresh pass
+ * ``{ force: true }``.
+ */
+export function getGitFetch(
+  computeNodeId: string | null,
+  workdir: string | null,
+  opts?: { force?: boolean },
+): Promise<GitStatus | null> {
+  if (!computeNodeId || !workdir) return Promise.resolve(null);
+  const key = keyFor(computeNodeId, workdir);
+  const hit = fetches.get(key);
+  if (hit && !opts?.force) return hit;
+  const promise: Promise<GitStatus | null> = new GitWorkdir(workdir, computeNodeId).fetch().catch(() => null);
+  fetches.set(key, promise);
+  void promise.then((result) => {
+    // A failed fetch is not remembered: the next caller tries again.
+    const keep = result && !result.error ? FETCH_REUSE_MS : 0;
+    setTimeout(() => {
+      if (fetches.get(key) === promise) fetches.delete(key);
+    }, keep);
+  });
+  return promise;
+}

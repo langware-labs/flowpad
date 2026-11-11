@@ -103,8 +103,8 @@ def detached_work_running(
 
 async def send_keep_alive_if_in_use() -> bool:
     """One tick: report to the hub if this machine is a hub node and was in use. True if sent."""
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
     from flow_sdk.cloud_client.shared.errors import HubError
-    from flow_sdk.cloud_client.transport.hub_http import hub_post
     from flow_sdk.instance_settings.runtime import get_assigned_compute_node
 
     node_typeid = get_assigned_compute_node()
@@ -117,7 +117,7 @@ async def send_keep_alive_if_in_use() -> bool:
     try:
         # The hub addresses an entity by its bare id; the typeid form is a 422 there.
         node_id = node_typeid.removeprefix("compute_node-")
-        await hub_post("compute_node", {}, entity_id=node_id, action="keep-alive")
+        await HubProxy.call("POST", "compute_node", node_id, "keep-alive", payload={})
     except HubError as e:
         # Not retried: the next tick is a minute away, and a missed report costs at
         # most the difference between the active and idle windows.

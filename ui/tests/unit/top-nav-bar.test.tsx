@@ -30,7 +30,7 @@ vi.mock('@src/navigation/use-history-nav', () => ({ useHistoryNav: () => nav }))
 // The magic line asks NavigationDecision first; by default it answers like a box with no
 // decision API -- the prompt, unchanged -- so every ask below is today's ask.
 const navigationDecision = vi.hoisted(() =>
-  vi.fn(async (utterance: string) => ({ decision: { route: 'agentic' }, candidates: [], prompt: utterance })),
+  vi.fn((utterance: string) => Promise.resolve({ decision: { route: 'agentic' }, candidates: [], prompt: utterance })),
 );
 vi.mock('@sdk/decision', () => ({ navigationDecision }));
 // The bar's Home falls back to the app root through the router.
@@ -71,6 +71,7 @@ vi.mock('@src/components/top-nav-bar/use-entity-breadcrumbs', () => ({
   }),
 }));
 vi.mock('@src/components/top-nav-bar/TopBarActions', () => ({ TopBarActions: () => null }));
+vi.mock('@src/components/top-nav-bar/TopBarAskForHelp', () => ({ TopBarAskForHelp: () => null }));
 /** The ⚡'s counter reads react-query; the bar's own tests pin the counter in top-nav-automations.test.tsx. */
 vi.mock('@src/hooks/automations/useAutomations', () => ({ useStartedLastHour: () => 0 }));
 // The project switcher is a heavy surface with its own tests; here we only care
@@ -214,8 +215,8 @@ describe('the navigation bar', () => {
   it('disables each history button when there is nowhere to go', () => {
     renderBar();
 
-    expect((screen.getByTestId('top-nav-back') as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByTestId('top-nav-forward') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('top-nav-back').disabled).toBe(false);
+    expect(screen.getByTestId('top-nav-forward').disabled).toBe(true);
   });
 
   it('carries Home, which the rail no longer does', () => {
@@ -224,19 +225,18 @@ describe('the navigation bar', () => {
     expect(screen.getByTestId('top-nav-home')).toBeTruthy();
   });
 
-  describe('Home always opens the main home', () => {
-    it.each([
-      { tabHash: 'h1' },
-      { viewType: 'home', tabHash: null },
-      { viewType: 'project', pointer: PROJECT_ID },
-    ])('opens the main home from %j', async (current) => {
-      dock.current = current;
-      renderBar();
+  describe('Home always goes to the Flowpad home page', () => {
+    it.each([{ tabHash: 'h1' }, { viewType: 'home', tabHash: null }, { viewType: 'project', pointer: PROJECT_ID }])(
+      'goes to the Flowpad home page from %j',
+      async (current) => {
+        dock.current = current;
+        renderBar();
 
-      expect(screen.queryByTestId('top-nav-tabs')).toBeNull();
-      await userEvent.click(screen.getByTestId('top-nav-home'));
-      expect(goHome).toHaveBeenCalledWith();
-    });
+        expect(screen.queryByTestId('top-nav-tabs')).toBeNull();
+        await userEvent.click(screen.getByTestId('top-nav-home'));
+        expect(goHome).toHaveBeenCalledWith();
+      },
+    );
   });
 
   // Inherited from the rail's project item when that icon moved up here

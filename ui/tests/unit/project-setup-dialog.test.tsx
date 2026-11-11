@@ -78,7 +78,7 @@ async function open(readiness: ProjectReadiness, onOpenChange = vi.fn()) {
     if (readiness.ready) expect(screen.getByTestId('project-setup-ready')).toBeInTheDocument();
     else expect(screen.getByTestId('project-setup-requirements').children).toHaveLength(readiness.to_do.length);
     if (readiness.optional?.length) expect(screen.getByTestId('project-setup-optional')).toBeInTheDocument();
-    if (readiness.skipped?.length) expect(screen.getByTestId('project-setup-skipped')).toBeInTheDocument();
+    if (readiness.skipped?.length) expect(screen.getByTestId('project-setup-skipped-toggle')).toBeInTheDocument();
   });
   return onOpenChange;
 }
@@ -131,13 +131,17 @@ describe('ProjectSetupDialog — skipping', () => {
     const skip = vi.spyOn(Project, 'skipSetup').mockResolvedValue(after);
 
     fireEvent.click(screen.getByTestId('project-setup-skip-google-cloud'));
-    // The row's Skip opens the same bar as a selection: Locally | Always | Cancel.
-    expect(screen.getByTestId('project-setup-selection-bar')).toHaveTextContent('1 selected');
-    expect(screen.getByTestId('project-setup-skip-always-selected')).toBeInTheDocument();
-    await act(async () => fireEvent.click(screen.getByTestId('project-setup-skip-local-selected')));
+    // The row's Skip opens Locally | Always | Cancel inline in the row, not the selection bar.
+    expect(screen.queryByTestId('project-setup-selection-bar')).toBeNull();
+    expect(screen.getByTestId('project-setup-skip-always-google-cloud')).toBeInTheDocument();
+    await act(async () => fireEvent.click(screen.getByTestId('project-setup-skip-local-google-cloud')));
 
     expect(skip).toHaveBeenCalledWith('p1', GCP_TYPEID, 'local', { name: 'google-cloud' });
-    const skipped = await screen.findByTestId('project-setup-skipped');
+    const toggle = await screen.findByTestId('project-setup-skipped-toggle');
+    expect(toggle).toHaveTextContent('(1)');
+    expect(screen.queryByTestId('project-setup-skipped')).toBeNull(); // folded by default
+    fireEvent.click(toggle);
+    const skipped = screen.getByTestId('project-setup-skipped');
     expect(skipped).toHaveTextContent('Required — skipped on this machine');
     expect(screen.queryByTestId('project-setup-chip-google-cloud')).toBeNull();
     expect(screen.getByTestId('project-setup-undo-google-cloud')).toBeInTheDocument();
@@ -177,10 +181,39 @@ describe('ProjectSetupDialog — skipping', () => {
     expect(screen.queryByTestId('project-setup-selection-bar')).toBeNull();
   });
 
+  it('Always says which installed asset it removes; a root outside the project says why it cannot', async () => {
+    const gmail = req({
+      name: 'gmail',
+      title: 'Gmail',
+      roots: [
+        {
+          typeid: 'data_source-1',
+          kind: 'data_source',
+          name: 'Gmail',
+          asset_ref: '/p/agentic-assets/data_source/gmail',
+        },
+      ],
+    });
+    await open({ ...NOT_READY, to_do: [gmail] });
+    fireEvent.click(screen.getByTestId('project-setup-skip-gmail'));
+    expect(screen.getByTestId('project-setup-skip-always-gmail')).toBeEnabled();
+    expect(screen.getByTestId('project-setup-removes-gmail')).toHaveTextContent('Removes: Gmail (data source)');
+    cleanup();
+
+    const why =
+      "the data source 'Gmail' is not this project's own (it lives outside the project folder) — skip it locally";
+    await open({ ...NOT_READY, to_do: [{ ...gmail, can_skip_always: false, why_not_always: why }] });
+    fireEvent.click(screen.getByTestId('project-setup-skip-gmail'));
+    expect(screen.getByTestId('project-setup-skip-always-gmail')).toBeDisabled();
+    expect(screen.getByTestId('project-setup-skip-always-gmail').parentElement).toHaveAttribute('title', why);
+    expect(screen.queryByTestId('project-setup-removes-gmail')).toBeNull();
+  });
+
   it('Undo un-skips it', async () => {
     const mark = { at: 1, by: 'u1', note: '' };
     await open({ ...NOT_READY, to_do: [], ready: true, skipped: [req({ skipped: mark })] });
     const unskip = vi.spyOn(Project, 'unskipSetup').mockResolvedValue(NOT_READY);
+    fireEvent.click(screen.getByTestId('project-setup-skipped-toggle'));
     await act(async () => fireEvent.click(screen.getByTestId('project-setup-undo-google-cloud')));
     expect(unskip).toHaveBeenCalledWith('p1', GCP_TYPEID, 'google-cloud');
   });
@@ -415,5 +448,59 @@ describe('ProjectSetupDialog — one row id per requirement', () => {
     await open({ ...NOT_READY, to_do: [NOT_READY.to_do[0], source] });
     expect(screen.getByTestId('project-setup-req-google-cloud')).toBeInTheDocument();
     expect(screen.getByTestId('project-setup-req-source-google-cloud')).toBeInTheDocument();
+  });
+});
+
+describe('ProjectSetupDialog — recommended automations', () => {
+  const RULE: ProjectSetupRequirement = {
+    kind: 'automation',
+    name: 'Team code review: answer and review',
+    title: 'Team code review: answer and review',
+    typeid: 'trigger-0b5c7a1e-3d2f-4c6b-9a8e-1f2d3c4b5a69',
+    used_by: ['project'],
+    note: '',
+    needed_for: 'Answers Available for you when a review request names you.',
+    required: true,
+    skipped: null,
+    can_skip_always: false,
+    why_not_always: '',
+    vars: [],
+  };
+
+  it('a recommended automation is a choice in its own section: Enable decides it here, and there is nothing to Start', async () => {
+    vi.spyOn(Project, 'setupRequirements').mockResolvedValue({ project_id: 'p1', ready: false, to_do: [RULE], gaps: [] });
+    vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: RUN, running: false, tree: null });
+    const decide = vi.spyOn(Project, 'decideAutomation').mockResolvedValue({ project_id: 'p1', ready: true, to_do: [], gaps: [] });
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={vi.fn()} />);
+
+    const section = await screen.findByTestId('project-setup-automations');
+    expect(section).toHaveTextContent('Team code review: answer and review');
+    expect(screen.queryByTestId('project-setup-requirements')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('project-setup-start')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Enable'));
+    await waitFor(() => expect(decide).toHaveBeenCalledWith('p1', RULE.typeid, true));
+    expect(await screen.findByTestId('project-setup-ready')).toBeInTheDocument();
+  });
+});
+
+describe('ProjectSetupDialog — a package is one step', () => {
+  const STEP: ProjectSetupRequirement = {
+    kind: 'automation', name: 'Team code review', title: 'Team code review', typeid: 'agent-8caeb94a-84d7-4d78-9f4b-0e41226380f4',
+    used_by: ['project'], note: '', needed_for: 'Reviews PRs.', required: true, skipped: null, can_skip_always: false,
+    why_not_always: '', vars: [], satisfied: false,
+  };
+
+  it('has one Enable / Disable and nothing to expand; Enable decides the whole package here', async () => {
+    vi.spyOn(Project, 'setupRequirements').mockResolvedValue({ project_id: 'p1', ready: false, to_do: [STEP], gaps: [] });
+    vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: RUN, running: false, tree: null });
+    const decide = vi.spyOn(Project, 'decideAutomation').mockResolvedValue({ project_id: 'p1', ready: true, to_do: [], gaps: [] });
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={vi.fn()} />);
+
+    await screen.findByTestId('project-setup-automations');
+    expect(screen.queryByText(/^[0-9]+ automations?$/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('Enable')).toHaveLength(1);
+    fireEvent.click(screen.getByText('Enable'));
+    await waitFor(() => expect(decide).toHaveBeenCalledWith('p1', STEP.typeid, true));
   });
 });

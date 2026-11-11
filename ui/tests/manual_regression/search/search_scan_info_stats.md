@@ -27,15 +27,15 @@ test 3: SearchView "indexed" count is a non-negative integer
 - [browser] read the text of the element containing "indexed"
 - [browser] validate the leading number in that text is >= 0 (e.g. "0 indexed" or "142 indexed")
 
-test 4: Home inline search stats line shows "indexed" after a search
-- [browser] navigate to {APP_URL}/
+test 4: Search view stats line shows "indexed" after a search
+(The home's inline search panel is gone: since 2026-10-11 the home is always the tabless Vibe hero — docs/viewmodes.md. A search runs in the search view.)
+- [browser] navigate to {APP_URL}/dock/search
 - [browser] wait for page to load (networkidle)
-- [browser] locate the search input with data-testid="search-input" (first match)
+- [browser] locate the visible search input with data-testid="search-input" (first match)
 - [browser] click the search input
 - [browser] fill the search input with "test"
-- [browser] wait up to 6 seconds for inline results panel to appear (element with text "result" or "Searching")
-- [browser] wait up to 6 seconds for loading to complete (text "Searching" disappears)
-- [browser] validate the inline stats line contains the word "indexed"
+- [browser] wait up to 10 seconds for the search-view header to show the latency readout ("N ms" — rendered only once a search completed)
+- [browser] validate the search-view header contains "N indexed"
 
 test 5: index-status API endpoint returns expected shape
 - [api] GET {API_URL}/api/v1/graph/compute_node/@local/fs-records/index-status

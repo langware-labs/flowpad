@@ -1,17 +1,19 @@
 import { t } from '@lingui/core/macro';
 import {
   oauthService,
+  resendConversation,
   OAUTH_PROVIDERS,
-  copyToClipboard,
   AgenticProcess,
   dataContext,
   snifferManager,
   tabManager,
 } from '@sdk';
+import { errorMessage } from '@src/lib/error-message';
 import { gitResolvePrompt } from '@src/lib/git-resolve-prompt';
 import { notify } from './notify';
 import { settleAsk } from './pending-asks';
 import type { NotificationAction } from './types';
+import { commandFor, registerCommand, type CommandArgs } from './command-registry';
 
 /**
  * Imperative command registry for notification actions. A `NotificationAction`
@@ -20,25 +22,16 @@ import type { NotificationAction } from './types';
  *
  * Navigation actions use `action.href` instead (URL-first) — see `navigateTo`.
  */
-export type CommandArgs = Record<string, string | number | boolean>;
-type CommandHandler = (args: CommandArgs, ctx: { id: string }) => void;
+export { registerCommand, type CommandArgs } from './command-registry';
 
-const registry = new Map<string, CommandHandler>();
-
-export function registerCommand(name: string, fn: CommandHandler): void {
-  registry.set(name, fn);
-}
-
-// The answer to an `askNotification` button. Built in here rather than registered by ask.ts as it
-// loads: ask.ts can load while THIS module is still loading (notify → the toast UI → … → the
-// notifications index → ask.ts), and a registration then reaches `registry` before it exists.
-registry.set('notification.answer', (args, ctx) => {
+// The answer to an `askNotification` button. Built in here so it exists as soon as commands.ts loads.
+registerCommand('notification.answer', (args, ctx) => {
   settleAsk(ctx.id, { value: String(args.value), remember: args.remember === true });
   notify.dismiss(ctx.id);
 });
 
 export function runCommand(name: string, args: CommandArgs, ctx: { id: string }): void {
-  const fn = registry.get(name);
+  const fn = commandFor(name);
   if (fn) fn(args, ctx);
   else console.warn(`[notify] unknown command '${name}'`);
 }
@@ -67,6 +60,14 @@ registerCommand('cloud.signin', () => {
   void oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
 });
 
+// `Retry` on the "Not sent yet" toast: deliver what the conversation still owes the hub.
+registerCommand('message.resend', (args, ctx) => {
+  notify.dismiss(ctx.id);
+  void resendConversation(String(args.conversationId)).catch((e: unknown) => {
+    notify.error({ title: t`Could not send`, message: errorMessage(e, '') });
+  });
+});
+
 registerCommand('terminal.terminate', (args) => {
   if (args.typeId) void tabManager.closeTarget(String(args.typeId));
 });
@@ -79,7 +80,7 @@ registerCommand('terminal.terminate', (args) => {
 // context folder is not); absent → the current project.
 registerCommand('git.resolve-conflict', (args) => {
   const branch = String(args.branch ?? '');
-  const origin = args.origin === 'pull' ? 'pull' : 'push';
+  const origin = args.origin === 'pull' || args.origin === 'cherry-pick' ? args.origin : 'push';
   const workdir = typeof args.workdir === 'string' && args.workdir ? args.workdir : null;
   const where =
     workdir && workdir !== dataContext.project?.fs_storage_mount_path ? { fs_storage_mount_path: workdir } : undefined;
@@ -109,27 +110,6 @@ registerCommand('sniffer.disable', (_args, ctx) => {
 registerCommand('notification.dismiss', (_args, ctx) => {
   // One dismiss path for all three surfaces — toast, sidebar badge, alert log.
   notify.dismiss(ctx.id);
-});
-
-// `Detail` on a cloud-error toast. Surfaces the raw transport detail the
-// headline hides — visibly (a follow-up toast) AND on the clipboard — instead
-// of only writing it to the console (which a user without DevTools never sees).
-registerCommand('debug.logHubError', (args) => {
-  console.warn('[hub error]', args);
-
-  const str = (v: unknown) =>
-    (typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' ? String(v) : '').trim();
-  const requestLine = `${str(args.method)} ${str(args.path)}`.trim() + (args.statusCode ? ` → ${args.statusCode}` : '');
-  const detail = [requestLine, str(args.message)].filter(Boolean).join('\n');
-
-  void copyToClipboard(detail);
-
-  notify.info({
-    id: 'cloud-error-detail',
-    title: t`Cloud error detail (copied to clipboard)`,
-    message: detail || 'No additional detail was provided.',
-    durationMs: 15000,
-  });
 });
 
 // `terminal.resume` is hook-bound (useResumeInTerminal) and is registered at

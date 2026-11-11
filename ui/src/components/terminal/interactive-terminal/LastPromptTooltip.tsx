@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import React from 'react';
 import { TooltipContent } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
@@ -27,11 +28,9 @@ export const LastPromptTooltip: React.FC<LastPromptTooltipProps> = ({ text, coun
   return (
     <div className="space-y-1">
       <div className="text-[10px] font-semibold uppercase tracking-wide opacity-70">
-        Last prompt{count > 1 ? ` · ${count} total` : ''}
+        {count > 1 ? <Trans>Last prompt · {count} total</Trans> : <Trans>Last prompt</Trans>}
       </div>
-      <div className="max-h-60 overflow-hidden whitespace-pre-wrap break-words text-xs leading-snug">
-        {clipped}
-      </div>
+      <div className="max-h-60 overflow-hidden whitespace-pre-wrap break-words text-xs leading-snug">{clipped}</div>
     </div>
   );
 };
@@ -61,10 +60,6 @@ export const SideTabTooltipContent: React.FC<SideTabTooltipContentProps> = ({
     side={side}
     className={cn('text-xs', isPrompts && 'max-w-md border bg-popover text-popover-foreground shadow-md')}
   >
-    {isPrompts ? (
-      <LastPromptTooltip text={lastPromptText} count={promptCount} fallback={fallback} />
-    ) : (
-      fallback
-    )}
+    {isPrompts ? <LastPromptTooltip text={lastPromptText} count={promptCount} fallback={fallback} /> : fallback}
   </TooltipContent>
 );

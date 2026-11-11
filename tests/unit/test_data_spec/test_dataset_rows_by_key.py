@@ -45,11 +45,15 @@ def _dataset(tmp_path):
                    data_layout="io_folder", spec="unittest.bykey.dataset")
 
 
+def _rows(tmp_path):
+    return _dataset(tmp_path)._rows_root() / "rows"
+
+
 async def test_append_with_a_key_names_the_folder_and_the_row_says_its_key(tmp_path):
     d = _dataset(tmp_path)
     eid, numbered = await d.append([{"key": "acme", "input": {"name": "Acme"}}, {"input": {"name": "Beta"}}])
-    assert (tmp_path / "rows/acme/input/lead.json").is_file()
-    assert (tmp_path / "rows/0001").is_dir()
+    assert (_rows(tmp_path) / "acme/input/lead.json").is_file()
+    assert (_rows(tmp_path) / "0001").is_dir()
     assert {r.key: r.id for r in d.read_rows()} == {"0001": numbered, "acme": eid}
     assert d.row(eid)["key"] == "acme"             # the stored id finds the row
     assert d.row("acme")["key"] == "acme"          # a key addresses a row like its id does
@@ -61,7 +65,7 @@ async def test_a_taken_key_refuses_the_whole_batch(tmp_path):
     await d.append([{"key": "acme", "input": {"name": "Acme"}}])
     with pytest.raises(ValueError, match="already taken"):
         await d.append([{"key": "fresh", "input": {"name": "F"}}, {"key": "acme", "input": {"name": "A2"}}])
-    assert not (tmp_path / "rows/fresh").exists()
+    assert not (_rows(tmp_path) / "fresh").exists()
 
 
 @pytest.mark.parametrize("bad", ["Acme", "../x", ".hidden", "", "a b"])
@@ -80,7 +84,7 @@ async def test_put_creates_then_replaces_and_keeps_gold_and_metadata(tmp_path):
     assert row["ground_truth"] == {"value": 3, "note": None}    # an input edit never drops the gold
     assert row["kind"] == "eval"
     assert row["metadata"]["annotations"][0]["by"] == "heidi"
-    assert [p.name for p in (tmp_path / "rows").iterdir()] == ["acme"]   # no scratch dir left
+    assert [p.name for p in (_rows(tmp_path)).iterdir()] == ["acme"]   # no scratch dir left
 
 
 async def test_a_put_that_does_not_fit_writes_nothing(tmp_path):
@@ -110,13 +114,13 @@ async def test_check_says_what_is_wrong_and_writes_nothing(tmp_path):
     errors = d.check({"input": {"name": "Acme", "status": "maybe"}})
     assert len(errors) == 1 and errors[0].startswith("input.status:")
     assert d.check({"inputs": {}}) == ["row 1: an object with an `input` is required"]
-    assert not (tmp_path / "rows").exists()
+    assert not (_rows(tmp_path)).exists()
 
 
 def test_scratch_dirs_are_never_rows(tmp_path):
     FolderLayout().append_many(tmp_path, [(RowSpec[Lead, Score, DataSpec](input=Lead(name="A")), None)],
                                dataset_id=DATASET_ID)
-    (tmp_path / "rows/.acme.new-1234/input").mkdir(parents=True)
+    (_rows(tmp_path) / ".acme.new-1234/input").mkdir(parents=True)
     assert [r["key"] for r in FolderLayout().index(tmp_path, dataset_id=DATASET_ID)] == ["0001"]
 
 
@@ -216,7 +220,7 @@ async def test_a_row_file_keeps_utf8_and_leaves_unset_optionals_out(tmp_path):
     d = Dataset(id=DATASET_ID, name="notes", asset_ref=str(tmp_path), data_layout="io_folder",
                 spec="unittest.bykey.notes")
     await d.put("n1", {"input": {"text": "20–500 engineers"}})
-    assert (tmp_path / "rows/n1/input/note.json").read_text(encoding="utf-8") == '{\n  "text": "20–500 engineers"\n}\n'
+    assert (_rows(tmp_path) / "n1/input/note.json").read_text(encoding="utf-8") == '{\n  "text": "20–500 engineers"\n}\n'
     assert d.row("n1")["input"] == {"text": "20–500 engineers", "owner": None}
 
 
@@ -224,8 +228,8 @@ def test_validate_names_the_row_by_its_key(tmp_path):
     import json
 
     d = _dataset(tmp_path)
-    (tmp_path / "rows/broken/input").mkdir(parents=True)
-    (tmp_path / "rows/broken/input/lead.json").write_text(json.dumps({"name": "B", "status": "maybe"}))
+    (_rows(tmp_path) / "broken/input").mkdir(parents=True)
+    (_rows(tmp_path) / "broken/input/lead.json").write_text(json.dumps({"name": "B", "status": "maybe"}))
     (problem,) = d.validate_rows()
     assert problem["key"] == "broken" and problem["row_id"] == derived_row_id(DATASET_ID, "broken")
 

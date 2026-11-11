@@ -18,7 +18,9 @@ import { cn } from '@src/lib/utils';
 import { useFlowDataTrace } from '@src/hooks/use-flow-data-trace';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewMode } from '@src/contexts/view-mode-context';
-import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
+import { SETUP_GITHUB_JOURNEY, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
+import { GitRequiredStrip } from '@src/components/git/GitRequiredStrip';
+import { useProject } from '@sdk/react/hooks';
 import type { TraceEvent } from '@src/types/trace-event';
 import {
   BadgeCheck,
@@ -450,6 +452,7 @@ function IntentSection({
   probingKind: string | null;
 }) {
   const [open, setOpen] = useState(true);
+  const { project } = useProject();
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
     <div className="overflow-hidden rounded-lg border">
@@ -479,12 +482,16 @@ function IntentSection({
       </button>
       {open && (
         <div>
-          {intent.intent === 'source_control' && !intent.available && (
+          {intent.intent === 'source_control' && !intent.available && project?.fs_storage_mount_path && (
+            // The one git setup flow; its repo picker owns "Connect GitHub".
+            <GitRequiredStrip project={project} className="rounded-none border-x-0 border-t-0" />
+          )}
+          {intent.intent === 'source_control' && !intent.available && !project?.fs_storage_mount_path && (
             <div className="flex items-center justify-between gap-2 border-b bg-muted/20 px-3 py-2">
               <span className="text-xs text-muted-foreground">
                 <Trans>Connect GitHub and the gh CLI with a guided setup.</Trans>
               </span>
-              <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID}>
+              <SetupJourneyButton journey={SETUP_GITHUB_JOURNEY}>
                 <Trans>Set up GitHub</Trans>
               </SetupJourneyButton>
             </div>

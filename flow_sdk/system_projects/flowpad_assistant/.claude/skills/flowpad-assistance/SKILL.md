@@ -6,7 +6,7 @@ description: >-
   process, workspace) so other actions compose without needing an id; creates and
   indexes records (tasks, skills, agents, workflows); searches local assets via FTS;
   restarts the calling agentic-process; reads messages the user received ("X sent me
-  a message") and sends messages with attachments into a conversation. Use for "the current X" / "this X", "create a task / skill / agent",
+  a message") and sends messages with attachments into a conversation, or starts one with a contact. Use for "the current X" / "this X", "create a task / skill / agent",
   "find or look up X", "restart this session", "what did X send me", or "send X to my
   conversation with Y", and finding Flow SDK guidance for FlowCall (calls, outcomes, returned values, and composition), channel webhooks and deployment routing.
   NOT for showing or opening something in the UI (flowpad-navigation), building a
@@ -130,8 +130,8 @@ creating the agent remains `agent-builder`, and connecting its source remains
 ## Keeping data in step with a system outside Flowpad
 
 "Keep my CRM deals / tickets / tasks here", "sync X with Y", "mirror ..." is two skills, in this
-order: `connect-data-source` connects (or writes) the source, then `data-management` declares the
-dataset it mirrors into and which fields are the outside system's. Nothing here is a script of
+order: `connect-data-source` connects (or writes) the driver, then `data-management` gives the
+dataset a `location` in that system and marks which fields are the outside system's. Nothing here is a script of
 your own — do not write a sync loop, an API client or a state file.
 
 ## Other actions
@@ -143,7 +143,9 @@ For records, search, process or message actions, open the matching file in this 
 | records  | [`records.md`](records.md) — data schemas and datasets are the **data-management** skill |
 | search   | [`search.md`](search.md) |
 | process  | [`process.md`](process.md) |
+| doc comments | [`doc-comments.md`](doc-comments.md) — ask the person questions, or leave a note, ON a doc (drawn under the passage, never written into the file); reply in a comment's thread |
 | message  | [`message.md`](message.md) — read what someone sent (Flowpad conversations, never Slack/Gmail unprompted; needs cloud login) or send |
+| credential test | `flow credentials test <name>` — is a key GOOD, not only present (exit 0 = the provider takes it). No test declared → the **cred-scan** skill, `cred-scan test <name>`, writes one |
 
 When composing two actions in this skill (e.g. `search` then `records`), read both
 files end-to-end before you start running commands.

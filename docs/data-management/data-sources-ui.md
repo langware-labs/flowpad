@@ -15,7 +15,17 @@ one, and shows whether each is actually alive. Everything lives under
 | File | Role |
 |------|------|
 | `DataSourcesView.tsx` | The grid. Owns the one instance each of the add/edit dialog, the replay dialog and the delete confirm ("list holds a nullable pending target, rows hold no dialog"). The position lives on the source row, so the grid watches one query. |
-| `DataSourceCard.tsx` | One source: lifecycle chip, health, `synced …` / `next …` countdown, the parked warning, the setup panel with **Verify**, the **Pull changes** button, and an expandable detail panel. |
+| `DataSourceRow.tsx` | One source as a row: status, health, sync, and where they disagree. |
+| `DataSourceDetail.tsx` | One source on its own — the row's status, sync, pull and edit, expanded. |
+| `DataSourcePage.tsx` | `/dock/data-sources/<id>`: the source's stream (a message source's conversation, a file source's files). |
+| `DataDriversView.tsx` | The installed drivers and one driver's page (`drivers`, `drivers/<name>`). |
+| `MessageChannelsList.tsx`, `ChannelRouteControl.tsx` | `Data sources › Channels`: every message channel and the hub claim that delivers to it. |
+| `SourceSetupButton.tsx` | **Setup** (finishes a source in setup) and the gear to its settings. |
+| `SourceFiles.tsx`, `OpenFolderButton.tsx` | A file source's files and its folder. |
+| `ChoiceField.tsx`, `GroupChoice.tsx`, `choice-fetch.ts` | Config fields whose options the driver supplies. |
+| `data-sources-pointer.ts` | The view's URL pointer (`drivers`, `channels`, `<id>`). |
+| `source-icon.ts`, `source-look.ts`, `source-parts.tsx`, `source-attention.ts` | Shared look, icon and attention helpers. |
+| `use-source-delete.ts`, `use-source-toggle.ts`, `use-source-verify.ts` | The row actions as hooks. |
 | `DataSourceDialog.tsx` | Add/edit form driven entirely by the installed `DataDriver`s. Writes `name`, `provider`, `account_key`, `config`, `status`, `poll_interval_seconds`, `window_days`; never `kind` or `channel` (the driver sets those on first poll). |
 | `SourceMenu.tsx` | The "more" menu: pause/resume, edit, replay, open a spec-shipped editor app, Events, Runs, delete. |
 | `ReplayDialog.tsx` | Optional `since` date, then `source.replay(since)`. |

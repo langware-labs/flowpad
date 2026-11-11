@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { tabKey, tabManager, Tab } from '@sdk';
 import { Monitor } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
@@ -11,6 +12,9 @@ import { useTabLifecycles, useWorkspaceChildren } from '@src/tabs/use-tab-manage
 import { useLingui } from '@lingui/react/macro';
 
 interface WorkspaceChildStripProps {
+  /** Rendered at the row's right end — the session's anchor ([Fork] | [modes] [menu]),
+   *  so Vibe keeps it in the same top-right corner as Terminal and Chat. */
+  trailing?: ReactNode;
   /** The workspace's fixed tab (the vibe display / process tab). Children are the
    *  tabs whose `parent_tab_id` is this tab's id. */
   processTab: Tab | null;
@@ -31,7 +35,7 @@ interface WorkspaceChildStripProps {
  * component stays dumb. The workspace itself closes from its chip in the global
  * strip, and the backend closes its children with it (`Tab.close`).
  */
-export function WorkspaceChildStrip({ processTab, processDock }: WorkspaceChildStripProps) {
+export function WorkspaceChildStrip({ processTab, processDock, trailing }: WorkspaceChildStripProps) {
   const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
 
@@ -40,22 +44,12 @@ export function WorkspaceChildStrip({ processTab, processDock }: WorkspaceChildS
   useTabLifecycles();
   const workspaceChildren = useWorkspaceChildren(processTab?.id);
   const children = tabManager.lifecycle.excludeClosing(workspaceChildren);
-  // The workspace's OWN active display is already the fixed "Display" square, so
-  // its adopted child row must not ALSO be a chip. Dropped from the STRIP only.
-  const visibleChildren = useMemo(
-    () => children.filter((tab) => !(tab.dockPointer && new DockPointer(tab.dockPointer).isActiveDisplay)),
-    [children],
-  );
-  // The child TABS only — the Display is NOT a tab (it renders as a fixed,
-  // square header to the left of the strip). The strip starts after it.
-  const items: TabStripItem[] = useTabStripItems(visibleChildren);
+  // Every child is a tab — what the agent showed and what the user opened alike.
+  const items: TabStripItem[] = useTabStripItems(children);
 
   const processKey = processDock.tabHash ?? 'workspace-display';
   const activeKey = currentDock?.tabHash ?? '';
-  // The active display's dock is keyed by `ACTIVE_DISPLAY_HASH_NS`, not the
-  // process's tabHash, so a plain comparison never lit the square for it — and
-  // with no chip in the strip either, nothing marked the Display as active.
-  const processActive = activeKey === processKey || !!currentDock?.isActiveDisplay;
+  const processActive = activeKey === processKey;
 
   const childByKey = useMemo(() => {
     const m = new Map<string, Tab>();
@@ -123,6 +117,7 @@ export function WorkspaceChildStrip({ processTab, processDock }: WorkspaceChildS
           testId="workspace-child-strip"
         />
       </div>
+      {trailing && <div className="flex shrink-0 items-center px-2">{trailing}</div>}
     </div>
   );
 }

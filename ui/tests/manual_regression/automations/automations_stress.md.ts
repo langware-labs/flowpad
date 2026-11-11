@@ -12,11 +12,12 @@
  * test-results/automations-shots).
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { apiContext } from '../_shared/api';
 import { dismissSetupModal } from '../triggers/helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const SHOTS = process.env.AUTOMATIONS_SHOTS || path.resolve('test-results/automations-shots');
 const RUN = Math.random().toString(36).slice(2, 7);
@@ -62,10 +63,22 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
   test.setTimeout(SPEC_BUDGET_MS);
   const rq = await apiContext();
   const created: Created[] = [];
+  const effects = mkdtempSync(path.join(tmpdir(), `auto-wizard-effects-${RUN}-`));
+  const effectAction = (kind: string) => {
+    const script = path.join(effects, `${kind}.sh`);
+    writeFileSync(script, `#!/bin/sh\nprintf '%s\\n' '${kind}' >> '${path.join(effects, `${kind}.txt`)}'\n`, { mode: 0o700 });
+    return [{ action_type: 'run_script', script_path: script }];
+  };
   const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const failedResponses: string[] = [];
   const badResponses: string[] = [];
   page.on('pageerror', (e) => pageErrors.push(String(e)));
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
   page.on('response', (r) => {
+    if (r.status() >= 400) failedResponses.push(`${r.status()} ${r.request().method()} ${r.url()}`);
     if (r.url().includes('/graph/trigger') && r.status() >= 400 && r.status() !== 404 && r.status() !== 422) {
       badResponses.push(`${r.status()} ${r.request().method()} ${r.url()}`);
     }
@@ -75,7 +88,9 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
     // ── Seed: 6 event, 3 failing event, 1 storm-guarded, 5 schedule, 4 file ─────────
     const ok: Created[] = [];
     for (let i = 0; i < 6; i++) {
-      ok.push(await create(rq, { name: `stress ok ${RUN}-${i}`, trigger_type: 'tag', tag_pattern: `st${RUN}.ok${i}.*` }));
+      ok.push(await create(rq, { name: `stress ok ${RUN}-${i}`, trigger_type: 'tag', tag_pattern: `st${RUN}.ok${i}.*`,
+        ...(i === 0 ? { actions: effectAction('event') } : {}),
+      }));
     }
     const failing: Created[] = [];
     for (let i = 0; i < 3; i++) {
@@ -96,12 +111,16 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
     });
     const schedules: Created[] = [];
     for (const [i, expr] of ['0 9 * * 1-5', '30 7 * * *', '0 12 * * 1', '15 6 1 * *', '0 18 * * 5'].entries()) {
-      schedules.push(await create(rq, { name: `stress schedule ${RUN}-${i}`, trigger_type: 'schedule', expr, sched_trigger_type: 'cron' }));
+      schedules.push(await create(rq, { name: `stress schedule ${RUN}-${i}`, trigger_type: 'schedule', expr, sched_trigger_type: 'cron',
+        ...(i === 0 ? { actions: effectAction('schedule') } : {}),
+      }));
     }
     const files: Created[] = [];
     for (let i = 0; i < 4; i++) {
       const dir = mkdtempSync(path.join(tmpdir(), `auto-stress-${RUN}-`));
-      files.push(await create(rq, { name: `stress file ${RUN}-${i}`, trigger_type: 'fsop', watch_path: dir, watch_glob: '*.md' }));
+      files.push(await create(rq, { name: `stress file ${RUN}-${i}`, trigger_type: 'fsop', watch_path: dir, watch_glob: '*.md',
+        ...(i === 0 ? { actions: effectAction('file') } : {}),
+      }));
     }
     created.push(...ok, ...failing, storm, ...schedules, ...files);
 
@@ -110,7 +129,7 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.goto('/dock/automations');
     const skip = page.getByRole('button', { name: 'Skip' });
-    if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
+    if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
     await page.getByTestId('automations-list').waitFor();
     for (const a of created) await expect(page.getByTestId(`automation-row-${a.id}`)).toHaveCount(1);
     await shot(page, '01-list');
@@ -136,7 +155,7 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
     await page.getByTestId('test-run-once').click();
     await expect(page.getByTestId('test-run-started')).toBeVisible();
     await expect.poll(async () => (await runsFor(rq, uiScheduleId)).length).toBeGreaterThan(0);
-    await page.reload();
+    // Completion is pushed into the existing screen; no refresh may repair stale state.
     await expect(page.getByTestId('automation-tested')).toBeVisible();
     await page.getByTestId('automation-tab-runs').click();
     await expect(page.locator('[data-testid^="run-row-"]').first()).toBeVisible();
@@ -175,10 +194,24 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
       Array.from({ length: 20 }, (_, i) => rq.post(`${T}/${ok[i % ok.length].id}/test`, { data: {} })),
     );
     for (const r of once) expect(r.status()).toBe(200);
+    for (const automation of [schedules[0], files[0]]) {
+      const admission = await rq.post(`${T}/${automation.id}/test`, { data: {} });
+      expect(admission.status(), await admission.text()).toBe(200);
+      const { run_id: runId } = (await admission.json()).data;
+      expect(runId).toBeTruthy();
+      await expect.poll(async () => (await runsFor(rq, automation.id)).find((run) => run.id === runId)?.status).toBe('succeeded');
+      const completed = (await runsFor(rq, automation.id)).find((run) => run.id === runId);
+      expect(completed?.wizard?.exit_code).toBe(0);
+      expect(Object.keys(completed?.wizard?.steps ?? {}).length).toBeGreaterThan(0);
+    }
+    for (const kind of ['event', 'schedule', 'file']) {
+      const output = path.join(effects, `${kind}.txt`);
+      await expect.poll(() => existsSync(output) ? readFileSync(output, 'utf8') : '').toContain(kind);
+    }
 
     // ── Every fire is a run with the right status ────────────────────────────────────
     await expect
-      .poll(async () => (await runsFor(rq, ok[0].id, '&include_tests=false')).length, { timeout: 20_000 })
+      .poll(async () => (await runsFor(rq, ok[0].id, '&include_tests=false')).length, { timeout: adjusted(20_000) })
       .toBeGreaterThanOrEqual(Math.floor(260 / tags.length));
     for (const f of failing) {
       await expect.poll(async () => (await runsFor(rq, f.id)).filter((r) => r.status === 'failed').length).toBeGreaterThan(0);
@@ -269,7 +302,11 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
     expect(pageErrors).toEqual([]);
     expect(badResponses).toEqual([]);
   } finally {
+    await test.info().attach('browser-diagnostics', {
+      body: JSON.stringify({ pageErrors, consoleErrors, failedResponses }, null, 2), contentType: 'application/json',
+    });
     for (const a of created) await rq.delete(`${T}/${a.id}/delete`).catch(() => undefined);
     await rq.dispose();
+    rmSync(effects, { recursive: true, force: true });
   }
 });

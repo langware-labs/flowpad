@@ -14,6 +14,7 @@ import { IEntity, EntityMerge } from '../IEntity';
 import type { SetupStageState } from './data-driver';
 import type { ProjectSetupRun } from './project';
 import type { ChannelRouteClaim } from './inbound-webhook';
+import type { ReturnedValue } from '../models/ReturnedValue';
 
 /** Mirror of flow_sdk/ingest/health.py SourceHealth. */
 export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_error';
@@ -103,6 +104,8 @@ export type { ChannelRouteClaim, ChannelRouteTarget } from './inbound-webhook';
 export interface ChannelRoutePlace {
   key: string;
   label: string;
+  /** `this`: this computer's instance id. */
+  instance_id?: string;
   node_typeid?: string;
 }
 
@@ -274,13 +277,6 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.health === 'ok' && this.error_code === 'write_back_held';
   }
 
-  /** Running, but the dataset it mirrors into is not the mirror of its records: the sweep failed
-   *  (`mirror_failed`) or some records did not fit the row kind (`mirror_misfit`); `error_detail` says
-   *  which. Not broken: the source keeps polling, and a good sweep clears it. */
-  get isMirrorBroken(): boolean {
-    return this.health === 'ok' && (this.error_code === 'mirror_failed' || this.error_code === 'mirror_misfit');
-  }
-
   /** Stopped on purpose: nothing is fetched until a person resumes it. */
   get isPaused(): boolean {
     return this.status === 'disabled';
@@ -336,6 +332,12 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    */
   async pollNow(): Promise<{ status: string; health: SourceHealth; detail: string }> {
     return this.post('poll_now');
+  }
+
+  /** Run one setup step of this source's driver (what its wizard calls). `check` only asks whether the step
+   *  already holds; `probe` judges the typed `values` without keeping them (a question's Verify). */
+  async step(name: string, body: { check?: boolean; probe?: boolean; values?: Record<string, string> } = {}): Promise<ReturnedValue> {
+    return this.post('step', { step: name, ...body });
   }
 
   /** The setup wizards this source's driver declares, each as it stands for THIS source. */
@@ -512,6 +514,8 @@ export interface SetupNeed {
   /** `missing`, `needs_reauth`, `refused`. */
   state?: string;
   detail?: string;
+  /** What the sign-in lets the source do, in the driver's own words. */
+  why?: string;
 }
 
 /** What `DataSource.verify` answers — the same shape the stream inbox's attention bar shows in place. */

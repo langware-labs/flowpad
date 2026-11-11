@@ -92,14 +92,19 @@ async def runs_here(entity: Any) -> bool:
     runs_on = str(getattr(entity, "runs_on", "") or "")
     if not runs_on:
         return True
+    deployment = await deployment_named(runs_on)
+    return bool(deployment is not None and deployment.is_local)
+
+
+async def deployment_named(runs_on: str) -> Any:
+    """The Deployment a ``runs_on`` names, as known here; None when it is unknown or unreadable."""
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
     try:
-        deployment = await Deployment.get_by_id(runs_on)
+        return await Deployment.get_by_id(runs_on)
     except Exception:  # noqa: BLE001 — unresolvable is "not here", never an error
         _log.debug("runs_on %s unresolvable", runs_on, exc_info=True)
-        return False
-    return bool(deployment is not None and deployment.is_local)
+        return None
 
 
 async def arm_after_index(record: Any) -> None:
@@ -115,7 +120,36 @@ async def arm_after_index(record: Any) -> None:
     if entity is None:
         _log.debug("trigger %s indexed but not resolvable; nothing to arm", record.id)
         return
+    from flow_sdk.builtin.trigger import _project_setup_changed, set_trigger_on  # noqa: PLC0415
+
+    # Flowpad's own follow their file, as they always did -- but one Flowpad ships off is the person's once decided; on a machine the hub runs ONLY for a deployed agent,
+    # the deploy was its owner's choice, so recommended rules are on (nobody is at that box to answer setup).
+    # Every other rule's switch is the person's here, and an index never moves it.
+    if entity.is_builtin and not (entity.switchable and entity.decided):
+        target = entity.recommended
+    elif not entity.decided and entity.recommended and _deployed_agent_machine():
+        target = True
+    else:
+        target = None
+    if target is not None and (not entity.decided or entity.enabled != target):
+        await set_trigger_on(entity, target)
+        return
+    if not entity.decided:  # a rule that came with a project: its setup now has something to ask
+        _project_setup_changed(entity)
     await arm_trigger(entity)
+
+
+async def rearm_missed_one_shot(trigger_id: str) -> None:
+    """The scheduler dropped this one-shot as too late: arm it again, which runs it once now
+    (``Trigger._register_schedule_job``)."""
+    from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
+
+    try:
+        trigger = await Trigger.get_by_id(trigger_id)
+        if trigger is not None:
+            await arm_trigger(trigger)
+    except Exception:
+        _log.exception("Could not re-arm missed one-shot %s", trigger_id)
 
 
 async def disarm_trigger(trigger_id: str) -> None:
@@ -150,3 +184,13 @@ async def disarm_trigger(trigger_id: str) -> None:
         await fsop_watcher.on_trigger_deleted(trigger_id)
     except Exception:
         _log.exception("Disarming (watch) failed for trigger %s", trigger_id)
+
+
+def _deployed_agent_machine() -> bool:
+    """This Flowpad runs only to serve a deployed agent (the hub assigned it the ``agent`` runtime)."""
+    from flow_sdk.instance_settings.runtime import RuntimeKind, get_assigned_runtime  # noqa: PLC0415
+
+    try:
+        return get_assigned_runtime() == RuntimeKind.AGENT
+    except Exception:  # noqa: BLE001 — unknown is "a person's machine": the safe answer
+        return False

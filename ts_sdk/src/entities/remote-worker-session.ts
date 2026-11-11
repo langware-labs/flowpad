@@ -48,9 +48,6 @@ export enum SessionReplyPolicy {
   REVIEW = 'review',
 }
 
-/** Standing-grant scope accepted by the `approve` action's `remember` body. */
-export type SessionRememberScope = 'project' | 'everywhere';
-
 export interface IRemoteWorkerSession extends IEntity {
   conversation_id?: string | null;
   collaboration_room_id?: string | null;
@@ -71,8 +68,13 @@ export interface IRemoteWorkerSession extends IEntity {
   /** `SessionReplyPolicy`; null = auto. */
   reply_policy?: string | null;
   approved_at?: string | null;
-  /** 'manual' | 'standing_grant'. */
+  /** 'manual' — the host clicked Approve (the only way a session is approved). */
   approved_via?: string | null;
+  /** Prompts this session may run: 1 = a prompt request (the host ends it after
+   *  the answered prompt); null = a live session, no limit. */
+  prompt_limit?: number | null;
+  /** Turns answered so far (host-authoritative). */
+  prompts_used?: number;
 }
 
 @registerEntity
@@ -95,6 +97,8 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
   reply_policy: string | null = null;
   approved_at: string | null = null;
   approved_via: string | null = null;
+  prompt_limit: number | null = null;
+  prompts_used: number = 0;
 
   constructor(entity: Partial<IRemoteWorkerSession> = {}) {
     super(entity as IEntity);
@@ -112,6 +116,11 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
     if (this.isHost(cloudUserId) || !!this.host_process_id) return 'host';
     if (this.guest_user_id && this.guest_user_id === cloudUserId) return 'guest';
     return 'observer';
+  }
+
+  /** A prompt request — one prompt, shown as a prompt row — rather than a live session. */
+  get isPromptRequest(): boolean {
+    return this.prompt_limit != null;
   }
 
   /** Effective reply policy — null/garbage reads as auto. */
@@ -148,19 +157,14 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
     this.status = optimistic;
   }
 
-  /** Host approves a PENDING session; queued prompts re-drive server-side.
-   *  `remember` also writes the standing grant for this guest. `projectId` is
+  /** Host approves a PENDING session (this session only); queued prompts
+   *  re-drive server-side. `projectId` is
    *  where the session runs — required when neither the session nor its
    *  conversation has a project (a person-to-person chat has none by design);
    *  without it the host refuses (409) and the session stays pending.
    *  `scratch` is the host's "No project": the instance's one temp folder. */
-  public approve(
-    remember?: SessionRememberScope,
-    projectId?: string,
-    options: { scratch?: boolean } = {},
-  ): Promise<void> {
+  public approve(projectId?: string, options: { scratch?: boolean } = {}): Promise<void> {
     const body: Record<string, unknown> = {};
-    if (remember) body.remember = remember;
     if (options.scratch) body.scratch = true;
     else if (projectId) body.project_id = projectId;
     return this.lifecycleAction('approve', RemoteWorkerSessionStatus.IDLE, Object.keys(body).length ? body : undefined);

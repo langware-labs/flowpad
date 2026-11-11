@@ -55,7 +55,7 @@ family* the renderer already has.
 | Pack | Kind | Contents |
 |---|---|---|
 | `brands` | assets | 16 vendor marks |
-| `flowpad` | assets | 6 of our own UI glyphs |
+| `flowpad` | assets | 11 of our own UI glyphs |
 | `lucide` | bundle | declares the family; 105 files served |
 
 They live at `flow_sdk/server/icons/<pack>/icon_pack.json` (+ `assets/`), are

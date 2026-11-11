@@ -6,6 +6,8 @@ import json
 
 import httpx
 
+from flow_sdk.migrations.migration_2026_10_role_sets import legacy_roles
+
 
 def _targets(invitation: dict, entity_type: str, entity_id: str) -> bool:
     """Whether a pending-invitation payload names one concrete target."""
@@ -41,10 +43,14 @@ def _assert_assignment(
         None,
     )
     assert member is not None, f"{user_id} was not assigned to {entity_type}-{entity_id}: {members}"
+    # Members carry a role SET (`roles`). A legacy name ("member") is read through the
+    # same mapping the role-set migration applies, so the assertion keeps its meaning.
+    roles = member.get("roles") or []
     if expected_role is not None:
-        assert member.get("role") == expected_role, member
+        expected = legacy_roles(expected_role, entity_type)
+        assert expected and set(expected) <= set(roles), member
     else:
-        assert member.get("role"), member
+        assert roles, member
     return member
 
 

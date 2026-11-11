@@ -10,12 +10,17 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import HUB_ENDPOINT_HARNESSES
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 PATH = "/api/v1/graph/compute_node/@local/llm-endpoint"
 INVOKE_PATH = "/api/v1/graph/llm_endpoint/ep1/invoke"
-BIND = {"endpoint_typeid": "llm_endpoint:ep1", "invoke_path": INVOKE_PATH, "provider": "openrouter", "name": "OR"}
+BIND = {
+    "endpoint_typeid": "llm_endpoint:ep1", "invoke_path": INVOKE_PATH, "provider": "openrouter", "name": "OR",
+    # The endpoint names the model each size runs; a harness has none of its own to fall back on.
+    "tiers": {"sm": "vendor/small-1", "md": "vendor/medium-1", "lg": "vendor/large-1"},
+}
 
 
 def _patch_hub_key(monkeypatch, key: str | None) -> None:
@@ -235,11 +240,12 @@ def hub_test_call(monkeypatch):
     """Capture the hub call the sub-action makes, and answer it with a verdict."""
     calls: list[tuple] = []
 
-    async def _hub_post(entity_type, payload, entity_id=None, action=None, **kwargs):
+    async def _hub_post(method, entity_type, entity_id=None, action=None, *a, payload=None, **kwargs):
+        assert method == "POST"
         calls.append((entity_type, entity_id, action))
         return VERDICT
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", _hub_post)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_hub_post))
     return calls
 
 
@@ -293,11 +299,11 @@ def hub_chain_call(monkeypatch):
     """Capture the hub GET the sub-action makes, and answer it with a chain report."""
     calls: list[tuple] = []
 
-    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, action=None, **kwargs):
         calls.append((entity_type, entity_id, action))
         return {"status": "SUCCESS", "data": CHAIN}
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", _hub_get)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_hub_get))
     return calls
 
 

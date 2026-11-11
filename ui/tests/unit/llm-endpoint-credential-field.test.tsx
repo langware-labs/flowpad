@@ -197,4 +197,37 @@ describe('CredentialField', () => {
     await userEvent.type(screen.getByTestId('credential-input'), 'abc{enter}');
     expect(h.setCredential).not.toHaveBeenCalled();
   });
+  describe('Vertex: a service-account JSON file', () => {
+    const SA = JSON.stringify({
+      type: 'service_account',
+      project_id: 'acme-prod',
+      private_key: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n',
+      client_email: 'llm@acme-prod.iam.gserviceaccount.com',
+    });
+
+    it('offers a file upload for Vertex only', () => {
+      const { rerender } = render(<Harness endpointId={ID} provider="openrouter" />);
+      expect(screen.queryByTestId('credential-upload')).toBeNull();
+      rerender(<Harness endpointId={ID} provider="vertex" />);
+      expect(screen.getByTestId('credential-upload')).toBeTruthy();
+    });
+
+    it('puts the file text into the key box, in the create flow too (no endpoint yet)', async () => {
+      const user = userEvent.setup();
+      render(<Harness provider="vertex" />);
+      const file = new File([`  ${SA}\n`], 'key.json', { type: 'application/json' });
+      await user.upload(screen.getByTestId('credential-file-input'), file);
+      await waitFor(() => expect(screen.getByTestId<HTMLInputElement>('credential-input').value).toBe(SA));
+      expect(screen.queryByTestId('credential-shape-problem')).toBeNull();
+    });
+
+    it('sends the uploaded file on Save', async () => {
+      const user = userEvent.setup();
+      render(<Harness endpointId={ID} provider="vertex" />);
+      await user.upload(screen.getByTestId('credential-file-input'), new File([SA], 'key.json'));
+      await waitFor(() => expect(screen.getByTestId<HTMLInputElement>('credential-input').value).toBe(SA));
+      await user.click(screen.getByTestId('credential-save'));
+      await waitFor(() => expect(h.setCredential).toHaveBeenCalledWith(ID, SA));
+    });
+  });
 });

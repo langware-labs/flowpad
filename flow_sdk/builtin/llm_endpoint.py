@@ -99,7 +99,7 @@ class LLMFilters(BaseModel):
 
 
 #: What sharing a budget confers: spend it, never control it. See ``LLMEndpoint.share``.
-SHARE_ROLE = HubRole.READER.value
+SHARE_ROLES = [HubRole.READER.value, HubRole.RUNNER.value]
 
 #: The sod-store prefix every stored provider key lives under. Mirrors
 #: ``cli.auth.lm_api_keys._PREFIX``; kept here so the entity can name its own secret without
@@ -135,13 +135,34 @@ def hub_invoke_path(typeid: Any) -> str:
     return urls_service.api.build_entity_path(typeid, None, "invoke")
 
 
+def _tiers_from_legacy_models(data: Any) -> Any:
+    """Move a size map stored under ``models`` (the field's old name) into ``tiers``.
+
+    Rows saved before the rename carry ``models``; a hub row's ``models`` is a root's catalog (a LIST)
+    and never a size map, so only a dict moves. The next save writes ``tiers``.
+    """
+    if not isinstance(data, dict) or "models" not in data:
+        return data
+    data = dict(data)
+    legacy = data.pop("models")
+    if isinstance(legacy, dict) and not data.get("tiers"):
+        data["tiers"] = legacy
+    return data
+
+
 class LLMEndpointConfig(DataSpec):
     """What a caller may set on a local key endpoint through :meth:`LLMEndpoint.by_provider`."""
 
     #: Slugs to change, by tier (``sm`` / ``md`` / ``lg`` / ``embedding``). Merged over the row's
     #: own, so naming one tier leaves the others alone.
-    models: dict[str, str] | None = None
+    tiers: dict[str, str] | None = None
     base_url: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_models(cls, data: Any) -> Any:
+        """``models=`` is the field's old name, still accepted from published snippets."""
+        return _tiers_from_legacy_models(data)
 
 
 class LLMEndpoint(Entity):
@@ -183,7 +204,7 @@ class LLMEndpoint(Entity):
     secret_name: str = APIField(default="", sharing=Sharing.PRIVATE)
     #: ``{sm, md, lg, embedding}`` model slugs for this credential. Per-credential, not
     #: per-harness: the same map serves a spawned worker and an in-process call.
-    models: dict[str, str] = APIField(default_factory=dict, sharing=Sharing.PRIVATE)
+    tiers: dict[str, str] = APIField(default_factory=dict, sharing=Sharing.PRIVATE)
     #: DEVICE only: which harness's login this projects. Runtime-only — device rows are derived
     #: from ``Capability`` on every read and never stored.
     harness: str = APIField(default="", persist=Persist.FALSE)
@@ -201,6 +222,10 @@ class LLMEndpoint(Entity):
     #:   without a role edge, and answering ``False`` for it would turn the shared pool into
     #:   everybody's personal budget.
     can_administer: bool | None = APIField(default=None, persist=Persist.FALSE)
+    #: Whether this box's user may carve a sub-budget from this one (the hub's ``allocate`` permission).
+    #: Wider than ``can_administer``: the holder of an allowance may allocate from it without being
+    #: able to change it. Same three states and the same expansion.
+    can_allocate: bool | None = APIField(default=None, persist=Persist.FALSE)
     #: HUB only: the hub opened this budget to whoever holds its id, so it is spendable with NO
     #: hub login. Runtime-only like the rest of a hub projection -- it arrives from the hub's
     #: listing, or from this box's own public binding when no listing is reachable at all.
@@ -227,6 +252,7 @@ class LLMEndpoint(Entity):
         arrives with the ``id`` of a row that exists on the hub, so requiring one here separates
         the two without a magic flag. An explicit ``kind`` always wins.
         """
+        data = _tiers_from_legacy_models(data)
         if isinstance(data, dict) and not data.get("kind") and data.get("provider") and not data.get("id"):
             data = {**data, "kind": LLMEndpointKind.API_KEY}
         return data
@@ -250,8 +276,8 @@ class LLMEndpoint(Entity):
             self.base_url = dialect.default_base_url
         if not self.secret_name:
             self.secret_name = f"{LM_SECRET_PREFIX}{self.provider}"
-        if not self.models:
-            self.models = dict(dialect.default_models)
+        if not self.tiers:
+            self.tiers = dict(dialect.default_models)
         if not self.name:
             self.name = f"{self.provider} key"
         return self
@@ -276,10 +302,11 @@ class LLMEndpoint(Entity):
             # would offer the user a device endpoint the backend can never call.
             "kind",
             "secret_name",
-            "models",
+            "tiers",
             "harness",
             "invocable",
             "can_administer",
+            "can_allocate",
             "public",
         )
     )
@@ -316,7 +343,7 @@ class LLMEndpoint(Entity):
         means, and the UI reports per-address outcomes.
         """
         from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         if self.kind != LLMEndpointKind.HUB:
             raise ValueError(f"an {self.kind} endpoint is local to this machine and cannot be shared")
@@ -326,15 +353,16 @@ class LLMEndpoint(Entity):
             # match, so a mixed-case address is an invitation the recipient never sees.
             if not (address := normalize_email(email)):
                 continue
-            await hub_post(
+            await HubProxy.call(
+                "POST",
                 "llm_endpoint",
-                {
-                    "recipient_email": address,
-                    "invitation_targets": [{"typeid": str(self.typeid), "role": SHARE_ROLE}],
-                    "callback_override": endpoint_share_landing_path(self.id),
-                },
                 self.id,
                 "members",
+                payload={
+                    "recipient_email": address,
+                    "invitation_targets": [{"typeid": str(self.typeid), "roles": SHARE_ROLES}],
+                    "callback_override": endpoint_share_landing_path(self.id),
+                },
             )
 
     @property
@@ -418,7 +446,7 @@ class LLMEndpoint(Entity):
                 f"{self.name or self.harness} is a vendor device login; it can fund a CLI worker "
                 f"but the backend cannot call it"
             )
-        models = dict(self.models)
+        tiers = dict(self.tiers)
         if self.kind == LLMEndpointKind.HUB:
             base_url = self._hub_invoke_url()
             if not base_url:
@@ -433,7 +461,7 @@ class LLMEndpoint(Entity):
                 # serializes no model names, so a hub endpoint carries none of its own, and
                 # without this every hub call had to name a model explicitly — which the docs
                 # said it did not.
-                models=models or None,
+                models=tiers or None,
                 extra_headers={},
                 label=self.name or "hub endpoint",
             )
@@ -441,7 +469,7 @@ class LLMEndpoint(Entity):
             self.provider,
             api_key=self.resolve_api_key(),
             base_url=self.base_url,
-            models=models or None,
+            models=tiers or None,
             label=self.name or self.provider,
         )
 
@@ -540,7 +568,7 @@ class LLMEndpoint(Entity):
             raise LLMNoCredential(f"no {provider.value} key is stored on this machine; pass key=")
         endpoint = await cls.ensure_for_secret(provider.value)
         if config is not None:
-            endpoint.models = {**endpoint.models, **(config.models or {})}
+            endpoint.tiers = {**endpoint.tiers, **(config.tiers or {})}
             endpoint.base_url = config.base_url or endpoint.base_url
             await endpoint.save()
         return endpoint

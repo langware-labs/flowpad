@@ -21,7 +21,6 @@ in ``server/service_proxy.py``.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Optional
 
 from fastapi import APIRouter, Request, WebSocket
@@ -78,27 +77,14 @@ async def service_http(request: Request, endpoint_id: str, sub_path: str = "") -
 
 async def _via_hub(request: Request, endpoint: ServiceEndpoint, path: str) -> Response:
     """A hub row: the hub reaches the machine; this desktop only forwards, with its hub login."""
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import hub_graph_url  # noqa: PLC0415
 
     base = hub_graph_url(endpoint.get_type(), endpoint.id, "service")
     if base is None:
         return fail(409, "this endpoint runs on a cloud machine and no hub is configured")
     # The sub-path arrives DECODED; `upstream_path` re-quoted it (hub_graph_url does not).
-    return await _cloud_proxy()(request, base + path)
-
-
-_proxy: Optional[tuple[asyncio.AbstractEventLoop, Any]] = None
-
-
-def _cloud_proxy():
-    """One ``CloudProxy`` per loop: a fresh one per request would open a new hub connection per asset."""
-    from flow_sdk.cloud_client.transport import CloudProxy  # noqa: PLC0415
-
-    global _proxy
-    loop = asyncio.get_running_loop()
-    if _proxy is None or _proxy[0] is not loop:
-        _proxy = (loop, CloudProxy())
-    return _proxy[1]
+    return await HubProxy.forward(request, base + path)
 
 
 # ── WebSocket ────────────────────────────────────────────────────────────────

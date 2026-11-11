@@ -951,7 +951,7 @@ pre.code.show-imp .imp-note{display:none}
 <span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.secrets</span><span class="w"> </span><span class="kn">import</span> <span class="n">SecretStore</span>
 
 </span><span class="n">agentmail</span> <span class="o">=</span> <span class="k">await</span> <span class="n">DataSource</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;agent mailbox&quot;</span><span class="p">)</span>
-<span class="n">remote</span> <span class="o">=</span> <span class="k">await</span> <span class="n">SecretStore</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;gcp_secret_manager&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;gcp_project&quot;</span><span class="p">:</span> <span class="s2">&quot;acme-prod&quot;</span><span class="p">,</span> <span class="s2">&quot;prefix&quot;</span><span class="p">:</span> <span class="s2">&quot;agentmail-production-&quot;</span><span class="p">})</span>
+<span class="n">remote</span> <span class="o">=</span> <span class="k">await</span> <span class="n">SecretStore</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;gcp&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;project&quot;</span><span class="p">:</span> <span class="s2">&quot;acme-prod&quot;</span><span class="p">,</span> <span class="s2">&quot;prefix&quot;</span><span class="p">:</span> <span class="s2">&quot;agentmail-production-&quot;</span><span class="p">})</span>
 
 <span class="n">google</span> <span class="o">=</span> <span class="k">await</span> <span class="n">Connection</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;google&quot;</span><span class="p">)</span>  <span class="c1"># remote.connections.names() → [&quot;google&quot;]</span>
 <span class="k">await</span> <span class="n">google</span><span class="o">.</span><span class="n">validate_scopes</span><span class="p">(</span><span class="n">remote</span><span class="o">.</span><span class="n">connections</span><span class="o">.</span><span class="n">scopes</span><span class="p">(</span><span class="s2">&quot;google&quot;</span><span class="p">))</span>
@@ -1086,7 +1086,7 @@ flow<span class="w"> </span>connections<span class="w"> </span><span class="nb">
     <span class="k">async</span> <span class="k">for</span> <span class="n">page</span> <span class="ow">in</span> <span class="n">live</span><span class="o">.</span><span class="n">pages</span><span class="p">(</span><span class="n">page_size</span><span class="o">=</span><span class="mi">100</span><span class="p">):</span>       <span class="c1"># a page is a slice of the table</span>
         <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([</span><span class="n">row</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">model_dump</span><span class="p">()</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">page</span><span class="o">.</span><span class="n">items</span><span class="p">])</span>   <span class="c1"># columns = the record&#39;s fields</span>
         <span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">[[</span><span class="s2">&quot;key&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;assignee&quot;</span><span class="p">]])</span>
-        <span class="k">await</span> <span class="n">page</span><span class="o">.</span><span class="n">ack</span><span class="p">()</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="si-1" aria-label="Copy code">Copy</button></figcaption></figure></div><div class="ps-row"><div class="ps-point"><b>Messages — MessageSource</b><span>Serial. Arrivals come one at a time in order, and each has a reply that goes back the same way.</span></div><figure class="snip" id="si-2"><pre class="code lang-python" tabindex="0"><code><button type="button" class="imp-note" aria-expanded="false">⋯ 2 imports</button><span class="imp"><span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.blocks</span><span class="w"> </span><span class="kn">import</span> <span class="n">StreamInbox</span><span class="p">,</span> <span class="n">SlackMessageSpec</span><span class="p">,</span> <span class="n">workflow</span>
+        <span class="k">await</span> <span class="n">page</span><span class="o">.</span><span class="n">ack</span><span class="p">()</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="si-1" aria-label="Copy code">Copy</button></figcaption></figure></div><div class="ps-row"><div class="ps-point"><b>Messages — MessageSource</b><span>Serial. Arrivals come one at a time in order, and each has a reply that goes back the same way.</span></div><figure class="snip" id="si-2"><pre class="code lang-python" tabindex="0"><code><button type="button" class="imp-note" aria-expanded="false">⋯ 2 imports</button><span class="imp"><span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.blocks</span><span class="w"> </span><span class="kn">import</span> <span class="n">StreamInbox</span><span class="p">,</span> <span class="n">workflow</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.builtin.agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span>
 
 </span><span class="k">async</span> <span class="k">with</span> <span class="n">workflow</span><span class="p">(</span><span class="s2">&quot;channel-helper&quot;</span><span class="p">):</span>
@@ -1096,7 +1096,7 @@ flow<span class="w"> </span>connections<span class="w"> </span><span class="nb">
     <span class="k">async</span> <span class="k">with</span> <span class="n">agent</span><span class="o">.</span><span class="n">process_messages</span><span class="p">():</span>
         <span class="k">async</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">stream_inbox</span><span class="o">.</span><span class="n">listen</span><span class="p">():</span>
             <span class="n">out</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">process_message</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>       <span class="c1"># session per thread</span>
-            <span class="k">await</span> <span class="n">m</span><span class="o">.</span><span class="n">reply</span><span class="p">(</span><span class="n">SlackMessageSpec</span><span class="o">.</span><span class="n">reply_to</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">text</span><span class="p">))</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="si-2" aria-label="Copy code">Copy</button></figcaption></figure></div></div>
+            <span class="k">await</span> <span class="n">m</span><span class="o">.</span><span class="n">reply</span><span class="p">(</span><span class="k">await</span> <span class="n">m</span><span class="o">.</span><span class="n">reply_spec</span><span class="p">(</span><span class="n">body</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">text</span><span class="p">))</span>   <span class="c1"># into the thread</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="si-2" aria-label="Copy code">Copy</button></figcaption></figure></div></div>
   </section>
 
   <section class="blocks connectors agent-sec" id="agent" aria-labelledby="agent-h">
@@ -1139,7 +1139,7 @@ flow<span class="w"> </span>connections<span class="w"> </span><span class="nb">
 
 </span><span class="n">agent</span> <span class="o">=</span> <span class="k">await</span> <span class="n">Agent</span><span class="o">.</span><span class="n">by_name</span><span class="p">(</span><span class="s2">&quot;researcher&quot;</span><span class="p">)</span>
 <span class="n">here</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run_locally</span><span class="p">()</span>                <span class="c1"># a process on this computer running the agent loop</span>
-<span class="n">again</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run_locally</span><span class="p">()</span>               <span class="c1"># the same deployment — one per agent here</span>
+<span class="n">again</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run_locally</span><span class="p">()</span>               <span class="c1"># the same deployment — one per project here</span>
 <span class="k">assert</span> <span class="n">again</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="n">here</span><span class="o">.</span><span class="n">id</span> <span class="ow">and</span> <span class="n">here</span><span class="o">.</span><span class="n">serving</span>
 
 <span class="n">chat</span> <span class="o">=</span> <span class="k">await</span> <span class="n">ServiceEndpoint</span><span class="o">.</span><span class="n">find_existing</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">here</span><span class="o">.</span><span class="n">typeid</span><span class="p">),</span> <span class="s2">&quot;chat&quot;</span><span class="p">)</span>
@@ -1451,7 +1451,7 @@ await sdk.dataManager.watchQuery(request);
 
 <span class="n">answer</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">launch</span><span class="p">(</span><span class="s2">&quot;Find the open Linear issues assigned to me.&quot;</span><span class="p">,</span> <span class="n">wait</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="c2-agents-2" aria-label="Copy code">Copy</button></figcaption></figure></div><div class="ps-row"><div class="ps-point"><b>Who pays for tokens</b><span>A provider key, a budget, or a harness login.</span></div><figure class="snip" id="c2-agents-3"><pre class="code lang-python" tabindex="0"><code><button type="button" class="imp-note" aria-expanded="false">⋯ 1 import</button><span class="imp"><span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.builtin.llm_endpoint</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLMEndpoint</span>
 
-</span><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMEndpoint</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openrouter&quot;</span><span class="p">)</span>          <span class="c1"># kind=api_key, base_url and models filled in</span>
+</span><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMEndpoint</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openrouter&quot;</span><span class="p">)</span>          <span class="c1"># kind=api_key, base_url and tiers filled in</span>
 <span class="n">vectors</span> <span class="o">=</span> <span class="k">await</span> <span class="n">llm</span><span class="o">.</span><span class="n">create_embeddings</span><span class="p">([</span><span class="s2">&quot;a hot day in July&quot;</span><span class="p">,</span> <span class="s2">&quot;a cold night in January&quot;</span><span class="p">])</span>
 <span class="n">answer</span> <span class="o">=</span> <span class="k">await</span> <span class="n">llm</span><span class="o">.</span><span class="n">create_completion</span><span class="p">(</span><span class="s2">&quot;You answer in one word.&quot;</span><span class="p">,</span> <span class="s2">&quot;Capital of France?&quot;</span><span class="p">)</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="c2-agents-3" aria-label="Copy code">Copy</button></figcaption></figure></div>
   <div class="c2-foot"><button type="button" class="btn-ghost" data-copy-md="md-agents">Copy chapter as Markdown</button></div>
@@ -1521,7 +1521,7 @@ A provider key, a budget, or a harness login.
 ```python
 from flow_sdk.builtin.llm_endpoint import LLMEndpoint
 
-llm = LLMEndpoint(provider=&quot;openrouter&quot;)          # kind=api_key, base_url and models filled in
+llm = LLMEndpoint(provider=&quot;openrouter&quot;)          # kind=api_key, base_url and tiers filled in
 vectors = await llm.create_embeddings([&quot;a hot day in July&quot;, &quot;a cold night in January&quot;])
 answer = await llm.create_completion(&quot;You answer in one word.&quot;, &quot;Capital of France?&quot;)
 ```</script>
@@ -2132,22 +2132,24 @@ flow connections test google --scope https://www.googleapis.com/auth/drive.reado
     <span class="n">name</span><span class="o">=</span><span class="s2">&quot;researcher&quot;</span><span class="p">,</span>
     <span class="n">model</span><span class="o">=</span><span class="s2">&quot;sm&quot;</span><span class="p">,</span>
     <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;You research; you do not summarize.&quot;</span><span class="p">,</span>
+    <span class="n">project_id</span><span class="o">=</span><span class="n">PROJECT</span><span class="p">,</span>                        <span class="c1"># a deployment places a project</span>
 <span class="p">)</span>
 <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
 
-<span class="n">here</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">deploy</span><span class="p">(</span><span class="s2">&quot;local&quot;</span><span class="p">)</span>             <span class="c1"># &quot;This computer&quot; — nothing is placed until you ask</span>
+<span class="n">here</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">deploy</span><span class="p">(</span><span class="s2">&quot;local&quot;</span><span class="p">)</span>             <span class="c1"># the project&#39;s ONE local deployment, the agent as main</span>
 <span class="n">again</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">deploy</span><span class="p">(</span><span class="s2">&quot;local&quot;</span><span class="p">)</span>
 <span class="k">assert</span> <span class="n">again</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="n">here</span><span class="o">.</span><span class="n">id</span>                     <span class="c1"># converges by lookup, never a derived id</span>
 
-<span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">element_type</span> <span class="o">==</span> <span class="s2">&quot;agent&quot;</span>            <span class="c1"># what it places is its parent — no stored kind</span>
-<span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">identity</span> <span class="o">==</span> <span class="s2">&quot;agent&quot;</span>                <span class="c1"># a box it runs on logs in as the agent</span>
+<span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">element_type</span> <span class="o">==</span> <span class="s2">&quot;project&quot;</span>          <span class="c1"># what it places is its parent: the project</span>
+<span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">main_agent_id</span> <span class="o">==</span> <span class="nb">str</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">typeid</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">identity</span> <span class="o">==</span> <span class="s2">&quot;agent&quot;</span>                <span class="c1"># a box with a main agent logs in as it</span>
 <span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">provider</span> <span class="o">==</span> <span class="s2">&quot;local&quot;</span>
 <span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">is_local</span>                           <span class="c1"># an id comparison, not a provider test</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="c2-ship-0" aria-label="Copy code">Copy</button></figcaption></figure></div><div class="ps-row"><div class="ps-point"><b>Run it on this computer</b><span>One process per deployment, each with a chat endpoint.</span></div><figure class="snip" id="c2-ship-1"><pre class="code lang-python" tabindex="0"><code><button type="button" class="imp-note" aria-expanded="false">⋯ 2 imports</button><span class="imp"><span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.builtin.agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.builtin.service_endpoint</span><span class="w"> </span><span class="kn">import</span> <span class="n">ServiceEndpoint</span>
 
 </span><span class="n">agent</span> <span class="o">=</span> <span class="k">await</span> <span class="n">Agent</span><span class="o">.</span><span class="n">by_name</span><span class="p">(</span><span class="s2">&quot;researcher&quot;</span><span class="p">)</span>
 <span class="n">here</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run_locally</span><span class="p">()</span>                <span class="c1"># a process on this computer running the agent loop</span>
-<span class="n">again</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run_locally</span><span class="p">()</span>               <span class="c1"># the same deployment — one per agent here</span>
+<span class="n">again</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run_locally</span><span class="p">()</span>               <span class="c1"># the same deployment — one per project here</span>
 <span class="k">assert</span> <span class="n">again</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="n">here</span><span class="o">.</span><span class="n">id</span> <span class="ow">and</span> <span class="n">here</span><span class="o">.</span><span class="n">serving</span>
 
 <span class="n">chat</span> <span class="o">=</span> <span class="k">await</span> <span class="n">ServiceEndpoint</span><span class="o">.</span><span class="n">find_existing</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">here</span><span class="o">.</span><span class="n">typeid</span><span class="p">),</span> <span class="s2">&quot;chat&quot;</span><span class="p">)</span>
@@ -2196,15 +2198,17 @@ agent = Agent(
     name=&quot;researcher&quot;,
     model=&quot;sm&quot;,
     system_prompt=&quot;You research; you do not summarize.&quot;,
+    project_id=PROJECT,                        # a deployment places a project
 )
 await agent.save()
 
-here = await agent.deploy(&quot;local&quot;)             # &quot;This computer&quot; — nothing is placed until you ask
+here = await agent.deploy(&quot;local&quot;)             # the project&#x27;s ONE local deployment, the agent as main
 again = await agent.deploy(&quot;local&quot;)
 assert again.id == here.id                     # converges by lookup, never a derived id
 
-assert here.element_type == &quot;agent&quot;            # what it places is its parent — no stored kind
-assert here.identity == &quot;agent&quot;                # a box it runs on logs in as the agent
+assert here.element_type == &quot;project&quot;          # what it places is its parent: the project
+assert here.main_agent_id == str(agent.typeid)
+assert here.identity == &quot;agent&quot;                # a box with a main agent logs in as it
 assert here.target.provider == &quot;local&quot;
 assert here.is_local                           # an id comparison, not a provider test
 ```
@@ -2219,7 +2223,7 @@ from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name(&quot;researcher&quot;)
 here = await agent.run_locally()                # a process on this computer running the agent loop
-again = await agent.run_locally()               # the same deployment — one per agent here
+again = await agent.run_locally()               # the same deployment — one per project here
 assert again.id == here.id and here.serving
 
 chat = await ServiceEndpoint.find_existing(str(here.typeid), &quot;chat&quot;)
@@ -2470,7 +2474,7 @@ from flow_sdk.connections import Connection
 from flow_sdk.secrets import SecretStore
 
 agentmail = await DataSource.get(&quot;agent mailbox&quot;)
-remote = await SecretStore.get(&quot;gcp_secret_manager&quot;, {&quot;gcp_project&quot;: &quot;acme-prod&quot;, &quot;prefix&quot;: &quot;agentmail-production-&quot;})
+remote = await SecretStore.get(&quot;gcp&quot;, {&quot;project&quot;: &quot;acme-prod&quot;, &quot;prefix&quot;: &quot;agentmail-production-&quot;})
 
 google = await Connection.get(&quot;google&quot;)  # remote.connections.names() → [&quot;google&quot;]
 await google.validate_scopes(remote.connections.scopes(&quot;google&quot;))
@@ -2580,7 +2584,7 @@ async with await issues.open() as live:
 Serial. Arrivals come one at a time in order, and each has a reply that goes back the same way.
 
 ```python
-from flow_sdk.blocks import StreamInbox, SlackMessageSpec, workflow
+from flow_sdk.blocks import StreamInbox, workflow
 from flow_sdk.builtin.agent import Agent
 
 async with workflow(&quot;channel-helper&quot;):
@@ -2590,7 +2594,7 @@ async with workflow(&quot;channel-helper&quot;):
     async with agent.process_messages():
         async for m in stream_inbox.listen():
             out = await agent.process_message(m)       # session per thread
-            await m.reply(SlackMessageSpec.reply_to(m, body=out.text))
+            await m.reply(await m.reply_spec(body=out.text))   # into the thread
 ```
 
 ## `flow.Agent`
@@ -2650,7 +2654,7 @@ from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name(&quot;researcher&quot;)
 here = await agent.run_locally()                # a process on this computer running the agent loop
-again = await agent.run_locally()               # the same deployment — one per agent here
+again = await agent.run_locally()               # the same deployment — one per project here
 assert again.id == here.id and here.serving
 
 chat = await ServiceEndpoint.find_existing(str(here.typeid), &quot;chat&quot;)
@@ -2892,7 +2896,7 @@ A provider key, a budget, or a harness login.
 ```python
 from flow_sdk.builtin.llm_endpoint import LLMEndpoint
 
-llm = LLMEndpoint(provider=&quot;openrouter&quot;)          # kind=api_key, base_url and models filled in
+llm = LLMEndpoint(provider=&quot;openrouter&quot;)          # kind=api_key, base_url and tiers filled in
 vectors = await llm.create_embeddings([&quot;a hot day in July&quot;, &quot;a cold night in January&quot;])
 answer = await llm.create_completion(&quot;You answer in one word.&quot;, &quot;Capital of France?&quot;)
 ```
@@ -3253,15 +3257,17 @@ agent = Agent(
     name=&quot;researcher&quot;,
     model=&quot;sm&quot;,
     system_prompt=&quot;You research; you do not summarize.&quot;,
+    project_id=PROJECT,                        # a deployment places a project
 )
 await agent.save()
 
-here = await agent.deploy(&quot;local&quot;)             # &quot;This computer&quot; — nothing is placed until you ask
+here = await agent.deploy(&quot;local&quot;)             # the project&#x27;s ONE local deployment, the agent as main
 again = await agent.deploy(&quot;local&quot;)
 assert again.id == here.id                     # converges by lookup, never a derived id
 
-assert here.element_type == &quot;agent&quot;            # what it places is its parent — no stored kind
-assert here.identity == &quot;agent&quot;                # a box it runs on logs in as the agent
+assert here.element_type == &quot;project&quot;          # what it places is its parent: the project
+assert here.main_agent_id == str(agent.typeid)
+assert here.identity == &quot;agent&quot;                # a box with a main agent logs in as it
 assert here.target.provider == &quot;local&quot;
 assert here.is_local                           # an id comparison, not a provider test
 ```
@@ -3276,7 +3282,7 @@ from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name(&quot;researcher&quot;)
 here = await agent.run_locally()                # a process on this computer running the agent loop
-again = await agent.run_locally()               # the same deployment — one per agent here
+again = await agent.run_locally()               # the same deployment — one per project here
 assert again.id == here.id and here.serving
 
 chat = await ServiceEndpoint.find_existing(str(here.typeid), &quot;chat&quot;)

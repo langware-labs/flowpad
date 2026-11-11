@@ -4,8 +4,7 @@ Two transports talk to the hub, sharing one credential/expiry/error path. The
 package is organized into three groups (import from these in new code):
 
   transport/  — how bytes move to the hub
-      CloudProxy            transparent HTTP reverse proxy (method-faithful)
-      hub_get/post/...      outbound HTTP from semantic args
+      HubProxy (hub_proxy)  every HTTP request to the hub: verbatim forwarding + typed calls
       HubWebSocketManager   persistent WebSocket proxy (ws_client)
   shared/     — protocol-neutral plumbing
       HubError, invalidate_hub_login, hub_error_reporter, EXPIRY_LEEWAY_SECONDS
@@ -18,13 +17,11 @@ canonical so existing call sites and monkeypatches are unaffected.
 """
 
 from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
-from flow_sdk.cloud_client.transport import CloudProxy
 
 __all__ = [
     # transport
     "ApiConfig",
     "FlowpadClient",
-    "CloudProxy",
     # shared
     "HubError",
     # events

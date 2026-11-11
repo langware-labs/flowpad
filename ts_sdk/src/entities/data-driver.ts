@@ -25,6 +25,7 @@ export enum FieldType {
   CSV = 'csv',
   NUMBER = 'number',
   PATH = 'path',
+  BOOL = 'bool',
 }
 
 /** One field of the create form, as the manifest declares it. */
@@ -87,6 +88,9 @@ export interface SetupStageState {
 export interface DriverProfile {
   name?: string;
   description?: string;
+  /** What a new source of this way should be called for THIS person ("Eran's inbox") — the same name the
+   *  driver gives whatever it creates for them (a Slack app), so the two are named once. */
+  default_name?: string;
   avatar?: string | null;
   number?: string;
   available?: boolean;
@@ -120,6 +124,10 @@ export interface IDataDriver extends IEntity {
   family?: DataSourceFamily;
   /** A message source that answers on its channel: it sends and replies. */
   sends?: boolean;
+  /** A source of this driver can be a data store: a dataset's rows can live in it (an object store). */
+  holds_rows?: boolean;
+  /** A source of this driver is a system of record: it holds the truth of the fields mapped to it. */
+  is_system_of_record?: boolean;
   /** Why the folder's source did not load, or empty. */
   load_error?: string;
   /** What a person calls the sign-in it reads through (`GitHub`), or empty when it needs none. */

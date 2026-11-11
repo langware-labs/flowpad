@@ -9,7 +9,6 @@ import type { ChildSection } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AssetEditorRouter } from '../AssetEditorRouter';
 import { NestedHostContext, type NestedHost } from '../nested-host';
-import { AgentDeploymentPage } from './deployment/AgentDeploymentPage';
 import { CredentialView } from '@src/components/credentials-view/CredentialView';
 
 function Missing() {
@@ -60,9 +59,7 @@ export function AgentChildView({ agent, section, typeIdString }: { agent: Agent;
   if (!typeId) return <Missing />;
 
   let body;
-  if (section === 'deployment') {
-    body = <AgentDeploymentPage agent={agent} deploymentId={typeId.id} />;
-  } else if (section === 'channel' || section === 'data_source') {
+  if (section === 'channel' || section === 'data_source') {
     body = <SourceChild typeId={typeId} onGone={host.close} />;
   } else if (section === 'credential') {
     body = <CredentialView typeid={typeIdString} onGone={host.close} />;

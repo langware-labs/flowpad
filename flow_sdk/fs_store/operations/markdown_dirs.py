@@ -139,8 +139,17 @@ def doc_search_dirs() -> tuple[Path, ...]:
     return _doc_search_dirs_cached(_fingerprint())
 
 
+# The Documents tree lists markdown and the read-only document files
+# (DOCUMENT_FILE: .docx / .txt) of the same docs folders.
+def _doc_tree_exts() -> tuple[str, ...]:
+    from flow_sdk.assets.types.document_file import DOCUMENT_FILE_EXTS  # noqa: PLC0415
+
+    return (".md", *DOCUMENT_FILE_EXTS)
+
+
 def walk_markdown_files(root: Path) -> list[str]:
-    """Recursively collect the ``.md`` files under ``root``'s doc folders, honoring ``.gitignore``.
+    """Recursively collect the document files (``.md``, ``.docx``, ``.txt``) under
+    ``root``'s doc folders, honoring ``.gitignore``.
 
     Only files inside a ``docs``/``doc`` folder count (see :func:`is_in_doc_dir`)
     — or every file, when ``root`` is itself one. Returns sorted relative POSIX
@@ -159,12 +168,13 @@ def walk_markdown_files(root: Path) -> list[str]:
     except OSError:
         return []
 
+    exts = _doc_tree_exts()
     out = [
         f.relative_to(root).as_posix()
         for dir_path, _subdirs, files in gitignore_walk(root)
         if is_in_doc_dir(dir_path, root)
         for f in files
-        if f.name.lower().endswith(".md")
+        if f.name.lower().endswith(exts)
     ]
     out.sort()
     return out

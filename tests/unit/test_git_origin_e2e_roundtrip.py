@@ -62,6 +62,16 @@ async def _install_staged(fm_id: str, key: str, *, scope: str, project_id: str |
     return ma
 
 
+async def _install_refused_no_checkout(fm_id: str, key: str) -> None:
+    """A git-mode install with no checkout of the shared repo: a 424 naming
+    ``no-checkout``, the attachment left staged for a later clone-as-project."""
+    ma_id = MessageAttachment.allocate_deterministic_id(fm_id, key)
+    res = await handle_attachment_install(ma_id, "user", None, someone_typeid=None)
+    assert not isinstance(res, ApiSuccessResponse), "a share with no checkout claimed success"
+    assert (res.data or {}).get("git_share_error") == "no-checkout", res.data
+    assert (await MessageAttachment.get_one({"id": ma_id})).scope is None
+
+
 REL_PATH = "tools/kit/.claude/skills/foo"
 SKILL_ID = "a1a1a1a1-0000-4000-8000-000000000111"
 CONV_ID = "c1c1c1c1-0000-4000-8000-000000000222"
@@ -231,7 +241,7 @@ async def test_git_transfer_indexes_existing_receiver_worktree_without_copying_b
     )
 
 
-async def test_git_transfer_clones_remote_when_receiver_has_no_checkout(tmp_path, monkeypatch):
+async def test_git_transfer_with_no_checkout_refuses_and_never_clones(tmp_path, monkeypatch):
     workspace = tmp_path / "flowpad-workspace"
     monkeypatch.setattr("flow_sdk.config.agent_workspace_root", lambda: workspace)
 
@@ -277,21 +287,11 @@ async def test_git_transfer_clones_remote_when_receiver_has_no_checkout(tmp_path
     shared = workspace / ".shared"
     assert not shared.exists(), "unpack must not clone anymore — install does"
 
-    # No project mapped → the user installs into the user scope; the git-mode
-    # restore makes Flowpad's own clone of the remote (``.shared/repos``) and
-    # opens the shared commit in a worktree of it (``.shared/<repo>@<commit>``).
-    await _install_staged(GIT_CLONE_FM_ID, f"{EntityType.SKILL.value}-{GIT_CLONE_SKILL_ID}", scope="user")
-    pinned = subprocess.run(["git", "rev-parse", "HEAD"], cwd=sender_repo, capture_output=True, text=True).stdout.strip()
-    expected = shared / f"clone-origin@{pinned[:12]}" / REL_PATH / "SKILL.md"
-    assert expected.exists(), f"receiver did not clone/index git transfer into {expected}"
-    recv_skill = await Skill.get_one({"id": GIT_CLONE_SKILL_ID})
-    assert recv_skill is not None
-    assert Path(recv_skill.asset_ref).resolve() == expected.parent.resolve()
-    assert recv_skill.origin and recv_skill.origin.provider == "file"
-    results = await Entity.search(GIT_CLONE_SEARCH_TOKEN, record_type=EntityType.SKILL.value)
-    assert any(result.id == GIT_CLONE_SKILL_ID for result in results), (
-        "cloned git-transfer skill materialized but was not searchable via FTS"
-    )
+    # No checkout of the repo here: a share comes into the receiver's own
+    # checkout only — no hidden clone; the receiver is told to clone it as a project.
+    await _install_refused_no_checkout(GIT_CLONE_FM_ID, f"{EntityType.SKILL.value}-{GIT_CLONE_SKILL_ID}")
+    assert not shared.exists(), "a hidden clone was made"
+    assert await Skill.get_one({"id": GIT_CLONE_SKILL_ID}) is None
 
 
 async def test_git_checkout_resolution_skips_matching_remote_on_wrong_branch(tmp_path, monkeypatch):
@@ -526,7 +526,7 @@ async def test_git_transfer_markdown_doc_indexes_from_receiver_worktree_and_is_s
     )
 
 
-async def test_git_transfer_markdown_doc_clones_remote_and_is_searchable(tmp_path, monkeypatch):
+async def test_git_transfer_markdown_doc_with_no_checkout_refuses_and_never_clones(tmp_path, monkeypatch):
     workspace = tmp_path / "flowpad-workspace"
     monkeypatch.setattr("flow_sdk.config.agent_workspace_root", lambda: workspace)
 
@@ -586,24 +586,12 @@ async def test_git_transfer_markdown_doc_clones_remote_and_is_searchable(tmp_pat
     shared = workspace / ".shared"
     assert not shared.exists(), "unpack must not clone anymore — install does"
 
-    # Git-mode user-scope install: the checkout resolves itself (no .claude
-    # layout gate — the root is only a clone preference in git mode).
-    await _install_staged(
-        GIT_MARKDOWN_CLONE_FM_ID, f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_CLONE_ID}", scope="user"
+    # No checkout of the repo here: refused with a sentence, never a hidden clone.
+    await _install_refused_no_checkout(
+        GIT_MARKDOWN_CLONE_FM_ID, f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_CLONE_ID}"
     )
-    pinned = subprocess.run(["git", "rev-parse", "HEAD"], cwd=sender_repo, capture_output=True, text=True).stdout.strip()
-    expected = shared / f"markdown-clone-origin@{pinned[:12]}" / rel_path
-    assert expected.exists(), f"receiver did not clone/index git markdown transfer into {expected}"
-    received_doc = await Docs.get_one({"id": GIT_MARKDOWN_CLONE_ID})
-    assert received_doc is not None
-    assert Path(received_doc.asset_ref).resolve() == expected.resolve()
-    assert received_doc.origin and received_doc.origin.provider == "file"
-    assert received_doc.origin.rel_path == rel_path
-
-    results = await Entity.search(GIT_MARKDOWN_CLONE_TOKEN, record_type=EntityType.MARKDOWN.value)
-    assert any(result.id == GIT_MARKDOWN_CLONE_ID for result in results), (
-        "cloned git-transferred markdown materialized but was not searchable via FTS"
-    )
+    assert not shared.exists(), "a hidden clone was made"
+    assert await Docs.get_one({"id": GIT_MARKDOWN_CLONE_ID}) is None
 
 
 async def test_git_transfer_packs_folder_chip_metadata_only_and_install_never_clones(tmp_path):
@@ -674,3 +662,58 @@ async def test_git_transfer_packs_folder_chip_metadata_only_and_install_never_cl
     assert received is not None, "install never minted the receiver Folder"
     assert not received.path, "install must not clone or set a local path"
     assert received.origin is not None and received.origin.key() == folder.origin.key()
+
+
+CRED_CONV_ID = "c1c1c1c1-0000-4000-8000-000000003222"
+CRED_FM_ID = "f1f1f1f1-0000-4000-8000-000000003333"
+CRED_REL = "agentic-assets/credential/bright_data"
+
+
+async def test_git_shared_credential_opens_as_the_id_the_receivers_checkout_carries(tmp_path):
+    """A credential's id lives in ``.flow/`` — never committed — so the receiver's checkout indexes it under an
+    id of its own. The share opens THAT one: the sender's id names nothing here (it showed "Missing asset")."""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
+    sender_repo = tmp_path / "sender_repo"
+    _git(tmp_path, "clone", "-q", origin.resolve().as_uri(), str(sender_repo))
+    _git(sender_repo, "checkout", "-q", "-b", "main")
+    _git(sender_repo, "config", "user.email", "t@t.co")
+    _git(sender_repo, "config", "user.name", "t")
+    folder = sender_repo / CRED_REL
+    folder.mkdir(parents=True)
+    (folder / "credential.json").write_text(json.dumps({
+        "manifest_schema": 2, "name": "bright_data", "title": "Bright Data", "setup": "From the team vault.",
+        "vars": {"BRIGHT_DATA_API": {"required": "OPTIONAL", "secret_ref": {"vault": "team", "key": "BRIGHT_DATA_API"}}},
+    }))
+    (sender_repo / ".gitignore").write_text(".flow/\n")
+    _git(sender_repo, "add", "-A")
+    _git(sender_repo, "commit", "-qm", "credential")
+    _git(sender_repo, "push", "-q", "-u", "origin", "main")
+    recv_repo = tmp_path / "recv_repo"
+    _git(tmp_path, "clone", "-q", "--branch", "main", origin.resolve().as_uri(), str(recv_repo))
+
+    from flow_sdk.builtin.flow_message_bundle import _reindex_root
+    from flow_sdk.fs_store.record_types import RecordType
+
+    sender_project = Project(name="gtm-studio-sender", fs_storage_mount_path=str(sender_repo))
+    await sender_project.save(notify=False)
+    await _reindex_root(sender_repo, RecordType.REAL_PROJECT_CWD, types=(RecordType.CREDENTIAL,), project_id=sender_project.id)
+    sender = await Entity.get_by_asset_ref(folder)
+    assert sender is not None and (folder / ".flow").is_dir(), "the sender's id lives in its uncommitted .flow/"
+    key = f"{EntityType.CREDENTIAL.value}-{sender.id}"
+    fm = FlowMessage(text="", sender_name="eran", conversation_id=CRED_CONV_ID,
+                     attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID, data=key)])
+    fm.id = CRED_FM_ID
+    zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
+
+    project = Project(name="gtm-studio", fs_storage_mount_path=str(recv_repo))
+    await project.save(notify=False)
+    await Conversation(id=CRED_CONV_ID, title="shared bright_data", project_id=project.id).save(notify=False)
+    await sender.delete()
+    await unpack_bundle(zip_path, local_user_id="ami")
+    await _install_staged(CRED_FM_ID, key, scope="project", project_id=project.id)
+
+    here = await Entity.get_by_asset_ref(recv_repo / CRED_REL)
+    assert here is not None and str(here.id) != str(sender.id), "the receiver's checkout carries an id of its own"
+    ma = await MessageAttachment.get_one({"id": MessageAttachment.allocate_deterministic_id(CRED_FM_ID, key)})
+    assert ma.asset_id == str(here.id), "the share must open the credential that exists here, not the sender's id"

@@ -19,8 +19,8 @@ export enum ComputeNodeSize {
  */
 export const ComputeNodeSizeLabels: Record<ComputeNodeSize, string> = {
   [ComputeNodeSize.SMALL]: 'Small (2 CPU, 2GB)',
-  [ComputeNodeSize.MEDIUM]: 'Medium (4 CPU, 2GB)',
-  [ComputeNodeSize.LARGE]: 'Large (8 CPU, 4GB)',
+  [ComputeNodeSize.MEDIUM]: 'Medium (2 CPU, 4GB)',
+  [ComputeNodeSize.LARGE]: 'Large (4 CPU, 8GB)',
 };
 
 /**

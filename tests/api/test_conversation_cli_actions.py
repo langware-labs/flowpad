@@ -29,7 +29,7 @@ async def _make_conversation(client) -> str:
     project_id = await _local_project_id(client)
     resp = await client.post(
         "/api/v1/graph/conversation-create",
-        json={"project_id": project_id, "participants": [{"email": "frank@example.com", "name": "Frank"}]},
+        json={"project_id": project_id, "members": [{"email": "frank@example.com", "name": "Frank"}]},
     )
     assert resp.json().get("status") == "SUCCESS", resp.text
     return resp.json()["data"]["conversation_id"]
@@ -113,7 +113,6 @@ async def test_add_message_git_share_config_reaches_background_upload(
 
     async def fake_upload(
         _fm,
-        _conv_id,
         *,
         transfer_mode: str = "copy",
         create_bookmark: bool = False,

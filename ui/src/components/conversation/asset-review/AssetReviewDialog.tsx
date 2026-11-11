@@ -1,4 +1,6 @@
 import { t } from '@lingui/core/macro';
+import { isAssetConflict, ReplacePrompt } from './ReplacePrompt';
+import type { OpenShareOutcome } from './use-open-git-share';
 import { dataManager, MessageAttachment, Project, TypeId, type AnyEntity } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
 import { isHubRepoOrigin, projectSourceLabel } from '@sdk/models/FSOrigin';
@@ -6,18 +8,31 @@ import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import { Cloud, ExternalLink, File, FolderDown, GitBranch, Globe, Loader2, Package, Trash2 } from 'lucide-react';
+import {
+  Cloud,
+  ExternalLink,
+  File,
+  FolderDown,
+  GitBranch,
+  Globe,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Package,
+  Trash2,
+} from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { notify } from '@src/notifications';
-import { buildDockPointer, iconForEntity } from '../EntityChip';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
+import { iconForEntity } from '../EntityChip';
 import { AssetInstallActions } from './AssetInstallActions';
 import { isCloudOnlyProject, ProjectInstallAction } from './ProjectInstallAction';
 import { ProjectPreview } from './ProjectPreview';
 import { StagedAssetViewer } from './StagedAssetViewer';
+import { ReviewShell, ReviewSource } from './ReviewShell';
 
 /** Where the asset's content actually comes from — the reviewer's trust signal.
  *  Derived from the MA row: a git transfer carries only the remote (installing
@@ -185,7 +200,7 @@ interface AssetReviewDialogProps {
   project?: ProjectReviewRef;
   /** Why opening the clicked attachment just failed (a 1-click git open), shown
    *  inline beside its Retry. */
-  initialError?: string | null;
+  initialOutcome?: OpenShareOutcome | null;
 }
 
 /**
@@ -248,7 +263,7 @@ function AttachmentReviewDialog({
   attachments,
   initialAttachmentId,
   attachmentProjectId,
-  initialError,
+  initialOutcome,
 }: AssetReviewDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -284,6 +299,7 @@ function AttachmentReviewDialog({
   }, []);
 
   const [selectedId, setSelectedId] = useState(initialAttachmentId);
+  const [fullscreen, setFullscreen] = useState(false);
   // Reopening the dialog (or clicking a different chip) re-pins the clicked one.
   useEffect(() => {
     if (open) setSelectedId(initialAttachmentId);
@@ -397,12 +413,21 @@ function AttachmentReviewDialog({
   } = useEntity<Project>(selectedProjectTypeId);
   const selectedInstalled = selected.effectiveScope != null;
 
-  const installAllToProject = async (projectId: string, name?: string) => {
+  // An install the receiver already has (an earlier share of the same asset): the backend answers
+  // 409 `asset_conflict`; the dialog asks once, then repeats the same install with `overwrite`.
+  const [replace, setReplace] = useState<(() => void) | null>(null);
+
+  const installAllToProject = async (projectId: string, name?: string, overwrite = false) => {
     setBusyAction('project');
+    setReplace(null);
     try {
-      for (const a of installable) await a.install('project', projectId);
+      for (const a of installable) await a.install('project', projectId, { overwrite });
       notify.success({ title: labels.added, message: name ?? '' });
     } catch (err) {
+      if (!overwrite && isAssetConflict(err)) {
+        setReplace(() => () => void installAllToProject(projectId, name, true));
+        return;
+      }
       console.error('[asset-review] batch project install failed', err);
       notify.error({ title: labels.addFailed });
     } finally {
@@ -420,12 +445,17 @@ function AttachmentReviewDialog({
     setPickerOpen(true);
   };
 
-  const handleInstallGlobal = async () => {
+  const handleInstallGlobal = async (overwrite = false) => {
     setBusyAction('global');
+    setReplace(null);
     try {
-      for (const a of installable) await a.install('user');
+      for (const a of installable) await a.install('user', undefined, { overwrite });
       notify.success({ title: t`Installed`, message: t`${installable.length} attachments` });
     } catch (err) {
+      if (!overwrite && isAssetConflict(err)) {
+        setReplace(() => () => void handleInstallGlobal(true));
+        return;
+      }
       console.error('[asset-review] batch global install failed', err);
       notify.error({ title: t`Install failed` });
     } finally {
@@ -458,7 +488,7 @@ function AttachmentReviewDialog({
   // the modal offers a jump to the SELECTED entity's real view (e.g. the task
   // view). Staged/not-yet-installed → nothing to open, so it's hidden.
   const openSelected = async () => {
-    const tid = selected.targetTypeId;
+    const tid = selected.localTypeId;
     if (!tid?.id) return;
     // Resolve the entity rather than hand `buildDockPointer` a {type, id} stub.
     // Most types need nothing more — they open by TypeId and the loader resolves
@@ -468,7 +498,8 @@ function AttachmentReviewDialog({
     // session. Fetching here costs one request on an explicit click.
     const entity = await dataManager.getByTypeId<AnyEntity & { type: string }>(tid).catch(() => null);
     const pointer = buildDockPointer(entity ?? { type: tid.type, id: tid.id }, undefined);
-    if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, attachmentProjectId));
+    // The plain dock: the loader opens the installed asset in its own project.
+    if (pointer) navigation.openDock(pointer);
     onClose();
   };
 
@@ -479,195 +510,148 @@ function AttachmentReviewDialog({
   const multi = ordered.length > 1;
 
   return (
-    <Dialog
+    <ReviewShell
       open={open}
-      onOpenChange={(o) => {
-        if (!o) onClose();
+      onClose={onClose}
+      title={multi ? labels.titleMany : labels.titleOne}
+      description={t`Review each attached asset and choose how to install it.`}
+      rows={rows.map(({ a, depth }) => {
+        const r = resolve(a);
+        return {
+          id: a.id,
+          name: r.name ?? typeWordOf(r.asset_type),
+          Icon: iconFor(r),
+          depth,
+          marked: r.effectiveScope != null ? t`Installed` : null,
+        };
+      })}
+      selectedId={selectedId}
+      onSelect={setSelectedId}
+      selected={{
+        Icon: SelectedIcon,
+        name: selected.name ?? typeWordOf(selected.asset_type),
+        typeWord: typeWordOf(selected.asset_type),
+        description: selected.description,
+        source: <SourceRow ma={selected} />,
       }}
-    >
-      <DialogContent className="sm:max-w-3xl" data-testid="asset-review-dialog">
-        {/* Per-attachment subscriptions (render nothing): live MA row + the
-            asset entity's parent_id for left-list nesting. */}
-        {open && ordered.map((a) => <AttachmentLiveSubscriber key={`ma:${a.id}`} id={a.id} onUpdate={applyLive} />)}
-        {open &&
-          ordered.map((a) => (
-            <AssetParentSubscriber
-              key={`parent:${a.id}`}
-              maId={a.id}
-              typeId={a.asset_type === 'file' ? null : a.targetTypeId}
-              onParent={applyParent}
-            />
-          ))}
-        <DialogHeader>
-          {/* Whole-popup title — the per-entity icon/name/type moved down to the
-              selected-entity pane. Singular vs plural tracks the list size. */}
-          <DialogTitle className="font-bold">{multi ? labels.titleMany : labels.titleOne}</DialogTitle>
-          <DialogDescription className="sr-only">
-            <Trans>Review each attached asset and choose how to install it.</Trans>
-          </DialogDescription>
-        </DialogHeader>
-
-        {/* Install header — buttons stay on top. Scope actions batch the whole
-            list; Open acts on the selected entity. When no project is mapped,
-            "Install in project" opens the picker to choose the target. */}
-        <div className="flex flex-wrap items-center gap-2">
-          {selectedProjectTypeId ? (
-            <ProjectInstallAction
-              typeId={selectedProjectTypeId}
-              attachment={selected}
-              entityRow={selectedProjectRow}
-              entityUnavailable={selectedProjectNotFound || selectedProjectError}
-              onDone={onClose}
-            />
-          ) : selectedIsGit ? (
-            <AssetInstallActions
-              attachment={selected}
-              conversationProjectId={attachmentProjectId}
-              initialError={selected.id === initialAttachmentId ? initialError : null}
-            />
-          ) : (
-            <>
-              {allProject ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void handleUninstallAll()}
-                  data-testid="asset-uninstall-project"
-                >
-                  {spinnerFor('uninstall') ?? <Trash2 className="h-3.5 w-3.5" />}
-                  {labels.remove}
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={busy || anyUser}
-                  title={anyUser ? t`Already installed globally — uninstall first` : undefined}
-                  onClick={handleInstallProject}
-                  data-testid="asset-install-project"
-                >
-                  {spinnerFor('project') ?? <FolderDown className="h-3.5 w-3.5" />}
-                  {labels.add}
-                </Button>
-              )}
-              {userScopeAllowed &&
-                (allUser ? (
+      extra={
+        <>
+          {/* Per-attachment subscriptions (render nothing): live MA row + the
+              asset entity's parent_id for left-list nesting. */}
+          {open && ordered.map((a) => <AttachmentLiveSubscriber key={`ma:${a.id}`} id={a.id} onUpdate={applyLive} />)}
+          {open &&
+            ordered.map((a) => (
+              <AssetParentSubscriber
+                key={`parent:${a.id}`}
+                maId={a.id}
+                typeId={a.asset_type === 'file' ? null : a.targetTypeId}
+                onParent={applyParent}
+              />
+            ))}
+          <OpenProjectComponent
+            open={pickerOpen}
+            onOpenChange={setPickerOpen}
+            onPicked={(project) => void handleProjectPicked(project)}
+          />
+        </>
+      }
+      actions={
+        <>
+            {selectedProjectTypeId ? (
+              <ProjectInstallAction
+                typeId={selectedProjectTypeId}
+                attachment={selected}
+                entityRow={selectedProjectRow}
+                entityUnavailable={selectedProjectNotFound || selectedProjectError}
+                onDone={onClose}
+              />
+            ) : selectedIsGit ? (
+              <AssetInstallActions
+                attachment={selected}
+                conversationProjectId={attachmentProjectId}
+                initialOutcome={selected.id === initialAttachmentId ? initialOutcome : null}
+              />
+            ) : (
+              <>
+                {allProject ? (
                   <Button
                     size="sm"
                     variant="outline"
                     disabled={busy}
                     onClick={() => void handleUninstallAll()}
-                    data-testid="asset-uninstall-global"
+                    data-testid="asset-uninstall-project"
                   >
                     {spinnerFor('uninstall') ?? <Trash2 className="h-3.5 w-3.5" />}
-                    <Trans>Uninstall</Trans>
+                    {labels.remove}
                   </Button>
                 ) : (
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={busy || anyProject}
-                    title={anyProject ? t`Already installed in a project — uninstall first` : undefined}
-                    onClick={() => void handleInstallGlobal()}
-                    data-testid="asset-install-global"
+                    disabled={busy || anyUser}
+                    title={anyUser ? t`Already installed globally — uninstall first` : undefined}
+                    onClick={handleInstallProject}
+                    data-testid="asset-install-project"
                   >
-                    {spinnerFor('global') ?? <Globe className="h-3.5 w-3.5" />}
-                    <Trans>Install global</Trans>
+                    {spinnerFor('project') ?? <FolderDown className="h-3.5 w-3.5" />}
+                    {labels.add}
                   </Button>
-                ))}
-            </>
-          )}
-          {selectedInstalled && !selectedProjectTypeId && (
-            <Button size="sm" variant="secondary" onClick={() => void openSelected()} data-testid="asset-open-entity">
-              <ExternalLink className="h-3.5 w-3.5" />
-              <Trans>Open</Trans>
-            </Button>
-          )}
-        </div>
-
-        {/* Two panes: entity list | selected entity's default content view. */}
-        <div className="flex min-h-0 gap-3 border-t border-border pt-3">
-          {multi && (
-            <div className="max-h-[55vh] w-52 shrink-0 overflow-y-auto border-e border-border pe-2">
-              {rows.map(({ a, depth }) => {
-                const r = resolve(a);
-                const RowIcon = iconFor(r);
-                const isSel = a.id === selectedId;
-                return (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => setSelectedId(a.id)}
-                    title={r.name ?? typeWordOf(r.asset_type)}
-                    data-testid={`asset-review-row-${a.id}`}
-                    style={depth ? { paddingLeft: `${depth * 0.875 + 0.375}rem` } : undefined}
-                    className={cn(
-                      'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-start text-[12px] transition-colors',
-                      isSel ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50',
-                    )}
-                  >
-                    {depth > 0 && <span className="shrink-0 text-muted-foreground/50">└</span>}
-                    <RowIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
-                    <span className="min-w-0 flex-1 truncate">{r.name ?? typeWordOf(r.asset_type)}</span>
-                    {r.effectiveScope != null && (
-                      <span
-                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                        title={t`Installed`}
-                        aria-label={t`Installed`}
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          <div className="min-w-0 flex-1">
-            {/* Selected-entity header — icon, name and type chip, plus its
-                description and provenance. Changes as the list selection moves. */}
-            <div className="mb-3 flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <SelectedIcon className="h-4 w-4 shrink-0 text-primary" />
-                <span className="truncate font-semibold">{selected.name ?? typeWordOf(selected.asset_type)}</span>
-                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
-                  {typeWordOf(selected.asset_type)}
-                </span>
-              </div>
-              {selected.description && <p className="text-[12px] text-muted-foreground">{selected.description}</p>}
-              <SourceRow ma={selected} />
-            </div>
-            {selected.asset_type === Project.type ? (
-              // A project has no staged files: it previews from its row.
-              <ProjectPreview project={selectedProjectRow} fallbackName={selected.name} />
-            ) : selectedIsGit ? (
-              // A git share stages a POINTER, not files: say what it opens.
-              <GitPointerPreview ma={selected} />
-            ) : (
-              <StagedAssetViewer attachment={selected} />
+                )}
+                {userScopeAllowed &&
+                  (allUser ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => void handleUninstallAll()}
+                      data-testid="asset-uninstall-global"
+                    >
+                      {spinnerFor('uninstall') ?? <Trash2 className="h-3.5 w-3.5" />}
+                      <Trans>Uninstall</Trans>
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy || anyProject}
+                      title={anyProject ? t`Already installed in a project — uninstall first` : undefined}
+                      onClick={() => void handleInstallGlobal()}
+                      data-testid="asset-install-global"
+                    >
+                      {spinnerFor('global') ?? <Globe className="h-3.5 w-3.5" />}
+                      <Trans>Install global</Trans>
+                    </Button>
+                  ))}
+              </>
             )}
-          </div>
-        </div>
-
-        <OpenProjectComponent
-          open={pickerOpen}
-          onOpenChange={setPickerOpen}
-          onPicked={(project) => void handleProjectPicked(project)}
-        />
-      </DialogContent>
-    </Dialog>
+            {replace && (
+              <div className="basis-full">
+                <ReplacePrompt busy={busy} onConfirm={replace} testId="asset-replace" />
+              </div>
+            )}
+            {selectedInstalled && !selectedProjectTypeId && (
+              <Button size="sm" variant="secondary" onClick={() => void openSelected()} data-testid="asset-open-entity">
+                <ExternalLink className="h-3.5 w-3.5" />
+                <Trans>Open</Trans>
+              </Button>
+            )}
+        </>
+      }
+    >
+      {selected.asset_type === Project.type ? (
+        // A project has no staged files: it previews from its row.
+        <ProjectPreview project={selectedProjectRow} fallbackName={selected.name} />
+      ) : selectedIsGit ? (
+        // A git share stages a POINTER, not files: say what it opens.
+        <GitPointerPreview ma={selected} />
+      ) : (
+        <StagedAssetViewer attachment={selected} />
+      )}
+    </ReviewShell>
   );
 }
 
 /** Provenance line under the title: where installing pulls the content from. */
 function SourceRow({ ma }: { ma: MessageAttachment }) {
-  const { label, Icon, detail } = sourceOf(ma);
-  return (
-    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground" data-testid="asset-review-source">
-      <Icon className="h-3 w-3 shrink-0" />
-      <span>
-        <Trans>Source:</Trans> {label}
-      </span>
-      {detail && <span className="truncate font-mono text-[10px]">{detail}</span>}
-    </div>
-  );
+  return <ReviewSource {...sourceOf(ma)} />;
 }

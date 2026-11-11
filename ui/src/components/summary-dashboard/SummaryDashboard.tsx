@@ -1,4 +1,5 @@
 import { useResources, SystemResourceType } from '@src/hooks/use-resources';
+import { Trans } from '@lingui/react/macro';
 import {
   type AgentItem,
   type CommandItem,
@@ -207,6 +208,8 @@ export function SummaryDashboard({ projectCwd, showProjectsCard = true, onNaviga
     cyan: 'bg-cyan-500/10 text-cyan-500',
   };
 
+  const projectName = projects.find((p) => p.cwd === projectCwd)?.name || projectCwd;
+
   return (
     <div className="space-y-4">
       {/* Project context header (when filtered) */}
@@ -214,10 +217,9 @@ export function SummaryDashboard({ projectCwd, showProjectsCard = true, onNaviga
         <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
           <Activity className="h-4 w-4 text-primary" />
           <span className="text-xs text-muted-foreground">
-            Showing stats for project:{' '}
-            <span className="font-medium text-foreground">
-              {projects.find((p) => p.cwd === projectCwd)?.name || projectCwd}
-            </span>
+            <Trans>
+              Showing stats for project: <span className="font-medium text-foreground">{projectName}</span>
+            </Trans>
           </span>
         </div>
       )}
@@ -257,7 +259,7 @@ export function SummaryDashboard({ projectCwd, showProjectsCard = true, onNaviga
       {/* Empty state hint */}
       {!projectCwd && projects.length === 0 && !projectsLoading && (
         <p className="text-center text-xs text-muted-foreground">
-          No Claude Code data found. Run Claude Code in a project to see stats here.
+          <Trans>No Claude Code data found. Run Claude Code in a project to see stats here.</Trans>
         </p>
       )}
     </div>

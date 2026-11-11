@@ -46,7 +46,7 @@ interface Props {
   open: boolean;
   gitOrigin: ProjectOrigin;
   projectName: string;
-  senderName: string;
+  senderName?: string;
   /** A shared project's id: install it in place instead of cloning a template. */
   projectId?: string;
   /** Its name is already a project here: ask instead of setting it up. */
@@ -250,9 +250,13 @@ export function IncomingProjectDialog({
           <>
             <DialogHeader>
               <DialogTitle>
-                <Trans>
-                  <strong>{senderName}</strong> shared a project with you
-                </Trans>
+                {senderName ? (
+                  <Trans>
+                    <strong>{senderName}</strong> shared a project with you
+                  </Trans>
+                ) : (
+                  <Trans>A project was shared with you</Trans>
+                )}
               </DialogTitle>
               <DialogDescription>
                 <Trans>
@@ -294,9 +298,13 @@ export function IncomingProjectDialog({
           <>
             <DialogHeader>
               <DialogTitle>
-                <Trans>
-                  <strong>{senderName}</strong> shared a project with you
-                </Trans>
+                {senderName ? (
+                  <Trans>
+                    <strong>{senderName}</strong> shared a project with you
+                  </Trans>
+                ) : (
+                  <Trans>A project was shared with you</Trans>
+                )}
               </DialogTitle>
               <DialogDescription>
                 <Trans>

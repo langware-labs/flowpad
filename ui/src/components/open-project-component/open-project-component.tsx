@@ -1,7 +1,12 @@
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { dataContext, type ProjectListItem, Project, PrefKey, PageId } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
-import { canonicalPath } from '@src/components/project-selector';
+import {
+  canonicalPath,
+  NewProjectFromGitDialog,
+  useGitCloneDialogSubmit,
+  type ProjectLanding,
+} from '@src/components/project-selector';
 import { useProjectListSource } from './use-project-list-source';
 import { normalizePath, useProjectOpener } from './use-open-project';
 import { SectionHairlineTitle } from '@src/components/terminal/project-list-menu';
@@ -14,8 +19,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Label } from '@src/components/ui/label';
 import { notify } from '@src/notifications';
-import { Check, FolderOpen, FolderPlus, Info, Loader2, Search } from 'lucide-react';
+import { Check, FolderOpen, FolderPlus, Github, Info, Loader2, Search } from 'lucide-react';
 import { projectRecencyMs } from '@src/lib/project-recency';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { AdvancedOnly } from '@src/components/view-mode';
@@ -23,6 +29,8 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
+// The server's own sentence (e.g. a name another project already holds), never Axios's status line.
+import { errorMessage } from '@src/lib/error-message';
 
 /** Free-text match against a project's display name or cwd. `q` must already be
  *  trimmed + lowercased. */
@@ -144,10 +152,13 @@ interface CompactProjectSelectDialogProps {
   onProjectClick: (project: ProjectListItem) => void;
   onOpenFolder: () => void;
   onCreateNew: () => void;
+  onOpenFromGit: () => void;
   /** Adapts the dialog title + description to the trigger context. */
   trigger?: 'switch' | 'map' | 'gate';
   /** Optional remote-project label shown in the description for 'map' trigger. */
   remoteProjectName?: string;
+  /** When set, the header offers "Run (Skip project)": run in the instance's temp folder. */
+  onSkipProject?: () => void;
 }
 
 /** How many recent projects the compact list shows before the rest are
@@ -167,8 +178,10 @@ function CompactProjectSelectDialog({
   onProjectClick,
   onOpenFolder,
   onCreateNew,
+  onOpenFromGit,
   trigger = 'switch',
   remoteProjectName,
+  onSkipProject,
 }: CompactProjectSelectDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -193,18 +206,16 @@ function CompactProjectSelectDialog({
 
   const { active, rest, hiddenCount } = useMemo(() => {
     const matches = (p: ProjectListItem) => !q || matchesProjectQuery(p, q);
-    // Active section mirrors the chip: alphabetical by display name, id tie-break.
-    const activeList = projects
-      .filter((p) => tabCountByProjectId.has(p.id) && matches(p))
-      .sort((a, b) => getProjectDisplayName(a).localeCompare(getProjectDisplayName(b)) || a.id.localeCompare(b.id));
-    // `last_active_at` (UI-open recency) wins; session `modified_at` is the
-    // fallback; fully-unknown recency sorts as "now" (new project → top).
+    // Both sections sort most-recent first: `last_active_at` (UI-open recency)
+    // wins, session `modified_at` is the fallback, unknown sorts as "now".
     const now = Date.now();
-    const byRecent = projects
-      .filter((p) => !tabCountByProjectId.has(p.id) && matches(p))
-      .map((p) => ({ p, ms: projectRecencyMs(p) ?? now }))
-      .sort((a, b) => b.ms - a.ms)
-      .map((r) => r.p);
+    const byRecency = (list: ProjectListItem[]) =>
+      list
+        .map((p) => ({ p, ms: projectRecencyMs(p) ?? now }))
+        .sort((a, b) => b.ms - a.ms || a.p.id.localeCompare(b.p.id))
+        .map((r) => r.p);
+    const activeList = byRecency(projects.filter((p) => tabCountByProjectId.has(p.id) && matches(p)));
+    const byRecent = byRecency(projects.filter((p) => !tabCountByProjectId.has(p.id) && matches(p)));
     // No query → active projects always show; the rest keep the most-recent
     // cap so Standard view stays short. Querying searches all projects.
     const restList = q ? byRecent : byRecent.slice(0, COMPACT_PROJECT_LIMIT);
@@ -221,6 +232,8 @@ function CompactProjectSelectDialog({
     const projectPath = normalizePath(project.cwd || '');
     const isCurrent = !!currentProjectPath && canonicalPath(projectPath) === canonicalPath(currentProjectPath);
     const isOpening = openingProjectId === project.id;
+    const recency = projectRecencyMs(project);
+    const lastActiveAgo = recency === null ? null : formatTimeAgo(new Date(recency));
     return (
       // A row, not a button: the info icon is a second control, and a button
       // inside a button is invalid markup whose clicks would open the project
@@ -243,7 +256,17 @@ function CompactProjectSelectDialog({
             <div className="h-3.5 w-3.5 shrink-0" />
           )}
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
+            <span className="flex min-w-0 items-baseline gap-1.5">
+              <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
+              {tabCount !== undefined && lastActiveAgo && (
+                <span
+                  className="shrink-0 text-[10px] text-muted-foreground"
+                  data-testid={`switch-project-ago-${project.id}`}
+                >
+                  {lastActiveAgo}
+                </span>
+              )}
+            </span>
             {project.cwd && (
               <span
                 className="truncate text-[10px] leading-tight text-muted-foreground"
@@ -292,7 +315,20 @@ function CompactProjectSelectDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle className="text-base">{title}</DialogTitle>
+          <div className="flex items-center justify-between gap-2 pe-6">
+            <DialogTitle className="text-base">{title}</DialogTitle>
+            {onSkipProject && (
+              <Button
+                size="sm"
+                className="h-7 shrink-0 bg-blue-600 text-white hover:bg-blue-500"
+                onClick={onSkipProject}
+                title={t`Run it without a project, in this machine's temp folder`}
+                data-testid="project-gate-skip-project"
+              >
+                {t`Run (Skip project)`}
+              </Button>
+            )}
+          </div>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
 
@@ -345,11 +381,10 @@ function CompactProjectSelectDialog({
           )}
 
           <div className="flex items-center gap-2">
-            {/* Native host folder picker — nothing to point at on a hub-only
-                server, whose files live on the git-backed VFS. Same gate as the
-                home-surface `ProjectActionsRow`, so the two can't disagree
-                about which affordances a hub offers. */}
-            {!isHubOnly() && (
+            {/* Native host folder picker — only where an OS window reaches a person.
+                Same gate as the home-surface `ProjectActionsRow`, so the two can't
+                disagree. */}
+            {dataContext.caps.osDialogs && (
               <Button
                 variant="outline"
                 size="sm"
@@ -370,6 +405,20 @@ function CompactProjectSelectDialog({
             >
               <FolderPlus className="h-3.5 w-3.5" />
               <Trans>Create New</Trans>
+            </Button>
+            {/* Icon-only shortcut to the same clone-from-git dialog the home
+                surface's `ProjectActionsRow` opens — nothing of its own. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 px-2"
+              onClick={onOpenFromGit}
+              disabled={isSubmitting || !!openingProjectId}
+              aria-label={t`Open from git`}
+              title={t`Open from git`}
+              data-testid="switch-project-open-from-git"
+            >
+              <Github className="h-3.5 w-3.5" />
             </Button>
           </div>
 
@@ -425,11 +474,11 @@ function NewProjectDialog({
     try {
       await onCreate(projectName.trim(), parentFolder.trim());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create project');
+      setError(errorMessage(err, t`Failed to create project`));
     } finally {
       setIsSubmitting(false);
     }
-  }, [projectName, parentFolder, onCreate]);
+  }, [projectName, parentFolder, onCreate, t]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -537,6 +586,8 @@ interface OpenProjectComponentProps {
   /** Called after the project has been picked + side-effects applied. The
    *  gate uses this to resume the action that opened the dialog. */
   onPicked?: (project: Project) => void | Promise<void>;
+  /** Offers "Run (Skip project)" in the picker; the caller runs without a project. */
+  onSkipProject?: () => void;
 }
 
 export function OpenProjectComponent({
@@ -548,11 +599,13 @@ export function OpenProjectComponent({
   remoteProjectName,
   trigger,
   onPicked,
+  onSkipProject,
 }: OpenProjectComponentProps) {
   const { t } = useLingui();
   const { project: currentProject } = useProject();
 
-  const [showCreate, setShowCreate] = useState(false);
+  // Which sub-dialog has replaced the picker; at most one at a time.
+  const [subDialog, setSubDialog] = useState<'create' | 'git' | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -562,7 +615,7 @@ export function OpenProjectComponent({
   // the vibe home hero buttons, so surface-derived behavior (stay on home,
   // resume a process, resume the last tab) can't drift between call sites.
   // The dialog owns only its UI state (busy flags, error, close-on-success).
-  const { computeNode, ensureProjectAndSetContext, pickFolder } = useProjectOpener({
+  const { computeNode, ensureProjectAndSetContext, pickFolder, openExistingProject } = useProjectOpener({
     onProjectChanged,
     onPicked,
     onError: setError,
@@ -582,10 +635,9 @@ export function OpenProjectComponent({
     workspace: scopeId,
   });
 
-
   useEffect(() => {
     if (!open) {
-      setShowCreate(false);
+      setSubDialog(null);
       setError(null);
       setIsSubmitting(false);
       setOpeningProjectId(null);
@@ -622,7 +674,7 @@ export function OpenProjectComponent({
         await ensureProjectAndSetContext(path);
         onOpenChange(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : t`Failed to open project`);
+        setError(errorMessage(err, t`Failed to open project`));
       } finally {
         setOpeningProjectId(null);
       }
@@ -643,7 +695,7 @@ export function OpenProjectComponent({
       }
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Failed to open project`);
+      setError(errorMessage(err, t`Failed to open project`));
     } finally {
       setIsSubmitting(false);
     }
@@ -659,10 +711,18 @@ export function OpenProjectComponent({
     [ensureProjectAndSetContext, onOpenChange],
   );
 
+  // Dismissing a sub-dialog closes the whole switcher, not back to the picker.
+  const closeAllOnDismiss = useCallback(
+    (v: boolean) => {
+      if (!v) onOpenChange(false);
+    },
+    [onOpenChange],
+  );
+
   return (
     <>
       <CompactProjectSelectDialog
-        open={open && !showCreate}
+        open={open && !subDialog}
         onOpenChange={onOpenChange}
         projects={mergedProjects}
         isLoadingProjects={isLoadingScanProjects}
@@ -673,22 +733,48 @@ export function OpenProjectComponent({
         error={error}
         onProjectClick={(p: ProjectListItem) => void handleProjectClick(p)}
         onOpenFolder={() => void handleOpenFolder()}
-        onCreateNew={() => setShowCreate(true)}
+        onCreateNew={() => setSubDialog('create')}
+        onOpenFromGit={() => setSubDialog('git')}
         trigger={resolvedTrigger}
         remoteProjectName={remoteProjectName}
+        onSkipProject={onSkipProject}
       />
       <NewProjectDialog
-        open={open && showCreate}
-        onOpenChange={(v) => {
-          if (!v) onOpenChange(false);
-        }}
+        open={open && subDialog === 'create'}
+        onOpenChange={closeAllOnDismiss}
         defaultWorkspacePath={defaultWorkspacePath}
         computeNodeAvailable={!!computeNode}
         pickFolder={pickFolder}
         onCreate={handleCreate}
       />
+      {open && subDialog === 'git' && (
+        <GitCloneSubDialog
+          computeNodeId={computeNode?.id}
+          landing={openExistingProject}
+          onOpenChange={closeAllOnDismiss}
+        />
+      )}
     </>
   );
+}
+
+/**
+ * Mounted only while the git sub-dialog shows: `useGitCloneDialogSubmit` pulls
+ * in `useSandboxes`, which subscribes to the node list and probes machines on
+ * mount, and `OpenProjectComponent` sits closed on many surfaces.
+ */
+function GitCloneSubDialog({
+  computeNodeId,
+  landing,
+  onOpenChange,
+}: {
+  computeNodeId: string | undefined;
+  landing: ProjectLanding;
+  onOpenChange: (open: boolean) => void;
+}) {
+  // Same clone-and-open as the home surface's `ProjectActionsRow`.
+  const onCreate = useGitCloneDialogSubmit(computeNodeId, landing);
+  return <NewProjectFromGitDialog open onOpenChange={onOpenChange} onCreate={onCreate} />;
 }
 
 export default OpenProjectComponent;

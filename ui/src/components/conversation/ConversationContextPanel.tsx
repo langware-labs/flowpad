@@ -7,14 +7,13 @@ import {
   dataManager,
   FlowMessage,
   ProcessStatus,
-  QueryRequest,
   Skill,
   Spec,
   Task,
   TaskKind,
   TypeId,
 } from '@sdk';
-import { useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
+import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
 import { useSessionDisplayName } from '@src/hooks/use-session-display-name';
 import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import {
@@ -33,11 +32,13 @@ import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
 import { localAttachmentUrl, dockPointerForLocalFile } from './attachment-url';
 import { AttachmentDownloadWarning } from './AttachmentDownloadWarning';
-import { ICON_BY_TYPE, buildDockPointer } from './EntityChip';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
+import { ICON_BY_TYPE } from './EntityChip';
 import { buildAssistancePrompt } from './prompt-building';
+import { conversationMessagesRequest } from './conversation-messages-query';
 import type { WorkerType } from './conversation-session-constants';
 import { useConversationSession } from './useConversationSession';
 import {
@@ -48,7 +49,6 @@ import {
   flowMessageIdSet as buildFlowMessageIdSet,
   orderMessagesByConversation,
   resolveAnchorMessage,
-  resolveAttachmentProjectId,
   resolveProjectTypeId,
   type AttachmentEntry,
   type PrivateProcessAgg,
@@ -103,13 +103,9 @@ function taskRole(
 /** Canonical dock pointer for an entity TypeId — delegates to the single
  *  EntityChip dispatch (``buildDockPointer``). Asset types navigate by TypeId
  *  (the loader resolves the entity). */
-function dockPointerFor(
-  typeId: TypeId,
-  inside?: { type: string; id: string },
-  projectId?: string | null,
-): DockPointer | null {
-  const ptr = buildDockPointer({ type: typeId.type, id: typeId.id }, inside);
-  return ptr ? DockPointer.rebaseAssetsOntoProject(ptr, projectId) : null;
+function dockPointerFor(typeId: TypeId, inside?: { type: string; id: string }): DockPointer | null {
+  // The plain dock: a click opens the entity in its own project (the loader places it).
+  return buildDockPointer({ type: typeId.type, id: typeId.id }, inside);
 }
 
 /**
@@ -146,21 +142,11 @@ export function ConversationContextPanel({
   // origin-overlap cascade is suppressed so clicking one entity doesn't
   // co-light every other entity that happens to share its messages.
   const entityKey = selectedEntityKey ?? null;
-  // Fetch every FlowMessage in the conversation so we can aggregate context
-  // across all of them. Sorting is deferred to the order the conversation
-  // itself records on `conversationMessageIds` (the ordered jsonl pointer
-  // list) — origin lists derived from this query are then re-sorted to that
-  // order so click-back consistently jumps to the *earliest* occurrence.
-  const flowMessagesQuery = useMemo(
-    () =>
-      new QueryRequest({
-        type: FlowMessage.type,
-        scope: [],
-        name: `conv-flow-messages:${conversationId}`,
-        query: undefined,
-      }),
-    [conversationId],
-  );
+  // The conversation's own messages — its children (`conversation/<id>/flow_message`), the very
+  // request ConversationView reads, so the two share one fetch and one watch. Ordering is deferred to
+  // the order the conversation records on `conversationMessageIds` (the ordered pointer list) — origin
+  // lists derived from it are re-sorted to that order so click-back jumps to the *earliest* occurrence.
+  const flowMessagesQuery = useMemo(() => conversationMessagesRequest(conversationId), [conversationId]);
   const { data: candidateFlowMessages = [], refetch: refetchFlowMessages } = useEntitiesQuery<FlowMessage>(
     flowMessagesQuery,
     {
@@ -185,10 +171,8 @@ export function ConversationContextPanel({
   }, [pointerCount, refetchFlowMessages]);
 
   // The conversation's pointer list is the authoritative ordering — same
-  // approach `ConversationView` uses. We don't filter server-side on
-  // `conversation_id` (it isn't reliably set on every FlowMessage), so this
-  // pulls all FlowMessages and keeps only those whose id is in the pointer
-  // list. Drops drafts / strays at the same time.
+  // approach `ConversationView` uses; keeping only the ids in it drops
+  // drafts / strays at the same time.
   const orderedMessages = useMemo(
     () => orderMessagesByConversation(conversation, candidateFlowMessages),
     [candidateFlowMessages, conversation],
@@ -260,8 +244,6 @@ export function ConversationContextPanel({
   }, [orderedMessages, conversation]);
 
   const projectTypeId = useMemo(() => resolveProjectTypeId(task, conversation), [task, conversation]);
-  const { project: currentProject } = useProject();
-  const effectiveProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
 
   const privateTypeIds = useMemo(
     () => buildPrivateTypeIds(projectTypeId, privateTasks, privateProcesses),
@@ -328,7 +310,6 @@ export function ConversationContextPanel({
         selectedEntityKey={entityKey}
         onSelectEntity={onSelectEntity}
         onDownloadEntity={handleDownloadEntity}
-        projectId={effectiveProjectId}
       />
 
       <PrivateContextSection
@@ -361,7 +342,6 @@ interface SharedContextSectionProps {
   onSelectEntity?: (entityKey: string, messageIds: string[]) => void;
   /** Pull the bundle for the message that contributed an entity. */
   onDownloadEntity?: (messageId: string) => void;
-  projectId?: string | null;
 }
 
 function SharedContextSection({
@@ -372,7 +352,6 @@ function SharedContextSection({
   selectedEntityKey,
   onSelectEntity,
   onDownloadEntity,
-  projectId,
 }: SharedContextSectionProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -418,7 +397,7 @@ function SharedContextSection({
                     : undefined
                 }
                 onOpen={() => {
-                  const ptr = dockPointerFor(entry.typeId, containerInside, projectId);
+                  const ptr = dockPointerFor(entry.typeId, containerInside);
                   if (ptr) navigation.openDock(ptr);
                 }}
               />
@@ -504,6 +483,8 @@ function SharedEntityRow({
   const isSpec = typeId.type === Spec.type;
   const primaryLabel = isSpec ? t`View` : t`Open`;
   const primaryIcon = isSpec ? <Eye className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />;
+  const typeWord = humanType(typeId.type);
+  const messageCount = originMessageIds.length;
   return (
     <Row
       icon={Icon}
@@ -512,9 +493,9 @@ function SharedEntityRow({
       isHighlighted={isHighlighted}
       onFocus={onSelect}
       focusTitle={
-        originMessageIds.length > 1
-          ? `Light up the ${originMessageIds.length} messages this is attached to`
-          : 'Reveal the message that introduced this'
+        messageCount > 1
+          ? t`Light up the ${messageCount} messages this is attached to`
+          : t`Reveal the message that introduced this`
       }
     >
       {missing ? (
@@ -524,9 +505,9 @@ function SharedEntityRow({
           onDownload={onDownload}
         />
       ) : needsDownload && onDownload ? (
-        <RowAction onClick={onDownload} title={`Download ${humanType(typeId.type)} — not pulled to this device yet`}>
+        <RowAction onClick={onDownload} title={t`Download ${typeWord} — not pulled to this device yet`}>
           <Download className="h-3 w-3" />
-          Download {humanType(typeId.type)}
+          <Trans>Download {typeWord}</Trans>
         </RowAction>
       ) : (
         <RowAction onClick={() => onOpen(assetRef)} title={`${primaryLabel} ${humanType(typeId.type)}: ${name}`}>
@@ -895,7 +876,7 @@ function PrivateContextSection({
           {menuOpen && (
             <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-md border border-border bg-popover p-1 text-xs shadow-md">
               {onStartAssistance && (
-                <WorkerToolbar
+                <ContextWorkerToolbar
                   variant="menu-list"
                   onLaunch={handleLaunchWorker}
                   starting={starting}

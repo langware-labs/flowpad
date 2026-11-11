@@ -367,7 +367,7 @@ export class Task extends APIEntity<Task> implements ITask {
     const sent = await createAndSendConversation(
       {
         project_id: null, // cross-user bundle conversation
-        participants: [participant],
+        members: [participant],
         title: this.title || 'Task',
       },
       {

@@ -7,6 +7,7 @@ import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { prepareAgentSession } from '@src/components/agents/use-agent-launcher';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { badgeVariants } from '@src/components/ui/badge';
+import { errorMessage } from '@src/lib/error-message';
 import { Button } from '@src/components/ui/button';
 import { Textarea } from '@src/components/ui/textarea';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -38,6 +39,9 @@ function remember(deploymentId: string, conversationId: string | null): void {
   }
 }
 
+/** How long an answer may take to start before the panel says the agent is waking up. */
+const WAKING_AFTER_MS = 1500;
+
 interface ShownMessage extends AgentChatMessage {
   tools?: string[];
 }
@@ -58,11 +62,15 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The answer has not started after a moment: the person's machine is waking (paused) or starting (first message).
+  const [waking, setWaking] = useState(false);
   const abort = useRef<AbortController | null>(null);
 
   const { data: chat, isLoading } = useQuery({
     queryKey: ['agent-chat', deployment.id],
-    queryFn: () => AgentChat.forDeployment(deployment),
+    // A private deployment answers each person on their own machine: the agent's Chat API, routed by who calls.
+    queryFn: () =>
+      deployment.agent_mode === 'private' ? AgentChat.forAgent(agent.id) : AgentChat.forDeployment(deployment),
   });
 
   // The conversation remembered when the panel opened is shown as it stands. Only
@@ -93,20 +101,28 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
     setMessages((prev) => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '', tools: [] }]);
     const controller = new AbortController();
     abort.current = controller;
+    const wakingTimer = setTimeout(() => setWaking(true), WAKING_AFTER_MS);
+    const started = () => {
+      clearTimeout(wakingTimer);
+      setWaking(false);
+    };
     const patchReply = (patch: (reply: ShownMessage) => ShownMessage) =>
       setMessages((prev) => [...prev.slice(0, -1), patch(prev[prev.length - 1])]);
     try {
       for await (const event of chat.send(text, { conversationId, signal: controller.signal })) {
+        if (event.type !== 'conversation') started();
         if (event.type === 'conversation') {
           setConversationId(event.conversationId);
           remember(deployment.id, event.conversationId);
         } else if (event.type === 'text') patchReply((reply) => ({ ...reply, content: reply.content + event.text }));
-        else if (event.type === 'tool') patchReply((reply) => ({ ...reply, tools: [...(reply.tools ?? []), event.name] }));
+        else if (event.type === 'tool')
+          patchReply((reply) => ({ ...reply, tools: [...(reply.tools ?? []), event.name] }));
         else if (event.type === 'error') setError(event.message);
       }
     } catch (err) {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : String(err));
+      if (!controller.signal.aborted) setError(errorMessage(err, String(err)));
     } finally {
+      started();
       setSending(false);
     }
   }, [chat, conversationId, deployment.id, draft, sending]);
@@ -135,7 +151,10 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
           </div>
           <button
             type="button"
-            className={badgeVariants({ variant: 'secondary', className: 'mt-0.5 cursor-pointer px-1.5 py-0 text-[10px]' })}
+            className={badgeVariants({
+              variant: 'secondary',
+              className: 'mt-0.5 cursor-pointer px-1.5 py-0 text-[10px]',
+            })}
             onClick={() => navigation.openDock(agent.dockPointer)}
             data-testid="deployed-agent-chat-agent-link"
           >
@@ -170,7 +189,18 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
                 <div className="mb-1 text-[11px] text-muted-foreground">{message.tools.join(' · ')}</div>
               ) : null}
               <div className="whitespace-pre-wrap">
-                {message.content || (message.role === 'assistant' && sending ? '…' : '')}
+                {message.content ||
+                  (message.role === 'assistant' && sending ? (
+                    waking && index === messages.length - 1 ? (
+                      <span className="italic text-muted-foreground" data-testid="deployed-agent-chat-waking">
+                        <Trans>Waking up…</Trans>
+                      </span>
+                    ) : (
+                      '…'
+                    )
+                  ) : (
+                    ''
+                  ))}
               </div>
             </div>
           ))
@@ -197,7 +227,11 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
           disabled={!chat}
           data-testid="deployed-agent-chat-input"
         />
-        <Button onClick={() => void send()} disabled={!chat || sending || !draft.trim()} data-testid="deployed-agent-chat-send">
+        <Button
+          onClick={() => void send()}
+          disabled={!chat || sending || !draft.trim()}
+          data-testid="deployed-agent-chat-send"
+        >
           <Trans>Send</Trans>
         </Button>
       </div>

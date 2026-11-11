@@ -23,7 +23,7 @@ function endpoint(name: string, recorded: EndpointHealth | null, next?: Endpoint
 }
 
 function deployment(endpoints: ServiceEndpoint[], exposes: Array<{ name: string }> = []) {
-  return { id: 'd1', exposes, endpoints: vi.fn().mockResolvedValue(endpoints) } as unknown as Deployment;
+  return { id: 'd1', typeId: { toString: () => 'deployment.id.d1' }, exposes, endpoints: vi.fn().mockResolvedValue(endpoints) } as unknown as Deployment;
 }
 
 async function renderHealth(d: Deployment) {

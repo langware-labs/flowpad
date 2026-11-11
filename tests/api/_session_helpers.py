@@ -22,7 +22,7 @@ async def make_conversation(client) -> str:
     project_id = await local_project_id(client)
     resp = await client.post(
         "/api/v1/graph/conversation-create",
-        json={"project_id": project_id, "participants": []},
+        json={"project_id": project_id, "members": []},
     )
     assert resp.json().get("status") == "SUCCESS", resp.text
     return resp.json()["data"]["conversation_id"]

@@ -14,6 +14,7 @@
  * and the home-landing "Start conversation" button by text.
  */
 import { type Browser, type BrowserContext, type Page, expect } from '@playwright/test';
+import { adjusted } from '../adjustableTimeout';
 
 export interface InstanceConfig {
   /** Display label used in console output, e.g. "alice". */
@@ -84,15 +85,14 @@ export async function openInstance(browser: Browser, inst: InstanceConfig): Prom
   return { ctx, page };
 }
 
-/**
- * Navigate to the STANDARD home landing and wait for the conversations strip.
- * A fresh instance defaults to vibe mode, whose home has no conversations
- * strip; the strip's footer "New" button is the only way to start a
- * conversation from the UI now (it replaced the old "Start conversation" CTA).
- */
+/** The Stream Inbox's "New conversation" button: there whatever `/` shows (the main landing,
+ *  or Project Home once a project is selected — which has no conversations strip). */
+const NEW_CONVERSATION = 'stream-inbox-new-conversation-button';
+
+/** Navigate to the STANDARD Stream Inbox and wait for its "New conversation" button. */
 export async function gotoHome(page: Page) {
-  await page.goto('/?viewMode=standard');
-  await page.getByTestId('new-conversation-footer-button').waitFor({ state: 'visible' });
+  await page.goto('/dock/stream_inbox?viewMode=standard');
+  await page.getByTestId(NEW_CONVERSATION).waitFor({ state: 'visible' });
 }
 
 /**
@@ -101,7 +101,7 @@ export async function gotoHome(page: Page) {
  * parsed from the URL after Create succeeds.
  *
  * The flow exercised is exactly the pure-UI path the human would walk:
- *   1. click the conversations strip's "New" footer button
+ *   1. click the Stream Inbox's "New conversation" button
  *   2. type bob's email into the participants input, press Enter to add
  *   3. type the initial message
  *   4. click "Create"
@@ -116,7 +116,7 @@ export async function startConversationViaUi(
   // ``onHome``: the caller already loaded the home landing on this page, so
   // don't reload the whole dev bundle a second time.
   if (!opts.onHome) await gotoHome(alicePage);
-  await alicePage.getByTestId('new-conversation-footer-button').click();
+  await alicePage.getByTestId(NEW_CONVERSATION).click();
 
   const dialog = alicePage.getByTestId('new-conversation-dialog');
   await dialog.waitFor({ state: 'visible' });
@@ -134,7 +134,7 @@ export async function startConversationViaUi(
 
   // After create, FE navigates to /dock/conversation/<id>. We wait on the URL
   // rather than the bubble so we surface a navigation failure fast.
-  await alicePage.waitForURL(/\/dock\/conversation\/[0-9a-f-]+/, { timeout: 8_000 });
+  await alicePage.waitForURL(/\/dock\/conversation\/[0-9a-f-]+/, { timeout: adjusted(8_000) });
   const match = alicePage.url().match(/\/dock\/conversation\/([0-9a-f-]+)/);
   if (!match) throw new Error(`Failed to extract conversation id from ${alicePage.url()}`);
   return match[1];
@@ -147,7 +147,7 @@ export async function sendReplyViaUi(page: Page, text: string): Promise<{ sentAt
   // Scope to the composer's send button — the other ``title="Send"`` is the
   // entity-execution panel's button (data-testid="entity-execution-send").
   const sendBtn = page.locator('button[title="Send"]:not([data-testid])');
-  await expect(sendBtn).toBeEnabled({ timeout: 1_000 });
+  await expect(sendBtn).toBeEnabled({ timeout: adjusted(1_000) });
   const sentAt = Date.now();
   await sendBtn.click();
   return { sentAt };
@@ -223,7 +223,7 @@ export async function waitForConversationReady(page: Page) {
  * reloads the whole dev bundle (~1900 modules) in the page.
  */
 export async function openConversationFromStrip(page: Page, convId: string) {
-  await page.locator(`[data-testid="conversation-row"][data-conversation-id="${convId}"]`).click();
+  await page.locator(`[data-testid="stream-inbox-conversation-row"][data-conversation-id="${convId}"]`).click();
   await page.waitForURL(new RegExp(`/dock/conversation/${convId}`));
   await waitForConversationReady(page);
 }

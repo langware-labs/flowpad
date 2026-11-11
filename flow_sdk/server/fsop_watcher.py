@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -53,43 +52,13 @@ async def _fire(
     if (not trigger.enabled and not is_test) or not changes:
         return
 
-    if not is_test:
-        trigger.counter += len(changes)
-        trigger.last_triggered = datetime.now(timezone.utc)
-        # last_seen_* anchors catch-up replay on next boot. Update from the
-        # MOST RECENT change matching watch_path (if any) — a synthetic test
-        # would otherwise settle the fingerprint and mask organic changes.
-        if trigger.watch_path:
-            for c in reversed(changes):
-                if str(c.path) == trigger.watch_path:
-                    try:
-                        st = c.path.stat()
-                        trigger.last_seen_mtime = st.st_mtime
-                        trigger.last_seen_size = st.st_size
-                    except FileNotFoundError:
-                        trigger.last_seen_mtime = None
-                        trigger.last_seen_size = None
-                    break
+    from flow_sdk.automations.execution import AutomationMode, run_automation
 
-    # Persist counter/last_triggered/last_seen_* so the UI reflects the fire.
-    if trigger.id and not is_test:
-        try:
-            await trigger.update()
-        except Exception:
-            _log.exception("Trigger %s: failed to persist counter/last_triggered", trigger.name)
-
-    # Shared fire steps — the SAME helpers schedule and tag fires use. These
-    # were inlined copies until the bus emitters landed and made a third
-    # duplicated concern obvious; the fire contract (the `envelope=` kwarg,
-    # `trigger.failed` emission) now has one home instead of three.
-    from flow_sdk.builtin.trigger import activate_flows_for_trigger, run_trigger_actions
-
-    flow_error = None
-    if not is_test and trigger.id:
-        flow_error = await activate_flows_for_trigger(trigger.id, trigger.name or trigger.id,
-                                                      trigger=trigger)
-    outcome = await run_trigger_actions(trigger, changes=changes)
-    error = "; ".join(e for e in (flow_error, outcome.error) if e) or None
+    outcome = await run_automation(
+        trigger, mode=AutomationMode.TEST if is_test else AutomationMode.REAL,
+        changes=changes, run_id=run_id, include_graph=not is_test,
+    )
+    error = outcome.error
 
     # One log row per fire. Cap paths persisted; `changes_total` is the truth.
     first = changes[0]
@@ -114,7 +83,7 @@ async def _fire(
         },
         project_id=trigger.project_id,
         is_test=is_test,
-    )
+    ) if outcome.accepted else None
 
     try:
         from flow_sdk.automations.fingerprint import spec_hash
@@ -127,7 +96,7 @@ async def _fire(
                 # log readers (TriggerLogViewer lens, hook-shape invocation
                 # rows) continue rendering before the UI consumes the new
                 # batch fields.
-                **({"id": run_id} if run_id else {}),
+                "id": outcome.run_id,
                 "hook_event": "file_change",
                 "reason": (
                     f"File {first.change_type}: {first.path}"
@@ -142,7 +111,8 @@ async def _fire(
                 "changes": sampled,
                 "changes_total": len(changes),
                 "changes_truncated": max(0, len(changes) - _LOG_CAP),
-                "trigger": True,
+                "trigger": outcome.accepted,
+                "reason_code": outcome.reason_code or None,
                 "is_test": is_test,
                 "rule_name": trigger.name,
                 "trigger_id": trigger.id,
@@ -154,6 +124,8 @@ async def _fire(
                 "error": error,
                 "duration_ms": outcome.duration_ms,
                 "spec_hash": spec_hash(trigger),
+                "wizard": outcome.wizard,
+                "invocation_id": outcome.result.invocation_id,
             },
         )
     except Exception:
@@ -194,6 +166,26 @@ async def _catch_up_if_changed(trigger: Trigger) -> None:
 # ── per-trigger awatch loop ───────────────────────────────────────────────────
 
 
+def _nearest_existing_parent(path: Path) -> Path:
+    return next(parent for parent in path.parents if parent.exists())
+
+
+async def _wait_for_dir(watch_dir: Path) -> None:
+    """Return once ``watch_dir`` exists.
+
+    Watches the nearest folder that does exist (its direct children only, so a home directory is
+    never walked) and re-anchors one level deeper each time the missing path grows a component.
+    Driven by the creation events themselves: no polling interval, no timeout.
+    """
+    from watchfiles import awatch
+
+    while not watch_dir.exists():
+        anchor = _nearest_existing_parent(watch_dir)
+        async for _changes in awatch(str(anchor), recursive=False):
+            if watch_dir.exists() or _nearest_existing_parent(watch_dir) != anchor:
+                break
+
+
 async def _run_watch_for(trigger: Trigger) -> None:
     """Per-trigger awatch loop. File-mode watches the parent dir + exact-path
     filter (survives atomic-rename inode swaps); folder-mode watches the dir.
@@ -212,8 +204,17 @@ async def _run_watch_for(trigger: Trigger) -> None:
     is_folder = watched_path.is_dir() or trigger.recursive
     watch_dir = watched_path if is_folder else watched_path.parent
     if not watch_dir.exists():
-        _log.warning("Trigger %s: watch dir %s does not exist; skipping", trigger.name, watch_dir)
-        return
+        # A box boots before the worker has ever run, so the folder its transcripts go in is not
+        # there yet. Dropping the watch here would leave that folder unwatched for the life of the
+        # server; wait for it to be created instead.
+        _log.info("Trigger %s: watch dir %s does not exist yet; waiting for it", trigger.name, watch_dir)
+        try:
+            await _wait_for_dir(watch_dir)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _log.exception("Trigger %s: could not wait for watch dir %s", trigger.name, watch_dir)
+            return
 
     composite_filter = CompositeFsopFilter(trigger=trigger, watched_path=watched_path)
 

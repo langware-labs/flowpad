@@ -7,7 +7,7 @@
  *      Try fills the list; Save turns the rule on;
  *   4. a second message arrives; the rule catches it; the chip "⚡ <agent>" appears on the
  *      message and the stream inbox row; the lifecycle line reads handling → replied;
- *   5. the chip opens the agent's session; the top-bar ⚡ counts it; the list row shows a mark.
+ *   5. the chip opens the agent's session; Runs links the caught message back to that session.
  *
  * Runs against an instance whose backend is `tests/e2e/mock_worker_backend.py` with `MOCK_DECISION=1`
  * (every agent turn answers from the mock worker; the Decision API answers "yes 0.9" from the double):
@@ -23,6 +23,7 @@ import { mkdirSync } from 'node:fs';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { REPO_ROOT, apiContext, apiOrigin, configuredFileEnv } from '../_shared/api';
 import { dismissSetupModal } from '../triggers/helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const INSTANCE = process.env.FLOW_INSTANCE || '';
 const CHANNEL = 'telegram';
@@ -42,6 +43,8 @@ let agentId = '';
 let sourceId = '';
 let ruleId = '';
 const pageErrors: string[] = [];
+const consoleErrors: string[] = [];
+const failedResponses: string[] = [];
 const badResponses: string[] = [];
 
 async function controlJson<T>(method: 'GET' | 'POST', route: string, body?: unknown): Promise<T> {
@@ -82,7 +85,7 @@ async function open(page: Page, route: string) {
   await dismissSetupModal(page);
   await page.goto(route);
   const skip = page.getByRole('button', { name: 'Skip' });
-  if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
+  if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
 }
 
 async function shot(page: Page, name: string) {
@@ -96,7 +99,7 @@ async function shot(page: Page, name: string) {
 }
 
 test.describe.configure({ mode: 'serial' });
-test.setTimeout(240_000);
+test.setTimeout(adjusted(240_000));
 
 test.beforeAll(async () => {
   api = await apiContext();
@@ -156,9 +159,19 @@ test.afterAll(async () => {
 
 test.beforeEach(({ page }) => {
   page.on('pageerror', (e) => pageErrors.push(String(e)));
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
   page.on('response', (r) => {
+    if (r.status() >= 400) failedResponses.push(`${r.status()} ${r.request().method()} ${r.url()}`);
     if (r.url().includes('/graph/trigger') && r.status() >= 400 && ![404, 422].includes(r.status()))
       badResponses.push(`${r.status()} ${r.url()}`);
+  });
+});
+
+test.afterEach(async () => {
+  await test.info().attach('browser-diagnostics', {
+    body: JSON.stringify({ pageErrors, consoleErrors, failedResponses }, null, 2), contentType: 'application/json',
   });
 });
 
@@ -202,11 +215,19 @@ test('2. sentence, agent, prompt; the fast test and Try answer; Save turns it on
   expect(rule.gate?.sentence).toBe('asks for a refund or disputes a charge');
   expect(rule.then?.run_agent?.agent).toBe(`agent-${agentId}`);
   expect(rule.enabled).toBe(true);
+  // Both preview routes must stay read-only even though this rule has a real agent action.
+  expect(await graph('get', `/graph/trigger/runs?trigger_id=${ruleId}`)).toEqual([]);
   await shot(page, 'stream-inbox-rule-tried');
 });
 
 test('3. a second message is caught: the chip on the message and the row, the lifecycle, the session', async ({ page }) => {
   const nonce = Math.random().toString(36).slice(2, 8);
+  const conversationId = await conversationOfSource();
+  await open(page, '/dock/stream_inbox');
+  const row = page.locator(`[data-testid="stream-inbox-conversation-row"][data-conversation-id="${conversationId}"]`);
+  await expect(row).toHaveCount(1);
+  await row.click();
+  // Keep the conversation mounted while the message and its wizard-backed result arrive.
   await deliverAndSync(`Please refund the duplicate charge from last week ${nonce}`);
   // The fire: one run for the rule, with the decision and the session it started.
   await expect
@@ -219,12 +240,6 @@ test('3. a second message is caught: the chip on the message and the row, the li
     }, { message: 'the rule never caught the message' })
     .toBe('caught');
 
-  const conversationId = await conversationOfSource();
-  await open(page, '/dock/stream_inbox');
-  const row = page.locator(`[data-testid="stream-inbox-conversation-row"][data-conversation-id="${conversationId}"]`);
-  await expect(row).toHaveCount(1);
-  await expect(row.getByTestId('stream-inbox-row-automation')).toBeVisible();
-  await row.click();
   const bubble = page.locator('[data-testid^="message-bubble-"]').filter({ hasText: nonce });
   const chip = bubble.getByTestId('message-automation-chip');
   await expect(chip).toBeVisible();
@@ -237,13 +252,17 @@ test('3. a second message is caught: the chip on the message and the row, the li
   await expect(page).toHaveURL(/\/dock\/process-runs\?run=/);
   await shot(page, 'stream-inbox-session');
 
-  // The top bar counts it; the list row carries a mark.
-  await expect(page.getByTestId('top-nav-automations-badge')).toHaveText(/^[1-9]/);
-  await page.getByTestId('top-nav-automations').click();
-  await expect(page).toHaveURL(/\/dock\/automations$/);
-  await expect(page.getByTestId(`automation-marks-${ruleId}`)).toBeVisible();
-  await expect(page.getByTestId(`automation-counts-${ruleId}`)).toContainText('caught');
+  await open(page, '/dock/stream_inbox');
+  await expect(row.getByTestId('stream-inbox-row-automation')).toBeVisible();
+
+  // The current compact list opens the rule; execution details live in Runs.
+  await open(page, '/dock/automations');
+  await expect(page.getByTestId(`automation-row-${ruleId}`)).toBeVisible();
   await shot(page, 'stream-inbox-list');
+  await open(page, `/dock/automations/runs?trigger=${ruleId}`);
+  await page.locator('[data-testid^="run-row-"]').first().click();
+  await expect(page.getByTestId('run-detail-open-process')).toBeVisible();
+  await shot(page, 'stream-inbox-run');
 
   expect(pageErrors, 'page errors').toEqual([]);
   expect(badResponses, 'trigger responses ≥ 400').toEqual([]);

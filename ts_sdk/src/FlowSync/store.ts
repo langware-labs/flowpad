@@ -3,8 +3,8 @@ import { ViewType } from '../utils/ui/view-types';
 import { bindAssetEditorRegistry } from '../models/asset-editor';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
-import { ApiError, isApiError } from '../ApiResponse';
-import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX } from '../client';
+import { ApiError, ApiWarning, isApiError } from '../ApiResponse';
+import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX, ListPage, pageOf, withPage } from '../client';
 
 import config from '../config';
 import { IEntity } from '../IEntity';
@@ -14,8 +14,8 @@ import type { ReturnedValue } from '../models/ReturnedValue';
 import { readFlowAnswer, readFlowEnvelope } from './flow-call';
 import { isAxiosError } from 'axios';
 import { BootstrapInfo, DeferredInfo, ScanInfo } from '../models/BootstrapInfo';
-import { isValidIdentifier, isValidUUIDv4, TypeId } from '../models/TypeId';
-import { dockOptionsToScopeFilter } from '../utils/scope-filter';
+import { isValidIdentifier, isValidEntityId, TypeId } from '../models/TypeId';
+import { dockOptionsToScopeFilter, pinnedProjectId } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
 import { isElectronShell } from '../utils/runtime';
 import { isAbsoluteMachinePath } from '../utils/vfs-path';
@@ -36,7 +36,7 @@ import { emitEntityTag } from './entity.onTag';
 import { ExpansionType } from './expand';
 import { EntityFactory } from '../schema/factory';
 import { SubscriptionMap, TypeIdMap, WatchMap, WatchQueryMap } from './map';
-import { ExpansionRequest, QueryRequest } from './query';
+import { ExpansionRequest, QueryRequest, WatchedQuery } from './query';
 import { ActionType, JSONSchemaParser, TypeInfo } from './schema';
 import { ptyOrphanBuffer } from '../services/shell/ptyOrphanBuffer';
 
@@ -60,6 +60,26 @@ export interface EntityExpansion {
   auth_scopes?: string[][] | null;
   is_private?: boolean;
   expansions?: ExpansionType[] | null;
+  /** Is this row the caller's own (llm_endpoint: an allowance they hold)? Rides `permissions`. */
+  mine?: boolean | null;
+  /** What this row draws from, in fallback order (llm_endpoint). Rides `permissions`. */
+  source_ids?: string[] | null;
+  /** Who sponsors the row (llm_endpoint: `global` | `organization` | `team` | `user`). */
+  scope_kind?: string | null;
+  /** The row's own limits with used / remaining / resets_at (llm_endpoint). */
+  remaining?: RemainingEntry[] | null;
+  /** The model each size (sm/md/lg) resolves to down the row's chain (llm_endpoint); `null` = none declared. */
+  tiers?: Record<string, string | null> | null;
+}
+
+/** One limit of a row with what is used of it, as the hub reports it. */
+export interface RemainingEntry {
+  key: string;
+  limit: number;
+  used: number;
+  remaining: number;
+  window: string;
+  resets_at: number | null;
 }
 
 interface PendingPromise<T> {
@@ -328,6 +348,26 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   public getTypeInfo(type: string): TypeInfo | undefined {
     if (typeof type !== 'string') return undefined;
     return this.typeInfos[type.toLowerCase()];
+  }
+
+  /** Types a query was answered empty for because the server does not serve them (warned once). */
+  private readonly unservedTypesLogged = new Set<string>();
+
+  /** Whether the connected server serves rows of this type — its bootstrap ``types`` lists every
+   *  type it serves (the desktop all of its own, the hub its API-visible ones). Before the types
+   *  load nothing is known, so nothing is refused. */
+  public servesType(type: string): boolean {
+    if (Object.keys(this.typeInfos).length === 0) return true;
+    return typeof type === 'string' && type.toLowerCase() in this.typeInfos;
+  }
+
+  /** Which fields the connected server keeps on rows of `type`: the ones its bootstrap schema lists. Each
+   *  server lists exactly the fields it keeps, so a query is folded to those before it is sent
+   *  (`QueryFilter.forServer`). Before the types load — or for a schema that does not even list `id`, so does
+   *  not describe its rows — nothing is known, and every field counts as kept. */
+  private keptFields(type: string): (field: string) => boolean {
+    const fields = this.getSchema(type)?.fieldSet;
+    return fields?.has('id') ? (field) => fields.has(field) : () => true;
   }
 
   /** All registered TypeInfos (the frontend SchemaRegistry). */
@@ -653,7 +693,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     emitEntityTag(typeId, op, data ?? null);
     // Handle delete operation by removing from all query results
     if (op === 'delete') {
-      this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
+      this.watchedQueries.removeEntityFromResults(typeId.type, typeId, this.refillPage);
     } else if (op === 'update' && this.dataOpQueryInvalidation) {
       // `update` ops only invalidate (full network refetch) when explicitly
       // enabled. `create` no longer takes this path — the data-op already carries
@@ -709,6 +749,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           // approved. Merge into the row the list holds too.
           const row = watchedQuery.results[index];
           if (row !== this.entities.get(typeId)?.entity) this.deepAssign(row, data);
+          // An ordered list keeps its order: the changed field may be the one it is sorted by.
+          WatchQueryMap.reorder(watchedQuery, { typeId, data });
           watchedQuery.notifyCallbacks();
         }
       }
@@ -1178,8 +1220,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (dock?.viewType === 'assets' || dock?.viewType === 'explorer') {
       const noun = dock.viewType === 'assets' ? 'Assets' : 'Files';
       const scope = dockOptionsToScopeFilter(dock.options);
-      if (scope?.mode === 'project' && scope.activeProjectId) {
-        const name = nameFromCache('project', scope.activeProjectId);
+      const pinned = pinnedProjectId(scope);
+      if (pinned) {
+        const name = nameFromCache('project', pinned);
         return name ? `${name}'s ${noun}` : noun;
       }
       if (scope?.mode === 'user') return `My ${noun}`;
@@ -1254,7 +1297,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   public removeEntityFromCache(typeId: TypeId): void {
-    this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
+    this.watchedQueries.removeEntityFromResults(typeId.type, typeId, this.refillPage);
     const entity = this._evict(typeId);
     this._notifyAllAliases(typeId, entity, null);
   }
@@ -1336,7 +1379,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       ?.filter?.match;
     if (match?.op !== '$IN' || match.operands?.[0] !== 'id' || !Array.isArray(match.operands[1])) return claimed;
     for (const id of match.operands[1]) {
-      if (typeof id !== 'string' || !isValidUUIDv4(id)) continue;
+      if (typeof id !== 'string' || !isValidEntityId(id)) continue;
       const typeId = new TypeId(type, id);
       const ref = this.getRef(typeId);
       if (ref.entity || ref.status === EntityStatus.FETCHING || ref.notFound || ref.saveInFlight) continue;
@@ -1633,13 +1676,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           throw new Error('Entity missing id on ref');
         }
         const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}/${entity.typeId.id}`;
-        // A remote entity's save reflects to the hub: the server forwards the PUT,
-        // merges the hub's authoritative response (incl. server times) back onto the
-        // local row + broadcasts, and returns the merged entity. Local-only entities
-        // omit the header and save purely locally. The server still re-gates on
-        // remote + logged-in, so an offline remote entity falls back to local.
-        const reflectConfig = entity.remote ? { headers: { 'Hub-Reflect': 'true' } } : undefined;
+        // A remote entity's save goes to the hub: the local server forwards the PUT verbatim
+        // and answers with the HUB's row (hub field names, no local-only fields), after folding
+        // it into the local row. So the entity is re-read from the local server, which holds
+        // both halves. Local-only entities omit the header and save purely locally; a hub row
+        // carries no `remote` flag, so a save on the hub page is a plain PUT.
+        const reflect = entity.remote === true;
+        const reflectConfig = reflect ? { headers: { 'Hub-Reflect': 'true' } } : undefined;
         newEntityJson = (await apiClient.put<IEntity>(endpoint, entityJson, reflectConfig)) as IEntity;
+        if (reflect) {
+          newEntityJson = ((await apiClient.get<IEntity>(endpoint)) as IEntity) ?? newEntityJson;
+        }
       }
       if (!newEntityJson) {
         throw new Error('No data returned');
@@ -1667,11 +1714,28 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (this.applyPendingUpdate(selfTypeId, ref)) {
         ref.status = EntityStatus.READY;
         ref.error = null;
+      } else if (entity.saved && entity.typeId.id) {
+        // The edit was applied to the cached entity before the PUT; a refused or failed PUT must
+        // not leave it showing as if it saved. Put back what the server holds (still rejecting).
+        await this.restoreServerCopy(ref, `${GRAPH_API_PREFIX}${scope_path}/${entityType}/${entity.typeId.id}`);
       }
       throw error;
     } finally {
       ref.saveInFlight = false;
       this.resolvePendingRequests(ref);
+    }
+  }
+
+  /** Replace a ref's entity with the server's copy after a failed save; best-effort — with no
+   *  answer the edited value stays (it is still marked dirty and the save already rejected). */
+  private async restoreServerCopy(ref: EntityRef<T>, endpoint: string): Promise<void> {
+    try {
+      const serverJson = (await apiClient.get<IEntity>(endpoint)) as IEntity | null;
+      if (!serverJson) return;
+      ref.entity = this.castAndDeepAssign(serverJson);
+      if (ref.entity) ref.entity.dirty = false;
+    } catch {
+      // Unreachable too: nothing more honest to show than the unsaved edit.
     }
   }
 
@@ -1686,6 +1750,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       ...(typeof body === 'string' ? { 'Content-Type': 'application/json' } : {}),
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache',
+      // A hub-owned stream (an agent's Chat API) is forwarded by the desktop, as the non-streaming path does.
+      ...(actionInfo.hubReflect && !isHubOnly() ? { 'Hub-Reflect': 'true' } : {}),
     };
     // @ts-ignore
     if (apiClient.testUserToken) {
@@ -1758,6 +1824,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       };
     }
 
+    if (actionInfo.keepEnvelope) requestConfig = { ...(requestConfig ?? {}), keepEnvelope: true };
+
     // XHR cannot outlive the page; the fetch adapter can (same client and interceptors).
     // Only where `fetch` can resolve the address: it parses the URL itself and throws on a
     // relative one, while XHR resolves it against the document. With no absolute base and no
@@ -1772,7 +1840,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     const method = actionInfo.method ?? 'GET';
     const isDedupable = method === 'GET' && !actionInfo.abortSignal;
     if (isDedupable) {
-      const key = endpoint;
+      const key = actionInfo.keepEnvelope ? `envelope:${endpoint}` : endpoint;
       const pending = this._inFlightGets.get(key);
       if (pending) return pending as Promise<Res>;
       const promise = (async () => {
@@ -1815,6 +1883,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         break;
     }
     return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
+  }
+
+  /** One action over HTTP, answering its `data` together with the envelope's `warnings` (a SUCCESS
+   *  answer saying part of the work did not land), which {@link callAction} only logs. */
+  public async callActionWithWarnings<Res>(actionInfo: ActionInfo): Promise<{ data: Res; warnings: ApiWarning[] }> {
+    actionInfo.keepEnvelope = true;
+    const envelope = (await this.callAction<undefined, unknown>(actionInfo)) as {
+      data?: Res;
+      warnings?: ApiWarning[] | null;
+    } | null;
+    return { data: envelope?.data as Res, warnings: Array.isArray(envelope?.warnings) ? envelope.warnings : [] };
   }
 
   /** FlowCall answers survive either transport; expected work outcomes do not throw.
@@ -1916,6 +1995,24 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return this.callAction<_Req, Res>(actionInfo);
   }
 
+  /** Ask a live paged query's page again (a row of it went away and it has more behind it). */
+  private refillPage = (watchedQuery: WatchedQuery<T>): void => {
+    void this._query(watchedQuery.request)
+      .then((rows) => watchedQuery.updateResults(rows))
+      .catch((error) => console.warn(`[FlowSync] ${watchedQuery.request.type}: page refill failed`, error));
+  };
+
+  /** The `has_more` / `next_offset` / `next_cursor` of a live paged query, or undefined for an unpaged one. */
+  public getQueryPage(request: QueryRequest): ListPage | undefined {
+    const watchedQuery = this.watchedQueries.getWatchedQuery(request);
+    if (watchedQuery?.hasMore === undefined) return undefined;
+    return {
+      has_more: watchedQuery.hasMore,
+      next_offset: watchedQuery.nextOffset ?? 0,
+      next_cursor: watchedQuery.nextCursor ?? null,
+    };
+  }
+
   public getCachedQueryResults<U extends T>(request: QueryRequest): U[] | undefined {
     const watchedQuery = this.watchedQueries.getWatchedQuery(request);
     return watchedQuery?.results as U[] | undefined;
@@ -1998,6 +2095,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
   private async _query<U extends T>(request: QueryRequest): Promise<U[]> {
     const { type, query, scope } = request;
+    // A type this server does not serve has no rows here: answer empty instead of asking.
+    if (!this.servesType(type)) {
+      if (!this.unservedTypesLogged.has(type)) {
+        this.unservedTypesLogged.add(type);
+        console.warn(
+          `[FlowSync] ${type}: not served by this backend (absent from bootstrap types); queries answer empty`,
+        );
+      }
+      return [];
+    }
     const epoch = this.queryEpoch;
 
     // Check if WatchedQuery with pending promise already exists (another call beat us to it)
@@ -2033,10 +2140,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         }
       }
 
-      let apiQuery: any = {};
-      if (query) {
-        apiQuery = query.toJSON();
+      // A test on a field this server does not keep is answered here, not sent (the server refuses it).
+      const asked = query ? query.forServer(this.keptFields(type)) : undefined;
+      if (asked === null) {
+        const none: U[] = [];
+        return query?.limit != null
+          ? withPage(none, { has_more: false, next_offset: query.offset ?? 0, next_cursor: null })
+          : none;
       }
+      const apiQuery: any = asked ? asked.toJSON() : {};
       // Blob-carrying types (comment.raw_content, …) serve their blob fields
       // only under expand=blobs — without this, a scoped query returns rows
       // with EMPTY bodies (a receiver's synced comment renders "(empty)" in
@@ -2081,7 +2193,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         queryResult.push(ref.entity as U);
       }
 
-      return queryResult;
+      // A paged answer says where the next page starts; the rows keep it.
+      const page = pageOf(entitiesJson);
+      return page ? withPage(queryResult, page) : queryResult;
     })().finally(() => this.settleIdBatch(idBatch));
 
     // Register the pending promise BEFORE awaiting it
@@ -2095,6 +2209,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       const watchedQuery = this.watchedQueries.getWatchedQuery(request);
       if (epoch === this.queryEpoch && watchedQuery?.pendingPromise === queryPromise) {
         watchedQuery.results = results;
+        watchedQuery.setPage(results);
         watchedQuery.pendingPromise = undefined;
       }
       this.watchedQueries.releaseIfUnwatched(request);
@@ -2238,7 +2353,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       this._evict(typeId);
       // Keep query-driven UIs reactive even when backend doesn't emit a delete DataOp.
       // If a delete DataOp arrives later, removeEntityFromResults is idempotent.
-      this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
+      this.watchedQueries.removeEntityFromResults(typeId.type, typeId, this.refillPage);
       console.log(`🗂️ [DataManager.delete] Removed ${typeId.type}:${typeId.id} from local entities cache`);
       console.log(`🔔 [DataManager.delete] Waiting for DataOp from server for query invalidation...`);
     } catch (error) {
@@ -2415,7 +2530,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
   private mergeExpansions(exp1?: EntityExpansion, exp2?: EntityExpansion): EntityExpansion {
     // TODO [FLOWPAD-891] Delete mergeExpansions and don't use entity.expand.expansions array
+    // Per-row facts a type adds to its permissions expansion (`mine`, an llm_endpoint's tree facts)
+    // are kept, newest first: rebuilding from the generic fields alone dropped them whenever the
+    // entity was already cached, so a re-read lost its own answers.
     return {
+      ...exp1,
+      ...exp2,
       roles: this.mergeArrays(exp1?.roles, exp2?.roles),
       allowed_actions: this.mergeArrays(exp1?.allowed_actions, exp2?.allowed_actions),
       auth_scopes: this.mergeArrays(exp1?.auth_scopes, exp2?.auth_scopes),

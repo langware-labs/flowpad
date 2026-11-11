@@ -129,6 +129,10 @@ export interface Browseable {
    *  PREVIEW: hovering a row shows it without opening anything. */
   tooltip?: ReactNode;
 
+  /** The entity this row names. Hover shows the same `EntityCard` the tab
+   *  strip shows for it; wins over `tooltip`. */
+  entity?: { type: string; id: string };
+
   /** Optional stable alternate identity for *selection* matching, used when the
    *  active pointer addresses this row by a different serialization than its
    *  `pointer` (e.g. an `editor/<t>/typeid/<id>` URL vs a vfs-path leaf). The
@@ -162,14 +166,30 @@ export interface Browseable {
   /** Inline hover actions. Side effects only. */
   toolbar?: ToolbarAction[];
 
+  /** Right-click menu. A function is evaluated each time the menu opens, so an
+   *  item can depend on live state (e.g. Paste enabled only with a clipboard).
+   *  Undefined ⇒ the row has no context menu. An item with `startsRename`
+   *  opens the row's inline rename instead of calling `run`. */
+  contextMenu?: ToolbarAction[] | (() => ToolbarAction[]);
+
+  /** Keyboard actions on the focused row (F2 always means rename, via
+   *  `onRename`). Each receives the rows it applies to: the whole
+   *  multi-selection when this row is part of one, else just this row. */
+  keyActions?: Partial<Record<RowKeyAction, (rows: Browseable[]) => void | Promise<void>>>;
+
+  /** Absolute URL that downloads this row's file. Lets the row be dragged
+   *  out of the app onto the desktop (Chromium `DownloadURL`). */
+  downloadUrl?: string;
+
   /** Internal tree drag payload. When present, the row can be dragged. */
   dragData?: BrowseableDragData;
 
   /** Return true when this row can accept the currently-dragged row. */
   canDrop?: (dragData: BrowseableDragData) => boolean;
 
-  /** Side effect for a successful drop. */
-  onDrop?: (dragData: BrowseableDragData) => void | Promise<void>;
+  /** Side effect for a successful drop. `copy` is true when the user held
+   *  Alt/Option while dropping — copy instead of move. */
+  onDrop?: (dragData: BrowseableDragData, opts?: { copy: boolean }) => void | Promise<void>;
 
   /** Accept OS files/folders dropped from outside the app. Entries carry the
    *  drop-relative path (`relPath`, posix, includes the file name) so a dropped
@@ -183,6 +203,9 @@ export interface Browseable {
    *  within THIS container. */
   reorderChildren?: (dragId: string, anchor: { afterId?: string; beforeId?: string }) => void | Promise<void>;
 }
+
+/** Keyboard actions a row can bind: Delete/Backspace, ⌘C, ⌘X, ⌘V, ⌘D. */
+export type RowKeyAction = 'delete' | 'copy' | 'cut' | 'paste' | 'duplicate';
 
 /**
  * A root Browseable. Roots own a subtree and know how to resolve a pointer
@@ -221,8 +244,22 @@ export interface ToolbarAction {
   label: string;
 
   /** Called when the button is clicked. Explicitly a side effect — if you
-   *  want to navigate, use the row's `pointer` instead. */
-  run: () => void | Promise<void>;
+   *  want to navigate, use the row's `pointer` instead. From a row's context
+   *  menu it receives the rows it applies to (the multi-selection when the row
+   *  is in one, else the row itself). */
+  run: (rows?: Browseable[]) => void | Promise<void>;
+
+  /** Context menu only: draw a separator above this item. */
+  separatorBefore?: boolean;
+
+  /** Context menu only: shortcut hint shown on the right (e.g. "F2"). */
+  shortcut?: string;
+
+  /** Context menu only: greyed out. A function is read when the menu opens. */
+  disabled?: boolean | (() => boolean);
+
+  /** Opens the row's inline rename (needs `onRename`); `run` is not called. */
+  startsRename?: boolean;
 
   /** Optional busy indicator while `run()` is pending. Defaults to true. */
   showBusyIndicator?: boolean;

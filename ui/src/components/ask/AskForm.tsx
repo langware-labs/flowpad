@@ -1,15 +1,17 @@
 import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
+import { isOk, type ReturnedValue } from '@sdk';
 import apiClient from '@sdk/client';
 import { Button } from '@src/components/ui/button';
 import { AskAssist, type AssistState } from './AskAssist';
 import { AskChoiceBlock } from './AskChoiceBlock';
+import { AskSkipButton, SKIPPED } from './AskSkipButton';
 import { AskItems, type AskItem } from './AskItems';
 import { AskValueInput } from './AskValueInput';
-import { hasChoicesOf, useKeepQuestionOpen, type AskChoice } from './use-ask-question';
+import { type AskQuestion as Question, fieldsOf, hasChoicesOf, useKeepQuestionOpen } from './use-ask-question';
 import { useBackendText } from '@src/components/assets/editor/wizard/wizard-texts';
 import { MarkdownView } from '@src/components/markdown-view';
 
@@ -26,53 +28,20 @@ import { MarkdownView } from '@src/components/markdown-view';
  * than a way to close the form, and a question that has already settled renders as settled.
  */
 
-type Shape = Record<string, unknown> | string | null;
-
-interface Question {
-  id: string;
-  op: string;
-  prompt: string;
-  /** The declared kind opened one level: `{field: form}`, or the kind itself for a scalar. */
-  fields: Shape;
-  /** The answer is a secret (an API key): drawn masked. */
-  secret?: boolean;
-  /** The answer is a file's content (a key file): drawn as a file picker. */
-  file?: boolean;
-  /** More than one way to answer (`AskChoiceBlock`); empty for every ordinary question. */
-  choices?: AskChoice[];
-  /** Several questions asked as one (`AskItems`); empty for every ordinary question. */
-  items?: AskItem[];
-  /** The words on the two buttons ("Continue"); empty means Send / Cancel. */
-  submit_label?: string;
-  cancel_label?: string;
-  /** Closes by itself once its goal holds (a phone sends a code): nothing to Send, only to watch. */
-  auto?: boolean;
-  /** Why it is asked and what to do — markdown; a gate's "not yet" reason is appended to it. */
-  detail?: string;
-  /** How a person finds the value — the op's `setup.md`, markdown. */
-  guide?: string;
-  /** The op names an agent that can answer instead (AI Assist). */
-  assist_available?: boolean;
-  assist?: AssistState | null;
-}
-
-/** The field names to draw. An object shape is its keys; anything else is one
- *  unnamed value, which is what a scalar declaration means. */
-function fieldsOf(shape: Shape): string[] {
-  if (shape && typeof shape === 'object' && !Array.isArray(shape)) return Object.keys(shape);
-  return [''];
-}
-
 export function AskForm({
   questionId,
   onSettled,
   showOp = true,
+  verifyWith,
 }: {
   questionId: string;
   /** Told once the question is answered or cancelled (`'answered'` / `'cancelled'`). */
   onSettled?: (how: 'answered' | 'cancelled') => void;
   /** Show the op's name under the prompt — useful in a bare window, noise inside a wizard. */
   showOp?: boolean;
+  /** How the host runs a question's `verify` on the typed values (a source setup dialog: that source's step as a
+   *  probe): once by itself after a paste, then on the Verify button, the verdict shown in place. */
+  verifyWith?: (step: string, values: Record<string, string>) => Promise<Pick<ReturnedValue, 'exit_code' | 'detail'>>;
 }) {
   const { _ } = useLingui();
   const bt = useBackendText();
@@ -81,6 +50,11 @@ export function AskForm({
   const [error, setError] = useState('');
   const [settled, setSettled] = useState('');
   const [busy, setBusy] = useState(false);
+  /** The verdict of the last verify: the step's own sentence, and whether it passed. */
+  const [verdict, setVerdict] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  /** The one verify a paste runs by itself: armed by the paste, spent by the change that carries its value. */
+  const verifyOnPaste = useRef(false);
   useKeepQuestionOpen(settled ? null : questionId);
 
   useEffect(() => {
@@ -103,12 +77,18 @@ export function AskForm({
   }, [questionId, _]);
 
   const send = useCallback(
-    async (path: '/answer' | '/cancel', body?: unknown) => {
+    async (path: '/answer' | '/cancel' | '/skip', body?: unknown) => {
       setBusy(true);
       setError('');
       try {
         await apiClient.post(`/api/v1/ask/${questionId}${path}`, body);
-        setSettled(path === '/cancel' ? _(msg`Cancelled.`) : _(msg`Thank you — sent.`));
+        setSettled(
+          path === '/cancel'
+            ? _(msg`Cancelled.`)
+            : path === '/skip'
+              ? _(SKIPPED)
+              : _(msg`Thank you — sent.`),
+        );
         onSettled?.(path === '/cancel' ? 'cancelled' : 'answered');
       } catch (reason) {
         // A 422 means the value did not match the shape the op declared. The
@@ -125,6 +105,25 @@ export function AskForm({
     setSettled(_(msg`AI Assist answered it.`));
     onSettled?.('answered');
   }, [onSettled, _]);
+
+  const canVerify = !!(question?.verify && verifyWith);
+  const verify = useCallback(
+    async (current: Record<string, string>) => {
+      if (!question?.verify || !verifyWith) return;
+      setVerifying(true);
+      setVerdict(null);
+      try {
+        const names = fieldsOf(question.fields);
+        const answer = await verifyWith(question.verify.source_step, Object.fromEntries(names.map((n) => [n || 'value', current[n] ?? ''])));
+        setVerdict({ ok: isOk(answer), detail: answer?.detail ?? '' });
+      } catch (reason) {
+        setVerdict({ ok: false, detail: reason instanceof Error ? reason.message : String(reason) });
+      } finally {
+        setVerifying(false);
+      }
+    },
+    [question, verifyWith],
+  );
 
   const submit = useCallback(() => {
     const names = fieldsOf(question?.fields ?? null);
@@ -154,6 +153,12 @@ export function AskForm({
   return (
     <div className="flex flex-col gap-4" data-testid="ask-view">
       <div>
+        {question.stage ? (
+          <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground" data-testid="ask-stage">
+            {question.stage.index} of {question.stage.total}
+            {question.stage.label ? ` · ${question.stage.label}` : ''}
+          </p>
+        ) : null}
         <h1 className="whitespace-pre-line text-base font-medium" data-testid="ask-prompt">
           {question.prompt}
         </h1>
@@ -185,8 +190,8 @@ export function AskForm({
       {(hasChoices || items.length > 0 ? [] : fieldsOf(question.fields)).map((name) => (
         <div key={name} className="flex flex-col gap-1">
           {name ? (
-            <label className="text-sm" htmlFor={`ask-${name}`}>
-              {name}
+            <label className="text-sm" htmlFor={`ask-${name}`} data-testid={`ask-label-${name}`}>
+              {question.labels?.[name] ?? name}
             </label>
           ) : null}
           <AskValueInput
@@ -195,11 +200,43 @@ export function AskForm({
             secret={question.secret}
             file={question.file}
             value={values[name] ?? ''}
-            onChange={(value) => setValues((prev) => ({ ...prev, [name]: value }))}
+            onChange={(value) => {
+              const next = { ...values, [name]: value };
+              setValues(next);
+              if (verifyOnPaste.current) {
+                verifyOnPaste.current = false;
+                void verify(next);
+              }
+            }}
             onEnter={() => void submit()}
+            onPaste={canVerify && !verdict ? () => (verifyOnPaste.current = true) : undefined}
           />
         </div>
       ))}
+
+      {canVerify ? (
+        <div className="flex items-center gap-3" data-testid="ask-verify">
+          <Button
+            variant={verdict?.ok ? 'outline' : 'default'}
+            size="sm"
+            data-testid="ask-verify-button"
+            disabled={busy || verifying}
+            onClick={() => void verify(values)}
+          >
+            {verifying ? <Loader2 className="size-4 animate-spin" /> : null}
+            {question.verify?.label ? bt(question.verify.label) : <Trans>Verify</Trans>}
+          </Button>
+          {verdict ? (
+            <span
+              className={verdict.ok ? 'text-sm text-emerald-600 dark:text-emerald-400' : 'text-sm text-destructive'}
+              data-testid="ask-verify-verdict"
+              data-ok={verdict.ok ? 'true' : 'false'}
+            >
+              {verdict.detail}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {error ? (
         <p
@@ -217,7 +254,8 @@ export function AskForm({
               <Loader2 className="size-4 animate-spin" />
               <Trans>Waiting…</Trans>
             </span>
-          ) : (
+          ) : canVerify && !verdict?.ok ? null : (
+            // A question with a verify sends only once the verdict passed: Verify is the action until then.
             <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
               {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
             </Button>
@@ -227,6 +265,8 @@ export function AskForm({
           </Button>
         </div>
       )}
+
+      <AskSkipButton skippable={question.skippable} busy={busy} onSkip={() => void send('/skip')} />
 
       {/* Help comes after the inputs: the answer is the point of the screen, the how-to is for whoever needs it. */}
       <AskAssist

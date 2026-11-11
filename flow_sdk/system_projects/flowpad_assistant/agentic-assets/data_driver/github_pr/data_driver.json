@@ -3,7 +3,7 @@
   "name": "github_pr",
   "title": "GitHub PRs",
   "icon_name": "GitHub",
-  "description": "Each pull request assigned to you is a conversation; its comments, reviews, pushes and checks are the messages.",
+  "description": "Each open pull request you opened or whose review is requested from you is a conversation; its comments, reviews, pushes and checks are the messages.",
   "kind": "datasource.api.github_pr",
   "auth": {
     "connector": "github",
@@ -13,7 +13,7 @@
     "permission.github.pull_requests.read": {
       "mechanism": "oauth",
       "oauth_scopes": ["repo", "read:org"],
-      "why": "Reads the pull requests assigned to you, with their comments, reviews, pushes and checks."
+      "why": "Reads the pull requests you opened or that await your review, with their comments, reviews, pushes and checks."
     },
     "permission.github.pull_requests.comment": {
       "mechanism": "oauth",
@@ -27,13 +27,18 @@
       "type": "text",
       "choices": true,
       "label": "Start a conversation when a PR is",
-      "hint": "assigned (assigned to you) or review_requested (your review is requested)."
+      "hint": "mine (opened by you or awaiting your review — the default), assigned (assigned to you) or review_requested (your review is requested)."
     },
     "repos": {
       "type": "lines",
       "label": "Repositories",
       "placeholder": "octo-org/octo-repo",
       "hint": "owner/repo per line; empty = every repository you can reach"
+    },
+    "dependabot": {
+      "type": "bool",
+      "label": "Include Dependabot PRs",
+      "hint": "Dependabot's open PRs in these repositories — or, with none listed, in your organisations and your own account."
     },
     "base_url": {
       "type": "text",

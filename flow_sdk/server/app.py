@@ -67,6 +67,7 @@ from .routes import (
     favorites_router,
     git_router,
     graph_workflows_router,
+    headless_turn_router,
     hooks_router,
     ingest_router,
     journeys_router,
@@ -102,14 +103,30 @@ async def _on_server_startup():
     from flow_sdk.db.drivers.sqlite.connection import get_database_path
     from flow_sdk.instance_settings import get_instance_settings
 
+    from .startup import server_launched_by
+
     settings = get_instance_settings()
     clear_backend_restart_request()
+
+    # Code running in the backend that calls a local backend with urllib (the in-app diagnose's health
+    # check) presents the gate token, like the CLI and the monitor do.
+    from flow_sdk.instance_settings.cookie_gate import install_gate_opener
+
+    install_gate_opener()
 
     # Establish local identities before background services use them. Assemble
     # the type payload after those services have registered their entity types.
     from flow_sdk.server.routes.bootstrap import _ensure_local_entities, initialize_bootstrap
 
     await _ensure_local_entities()
+
+    # An IT session a dead backend left mid-run leaves its throwaway folder behind; nothing of it may stay.
+    try:
+        from flow_sdk.core.compute.it_session import sweep_leftovers  # noqa: PLC0415
+
+        sweep_leftovers()
+    except Exception:
+        logging.getLogger(__name__).exception("IT session leftovers could not be swept")
 
     # A previously enabled direct callback keeps its port across restarts.
     from flow_sdk.server import webhook_listener
@@ -118,6 +135,15 @@ async def _on_server_startup():
         await webhook_listener.restore()
     except Exception:
         logging.getLogger(__name__).exception("Direct webhook listener could not start")
+
+    # A web app's lifecycle record left mid-run by the previous backend is settled from what runs now, never
+    # by redoing its work (``core/webapp/coordinator.adopt_on_start``).
+    try:
+        from flow_sdk.core.webapp.coordinator import adopt_on_start  # noqa: PLC0415
+
+        adopt_on_start()
+    except Exception:
+        logging.getLogger(__name__).exception("Web app lifecycle records could not be settled")
 
     # The two audience doors — one listener per audience a browser can enter this box by.
     from flow_sdk.server import audience_listener
@@ -155,6 +181,7 @@ async def _on_server_startup():
             "server_pid": os.getpid(),
             "server_create_time": psutil.Process(os.getpid()).create_time(),
             "generation": os.environ.get("FLOWPAD_SERVICE_GENERATION"),
+            "launched_by": server_launched_by(),
         }
     )
     print(f"  server.json:   {settings.server_json_path}")
@@ -269,6 +296,8 @@ async def _on_server_startup():
         print(f"  Tag forwarding: failed to arm ({_e})")
 
     await _lift_this_computer_placement()
+    await _boot_lift("migration_2026_11_project_deployments", "Project deployments")
+    await _boot_lift("migration_2026_11_attachment_count", "Conversation attachment counts")
     await _lift_credential_stores()
     await _lift_place_settings()
     await _lift_credential_guides()
@@ -327,6 +356,10 @@ async def _start_app_ready_signal() -> None:
         logging.getLogger(__name__).exception("App-ready signal: failed to start")
 
 
+#: The startup pass that tells hosted datasets where their rows are (held so it is not collected).
+_HOSTED_REFRESH: set = set()
+
+
 async def _app_ready_signal() -> None:
     """Emit ``app.ready`` once this boot, when the app is genuinely usable.
 
@@ -380,6 +413,14 @@ async def _app_ready_signal() -> None:
         await reconcile_wizard_triggers()
         await reap_stale_trigger_rows()
         system_content_ready.set()
+        # Each dataset in a data source hears from its source now, not at that source's next poll --
+        # beside the ready signal, never ahead of it.
+        import asyncio as _asyncio_hosted
+
+        from flow_sdk.datasets.stores import refresh_all_hosted  # noqa: PLC0415
+
+        _HOSTED_REFRESH.add(task := _asyncio_hosted.create_task(refresh_all_hosted(), name="hosted-datasets-refresh"))
+        task.add_done_callback(_HOSTED_REFRESH.discard)
 
         # make+publish rather than emit: `emit` returns None when nothing is
         # subscribed, and this line wants a stable event id in the log either
@@ -514,6 +555,10 @@ async def _start_agent_server() -> None:
         from flow_sdk.builtin.agent_serve import AgentServer
         from flow_sdk.config import default_service_config
 
+        if _AGENT_SERVER is not None:
+            # A second startup in one process (a test app, a reload) must not leave the first
+            # supervisor's watch loop polling the database forever.
+            await _AGENT_SERVER.stop()
         _AGENT_SERVER = AgentServer(
             run_processes=default_service_config.agent_run_deployments,
             watch_seconds=default_service_config.agent_watch_seconds,
@@ -636,10 +681,10 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.ingest.change_event import subscribe as subscribe_source_changes
 
         subscribe_source_changes()
-        # A source that declares a mirror has its dataset made the mirror of its records after every sync.
-        from flow_sdk.datasets.projection import start_dataset_projection
+        # A change to what a project's setup status reads marks it stale (``core/project_status``).
+        from flow_sdk.core.project_status.hooks import subscribe as subscribe_project_status
 
-        start_dataset_projection()
+        subscribe_project_status()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")
@@ -966,6 +1011,7 @@ server.add_router(runs_router)
 server.add_router(tags_router)
 server.add_router(display_router)
 server.add_router(snippet_router)
+server.add_router(headless_turn_router)
 server.add_router(shell_router)
 server.add_router(asset_share_router)
 server.add_router(subgraph_router)
@@ -989,6 +1035,9 @@ server.add_router(agents_router)
 server.add_router(journeys_router)
 server.add_router(git_router)
 server.add_router(worldview_router)
+from flow_sdk.server.routes.it_session import router as it_session_router  # noqa: E402
+
+server.add_router(it_session_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

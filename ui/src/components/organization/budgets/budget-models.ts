@@ -27,8 +27,61 @@
  *  happened to open this page. Keep these in step with `MEMBER_DEFAULT_MODELS` / `ORG_DEFAULT_MODELS`
  *  in `hub llm_endpoint.py`; they are a hint, so drift shows as a stale placeholder
  *  rather than as a wrong value on a row. */
-export const DEFAULT_MODELS = ['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini', 'openai/text-embedding-3-small'];
+export const DEFAULT_MODELS = ['anthropic/claude-haiku-5.5', 'openai/gpt-5-mini', 'openai/text-embedding-3-small'];
 export const ORG_DEFAULT_MODELS = ['anthropic/claude-*', 'openai/*'];
+
+/**
+ * The one-press allow-lists on a budget row: a whole vendor family each. Pressing several chains them
+ * (`withModelEntries`), so an admin can allow Claude AND Gemini without typing either; `Clear` empties the list.
+ *
+ * Two spellings of one family. The ORG states a ceiling, so it gets the glob (`glob`), which opens the family.
+ * A TEAM gets the family's three sizes written out, because a list of exact slugs is what a person reads and
+ * edits, and the first slug (small) is where a request for any other model of that family lands
+ * (`aliasesForPinnedModel`). The sizes are not kept here: the hub declares them per provider and serves them
+ * (`provider-sizes`), and `presetEntries` picks the provider whose three sizes all belong to the family.
+ */
+export const MODEL_FAMILY_PRESETS = [
+  { key: 'anthropic', label: 'Anthropic', glob: 'anthropic/claude-*' },
+  { key: 'openai', label: 'OpenAI', glob: 'openai/*' },
+  { key: 'gemini', label: 'Gemini', glob: 'google/gemini-*' },
+] as const;
+
+/** One provider's declared sizes, as the hub serves them. */
+export interface ProviderSizes {
+  provider: string;
+  sm: string;
+  md: string;
+  lg: string;
+}
+
+function matchesGlob(glob: string, slug: string): boolean {
+  const pattern = glob.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(`^${pattern.join('.*')}$`).test(slug);
+}
+
+/**
+ * What a family press writes on a row of this level: the glob on the org, and below it the family's three sizes,
+ * small to large, taken from the provider the hub declares them for. `null` when no provider declares sizes inside
+ * this family (or they have not loaded yet): the button then has nothing honest to write.
+ */
+export function presetEntries(
+  preset: (typeof MODEL_FAMILY_PRESETS)[number],
+  scope: BudgetScope,
+  providerSizes: readonly ProviderSizes[] | undefined,
+): readonly string[] | null {
+  if (scope === 'org') return [preset.glob];
+  const declared = (providerSizes ?? []).find((row) =>
+    [row.sm, row.md, row.lg].every((slug) => matchesGlob(preset.glob, slug)),
+  );
+  return declared ? [declared.sm, declared.md, declared.lg] : null;
+}
+
+/** `models` with each of `entries` added at the end, in order, skipping any already there. */
+export function withModelEntries(models: readonly string[], entries: readonly string[]): string[] {
+  const out = [...models];
+  for (const entry of entries) if (!out.includes(entry)) out.push(entry);
+  return out;
+}
 
 /** What each level of the hierarchy starts with when its list is empty. */
 export type BudgetScope = 'org' | 'team' | 'person';
@@ -114,6 +167,75 @@ export function aliasesForPinnedModel(models_allow: string[]): Record<string, st
     // must agree or this screen's repair effect would rewrite what the hub seeded.
     const bare = family.includes('/') ? family.slice(family.indexOf('/') + 1) : null;
     if (bare && !(bare in out) && !models_allow.includes(bare)) out[bare] = slugs[0];
+  }
+  return out;
+}
+
+/** The model family of a slug or of a family glob, vendor-free: `anthropic/claude-*`, `claude-*` -> `claude`;
+ *  `google/gemini-3.5-flash` -> `gemini`. */
+function familyName(slugOrGlob: string): string {
+  const bare = slugOrGlob.includes('/') ? slugOrGlob.slice(slugOrGlob.indexOf('/') + 1) : slugOrGlob;
+  return bare.split('-')[0];
+}
+
+/** Whether `models_allow` lets `slug` through: listed as is, or covered by one of its globs. */
+function isAllowed(slug: string, models_allow: string[]): boolean {
+  return models_allow.some((pattern) => {
+    if (!pattern.includes('*')) return pattern === slug;
+    const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+    return new RegExp(`^${escaped}$`).test(slug);
+  });
+}
+
+/**
+ * Whether a redirect to `slug` can still land: the list allows it, or allows another model of the SAME family
+ * (a team that narrowed the family to one model). The hub follows a redirect to the model the list does allow
+ * from that family, so a target that is merely not the one pinned is not a dead end.
+ */
+function reachable(slug: string, models_allow: string[]): boolean {
+  return isAllowed(slug, models_allow) || models_allow.some((entry) => familyName(entry) === familyName(slug));
+}
+
+/**
+ * The alias map a row should carry: what the allowed list derives (`aliasesForPinnedModel`), PLUS the
+ * redirects an admin wrote by hand that the derivation can never make -- those that cross families
+ * (`anthropic/claude-*` -> `google/gemini-3.5-flash`: Claude Code asking for Claude, answered with
+ * the one model the wallet funds) and still point at a model the list allows.
+ *
+ * Without this the screen's repair effect rewrote the map from the list alone on every open, so a
+ * redirect an admin typed and saved was gone the next time anyone looked. Same-family entries stay
+ * fully derived: widening a wallet back to a glob must still clear the redirect it used to need.
+ */
+export function reconcileAliases(current: Record<string, string>, models_allow: string[]): Record<string, string> {
+  const derived = aliasesForPinnedModel(models_allow);
+  const kept: Record<string, string> = {};
+  for (const [from, to] of Object.entries(current)) {
+    if (from in derived) continue;
+    if (familyName(from) === familyName(to)) continue; // derived territory: rebuilt from the list
+    if (!reachable(to, models_allow)) continue; // no model of that family is allowed: a redirect into a refusal
+    kept[from] = to;
+  }
+  return { ...kept, ...derived };
+}
+
+/** Same map, whatever the key order. */
+export function sameAliases(a: Record<string, string>, b: Record<string, string>): boolean {
+  const norm = (m: Record<string, string>) => JSON.stringify(Object.entries(m).sort(([x], [y]) => (x < y ? -1 : 1)));
+  return norm(a) === norm(b);
+}
+
+/**
+ * The cross-family redirects on a row, as `[from, to]` family names (`['claude', 'gemini']`), one per
+ * pair. What the "suggested for this provider" note names after a provider's defaults were written.
+ */
+export function crossFamilyRedirects(aliases: Record<string, string>): Array<[string, string]> {
+  const seen = new Set<string>();
+  const out: Array<[string, string]> = [];
+  for (const [from, to] of Object.entries(aliases)) {
+    const pair: [string, string] = [familyName(from), familyName(to)];
+    if (pair[0] === pair[1] || seen.has(pair.join('>'))) continue;
+    seen.add(pair.join('>'));
+    out.push(pair);
   }
   return out;
 }

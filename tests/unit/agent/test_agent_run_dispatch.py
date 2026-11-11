@@ -21,7 +21,7 @@ class _FakeDeployment:
         self.is_local = local
         self._launch = launch
 
-    async def agent(self):
+    async def main_agent(self):
         return type("A", (), {"name": "probe"})()
 
     async def launch(self, prompt, **options):

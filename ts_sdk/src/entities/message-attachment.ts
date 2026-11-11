@@ -42,14 +42,18 @@ export interface IMessageAttachment extends IEntity {
   /** The shared asset's identity as sent (sender-pinned id). */
   asset_type?: string;
   asset_id?: string;
+  /** The id of the entity a copy install put on THIS machine, when it is not `asset_id`. */
+  installed_asset_id?: string;
   name?: string | null;
   description?: string | null;
+  /** The kind a `*.value.json` file carries (its `spec_kind`), read once at stage time. */
+  value_kind?: string | null;
   /** Staging path RELATIVE to the message's data dir. */
   unpacked_path?: string;
   /** Whether "Install global" (user scope) is offered — schema-derived and
    *  stamped backend-side at stage time (single source of the policy). */
   user_scope_allowed?: boolean;
-  transfer_mode?: 'copy' | 'git';
+  transfer_mode?: 'copy' | 'git' | 'both';
   origin?: Record<string, unknown> | null;
   scope?: MessageAttachmentScope;
   project_id?: string | null;
@@ -63,6 +67,35 @@ export interface IMessageAttachment extends IEntity {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface MessageAttachment extends EntityMerge<IMessageAttachment> {}
 
+/**
+ * How a received git share comes into the receiver's own checkout — mirror of
+ * `ReceivePlan` (flow_sdk/builtin/git_share_specs.py). `have`: already there;
+ * `pull`: on the shared branch, behind; `cherry_pick`: `commits` (oldest first)
+ * onto `branch`, also changing `other_files` outside the asset.
+ */
+export interface ReceivePlan {
+  action: 'have' | 'pull' | 'cherry_pick';
+  commit: string;
+  branch: string;
+  workdir: string;
+  commits: string[];
+  other_files: string[];
+}
+
+/** What `openShared` / `installShared` answer. */
+export interface OpenSharedResult {
+  show?: ReceiveShowTarget | null;
+  project_id?: string;
+  mismatch?: boolean;
+  /** What to ask: which checkout (`choice`), clone vs copy (`placement`), replace the copy you already have
+   *  (`overwrite`), or say yes to a pull / cherry-pick into your checkout (`apply`, see `plan`). */
+  needs?: 'choice' | 'placement' | 'overwrite' | 'apply';
+  plan?: ReceivePlan;
+  candidates?: { id: string; name: string; path: string }[];
+  git_share_error?: string;
+  git_share_message?: string;
+}
+
 @registerEntity
 export class MessageAttachment extends APIEntity<MessageAttachment> implements IMessageAttachment {
   static type: string = 'message_attachment';
@@ -71,11 +104,12 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
   conversation_id?: string | null;
   asset_type?: string;
   asset_id?: string;
+  installed_asset_id?: string;
   name?: string | null;
   description?: string | null;
   unpacked_path?: string;
   user_scope_allowed?: boolean;
-  transfer_mode?: 'copy' | 'git';
+  transfer_mode?: 'copy' | 'git' | 'both';
   origin?: Record<string, unknown> | null;
   scope?: MessageAttachmentScope;
   project_id?: string | null;
@@ -88,6 +122,7 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
     this.conversation_id = entity.conversation_id ?? null;
     this.asset_type = entity.asset_type;
     this.asset_id = entity.asset_id;
+    this.installed_asset_id = entity.installed_asset_id || undefined;
     this.name = entity.name ?? null;
     this.description = entity.description ?? null;
     this.unpacked_path = entity.unpacked_path;
@@ -106,6 +141,12 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
   get targetTypeId(): TypeId | null {
     if (!this.asset_type || !this.asset_id) return null;
     return new TypeId(this.asset_type, this.asset_id);
+  }
+
+  /** The asset's entity on THIS machine. Open and the installed chip go here. */
+  get localTypeId(): TypeId | null {
+    const id = this.installed_asset_id || this.asset_id;
+    return this.asset_type && id ? new TypeId(this.asset_type, id) : null;
   }
 
   /** Canonical install-state accessor. The backend clears scope with `''`
@@ -134,8 +175,21 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
   async install(
     scope: 'user' | 'project',
     projectId?: string,
-    opts: { overwrite?: boolean; name?: string } = {},
+    opts: { overwrite?: boolean; name?: string; apply?: boolean } = {},
   ): Promise<ReceiveShowTarget | null> {
+    return (await this.installShared(scope, projectId, opts)).show ?? null;
+  }
+
+  /**
+   * `install`, answering in full: a git share that would write the receiver's
+   * branch comes back as `needs: 'apply'` with its `plan` and writes nothing;
+   * the same call with `apply: true` runs the pull / cherry-pick.
+   */
+  async installShared(
+    scope: 'user' | 'project',
+    projectId?: string,
+    opts: { overwrite?: boolean; name?: string; apply?: boolean } = {},
+  ): Promise<OpenSharedResult> {
     if (!this.id) throw new Error('install requires this.id');
     const action = new ActionInfo('install', MessageAttachment.type, this.id, 'POST');
     action.bodyParameters = {
@@ -143,9 +197,9 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
       project_id: projectId ?? null,
       overwrite: opts.overwrite ?? false,
       ...(opts.name ? { name: opts.name } : {}),
+      ...(opts.apply ? { apply: true } : {}),
     };
-    const res = await dataManager.callAction<unknown, { entity?: unknown; show?: ReceiveShowTarget | null }>(action);
-    return res?.show ?? null;
+    return (await dataManager.callAction<unknown, OpenSharedResult>(action)) ?? {};
   }
 
   /**
@@ -159,6 +213,41 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
     if (!this.id) throw new Error('runSetup requires this.id');
     const res = await this.post<{ entity?: unknown; show?: ReceiveShowTarget | null }>('setup');
     return res?.show ?? null;
+  }
+
+  /**
+   * Open a received share (Git pointer + copy) in the right place. With no
+   * choice the backend picks the receiver's project; when it cannot, `needs`
+   * says what to ask: `choice` (2+ checkouts, see `candidates`) or `placement`
+   * (none: clone the repo, or open the copy). `git_share_error` is set when it
+   * opened from the copy because Git could not open it here. `overwrite` answers
+   * `needs: overwrite` — replace the copy the receiver already has. `apply`
+   * answers `needs: apply` — yes to the pull / cherry-pick in `plan`.
+   */
+  async openShared(
+    opts: { projectId?: string; choice?: 'clone' | 'copy'; overwrite?: boolean; apply?: boolean } = {},
+  ): Promise<OpenSharedResult> {
+    if (!this.id) throw new Error('openShared requires this.id');
+    const action = new ActionInfo('open-shared', MessageAttachment.type, this.id, 'POST');
+    action.bodyParameters = {
+      ...(opts.projectId ? { project_id: opts.projectId } : {}),
+      ...(opts.choice ? { choice: opts.choice } : {}),
+      ...(opts.overwrite ? { overwrite: true } : {}),
+      ...(opts.apply ? { apply: true } : {}),
+    };
+    return (await dataManager.callAction<unknown, OpenSharedResult>(action)) ?? {};
+  }
+
+  /** Ask the sharer for Git access to this share's repo ("Git request access" in the conversation). */
+  async requestGitAccess(): Promise<void> {
+    if (!this.id) throw new Error('requestGitAccess requires this.id');
+    await this.post<unknown>('request-git-access');
+  }
+
+  /** Tell the sharer this conversation's project is not a checkout of the shared repo. */
+  async reportShareMismatch(): Promise<void> {
+    if (!this.id) throw new Error('reportShareMismatch requires this.id');
+    await this.post<unknown>('report-share-mismatch');
   }
 
   /** Remove the installed copy (staged copy persists; chip reverts to staged). */

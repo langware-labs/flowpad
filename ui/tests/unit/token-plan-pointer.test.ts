@@ -3,12 +3,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import {
-  parseTokenPlanPointer,
-  scopePointer,
-  selectScope,
-  tokenPlanPointer,
-} from '@src/components/token-plan/token-plan-pointer';
+import { parseTokenPlanPointer, selectScope, tokenPlanPointer } from '@src/components/token-plan/token-plan-pointer';
 
 const TEAM = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -28,15 +23,12 @@ describe('parseTokenPlanPointer', () => {
   });
 });
 
-describe('tokenPlanPointer / scopePointer', () => {
+describe('tokenPlanPointer', () => {
   it('writes me as the empty pointer and round-trips the rest', () => {
     expect(tokenPlanPointer('me')).toBe('');
     expect(tokenPlanPointer('org')).toBe('org');
     expect(tokenPlanPointer('team', TEAM)).toBe(`team/${TEAM}`);
     expect(tokenPlanPointer('team')).toBe('team');
-    expect(scopePointer({ kind: 'team', id: TEAM })).toBe(`team/${TEAM}`);
-    expect(scopePointer({ kind: 'org', id: 'o' })).toBe('org');
-    expect(scopePointer({ kind: 'me', id: 'u' })).toBe('');
     for (const p of ['', 'org', `team/${TEAM}`]) {
       const parsed = parseTokenPlanPointer(p);
       expect(tokenPlanPointer(parsed.kind, parsed.id)).toBe(p);

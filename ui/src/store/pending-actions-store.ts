@@ -1,4 +1,4 @@
-import { AgenticProcess, classifyExecutionMode, dataManager, ExecutionMode, isBusy, isReadyForInput } from '@sdk';
+import { AgenticProcess, dataManager, isBusy, isReadyForInput, ProcessKind, ProcessStatus, WorkerStatus } from '@sdk';
 import { subscribeToEntityOps } from '@sdk/react/hooks';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
@@ -41,6 +41,9 @@ export interface ProcessTracker {
   busy: boolean | undefined;
   /** PTY (visible=true) vs headless CLI (visible=false). Routes ExecutionMode. */
   visible: boolean | undefined;
+  /** Product meaning, deliberately independent of terminal transport. */
+  processType: ProcessKind | null | undefined;
+  workerStatusDetail: string | null | undefined;
   /** True while currently ready-for-input (RUNNING and not busy). */
   glowing: boolean;
   /** Wall time (ms) of the most recent observed status / worker_status change. */
@@ -162,6 +165,8 @@ export function handleDataOp(typeIdStr: string, op: string, data: unknown): void
     busy?: boolean;
     project_id?: string | null;
     visible?: boolean;
+    process_type?: ProcessKind | null;
+    worker_status_detail?: string | null;
   };
   // WS ops are partial: merge with the cached entity so the tracker always
   // reflects the latest known truth across all fields (a worker_status-only
@@ -173,6 +178,8 @@ export function handleDataOp(typeIdStr: string, op: string, data: unknown): void
         busy?: boolean;
         project_id?: string | null;
         visible?: boolean;
+        process_type?: ProcessKind | null;
+        worker_status_detail?: string | null;
       })
     | null;
   const merged = {
@@ -182,6 +189,8 @@ export function handleDataOp(typeIdStr: string, op: string, data: unknown): void
     busy: obj.busy ?? cached?.busy,
     project_id: obj.project_id ?? cached?.project_id ?? null,
     visible: obj.visible ?? cached?.visible,
+    process_type: obj.process_type ?? cached?.process_type,
+    worker_status_detail: obj.worker_status_detail ?? cached?.worker_status_detail,
   };
   const glowing = isGlowStatus(merged.status, merged.busy);
   const newStatus = merged.status;
@@ -203,6 +212,8 @@ export function handleDataOp(typeIdStr: string, op: string, data: unknown): void
       workerStatus: newWorkerStatus,
       busy: newBusy,
       visible: newVisible,
+      processType: merged.process_type,
+      workerStatusDetail: merged.worker_status_detail,
       glowing,
       lastStatusChangedAt: now,
       readyAt: null,
@@ -236,6 +247,11 @@ export function handleDataOp(typeIdStr: string, op: string, data: unknown): void
     // visible flip (interactive↔background) doesn't change pending/burning, but
     // it moves the row between execution-mode buckets — re-derive the list.
     prev.visible = newVisible;
+    dirty = true;
+  }
+  if (prev.processType !== merged.process_type || prev.workerStatusDetail !== merged.worker_status_detail) {
+    prev.processType = merged.process_type;
+    prev.workerStatusDetail = merged.worker_status_detail;
     dirty = true;
   }
   if (prev.projectId !== projectId) {
@@ -358,6 +374,16 @@ export function useIsBurning(processId: string | null | undefined): boolean {
   return useSyncExternalStore(subscribe, getBurning, getBurning);
 }
 
+/** This process's live worker status, or undefined when no tracker holds it.
+ *  Primitive snapshot, so a row re-renders only when its own status changes. */
+export function useWorkerStatus(processId: string | null | undefined): string | undefined {
+  const get = useCallback(
+    (): string | undefined => (processId ? trackers.get(processId)?.workerStatus : undefined),
+    [processId],
+  );
+  return useSyncExternalStore(subscribe, get, get);
+}
+
 /** Shared shape for a tracked worker surfaced to a React view. */
 export interface ActiveProcessEntry {
   processId: string;
@@ -370,6 +396,8 @@ export interface ActiveProcessEntry {
   pending: boolean;
   /** Client transition-stamped readyAt if pending, else null. */
   readyAt: number | null;
+  /** Transport choice only; never used to classify Chat versus Background. */
+  visible: boolean;
 }
 
 function isBurningTracker(t: ProcessTracker): boolean {
@@ -390,18 +418,27 @@ function isBurningTracker(t: ProcessTracker): boolean {
  * backend snapshot.
  */
 export interface WorkerListEntry extends ActiveProcessEntry {
-  mode: ExecutionMode;
+  category: 'chat' | 'background';
+  state: 'running' | 'waiting' | 'completed' | 'error';
+  errorDetail: string | null | undefined;
+}
+
+function processState(t: ProcessTracker): WorkerListEntry['state'] | null {
+  if (t.status === ProcessStatus.FAILED || t.workerStatus === WorkerStatus.ERROR || t.workerStatus === WorkerStatus.API_TIMEOUT) return 'error';
+  if (t.status === ProcessStatus.STOPPED || t.workerStatus === WorkerStatus.INTERRUPTED || t.workerStatus === WorkerStatus.INACTIVE) return 'completed';
+  // `busy` is authoritative when present. Older partial events omit it, so they
+  // remain Running until the serializer supplies the derived value.
+  if (t.status === ProcessStatus.RUNNING && t.busy === false) return 'waiting';
+  if (t.workerStatus === WorkerStatus.COMPLETE && t.status !== ProcessStatus.RUNNING) return 'completed';
+  if (t.status === ProcessStatus.RUNNING || t.status === ProcessStatus.STARTING) return 'running';
+  return null;
 }
 
 export function buildWorkerEntries(now: number): WorkerListEntry[] {
   const out: WorkerListEntry[] = [];
   for (const t of trackers.values()) {
-    const mode = classifyExecutionMode({
-      status: t.status,
-      worker_status: t.workerStatus,
-      visible: t.visible,
-    });
-    if (mode === null) continue; // not live → not listed
+    const state = processState(t);
+    if (state === null) continue;
     const pending = isCurrentlyPending(t, now);
     const burning = isBurningTracker(t);
     out.push({
@@ -412,7 +449,10 @@ export function buildWorkerEntries(now: number): WorkerListEntry[] {
       burning,
       pending,
       readyAt: pending ? t.readyAt : null,
-      mode,
+      visible: t.visible === true,
+      category: t.processType === ProcessKind.Chat ? 'chat' : 'background',
+      state,
+      errorDetail: t.workerStatusDetail,
     });
   }
   // Same ordering as the active view: pending first (newest readyAt), then
@@ -430,36 +470,25 @@ export function buildWorkerEntries(now: number): WorkerListEntry[] {
  * supports (pass `supportedExecutionModes(useIsAdvanced())`). Same dual
  * render-signal as `useActiveProcesses`.
  */
-export function useWorkerList(
-  supportedModes: readonly ExecutionMode[],
-): ReadonlyArray<WorkerListEntry> {
+export function useWorkerList(): ReadonlyArray<WorkerListEntry> {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const tick = useSyncExternalStore(subscribe, getActiveTick, getActiveTick);
-  const key = supportedModes.join(',');
   return useMemo(() => {
-    const allow = new Set(supportedModes);
-    return buildWorkerEntries(Date.now()).filter((e) => allow.has(e.mode));
-    // `key` captures the supported-mode set for memo invalidation.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick, key]);
+    return buildWorkerEntries(Date.now());
+  }, [tick]);
 }
 
 /**
  * Per-mode counts over the supported set — drives the filter-toggle badges.
  * Modes with no live workers report 0 (every supported mode is a key).
  */
-export function useWorkerCountsByMode(
-  supportedModes: readonly ExecutionMode[],
-): Record<ExecutionMode, number> {
-  const list = useWorkerList(supportedModes);
-  const key = supportedModes.join(',');
+export function useWorkerCounts(): Record<WorkerListEntry['state'], number> {
+  const list = useWorkerList();
   return useMemo(() => {
-    const counts = {} as Record<ExecutionMode, number>;
-    for (const m of supportedModes) counts[m] = 0;
-    for (const e of list) counts[e.mode] = (counts[e.mode] ?? 0) + 1;
+    const counts: Record<WorkerListEntry['state'], number> = { running: 0, waiting: 0, completed: 0, error: 0 };
+    for (const e of list) counts[e.state]++;
     return counts;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [list, key]);
+  }, [list]);
 }
 
 /**

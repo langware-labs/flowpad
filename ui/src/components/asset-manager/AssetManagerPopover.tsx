@@ -1,5 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import {
   assetDescriptorHasUsage,
   dataContext,
@@ -12,9 +14,9 @@ import {
   VFSPath,
   type Agent,
   type AssetDescriptor,
+  type ProcessAssetUsage,
 } from '@sdk';
-import { AgentAvatar } from '@src/components/agents/AgentAvatar';
-import { AgentTypeChip } from '@src/components/agents/AgentIntroCard';
+import { LaunchingAgentRow } from '@src/components/agents/LaunchingAgentRow';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import {
@@ -24,6 +26,8 @@ import {
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import apiClient from '@sdk/client';
+import { useDebounced } from '@src/hooks/useDebounced';
 import { useProcessAssets, type UseProcessAssetsResult } from './useProcessAssets';
 import { additionalDirScope, assetScope, AssetScopeChip, type AssetScope } from './asset-scope';
 import { assetBoardScope, BOARD_SCOPES, loadShownScopes, saveShownScopes, type BoardScope } from './board-scope';
@@ -36,8 +40,10 @@ import { EntityIcon, useEntityLocationLabel } from '@src/components/graph-view/u
 import {
   basename as _basename,
   descriptorKey,
+  dirname,
   displayLabelForDescriptor as _displayLabelForDescriptor,
   isOpenableTypeid as _isOpenableTypeid,
+  normalizePath,
   parseTypeid as _parseTypeid,
 } from './asset-row-helpers';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -50,6 +56,7 @@ import {
   ArrowDownAZ,
   Boxes,
   ChevronRight,
+  CircleHelp,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -162,8 +169,12 @@ export interface AssetManagerPopoverProps {
    * the agent. Absent for a process not spawned from an Agent.
    */
   agent?: Agent | null;
-  /** Restrict the visible candidates. Default: everything the source returned. */
+  /** Restrict the visible candidates. Default: everything the source returned. Never for a type: the list
+   *  is cut at a limit before this runs, so pass `types` and let the server narrow it. */
   filter?: (descriptor: AssetDescriptor) => boolean;
+  /** Only these asset types, asked of the server (before its list is cut at the limit) when the popover
+   *  fetches its own list. A client-side `filter` alone can come back empty on a project with many assets. */
+  types?: readonly string[];
 
   // ── selection: status in, actions out ──────────────────────────────────
   /**
@@ -244,6 +255,23 @@ export const RUNNABLE_ASSETS = (d: AssetDescriptor): boolean =>
  * EMBEDDED and USER_DIR), and selection is keyed by typeid so every row for one
  * asset reads as selected together.
  */
+/** ``picked`` as something a message can carry: its row exists, or its path is indexed now (by the one
+ *  scoped indexer walk) and the id that walk answers is the one handed on. Anything else stays as picked. */
+export async function indexedForSending(picked: AssetDescriptor): Promise<AssetDescriptor> {
+  if (!picked.posix_path || !isTypeId(picked.typeid)) return picked;
+  const typeId = new TypeId(picked.typeid);
+  const row = await dataManager.getByTypeId(typeId).catch(() => null);
+  if (row) return picked;
+  try {
+    const params = new URLSearchParams({ path: picked.posix_path, type: typeId.type });
+    const res = await apiClient.post<{ typeids?: string[] }>(`/graph/compute_node/@local/fs-records/index?${params.toString()}`);
+    const indexed = res?.typeids?.find((t) => t.startsWith(`${typeId.type}-`));
+    return indexed ? { ...picked, typeid: indexed } : picked;
+  } catch {
+    return picked;
+  }
+}
+
 export function AssetManagerPopover({
   trigger,
   open: controlledOpen,
@@ -254,6 +282,7 @@ export function AssetManagerPopover({
   assets,
   agent = null,
   filter,
+  types,
   selectedTypeIds = NONE,
   onPick,
   onUnpick,
@@ -287,23 +316,29 @@ export function AssetManagerPopover({
   // No host list supplied (a pick surface with no process): fetch the
   // project-wide staging list ourselves. `enabled` is false whenever the host
   // owns the data, so only one fetch is ever in flight.
-  const ownAssets = useProcessAssets(null, { enabled: open && !assets });
+  // A truncated list is narrowed on the server by what the person types (debounced), so an asset past
+  // the cut can still be found -- the client-side filter alone only ever searched the first page.
+  const serverQuery = useDebounced(listFilter.trim(), 250);
+  const ownAssets = useProcessAssets(null, { enabled: open && !assets, query: serverQuery, types });
 
   const { descriptors: listDescriptors, isLoading: listIsLoading, error: listError, scanIssues, truncated } =
     assets ?? ownAssets;
 
   // Which scopes the list shows — one header toggle each. Per viewer, kept
   // across opens and reloads.
-  const [shownScopes, setShownScopes] = useState<Set<BoardScope>>(loadShownScopes);
+  // A pick of one asset type (`types`) shows every scope it got -- a credential saved on the user is as
+  // pickable as the project's -- and leaves the board's saved choice alone.
+  const pinnedScopes = !!types;
+  const [shownScopes, setShownScopes] = useState<Set<BoardScope>>(() => (pinnedScopes ? new Set(BOARD_SCOPES) : loadShownScopes()));
   const toggleScope = useCallback((scope: BoardScope) => {
     setShownScopes((prev) => {
       const next = new Set(prev);
       if (next.has(scope)) next.delete(scope);
       else next.add(scope);
-      saveShownScopes(next);
+      if (!pinnedScopes) saveShownScopes(next);
       return next;
     });
-  }, []);
+  }, [pinnedScopes]);
 
   // Project picker — load once when entering pick-project mode.
   const projectsQuery = useMemo(() => new QueryRequest({ type: Project.type }), []);
@@ -451,6 +486,14 @@ export function AssetManagerPopover({
     return additionalDirs.filter((p) => p.toLowerCase().includes(q));
   }, [additionalDirs, listFilter]);
 
+  // Transcript usage that matched no asset. Expected to be empty; listed last,
+  // and only when there is something to list.
+  const unresolvedUsage = (assets ?? ownAssets).unresolvedUsage;
+  const unknownUsage = useMemo(() => {
+    const q = listFilter.trim().toLowerCase();
+    return (unresolvedUsage ?? []).filter((u) => !q || u.reference.toLowerCase().includes(q));
+  }, [unresolvedUsage, listFilter]);
+
   const filteredProjects = useMemo(() => {
     const q = projectQuery.trim().toLowerCase();
     const list = allProjects.filter((p) => {
@@ -478,8 +521,11 @@ export function AssetManagerPopover({
   );
 
   const handlePick = useCallback(
-    async (descriptor: AssetDescriptor) => {
+    async (picked: AssetDescriptor) => {
       if (!onPick) return;
+      // The list is a read-only disk scan: an asset nobody indexed yet has an id but no row, and a
+      // message cannot carry it ("there is no local record of it"). Index it on pick, under its real id.
+      const descriptor = await indexedForSending(picked);
       // A surface with no un-select is one-shot: close on pick. Settle our own
       // open state BEFORE emitting, because such a host routinely unmounts this
       // component from inside `onPick` (the automation rail swaps itself for a
@@ -538,6 +584,38 @@ export function AssetManagerPopover({
               workerLabel={workerType ? workerLabel(workerType) : undefined}
               workerIcon={workerType ? workerIcon(workerType) : undefined}
             />
+          </div>
+        )}
+      </div>
+
+      {view !== 'pick-project' ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center gap-1.5 border-b bg-muted/20 px-2 py-1.5">
+            <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+            <input
+              autoFocus
+              type="text"
+              placeholder={searchPlaceholder ?? t`Filter…`}
+              value={listFilter}
+              onChange={(e) => setListFilter(e.target.value)}
+              className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+              data-testid="asset-manager-list-filter"
+            />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'scope' | 'name')}
+              className="rounded border bg-background px-1 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+              title={t`Sort within each type`}
+              data-testid="asset-manager-list-sort"
+            >
+              <option value="scope">
+                <Trans>By scope</Trans>
+              </option>
+              <option value="name">
+                <Trans>By name</Trans>
+              </option>
+            </select>
+            <ArrowDownAZ className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
             {/* Prop-gated: pick surfaces supply neither handler, so no
                   DropdownMenu mounts there at all — which is what keeps this
                   component safe to drop into a composer that forbids nested
@@ -597,50 +675,10 @@ export function AssetManagerPopover({
               </DropdownMenu>
             )}
           </div>
-        )}
-      </div>
-
-      {view !== 'pick-project' ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center gap-1.5 border-b bg-muted/20 px-2 py-1.5">
-            <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-            <input
-              autoFocus
-              type="text"
-              placeholder={searchPlaceholder ?? t`Filter…`}
-              value={listFilter}
-              onChange={(e) => setListFilter(e.target.value)}
-              className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
-              data-testid="asset-manager-list-filter"
-            />
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'scope' | 'name')}
-              className="rounded border bg-background px-1 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
-              title={t`Sort within each type`}
-              data-testid="asset-manager-list-sort"
-            >
-              <option value="scope">
-                <Trans>By scope</Trans>
-              </option>
-              <option value="name">
-                <Trans>By name</Trans>
-              </option>
-            </select>
-            <ArrowDownAZ className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
-          </div>
           <div className="min-h-0 flex-1 overflow-y-auto" data-testid="asset-manager-list">
             {/* The run's principal — the Agent it was launched through. */}
-            {showPinnedRows && agent && <LaunchingAgentRow agent={agent} />}
+            {showPinnedRows && agent && <LaunchingAgentRow agent={agent} testId="asset-manager-launching-agent" className="m-1 w-[calc(100%-0.5rem)]" />}
             {filteredDirs.map((path) => <DirRow key={`dir|${path}`} path={path} onRemove={onRemoveDir} />)}
-            {(assets ?? ownAssets).unresolvedUsage?.map((usage) => (
-              <div key={`${usage.resolution}:${usage.reference}`} className="px-3 py-2 text-xs" data-testid="asset-unresolved-usage">
-                <div className="truncate" title={usage.reference}>{usage.reference}</div>
-                <div className="text-muted-foreground">
-                  <Trans>Used in transcript</Trans> · {usage.resolution}
-                </div>
-              </div>
-            ))}
             {!!scanIssues?.length && (
               <details className="px-3 py-2 text-xs text-amber-700" data-testid="asset-scan-issues">
                 <summary><Trans>Some assets could not be read.</Trans></summary>
@@ -653,7 +691,7 @@ export function AssetManagerPopover({
                 <Trans>Could not verify available assets.</Trans>
               </div>
             )}
-            {!listError && sections.length === 0 && !(assets ?? ownAssets).unresolvedUsage?.length &&
+            {!listError && sections.length === 0 && unknownUsage.length === 0 &&
               filteredDirs.length === 0 &&
               (listIsLoading ? (
                 <div
@@ -703,6 +741,16 @@ export function AssetManagerPopover({
                 ))}
               </Fragment>
             ))}
+            {unknownUsage.length > 0 && (
+              <>
+                <AssetSectionRule testid="asset-manager-section-unknown">
+                  <Trans>Unknown assets ({unknownUsage.length})</Trans>
+                </AssetSectionRule>
+                {unknownUsage.map((usage) => (
+                  <UnknownAssetRow key={`${usage.resolution}:${usage.reference}`} usage={usage} />
+                ))}
+              </>
+            )}
           </div>
         </div>
       ) : (
@@ -774,6 +822,44 @@ export function AssetManagerPopover({
 
 // ── Row components ────────────────────────────────────────────────────────────
 
+/** A skill's folder, not its SKILL.md: ".../skills/rca/SKILL.md" → "rca". */
+function unknownUsageName(reference: string): string {
+  const path = normalizePath(reference);
+  const last = _basename(path);
+  return /^SKILL\.md$/i.test(last) && path.includes('/') ? _basename(dirname(path)) : last;
+}
+
+/** Every outcome that lands in the unknown list needs a reason — a new one breaks the build. */
+type UnknownResolution = Exclude<ProcessAssetUsage['resolution'], 'resolved' | 'builtin'>;
+const UNKNOWN_REASONS: Record<UnknownResolution, MessageDescriptor> = {
+  missing: msg`Not found on disk`,
+  unbound: msg`Unknown name`,
+  ambiguous: msg`Several matches`,
+  identity_changed: msg`Changed since use`,
+};
+
+function UnknownAssetRow({ usage }: { usage: ProcessAssetUsage }) {
+  const { t } = useLingui();
+  const reason = UNKNOWN_REASONS[usage.resolution as UnknownResolution];
+  return (
+    <AssetGridRow data-testid="asset-unresolved-usage" data-resolution={usage.resolution}>
+      <span
+        className="flex min-w-0 items-center gap-1.5 rounded border border-dashed px-1.5 py-0.5 text-xs text-muted-foreground"
+        title={usage.reference}
+      >
+        <CircleHelp className="h-3 w-3 flex-shrink-0" aria-hidden />
+        <span className="truncate">{unknownUsageName(usage.reference)}</span>
+      </span>
+      <span className="truncate text-[10px] uppercase tracking-wide text-muted-foreground" data-testid="asset-unresolved-reason">
+        {reason ? t(reason) : usage.resolution}
+      </span>
+      <GridCellSpacer />
+      <GridCellSpacer />
+      <GridCellSpacer />
+    </AssetGridRow>
+  );
+}
+
 function DirRow({ path, onRemove }: { path: string; onRemove?: (path: string) => void | Promise<void> }) {
   const { t } = useLingui();
   return (
@@ -833,34 +919,6 @@ function ProjectPickRow({
     </button>
   );
 }
-
-/**
- * The run's principal, pinned above every asset section: the Agent this process
- * was launched through. Avatar (image / emoji / icon) with the name's initial
- * as the fallback, then the name; the row opens the agent.
- */
-function LaunchingAgentRow({ agent }: { agent: Agent }) {
-  const { t } = useLingui();
-  const { navigation } = useDockNavigation();
-  const name = agent.displayName;
-
-  return (
-    <button
-      type="button"
-      onClick={() => navigation.openDock(agent.dockPointer)}
-      className="m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded border border-border bg-muted/30 px-2.5 py-1.5 text-start hover:bg-muted"
-      data-testid="asset-manager-launching-agent"
-      title={t`Open ${name}`}
-    >
-      <AgentAvatar agent={agent} className="h-6 w-6 text-[11px]" data-testid="asset-manager-launching-agent-avatar" />
-      <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground" data-testid="asset-manager-launching-agent-name">
-        {name}
-      </span>
-      <AgentTypeChip className="flex-shrink-0" />
-    </button>
-  );
-}
-
 
 export function AssetRow({
   descriptor,

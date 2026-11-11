@@ -1,0 +1,8 @@
+{
+  "name": "automation-prepare",
+  "subkind": "python",
+  "exe_data": {},
+  "input": "automation.prepared",
+  "output": "automation.prepared",
+  "id": "e585f2f6-a6ee-4c9d-a299-a7e1c56b55b9"
+}

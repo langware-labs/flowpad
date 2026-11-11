@@ -16,7 +16,7 @@
  *
  * No React here: the parser is shared by the view and the address bar.
  */
-import { isValidUUIDv4, PageId, ViewType } from '@sdk';
+import { isHubOnly, isValidEntityId, PageId, ViewType } from '@sdk';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 
@@ -66,7 +66,7 @@ export function parseDataSourcesPointer(pointer?: string | null): DataSourcesRou
   if (head === DRIVERS_SEGMENT) return { section: 'drivers', driver: next ? decodeURIComponent(next) : null };
   if (head === CHANNELS_SEGMENT) return { section: 'channels' };
   // A source is addressed by its id: a uuid can never be `drivers`, and anything else is the list.
-  if (head && isValidUUIDv4(head)) {
+  if (head && isValidEntityId(head)) {
     if (next === FILES_SEGMENT) {
       const rel = [conversation, thread, ...rest].filter(Boolean).map(decodeURIComponent);
       // A folder under the source's files — never above them.
@@ -74,7 +74,7 @@ export function parseDataSourcesPointer(pointer?: string | null): DataSourcesRou
       return { section: 'source', id: head, tab: null, files };
     }
     const tab = (SOURCE_TABS as readonly string[]).includes(next ?? '') ? (next as SourceTab) : null;
-    if (tab === 'messages' && conversation && isValidUUIDv4(conversation)) {
+    if (tab === 'messages' && conversation && isValidEntityId(conversation)) {
       return { section: 'source', id: head, tab, conversation, thread: thread ?? null };
     }
     return { section: 'source', id: head, tab };
@@ -91,9 +91,9 @@ export function openDriver(navigation: NavigationActions, driver: string | null 
   navigation.openPage(PageId.DESK, ViewType.DATA_SOURCES, dataSourcesPointer({ section: 'drivers', driver }));
 }
 
-/** Open every MessageChannel and where each is routed. Same `openPage` shape as `openDriver`. */
+/** Open the one Channels screen (every channel and where its messages go). Same `openPage` shape as `openDriver`. */
 export function openChannels(navigation: NavigationActions): void {
-  navigation.openPage(PageId.DESK, ViewType.DATA_SOURCES, dataSourcesPointer({ section: 'channels' }));
+  navigation.openPage(isHubOnly() ? PageId.HUB : PageId.DESK, ViewType.INBOUND);
 }
 
 /** Open one configured source's page (a tab of it), or one of its conversations in place (and a thread in it). Same

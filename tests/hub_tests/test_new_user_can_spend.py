@@ -1,10 +1,9 @@
 """A brand-new hub user can spend real money by saying "hi".
 
 **What this pins, and why it is worth a live test.** Signing up allocates nothing — `/signup`
-creates the account and returns. What a new user gets instead is READ ACCESS to one shared,
-hub-managed endpoint (`flowpad/hub/builtin/instances/llm-endpoints/global_openrouter.json`
-carries `authenticated_role: "reader"`), whose key lives in hub config and which ships with no
-`limits` block at all. So the moment an account exists it can spend, and nothing caps it.
+creates the account and returns. The person's own default allowance (``<email> default``, with a
+lifetime cost cap) is minted on first contact — the hub's bootstrap — and that is what a new user
+spends. So the moment an account has signed in once, it can spend.
 
 That is a claim about behaviour, not about code, and it is the kind of claim that quietly stops
 being true (or quietly becomes worse) when someone edits a seed file or an authorizer. Hence a
@@ -77,11 +76,11 @@ async def _booked(endpoint_id: str) -> float:
     missing resource. That is a hub bug worth fixing, but it is not this test's subject, and
     proving spend through a broken reader would prove nothing either way.
     """
-    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     # The report's ``totals`` over its window: the requests booked and what they cost. It includes turns still
     # in the ledger's buffer, so the call just made shows at once.
-    totals = (await hub_get("llm_endpoint", endpoint_id, "usage") or {}).get("totals") or {}
+    totals = (await HubProxy.try_call("GET", "llm_endpoint", endpoint_id, "usage") or {}).get("totals") or {}
     return float(totals.get("requests") or 0) + float(totals.get("cost_micro_usd") or 0) / 1e6
 
 
@@ -89,22 +88,24 @@ async def _booked(endpoint_id: str) -> float:
 async def test_a_brand_new_user_can_spend_by_saying_hi(hub_base_url):
     """Sign up, say "hi", and prove the hub booked the cost."""
     from flow_sdk.builtin.llm_endpoint import hub_invoke_path
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
     from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints, hub_origin
 
     api_key = login_as(_signup_a_brand_new_user(hub_base_url))
 
-    # 1. The grant. An account one second old is already offered something to spend.
+    # 1. The grant. A person's default allowance is minted on first contact — the hub's bootstrap,
+    #    which a signed-in client calls first.
+    await HubProxy.try_call("GET", "bootstrap")
     offered = await fetch_hub_llm_endpoints()
     assert offered, (
-        "a brand-new user was offered no LLM endpoint at all — either the shared endpoint's "
-        "`authenticated_role: reader` grant is gone, or the hub now allocates per user"
+        "a brand-new user was offered no LLM endpoint after first contact — the hub's bootstrap "
+        "no longer mints the person's default allowance"
     )
     endpoint = offered[0]
     print(f"\n[grant] a one-second-old account is offered: {endpoint.name}")
 
-    # 2. What it is allowed to spend. Recorded rather than asserted: a cap appearing here would
-    #    be a WELCOME change, and a test that failed on it would be arguing for the weaker
-    #    system. The assertion below is about spending working, not about it being unbounded.
+    # 2. What it is allowed to spend (the allowance's cap). Recorded rather than asserted: the
+    #    assertion below is about spending working, not about the size of the cap.
     limits = {k: v for k, v in (endpoint.limits.model_dump() if endpoint.limits else {}).items() if v is not None}
     print(f"[limits] {limits or 'NONE — this endpoint is uncapped'}")
 
@@ -115,19 +116,17 @@ async def test_a_brand_new_user_can_spend_by_saying_hi(hub_base_url):
     #
     # The URL is DERIVED from the endpoint rather than read from the box binding
     # (`hub_llm_endpoint_invoke_url`), which answers None here: a fresh box has been pushed no
-    # binding, so there is nothing bound to invoke. That is not a gap in the test, it is the
-    # finding — the endpoint needs no binding, no allocation and no grant to be spent. Being a
-    # signed-in user is the whole qualification, and the path falls straight out of its id.
+    # binding, so there is nothing bound to invoke. The endpoint needs no binding to be spent:
+    # the path falls straight out of its id.
     invoke_url = f"{hub_origin()}{hub_invoke_path(endpoint.typeid)}"
-    # The shared endpoint advertises `models: {}` and `models_allow: []` — no tiers of its own,
-    # and no allow-list, i.e. ANY model is permitted. So the caller brings the slug, and this
-    # takes the repo's own proven default rather than inventing one. Deliberately the `sm` tier:
+    # When the endpoint advertises no tiers, the caller brings the slug, and this takes the
+    # repo's own proven default rather than inventing one. Deliberately the `sm` tier:
     # a `:free` model cannot be priced and the hub refuses it, which would make an unmetered call
     # look like a spend that booked nothing.
     from flow_sdk.external_apis.llm.dialects import get_dialect  # noqa: PLC0415
 
     fallback = get_dialect(endpoint.provider).default_models.get("sm") if endpoint.provider else None
-    model = (endpoint.models or {}).get("sm") or (endpoint.models or {}).get("md") or fallback
+    model = (endpoint.tiers or {}).get("sm") or (endpoint.tiers or {}).get("md") or fallback
     assert model, f"{endpoint.name} advertises no model and its provider has no default"
     print(f"[model ] {model}")
 

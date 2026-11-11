@@ -19,6 +19,7 @@ from flow_sdk.builtin.process_lifecycle import (
     request_backend_restart,
 )
 from flow_sdk.builtin.shell import Shell
+from flow_sdk.instance_settings import get_instance_settings
 
 # NOTE: ``test_driver_preassign_interactive_session_id_flags`` was removed
 # when CodexDriver migrated to the TranscriptDescriptor-based session
@@ -120,6 +121,7 @@ def test_session_sweep_skips_a_process_that_exits_mid_read():
     vanishing.cmdline.side_effect = SystemError("<built-in function proc_cmdline> returned a result with an exception set")
     worker = _fake_psutil_proc(102)
     worker.cmdline.return_value = ["claude", "--session-id", session_id]
+    worker.environ.return_value = {"FLOW_INSTANCE": get_instance_settings().instance_name}
     stranger = _fake_psutil_proc(103)
     stranger.cmdline.return_value = ["bash"]
 
@@ -517,3 +519,22 @@ async def test_open_missing_fork_source_fails_before_shell_spawn():
     assert result.status_code == 404
     assert source_id in (result.message or "")
     create_shell.assert_not_awaited()
+
+
+def test_restart_backend_marker_does_not_import_the_entity_registry():
+    """`flow instance restart-backend` runs in QA loops under a 15 s budget: writing the marker must not pull in flow_sdk.builtin."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; from flow_sdk.instances.restart_marker import request_backend_restart; "
+        "import flow_sdk.cli.commands.instance_cmd; "
+        "sys.exit(1 if 'flow_sdk.builtin' in sys.modules else 0)"
+    )
+    assert subprocess.run([sys.executable, "-c", code], check=False).returncode == 0
+
+    import inspect
+
+    from flow_sdk.cli.commands import instance_cmd
+
+    assert "flow_sdk.builtin" not in inspect.getsource(instance_cmd.restart_backend)

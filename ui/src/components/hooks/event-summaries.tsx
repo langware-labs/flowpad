@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import type { SnifferEvent } from '@src/hooks/use-hooks-sniffer';
 import { Badge } from '@src/components/ui/badge';
 import { cn } from '@src/lib/utils';
@@ -226,7 +227,7 @@ function PostToolUseFailureOneLiner({ event }: EventPartProps) {
       )}
       {isInterrupt && (
         <Badge variant="outline" className={`${CHIP} border-yellow-500/50 text-yellow-500`}>
-          interrupted
+          <Trans>interrupted</Trans>
         </Badge>
       )}
       {error && <span className="text-red-400/80">{truncate(error, 60)}</span>}
@@ -520,7 +521,11 @@ export function EventOneLiner({ event, className }: EventOneLinerProps) {
     content = (
       <>
         <ToolNameChips toolName={toolName} />
-        {planWrite && <Badge className={`${CHIP} border-amber-500/50 bg-amber-500/15 text-amber-500`}>Plan</Badge>}
+        {planWrite && (
+          <Badge className={`${CHIP} border-amber-500/50 bg-amber-500/15 text-amber-500`}>
+            <Trans>Plan</Trans>
+          </Badge>
+        )}
         {detail}
       </>
     );

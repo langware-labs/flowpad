@@ -207,10 +207,16 @@ async def _check(
         command,
         timeout_seconds=spec.completion_check.timeout(CHECK_TIMEOUT),
         workdir=workdir or Path.cwd(),
-        extra_env=env or {},
+        extra_env={"PATH": _machine_path(), **(env or {})},
         platform=platform,
     )
     return said.model_copy(update={"exit_code": spec.verdict_of(said)})
+
+
+def _machine_path() -> str:
+    """PATH without this interpreter's folder: a check asks about the machine, not about this install."""
+    own = os.path.normcase(os.path.dirname(sys.executable))
+    return os.pathsep.join(p for p in os.environ.get("PATH", "").split(os.pathsep) if os.path.normcase(p) != own)
 
 
 async def _status_check(spec: ComputeOpSpec, env: Optional[dict] = None) -> CliResult:
@@ -237,10 +243,16 @@ def _run_source(env: Optional[dict]) -> str:
     return raw.split("-", 1)[1] if raw.startswith("data_source-") else raw
 
 
-def _check_in_process(spec: ComputeOpSpec) -> bool:
-    """The op's check is a step this backend answers itself (a source's, a web app's) — its detail is a reason."""
+def _check_in_process(spec: ComputeOpSpec, platform: str = "") -> bool:
+    """The op's check is a step this backend answers itself (a source's, a web app's, the setup's own
+    credential check) — its detail is a reason."""
+    from flow_sdk.builtin.project_setup import setup_shell_answers  # noqa: PLC0415
+
     check = spec.completion_check
-    return check is not None and bool(check.source_step or check.webapp_step or check.requirement_step)
+    if check is None:
+        return False
+    return bool(check.source_step or check.webapp_step or check.requirement_step) or setup_shell_answers(
+        check.command_for(platform) or "")
 
 
 async def _in_process(op: CliOp, env: Optional[dict], *, check: bool, platform: str) -> Optional[CliResult]:
@@ -272,7 +284,8 @@ async def _webapp_step(op: CliOp, env: Optional[dict], *, check: bool) -> CliRes
     webapp = _run_value(env, "webapp")
     which = str(op.webapp_step)
     display = _run_value(env, "display")
-    answer = await step(webapp, which, check=check, display=display)
+    answer = await step(webapp, which, check=check, display=display, service=_run_value(env, "service"),
+                        project=_run_value(env, "project"))
     return CliResult(
         exit_code=answer.exit_code, detail=answer.detail, ran=answer.ran, value=answer.value,
         command=f"app step {webapp} {which}" + (" --check" if check else ""),
@@ -440,7 +453,7 @@ async def _run_op(
         if check_only:
             # A check answered in this backend says what is missing in its own words ("Received — connect
             # your own account"); "not installed" is only true of something a command installs.
-            own = before.detail if before is not None and _check_in_process(spec) else ""
+            own = before.detail if before is not None and _check_in_process(spec, platform) else ""
             return exe.ANSWER.not_yet(f"{spec.display_label}: {own or 'not installed yet.'}", check=before, ran=False)
 
         seams = _Seams(
@@ -1263,6 +1276,9 @@ async def _ask_once(ask, spec: ComputeOpSpec, env: Optional[dict], *, timeout, d
         detail=detail,
         submit_label=spec.exe_data.submit_label,
         cancel_label=spec.exe_data.cancel_label,
+        labels=dict(spec.exe_data.labels),
+        stage=spec.exe_data.stage.model_dump(mode="json") if spec.exe_data.stage is not None else None,
+        verify=spec.exe_data.verify.model_dump(mode="json") if spec.exe_data.verify is not None else None,
         secret=spec.exe_data.secret,
         file=spec.exe_data.file,
         auto=spec.exe_data.auto_continue,
@@ -1326,7 +1342,9 @@ async def _box_llm() -> Any:
         candidates = await list_llm_candidates(str(await resolve_default_worker_type()))
     except Exception:  # noqa: BLE001 — no source is an answer, not a crash
         return None
-    chosen = pick_llm_candidate([c for c in candidates if c.endpoint.kind != LLMEndpointKind.DEVICE])
+    chosen = pick_llm_candidate(
+        [c for c in candidates if c.endpoint.kind != LLMEndpointKind.DEVICE and c.endpoint.dialect is not None]
+    )
     return chosen.endpoint if chosen is not None else None
 
 

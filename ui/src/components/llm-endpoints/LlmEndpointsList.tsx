@@ -40,7 +40,7 @@ export interface LlmEndpointsListProps {
 export function KindBadge({ kind }: { kind: 'root' | 'chain' }) {
   return (
     <Badge variant="outline" data-testid={`kind-badge-${kind}`} className={kind === 'root' ? TONE.sky : TONE.violet}>
-      {kind === 'root' ? <Trans>root</Trans> : <Trans>chain</Trans>}
+      {kind === 'root' ? <Trans>API key</Trans> : <Trans>existing source</Trans>}
     </Badge>
   );
 }

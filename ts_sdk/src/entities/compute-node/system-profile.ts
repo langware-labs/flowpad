@@ -1,3 +1,4 @@
+import type { ProfileChoice } from '../../services/browser-profiles';
 /**
  * System profile types for Claude Code environment information.
  * These types mirror the Python Pydantic models in hub system_profile.py
@@ -799,11 +800,13 @@ export async function openTerminalFromComputeNode(
   computeNodeId: string,
   command: string,
   cwd?: string,
+  /** Pages the command opens land in this browser profile (`BROWSER`); omit for the system default. */
+  browser?: ProfileChoice | null,
 ): Promise<{ command: string; cwd: string | null } | null> {
   const actionInfo = new ActionInfo('open-terminal', 'compute_node', computeNodeId, 'POST');
-  actionInfo.bodyParameters = { command, cwd };
+  actionInfo.bodyParameters = browser ? { command, cwd, browser } : { command, cwd };
   return dataManager.callAction<
-    { command: string; cwd?: string },
+    { command: string; cwd?: string; browser?: ProfileChoice },
     { command: string; cwd: string | null } | null
   >(actionInfo);
 }

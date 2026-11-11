@@ -17,7 +17,7 @@ from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialRequirement, CredentialVarKind, Requirement, is_valid_env_var
-from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec, group_held
+from flow_sdk.schema.data_spec.credential_status_spec import CredentialTestResultSpec, CredentialWaySpec, group_held
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 REQUIREMENT_PACK = "pack"
@@ -29,6 +29,9 @@ REQUIREMENT_DEPENDENCY = "dependency"
 REQUIREMENT_SOURCE = "source"
 #: A web app of the project whose dev server does not answer. Readiness only, like ``source``.
 REQUIREMENT_WEBAPP = "webapp"
+#: An automation the project recommends that nobody here has turned on or off yet (docs/automations.md
+#: "On, off and recommended"). Readiness only — the person decides; there is nothing for the tree to run.
+REQUIREMENT_AUTOMATION = "automation"
 
 
 def input_name(credential: str, env_var: str) -> str:
@@ -85,13 +88,39 @@ class SetupVarSpec(DataSpec):
         return self.required is CredentialRequirement.ONE_OF
 
 
+#: What a root is — the installed asset kinds a need can come from.
+ROOT_SOURCE = "data_source"
+ROOT_AGENT = "agent"
+ROOT_WEBAPP = "webapp"
+ROOT_DEPENDENCY = "dependency"
+ROOT_CREDENTIAL = "credential"
+
+
+class RootRef(DataSpec):
+    """An installed asset of the project that a requirement exists for. Shipped drivers and credential
+    templates are the catalog and never a root: a need lives as long as the root it comes from, and
+    "Skip → Always" uninstalls the roots."""
+
+    spec_kind: ClassVar[str] = "project.setup.root"
+    model_config = ConfigDict(frozen=True)
+
+    #: The root's record (a dependency: the project's typeid; ``name`` says which).
+    typeid: str
+    #: ``data_source`` / ``agent`` / ``webapp`` / ``dependency`` / ``credential``.
+    kind: str
+    name: str
+    #: Where it is declared on this machine (its folder; a dependency: the project's ``flow.json``) —
+    #: inside the project folder or not decides whether Always may uninstall it. ``""``: not the project's.
+    asset_ref: str = ""
+
+
 class SetupRequirementSpec(DataSpec):
     """One thing to set up, and who needs it."""
 
     spec_kind: ClassVar[str] = "project.setup.requirement"
     model_config = ConfigDict(frozen=True)
 
-    #: ``pack`` / ``gap`` / ``dependency`` / ``source`` / ``webapp``.
+    #: ``pack`` / ``gap`` / ``dependency`` / ``source`` / ``webapp`` / ``automation``.
     kind: str
     #: The credential's name (pack), the dependency's, the source's or the web app's.
     name: str
@@ -124,6 +153,8 @@ class SetupRequirementSpec(DataSpec):
     satisfied: Optional[bool] = None
     #: The data sources (and ``project``, for a pack the project declares itself) that need it.
     used_by: list[str] = []
+    #: The installed assets this requirement exists for (``RootRef``) — what "Skip → Always" removes.
+    roots: list[RootRef] = []
     #: Why a gap is one, or what is off about a requirement (a pack with no setup instructions).
     note: str = ""
     #: The project does not work without it. ``False``: it turns a feature on (an env credential with only
@@ -134,6 +165,11 @@ class SetupRequirementSpec(DataSpec):
     #: Whether "Skip → Always" can remove it from the project (its asset is the project's own), and if not, why.
     can_skip_always: bool = False
     why_not_always: str = ""
+    #: Its node in the project's setup tree (``derive.requirement_node_id``) — the ``root`` that runs it alone.
+    node: str = ""
+    #: pack: the credential declares a ``test`` (a ``test.json`` beside it), and its last result on this machine.
+    has_test: bool = False
+    test_result: Optional[CredentialTestResultSpec] = None
 
     @property
     def missing(self) -> list[SetupVarSpec]:
@@ -163,3 +199,7 @@ class ProjectReadinessSpec(DataSpec):
     skipped: list[SetupRequirementSpec] = []
     #: What no credential declares: reported, never runnable (``note`` says what to add).
     gaps: list[SetupRequirementSpec] = []
+    #: What is set up already (not skipped) — what the Project setup page lists as Ready.
+    set_up: list[SetupRequirementSpec] = []
+    #: Dependencies Flowpad cloned that are behind their remote. Never part of ``ready``: updates wait.
+    updates: int = 0

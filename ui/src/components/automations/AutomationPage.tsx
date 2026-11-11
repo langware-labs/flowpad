@@ -10,7 +10,7 @@
  * Flowpad's own are read-only here but can still be checked and run.
  */
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { AutomationKind, ITrigger } from '@sdk';
+import { Trigger, type AutomationKind, type ITrigger } from '@sdk';
 import { ArrowLeft, CheckCircle2, FileJson, FlaskConical, FolderOpen, Lock, Save, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
@@ -25,6 +25,7 @@ import {
   useDeleteAutomation,
   useDiscoverRules,
   useRuleCode,
+  useRunnableAgents,
   useSaveAutomation,
   useSetAutomationEnabled,
 } from '@src/hooks/automations/useAutomations';
@@ -33,9 +34,25 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { defaultDraft, draftFromTrigger, draftProblems, draftToFields, type AutomationDraft } from './automation-draft';
+import {
+  cloudAllowed,
+  defaultDraft,
+  draftFromTrigger,
+  draftProblems,
+  draftToCloudSchedule,
+  draftToFields,
+  type AutomationDraft,
+} from './automation-draft';
+import { RunsOnPicker } from '@src/components/assets/editor/agent-profile/RunsOnPicker';
+import { usePlaceBadge } from '@src/components/assets/editor/agent-profile/use-place-display';
+import { isMove, type RunsOn } from '@src/components/assets/editor/agent-profile/runs-on';
+import { useAgentPlaces } from '@src/components/assets/editor/agent-profile/use-agent-places';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import { useContext } from '@src/hooks/useContext';
+import { canSwitch } from './AutomationRow';
 import { recipeById } from './automation-recipes';
 import { sentenceText, useAutomationWords } from './automation-words';
+import { localZone } from './time-zone';
 import type { AutomationsRoute } from './automations-pointer';
 import { ThenBlock } from './blocks/ThenBlock';
 import { Advanced, Block, WhenBlock } from './blocks/WhenBlock';
@@ -44,7 +61,7 @@ import { RunsList } from './RunsList';
 import { TestPanel } from './TestPanel';
 import { definitionFile, useAutomationOpen } from './use-automation-open';
 import { MessageRulePage } from './MessageRulePage';
-import { ThenSteps } from './ThenSteps';
+import { ThenLine, ThenSteps } from './ThenSteps';
 
 /** One automation's page. Which page depends on the rule, and an existing rule's kind is only known once its
  *  row is read — so nothing kind-specific (the general page's polling list subscription among it) mounts first. */
@@ -70,7 +87,11 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
   const triggerId = route.trigger ?? null;
   const isNew = !triggerId;
   const { automation } = useAutomation(triggerId);
+  const onHub = automation?.source === 'hub';
   const triggerQuery = useAutomationTrigger(triggerId);
+  const projectId = useContext().project?.id ?? null;
+  const cloudGate = useCloudLoginGate();
+  const timezone = localZone();
   const save = useSaveAutomation();
   const remove = useDeleteAutomation();
   const setEnabled = useSetAutomationEnabled();
@@ -88,9 +109,12 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
       // Started from the event bus: the event is already chosen.
       if (route.tag && base.kind === 'event') base = { ...base, event: { ...base.event, pattern: route.tag } };
     } else if (triggerQuery.data && automation)
-      base = draftFromTrigger(triggerQuery.data as ITrigger, automation.when.schedule);
+      base = {
+        ...draftFromTrigger(triggerQuery.data as ITrigger, automation.when.schedule),
+        ...(onHub ? { runsOn: { kind: 'hub' } as RunsOn } : {}),
+      };
     if (base) setLoaded({ key: loadKey, base, draft: base });
-  }, [loadKey, loaded?.key, isNew, route.creating, route.recipe, route.tag, triggerQuery.data, automation]);
+  }, [loadKey, loaded?.key, isNew, route.creating, route.recipe, route.tag, triggerQuery.data, automation, onHub]);
 
   const draft = loaded?.draft ?? null;
   const setDraft = (next: AutomationDraft) => setLoaded((l) => (l ? { ...l, draft: next } : l));
@@ -103,7 +127,7 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
   const [jsonError, setJsonError] = useState<string | null>(null);
 
   const readOnly = !!automation?.read_only;
-  const isRuleFolder = !!triggerQuery.data?.path && automation?.kind === 'agent_hook';
+  const isRuleFolder = !!(triggerQuery.data as ITrigger | undefined)?.path && automation?.kind === 'agent_hook';
   const tab = route.tab ?? 'setup';
   const runs = useAutomationRuns({ triggerId, limit: 100 }, { enabled: !!triggerId && tab === 'runs' });
   const go = (patch: Partial<AutomationsRoute>) =>
@@ -143,10 +167,27 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
       });
       return null;
     }
+    const toHub = draft.kind === 'schedule' && draft.runsOn.kind === 'hub';
+    const saved_place: RunsOn | null = isNew ? null : (loaded?.base.runsOn ?? null);
+    const moving = !!saved_place && isMove(saved_place, draft.runsOn);
+    if (toHub) {
+      const gate = await cloudGate();
+      if (!gate.ok) {
+        notify.error({ title: t`Sign in to Flowpad cloud`, message: gate.error, forceToast: true });
+        return null;
+      }
+    }
     try {
-      const saved = await save.mutateAsync({ triggerId, fields });
+      const cloud = toHub ? draftToCloudSchedule(draft, { projectId, fallbackTimezone: timezone }) : null;
+      // A move across stores is a create on the new place, then a delete of the old row.
+      const saved = await save.mutateAsync({
+        triggerId: moving ? null : triggerId,
+        fields: cloud ? Trigger.cloudScheduleFields(cloud) : fields,
+        cloud,
+      });
+      if (moving && triggerId) await remove.mutateAsync(triggerId);
       setLoaded((l) => (l ? { ...l, base: l.draft } : l));
-      if (isNew && saved.id) navigation.openDock(DockPointer.forAutomations({ trigger: saved.id }));
+      if ((isNew || moving) && saved.id) navigation.openDock(DockPointer.forAutomations({ trigger: saved.id }));
       notify.success({ title: isNew ? t`Automation created` : t`Saved`, message: fields.name });
       return saved.id ?? triggerId;
     } catch (e) {
@@ -158,7 +199,7 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
   const onToggle = (on: boolean) => {
     if (isNew) return setDraft({ ...draft, enabled: on });
     setEnabled.mutate(
-      { triggerId: triggerId as string, enabled: on },
+      { triggerId, enabled: on },
       {
         onSuccess: () =>
           setLoaded((l) => (l ? { ...l, base: { ...l.base, enabled: on }, draft: { ...l.draft, enabled: on } } : l)),
@@ -184,7 +225,7 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
           <Switch
             checked={draft.enabled}
             onCheckedChange={onToggle}
-            disabled={readOnly || setEnabled.isPending}
+            disabled={(automation ? !canSwitch(automation) : readOnly) || setEnabled.isPending}
             aria-label={draft.enabled ? t`Turn off` : t`Turn on`}
             data-testid="automation-page-toggle"
           />
@@ -342,7 +383,8 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">
           <div className="grid gap-5 px-6 py-5 lg:grid-cols-[minmax(0,3fr)_minmax(16rem,2fr)]">
-            <div className="flex min-w-0 flex-col gap-4">
+            {/* `key`: each rule gets its own folded / unfolded blocks. */}
+            <div key={loadKey} className="flex min-w-0 flex-col gap-4">
               {readOnly && (
                 <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                   <Trans>Flowpad runs this one itself. You can check it, run it and see its runs, not change it.</Trans>
@@ -358,16 +400,41 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
                   ))}
                 </ul>
               )}
-              <WhenBlock draft={draft} onChange={setDraft} readOnly={readOnly || isRuleFolder} />
+              <WhenBlock
+                draft={draft}
+                onChange={setDraft}
+                readOnly={readOnly || isRuleFolder}
+                summary={automation ? words.when(automation.when) : undefined}
+                defaultOpen={isNew}
+              />
+              {draft.kind === 'schedule' && !readOnly && (
+                <RunsOnBlock
+                  draft={draft}
+                  onChange={setDraft}
+                  saved={isNew ? null : (loaded?.base.runsOn ?? null)}
+                  defaultOpen={isNew}
+                />
+              )}
               {isRuleFolder ? (
                 <RuleCodeBlock triggerId={triggerId as string} />
               ) : readOnly && automation ? (
                 // Nothing to edit: say what it does, and let each step be opened.
-                <Block testId="automation-then" title={<Trans>Then</Trans>}>
+                <Block
+                  testId="automation-then"
+                  title={<Trans>Then</Trans>}
+                  summary={<ThenLine steps={automation.then} />}
+                  defaultOpen={false}
+                >
                   <ThenSteps steps={automation.then} />
                 </Block>
               ) : (
-                <ThenBlock draft={draft} onChange={setDraft} readOnly={readOnly} savedThen={automation?.then} />
+                <ThenBlock
+                  draft={draft}
+                  onChange={setDraft}
+                  readOnly={readOnly}
+                  savedThen={automation?.then}
+                  defaultOpen={isNew}
+                />
               )}
               <Block testId="automation-advanced" title={<Trans>More</Trans>}>
                 <Advanced testId="automation-advanced-toggle">
@@ -488,15 +555,18 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
         confirmLabel={t`Delete`}
         variant="destructive"
         onConfirm={() =>
-          remove.mutate(triggerId as string, {
-            onSuccess: () => navigation.openDock(DockPointer.forAutomations()),
-            onError: (e) =>
-              notify.error({
-                title: t`Could not delete`,
-                message: errorMessage(e, t`Delete failed`),
-                forceToast: true,
-              }),
-          })
+          remove.mutate(
+            triggerId as string,
+            {
+              onSuccess: () => navigation.openDock(DockPointer.forAutomations()),
+              onError: (e) =>
+                notify.error({
+                  title: t`Could not delete`,
+                  message: errorMessage(e, t`Delete failed`),
+                  forceToast: true,
+                }),
+            },
+          )
         }
       />
     </div>
@@ -590,5 +660,46 @@ function AgentRulesExplainer({ onBack }: { onBack: () => void }) {
         {discover.isSuccess ? <Trans>Found {discover.data?.length ?? 0} rules</Trans> : <Trans>Find agent rules</Trans>}
       </Button>
     </div>
+  );
+}
+
+/** "Runs on" — this computer, one of the chosen agent's cloud machines, or Flowpad cloud. */
+function RunsOnBlock({
+  draft,
+  onChange,
+  saved,
+  defaultOpen,
+}: {
+  draft: AutomationDraft;
+  onChange: (next: AutomationDraft) => void;
+  saved: RunsOn | null;
+  defaultOpen: boolean;
+}) {
+  const { data: agents = [] } = useRunnableAgents();
+  const agent = agents.find((a) => `agent-${a.id}` === draft.then.agentTypeId || a.id === draft.then.agentTypeId);
+  const { places } = useAgentPlaces(draft.then.choice === 'run_agent' ? agent : null);
+  const badge = usePlaceBadge(places ?? []);
+  return (
+    <Block
+      testId="automation-runs-on"
+      title={<Trans>Where</Trans>}
+      summary={
+        defaultOpen
+          ? undefined
+          : badge({
+              kind: draft.runsOn.kind,
+              deployment_id: draft.runsOn.kind === 'cloud_machine' ? draft.runsOn.deploymentId : undefined,
+            }).label
+      }
+      defaultOpen={defaultOpen}
+    >
+      <RunsOnPicker
+        value={draft.runsOn}
+        onChange={(runsOn) => onChange({ ...draft, runsOn })}
+        places={places ?? []}
+        cloudAllowed={cloudAllowed(draft)}
+        saved={saved}
+      />
+    </Block>
   );
 }

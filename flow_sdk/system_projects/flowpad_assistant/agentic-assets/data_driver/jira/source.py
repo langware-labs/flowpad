@@ -77,6 +77,11 @@ class JiraIssueData(RecordData):
     #: The issue's ``updated`` — the time the application windows and orders records by.
     published_at: Optional[AwareDatetime] = None
 
+    @property
+    def item_time(self) -> Optional[datetime]:
+        return self.published_at
+
+
 
 class JiraConfig(SourceConfig):
     """What a jira source is configured with."""

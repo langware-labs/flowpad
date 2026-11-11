@@ -40,6 +40,7 @@ import re
 from functools import lru_cache
 from urllib.request import Request, urlopen
 
+from flow_sdk.api.api_types.identifier import UUID_PATTERN
 from flow_sdk.cli import app_config
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.models.bootstrap_models import RuntimeInfo, RuntimeKind
@@ -157,7 +158,7 @@ def own_sandbox_id() -> str | None:
     Cached for the process lifetime: the id is fixed at boot, and callers sit on
     per-request paths.
     """
-    if get_assigned_runtime() is not RuntimeKind.SANDBOX:
+    if get_assigned_runtime() not in (RuntimeKind.SANDBOX, RuntimeKind.AGENT):
         return None
     try:
         token_req = Request(_MMDS_TOKEN_URL, method="PUT", headers={"X-metadata-token-ttl-seconds": "60"})
@@ -173,7 +174,7 @@ def own_sandbox_id() -> str | None:
 
 
 _COMPUTE_NODE_KEY = "compute_node_typeid"
-_COMPUTE_NODE_RE = re.compile(r"^compute_node-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_COMPUTE_NODE_RE = re.compile(rf"^compute_node-{UUID_PATTERN}$")
 
 
 def get_assigned_compute_node() -> str | None:
@@ -195,6 +196,31 @@ def set_assigned_compute_node(typeid: str) -> str:
         raise ValueError(f"not a compute node typeid: {typeid!r}")
     app_config.set_config(_COMPUTE_NODE_KEY, typeid)
     return typeid
+
+
+_NODE_SIZE_KEY = "node_size"
+
+
+def get_assigned_node_size() -> str | None:
+    """The size the hub created this box at (``sm`` | ``md`` | ``lg``), or ``None`` on a local install.
+
+    The box cannot see its own allocation: the hub sizes the machine from ITS node row and hands the size
+    over in the standard box env (``FLOWPAD_NODE_SIZE``), which ``flow auth configure-box`` stores here.
+    Not memoized: each read is a small config-file read.
+    """
+    from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize  # noqa: PLC0415
+
+    raw = app_config.get_config(_NODE_SIZE_KEY)
+    return raw if raw in {s.value for s in ComputeNodeSize} else None
+
+
+def set_assigned_node_size(size: str) -> str:
+    """Persist the size the hub created this box at. Raises ``ValueError`` on an unknown size."""
+    from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize  # noqa: PLC0415
+
+    value = ComputeNodeSize(size).value
+    app_config.set_config(_NODE_SIZE_KEY, value)
+    return value
 
 
 _INSTANCE_UID_KEY = "instance_uid"

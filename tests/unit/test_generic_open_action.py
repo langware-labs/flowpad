@@ -19,6 +19,7 @@ from uuid import uuid4
 import pytest
 
 from flow_sdk.actions.action_registry import action
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from tests.unit._graph_client import call_local as _call_local
 
@@ -34,11 +35,11 @@ def _redirect_params(resp) -> dict[str, list[str]]:
 def message_hub(monkeypatch):
     """The hub a message deep link talks to: the message, its conversation, no
     further messages to sync, and a join that succeeds."""
-    from flow_sdk.app.actions import flow_message_action
 
     fid, cid = str(uuid4()), str(uuid4())
 
-    async def _hub_get(entity_type, entity_id=None, *args, scope=None, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, *args, scope=None, **kwargs):
+        assert method == "GET"
         et = getattr(entity_type, "value", entity_type)
         if et == BuiltinEntityType.FLOW_MESSAGE.value and entity_id == fid:
             return {
@@ -51,11 +52,12 @@ def message_hub(monkeypatch):
             return {"id": cid, "title": "thread"}
         return [] if scope else None
 
-    async def _hub_post(*args, **kwargs):
+    async def _hub_call(method, *args, **kwargs):
+        assert method != "GET", "a read goes through try_call here"
         return {}
 
-    monkeypatch.setattr(flow_message_action, "hub_get", _hub_get)
-    monkeypatch.setattr(flow_message_action, "hub_post", _hub_post)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_hub_call))
     return fid, cid
 
 
@@ -76,14 +78,14 @@ async def test_a_message_link_redirects_into_its_conversation(message_hub):
 
 @pytest.mark.asyncio
 async def test_a_notification_link_redirects_with_its_task(monkeypatch):
-    from flow_sdk.app.actions import notification_action
 
     nid = str(uuid4())
 
-    async def _hub_get(entity_type, entity_id=None, *args, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, *args, **kwargs):
+        assert method == "GET"
         return {"metadata": {"task_id": "t-1", "sender_name": "Dana", "task_title": "Fix it"}}
 
-    monkeypatch.setattr(notification_action, "hub_get", _hub_get)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
 
     params = _redirect_params(await _call_local("GET", f"notification/{nid}/open"))
 
@@ -121,18 +123,30 @@ def test_one_generic_open_replaces_the_per_type_ones():
 def project_hub(monkeypatch):
     """The hub a project link reads: ``rows`` by id; an int is the HubError status."""
     from flow_sdk.cloud_client.shared.errors import HubError
-    from flow_sdk.cloud_client.transport import hub_http
 
     rows: dict[str, object] = {}
 
-    async def _get_or_raise(entity_type, entity_id=None, *args, **kwargs):
+    async def _get_or_raise(method, entity_type, entity_id=None, *args, **kwargs):
+        assert method == "GET"
         row = rows.get(entity_id, 404)
         if isinstance(row, int):
             raise HubError(row, f"hub said {row}")
         return row
 
-    monkeypatch.setattr(hub_http, "hub_get_or_raise", _get_or_raise)
+    async def _roster(method, entity_type, entity_id=None, action=None, *args, **kwargs):
+        assert method == "GET" and action == "members"
+        return _ROSTER
+
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_get_or_raise))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_roster))
     return rows
+
+
+#: The recipient's own row on every project's hub roster: Dana invited them, Avi owns it.
+_ROSTER = [
+    {"type": "user", "role": "owner", "user_name": "Avi Owner"},
+    {"type": "user", "role": "member", "user_name": "Me", "invited_by_name": "Dana Levi"},
+]
 
 
 def _hub_project(pid: str) -> dict:
@@ -161,6 +175,7 @@ async def test_a_project_link_hydrates_it_and_hands_the_ui_its_set_up(project_hu
     params = _redirect_params(await _call_local("GET", f"project/{pid}/open"))
 
     assert params["project_id"] == [pid] and params["setup_git"] == ["1"]
+    assert params["sender_name"] == ["Dana Levi"], "the set-up names who shared it"
     assert '"owner": "langware-labs"' in params["git_origin"][0]
     row = await Project.get_one({"id": pid})
     assert row is not None and row.origin.owner == "langware-labs", "the link mirrors the project before set-up"
@@ -200,15 +215,18 @@ async def test_a_project_link_says_why_it_cannot_open(project_hub, hub_answer, e
 def project_list_hub(monkeypatch):
     """The hub's project list for the signed-in user: ``rows``, signed in."""
     from flow_sdk.cli.auth import hub_login
-    from flow_sdk.cloud_client.transport import hub_http
 
     rows: list[dict] = []
 
-    async def _hub_get(entity_type, entity_id=None, *args, **kwargs):
-        assert getattr(entity_type, "value", entity_type) == BuiltinEntityType.PROJECT.value and entity_id is None
+    async def _hub_get(method, entity_type, entity_id=None, action=None, *args, **kwargs):
+        assert method == "GET"
+        assert getattr(entity_type, "value", entity_type) == BuiltinEntityType.PROJECT.value
+        if action == "members":
+            return _ROSTER
+        assert entity_id is None
         return rows
 
-    monkeypatch.setattr(hub_http, "hub_get", _hub_get)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
     monkeypatch.setattr(hub_login, "hub_auth_available", lambda: True)
     return rows
 
@@ -229,9 +247,11 @@ async def test_a_hub_project_this_desktop_never_saw_is_offered_for_set_up(projec
     [link] = await _new_cloud_projects()
 
     assert link["project_id"] == pid and link["setup_git"] == "1" and link["title"] == f"course-{pid[:8]}"
+    assert link["sender_name"] == "Dana Levi", "the set-up names who shared it"
     assert '"owner": "langware-labs"' in link["git_origin"]
     row = await Project.get_one({"id": pid})
     assert row is not None and row.remote and not row.fs_storage_mount_path, "mirrored file-less, ready to set up"
+    assert row.members[1]["invited_by_name"] == "Dana Levi", "cached for the footer warning"
     assert await _new_cloud_projects() == [], "offered once: the mirrored row is no longer new"
 
 

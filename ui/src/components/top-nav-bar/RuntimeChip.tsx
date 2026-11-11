@@ -1,6 +1,7 @@
 import { Trans, useLingui } from '@lingui/react/macro';
+import { dataContext } from '@sdk';
 import { ChevronDown } from 'lucide-react';
-import { Project, RuntimeKind } from '@sdk';
+import { PageId, Project, RuntimeKind } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -17,7 +18,8 @@ import {
   useProjectListMenu,
 } from '@src/components/terminal/project-list-menu';
 import { cn } from '@src/lib/utils';
-import { useRef, useState } from 'react';
+import { tagAttrs } from '@src/tags/tag-attrs';
+import { useRef, useState, type ReactNode } from 'react';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { RUNTIME_APPEARANCE } from './runtime-appearance';
 
@@ -67,13 +69,6 @@ export function RuntimeIcon({ kind, className }: { kind: RuntimeKind; className:
 
 /** One pill segment: tinted on hover so it reads as pressable. */
 const SEGMENT = 'inline-flex cursor-pointer items-center bg-inherit transition-colors hover:bg-black/20';
-/** The raised segment — the project home button — drawn as a key cap inside the
- *  runtime tint so it reads as pressable: its own darker surface, a crisp rim,
- *  a top highlight + drop shadow (raised), and a press-down on click. Overlays
- *  and `currentColor`, never a fixed color, so it stays legible on every tint —
- *  the hub chip flips to a light tint with dark text in dark mode. */
-const RAISED_SEGMENT =
-  'inline-flex cursor-pointer items-center gap-1 rounded-full border border-[color-mix(in_srgb,currentColor_55%,transparent)] bg-black/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_1px_2px_rgba(0,0,0,0.45)] transition-[background-color,border-color,transform] hover:border-current hover:bg-black/45 active:translate-y-px active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current';
 /** One header chip in the hover card. */
 const HEADER_CHIP = 'inline-flex h-6 items-center gap-1 rounded-full px-2 text-[11px]';
 
@@ -96,6 +91,17 @@ function RuntimeDescription({ kind }: { kind: RuntimeKind }) {
   if (kind === RuntimeKind.BROWSER)
     return <Trans>This UI is served by a local server on your machine, in a browser tab.</Trans>;
   return <Trans>This UI is served by your own desktop.</Trans>;
+}
+
+/** The pill's glyph + word. Narrow windows keep the color and drop the word —
+ *  the color is the signal, the label is the explanation. */
+function PillLabel({ kind, children }: { kind: RuntimeKind; children: ReactNode }) {
+  return (
+    <>
+      <RuntimeIcon kind={kind} className="h-3.5 w-3.5 shrink-0" />
+      <span className="hidden max-w-[10rem] truncate sm:inline">{children}</span>
+    </>
+  );
 }
 
 export interface RuntimeChipProps {
@@ -129,7 +135,6 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
 
   const homeLabel = t`Open project home`;
   const { className: runtimeClass, heading } = RUNTIME_APPEARANCE[kind];
-
   // Per-type icon from the backend TypeInfo registry (CLAUDE.md: never hardcode
   // a glyph for an entity type).
   const ProjectIcon = iconForType(Project.type);
@@ -148,8 +153,8 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
           {/* A div, not a button: it holds two controls, and a button inside
               a button is invalid HTML (the nav-bar test pins that). The list
               anchors to the whole pill so it opens under its start edge; the
-              hover card hangs off the name segment only, so the home button
-              can carry its own plain tooltip. */}
+              hover card hangs off the chevron segment only, so the name (the
+              home button) can carry its own plain tooltip. */}
           <div
             data-testid="top-nav-runtime-chip"
             data-runtime={kind}
@@ -158,33 +163,46 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
               runtimeClass,
             )}
           >
-            {/* Project home: the project's own glyph, first. Hidden with no
-                  project — it addresses one by id, and without it the project
-                  page renders "not found". */}
+            {/* A split button: the project's NAME opens project home, and the
+                chevron segment after a full-height divider opens the list. A
+                separate "Project" key-cap before the name read as a label
+                ("Project: name"), not as a button. Hidden with no project — it
+                addresses one by id, and without it the page renders "not found". */}
             {project ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
-                    data-testid="top-nav-project"
-                    aria-label={homeLabel}
-                    className={cn(RAISED_SEGMENT, 'my-0.5 ml-0.5 px-2')}
-                  >
-                    <ProjectIcon className="h-4 w-4 shrink-0" />
-                    {/* A word, not just a glyph: an icon alone on a tinted pill
-                        reads as decoration. "Project", not "Home" — the bar's own
-                        Home button is the app home, and two "Home"s read as one.
-                        Narrow windows drop it, like the name. */}
-                    <span className="hidden sm:inline">
-                      <Trans>Project</Trans>
-                    </span>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  {homeLabel}
-                </TooltipContent>
-              </Tooltip>
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // On the hub the project's home is the hub page's own (members, roles, assets).
+                        const home = DockPointer.forProject(project.id);
+                        navigation.openDock(!dataContext.caps.localFiles ? home.withPage(PageId.HUB) : home);
+                      }}
+                      data-testid="top-nav-project"
+                      // The project's page opener: the tag journeys and highlights name (the footer carried it before).
+                      {...tagAttrs('ProjectPage', 'button')}
+                      aria-label={homeLabel}
+                      className={cn(SEGMENT, 'gap-1.5 pl-3 pr-2.5')}
+                    >
+                      <PillLabel kind={kind}>{menu.projectName ?? project.displayName}</PillLabel>
+                      {project.folderNameMismatch ? (
+                        <span
+                          className="-ms-1 hidden sm:inline"
+                          title={t`The project's folder is named "${project.folderNameMismatch}"`}
+                          data-testid="top-nav-project-folder-mismatch"
+                        >
+                          *
+                        </span>
+                      ) : null}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    {homeLabel}
+                  </TooltipContent>
+                </Tooltip>
+                <span aria-hidden className="w-px shrink-0 bg-black/40" />
+              </>
             ) : null}
             <HoverCardTrigger
               asChild
@@ -203,23 +221,15 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                   aria-haspopup="menu"
                   className={cn(SEGMENT, 'gap-1.5 pr-2', project ? 'pl-2' : 'pl-3')}
                 >
-                  <RuntimeIcon kind={kind} className="h-3.5 w-3.5 shrink-0" />
-                  {/* Narrow windows keep the color and drop the word — the color
-                      is the signal, the label is the explanation. */}
-                  <span className="hidden max-w-[10rem] truncate sm:inline">
-                    {menu.projectName ?? <RuntimeLabel kind={kind} />}
-                  </span>
-                  {menu.projectName && project?.folderNameMismatch ? (
-                    <span
-                      className="-ms-1 hidden sm:inline"
-                      title={t`The project's folder is named "${project.folderNameMismatch}"`}
-                      data-testid="top-nav-project-folder-mismatch"
-                    >
-                      *
-                    </span>
-                  ) : null}
+                  {/* With no project this segment is the whole pill: the runtime's
+                      glyph and word, so the pill never goes blank. */}
+                  {!project && (
+                    <PillLabel kind={kind}>
+                      <RuntimeLabel kind={kind} />
+                    </PillLabel>
+                  )}
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
                   <ProjectCountBadge menu={menu} />
-                  <ChevronDown className="h-3 w-3 shrink-0 opacity-80" />
                 </button>
               </PopoverTrigger>
             </HoverCardTrigger>

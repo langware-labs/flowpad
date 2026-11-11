@@ -1,6 +1,6 @@
 {
   "type": "data_source",
-  "id": "b6108026-501e-46cc-9bcb-23dae05537dd",
+  "id": "23ae0422-937c-497f-84c0-a65049d31d7d",
   "name": "My tasks",
   "data_driver_name": "task_manager",
   "data_driver_config": {
@@ -11,6 +11,7 @@
   "reflect_into": "",
   "poll_interval_seconds": 300,
   "window_days": 7,
+  "rate_limit_retries": 0,
   "required_capabilities": [],
   "connection": ""
 }

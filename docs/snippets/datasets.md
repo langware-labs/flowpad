@@ -156,10 +156,9 @@ mine.delete_row("sources")
 ```
 
 `put` creates or replaces one row and checks it first; slots it leaves out (gold, output, context)
-and the row's metadata are kept. Over HTTP: `POST dataset/<id>/put-row {key, row}`,
-`POST delete-row {key}`, `POST rename-row {key, new_key}`, `POST check-row {row}`; one value
+and the row's metadata are kept. HTTP and TypeScript names: [the verb table](../data-management/datasets.md#typed-rows--a-spec-that-names-a-kind); one value
 against a kind, outside any dataset: `POST /api/v1/kinds/<kind>/check {value}` (an unknown kind is a
-404, never "fits"). TypeScript: `dataset.put / deleteRow / rename / check` and `checkKind(kind, value)`.
+404, never "fits"), TypeScript `checkKind(kind, value)`.
 
 ## 8. Links between rows
 
@@ -185,16 +184,15 @@ refuses while one points at the row. Rows carry `ref` and `version` over HTTP to
 back as `put-row {key, row, expected}` and a row changed since answers 409. The datasets holding a
 kind: `GET /api/v1/kinds/<kind>/datasets?project=<id>` (TypeScript `Dataset.forKind(kind, projectId)`).
 
-## 9. Mirror an outside system, and read only what you show
+## 9. Hold an outside system's rows, and read only what you show
 
-A system of record reached through a data source is mirrored by DECLARING it on the source
-(`"mirror": {dataset, map, by?}` in its `data_source.json`): every sync keeps the dataset so, and a
-row's outside-owned fields write back through the source. The map turns ids into links
-(`{"link": <kind>, "by": <unique field>, "path": "data.deal_ids.*"}`). See
-[mirroring a system of record](../data-management/mirroring-a-system-of-record.md). What follows is
-the same mirror done by hand, from rows your own code builds.
+A dataset's data source can be a system of record: its `dataset.json` says `"data_source": "gtm-crm"`
+and the kind marks the fields the system holds `"truth"` (`"soc"`, `"soc.data.title"`, exactly one
+`"soc.external_id"`). Every read pulls the records into rows, and a row's truth fields write back
+through the driver. See [dataset stores](../data-management/dataset-stores.md). What follows is the same
+idea done by hand, from rows your own code builds.
 
-An app that keeps real records — a mirror of a CRM, a log of outreach — writes many rows per run and
+An app that keeps real records — a copy of a CRM, a log of outreach — writes many rows per run and
 shows a few of them. `sync` makes the dataset hold exactly the rows given, in one step; `query` and
 `count` answer the rows that match, so a number on a dashboard and the list behind it are one question.
 
@@ -222,10 +220,7 @@ expression (`{op, operands}`: `$EQ $NE $GT $GE $LT $LE $IN $NIN $LIKE $IS_NULL $
 `$AND` / `$OR`) or a plain `{path: value}` map; a field is a path into the row as it travels —
 `key`, `input.stage`, `input.stage_dates.won` — and a date compares as its ISO string.
 
-Over HTTP: `GET dataset/<id>/rows?filter={match, order_by, limit, offset}` → `{rows, total, problems, version}`,
-`GET rows-version` → `{version}`, `GET count?filter=…&group_by=a,b` → `{total, groups}`, `POST put-rows {rows, expected?}`,
-`POST delete-rows {keys, expected?}`, `POST sync-rows {rows, prune?, match?}`. TypeScript:
-`dataset.query(query)`, `count`, `putMany`, `deleteRows`, `sync` — and `dataset.onRowsChanged(handler)`:
+HTTP and TypeScript names: [the verb table](../data-management/datasets.md#typed-rows--a-spec-that-names-a-kind). In TypeScript, `dataset.onRowsChanged(handler)`:
 every row write says `dataset.rows.changed` once (the keys that moved, never their values), so a page
 re-reads when told instead of on a timer — or on focus: a write made while the socket was down is told
 on reconnect as one `{op: "sync", keys: []}` (`docs/flow-events.md`). A script outside the server is
@@ -257,35 +252,33 @@ colleagues = leads.query({"op": "$IN", "operands": ["input.company", levis]}, or
 ```
 
 A date bucket is written `week:input.day` (also `day:` / `month:` / `quarter:`; `week_start="sunday"`
-when your week begins there), a metric `distinct:` / `min:` / `max:` / `sum:` and a path. Over HTTP:
-`GET rows?filter={match, expand}&q=…`, `GET count?group_by=week:input.day&metrics={…}&order_by={…}`,
-`GET used-by`. A join on a value is a sub-query — `$IN [field, {$PROP: [path, match, kind?]}]`: "among the
-values `path` takes in the rows that match". TypeScript: `rows({match, q, expand})` → `linked`, `count({group_by, metrics, order_by,
-week_start})`, `usedBy(keys)`, and `bucketOf(day, 'week', 'sunday')` for the key of a period.
+when your week begins there), a metric `distinct:` / `min:` / `max:` / `sum:` and a path (HTTP and
+TypeScript names: [the verb table](../data-management/datasets.md#typed-rows--a-spec-that-names-a-kind)). A join on a value is a sub-query — `$IN [field, {$PROP: [path, match, kind?]}]`: "among the
+values `path` takes in the rows that match". TypeScript `bucketOf(day, 'week', 'sunday')` gives the key of a period.
 
 ## 11. Change a field the outside system owns
 
-In a dataset a data source mirrors (§9, the declared `mirror`), every field the map names is the
-outside system's: the schema marks it `"owned_by": "crm"`. You still edit it like any field — the
-change is sent to that system first, through the source's driver, and the row is then written as
-the system answered. The app's own fields (`notes`) are written as given. There is no merge to write
-and no client of your own to keep.
+In a dataset whose data source is a system of record (§9), every field the kind marks `truth` is the
+system's. You still edit it like any field — the change is sent to that system first, through the
+source's driver, and the row is then written as the system answered. A field without `truth` is yours,
+kept in the project's data store with the row; one row key joins both. There is no merge to write and
+no client of your own to keep.
 
 ```python
 from flow_sdk.datasets import LinkError
 
-row = tasks.query({"key": "t-1"})["rows"][0]                   # status is the CRM's; notes is ours
-await tasks.put("t-1", {"input": {**row["input"], "status": "DONE", "notes": "called twice"}}, expected=row["version"])
-now = tasks.query({"key": "t-1"})["rows"][0]["input"]         # status 'DONE' as the CRM answered, notes kept
+row = tasks.query({"key": "t-1"})["rows"][0]                   # status and label: truth fields
+await tasks.put("t-1", {"input": {**row["input"], "status": "DONE", "label": "hot"}}, expected=row["version"])
+now = tasks.query({"key": "t-1"})["rows"][0]["input"]         # status 'DONE', label 'hot', as the CRM answered
 try:
-    await tasks.put("t-1", {"input": {**now, "seen": "today"}})   # mirrored from a path nothing can write
+    await tasks.put("t-1", {"input": {**now, "seen": "today"}})   # truth from a path nothing can write
 except LinkError as refused:
     code = refused.details[0]["code"]                        # 'not_writable' -- nothing was sent
 ```
 
-The refusals, by `details[].code`: `not_writable` (the map reads the field from a path it cannot
-write), `source_refused` (the system said no — its words follow), `unlinked` (a list of links holds
-ids no row here resolves yet), `owned` (the source is read-only, or this process holds no driver). A
+The refusals, by `details[].code`: `not_writable` (the field's truth is a path that cannot be
+written), `source_refused` (the system said no — its words follow), `unlinked` (a list of links holds
+ids no row here resolves yet), `owned` (the data source is read-only, or this process holds no driver). A
 record the system made but could not finish is written, with `warnings: [{error_code:
 "source_partial", message, key}]` in the answer — show them.
 
@@ -293,6 +286,4 @@ Only the server holds a driver. Over HTTP — what an app and a script use — i
 `POST dataset/<id>/put-row {key, row, expected?}`, `put-rows`, `append`, and `delete-row` /
 `delete-rows` to delete the record outside too. TypeScript: `dataset.put(key, {input}, {expected})`.
 A script calls the action (`flow_sdk.local_client.graph_post(f"dataset/{ds.id}/put-row", {...})`);
-`Dataset.put` in a script is refused `owned`. A mirror whose map names a field the schema does not
-mark `owned_by` its `by` is refused as a whole (`mirror_failed`, `not_owned`): such a field would
-take an edit and lose it at the next sweep.
+`Dataset.put` in a script is refused `owned`.

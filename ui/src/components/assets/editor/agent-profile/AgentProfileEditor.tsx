@@ -1,26 +1,42 @@
-import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef, type AgentVersionState } from '@sdk';
+import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef, TypeId, type AgentVersionState } from '@sdk';
+import { isPublicPlace, useAgentPlaces } from './use-agent-places';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronRight, Loader2, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, MessageCircle, Plus, Trash2 } from 'lucide-react';
+import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { errorMessage } from '@src/lib/error-message';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
+import { RoleChip, useItemTime } from '@src/components/items/ItemCard';
+import { canDo, roleOf } from '@src/components/items/role';
 import { AgentAvatarPicker } from '@src/components/ui/agent-avatar-picker';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { prepareAvatarImage } from '@src/lib/prepare-avatar-image';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
+import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
+import { FullScreenButton, FullScreenView } from '@src/components/ui/full-screen';
 import { Switch } from '@src/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
 
+import { AttachedChannelsBar, useAttachedChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
+import { AddIntroTranslationButton, IntroTranslationFields } from './AgentIntroTranslations';
 import { AgentPlacesColumn } from './AgentPlacesColumn';
+import { NewDeploymentWizard } from './NewDeploymentWizard';
 import { AgentRequestLine } from './AgentRequestLine';
 import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
+import { AgentAssistantSkillsField } from './AgentAssistantSkillsField';
+import { AgentModelSizeField } from './AgentModelSizeField';
 import { AgentVisibilitySection } from './AgentVisibilitySection';
+import { AgentAutoLaunchTab } from './AgentAutoLaunchTab';
+import { AgentEnvTab } from './AgentEnvTab';
+import { undeclaredCount } from './project-secrets';
+import { useAgentSecrets } from './use-agent-secrets';
 import { useAgentMcpSync } from './use-agent-mcp-sync';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import type { AgentDocumentPatch } from './agent-fields';
@@ -53,13 +69,23 @@ interface AgentProfileEditorProps {
  * agent.md through the same revision-checked document action; the backend
  * preserves YAML and identity data.
  */
+/** Dock option: the editor's open tab. */
+const EDITOR_TAB_OPTION = 'tab';
+
+/** What the invite section reads on the hub, where the agent row is the published version. */
+const HUB_PUBLISHED: AgentVersionState = { published: true, published_commit: '', has_repo: false, pending_changes: 0 };
+
 export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) {
   const { t } = useLingui();
   const hub = isHubOnly();
+  const { launch, busyId } = useAgentLauncher();
+  // Held here so the Env tab's badge counts what the project does not declare before the tab is opened.
+  const secrets = useAgentSecrets(agent);
+  const undeclared = undeclaredCount(secrets.rows ?? []);
 
   const agentRef = useRef(agent);
   agentRef.current = agent;
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const nested = useNestedHost();
   const onDelete = useCallback(() => {
     showDeleteAssetModal({
@@ -76,15 +102,50 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const contentRef = useRef(content);
   contentRef.current = content;
   const profile = content.typedFields as Partial<Agent>;
-  const title = content.fields.title ?? '';
+  // A hub serves no agent document, so its draft title is empty: the agent's own name is the title then.
+  const title = content.fields.title || (hub || content.loadError ? agent.displayName : '') || '';
+  const agentTime = useItemTime({ date: agent.updated_date });
   const description = content.fields.description ?? '';
   const prompt = content.body;
   const intro = content.fields.intro ?? '';
+  const introTranslations = profile.intro_translations ?? {};
   const autoPrompt = content.fields.auto_launch_prompt ?? '';
   const [avatarRevision, setAvatarRevision] = useState(0);
   const [version, setVersion] = useState<AgentVersionState | null>(null);
+  // The channels people reach this agent on, drawn in the header the way the stream inbox header
+  // draws them: one mark per attached channel, the featured ones still to connect, and "+". A mark
+  // opens the agent's stream inbox on that channel — there is no list here to narrow.
+  const channelsOwner = useMemo(() => new TypeId(Agent.type, agent.id), [agent.id]);
+  const {
+    rows: channelRows,
+    specFor: channelSpecFor,
+    offers: channelOffers,
+    builtInOffered,
+  } = useAttachedChannels(hub ? null : channelsOwner);
+  const openChannel = useCallback(
+    (key: string) => navigation.openDock(DockPointer.forAgentStreamInbox(agent.id, { channel: key })),
+    [navigation, agent.id],
+  );
   // Sharing reads its public grant from the hub on mount; hold it back until "More" is first opened.
   const [moreOpened, setMoreOpened] = useState(false);
+  // The open tab lives in the URL (`?tab=`), like the deployment card's: saving the agent re-renders the editor, and a
+  // tab kept only in state would snap back to Summary (seen when saving a value on the Env tab).
+  // Who may deploy is the hub's policy (owner or admin): anyone else sees none of it. On the desktop the agent is the
+  // author's own (its read carries no permissions).
+  const canDeploy = canDo(agent, 'public_deployments') ?? !hub;
+  const askedTab = currentDock?.options?.[EDITOR_TAB_OPTION] || 'summary';
+  const tab = !canDeploy && askedTab === 'deployments' ? 'summary' : askedTab;
+  const openTab = (next: string) => {
+    if (next === 'settings') setMoreOpened(true);
+    if (currentDock) navigation.openDock(currentDock.withOption(EDITOR_TAB_OPTION, next === 'summary' ? null : next));
+  };
+  const [promptFull, setPromptFull] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  // Milkdown rebuilds on a new onChange, so keep the callback stable and read the latest body from a ref.
+  const setBodyRef = useRef(content.setBody);
+  setBodyRef.current = content.setBody;
+  const onPromptChange = useCallback((md: string) => setBodyRef.current(md), []);
 
   const loadVersion = useCallback(async () => {
     if (hub) return;
@@ -95,9 +156,26 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     }
   }, [hub]);
 
+  // A deploy publishes the agent without touching its row, so the header follows the deployments too:
+  // without this it still said "Not published yet" after a cloud deploy, until the page was reopened.
+  const { places } = useAgentPlaces(agent);
+  // Invite templates and visitors' boxes are the invite deployment's, never places of their own.
+  const plainPlaces = (places ?? []).filter((p) => !isPublicPlace(p.deployment));
+  const shownPlaces = plainPlaces.length;
+  const cloudPlaces = plainPlaces.filter((p) => !p.is_local).length;
+  const localPlace = places?.find((p) => p.is_local) ?? null;
+  const deployPage = agent.deployPagePointer;
+  const placesKey = places
+    ? places
+        .map(
+          (p) =>
+            `${p.deployment.id}:${p.deployment.status?.provider_state ?? ''}:${p.deployment.source_revision ?? ''}`,
+        )
+        .join(',')
+    : '';
   useEffect(() => {
     void loadVersion();
-  }, [loadVersion, agent.updated_date]);
+  }, [loadVersion, agent.updated_date, placesKey]);
 
   // Has this agent already used its once-per-project auto-launch? Local only:
   // the mark lives on this computer, beside the project.
@@ -136,8 +214,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
       else current.setField(key, value as DocumentValue);
     }
     const operation = writeQueueRef.current.then(async () => {
+      // A save with nothing changed writes nothing, so it is not an edit: no recency stamp and no
+      // git re-check (a blur on an untouched field used to stamp the agent as edited).
+      const wrote = contentRef.current.isDirty();
       const saved = await contentRef.current.save();
-      if (saved) {
+      if (saved && wrote) {
         agentRef.current.markEdit();
         // A saved agent.md in a git checkout is auto-committed server-side
         // (`asset_versioning`), which moves the branch ahead of its remote with
@@ -177,7 +258,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   // Every MCP server in the project is attached (the temporary policy); the list itself is shown in
   // the agent-resources menu, not here.
   const commitMcp = useCallback((ids: string[]) => void save({ mcp_servers: ids }), [save]);
-  useAgentMcpSync(profile.mcp_servers, commitMcp);
+  useAgentMcpSync(profile.mcp_servers, commitMcp, !hub);
 
   const commit = useCallback(
     <K extends keyof AgentDocumentPatch>(key: K, value: AgentDocumentPatch[K]) => {
@@ -186,8 +267,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     [save],
   );
 
-
   const AgentIcon = iconForType(Agent.type);
+  // Save the prompt when focus leaves its editor box (not when it moves inside it).
+  const commitPromptOnLeave = (e: React.FocusEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) commit('system_prompt', prompt);
+  };
   const avatarImageUrl =
     profile.avatar === AGENT_AVATAR_REF ? mainRef.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() : null;
   const pending = version?.pending_changes ?? 0;
@@ -197,6 +281,10 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   // An unreadable definition (a hub that serves no agent document) fails only the definition column:
   // the deployments beside it come from the agent row, not from this file.
   const definitionError = content.loadError;
+  const promptMode = hub || definitionError ? 'view' : 'editor';
+  const promptEditor = (toolbarRight?: React.ReactNode) => (
+    <MilkdownEditor content={prompt} onChange={onPromptChange} editorMode={promptMode} toolbarRight={toolbarRight} />
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -255,6 +343,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
             className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
             data-testid="agent-version"
           >
+            {/* The same role chip and time line as the agent's card (components/items). */}
+            <RoleChip role={roleOf(agent)} />
+            {agentTime && <span data-testid="item-time">{agentTime}</span>}
             {hub ? (
               <Trans>Published version — edit it on the author's computer</Trans>
             ) : !version ? null : version.published ? (
@@ -278,7 +369,36 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 {pending === 1 ? t`1 change not published` : t`${pending} changes not published`}
               </span>
             )}
+            {!hub && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void launch(agent, currentDock?.scopeProjectId ?? null)}
+                disabled={busyId === agent.id || agent.enabled === false}
+                data-testid="agent-chat"
+                className="h-6 shrink-0 gap-1 px-2 text-xs"
+              >
+                {busyId === agent.id ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <MessageCircle className="h-3.5 w-3.5" />
+                )}
+                <Trans>Chat</Trans>
+              </Button>
+            )}
           </div>
+          {!hub && (
+            <div className="mt-2" data-testid="agent-header-channels">
+              <AttachedChannelsBar
+                owner={channelsOwner}
+                rows={channelRows}
+                specFor={channelSpecFor}
+                offers={channelOffers}
+                builtInOffered={builtInOffered}
+                onMarkPress={openChannel}
+              />
+            </div>
+          )}
         </div>
         {!hub && (
           <Button
@@ -296,21 +416,10 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
       </div>
 
       {/* ── body: the definition on the left, where it runs on the right ── */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_36rem] lg:overflow-hidden">
-        <section
-          className="flex min-h-0 flex-col gap-5 px-6 py-5 lg:overflow-y-auto"
-          aria-labelledby="agent-definition"
-        >
+      <div className="flex min-h-0 flex-1 flex-col">
+        <section className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5" aria-label={t`Agent`}>
           {/* On the hub this is the PUBLISHED definition: read it here, edit it on the author's computer. */}
           <fieldset disabled={hub || !!definitionError} className="contents" data-testid="agent-definition-fields">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 id="agent-definition" className="text-sm font-semibold">
-                <Trans>Definition</Trans>
-              </h2>
-              <span className="text-xs text-muted-foreground">
-                <Trans>Shared by every place</Trans>
-              </span>
-            </div>
             {definitionError && (
               <div
                 role="alert"
@@ -320,217 +429,428 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 <Trans>Could not load the agent's definition: {definitionError.message}</Trans>
               </div>
             )}
-
-            {/* shrink-0: opening "More" must scroll the column, not squeeze the prompt to nothing. */}
-            <div className="flex shrink-0 flex-col">
-              <label className="mb-1 text-xs text-muted-foreground" htmlFor="agent-system-prompt">
-                <Trans>Behaviour — who this agent is, its system prompt</Trans>
-              </label>
-              <Textarea
-                id="agent-system-prompt"
-                value={prompt}
-                onChange={(e) => content.setBody(e.target.value)}
-                onBlur={() => commit('system_prompt', prompt)}
-                placeholder={t`Describe who this agent is, what it does, and what it must never do…`}
-                aria-label={t`System prompt`}
-                className="min-h-48 resize-y font-mono text-sm leading-relaxed"
-              />
-            </div>
           </fieldset>
 
-          <details
-            className="group rounded-md border border-border"
-            data-testid="agent-more"
-            onToggle={(e) => e.currentTarget.open && setMoreOpened(true)}
+          {/* The agent's toolbar, above its tabs. */}
+          <div className="flex items-center gap-2" data-testid="agent-toolbar">
+            {canDeploy && !wizardOpen && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 shrink-0"
+                onClick={() => setWizardOpen(true)}
+                data-testid="agent-new-deployment"
+              >
+                <Plus className="me-1.5 h-3.5 w-3.5" />
+                <Trans>New deployment</Trans>
+              </Button>
+            )}
+          </div>
+          {wizardOpen && (
+            <NewDeploymentWizard
+              agent={agent}
+              onClose={() => setWizardOpen(false)}
+              onOpenInvite={() => {
+                setWizardOpen(false);
+                setInviteOpen(true);
+                openTab('deployments');
+              }}
+            />
+          )}
+          <Tabs
+            value={tab}
+            className={cn('flex min-h-0 flex-1 flex-col', wizardOpen && 'hidden')}
+            onValueChange={openTab}
           >
-            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-medium">
-              <ChevronRight className="h-3.5 w-3.5 transition group-open:rotate-90" />
-              <Trans>More</Trans>
-              <span className="text-xs font-normal text-muted-foreground">
-                <Trans>
-                  name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields
-                </Trans>
-              </span>
-            </summary>
-            <div className="flex flex-col gap-4 border-t border-border px-3 py-3">
-              <fieldset disabled={hub || !!definitionError} className="contents" data-testid="agent-more-fields">
-                <div>
-                  <div className="mb-1 text-xs text-muted-foreground">
-                    <Trans>Name — the agent's folder name, used to address it</Trans>
-                  </div>
-                  <code className="font-mono text-sm" data-testid="agent-name">
-                    {agent.name}
-                  </code>
-                </div>
-                <div>
-                  <div className="mb-1 text-xs text-muted-foreground">
-                    <Trans>Description</Trans>
-                  </div>
-                  <Textarea
-                    value={description}
-                    onChange={(e) => content.setField('description', e.target.value)}
-                    onBlur={() => commit('description', description.trim())}
-                    placeholder={t`What is this agent for?`}
-                    aria-label={t`Description`}
-                    className="min-h-0 resize-none text-sm"
-                    rows={2}
-                  />
-                </div>
-                <div>
-                  <div className="mb-1 text-xs text-muted-foreground">
-                    <Trans>Intro — shown as the agent's first message, not sent to the model</Trans>
-                  </div>
-                  <Textarea
-                    value={intro}
-                    onChange={(e) => content.setField('intro', e.target.value)}
-                    onBlur={() => commit('intro', intro.trim())}
-                    placeholder={t`Welcome! Tell the user what this agent can do and how to start…`}
-                    aria-label={t`Intro`}
-                    data-testid="agent-intro-field"
-                    className="min-h-16 resize-none text-sm"
-                    rows={2}
-                  />
-                </div>
-                <AgentPhoneField
-                  label={t`Phone number — recorded on the agent's card, not yet used to route messages`}
-                  value={profile.phone}
-                  onCommit={(v) => void save({ phone: v })}
-                />
-                {/* Its own setting: sent on every new session, not only an auto-launch.
-                    Stored as `auto_launch_prompt` — AgentSpec forbids unknown keys. */}
-                <div>
-                  <div className="mb-1 text-xs text-muted-foreground">
-                    <Trans>Auto prompt — sent as the first message of every new session with this agent</Trans>
-                  </div>
-                  <Textarea
-                    value={autoPrompt}
-                    onChange={(e) => content.setField('auto_launch_prompt', e.target.value)}
-                    onBlur={() => commit('auto_launch_prompt', autoPrompt.trim())}
-                    placeholder={t`First message to send when a session starts…`}
-                    aria-label={t`Auto prompt`}
-                    data-testid="agent-auto-prompt"
-                    className="min-h-16 resize-none text-sm"
-                    rows={2}
-                  />
-                </div>
-                <div className="rounded-md border border-border px-3 py-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">
-                      <Trans>Auto-launch on project open</Trans>
+            <TabsList className="self-start">
+              <TabsTrigger value="summary" data-testid="agent-tab-summary">
+                <Trans>Summary</Trans>
+              </TabsTrigger>
+              <TabsTrigger value="instructions" data-testid="agent-tab-instructions">
+                <Trans>Instructions</Trans>
+              </TabsTrigger>
+              <TabsTrigger value="settings" data-testid="agent-tab-settings">
+                <Trans>Settings</Trans>
+              </TabsTrigger>
+              {canDeploy && (
+                <TabsTrigger value="deployments" data-testid="agent-tab-deployments">
+                  <Trans>Deployments</Trans>
+                  {shownPlaces > 0 && (
+                    <span
+                      className="ms-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums leading-none text-primary-foreground"
+                      data-testid="agent-tab-deployments-count"
+                    >
+                      {shownPlaces}
                     </span>
-                    <Switch
-                      checked={profile.auto_launch}
-                      onCheckedChange={(v) => void save({ auto_launch: v })}
-                      aria-label={t`Auto-launch on project open`}
-                      data-testid="agent-auto-launch"
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    <Trans>
-                      Once per project, the first time it is opened. Enabling this turns off auto-launch for the other agents in this project.
-                    </Trans>
-                  </p>
-                  {autoLaunched !== null ? (
-                    <div className="mt-2 flex items-center justify-between gap-2" data-testid="agent-auto-launch-status">
-                      <span className="text-xs text-muted-foreground">
-                        {autoLaunched ? (
-                          <Trans>Already launched in this project</Trans>
-                        ) : (
-                          <Trans>Not launched yet in this project</Trans>
-                        )}
-                      </span>
-                      {autoLaunched ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={resettingLaunch}
-                          onClick={() => void resetAutoLaunch()}
-                          data-testid="agent-auto-launch-reset"
-                        >
-                          {resettingLaunch ? <Loader2 className="size-3.5 animate-spin" /> : null}
-                          <Trans>Reset</Trans>
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
-                  <span className="text-sm">
-                    <Trans>Load Flowpad assistant</Trans>
+                  )}
+                </TabsTrigger>
+              )}
+              <TabsTrigger value="env" data-testid="agent-tab-env">
+                <Trans>Env</Trans>
+                {undeclared > 0 && (
+                  <span className="ms-1.5 text-amber-500" data-testid="agent-tab-env-issues">
+                    ⚠ {undeclared}
                   </span>
-                  <Switch
-                    checked={profile.load_flowpad_assistant}
-                    onCheckedChange={(v) => void save({ load_flowpad_assistant: v })}
-                    aria-label={t`Load Flowpad assistant`}
+                )}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent
+              value="instructions"
+              className="mt-3 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+            >
+              <span className="mb-1 text-xs text-muted-foreground">
+                <Trans>Behaviour — who this agent is, its system prompt</Trans>
+              </span>
+              <div
+                className="min-h-48 flex-1 overflow-y-auto rounded-md border border-input text-sm"
+                aria-label={t`System prompt`}
+                data-testid="agent-system-prompt"
+                onBlur={commitPromptOnLeave}
+              >
+                {/* One editor at a time: while full screen is open, the prompt is edited there. */}
+                {!promptFull &&
+                  promptEditor(<FullScreenButton className="ms-auto" onClick={() => setPromptFull(true)} />)}
+              </div>
+              {!hub && <AgentChannelsBlock agent={agent} />}
+              <FullScreenView
+                open={promptFull}
+                onExit={() => {
+                  setPromptFull(false);
+                  commit('system_prompt', prompt);
+                }}
+                title={title || agent.name}
+                subtitle={<Trans>Instructions — the agent's system prompt</Trans>}
+                icon={
+                  <AgentAvatar
+                    agent={agent}
+                    imageUrl={avatarImageUrl}
+                    color={profile.color ?? null}
+                    className="h-9 w-9 shrink-0"
+                    glyphClassName="h-5 w-5 text-lg"
+                    fallback={<AgentIcon className="h-5 w-5" />}
                   />
+                }
+              >
+                <div
+                  className="flex min-h-0 flex-1 flex-col overflow-y-auto text-sm"
+                  data-testid="agent-system-prompt-full"
+                  onBlur={commitPromptOnLeave}
+                >
+                  {promptEditor()}
                 </div>
-                <div className="space-y-2 rounded-md border border-border px-3 py-2" data-testid="agent-chief-of-staff">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">
-                      <Trans>Chief of Staff</Trans>
-                    </span>
-                    <Switch
-                      checked={!!profile.chief_of_staff}
-                      onCheckedChange={(v) => void save({ chief_of_staff: v })}
-                      aria-label={t`Chief of Staff`}
+              </FullScreenView>
+            </TabsContent>
+            {/* Kept mounted so a settings draft survives switching tabs. */}
+            <TabsContent
+              value="settings"
+              forceMount
+              className="mt-3 data-[state=inactive]:hidden"
+              data-testid="agent-more"
+            >
+              <div className="flex flex-col gap-4">
+                <fieldset disabled={hub || !!definitionError} className="contents" data-testid="agent-more-fields">
+                  <div>
+                    <div className="mb-1 text-xs text-muted-foreground">
+                      <Trans>Name — the agent's folder name, used to address it</Trans>
+                    </div>
+                    <code className="font-mono text-sm" data-testid="agent-name">
+                      {agent.name}
+                    </code>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-muted-foreground">
+                      <Trans>Description</Trans>
+                    </div>
+                    <Textarea
+                      value={description}
+                      onChange={(e) => content.setField('description', e.target.value)}
+                      onBlur={() => commit('description', description.trim())}
+                      placeholder={t`What is this agent for?`}
+                      aria-label={t`Description`}
+                      className="min-h-0 resize-none text-sm"
+                      rows={2}
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    <Trans>
-                      Answers fast and hands longer work to its staff as tasks. Their progress arrives on the agent's
-                      Tasks channel; only the agent talks to people.
-                    </Trans>
-                  </p>
-                  {profile.chief_of_staff ? (
-                    <AgentListField
-                      label={t`Staff (sub-agents; the general worker is always there)`}
-                      value={profile.subagents}
-                      onCommit={(v) => void save({ subagents: v ?? [] })}
+                  <div>
+                    <div className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
+                      <Trans>Intro — shown as the agent's first message, not sent to the model</Trans>
+                      <AddIntroTranslationButton
+                        translations={introTranslations}
+                        onAdd={(code) => content.setField('intro_translations', { ...introTranslations, [code]: '' })}
+                      />
+                    </div>
+                    <Textarea
+                      value={intro}
+                      onChange={(e) => content.setField('intro', e.target.value)}
+                      onBlur={() => commit('intro', intro.trim())}
+                      placeholder={t`Welcome! Tell the user what this agent can do and how to start…`}
+                      aria-label={t`Intro`}
+                      data-testid="agent-intro-field"
+                      className="min-h-16 resize-none text-sm"
+                      rows={2}
                     />
-                  ) : null}
-                </div>
-                <div className="space-y-3">
-                  <p className="text-xs text-muted-foreground">
-                    <Trans>Declared on the agent's card. Not yet applied to the worker.</Trans>
-                  </p>
-                  <AgentSelectField
-                    label={t`Max turns`}
-                    value={profile.max_turns == null ? '' : String(profile.max_turns)}
-                    placeholder={t`unlimited`}
-                    onCommit={(v) => {
-                      const n = v == null ? undefined : Number(v);
-                      if (n !== undefined && Number.isNaN(n)) return;
-                      void save({ max_turns: n });
-                    }}
+                    <IntroTranslationFields
+                      translations={introTranslations}
+                      onChange={(next) => content.setField('intro_translations', next)}
+                      onCommit={(next) => commit('intro_translations', next)}
+                    />
+                  </div>
+                  <AgentPhoneField
+                    label={t`Phone number — recorded on the agent's card, not yet used to route messages`}
+                    value={profile.phone}
+                    onCommit={(v) => void save({ phone: v })}
                   />
-                  <AgentListField label={t`Tools`} value={profile.tools} onCommit={(v) => void save({ tools: v })} />
-                  <AgentListField
-                    label={t`Disallowed tools`}
-                    value={profile.disallowed_tools}
-                    onCommit={(v) => void save({ disallowed_tools: v })}
-                  />
-                  <AgentListField
-                    label={t`Additional directories`}
-                    value={profile.additional_dirs}
-                    onCommit={(v) => void save({ additional_dirs: v ?? [] })}
-                  />
-                </div>
-              </fieldset>
-              {/* Sharing and the public grant land on the published hub row — nothing to toggle on the hub's own
+                  {/* Its own setting: sent on every new session, not only an auto-launch.
+                    Stored as `auto_launch_prompt` — AgentSpec forbids unknown keys. */}
+                  <div>
+                    <div className="mb-1 text-xs text-muted-foreground">
+                      <Trans>Auto prompt — sent as the first message of every new session with this agent</Trans>
+                    </div>
+                    <Textarea
+                      value={autoPrompt}
+                      onChange={(e) => content.setField('auto_launch_prompt', e.target.value)}
+                      onBlur={() => commit('auto_launch_prompt', autoPrompt.trim())}
+                      placeholder={t`First message to send when a session starts…`}
+                      aria-label={t`Auto prompt`}
+                      data-testid="agent-auto-prompt"
+                      className="min-h-16 resize-none text-sm"
+                      rows={2}
+                    />
+                  </div>
+                  <div className="rounded-md border border-border px-3 py-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">
+                        <Trans>Auto-launch on project open</Trans>
+                      </span>
+                      <Switch
+                        checked={profile.auto_launch}
+                        onCheckedChange={(v) => void save({ auto_launch: v })}
+                        aria-label={t`Auto-launch on project open`}
+                        data-testid="agent-auto-launch"
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      <Trans>
+                        Once per project, the first time it is opened. Enabling this turns off auto-launch for the other
+                        agents in this project.
+                      </Trans>
+                    </p>
+                    {autoLaunched !== null ? (
+                      <div
+                        className="mt-2 flex items-center justify-between gap-2"
+                        data-testid="agent-auto-launch-status"
+                      >
+                        <span className="text-xs text-muted-foreground">
+                          {autoLaunched ? (
+                            <Trans>Already launched in this project</Trans>
+                          ) : (
+                            <Trans>Not launched yet in this project</Trans>
+                          )}
+                        </span>
+                        {autoLaunched ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={resettingLaunch}
+                            onClick={() => void resetAutoLaunch()}
+                            data-testid="agent-auto-launch-reset"
+                          >
+                            {resettingLaunch ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                            <Trans>Reset</Trans>
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="rounded-md border border-border px-3 py-2" data-testid="agent-vibe-only">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">
+                        <Trans>Vibe only</Trans>
+                      </span>
+                      <Switch
+                        checked={!!profile.vibe_only}
+                        onCheckedChange={(v) => void save({ vibe_only: v })}
+                        aria-label={t`Vibe only`}
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      <Trans>
+                        Sessions with this agent stay in Vibe: no tabs, and no switch to Chat or Terminal. New sessions
+                        are reached from Recent.
+                      </Trans>
+                    </p>
+                  </div>
+                  <AgentModelSizeField value={profile.model} onCommit={(v) => void save({ model: v })} />
+                  <div className="rounded-md border border-border px-3 py-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">
+                        <Trans>Load Flowpad assistant</Trans>
+                      </span>
+                      <Switch
+                        checked={profile.load_flowpad_assistant}
+                        onCheckedChange={(v) => void save({ load_flowpad_assistant: v })}
+                        aria-label={t`Load Flowpad assistant`}
+                      />
+                    </div>
+                    {profile.load_flowpad_assistant ? (
+                      <AgentAssistantSkillsField
+                        agent={agent}
+                        value={profile.assistant_skills}
+                        onCommit={(v) => void save({ assistant_skills: v })}
+                      />
+                    ) : null}
+                  </div>
+                  <div
+                    className="space-y-2 rounded-md border border-border px-3 py-2"
+                    data-testid="agent-chief-of-staff"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">
+                        <Trans>Chief of Staff</Trans>
+                      </span>
+                      <Switch
+                        checked={!!profile.chief_of_staff}
+                        onCheckedChange={(v) => void save({ chief_of_staff: v })}
+                        aria-label={t`Chief of Staff`}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>
+                        Answers fast and hands longer work to its staff as tasks. Their progress arrives on the agent's
+                        Tasks channel; only the agent talks to people.
+                      </Trans>
+                    </p>
+                    {profile.chief_of_staff ? (
+                      <AgentListField
+                        label={t`Staff (sub-agents; the general worker is always there)`}
+                        value={profile.subagents}
+                        onCommit={(v) => void save({ subagents: v ?? [] })}
+                      />
+                    ) : null}
+                  </div>
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>Declared on the agent's card. Not yet applied to the worker.</Trans>
+                    </p>
+                    <AgentSelectField
+                      label={t`Max turns`}
+                      value={profile.max_turns == null ? '' : String(profile.max_turns)}
+                      placeholder={t`unlimited`}
+                      onCommit={(v) => {
+                        const n = v == null ? undefined : Number(v);
+                        if (n !== undefined && Number.isNaN(n)) return;
+                        void save({ max_turns: n });
+                      }}
+                    />
+                    <AgentListField label={t`Tools`} value={profile.tools} onCommit={(v) => void save({ tools: v })} />
+                    <AgentListField
+                      label={t`Disallowed tools`}
+                      value={profile.disallowed_tools}
+                      onCommit={(v) => void save({ disallowed_tools: v })}
+                    />
+                    <AgentListField
+                      label={t`Additional directories`}
+                      value={profile.additional_dirs}
+                      onCommit={(v) => void save({ additional_dirs: v ?? [] })}
+                    />
+                  </div>
+                </fieldset>
+                {/* Sharing and the public grant land on the published hub row — nothing to toggle on the hub's own
                   read-only view. Outside the definition's fieldsets: an unreadable agent document must not
                   disable controls that never touch it. */}
-              {!hub && moreOpened && (
-                <AgentVisibilitySection agent={agent} version={version} onPublished={loadVersion} />
+                {!hub && (moreOpened || tab === 'settings') && (
+                  <AgentVisibilitySection agent={agent} version={version} onPublished={loadVersion} />
+                )}
+              </div>
+            </TabsContent>
+            <TabsContent value="summary" className="mt-3 flex flex-col gap-4" data-testid="agent-summary">
+              <p className="whitespace-pre-wrap text-sm">
+                {description || <span className="text-muted-foreground">{t`No description yet.`}</span>}
+              </p>
+              {!hub && places !== null && (
+                <p className="text-xs text-muted-foreground" data-testid="agent-summary-local">
+                  {localPlace ? (
+                    <Trans>Runs on this computer as its project's main agent</Trans>
+                  ) : (
+                    <Trans>Not running on this computer</Trans>
+                  )}
+                </p>
               )}
-            </div>
-          </details>
+              {canDeploy && (
+                <div className="flex items-center gap-3 text-sm">
+                  <span data-testid="agent-summary-deployments">
+                    {places === null ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : cloudPlaces === 1 ? (
+                      t`1 cloud deployment`
+                    ) : (
+                      t`${cloudPlaces} cloud deployments`
+                    )}
+                  </span>
+                  {deployPage && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigation.openDock(deployPage)}
+                      data-testid="agent-summary-new-deployment"
+                    >
+                      <Plus className="me-1.5 h-3.5 w-3.5" />
+                      <Trans>Deploy</Trans>
+                    </Button>
+                  )}
+                </div>
+              )}
+            </TabsContent>
+            {/* One list of every deployment; the invite deployment is one row of it and opens in place -- the same
+                component on the desktop and the hub. Not force-mounted: read on first open, and the invite view's
+                10s poll stops when another tab is shown. */}
+            <TabsContent value="deployments" className="mt-3">
+              {inviteOpen ? (
+                // The hub row IS the published agent: there is no local version to read there.
+                <AgentAutoLaunchTab
+                  agent={agent}
+                  version={hub ? HUB_PUBLISHED : version}
+                  onBack={() => setInviteOpen(false)}
+                />
+              ) : (
+                <AgentPlacesColumn agent={agent} onOpenInvite={() => setInviteOpen(true)} />
+              )}
+            </TabsContent>
+            <TabsContent value="env" className="mt-3">
+              <AgentEnvTab agent={agent} secrets={secrets} />
+            </TabsContent>
+          </Tabs>
         </section>
-
-        <aside className="min-h-0 border-t border-border bg-muted/20 px-5 py-5 lg:overflow-y-auto lg:border-s lg:border-t-0">
-          <AgentPlacesColumn agent={agent} onMachineSize={(size) => save({ machine_size: size })} />
-        </aside>
       </div>
       {!hub && <AgentRequestLine agent={agent} displayName={title || (agent.name ?? '')} />}
+    </div>
+  );
+}
+
+/** What Flowpad adds to the agent's instructions about its channels — read-only, so a person sees exactly
+ *  what the agent is told (its address, how it sends, who it hears from). Nothing without a built-in email. */
+function AgentChannelsBlock({ agent }: { agent: Agent }) {
+  const [text, setText] = useState('');
+  useEffect(() => {
+    let live = true;
+    void agent
+      .channelsBlock()
+      .then((next) => live && setText(next))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [agent]);
+  if (!text) return null;
+  return (
+    <div
+      className="mt-3 rounded-md border border-border bg-card/50 px-3 py-2 text-xs"
+      data-testid="agent-channels-block"
+    >
+      <div className="mb-1 font-medium text-muted-foreground">
+        <Trans>Channels — added by Flowpad, read-only</Trans>
+      </div>
+      <pre className="whitespace-pre-wrap font-sans">{text.replace(/^## .*\n/, '')}</pre>
     </div>
   );
 }

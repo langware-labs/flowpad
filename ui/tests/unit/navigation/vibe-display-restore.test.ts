@@ -32,8 +32,7 @@ function seed({ lastShown, withDisplayTab = true }: { lastShown: unknown; withDi
   // nothing about whether the hashes actually agree.
   const displayDock = DockPointer.forFile(DOC_PATH)
     .withViewMode(ViewMode.Vibe)
-    .withHost(HOST)
-    .withActiveDisplay(true);
+    .withHost(HOST);
   const row = new Tab({
     id: '2b1d2f45-6f6a-5a3c-9c31-1c3a5f7b9d10',
     pointer: displayDock.toJSON(),
@@ -55,11 +54,9 @@ describe('vibe display restore redirect', () => {
   it('sends a cold vibe landing back to the deliverable', () => {
     seed({ lastShown: { kind: 'vfs', path: DOC_PATH } });
     const url = restoreDisplayRedirect(PROCESS_ID, REQUEST_PATH, { viewMode: ViewMode.Vibe });
-    // The full grammar: nested under the host's project, naming the host, flagged
-    // as the replaceable active display, and in vibe.
+    // The full grammar: nested under the host's project, naming the host, in vibe.
     expect(url).toContain(`/dock/project/${PROJECT_ID}/process/${HOST}/display/`);
     expect(url).toContain('deliverable.md');
-    expect(url).toContain('activeDisplay=1');
     expect(url).toContain(`${'viewMode'}=vibe`);
   });
 

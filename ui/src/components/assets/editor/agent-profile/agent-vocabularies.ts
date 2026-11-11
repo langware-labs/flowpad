@@ -49,36 +49,52 @@ export const AGENT_EFFORTS = ['low', 'medium', 'high'] as const;
 export const AGENT_MACHINE_SIZES = Object.values(ComputeNodeSize);
 
 /**
- * The Deploy tab's own display text — `ComputeNodeSizeLabels` plus an
- * indicative hourly price. Owned HERE, not in the shared SDK entity: that
- * label is mirrored verbatim into the hub's own SDK copy and read by an
- * unrelated hub surface, so a price baked in there would ship stale with no
- * build step to catch it. This component is the only place that wants a
- * price at all.
+ * The hourly machines' display text — `ComputeNodeSizeLabels` plus an
+ * indicative hourly price, shown by the Deploy tab and the New sandbox dialog.
+ * Owned HERE, not in the shared SDK entity: that label is mirrored verbatim
+ * into the hub's own SDK copy and read by an unrelated hub surface, so a price
+ * baked in there would ship stale with no build step to catch it.
+ *
+ * Prices are E2B usage rates ($0.0504/vCPU-hr, $0.0162/GiB-hr) x1.7 over the
+ * hub's E2B sizes (sm 2 vCPU/2 GiB, md 2/4, lg 4/8) — change both together.
  */
 const MACHINE_SIZE_HOURLY_PRICE: Record<ComputeNodeSize, string> = {
   [ComputeNodeSize.SMALL]: '$0.226/hr',
-  [ComputeNodeSize.MEDIUM]: '$0.398/hr',
-  [ComputeNodeSize.LARGE]: '$0.796/hr',
+  [ComputeNodeSize.MEDIUM]: '$0.282/hr',
+  [ComputeNodeSize.LARGE]: '$0.563/hr',
 };
 
 export const AGENT_MACHINE_SIZE_LABELS: Record<ComputeNodeSize, string> = Object.fromEntries(
   AGENT_MACHINE_SIZES.map((size) => [size, `${ComputeNodeSizeLabels[size]} · ${MACHINE_SIZE_HOURLY_PRICE[size]}`]),
 ) as Record<ComputeNodeSize, string>;
 
-/**
- * The monthly-billed machines (the hub's `gcp_vm` provider): the machine's strength and a MONTHLY
- * price — these run, and bill, all month. Owned here for the same reason as the hourly prices.
- *
- * The specs mirror what the hub creates per size — change both together. Prices are for the
- * machine alone, rounded to the dollar.
- */
-const MACHINE_SIZE_MONTHLY: Record<ComputeNodeSize, string> = {
-  [ComputeNodeSize.SMALL]: '2 CPU · 2 GB · $21/mo',
-  [ComputeNodeSize.MEDIUM]: '2 CPU · 4 GB · $42/mo',
-  [ComputeNodeSize.LARGE]: '8 CPU · 32 GB · $336/mo',
+/** How a cloud machine bills: by the hour while it runs, or by the month, always on. */
+export type MachineBilling = 'hourly' | 'monthly';
+
+/** The price of one size, on its own, for the New deployment wizard. Same sources as the labels above. */
+export const MACHINE_SIZE_PRICE: Record<MachineBilling, Record<ComputeNodeSize, string>> = {
+  hourly: {
+    [ComputeNodeSize.SMALL]: '$0.23 / hour',
+    [ComputeNodeSize.MEDIUM]: '$0.28 / hour',
+    [ComputeNodeSize.LARGE]: '$0.56 / hour',
+  },
+  monthly: {
+    [ComputeNodeSize.SMALL]: '$21 / month',
+    [ComputeNodeSize.MEDIUM]: '$42 / month',
+    [ComputeNodeSize.LARGE]: '$336 / month',
+  },
 };
 
-export const AGENT_MONTHLY_MACHINE_SIZE_LABELS: Record<ComputeNodeSize, string> = Object.fromEntries(
-  AGENT_MACHINE_SIZES.map((size) => [size, `${ComputeNodeSizeLabels[size]} · ${MACHINE_SIZE_MONTHLY[size]}`]),
-) as Record<ComputeNodeSize, string>;
+/** A size's strength, for its tooltip: what the hub creates per billing (change with the hub). */
+export const MACHINE_SIZE_SPECS: Record<MachineBilling, Record<ComputeNodeSize, string>> = {
+  hourly: {
+    [ComputeNodeSize.SMALL]: '2 CPU · 2 GB',
+    [ComputeNodeSize.MEDIUM]: '2 CPU · 4 GB',
+    [ComputeNodeSize.LARGE]: '4 CPU · 8 GB',
+  },
+  monthly: {
+    [ComputeNodeSize.SMALL]: '2 CPU · 2 GB',
+    [ComputeNodeSize.MEDIUM]: '2 CPU · 4 GB',
+    [ComputeNodeSize.LARGE]: '8 CPU · 32 GB',
+  },
+};

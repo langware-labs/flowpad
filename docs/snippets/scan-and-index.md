@@ -22,8 +22,9 @@ project folder.
 
 ## 1. Walk a tree the way the indexer does
 
-`kernel(TreeWalker)` is the one shared walk: `.gitignore` files honoured as they nest, vendor and
-build folders skipped, `.claude/` always seen. Every stream ends with one `StreamEnd` that
+`kernel(TreeWalker)` is the one shared walk: `.gitignore` and `.flowignore` files honoured as they
+nest (as git matches them, `.flowignore` first), vendor and build folders skipped, `.claude/` seen
+whatever a `.gitignore` says. Every stream ends with one `StreamEnd` that
 counts what came before it — a walk that stops early is told apart from one that finished.
 
 ```python

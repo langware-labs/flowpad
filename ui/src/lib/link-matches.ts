@@ -3,7 +3,7 @@
  * The terminal maps these matches onto buffer cells; a message renders them as spans.
  * Candidate recognition only: the backend decides whether a reference exists.
  */
-import { localWebUrl } from '@src/lib/link-kind';
+import { COMMAND_LINK, localWebUrl } from '@src/lib/link-kind';
 
 export interface LinkMatch {
   text: string;
@@ -27,7 +27,7 @@ const RELATIVE_PATH = new RegExp(String.raw`^${WORD}+(?:[/\\]${SEGMENT}+)+[/\\]?
 /** What a test runner appends to the file it names: `tests/a.py::test_x`, `a.py::TestA::test_b[1]`. */
 const TEST_ID = /(?:::[\w[\].-]+)+$/;
 
-const RTL = String.raw`֐-ࣿיִ-﷿ﹰ-﻿`;
+const RTL = String.raw`\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff`;
 export const HAS_RTL = new RegExp(`[${RTL}]`);
 // Prose wraps references in brackets: `(src/a.ts:49)`. Hebrew glues a prefix on with a hyphen: `ב-src/a.ts`.
 // Claude Code glues an attachment's label to its absolute path: `[image]/private/tmp/a.png`.
@@ -59,18 +59,32 @@ function trimTrail(value: string, trail: RegExp): string {
 const QUOTED = ['"', "'", '`'].map((q) => String.raw`(?<![\p{L}\p{N}_])${q}([^${q}\r\n]+)${q}(?![\p{L}\p{N}_])`);
 /** Box-drawing and block glyphs: a table's or a panel's borders, never part of a name. */
 export const BOX_GLYPHS = String.raw`\u2500-\u259f`;
+/** Where an absolute path starts, and the file name (with an optional position) it ends in. */
+const ROOT = String.raw`(?:/|~/|[A-Za-z]:[/\\])`;
+const FILE_END = String.raw`\.[A-Za-z]\w*(?::\d+){0,2}`;
 // Prose brackets an absolute path whose folder has a space: `(/Users/me/Flowpad workspace/a.md)`.
 // It must end in a file name, so a bracketed aside (`(/tmp is shared)`) stays prose.
-const BRACKETED_PATH = String.raw`\(((?:/|~/|[A-Za-z]:[/\\])[^()\r\n]*\.[A-Za-z]\w*(?::\d+){0,2})\)`;
-const TOKENS = new RegExp(`${[...QUOTED, BRACKETED_PATH].join('|')}|[^\\s"'\`<>${BOX_GLYPHS}]+`, 'gu');
+const ABSOLUTE_FILE = String.raw`${ROOT}[^()\r\n]*${FILE_END}`;
+const BRACKETED_PATH = String.raw`\((${ABSOLUTE_FILE})\)`;
+/** A whole code span that is one absolute file path, spaces in its folders allowed: `` `~/Flowpad workspace/a.md` ``. */
+export const SPACED_ABSOLUTE_FILE = new RegExp(String.raw`^${ROOT}[^()\r\n]*[/\\][^\s/\\()]+${FILE_END}$`);
+// A bare absolute path whose folder has a space: `/Users/me/Flowpad workspace/docs/a.md`. The word
+// before each space is a folder still open (no file extension, no clause punctuation), the word
+// after it goes on with a separator, and the first word that ends in a file name ends the path.
+const NAME = String.raw`[^\s"'<>()${BOX_GLYPHS}` + '`]';
+const OPEN_FOLDER = String.raw`(?<!\.[A-Za-z]\w*)(?<![,;:!?])`;
+const GOES_ON = String.raw`(?!${ROOT}|\.{1,2}/|https?:)${NAME}*?[/\\]${NAME}*?`;
+const SPACED_PATH = String.raw`(${ROOT}${NAME}*(?:${OPEN_FOLDER} ${GOES_ON})+?(?<=[/\\]${NAME}+${FILE_END}))(?=[.,;:!?)\]}]*(?:\s|$))`;
+const TOKENS = new RegExp(`${[...QUOTED, BRACKETED_PATH, SPACED_PATH].join('|')}|[^\\s"'\`<>${BOX_GLYPHS}]+`, 'gu');
 
 export function fileLinkMatches(text: string): LinkMatch[] {
   const links: LinkMatch[] = [];
   const leadPattern = HAS_RTL.test(text) ? RTL_LEAD : LEAD;
   for (const match of text.matchAll(TOKENS)) {
     const quoted = match[1] ?? match[2] ?? match[3] ?? match[4];
-    const lead = quoted === undefined ? leadPattern.exec(match[0])![0].length : 0;
-    const value = quoted ?? trimTrail(match[0].slice(lead), TRAIL).replace(TEST_ID, '');
+    const whole = quoted ?? match[5];
+    const lead = whole === undefined ? leadPattern.exec(match[0])![0].length : 0;
+    const value = whole ?? trimTrail(match[0].slice(lead), TRAIL).replace(TEST_ID, '');
     // webLinkMatches owns HTTP links, including their path portions.
     if (!value || /^https?:/i.test(value)) continue;
     // Placeholders (`/dock/...`) and bare punctuation or schemes name nothing.
@@ -106,9 +120,42 @@ export function webLinkMatches(text: string): LinkMatch[] {
     .filter((match) => isUrl(match.text));
 }
 
-/** Every file reference and web URL in `text`, in order, never overlapping. */
-export function linkMatches(text: string): LinkMatch[] {
-  const sorted = [...fileLinkMatches(text), ...webLinkMatches(text)].sort((a, b) => a.index - b.index);
+const COMMAND_LINE = /^([ \t]*(?:[-*•>][ \t]+)?)(![^\r\n]*?)[ \t]*$/gm;
+const QUOTED_SPAN = new RegExp(QUOTED.join('|'), 'gu');
+
+/**
+ * `! cmd` alone on a line, or quoted in prose (`run "! gcloud auth login" then…`). Markdown inline
+ * code and a terminal's colored inline code are found by their own surfaces, which can see the span.
+ */
+export function commandLinkMatches(text: string): LinkMatch[] {
+  const links: LinkMatch[] = [];
+  if (!text.includes('!')) return links;
+  for (const match of text.matchAll(COMMAND_LINE)) {
+    if (COMMAND_LINK.test(match[2])) links.push({ text: match[2], index: match.index + match[1].length });
+  }
+  for (const match of text.matchAll(QUOTED_SPAN)) {
+    const quoted = match[1] ?? match[2] ?? match[3];
+    if (quoted && COMMAND_LINK.test(quoted)) links.push({ text: quoted, index: match.index + 1 });
+  }
+  return links;
+}
+
+/**
+ * Every command, file reference and web URL in `text`, in order, never overlapping. A command
+ * holds what is inside it (`! cat src/a.ts` is one link); `commands` lets a surface add the ones
+ * only it can see.
+ */
+export function linkMatches(
+  text: string,
+  commands: LinkMatch[] = commandLinkMatches(text),
+  { web = true }: { web?: boolean } = {},
+): LinkMatch[] {
+  const others = web ? [...fileLinkMatches(text), ...webLinkMatches(text)] : fileLinkMatches(text);
+  const inside = (m: LinkMatch) =>
+    commands.some((c) => m.index < c.index + c.text.length && c.index < m.index + m.text.length);
+  const sorted = [...commands, ...(commands.length ? others.filter((m) => !inside(m)) : others)].sort(
+    (a, b) => a.index - b.index,
+  );
   const links: LinkMatch[] = [];
   let end = 0;
   for (const match of sorted) {

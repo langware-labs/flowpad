@@ -10,6 +10,8 @@ local registry when the desktop learned to hold its token, so it is no longer a
 stand-in for "hub-only" — Jira is.
 """
 
+from urllib.parse import parse_qs, urlsplit
+
 import pytest
 
 from flow_sdk.core.entity.entity_env.env_types import EntityEnvVars
@@ -60,7 +62,7 @@ def _routing_probe(monkeypatch, *, hub_available: bool):
 
     calls = []
 
-    async def desktop(provider, user_id, *_args):
+    async def desktop(provider, user_id, *_args, **_kwargs):
         calls.append(("desktop", provider))
         return ApiSuccessResponse(data={"kind": "device"})
 
@@ -119,7 +121,7 @@ async def test_hub_providers_delegate(monkeypatch):
 
     calls = []
 
-    async def desktop(provider, user_id, *_args):
+    async def desktop(provider, user_id, *_args, **_kwargs):
         calls.append(("desktop", provider))
         from flow_sdk.responses.response import ApiFailResponse
 
@@ -135,16 +137,18 @@ async def test_hub_providers_delegate(monkeypatch):
     result = await oauth_action._handle_auth("slack", None)
 
     assert calls == [("hub", "slack")], calls
-    # Returned verbatim: the client's popup branch already speaks this shape, so
-    # it never learns which side ran the flow.
-    assert result.data["auth_url"].startswith("https://slack.com/oauth/v2/authorize")
+    # Entered through this instance's /auth/gate, so the provider's return carries the
+    # gate cookie; the hub's authorize URL is where the gate sends the browser on.
+    auth_url = urlsplit(result.data["auth_url"])
+    assert auth_url.path == "/auth/gate"
+    assert parse_qs(auth_url.query)["next"][0].startswith("https://slack.com/oauth/v2/authorize")
 
 
 @pytest.mark.asyncio
 async def test_a_provider_neither_side_knows_keeps_the_desktop_refusal(monkeypatch):
     from flow_sdk.app.actions import oauth_action
 
-    async def desktop(provider, user_id, *_args):
+    async def desktop(provider, user_id, *_args, **_kwargs):
         from flow_sdk.responses.response import ApiFailResponse
 
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
@@ -173,7 +177,7 @@ async def test_a_dead_callback_host_falls_back_instead_of_refusing(monkeypatch):
 
     calls = []
 
-    async def desktop(provider, user_id, *_args):
+    async def desktop(provider, user_id, *_args, **_kwargs):
         calls.append(("desktop", provider))
         return ApiSuccessResponse(data={"kind": "device"})
 
@@ -205,7 +209,7 @@ async def test_a_dead_callback_host_with_no_local_grant_says_why(monkeypatch):
     from flow_sdk.app.actions import oauth_action
     from flow_sdk.responses.response import ApiFailResponse
 
-    async def desktop(provider, user_id, *_args):
+    async def desktop(provider, user_id, *_args, **_kwargs):
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
 
     async def hub(provider, **_kwargs):
@@ -271,7 +275,7 @@ def _hub_table(monkeypatch, values):
     emitted.
     """
 
-    async def _data(user_id, *, action, sub_path, on_error, level=None):
+    async def _data(user_id, *, action, sub_path, on_error, level=None, unreachable_raises=False):
         assert (action, sub_path) == ("env-var", "table")
         return {"values": values}
 

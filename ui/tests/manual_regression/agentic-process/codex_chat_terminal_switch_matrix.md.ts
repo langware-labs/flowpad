@@ -85,7 +85,7 @@ test('C02-C16: transport switching stays one URL-first process with busy and acc
   expect(terminalPanel).toContain('data-worker-session-id');
   expect(terminalPanel).toContain('data-pty-mode');
   expect(modeSwitch).toContain('role="radiogroup"');
-  expect(modeSwitch).toContain('aria-label={LABELS[m]}');
+  expect(modeSwitch).toContain('aria-label={label}');
   expect(modeSwitch).toContain('aria-checked={active}');
   expect(sdk).toContain('_pendingTransport');
   expect(sdk).toMatch(/async switchMode\(\s*mode: WorkerMode\b/);

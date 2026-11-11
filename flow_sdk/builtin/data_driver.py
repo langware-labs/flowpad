@@ -14,6 +14,7 @@ read) carries the manifest's fields; a LOADED driver also holds its class, manif
     source = driver.create_source({"feed_url": url}, name="news")  # unsaved
     await source.save()                                               # writes data_source.json
 """
+
 from __future__ import annotations
 
 from functools import cache
@@ -87,6 +88,7 @@ class DataDriver(DriverRuntime, Entity):
     auth: Optional[AuthSpec] = APIField(default=None)
     permissions: dict[str, PermissionMappingSpec] = APIField(default_factory=dict)
     webhook: Optional[DriverWebhookSpec] = APIField(default=None)
+    hub_desk: Optional[str] = APIField(default=None)
     setup_wizards: list[SetupStageSpec] = APIField(default_factory=list)
     group: str = APIField(default="")
     group_order: int = APIField(default=0)
@@ -137,7 +139,9 @@ class DataDriver(DriverRuntime, Entity):
         registered — ``DataDriver.register`` does that."""
         header = manifest.model_dump(exclude={"name"}, exclude_unset=True) if manifest is not None else {}
         header = {k: v for k, v in header.items() if k in cls.model_fields}
-        kind = kind or (manifest.kind if manifest is not None and manifest.kind else f"datasource.{source_cls.provider}")
+        kind = kind or (
+            manifest.kind if manifest is not None and manifest.kind else f"datasource.{source_cls.provider}"
+        )
         driver = cls(**{**header, **fields, "name": source_cls.provider, "kind": kind})
         driver._cls, driver._manifest, driver._folder = source_cls, manifest, folder
         driver._content_hash, driver._shipped = content_hash, shipped
@@ -148,6 +152,14 @@ class DataDriver(DriverRuntime, Entity):
         """The registered driver for ``name``, or None. An authored folder not loaded yet is a miss
         here; ``await DataDriver.get(name)`` loads it."""
         return DRIVERS.get_or_none(name or "")
+
+    @classmethod
+    def private_config_fields(cls, name: str) -> frozenset[str]:
+        """The config fields the loaded driver ``name`` declares ``Sharing.PRIVATE`` — on a source's row,
+        never in its file. A driver not loaded yet declares none here."""
+        driver = cls.loaded(name)
+        config_cls = driver.config_cls if driver is not None else None
+        return config_cls.private_fields() if config_cls is not None else frozenset()
 
     @core_action.get(action_name="profile")
     async def profile_action(self):
@@ -164,6 +176,25 @@ class DataDriver(DriverRuntime, Entity):
             return ApiSuccessResponse(data=dict(await profile() or {}))
         except Exception as exc:  # noqa: BLE001 — a card that cannot load says so; the picker still works
             return ApiSuccessResponse(data={"available": False, "detail": f"unavailable: {exc}"})
+
+    @core_action.get(action_name="recent")
+    async def recent_action(cls, driver: str = "", hours: str = "24"):
+        """GET /api/v1/graph/data_driver/recent?driver=slack&hours=24 — what happened lately on the driver named,
+        read with this machine's own connection (``Source.recent(hours)``); the answer is content, never a token.
+        Named, not addressed by id: the agent asking knows "slack", not a row id. 404 for a driver that declares
+        none, 409 when it is not connected here, 502 when its service fails."""
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        found = await DataDriver.get(driver)
+        recent = getattr(getattr(found, "cls", None), "recent", None)
+        if recent is None:
+            return ApiFailResponse(message=f"{driver} has no recent read", status_code=404)
+        try:
+            return ApiSuccessResponse(data=await recent(float(hours or 24)))
+        except LookupError as e:
+            return ApiFailResponse(message=str(e), status_code=409)
+        except (RuntimeError, ValueError) as e:
+            return ApiFailResponse(message=str(e), status_code=502)
 
     @classmethod
     async def get(cls, name: str) -> "DataDriver":
@@ -193,6 +224,29 @@ class DataDriver(DriverRuntime, Entity):
         messages); None for a driver nothing has loaded. Computed at serialization for ``sends``'s reason."""
         driver = self._loaded()
         return driver.cls.family.value if driver is not None else None
+
+    @computed_field
+    @property
+    def holds_rows(self) -> bool:
+        """Whether a source of this driver can be a DATA STORE -- hold a dataset's rows whole: its source is
+        ``RowFiles`` and places a dataset's folder inside its own (``rows_within``), or keeps the rows in a
+        folder on this machine (``rows_folder``). What a store picker offers, without naming a provider."""
+        from flow_sdk.sources.protocols import RowFiles  # noqa: PLC0415
+
+        driver = self._loaded()
+        cls = driver.cls if driver is not None else None
+        if cls is None:
+            return False
+        return callable(getattr(cls, "rows_folder", None)) or (
+            callable(getattr(cls, "rows_within", None)) and issubclass(cls, RowFiles)
+        )
+
+    @computed_field
+    @property
+    def is_system_of_record(self) -> bool:
+        """Whether a source of this driver is a SYSTEM OF RECORD: its records are a dataset's ``truth``
+        fields (a record driver: a CRM); the rest of each row lives in the project's data store."""
+        return self.family == "record"
 
     @computed_field
     @property
@@ -264,9 +318,7 @@ class DataDriver(DriverRuntime, Entity):
 
 
 #: The run-time verbs a single driver instance may have replaced (a test's stub); computed once.
-_VERBS = frozenset(
-    name for name, value in vars(DriverRuntime).items() if callable(value) and not name.startswith("__")
-)
+_VERBS = frozenset(name for name, value in vars(DriverRuntime).items() if callable(value) and not name.startswith("__"))
 
 
 @cache

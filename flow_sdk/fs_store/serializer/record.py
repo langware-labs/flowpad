@@ -13,21 +13,50 @@ import logging
 from typing import Any
 
 from flow_sdk.assets.layout import Folder
+from flow_sdk.utils.field_path import walk
 
 logger = logging.getLogger(__name__)
 
 
-def fts_content(obj: Any, info: Any) -> str:
-    """The FTS ``content`` column for ``obj``: ``TypeInfo.fts_content`` fields
-    joined by newlines (a list-valued field joins by spaces)."""
+# ``TypeInfo.fts`` buckets — the bm25 weight of the FTS column a source feeds
+# (production ranks with ``bm25(entities_fts, 0, 0, 10, 8, 3, 1)``).
+FTS_WEIGHT_NAME = 10
+FTS_WEIGHT_TITLE = 8
+FTS_WEIGHT_DESCRIPTION = 3
+FTS_WEIGHT_CONTENT = 1
+
+
+def _text_of(obj: Any, sources: Any) -> str:
     parts = []
-    for name in info.fts_content or ():
-        value = getattr(obj, name, None)
+    for source in sources:
+        value = walk(obj, source)   # a dotted path through attributes and keys; accessors are properties
         if isinstance(value, (list, tuple)):
             value = " ".join(str(v) for v in value if v)
         if value:
             parts.append(str(value))
     return "\n".join(parts).strip()
+
+
+#: Where a type that declares no ``TypeInfo.fts`` source for a column takes it from.
+_FTS_DEFAULT = {FTS_WEIGHT_NAME: "name", FTS_WEIGHT_TITLE: "title", FTS_WEIGHT_DESCRIPTION: "description"}
+
+
+def fts_text(obj: Any, info: Any, weight: int) -> str:
+    """The text for the column of bm25 ``weight``: the ``TypeInfo.fts`` sources routed there, else the
+    column's default field ("" when neither has text)."""
+    declared = getattr(info, "fts", None) or {}
+    routed = _text_of(obj, [source for source, bucket in declared.items() if bucket == weight])
+    return routed or (_text_of(obj, [_FTS_DEFAULT[weight]]) if weight in _FTS_DEFAULT else "")
+
+
+def fts_content(obj: Any, info: Any) -> str:
+    """The FTS ``content`` column for ``obj``: ``TypeInfo.fts_content`` sources
+    (then any ``TypeInfo.fts`` source in the content bucket) joined by newlines
+    (a list-valued field joins by spaces). Sources may be dotted paths or accessors."""
+    sources = list(info.fts_content or ())
+    declared = getattr(info, "fts", None) or {}
+    sources += [s for s, bucket in declared.items() if bucket == FTS_WEIGHT_CONTENT and s not in sources]
+    return _text_of(obj, sources)
 
 
 

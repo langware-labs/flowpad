@@ -1,4 +1,5 @@
 """SecretStore: a type plus its config, keyed by variable name; load, save, names, validate, forget."""
+
 from __future__ import annotations
 
 import subprocess
@@ -19,6 +20,7 @@ from flow_sdk.secrets import (
     VaultStore,
     load_all,
 )
+from flow_sdk.utils.git_ignore import IGNORED, ignore_status
 from tests.unit.test_secrets.conftest import git_init
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -66,7 +68,8 @@ async def test_an_env_file_store_saves_loads_lists_validates_and_forgets(tmp_pat
 
     await store.save({"DATABASE_URL": "postgres://localhost/dev", "EMPTY": ""})
 
-    assert ".env.local" in (tmp_path / ".gitignore").read_text()
+    assert ignore_status(tmp_path / ".env.local") == IGNORED, "git ignores it, without a change in the repo"
+    assert not (tmp_path / ".gitignore").exists()
     values = await store.load(["DATABASE_URL", "SENTRY_DSN"])
     assert list(values) == ["DATABASE_URL"]
     assert values["DATABASE_URL"].get_secret_value() == "postgres://localhost/dev"

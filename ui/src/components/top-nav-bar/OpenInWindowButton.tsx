@@ -8,7 +8,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
  * gesture, made global. Delegates to `navigation.openDockInWindow`
  * (docs/tab-management.md Part 3 §7); the origin window stays put.
  *
- * Self-gating like `AssetDiscussButton`: only for a dock the strip would show
+ * Self-gating: only for a dock the strip would show
  * a chip for (`isDockUrl`), and never inside a window that already is a popout.
  */
 export function OpenInWindowButton() {

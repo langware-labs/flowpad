@@ -9,7 +9,7 @@ import {
 } from '../APIEntity';
 import type { IEntity } from '../IEntity';
 import { getRaw } from '../client';
-import { QueryRequest } from '../FlowSync/query';
+import { ExpressionNode, QueryFilter, QueryRequest } from '../FlowSync/query';
 import {
   ActionInfo,
   TypeId,
@@ -27,11 +27,20 @@ import { DockPointerData } from '../models/DockPointer';
 import { type GitShare, gitShareFrom } from '../models/GitShare';
 import type { AssetSource } from '../process/asset-descriptor';
 import { isHubOnly } from '../utils/hub-runtime';
+import { EntityEnv, EnvVarType } from '../models/env_var';
 import { ViewType } from '../utils/ui/view-types';
 import type { CredentialRequirement, CredentialVarKind } from './credential';
 import { SubAgent } from './subagent';
 import { Artifact, IArtifact } from './artifact';
-import type { IDeployment } from './deployment';
+import type { DeploymentSourceKind, IDeployment } from './deployment';
+import type {
+  AgentPlannedDeployment,
+  AgentReadiness,
+  AgentRequirement,
+  AgentTokenAllocation,
+  CloudDeployProvider,
+} from './agent';
+import type { ActivityProgressSpec } from '../activity';
 import { type ConversationParticipant } from './conversation';
 import { ComputeNode } from './compute_node';
 import { GitWorkdir } from './git-workdir';
@@ -216,7 +225,7 @@ export type ProjectSetupSkipScope = 'local' | 'always';
 export interface ProjectSetupRequirement {
   /** `dependency`: a dependency that is not here — name = the dependency, title = its source, note = why.
    *  `oauth` is retired: a connection is a `pack` whose `credential_kind` is `oauth`. */
-  kind: 'pack' | 'gap' | 'dependency' | 'source' | 'webapp';
+  kind: 'pack' | 'gap' | 'dependency' | 'source' | 'webapp' | 'automation';
   name: string;
   title: string;
   /** pack: what the credential is needed for, in one line, and the full reason (`CredentialSpec`). */
@@ -235,9 +244,54 @@ export interface ProjectSetupRequirement {
   /** The project does not work without it; `false` turns a feature on and never counts. */
   required: boolean;
   skipped: ProjectSetupSkip | null;
+  /** The installed assets it exists for — what "Skip → Always" uninstalls (`RootRef`). */
+  roots?: ProjectSetupRoot[];
   /** Whether "Skip → Always" can remove it from the project, and if not, why. */
   can_skip_always: boolean;
   why_not_always: string;
+  /** Its node in the project's setup tree — the `root` that runs this step alone. */
+  node?: string;
+  /** pack: the credential declares a test, and its last result on this machine. */
+  has_test?: boolean;
+  test_result?: { state: 'ok' | 'invalid' | 'error'; detail: string; at: string } | null;
+}
+
+/** An installed asset of the project a requirement exists for. Drivers and shipped templates never are one. */
+export interface ProjectSetupRoot {
+  typeid: string;
+  kind: 'data_source' | 'agent' | 'webapp' | 'dependency' | 'credential' | string;
+  name: string;
+  asset_ref: string;
+}
+
+/** One part of a project's status on this machine — mirror of `StatusPartSpec`
+ *  (`flow_sdk/schema/data_spec/project_status_spec.py`). */
+export interface ProjectStatusPart<T = unknown> {
+  /** The part's last answer; null when it was never answered here. */
+  value: T | null;
+  /** Epoch seconds of that answer. */
+  checked_at: number | null;
+  ttl_s: number;
+  /** Something it reads changed: the next read refreshes it. */
+  stale: boolean;
+  /** A refresh is running now. */
+  checking: boolean;
+  /** Why the last refresh failed; empty when it did not. */
+  error: string;
+}
+
+/** A project's status on this machine, by part — mirror of `ProjectStatusSpec`. `setup` holds a
+ *  `ProjectReadiness`. */
+export interface ProjectStatus {
+  project_id: string;
+  parts: { setup?: ProjectStatusPart<ProjectReadiness> } & Record<string, ProjectStatusPart | undefined>;
+}
+
+/** What "Use mine" copied into the project's hub store (`secrets_use_mine`). Names only. */
+export interface ProjectSecretsUseMine {
+  copied: string[];
+  not_here: string[];
+  hub_funded: string[];
 }
 
 /** `GET project/<id>/setup-requirements` — is this project ready here? */
@@ -252,6 +306,10 @@ export interface ProjectReadiness {
   skipped?: ProjectSetupRequirement[];
   /** What no credential declares: shown, never runnable. */
   gaps: ProjectSetupRequirement[];
+  /** Dependencies Flowpad cloned that are behind their remote. Never part of `ready`. */
+  updates?: number;
+  /** What is set up already (not skipped): the Project setup page lists it as Ready. */
+  set_up?: ProjectSetupRequirement[];
 }
 
 /** One process of a project's app (`GET project/<id>/app-ports`). */
@@ -268,6 +326,9 @@ export interface ProjectAppPort {
   note: string;
   /** The log the process writes, when Flowpad started it and it is running. */
   log?: string | null;
+  /** What the running process no longer matches in the saved definition (`port 3300 → 3301`,
+   *  `start command`): a restart applies them. */
+  changes?: string[];
 }
 
 /** `GET project/<id>/setup-run` — the app-run setup: going or not, and its tree so far. */
@@ -284,6 +345,8 @@ export interface NewCloudProjectLink {
   /** A project origin as JSON — what the set-up dialog clones. */
   git_origin: string;
   title?: string;
+  /** Who shared it — whoever invited this user to the project. */
+  sender_name?: string;
   /** Its name is already this project's here: the set-up asks — open that one, or
    *  install this one under another name ({@link Project.installFromHub}). */
   existing_project_id?: string;
@@ -395,7 +458,11 @@ export function onProjectDependenciesChanged(projectId: string, listener: () => 
   };
 }
 
+const dependencyReads = new Map<string, Promise<ProjectDependencies>>();
+
 function notifyDependenciesChanged(projectId: string): void {
+  // A read started before this change answers for the old state: the refetches below start new ones.
+  for (const key of [...dependencyReads.keys()]) if (key.startsWith(`${projectId} `)) dependencyReads.delete(key);
   for (const listener of [...(dependencyListeners.get(projectId) ?? [])]) listener();
 }
 
@@ -495,6 +562,9 @@ export class Project extends APIEntity<Project> {
   /** Optional per-project home branding from `.flow/customization/`. Mirrors the
    *  backend computed `Project.customization`. Read-only. */
   customization: ProjectCustomization = {};
+  /** This project's status on this machine — mirror of the backend computed `Project.local_status`, carried
+   *  on every push of the row. Read it through `useProjectStatus`, which also asks for stale parts. */
+  local_status: ProjectStatus | null = null;
   /** True when this project is app-managed — SDK-shipped (the Flowpad
    *  Assistant), the agent mount root, or a help-desk portal checkout. Mirror
    *  of the backend computed `Project.hidden`; read-only, and the ONE answer to
@@ -568,6 +638,23 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
+   * The hub project whose hosted repo is `repoTypeId` (an asset's `git_origin.repo` when it lives in a hub repo),
+   * or null. On the hub an asset row carries no `project_id`: its repository is the link to its project.
+   */
+  static async forHostedRepo(repoTypeId: string): Promise<Project | null> {
+    if (!repoTypeId) return null;
+    const found = await Project.query<Project>(
+      new QueryRequest({
+        type: Project.type,
+        query: new QueryFilter({ type: Project.type, match: new ExpressionNode({ hosted_repo: repoTypeId }) }),
+        name: 'Project.forHostedRepo',
+      }),
+    );
+    // Exactly one: a filter the server did not apply would answer every project, never a guess at one of them.
+    return found.length === 1 ? found[0] : null;
+  }
+
+  /**
    * Invite people and whole teams to this Project through the ``share`` action,
    * and return what happened to each person.
    *
@@ -630,18 +717,83 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
-   * Run this project's app on a machine of its own in the cloud.
+   * Place this project on a machine — `provider: 'local'` is this computer, a cloud provider a box of its own.
    *
-   * The web half of deployment — a micro app is deployed by deploying the
-   * project that holds it, because the project is what has the repository the
-   * sandbox materializes. Sharing to the hub is implicit, so there is no order
-   * for a caller to get wrong.
+   * A deployment is the whole project at one source (`sourceKind` tag | release | commit, default the project's
+   * HEAD commit) with at most one main agent that answers every call on the box (`mainAgentId`, an agent TypeId;
+   * omitted = the project's recommendation, `null` = none). Publishing to the hub is implicit. Slow by nature for
+   * a cloud box: a taken-on deploy answers with the activity it reports at.
    *
-   * Slow by nature (create + boot + health on a real sandbox); callers should
-   * show progress rather than assume a snappy round trip.
+   * `tokenAllocation`: the deployment's own budget; `null` releases it back to the deployer's capped default.
+   * `deploymentId`: the placement a refused deploy named — a retry continues it.
+   * `values`: values typed for this deploy, `{credential: {variable: value}}`, stored on its placement.
    */
-  async deploy(): Promise<ProjectDeployResult> {
-    return (await this.post('deploy')) as ProjectDeployResult;
+  async deploy(args: ProjectDeployArgs = {}): Promise<ProjectDeployResult> {
+    const body = projectDeployBody(args);
+    return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as ProjectDeployResult;
+  }
+
+  /**
+   * The deployment this project will have before it has a machine, and whether it is ready — each missing value
+   * can be filled or a connection authorized before `deploy`, which is refused (409 `not_ready`) until it is.
+   */
+  async planDeployment(args: ProjectDeployArgs = {}): Promise<AgentPlannedDeployment> {
+    const body = projectDeployBody(args);
+    return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
+  }
+
+  /** The environment and source a deploy starts on, the environments to offer, and the recommended main agent. */
+  async deployDefaults(): Promise<ProjectDeployDefaults> {
+    return this.get<ProjectDeployDefaults>('deploy_defaults');
+  }
+
+  /** The project's secret store on the hub (`project/<id>/env-var`): the owner and admins write, nobody reads a value. */
+  private secretStore(): EntityEnv {
+    return new EntityEnv(new TypeId(Project.type, this.id), { hubReflect: true });
+  }
+
+  /** The variable names the project's hub store holds a value for. Never a value. */
+  async secretNames(): Promise<string[]> {
+    return (await this.secretStore().list()).map((row) => row.name);
+  }
+
+  /** Write one value into the project's hub store — write-only. `exists`: the name is already set (changed, not created). */
+  async setSecret(name: string, value: string, exists: boolean): Promise<void> {
+    const store = this.secretStore();
+    if (exists) await store.update(name, { value, var_type: EnvVarType.API_KEY });
+    else await store.create({ name, value, var_type: EnvVarType.API_KEY });
+  }
+
+  /** Copy this computer's values for `names` into the project's hub store. Names come back, never a value. */
+  async secretsUseMine(names: string[]): Promise<ProjectSecretsUseMine> {
+    const res = await this.post<Partial<ProjectSecretsUseMine> | null>('secrets_use_mine', { names });
+    return { copied: res?.copied ?? [], not_here: res?.not_here ?? [], hub_funded: res?.hub_funded ?? [] };
+  }
+
+  /**
+   * Tell the hub these values changed (`POST project/<id>/credentials-changed`): `all` re-places them on the
+   * running machines (paused ones take them at their next start), `new` leaves running machines as they are.
+   */
+  async credentialsChanged(names: string[], scope: 'all' | 'new'): Promise<void> {
+    const info = new ActionInfo('credentials-changed', Project.type, this.id, 'POST');
+    info.hubReflect = true;
+    info.bodyParameters = { names, scope };
+    await dataManager.callAction<unknown, unknown>(info);
+  }
+
+  /** What a deployment of this project needs — its credentials plus the main agent's. Names only. */
+  async requirements(mainAgentId?: string | null): Promise<AgentRequirement[]> {
+    const qs = mainAgentId ? `?main_agent_id=${encodeURIComponent(mainAgentId)}` : '';
+    return (await this.get<AgentRequirement[] | null>(`requirements${qs}`)) ?? [];
+  }
+
+  /** Does that deployment satisfy each requirement? Names only. */
+  async readiness(deploymentId?: string, mainAgentId?: string | null): Promise<AgentReadiness | null> {
+    const params = new URLSearchParams();
+    if (deploymentId) params.set('deployment_id', deploymentId);
+    if (mainAgentId) params.set('main_agent_id', mainAgentId);
+    const qs = params.toString();
+    return this.get<AgentReadiness | null>(`readiness${qs ? `?${qs}` : ''}`);
   }
 
   /**
@@ -668,12 +820,14 @@ export class Project extends APIEntity<Project> {
   /** Static form for callers without a Project instance (projectless staging → `'@local'`). */
   static async getAssetsById(
     projectId: string,
-    options?: { types?: string[]; limit?: number },
+    options?: { types?: string[]; limit?: number; query?: string },
   ): Promise<AssetScanResult> {
     const actionInfo = new ActionInfo('get-assets', Project.type, projectId, 'GET');
     const queryParameters: Record<string, string | number> = {};
     if (options?.types?.length) queryParameters.types = options.types.join(',');
     if (options?.limit) queryParameters.limit = options.limit;
+    // Narrows on the server, before the list is cut at ``limit``.
+    if (options?.query?.trim()) queryParameters.query = options.query.trim();
     actionInfo.queryParameters = queryParameters;
     const response = await dataManager.callAction<void, AssetScanResult>(actionInfo);
     return response ?? { assets: [] };
@@ -878,7 +1032,20 @@ export class Project extends APIEntity<Project> {
   /** Every dependency declared in this project's `flow.json`, as it stands on
    *  this machine, plus the warnings (required, not here, not dismissed). Never
    *  fetches: a dependency not on this machine yet reads `missing`. */
-  async dependencies(options: { asset?: string; declarers?: boolean } = {}): Promise<ProjectDependencies> {
+  dependencies(options: { asset?: string; declarers?: boolean } = {}): Promise<ProjectDependencies> {
+    // Every surface showing a project's dependencies mounts with it, so a project switch asked
+    // twice at once; identical calls in flight share one request.
+    const key = `${this.id} ${options.asset ?? ''} ${options.declarers ? 1 : 0}`;
+    const open = dependencyReads.get(key);
+    if (open) return open;
+    const request = this.readDependencies(options).finally(() => {
+      if (dependencyReads.get(key) === request) dependencyReads.delete(key);
+    });
+    dependencyReads.set(key, request);
+    return request;
+  }
+
+  private async readDependencies(options: { asset?: string; declarers?: boolean }): Promise<ProjectDependencies> {
     const { declarers, ...params } = options;
     const response = await this.get<(Partial<ProjectDependencies> & Partial<ProjectContextPayload>) | null>(
       'dependencies',
@@ -990,6 +1157,21 @@ export class Project extends APIEntity<Project> {
     });
   }
 
+  /** Edit a declared dependency in place — only the fields given change. Never fetches. */
+  async updateDependency(
+    name: string,
+    patch: { source?: string; optional?: boolean; label?: string; description?: string },
+  ): Promise<DependencyState[]> {
+    return this.changingDependencies(async () => {
+      const response = await this.post<({ dependencies: DependencyState[] } & ProjectContextPayload) | null>(
+        'update-dependency',
+        { name, ...patch },
+      );
+      this.adoptContext(response);
+      return response?.dependencies ?? [];
+    });
+  }
+
   /** Fetch / clone every required dependency that is missing (`update` also
    *  pulls the ones already here). */
   async resolveDependencies(options: { update?: boolean } = {}): Promise<DependencyState[]> {
@@ -1076,8 +1258,29 @@ export class Project extends APIEntity<Project> {
   }
 
   /** Is this project ready here (`GET project/<id>/setup-requirements`)? Static: callers hold an id. */
-  static async setupRequirements(projectId: string): Promise<ProjectReadiness | null> {
+  /** Fetch the remotes of the clones Flowpad made, so each dependency's `behind` is current, then
+   *  tell every dependency listener. Git does the work off the backend's event loop; callers fire it
+   *  and go on (`void`). Never throws. */
+  static async checkDependencyUpdates(projectId: string): Promise<DependencyState[]> {
+    try {
+      const actionInfo = new ActionInfo('check-dependency-updates', Project.type, projectId, 'POST');
+      const response = await dataManager.callAction<void, { dependencies: DependencyState[] }>(actionInfo);
+      return response?.dependencies ?? [];
+    } catch (err) {
+      console.warn('[project] dependency update check failed', err);
+      return [];
+    } finally {
+      notifyDependenciesChanged(projectId);
+    }
+  }
+
+  static async setupRequirements(
+    projectId: string,
+    { includeReady = false }: { includeReady?: boolean } = {},
+  ): Promise<ProjectReadiness | null> {
     const actionInfo = new ActionInfo('setup-requirements', Project.type, projectId, 'GET');
+    // The setup page also wants what is set up and each step's node; the footer's poll does not.
+    if (includeReady) actionInfo.queryParameters = { include_ready: 'true' };
     return (await dataManager.callAction<void, ProjectReadiness>(actionInfo)) ?? null;
   }
 
@@ -1114,6 +1317,14 @@ export class Project extends APIEntity<Project> {
     return data?.stopped ?? false;
   }
 
+  /** Turn one of the project's automations on or off on THIS machine (`POST project/<id>/setup-automation`) —
+   *  never in its file. Answers with the readiness that follows. */
+  static async decideAutomation(projectId: string, typeid: string, on: boolean): Promise<ProjectReadiness | null> {
+    const actionInfo = new ActionInfo('setup-automation', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { typeid, on };
+    return (await dataManager.callAction<Record<string, unknown>, ProjectReadiness>(actionInfo)) ?? null;
+  }
+
   /** Undo a local skip (`POST project/<id>/setup-unskip`). Answers with the readiness that follows. */
   static async unskipSetup(projectId: string, typeid: string, name = ''): Promise<ProjectReadiness | null> {
     const actionInfo = new ActionInfo('setup-unskip', Project.type, projectId, 'POST');
@@ -1131,16 +1342,30 @@ export class Project extends APIEntity<Project> {
 
   /** Stop an app of the project on this machine, whoever started it (`POST project/<id>/app-stop`); `restart`
    *  starts it again on its port. Answers whether it worked, and why not. */
-  static async stopApp(projectId: string, app: string, restart = false): Promise<{ ok: boolean; detail: string }> {
+  static async stopApp(
+    projectId: string,
+    app: string,
+    restart = false,
+    wait = false,
+  ): Promise<{ ok: boolean; detail: string }> {
     const actionInfo = new ActionInfo('app-stop', Project.type, projectId, 'POST');
-    actionInfo.bodyParameters = { app, restart };
-    const data = await dataManager.callAction<{ app: string; restart: boolean }, { apps: { ok: boolean; detail: string }[] }>(
-      actionInfo,
-    );
+    actionInfo.bodyParameters = { app, restart, ...(wait ? { wait } : {}) };
+    const data = await dataManager.callAction<
+      { app: string; restart: boolean; wait?: boolean },
+      { apps: { ok: boolean; detail: string }[] }
+    >(actionInfo);
     return data?.apps?.[0] ?? { ok: false, detail: `no app named ${app}` };
   }
 
   /** The setup run's state (`GET project/<id>/setup-run`). */
+  /** `GET project/<id>/status?parts=` — the stored status, at once. Every asked part that is missing, old or
+   *  stale starts refreshing behind the answer and arrives as a push of the project row. */
+  static async status(projectId: string, parts: string[] = []): Promise<ProjectStatus | null> {
+    const actionInfo = new ActionInfo('status', Project.type, projectId, 'GET');
+    if (parts.length) actionInfo.queryParameters = { parts: parts.join(',') };
+    return (await dataManager.callAction<void, ProjectStatus>(actionInfo)) ?? null;
+  }
+
   static async setupRun(projectId: string, root = ''): Promise<ProjectSetupRun | null> {
     const actionInfo = new ActionInfo('setup-run', Project.type, projectId, 'GET');
     if (root) actionInfo.queryParameters = { root };
@@ -1217,6 +1442,16 @@ export class Project extends APIEntity<Project> {
   static async openHomePage(projectId: string): Promise<ProjectHomePage> {
     const actionInfo = new ActionInfo('home-page', Project.type, projectId, 'GET');
     return (await dataManager.callAction<void, ProjectHomePage>(actionInfo)) ?? { asset: null, type: null };
+  }
+
+  /** The TypeId a home-page declaration (a TypeId or a `./path`) names in this
+   *  checkout (`GET project/<id>/home-page-typeid`), or null. Resolve only: unlike
+   *  {@link openHomePage} it never loads the project. The backend owns the path
+   *  rule (relative to this checkout, contained in it). */
+  static async resolveHomePageTypeId(projectId: string, reference: string): Promise<string | null> {
+    const actionInfo = new ActionInfo('home-page-typeid', Project.type, projectId, 'GET');
+    actionInfo.queryParameters = { reference };
+    return (await dataManager.callAction<void, { typeid: string | null }>(actionInfo))?.typeid ?? null;
   }
 
   /** Get-or-create the `Folder` entity for a directory, WITHOUT declaring it as
@@ -1559,4 +1794,61 @@ export interface ProjectDeployResult {
   node_typeid?: string;
   host_url?: string;
   reused?: boolean;
+  /** A cloud deploy taken on: it runs on, reporting at this activity, until its machine is placed. */
+  activity?: Pick<ActivityProgressSpec, 'path' | 'subject_entity'>;
+  /** The placement a taken-on deploy lands on, before its machine exists. */
+  deployment_id?: string;
+}
+
+/** `POST project/<id>/deploy` and `plan_deployment` — every field optional. */
+export interface ProjectDeployArgs {
+  provider?: 'local' | CloudDeployProvider;
+  environment?: string;
+  machineSize?: string;
+  sourceKind?: DeploymentSourceKind;
+  sourceRef?: string | null;
+  /** The agent TypeId (`agent-<uuid>`) that answers on the box; `null` = none; omitted = the recommendation. */
+  mainAgentId?: string | null;
+  tokenAllocation?: AgentTokenAllocation | null;
+  deploymentId?: string;
+  values?: Record<string, Record<string, string>>;
+  /** `private`: every person who talks to the agent gets a machine of their own (the deploy plans a template). */
+  agentMode?: AgentMode;
+  /** The channels it answers on besides Flowpad messages, which always reach it. */
+  channels?: AgentChannel[];
+  /** Seconds without activity before a machine pauses. */
+  idlePauseSeconds?: number;
+}
+
+export type AgentMode = 'shared' | 'private';
+export const AGENT_CHANNELS = ['email', 'slack', 'chat_api'] as const;
+export type AgentChannel = (typeof AGENT_CHANNELS)[number];
+
+/** `GET project/<id>/deploy_defaults`. */
+export interface ProjectDeployDefaults {
+  environment: string;
+  environments: string[];
+  /** The project's recommended main agent (flow.json `main_agent`), as an agent TypeId; null = none. */
+  main_agent_id?: string | null;
+  /** The project's HEAD commit — a new deployment's default source. */
+  source_ref?: string | null;
+}
+
+function projectDeployBody(args: ProjectDeployArgs): Record<string, unknown> {
+  return {
+    ...(args.provider ? { provider: args.provider } : {}),
+    ...(args.environment ? { environment: args.environment } : {}),
+    // This deploy's box size; never written into a definition (that would dirty the checkout it deploys).
+    ...(args.machineSize ? { machine_size: args.machineSize } : {}),
+    ...(args.sourceKind ? { source_kind: args.sourceKind } : {}),
+    ...(args.sourceRef ? { source_ref: args.sourceRef } : {}),
+    // Absent = the project's recommendation; '' = no agent (the backend's spelling of none).
+    ...(args.mainAgentId !== undefined ? { main_agent_id: args.mainAgentId ?? '' } : {}),
+    ...(args.tokenAllocation !== undefined ? { token_allocation: args.tokenAllocation } : {}),
+    ...(args.deploymentId ? { deployment_id: args.deploymentId } : {}),
+    ...(args.values && Object.keys(args.values).length ? { values: args.values } : {}),
+    ...(args.agentMode ? { agent_mode: args.agentMode } : {}),
+    ...(args.channels ? { channels: args.channels } : {}),
+    ...(args.idlePauseSeconds ? { idle_pause_seconds: args.idlePauseSeconds } : {}),
+  };
 }

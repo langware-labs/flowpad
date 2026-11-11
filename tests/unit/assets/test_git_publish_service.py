@@ -18,6 +18,7 @@ from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError, Git
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.asset_publishing import publish_git_asset
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -45,7 +46,10 @@ def hub(tmp_path, monkeypatch):
     subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main", str(bare)], check=True)
     calls: list[tuple] = []
 
-    async def hub_post(entity_type, payload, entity_id=None, action=None, sub_path=None, **_kw):
+    async def fake_call(method, entity_type, entity_id=None, action=None, sub_path=None, *, payload=None, **_kw):
+        if method == "PUT":
+            return {}
+        assert method == "POST"
         calls.append((entity_type, entity_id, action, payload))
         if action == "hosted_repo":
             return {"repo": REPO, "clone_url": str(bare), "default_branch": "main"}
@@ -57,9 +61,8 @@ def hub(tmp_path, monkeypatch):
         saved.append((actor, kwargs))
         return self
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_graph_url", lambda *_a, **_k: str(bare))
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_put", lambda *_a, **_k: _async({}))
     monkeypatch.setattr("flow_sdk.cli.auth.hub_login.resolve_hub_api_key", lambda **_: "hub-token")
     monkeypatch.setattr(
         "flow_sdk.assets.hub_repo_sync.mirror_root", lambda repo_id: tmp_path / "hub_git" / "mirrors" / repo_id

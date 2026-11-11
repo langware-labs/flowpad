@@ -118,6 +118,12 @@ describe('tab selectors', () => {
     expect(tabForDockKey([first, bare], tabKey(first))).toBe(first);
     expect(tabForDockKey([first], null)).toBeNull();
     expect(tabForTargetId([first, bare], first.target_id!)).toBe(first);
+    // A scope-keyed Assets row (empty pointer) holding the same target is never its tab.
+    const assets = tab('assets', {
+      pointer: JSON.stringify({ viewType: 'assets', pointer: '', tabHash: 'assets|all' }),
+      target_id: first.target_id,
+    });
+    expect(tabForTargetId([assets, first], first.target_id!)).toBe(first);
     expect(openTabHashes([first, bare])).toEqual(new Set([first.getKey()]));
     expect(openTabTargetIds([first, bare])).toEqual(new Set([first.target_id]));
   });

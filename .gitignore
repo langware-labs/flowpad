@@ -1,3 +1,4 @@
+flow.json
 # Local Docker config
 .dockerignore
 docker-compose.local.yml
@@ -358,3 +359,4 @@ id_ed25519
 id_ed25519.*
 secrets.json
 .claude/settings.local.json
+

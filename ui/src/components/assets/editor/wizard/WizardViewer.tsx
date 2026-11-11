@@ -15,6 +15,7 @@ import {
   PanelRightClose,
   RotateCcw,
   TriangleAlert,
+  X,
   XCircle,
 } from 'lucide-react';
 
@@ -416,11 +417,16 @@ function WizardViewerBody({
   // Any step in flight has gone quiet for long enough to be worth saying so — offer to start the whole
   // wizard over (a newer start replaces the one in flight, killing its shell and agent).
   const anyStuck = isPopup && joinedSteps.some(({ live, outcome }) => silentForMs(live, outcome, now) > STUCK_AFTER_MS);
-  const notYetStarted = isPopup && !starting && !runView.live && !state.result;
+  // A check-only result (the first-run trigger looks before it opens the popup) is not a run yet.
+  // Only a run going has a background to keep running in: before Start (or after it ended) the
+  // popup offers a plain close, and Minimize only while the wizard runs.
+  const running = starting || Boolean(runView.live);
+  const leave = running ? minimizeAndLeave : closeWizardPopup;
+  const notYetStarted = isPopup && !starting && !runView.live && (!state.result || Boolean(state.checked));
   // A settled run that fell short — a step failed, or the person declined one. Popup only: the
   // generic page has its own Run button.
   const notFinished =
-    !conversational && !runView.live && Boolean(state.result) && !isOk(state.result) && Boolean(wizard.failure_message);
+    !conversational && !runView.live && Boolean(state.result) && !state.checked && !isOk(state.result) && Boolean(wizard.failure_message);
 
   const main = (
     <div className="flex flex-col gap-5 p-4" data-testid="wizard-viewer">
@@ -781,7 +787,7 @@ function WizardViewerBody({
       // wizard instead of answering the question (and, mounted later, would
       // also sit on top of it). Non-modal has neither problem; the backdrop
       // below stands in for the dimming a modal would have drawn.
-      <Dialog open modal={false} onOpenChange={(wantsOpen) => !wantsOpen && minimizeAndLeave()}>
+      <Dialog open modal={false} onOpenChange={(wantsOpen) => !wantsOpen && leave()}>
         <div className="fixed inset-0 z-50 bg-black/80" aria-hidden="true" />
         <DialogContent
           ref={dialogContentRef}
@@ -795,16 +801,29 @@ function WizardViewerBody({
           <DialogHeader className="sr-only">
             <DialogTitle>{bt(wizard.label || wizard.name || '')}</DialogTitle>
           </DialogHeader>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute right-3 top-3 h-7 w-7 text-muted-foreground"
-            onClick={minimizeAndLeave}
-            title={t`Minimize — it keeps running in the background`}
-            data-testid="wizard-minimize"
-          >
-            <Minus className="h-4 w-4" />
-          </Button>
+          {running ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-3 top-3 h-7 w-7 text-muted-foreground"
+              onClick={minimizeAndLeave}
+              title={t`Minimize — it keeps running in the background`}
+              data-testid="wizard-minimize"
+            >
+              <Minus className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-3 top-3 h-7 w-7 text-muted-foreground"
+              onClick={closeWizardPopup}
+              title={t`Close`}
+              data-testid="wizard-close"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
           {main}
         </DialogContent>
       </Dialog>

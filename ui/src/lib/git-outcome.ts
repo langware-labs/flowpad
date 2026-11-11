@@ -37,11 +37,11 @@ export function closeGitConflict(workdir: string): void {
  * Toast a push/pull outcome in the repo at `workdir`. Success is brief; an
  * error is sticky and pops in every view (it is the only answer to the click).
  */
-export function notifyGitOutcome(op: GitSyncOp, result: SyncResult, workdir: string) {
+export function notifyGitOutcome(op: GitSyncOp, result: SyncResult, workdir: string, quietSuccess = false): boolean {
   const copy = gitOutcomeCopy(op, result.kind, getTierMode(), { branch: result.branch, message: result.message });
   if (copy.level === 'success') {
-    notify.success({ title: copy.title, message: copy.message, durationMs: 4000 });
-    return;
+    if (!quietSuccess) notify.success({ title: copy.title, message: copy.message, durationMs: 4000 });
+    return true;
   }
   notify.error({
     ...(copy.resolvable ? { id: gitConflictToastId(workdir) } : {}),
@@ -51,9 +51,16 @@ export function notifyGitOutcome(op: GitSyncOp, result: SyncResult, workdir: str
     forceToast: true,
     actions: copy.resolvable ? [resolveConflictAction(op, result.branch, workdir)] : undefined,
   });
+  return false;
 }
 
 /** Toast a sync that threw before git could answer. */
 export function notifyGitFailure(op: GitSyncOp, e: unknown, workdir: string) {
   notifyGitOutcome(op, { kind: 'generic', branch: null, message: e instanceof Error ? e.message : String(e) }, workdir);
+}
+
+/** A git share whose pull / cherry-pick conflicted: the same toast and Resolve as any sync. */
+export function notifyShareConflict(c: { operation?: string; branch?: string | null; workdir: string; message?: string }) {
+  const op: GitSyncOp = c.operation === 'pull' ? 'pull' : 'cherry-pick';
+  notifyGitOutcome(op, { kind: 'conflict', branch: c.branch ?? null, message: c.message ?? '' }, c.workdir);
 }

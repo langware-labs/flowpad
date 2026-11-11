@@ -20,6 +20,14 @@ describe('a dataset built from a wire row keeps its actions', () => {
   });
 });
 
+describe('a dataset whose spec NAMES a kind', () => {
+  it('links its rows through the row kind the backend resolved', () => {
+    const ds = new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n', spec: 'crm.companies', row_kind: 'crm.company' });
+    expect(ds.rowKind).toBe('crm.company');
+    expect(ds.refOf('11111111-1111-4111-8111-111111111111')).toBe('crm.company.id.11111111-1111-4111-8111-111111111111');
+  });
+});
+
 /**
  * Reading SOME rows, counting them, and writing many in one step: each method must reach its own
  * action with exactly the parameters the server reads (`flow_sdk/builtin/dataset.py`).
@@ -278,8 +286,8 @@ describe('hearing that rows changed', () => {
   });
 });
 
-/** A field an outside system owns (`owned_by` in the schema) is set only by a writer that says it
- *  writes as that owner: `by` travels on every write and on `check`, and only when given. */
+/** A field held by the dataset's system of record (its `truth`) is set only by a writer that says it
+ *  writes as the system of record (`by: "soc"`): `by` travels on every write and on `check`, and only when given. */
 describe('writing as the owner of outside-owned fields', () => {
   const ds = () => new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n' } as never);
   const rows = [{ key: 'a', input: { name: 'A' } }];
@@ -292,16 +300,16 @@ describe('writing as the owner of outside-owned fields', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('put, putMany, sync, append and check carry `by` when given', async () => {
-    await ds().put('a', { input: { name: 'A' } }, { expected: 'v1', by: 'crm' });
-    await ds().putMany(rows, { by: 'crm' });
-    await ds().sync(rows, { prune: false, by: 'crm' });
-    await ds().append(rows, { by: 'crm' });
-    await ds().check({ key: 'a', input: { name: 'A' } }, { by: 'crm' });
-    expect(body(0)).toEqual({ key: 'a', row: { input: { name: 'A' } }, expected: 'v1', by: 'crm' });
-    expect(body(1)).toEqual({ rows, by: 'crm' });
-    expect(body(2)).toEqual({ rows, prune: false, by: 'crm' });
-    expect(body(3)).toEqual({ rows, by: 'crm' });
-    expect(body(4)).toEqual({ row: { key: 'a', input: { name: 'A' } }, by: 'crm' });
+    await ds().put('a', { input: { name: 'A' } }, { expected: 'v1', by: 'soc' });
+    await ds().putMany(rows, { by: 'soc' });
+    await ds().sync(rows, { prune: false, by: 'soc' });
+    await ds().append(rows, { by: 'soc' });
+    await ds().check({ key: 'a', input: { name: 'A' } }, { by: 'soc' });
+    expect(body(0)).toEqual({ key: 'a', row: { input: { name: 'A' } }, expected: 'v1', by: 'soc' });
+    expect(body(1)).toEqual({ rows, by: 'soc' });
+    expect(body(2)).toEqual({ rows, prune: false, by: 'soc' });
+    expect(body(3)).toEqual({ rows, by: 'soc' });
+    expect(body(4)).toEqual({ row: { key: 'a', input: { name: 'A' } }, by: 'soc' });
   });
 
   it('an app editing its own fields sends no `by`', async () => {
@@ -313,32 +321,32 @@ describe('writing as the owner of outside-owned fields', () => {
     for (let n = 0; n < 5; n++) expect(body(n)).not.toHaveProperty('by');
   });
 
-  it('a refusal says which field is owned, and by whom', async () => {
+  it('a refusal says which field is owned', async () => {
     const refusal = {
-      response: { status: 400, data: { data: { details: [{ path: 'input.stage', code: 'owned', owned_by: 'crm', message: 'stage is owned by crm' }] } } },
+      response: { status: 400, data: { data: { details: [{ path: 'input.stage', code: 'owned', message: 'stage is held by the system of record' }] } } },
     };
     call.mockRejectedValue(refusal as never);
     const caught = await ds()
       .put('a', { input: { stage: 'won' } })
       .catch((error: typeof refusal) => error);
     const detail: CheckDetail = (caught as typeof refusal).response.data.data.details[0];
-    expect([detail.code, detail.owned_by]).toEqual(['owned', 'crm']);
+    expect([detail.code, detail.path]).toEqual(['owned', 'input.stage']);
   });
 });
 
-/** What a kind's form says beyond shapes: who owns a field, and the rules across rows. */
+/** What a kind's form says beyond shapes: where a field is true, and the rules across rows. */
 describe('a kind form carries owners and both kinds of rule', () => {
-  it('a field may name its owner; a rule is `same` or `unique`', () => {
+  it('a field may name its truth; a rule is `same` or `unique`', () => {
     const form: KindForm = {
       kind: '--acme--.crm.deal',
       subkind: 'record',
-      fields: { stage: { shape: 'enum:open|won', required: true, owned_by: 'crm' }, notes: { shape: '?string' } },
+      fields: { stage: { shape: 'enum:open|won', required: true, truth: 'data.stage' }, notes: { shape: '?string' } },
       rules: [
         { same: ['persona.icp', 'icp'], description: '' },
         { unique: ['crm_id'], description: 'one row per CRM record' },
       ],
     };
-    const readOnly = Object.entries(form.fields ?? {}).filter(([, field]) => field.owned_by).map(([name]) => name);
+    const readOnly = Object.entries(form.fields ?? {}).filter(([, field]) => field.truth).map(([name]) => name);
     const unique = (form.rules ?? []).flatMap((rule: KindRule) => rule.unique ?? []);
     expect(readOnly).toEqual(['stage']);
     expect(unique).toEqual(['crm_id']);
@@ -423,9 +431,9 @@ describe('asking more of rows and count', () => {
   });
 });
 
-/** A system of record through a data source: its items mirrored as typed rows, and an app-owned
- *  field written back through the source's driver — never a client or a key in the frame. */
-describe('mirroring a data source and writing back through it', () => {
+/** Rows in a data source (Drive, S3, a system of record), and a source's own write-back through its
+ *  driver — never a client or a key in the frame. */
+describe('where the rows live, and writing back through a source', () => {
   let call: ReturnType<typeof vi.spyOn>;
   const sent = (n = 0) => call.mock.calls[n][0] as { name: string; method: string; bodyParameters: Record<string, unknown> };
 
@@ -434,13 +442,14 @@ describe('mirroring a data source and writing back through it', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('mirror() posts the source and the map; by / prune / match only when given', async () => {
-    const ds = new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n' } as never);
-    const map = { key: 'external_id', input: { name: 'name', stage: 'data.stage' } };
-    await ds.mirror('src-1', map);
-    expect([sent().name, sent().method, sent().bodyParameters]).toEqual(['mirror', 'POST', { source_id: 'src-1', map }]);
-    await ds.mirror('src-1', map, { by: 'crm', prune: false, match: { 'input.source': 'crm' } });
-    expect(sent(1).bodyParameters).toEqual({ source_id: 'src-1', map, by: 'crm', prune: false, match: { 'input.source': 'crm' } });
+  it('pull() and moveRows() post to the dataset, the target as given', async () => {
+    const ds = new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n', data_source: 'acme-s3' } as never);
+    expect(ds.data_source).toBe('acme-s3');
+    await ds.pull();
+    expect([sent().name, sent().method, sent().bodyParameters]).toEqual(['pull', 'POST', {}]);
+    await ds.moveRows({ data_source: 'gtm-drive', path: 'GTM/Rows' });
+    await ds.moveRows();
+    expect([sent(1).name, sent(1).bodyParameters, sent(2).bodyParameters]).toEqual(['move-rows', { data_source: 'gtm-drive', path: 'GTM/Rows' }, {}]);
   });
 
   it('createItem() asks the source to make a record in its own system, and answers the record kept here', async () => {

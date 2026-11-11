@@ -38,6 +38,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 from flow_sdk.core.compute.process_step import launch_step_process
 from flow_sdk.core.compute.shared_shell import shell_for
+from flow_sdk.core.compute_op.ask import ASKING_STEP
 from flow_sdk.core.compute_op.runner import Launch, Shell
 from flow_sdk.core.setup.tree import NodeResolver, SetupNode
 from flow_sdk.core.wizard.runner import OpResolver, WizardResolver, run_wizard
@@ -389,6 +390,8 @@ class _Walk:
                 node.detail = text
                 self.emit_soon()
 
+        # A question this wizard asks names its step, so the question itself can skip it (``POST ask/<id>/skip``).
+        asking = ASKING_STEP.set(spec.id)
         task = asyncio.ensure_future(run_wizard(
             wizard,
             subject_entity=self.subject_entity,
@@ -409,6 +412,7 @@ class _Walk:
             on_step=on_step,
             on_status=on_status,
         ))
+        ASKING_STEP.reset(asking)
         try:
             result = await self.control.run(self.path, task)
         except (_Skipped, _Stopped) as ended:

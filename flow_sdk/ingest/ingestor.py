@@ -15,7 +15,7 @@ committed. A refactor that moves emission to the caller, or into ``save()``'s
 notify path, breaks that silently: keep steps 5-7 in one function.
 
 **The digest gate is the performance story.** An unchanged item costs one
-indexed read (the natural key, via ``ix_entities_source_item_origin_v3``) and
+indexed read (the natural key, via the index declared on ``SOURCE_ITEM.indexes``) and
 nothing else — no save, no metadata.json write, no FTS write, no WS broadcast,
 no event. Feeds re-serve their whole window on every
 poll, so without this gate a 5-minute poller rewrites and re-announces the same
@@ -30,7 +30,7 @@ from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.ingest.ingest_on_tag import emit_item_tag
-from flow_sdk.ingest.legacy_lift import lift
+from flow_sdk.ingest.envelope_lift import lift
 from flow_sdk.ingest.models import IngestMode, IngestOutcome, IngestReport
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
@@ -38,12 +38,26 @@ logger = logging.getLogger(__name__)
 
 
 async def lift_page(items: Sequence[SourceItemSpec]) -> list[SourceItemSpec]:
-    """Every envelope with its origin and payload — one source-row read per source in the page."""
+    """Every envelope with its origin, payload and scope — one source-row read per source in the
+    page that needs one."""
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
-    pending = {item.data_source_id for item in items if item.origin is None or item.data is None}
+    pending = {
+        item.data_source_id for item in items if item.origin is None or item.data is None or item.item_scope is None
+    }
     sources = {sid: await DataSource.get_one({"id": sid}) for sid in pending}
-    return [lift(sources.get(item.data_source_id), item) for item in items]
+    return [_scoped(sources.get(item.data_source_id), lift(sources.get(item.data_source_id), item)) for item in items]
+
+
+def _scoped(source, item: SourceItemSpec) -> SourceItemSpec:
+    """The envelope with ``item_scope`` filled: an origin that lost the scope it was minted in is
+    read back against the source's account (``scope_in``)."""
+    if item.item_scope is not None:
+        return item
+    from flow_sdk.sources.base import scope_in  # noqa: PLC0415
+
+    account = str(getattr(source, "account_key", None) or "").strip()
+    return item.model_copy(update={"item_scope": scope_in(item.origin, account)})
 
 
 async def ingest_item(
@@ -68,7 +82,7 @@ async def ingest_item(
     re-poll idempotent — and it works on rows written before ids were v4,
     because nothing here re-derives an id.
     """
-    if item.origin is None or item.data is None:
+    if item.origin is None or item.data is None or item.item_scope is None:
         (item,) = await lift_page([item])
     ser = SourceItem.serializer()
     if known is not None:

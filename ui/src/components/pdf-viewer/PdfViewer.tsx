@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { AlertCircle } from 'lucide-react';
 import { useDownloadUrl } from '@src/hooks/use-download-url';
 
@@ -14,12 +15,18 @@ export function PdfViewer({ path }: { path: string }) {
     return (
       <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
         <AlertCircle className="h-4 w-4" />
-        Cannot resolve PDF source: {path}
+        <Trans>Cannot resolve PDF source: {path}</Trans>
       </div>
     );
   }
   return (
-    <iframe key={revision} src={url} title="PDF" className="h-full w-full border-0 bg-background" data-testid="pdf-viewer" />
+    <iframe
+      key={revision}
+      src={url}
+      title="PDF"
+      className="h-full w-full border-0 bg-background"
+      data-testid="pdf-viewer"
+    />
   );
 }
 

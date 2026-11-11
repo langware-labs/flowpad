@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Playwright config for the **first-run setup** browser scenario.
@@ -6,7 +7,8 @@ import { defineConfig, devices } from '@playwright/test';
  * Needs a backend that has NEVER had a tab open — a fresh database — and that
  * was started WITHOUT `FLOWPAD_SKIP_FIRST_RUN_SETUP`, or the fire-once trigger
  * under test is spent or switched off before the spec opens its page. CI resets
- * the backend onto a new database for exactly this. Locally, a just-launched
+ * the backend onto a new database for exactly this, with Claude Code set aside — the popup
+ * opens only when a tool is missing. Locally, a just-launched
  * disposable instance (`scripts/instance_ctl.sh launch dev-1`) is fresh.
  *
  * Run:
@@ -15,8 +17,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
-  timeout: 120_000,
-  expect: { timeout: 20_000 },
+  timeout: adjusted(120_000),
+  expect: { timeout: adjusted(20_000) },
   fullyParallel: false,
   retries: 0,
   workers: 1,

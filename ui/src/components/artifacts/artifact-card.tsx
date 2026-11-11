@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { Artifact, formatFSOrigin, type FSOriginField } from '@sdk';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { Button } from '@src/components/ui/button';
@@ -76,7 +77,9 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
                   <Share2 className="h-3 w-3" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Share</TooltipContent>
+              <TooltipContent>
+                <Trans>Share</Trans>
+              </TooltipContent>
             </Tooltip>
           )}
 
@@ -93,16 +96,16 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
                   <Trash2 className="h-3 w-3" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Delete</TooltipContent>
+              <TooltipContent>
+                <Trans>Delete</Trans>
+              </TooltipContent>
             </Tooltip>
           )}
         </div>
       </div>
 
       <div className="mt-2 flex items-center gap-2">
-        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-          {artifact.kind}
-        </span>
+        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{artifact.kind}</span>
       </div>
 
       {source && (
@@ -116,11 +119,7 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
       )}
 
       {shareOpen && (
-        <ShareToConversationDialog
-          open={shareOpen}
-          onClose={() => setShareOpen(false)}
-          source={shareSource}
-        />
+        <ShareToConversationDialog open={shareOpen} onClose={() => setShareOpen(false)} source={shareSource} />
       )}
     </div>
   );

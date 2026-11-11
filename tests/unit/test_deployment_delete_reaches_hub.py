@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from flow_sdk.builtin.deployment import Deployment
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(5)]  # do not increase timeout without approval
@@ -22,26 +23,15 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(5)]  # do not increase ti
 def hub(monkeypatch):
     """The hub's answer to DELETE, and the paths it was asked for."""
     from flow_sdk.cli.auth import credentials
-    from flow_sdk.cloud_client import client
 
     state = SimpleNamespace(status=200, deleted=[])
 
-    class _Client:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *exc):
-            return False
-
-        async def request(self, method, path, **kwargs):
-            state.deleted.append((method, str(path)))
-            return httpx.Response(state.status)
+    async def send(method, url, **kwargs):
+        state.deleted.append((method, str(url)))
+        return httpx.Response(state.status)
 
     monkeypatch.setattr(credentials, "load_credentials", lambda: SimpleNamespace(api_key="test-key"))
-    monkeypatch.setattr(client, "FlowpadClient", _Client)
+    monkeypatch.setattr(HubProxy, "send", staticmethod(send))
     return state
 
 
@@ -95,4 +85,17 @@ async def test_a_local_placement_stops_its_process_and_never_asks_the_hub(hub, m
     await row.delete()
 
     assert stopped == [row.id] and hub.deleted == []
+    assert await Deployment.get_by_id(row.id) is None
+
+
+async def test_a_mirror_delete_never_asks_the_hub(hub):
+    """The hub telling us a row is gone, or sign-out clearing the cache, drops only this machine's copy."""
+    from flow_sdk.core.entity.entity_model import mirror_delete
+
+    row = await _placement(remote=True)
+
+    with mirror_delete():
+        assert await Deployment.delete_by_id(row.id)
+
+    assert hub.deleted == []
     assert await Deployment.get_by_id(row.id) is None

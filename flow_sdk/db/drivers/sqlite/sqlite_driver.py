@@ -1,5 +1,6 @@
 """SQLAlchemy/SQLite database driver for FlowPad testing."""
 
+import functools
 import json
 
 DEFAULT_BROWSE_LIMIT = 20
@@ -10,16 +11,17 @@ import re
 from collections import defaultdict
 from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal, Optional, Sequence, Set, Tuple
 
 from fastapi import HTTPException
 from pydantic import TypeAdapter
-from sqlalchemy import and_, asc, delete, desc, func, or_, select, text, update
+from sqlalchemy import DateTime, and_, asc, case, delete, desc, func, or_, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from flow_sdk._compat import UTC
+from flow_sdk.datasets.query import Many, field_of
 from flow_sdk.db.drivers.db_base_record import (
     BuiltinEntityType,
     DBBaseRecord,
@@ -29,13 +31,14 @@ from flow_sdk.db.drivers.db_base_record import (
 )
 from flow_sdk.db.drivers.db_driver import (
     _DB_LIFECYCLE_LOCK,
+    PROVEN_NEW_ROW,
     DBConfig,
     DBDriver,
     DBResetProfile,
     _lifecycle_in_progress,
 )
 from flow_sdk.db.drivers.path_model import NodeConnection, NodesPath
-from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp, order_terms
 from flow_sdk.db.load_context import lenient_entity_load
 from flow_sdk.flowpad_types.enums import RelationshipDirection
 from flow_sdk.fs_store.type_id import TypeId
@@ -45,6 +48,27 @@ from flow_sdk.fs_store.type_id import TypeId
 def get_current_request_info():
     return None
 
+
+def split_record_types(record_type: str) -> list[str]:
+    """``record_type`` may be a comma list ("markdown,document_file") matching any of them."""
+    return [t.strip() for t in record_type.split(",") if t.strip()]
+
+
+
+def _asset_ref_under_sql(roots, prefix: str, bindings: dict) -> str:
+    """SQL: the row's ``asset_ref`` is one of ``roots`` or lies beneath one (OR-joined;
+    ``""`` for no roots) — the twin of ``search_filters.under_dependency_root``.
+    ``substr`` rather than LIKE, so ``_``/``%`` in a path are not wildcards."""
+    parts = []
+    for i, root in enumerate(roots or ()):
+        key = f"{prefix}_{i}"
+        bindings[key] = root
+        bindings[f"{key}_slash"] = root + "/"
+        parts.append(
+            f"json_extract(data, '$.asset_ref') = :{key} OR "
+            f"substr(json_extract(data, '$.asset_ref'), 1, length(:{key}_slash)) = :{key}_slash"
+        )
+    return " OR ".join(parts)
 
 class TransactionHandler:
     pass
@@ -65,6 +89,85 @@ _standalone_session_var: "ContextVar[Optional[AsyncSession]]" = ContextVar(
     "_sqlite_driver_standalone_session", default=None
 )
 _AFTER_COMMIT_KEY = "flow_after_commit"
+
+# One segment of a field path. A path is pasted into SQL text (``json_extract`` takes its path as a
+# literal for index matching), so every segment is checked against this before it gets there.
+_PATH_SEGMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+@functools.lru_cache(maxsize=1024)   # a small closed set of paths, checked once each
+def json_path_sql(field_path: str, column: str = "data") -> str:
+    """``json_extract(<column>, '$.a.b')`` for the dotted ``field_path`` — validated, never pasted raw.
+
+    Raises ValueError on any segment that is not a plain identifier, which closes the hole a field
+    name like ``x') OR 1=1 --`` used to open."""
+    if not isinstance(field_path, str) or not field_path:
+        raise ValueError(f"Invalid field path: {field_path!r}")
+    for segment in field_path.split("."):
+        if not _PATH_SEGMENT.match(segment):
+            raise ValueError(f"Invalid field path: {field_path!r}")
+    return f"json_extract({column}, '$.{field_path}')"
+
+
+def _as_stored_datetime(col, value: Any) -> Any:
+    """An ISO string compared with a DateTime column, as the datetime the column stores.
+
+    SQLite keeps ``created_date``/``updated_date`` as text in SQLAlchemy's format
+    (``2026-10-23 11:25:07.768473``, naive UTC) and compares text with text. A client's
+    ``2026-10-23T11:25:00Z`` compared raw sorts after every stored row of the same day (``' '`` <
+    ``'T'``), so ``$LT`` answered every row and keyset paging broke. Parsed and bound as a datetime,
+    SQLAlchemy writes it in the stored format and the comparison is chronological."""
+    if not isinstance(value, str) or not isinstance(getattr(col, "type", None), DateTime):
+        return value
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+# Hand-written per-type indexes now declared on their ``TypeInfo.indexes``.
+_RETIRED_ENTITY_INDEXES = (
+    "ix_entities_source_item_origin_v3",
+    "ix_entities_source_item_by_source_created",
+    "ix_entities_position_by_source",
+    "ix_entities_source_change_by_source_created",
+    "ix_entities_message_thread_natural_key",
+    "ix_entities_message_thread_natural_key_v2",
+    "ix_entities_message_thread_natural_key_v3",
+)
+#: A declared index's name; the optional ``_<n>`` matches the earlier position-numbered names, so they drop too.
+_DECLARED_INDEX_NAME = re.compile(r"^ix_entities_(?P<type>[A-Za-z0-9_]+?)(?:_\d+)?_(?P<hash>[0-9a-f]{8})$")
+
+
+def declared_index_name(type_name: str, paths: Sequence[str]) -> str:
+    """The index name the driver builds for ``paths`` declared on ``type_name``'s ``TypeInfo.indexes``:
+    named by what it indexes, so reordering the declarations renames nothing."""
+    import hashlib  # noqa: PLC0415
+
+    return f"ix_entities_{type_name}_{hashlib.sha1(','.join(paths).encode()).hexdigest()[:8]}"
+
+
+def declared_index_sql(registry: Any, column_fields: Any) -> dict[str, str]:
+    """``{index name: CREATE INDEX sql}`` for every ``TypeInfo.indexes`` declaration in ``registry``."""
+    out: dict[str, str] = {}
+    for type_name in registry.get_all_types():
+        info = registry.get(type_name)
+        declared = getattr(info, "indexes", ()) or ()
+        if not declared:
+            continue
+        if not _PATH_SEGMENT.match(type_name):
+            raise ValueError(f"Invalid type name for a declared index: {type_name!r}")
+        for paths in declared:
+            exprs = [p if p in column_fields else json_path_sql(p) for p in paths]
+            name = declared_index_name(type_name, paths)
+            out[name] = (
+                f"CREATE INDEX IF NOT EXISTS {name} ON entities({', '.join(exprs)}) "
+                f"WHERE type = '{type_name}'"
+            )
+    return out
 
 
 async def _run_commit_callbacks(session: AsyncSession) -> None:
@@ -115,14 +218,20 @@ class FtsEntry:
         """Build the entry from the ROW — the other sanctioned constructor, for a
         row-only type (``db_only``) that has no ``FSRecord`` shadow to read from.
         Same four weighted columns; ``content`` is ``TypeInfo.fts_content``."""
-        from flow_sdk.fs_store.serializer.record import fts_content  # noqa: PLC0415
+        from flow_sdk.fs_store.serializer.record import (  # noqa: PLC0415
+            FTS_WEIGHT_DESCRIPTION,
+            FTS_WEIGHT_NAME,
+            FTS_WEIGHT_TITLE,
+            fts_content,
+            fts_text,
+        )
 
         return cls(
             entity_id=str(entity.id),
             entity_type=entity.get_type(),
-            name=getattr(entity, "name", None) or None,
-            title=getattr(entity, "title", None) or None,
-            description=getattr(entity, "description", None) or None,
+            name=fts_text(entity, info, FTS_WEIGHT_NAME) or None,
+            title=fts_text(entity, info, FTS_WEIGHT_TITLE) or None,
+            description=fts_text(entity, info, FTS_WEIGHT_DESCRIPTION) or None,
             content=fts_content(entity, info) or None,
         )
 
@@ -506,23 +615,6 @@ class SQLiteDBDriver(DBDriver):
             )
         )
 
-        # Partial expression index on a SourceItem's natural key (``SOURCE_ITEM.natural_key``).
-        # Ingestion resolves every record by its origin rather than by a derived id, and does it
-        # on EVERY poll to consult the digest gate — the read that is supposed to cost one indexed
-        # lookup and nothing else. These are JSON fields, not columns, so without this the gate
-        # degrades to a full scan of the type.
-        await conn.execute(text("DROP INDEX IF EXISTS ix_entities_source_item_natural_key_v2"))
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_origin_v3 "
-                "ON entities(json_extract(data, '$.data_source_id'), "
-                "json_extract(data, '$.origin_kind'), "
-                "json_extract(data, '$.origin_namespace'), "
-                "json_extract(data, '$.origin_key')) "
-                "WHERE type = 'source_item'"
-            )
-        )
-
         # Identity for a source-backed asset is resolved by ORIGIN, not by a
         # derived id — `reflect._find_by_origin` asks every file-backed type
         # whether it holds this handle, on every observed ref. There is no
@@ -543,36 +635,7 @@ class SQLiteDBDriver(DBDriver):
         )
 
         await conn.execute(text("DROP INDEX IF EXISTS ix_entities_cursor_by_source"))
-
-        # A consumer drains a source in INGEST order — `(created_date, id)`, both real
-        # columns, so ORDER BY and LIMIT push to SQL. Without this the drain is a type scan
-        # per page; with `occurred_at` (a JSON field) it could not push at all.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_by_source_created "
-                "ON entities(json_extract(data, '$.data_source_id'), created_date, id) "
-                "WHERE type = 'source_item'"
-            )
-        )
-
-        # The position row is found by `(consumer, data_source_id)` on every listen() start.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_position_by_source "
-                "ON entities(json_extract(data, '$.data_source_id'), "
-                "json_extract(data, '$.consumer')) "
-                "WHERE type = 'consumer_position'"
-            )
-        )
-
-        # The change log a folder consumer drains, in the same ingest order.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_source_change_by_source_created "
-                "ON entities(json_extract(data, '$.data_source_id'), created_date, id) "
-                "WHERE type = 'source_change'"
-            )
-        )
+        await conn.execute(text("DROP INDEX IF EXISTS ix_entities_source_item_natural_key_v2"))
 
         # A reference FlowMessage keys on the SourceItem it renders. The
         # projection resolves "is this item already placed" by this field on
@@ -585,43 +648,6 @@ class SQLiteDBDriver(DBDriver):
                 "CREATE INDEX IF NOT EXISTS ix_entities_fm_source_item "
                 "ON entities(json_extract(data, '$.source_item_id')) "
                 "WHERE type = 'flow_message'"
-            )
-        )
-
-        # A MessageThread's natural key. The projection resolves every ingested
-        # message's thread by (channel, thread_key) — a lookup, not a derived
-        # id — and does it once per projected item.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_message_thread_natural_key "
-                "ON entities(json_extract(data, '$.channel'), "
-                "json_extract(data, '$.thread_key')) "
-                "WHERE type = 'message_thread'"
-            )
-        )
-        # The same key with its owner. `_v2` rather than a redefinition, for the
-        # reason the SourceItem index carries one: `IF NOT EXISTS` never alters
-        # an index that already exists under a name. v1 stays — the projection's
-        # legacy fallback (`owner IS NULL`) and every pre-owner caller use it.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_message_thread_natural_key_v2 "
-                "ON entities(json_extract(data, '$.channel'), "
-                "json_extract(data, '$.thread_key'), "
-                "json_extract(data, '$.owner')) "
-                "WHERE type = 'message_thread'"
-            )
-        )
-        # ...and its account: the source that read it (`MessageThread.data_source_id`).
-        # `_v3` for the same reason; v1/v2 stay for the pre-account adoption lookup.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_message_thread_natural_key_v3 "
-                "ON entities(json_extract(data, '$.channel'), "
-                "json_extract(data, '$.thread_key'), "
-                "json_extract(data, '$.owner'), "
-                "json_extract(data, '$.data_source_id')) "
-                "WHERE type = 'message_thread'"
             )
         )
 
@@ -643,6 +669,37 @@ class SQLiteDBDriver(DBDriver):
                 "WHERE json_extract(data, '$.asset_ref') IS NOT NULL"
             )
         )
+
+        # Per-type indexes are declared on ``TypeInfo.indexes``; these are the
+        # hand-written names they replaced. Kept as drops so an upgraded DB does
+        # not carry both. (Cross-type and value-partial indexes above stay here:
+        # a ``type = '<t>'`` declaration cannot express them.)
+        for retired in _RETIRED_ENTITY_INDEXES:
+            await conn.execute(text(f"DROP INDEX IF EXISTS {retired}"))
+        await self._sync_declared_indexes(conn)
+
+    async def _sync_declared_indexes(self, conn) -> None:
+        """Create every ``TypeInfo.indexes`` declaration; drop the ones no longer declared.
+
+        Names are deterministic (``ix_entities_<type>_<n>_<hash of the paths>``) so a re-run
+        is a no-op, and a changed declaration lands under a new name — the old one is then
+        not desired and is dropped. Only indexes of a REGISTERED type are ever dropped: a
+        type this process does not know about keeps whatever it built."""
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        desired = declared_index_sql(SchemaRegistry, self._COLUMN_FIELDS)
+        registered = set(SchemaRegistry.get_all_types())
+        result = await conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'ix_entities_%'")
+        )
+        existing = {row[0] for row in result.fetchall()}
+        for name in sorted(existing - set(desired)):
+            match = _DECLARED_INDEX_NAME.match(name)
+            if match and match.group("type") in registered:
+                await conn.execute(text(f'DROP INDEX IF EXISTS "{name}"'))
+        for name, sql in desired.items():
+            if name not in existing:
+                await conn.execute(text(sql))
 
     async def close(self):
         """Close database connection and ensure worker threads stop."""
@@ -724,8 +781,11 @@ class SQLiteDBDriver(DBDriver):
         if not entries:
             return
 
+        proven_new = PROVEN_NEW_ROW.get()
         async with self._session_ctx() as session:
-            await self._fts_delete_batch(session, [e.entity_id for e in entries], batch_size)
+            stale = [e.entity_id for e in entries if str(e.entity_id) != proven_new]
+            if stale:
+                await self._fts_delete_batch(session, stale, batch_size)
             await self._fts_insert_batch(session, entries, batch_size)
 
     async def fts_search(
@@ -736,8 +796,12 @@ class SQLiteDBDriver(DBDriver):
         status: str | None = None,
         calibration: "SearchCalibration | None" = None,
         match: Literal["all", "any"] = "all",
+        tags: "Sequence[str] | None" = None,
     ) -> list:
         """Execute FTS5 MATCH query and return hydrated Entity objects.
+
+        ``tags``: only rows carrying every one of them, itself or a tag under it — in the
+        query, so ``limit`` counts matches and a tagged row past the first page is found.
 
         ``match="all"``: every term must appear. ``match="any"``: any term may, bm25 ranking the rows
         that match more of them (and rarer ones) first -- for a sentence, whose words are not all
@@ -793,11 +857,21 @@ class SQLiteDBDriver(DBDriver):
             fetch_limit = limit + (cal.overfetch or 0)
             params: dict[str, Any] = {"query": fts_query, "limit": fetch_limit}
             if record_type:
-                sql += " AND e.type = :record_type"
-                params["record_type"] = record_type
+                # A comma list ("markdown,document_file") matches any of the types.
+                types = split_record_types(record_type)
+                marks = ", ".join(f":record_type_{i}" for i in range(len(types)))
+                sql += f" AND e.type IN ({marks})"
+                params.update({f"record_type_{i}": t for i, t in enumerate(types)})
             if status:
                 sql += " AND json_extract(e.data, '$.status') = :status"
                 params["status"] = status
+            # ``grammar.tag_is_within`` in SQL (``Entity.has_tag`` is the Python side of the same rule).
+            for i, tag in enumerate(tags or ()):
+                sql += (
+                    " AND EXISTS (SELECT 1 FROM json_each(e.data, '$.tags') AS jt"
+                    f" WHERE jt.value = :tag_{i} OR substr(jt.value, 1, length(:tag_{i}) + 1) = :tag_{i} || '.')"
+                )
+                params[f"tag_{i}"] = tag
 
             order_parts = [bm25_expr]
 
@@ -1051,6 +1125,7 @@ class SQLiteDBDriver(DBDriver):
             (system rows carry the system project's id, so selecting that project
             surfaces them; they stay hidden otherwise)
           - scope is empty/missing → kept only for non-scoped record types
+          - asset_ref under a ``dependency_roots`` folder → kept (deps scope)
 
         Returns "" when scope is None (caller-side opt-out). Mutates
         ``bindings`` to add any new bind parameters.
@@ -1079,7 +1154,11 @@ class SQLiteDBDriver(DBDriver):
                 scoped_type_placeholders.append(f":{key}")
             clauses.append(f"({empty_scope} AND type NOT IN ({','.join(scoped_type_placeholders)}))")
         if keep_user:
-            clauses.append("json_extract(data, '$.scope') = 'user'")
+            # Plain dependency folders index as user scope but belong to the project
+            # depending on them — "Mine" leaves them out (mirrors apply_scope_filter).
+            excluded = _asset_ref_under_sql(getattr(scope, "user_excluded_roots", ()), "__sf_xu", bindings)
+            not_excluded = f" AND NOT (coalesce({excluded}, 0))" if excluded else ""
+            clauses.append(f"(json_extract(data, '$.scope') = 'user'{not_excluded})")
         if projects:
             placeholders = []
             for i, pid in enumerate(projects):
@@ -1095,6 +1174,12 @@ class SQLiteDBDriver(DBDriver):
                 f"(json_extract(data, '$.scope') IN ({','.join(scope_placeholders)}) AND "
                 f"json_extract(data, '$.project_id') IN ({','.join(placeholders)}))"
             )
+        # Dependency folders (a `deps` scope): a row under one is in scope
+        # whatever its stamp — mirrors `under_dependency_root`. `substr` rather
+        # than LIKE, so `_`/`%` in a path are not wildcards.
+        under_dependency = _asset_ref_under_sql(getattr(scope, "dependency_roots", ()), "__sf_dep", bindings)
+        if under_dependency:
+            clauses.append(f"({under_dependency})")
         # Without `user` and without any projects, only non-scoped record
         # types can still match via the empty-scope branch above.
         if not clauses:
@@ -1204,6 +1289,26 @@ class SQLiteDBDriver(DBDriver):
             )
             result = await session.execute(text(f"DELETE FROM entities WHERE {where_clause}"), bindings)
             return result.rowcount or 0
+
+    async def entity_metas_for_project(self, project_id: str) -> list[dict]:
+        """Every row whose ``project_id`` is ``project_id``, any type and scope, as a
+        flat record dict (``data`` plus ``type``/``id``). One query: a project's
+        children without reading every record's metadata.json off disk."""
+        if not self.session_factory:
+            return []
+        async with self._session_ctx(write=False) as session:
+            result = await session.execute(
+                text("SELECT id, type, data FROM entities WHERE json_extract(data, '$.project_id') = :pid"),
+                {"pid": project_id},
+            )
+            metas = []
+            for rid, rtype, data in result.all():
+                try:
+                    payload = json.loads(data) if isinstance(data, str) else dict(data or {})
+                except ValueError:
+                    payload = {}
+                metas.append({**payload, "type": rtype, "id": rid})
+            return metas
 
     async def create_db(self):
         """Create database tables."""
@@ -1372,6 +1477,8 @@ class SQLiteDBDriver(DBDriver):
     async def save(self, entity: DBBaseRecord, owner: TypeId | None = None) -> DBBaseRecord:
         """Save entity (create or update)."""
         async with self._session_ctx() as session:
+            if PROVEN_NEW_ROW.get() == str(entity.id):
+                return await self._create_entity(entity, owner, session)
             # Check if entity exists by ID
             result = await session.execute(select(EntitySchema).where(EntitySchema.id == entity.id))
             existing = result.scalar_one_or_none()
@@ -1429,6 +1536,54 @@ class SQLiteDBDriver(DBDriver):
             setattr(current, field_name, value)
             current._dirty = False
             return current, True
+
+    async def stamp_tab_orders(self, orders: dict[str, int]) -> set[str]:
+        """Batched :meth:`stamp_tab_order`: ONE writer transaction, one keyed read of
+        just ``visible``/``tab_order`` and one ``UPDATE ... CASE`` — opening a tab
+        mid-strip shifts every later tab, and stamping them one hydrated row at a
+        time made ``new_tab`` O(open tabs) round trips (about 270 ms at 87 tabs).
+        The race rule is kept: the read and the write share the writer transaction,
+        so a tab ``close_many`` hid meanwhile is skipped, never resurrected."""
+        if not orders:
+            return set()
+        from types import SimpleNamespace  # noqa: PLC0415
+
+        ids = list(orders)
+        async with self._session_ctx() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        EntitySchema.id,
+                        func.json_extract(EntitySchema.data, "$.visible"),
+                        func.json_extract(EntitySchema.data, "$.tab_order"),
+                    ).where(EntitySchema.id.in_(ids))
+                )
+            ).all()
+            todo = {
+                rid: orders[rid]
+                for rid, visible, current in rows
+                if visible not in (0, False) and current != orders[rid]
+            }
+            if not todo:
+                return set()
+            stamp = SimpleNamespace(type="tab", id=None, updated_by=None, updated_date=None, updated_through=None,
+                                    get_type=lambda: "tab")
+            self.apply_update_fields(stamp)
+            await session.execute(
+                update(EntitySchema)
+                .where(EntitySchema.id.in_(list(todo)))
+                .values(
+                    updated_by=stamp.updated_by,
+                    updated_through=stamp.updated_through,
+                    data=func.json_set(
+                        func.coalesce(EntitySchema.data, "{}"),
+                        "$.tab_order",
+                        case(todo, value=EntitySchema.id),
+                    ),
+                )
+                .execution_options(synchronize_session=False)
+            )
+            return set(todo)
 
     async def stamp_last_active_at(self, entity_id: str, timestamp_ms: int) -> tuple[DBBaseRecord | None, bool]:
         """Atomically stamp recency without rewriting a stale entity snapshot.
@@ -1685,10 +1840,9 @@ class SQLiteDBDriver(DBDriver):
         """Update an existing entity. Outer _session_ctx drives commit."""
         # A row only reaches here after ``save()`` has SELECTed it and confirmed
         # it exists, so a null ``created_by`` is NOT a create-on-existing
-        # collision. It is a legitimate hub-origin reflection: the hub stamps no
-        # owner (``initiated_by``) for share/diagnostics conversations, so the
-        # receiver faithfully reflects ``created_by=None`` — and a later backfill
-        # (participants/title/parent) must still be able to UPDATE that row.
+        # collision. It is a legitimate hub-origin reflection that carries no
+        # ``created_by`` — and a later backfill (members/title/parent) must still
+        # be able to UPDATE that row.
         # Rejecting it here aborted invitation-preview + bundle unpack, so the
         # recipient never saw the messages or their attachments. Reject only a
         # structurally malformed entity (the field missing entirely).
@@ -1853,6 +2007,10 @@ class SQLiteDBDriver(DBDriver):
                     )
                 )
 
+            # Their FTS rows go in the same transaction — a cascaded descendant
+            # must not stay searchable after its row is gone.
+            await self._fts_delete_batch(session, entity_ids, 500)
+
             # Delete entities
             for entity_id in entity_ids:
                 await session.execute(delete(EntitySchema).where(EntitySchema.id == entity_id))
@@ -1875,7 +2033,8 @@ class SQLiteDBDriver(DBDriver):
                     (RelationshipSchema.from_id == eid) | (RelationshipSchema.to_id == eid)
                 )
             )
-            # Delete entity
+            # Delete entity and its FTS row together
+            await self._fts_delete_batch(session, [eid], 500)
             await session.execute(delete(EntitySchema).where(EntitySchema.id == eid))
             return True
 
@@ -1895,7 +2054,7 @@ class SQLiteDBDriver(DBDriver):
                 result = await session.execute(
                     select(EntitySchema).where(
                         EntitySchema.type == entity_type,
-                        text(f"json_extract(data, '$.{property_key}') = :value").bindparams(value=property_value),
+                        text(f"{json_path_sql(property_key)} = :value").bindparams(value=property_value),
                     )
                 )
 
@@ -1993,38 +2152,40 @@ class SQLiteDBDriver(DBDriver):
             query = query.where(scope_cond)
 
         # Push ORDER BY for column-level sort fields
-        sql_order, needs_python_sort = self._build_sql_order_by(entities_filter.order_by)
+        paged = bool(entities_filter.limit or entities_filter.offset)
+        sql_order = self._build_sql_order_by(entities_filter.order_by, paged)
         if sql_order:
             query = query.order_by(*sql_order)
 
-        # Push LIMIT/OFFSET to SQL only when the full filter+sort is handled in SQL
-        # (if Python post-filter or Python sort is needed, pagination must happen after).
-        can_push_pagination = fully_sql and not needs_python_sort
-        if can_push_pagination:
+        # Push LIMIT/OFFSET to SQL only when the whole filter runs in SQL (a Python
+        # post-filter must see every row before pagination). Sorting always runs in SQL.
+        if fully_sql:
             if entities_filter.offset:
                 query = query.offset(entities_filter.offset)
             if entities_filter.limit:
                 query = query.limit(entities_filter.limit)
 
         async with self._session_ctx(write=False) as session:
-            result = await session.execute(query)
-            entities = self._hydrate(result.scalars().all(), "get_all")
+            schemas = (await session.execute(query)).scalars().all()
+            entities = self._hydrate(schemas, "get_all")
+        # An unreadable row skipped by ``_hydrate`` still took its place in the SQL page, like a row the
+        # hub hides from its reader: the offset counts it, and the caller is told how many rows were read.
+        rows_read = len(schemas)
 
         # Python post-filter — only needed when SQL pushdown was partial
         if not fully_sql:
             entities = [e for e in entities if self._entity_matches_filter(e, entities_filter)]
 
-        # Python sort — only for sort fields that live in the JSON blob
-        if needs_python_sort:
-            entities = self._apply_sorting(entities, entities_filter.order_by)
-
-        # Pagination — only when not already applied in SQL
-        if not can_push_pagination:
+        # Pagination — only when not already applied in SQL; the rows are already in SQL order
+        # (tie-break included), so a slice of the filtered rows is the same page SQL would cut.
+        if not fully_sql:
             if entities_filter.offset:
                 entities = entities[entities_filter.offset :]
             if entities_filter.limit:
                 entities = entities[: entities_filter.limit]
+            rows_read = len(entities)
 
+        entities_filter.rows_read = rows_read
         return entities
 
     @staticmethod
@@ -2135,6 +2296,7 @@ class SQLiteDBDriver(DBDriver):
         col = getattr(EntitySchema, field_name, None)
         if col is None:
             return None
+        value = _as_stored_datetime(col, value)
         if op == QueryOp.EQ:
             return col == value
         if op == QueryOp.NE:
@@ -2161,7 +2323,7 @@ class SQLiteDBDriver(DBDriver):
 
     def _json_op_to_sql(self, field_name: str, op: QueryOp, value: Any, n: int):
         """Translate a JSON-blob field leaf to a SQLAlchemy text condition."""
-        path = f"json_extract(data, '$.{field_name}')"
+        path = json_path_sql(field_name)
         pname = f"p{n}"
         # SQLite stores JSON booleans as integers (1/0); convert before binding.
         # String "true"/"false" can arrive from URL query params.
@@ -2169,6 +2331,10 @@ class SQLiteDBDriver(DBDriver):
             sv = 1 if value else 0
         elif isinstance(value, str) and value.lower() in ("true", "false"):
             sv = 1 if value.lower() == "true" else 0
+        elif isinstance(value, (int, float)):
+            # A number stays a number: json_extract answers INTEGER/REAL, and SQLite orders every number
+            # before every text, so a bound '10' made `count > 9` false and broke keyset paging.
+            sv = value
         else:
             sv = str(value) if value is not None else None
 
@@ -2200,33 +2366,19 @@ class SQLiteDBDriver(DBDriver):
             return text(f"{path} NOT IN ({placeholders})").bindparams(**params)
         return None
 
-    def _build_sql_order_by(self, order_by) -> tuple:
-        """Return (sql_clauses, needs_python_sort).
-
-        Pushes column-field sorts to SQL ORDER BY; leaves JSON-field sorts for Python.
-        If any sort field lives in the JSON blob, needs_python_sort=True and Python
-        _apply_sorting() will run on the result (overriding the SQL order).
-        """
-        if not order_by:
-            return [], False
-
-        if isinstance(order_by, dict):
-            order_by = [order_by]
-        elif isinstance(order_by, str):
-            order_by = [{order_by: "asc"}]
-
-        sql_clauses, needs_python = [], False
-        for spec in order_by:
-            if isinstance(spec, str):
-                spec = {spec.lstrip("-"): "desc" if spec.startswith("-") else "asc"}
-            if isinstance(spec, dict):
-                for field, direction in spec.items():
-                    if field in self._COLUMN_FIELDS:
-                        col = getattr(EntitySchema, field)
-                        sql_clauses.append(desc(col) if direction == "desc" else asc(col))
-                    else:
-                        needs_python = True
-        return sql_clauses, needs_python
+    def _build_sql_order_by(self, order_by, paged: bool = False) -> list:
+        """The SQL ORDER BY clauses: column fields as columns, JSON-blob fields (dotted paths
+        included) as validated ``json_extract`` expressions. NULLs sort last ascending and first
+        descending, where the hub's Neo4j puts them."""
+        sql_clauses = []
+        for field, descending in order_terms(order_by, paged):
+            if field in self._COLUMN_FIELDS:
+                expr = getattr(EntitySchema, field)
+            else:
+                # A JSON field (dotted paths included) sorts in SQL too, so LIMIT/OFFSET stay in SQL.
+                expr = text(json_path_sql(field))
+            sql_clauses.append(desc(expr).nulls_first() if descending else asc(expr).nulls_last())
+        return sql_clauses
 
     # ==================== Relationship CRUD ====================
 
@@ -2591,22 +2743,9 @@ class SQLiteDBDriver(DBDriver):
 
     @staticmethod
     def _sort_key(value):
-        """Comparable key that never compares a missing value against a real one.
-
-        Used by ``_apply_sorting`` (the Python fallback for JSON-blob sort fields)
-        AND by the child ordering that delegates to it — one rule, one place.
-
-        Bucket 0 = missing, so NULLs sort FIRST on ascending — the same place
-        SQLite's ``ORDER BY ... ASC`` puts them, so ordering children in Python
-        can't disagree with the SQL path.
-
-        Not reusing ``_apply_sorting``: its key is ``getattr(e, f, "") or ""``,
-        which coerces a missing value to ``""`` and then raises comparing ``str``
-        to ``datetime``. Children are ordered by ``created_date``, so that would
-        be a live hazard here. (Consolidating the two sorters is worth doing, but
-        it changes a helper shared with the main query path — left alone
-        deliberately rather than folded into this change.)
-        """
+        """Comparable key for the Python ordering of child values (entity sorts run in SQL):
+        a missing value sorts FIRST ascending, where SQLite's ``ORDER BY ... ASC`` puts NULLs,
+        and never compares against a real one."""
         return (0, "") if value is None else (1, value)
 
     def _sort_children(self, children: List[EntityChild], order_by) -> List[EntityChild]:
@@ -2838,7 +2977,7 @@ class SQLiteDBDriver(DBDriver):
                 result = await session.execute(
                     select(EntitySchema).where(
                         EntitySchema.type == entity.get_type(),
-                        text(f"json_extract(data, '$.{field}') = :value").bindparams(value=str(field_value)),
+                        text(f"{json_path_sql(field)} = :value").bindparams(value=str(field_value)),
                     )
                 )
 
@@ -2886,7 +3025,7 @@ class SQLiteDBDriver(DBDriver):
                     select(EntitySchema).where(
                         EntitySchema.type == entity.get_type(),
                         EntitySchema.id != entity.id,
-                        text(f"json_extract(data, '$.{field}') = :value").bindparams(value=str(field_value)),
+                        text(f"{json_path_sql(field)} = :value").bindparams(value=str(field_value)),
                     )
                 )
 
@@ -3091,6 +3230,29 @@ class SQLiteDBDriver(DBDriver):
             return dt.replace(tzinfo=UTC)
         return dt
 
+    async def get_all_rows(self, entity_type: str) -> list[dict]:
+        """Every row of a type as its stored JSON plus ``id`` / ``updated_date``; no entity is built.
+
+        Building is the cost of a whole-type read: 1,382 processes take ~370 ms to hydrate and
+        ~30 ms to read this way (perf hunt 2026-11-07, worker-history on every project switch).
+        """
+        query = select(EntitySchema.id, EntitySchema.updated_date, EntitySchema.data).where(
+            EntitySchema.type == entity_type
+        )
+        async with self._session_ctx(write=False) as session:
+            result = await session.execute(query)
+            raw = result.all()
+        rows: list[dict] = []
+        for row_id, updated_date, data in raw:
+            try:
+                row = json.loads(data) if data else {}
+            except ValueError:
+                continue
+            row["id"] = row_id
+            row["updated_date"] = self._ensure_utc(updated_date)
+            rows.append(row)
+        return rows
+
     def _hydrate(self, schemas: "Sequence[EntitySchema]", where: str) -> List[DBBaseRecord]:
         """The rows of a LIST that can be built, with ONE warning for those that cannot.
 
@@ -3271,7 +3433,9 @@ class SQLiteDBDriver(DBDriver):
         if expression.op in (QueryOp.IS_NULL, QueryOp.IS_NOT_NULL):
             if not expression.operands:
                 return False
-            attr_value = attributes.get(expression.operands[0])
+            attr_value = field_of(attributes, expression.operands[0])
+            if isinstance(attr_value, Many):
+                attr_value = attr_value or None
             return attr_value is None if expression.op == QueryOp.IS_NULL else attr_value is not None
 
         if len(expression.operands) < 2:
@@ -3283,7 +3447,7 @@ class SQLiteDBDriver(DBDriver):
         # Handle PROP expression
         if isinstance(operand2, ExpressionNode) and operand2.op == QueryOp.PROP:
             prop_name = operand2.operands[0]
-            prop_value = attributes.get(prop_name)
+            prop_value = field_of(attributes, prop_name)
             if prop_value is None:
                 return False
             if expression.op == QueryOp.IN:
@@ -3293,9 +3457,15 @@ class SQLiteDBDriver(DBDriver):
             return False
 
         attr_name = operand1
-        target_value = operand2
-        attr_value = attributes.get(attr_name)
+        attr_value = field_of(attributes, attr_name)
+        if isinstance(attr_value, Many):
+            # A ``*`` step: the test passes when any one of the values does.
+            return any(self._compare_leaf(expression.op, attr_name, v, operand2) for v in attr_value)
+        return self._compare_leaf(expression.op, attr_name, attr_value, operand2)
 
+    @staticmethod
+    def _compare_leaf(op: QueryOp, attr_name: Any, attr_value: Any, target_value: Any) -> bool:
+        """One leaf comparison of an entity value against the query's value."""
         if attr_value is None:
             if attr_name in ["is_child", "is_final"] and isinstance(target_value, bool):
                 attr_value = False
@@ -3318,23 +3488,23 @@ class SQLiteDBDriver(DBDriver):
             elif target_value.lower() == "false":
                 target_value = False
 
-        if expression.op == QueryOp.EQ:
+        if op == QueryOp.EQ:
             return attr_value == target_value
-        elif expression.op == QueryOp.NE:
+        elif op == QueryOp.NE:
             return attr_value != target_value
-        elif expression.op == QueryOp.GT:
+        elif op == QueryOp.GT:
             return attr_value > target_value
-        elif expression.op == QueryOp.GE:
+        elif op == QueryOp.GE:
             return attr_value >= target_value
-        elif expression.op == QueryOp.LT:
+        elif op == QueryOp.LT:
             return attr_value < target_value
-        elif expression.op == QueryOp.LE:
+        elif op == QueryOp.LE:
             return attr_value <= target_value
-        elif expression.op == QueryOp.IN:
+        elif op == QueryOp.IN:
             return attr_value in target_value if isinstance(target_value, (list, tuple, set)) else False
-        elif expression.op == QueryOp.NIN:
+        elif op == QueryOp.NIN:
             return attr_value not in target_value if isinstance(target_value, (list, tuple, set)) else True
-        elif expression.op == QueryOp.LIKE:
+        elif op == QueryOp.LIKE:
             return str(target_value).lower() in str(attr_value).lower()
 
         return False
@@ -3353,7 +3523,7 @@ class SQLiteDBDriver(DBDriver):
             if isinstance(sort_spec, dict):
                 for field, direction in sort_spec.items():
                     reverse = direction == "desc"
-                    entities.sort(key=lambda e, f=field: self._sort_key(getattr(e, f, None)), reverse=reverse)
+                    entities.sort(key=lambda e, f=field: self._sort_key(field_of(e, f)), reverse=reverse)
             elif isinstance(sort_spec, str):
                 if sort_spec.startswith("-"):
                     field = sort_spec[1:]
@@ -3361,7 +3531,7 @@ class SQLiteDBDriver(DBDriver):
                 else:
                     field = sort_spec
                     reverse = False
-                entities.sort(key=lambda e, f=field: self._sort_key(getattr(e, f, None)), reverse=reverse)
+                entities.sort(key=lambda e, f=field: self._sort_key(field_of(e, f)), reverse=reverse)
 
         return entities
 

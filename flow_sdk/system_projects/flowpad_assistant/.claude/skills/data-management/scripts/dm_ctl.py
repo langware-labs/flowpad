@@ -32,17 +32,17 @@ Verbs
                                      (--expected JSON: {key: version})
   ds-sync DATASET ROWS               make the dataset hold exactly ROWS: created / updated / unchanged / deleted
                                      (--no-prune: remove nothing; --match JSON: prune only the rows it selects)
-  ds-mirror DATASET SOURCE_ID MAP    make the dataset the typed mirror of a data source's items; MAP is
-                                     {"key": "<path in the item>", "input": {"<field>": "<path>"}} (--by, --no-prune, --match)
+  ds-pull DATASET                    bring the rows up to date now (a remote data store, a system of record)
+  ds-move DATASET [DATA_SOURCE]      copy every row into DATA_SOURCE (none: the project's data store; --path FOLDER),
+                                     check it holds them all, then make it the dataset's data source
   ds-delete DATASET KEY [KEY ...]    remove rows -- several go in ONE step, or none (--expected VERSION, one key:
                                      refuse a row changed since)
-  ds-store-ids DATASET               store each row's id where it only has the legacy derived one
   ds-rename DATASET KEY NEW_KEY      move a row to a new key (its id stays; --expected VERSION)
   ds-check DATASET ROW               would ROW fit? writes nothing
   ds-validate DATASET                every row checked against the dataset's shape
 
---by OWNER on a write (ds-append / ds-put / ds-put-many / ds-sync) or ds-check says which outside system you
-write as: only it sets the fields a schema marks ``owned_by`` it.
+--by soc on a write (ds-append / ds-put / ds-put-many / ds-sync) or ds-check writes AS the dataset's system of
+record: only it sets the fields the data model marks ``truth`` (a normal write sends them to the system first).
 
 DATASET is a dataset id, name, title, or its folder path. VALUE / ROWS / ROW are JSON, or ``-`` for stdin.
 """
@@ -168,7 +168,8 @@ def cmd_probe_copy(args) -> dict:
     * every entity id is dropped (``"id"`` in the asset documents, ``id:`` in a ``description.md``
       front matter) -- applying the probe mints its own, so it can never take over the real
       project's index rows (and ``probe-drop`` can never delete them). Row ids in
-      ``rows/*/row.json`` stay: links between the copied rows name them;
+      ``rows/*/row.json`` stay: links between the copied rows name them. A dataset's rows come from
+      its store and go to the probe dataset's (the project's data store), unless ``--no-rows``;
     * every project namespace becomes the probe's: each ``"ns"`` and each ``--<ns>--.`` prefix in the
       copied JSON, whichever call copied the folder that declared it -- a kind not copied then
       fails loudly in the probe instead of resolving to the real project's.
@@ -189,6 +190,12 @@ def cmd_probe_copy(args) -> dict:
             shutil.rmtree(dest)
         ignore = shutil.ignore_patterns(".flow", *(["rows"] if args.no_rows and family == "dataset" else []))
         shutil.copytree(src, dest, ignore=ignore)
+        if family == "dataset" and not args.no_rows:
+            from flow_sdk.datasets.stores import rows_root_of  # noqa: PLC0415
+
+            held = rows_root_of(src) / "rows"
+            if held.is_dir():   # staged in the copy, renamed with it, then moved into the probe's store
+                shutil.copytree(held, dest / "rows")
         copied.append(str(dest))
     rewritten, foreign = 0, set()
     for dest in map(Path, copied):
@@ -216,6 +223,16 @@ def cmd_probe_copy(args) -> dict:
                 foreign.add(front_id)
                 md.write_text(merge_frontmatter(md.read_text(), {}, drop_keys=("id",)))
     _remember_foreign(root, foreign)
+    for dest in map(Path, copied):
+        if (dest / "rows").is_dir() and (dest / DATASET_DOC).is_file():
+            from flow_sdk.datasets.stores import rows_root_of  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.io.identity import ensure_id  # noqa: PLC0415
+
+            store = rows_root_of(dest, dataset_id=ensure_id(dest))
+            store.mkdir(parents=True, exist_ok=True)
+            if (store / "rows").exists():
+                shutil.rmtree(store / "rows")
+            shutil.move(str(dest / "rows"), str(store / "rows"))
     return {"root": str(root), "ns": ns, "copied": copied, "renamed_namespaces": sorted(old - {ns}),
             "files_rewritten": rewritten, "ids_dropped": len(foreign)}
 
@@ -347,7 +364,7 @@ def cmd_ds_used_by(args) -> dict:
 
 
 def _by(args, body: dict) -> dict:
-    """``body`` plus who the write is for (``--by crm``: the owner of the schema's ``owned_by`` fields)."""
+    """``body`` plus who the write is as (``--by soc``: the dataset's system of record, writer of ``truth`` fields)."""
     return {**body, "by": args.by} if getattr(args, "by", "") else body
 
 
@@ -375,10 +392,15 @@ def cmd_ds_put(args) -> dict:
     return _ds(args, "put-row", body=_by(args, {**body, "expected": args.expected} if args.expected else body))
 
 
-def cmd_ds_mirror(args) -> dict:
-    """Make the dataset the typed mirror of a data source's items (``map``: how an item becomes a row)."""
-    body: dict = {"source_id": args.source_id, "map": _json(args.map), "prune": not args.no_prune}
-    return _ds(args, "mirror", body=_by(args, {**body, "match": _json(args.match)} if args.match else body))
+def cmd_ds_pull(args) -> dict:
+    """Bring the rows up to date now: ``{moved, gone, num_rows}``."""
+    return _ds(args, "pull", body={})
+
+
+def cmd_ds_move(args) -> dict:
+    """Move every row into a data source, or the project's data store (``{from, to, rows}``)."""
+    body = {k: v for k, v in (("data_source", args.data_source), ("path", args.path)) if v}
+    return _ds(args, "move-rows", body=body)
 
 
 def cmd_ds_delete(args) -> dict:
@@ -388,10 +410,6 @@ def cmd_ds_delete(args) -> dict:
         return _ds(args, "delete-rows", body={"keys": args.key})
     body = {"key": args.key[0]}
     return _ds(args, "delete-row", body={**body, "expected": args.expected} if args.expected else body)
-
-
-def cmd_ds_store_ids(args) -> dict:
-    return _ds(args, "store-ids", body={})
 
 
 def cmd_ds_rename(args) -> dict:
@@ -410,7 +428,7 @@ def cmd_ds_validate(args) -> dict:
 # ── entry ────────────────────────────────────────────────────────────────────
 
 _DS = ("dataset", {"help": "dataset id, name, title or folder path"})
-_BY = ("--by", {"default": "", "help": "the outside system you write as (\"crm\"): the owner of the schema's owned_by fields"})
+_BY = ("--by", {"default": "", "help": "soc: write as the dataset's system of record (the writer of its truth fields)"})
 _Q = ("--q", {"default": "", "help": "keep the rows whose text holds every word of this"})
 _ORDER = ("--order", {"default": "", "help": 'JSON: {"<path>": "asc"|"desc"}, or a list of them (ds-count: by a group_by entry, count or a metric)'})
 _MATCH = ("--match", {"default": "", "help": 'JSON: {"op": "$GE", "operands": ["input.day", "2026-09-01"]} or {"<path>": value}'})
@@ -434,16 +452,15 @@ VERBS: dict[str, tuple] = {
     "ds-used-by": (cmd_ds_used_by, [_DS, ("key", {"nargs": "*", "help": "row keys (every row when none)"})]),
     "ds-put-many": (cmd_ds_put_many, [_DS, ("rows", {}), ("--expected", {"default": "", "help": "JSON: {key: the version you read}"}), _BY]),
     "ds-sync": (cmd_ds_sync, [_DS, ("rows", {}), _MATCH, ("--no-prune", {"action": "store_true", "help": "remove nothing"}), _BY]),
-    "ds-mirror": (cmd_ds_mirror, [_DS, ("source_id", {"help": "the data source whose items become rows"}),
-                                  ("map", {"help": 'JSON: {"key": "<path>", "input": {"<field>": "<path>"}}'}),
-                                  _MATCH, ("--no-prune", {"action": "store_true", "help": "remove nothing"}), _BY]),
+    "ds-pull": (cmd_ds_pull, [_DS]),
+    "ds-move": (cmd_ds_move, [_DS, ("data_source", {"nargs": "?", "default": "", "help": "a data source of the project; none: its data store"}),
+                              ("--path", {"default": "", "help": "the rows' folder inside the source"})]),
     "ds-row": (cmd_ds_row, [_DS, ("key", {})]),
     "ds-append": (cmd_ds_append, [_DS, ("rows", {}), _BY]),
     "ds-put": (cmd_ds_put, [_DS, ("key", {}), ("row", {}),
                             ("--expected", {"default": "", "help": "the version you read; a newer row refuses"}), _BY]),
     "ds-delete": (cmd_ds_delete, [_DS, ("key", {"nargs": "+"}),
                                   ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
-    "ds-store-ids": (cmd_ds_store_ids, [_DS]),
     "ds-rename": (cmd_ds_rename, [_DS, ("key", {}), ("new_key", {}),
                                   ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
     "ds-check": (cmd_ds_check, [_DS, ("row", {}), _BY]),

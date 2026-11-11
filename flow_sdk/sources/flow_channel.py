@@ -58,22 +58,20 @@ class AppHub:
     """The hub, as this desktop's signed-in user reaches it."""
 
     async def connect(self, channel: str, target: dict) -> dict:
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
-
         body = {"parent": f"@{channel}", "claim": {"kind": "user"}, "target": {"kind": "desktop", **target}}
-        return dict(await hub_post(CLAIM_ENTITY, body, None, "chain") or {})
+        return dict(await self._post(None, "chain", body) or {})
 
     async def claim(self, claim_id: str) -> Optional[dict]:
         """The claim as the hub has it; ``None`` when the hub says it is gone (404) or not ours (403). Any other answer
         goes through the one status table; no answer at all is ``SourceUnavailable`` — not knowing is not "not
         connected"."""
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
         from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
         from flow_sdk.sources.http import error_for_status  # noqa: PLC0415
 
         try:
-            found = await hub_get_or_raise(CLAIM_ENTITY, claim_id, "view")
+            found = await HubProxy.call("GET", CLAIM_ENTITY, claim_id, "view")
         except HubError as exc:
             if exc.status_code in (403, 404):
                 return None
@@ -85,9 +83,21 @@ class AppHub:
         return dict(found) if isinstance(found, dict) else None
 
     async def reply(self, claim_id: str, text: str, event_id: str) -> dict:
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        return dict(await self._post(claim_id, "reply", {"text": text, "event_id": event_id}) or {})
 
-        return dict(await hub_post(CLAIM_ENTITY, {"text": text, "event_id": event_id}, claim_id, "reply") or {})
+    @staticmethod
+    async def _post(claim_id: Optional[str], action: str, payload: dict) -> dict:
+        """POST to the claim; no hub configured is ``Rejected``, as ``claim`` says it."""
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
+        try:
+            return await HubProxy.call("POST", CLAIM_ENTITY, claim_id, action, payload=payload)
+        except HubError as exc:
+            if exc.kind is HubFailureKind.NOT_CONFIGURED:
+                raise Rejected("no hub is configured for this machine") from exc
+            raise
 
 
 class FlowChannelConfig(SourceConfig):
@@ -97,6 +107,12 @@ class FlowChannelConfig(SourceConfig):
     claim_id: str = ""
     #: The person's own id on the channel, once the hub validated it.
     sender: str = ""
+    #: An agent's PRIVATE channel (its own app's account claim, targeting a private deployment): each person's
+    #: machine takes whoever the hub delivers to it -- that person alone -- and answers only as a reply to a
+    #: message it was delivered. The hub enforces both (``webhook_chain.reply``); no sender is linked here.
+    answers_delivered: bool = False
+
+    derived: ClassVar[tuple[str, ...]] = ("answers_delivered",)
 
 
 class FlowChannel(MessageSource):
@@ -147,6 +163,15 @@ class FlowChannel(MessageSource):
     @property
     def claim_id(self) -> str:
         return str(self.config.get("claim_id") or "")
+
+    @classmethod
+    def set_up_by_config(cls, config) -> bool:
+        """A private channel naming its claim is set up: no person links it, the hub's claim delivers to it."""
+        return bool(config.get("answers_delivered") and config.get("claim_id"))
+
+    @property
+    def answers_delivered(self) -> bool:
+        return bool(self.config.get("answers_delivered"))
 
     # ── what a channel driver owns ───────────────────────────────────────────
     def items_of(self, payload: dict) -> list[dict]:
@@ -213,6 +238,12 @@ class FlowChannel(MessageSource):
     @setup_step("connected")
     async def _connected(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
         """The gate: the hub validated the code from the person's account. Until then this says why not."""
+        if self.answers_delivered:
+            # An agent's private channel: the provider's claim (proven at the hub, not here) is what delivers to this
+            # machine, and the hub decides who reaches it and what it may answer. Naming the claim is being connected.
+            if not self.claim_id:
+                return ReturnedValue.not_yet("this private channel names no hub claim")
+            return ReturnedValue.satisfied("delivered by the hub's claim", ran=False)
         claim = await self.hub.claim(self.claim_id) if self.claim_id else None
         if claim is None:
             return ReturnedValue.not_yet(f"Press {self.connect_label} first.")
@@ -266,7 +297,7 @@ class FlowChannel(MessageSource):
         nothing. Only THIS source's account: a person may hold an older source that never connected."""
         if not isinstance(payload, dict):
             return []
-        mine = self.linked_sender
+        mine = "" if self.answers_delivered else self.linked_sender
         events: list[DataSourceEvent] = []
         for message in self.items_of(payload):
             item = self._item(message)
@@ -325,7 +356,10 @@ class FlowChannel(MessageSource):
         return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"in_reply_to": origin}))
 
     async def _send(self, sender: str, data: MessageData, *, quoted: str) -> MessageItem:
-        if sender != self.linked_sender or not self.claim_id:
+        if self.answers_delivered:
+            if not quoted or not self.claim_id:
+                raise NotFound(f"a private {self.title} machine only answers the messages delivered to it")
+        elif sender != self.linked_sender or not self.claim_id:
             raise NotFound(f"only the linked {self.title} account is reached here")
         body = await self.hub.reply(self.claim_id, data.text or "", quoted)
         message_id = str(body.get("message_id") or "")

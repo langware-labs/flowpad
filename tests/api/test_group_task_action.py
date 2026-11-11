@@ -4,10 +4,10 @@ Groups only — single-assignee assignment is ``test_task_assign_action.py``.
 
 Exercises the real action handlers over the in-process ASGI app: parent task +
 contacts group are created through the normal graph routes, then the group
-fan-out runs with `share`/`create_child`/`hub_post`/`hub_put`/`hub_get` faked
-at their source modules. Asserts the plan's contract: title-only clone, deduped
+fan-out runs with `share`/`create_child` and ``HubProxy.call``/``try_call``
+faked. Asserts the plan's contract: title-only clone, deduped
 member rows keyed (parent_id, assignee), child-first invitation targets with
-editor/guest roles, idempotent re-run, and owner-side member-field sync (LWW).
+editor/reader roles, idempotent re-run, and owner-side member-field sync (LWW).
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin.task import Task
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.schema.data_spec.task_spec import TaskKind
 
 pytestmark = pytest.mark.asyncio
@@ -71,15 +72,15 @@ async def test_create_group_task_fans_out_and_is_idempotent(bootstrapped_client,
         assert c.remote is True
     assert len(hub_faked["children"]) == 2  # created via create_child (is_child edge)
 
-    # One invitation per member: child target FIRST (editor), parent guest.
+    # One invitation per member: child target FIRST (editor), parent Reader without inherited child access.
     member_posts = [p for p in hub_faked["posts"] if p[0].endswith("/members")]
     assert len(member_posts) == 2
     for path, body in member_posts:
         child = by_assignee[body["recipient_email"]]
         assert path == f"/graph/task/{child.id}/members"
         targets = body["invitation_targets"]
-        assert targets[0] == {"typeid": f"task-{child.id}", "role": "editor"}
-        assert targets[1] == {"typeid": f"task-{parent['id']}", "role": "guest"}
+        assert targets[0] == {"typeid": f"task-{child.id}", "roles": ["editor"]}
+        assert targets[1] == {"typeid": f"task-{parent['id']}", "roles": ["reader"], "is_final": True}
 
     # Idempotent re-run: nothing new, both skipped (invites re-attempted).
     resp2 = await bootstrapped_client.post(
@@ -101,7 +102,6 @@ async def test_sync_group_merges_member_owned_fields(bootstrapped_client, hub_fa
     await bootstrapped_client.post(f"{GRAPH}/task/{parent['id']}/create-group-task", json={"group_id": group["id"]})
     child = (await Task.get_all({"parent_id": parent["id"]}))[0]
 
-    import flow_sdk.app.actions.group_task_action as gta
 
     hub_rows = {
         child.id: {
@@ -112,12 +112,12 @@ async def test_sync_group_merges_member_owned_fields(bootstrapped_client, hub_fa
         }
     }
 
-    async def fake_hub_get(entity_type, entity_id=None, *a, **k):
+    async def fake_hub_get(_method, entity_type, entity_id=None, *a, **k):
         return hub_rows.get(entity_id)
 
-    monkeypatch.setattr(gta, "hub_get", fake_hub_get)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_hub_get))
     # The owner-side sync ALSO pulls each child's comments via
-    # ``_sync_remote_children`` (a separate ``hub_get``); stub it to no children
+    # ``_sync_remote_children`` (a separate ``HubProxy.try_call``); stub it to no children
     # so this test stays focused on the member-owned field merge.
     import flow_sdk.app.actions.flow_message_action as fma
 

@@ -15,13 +15,12 @@ The handler validates the api-key, finalizes the login, and either redirects to
 import logging
 import os
 from secrets import compare_digest
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from flow_sdk.cli.auth.secrets import is_secrets_enabled
-from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.server.grants import safe_next
 
 from .. import state
@@ -30,6 +29,20 @@ from .cloud import _render_result_page
 router = APIRouter(prefix="/auth")
 
 logger = logging.getLogger(__name__)
+
+
+def _carries_gate_secret(request: Request, secret: str | None) -> bool:
+    """Whether the request presents the box's current gate SECRET as the machine header.
+
+    HEADER ONLY, on purpose: a grant cookie or a ticket query also passes the gate
+    middleware, but neither is the raw secret, so neither may authorize a hub-hop
+    mutation (revoke, or an identity switch / gate re-arm in ``login_callback``). The
+    secret is read by the caller so an "is it armed" test can share the one read.
+    """
+    from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
+
+    presented = request.headers.get(HEADER_NAME) or ""
+    return bool(secret) and compare_digest(presented, secret)
 
 
 @router.get("/oauth/complete", response_class=HTMLResponse)
@@ -89,11 +102,9 @@ async def oauth_loopback_callback(state: str = Query(""), code: str = Query(""),
 
 
 @router.get("/gate")
-async def gate(
-    ticket: str = Query(None),
-    next: str = Query(None),
-):
-    """Trade the hub's ticket for this box's grant cookie, then redirect.
+async def gate(request: Request, ticket: str = Query(None), next: str = Query(None)):
+    """Trade the hub's ticket for this box's grant cookie, or this machine's token for
+    its local cookie, then redirect.
 
     The browser's one cold request at the system door. It cannot already hold the
     grant: the hub admitted it (``service_endpoint/<id>/open``) and sent it here with a
@@ -105,11 +116,30 @@ async def gate(
     Not a path exemption — ``CookieGateMiddleware`` gates this route like every
     other, and it is reachable precisely *because* the caller presented the ticket.
 
+    On this machine (a loopback host) it is the local gate's door instead: the
+    ``?cookie-gate=`` token sets the local cookie. ``next`` may be an absolute ``http(s)``
+    URL only when that token is in the URL: the backend opens the hub login and OAuth
+    authorize pages through here (``cloud_urls.wrap_url_auth_gate``), so the return to
+    this host carries the cookie. A link without the token in its URL still reaches this
+    route -- a click from a desktop app passes the gate's direct-open rule, and a click
+    from a web page carries the browser's ``Lax`` cookie -- so its ``next`` is held to
+    this instance (``safe_next``); otherwise any link would be an open redirect.
+
     On an unarmed instance this is inert — it redirects without setting anything,
     so a stale link still lands in the app rather than 404ing.
     """
+    from flow_sdk.instance_settings import cookie_gate
     from flow_sdk.server import grants
     from flow_sdk.server.service_proxy import SYSTEM_AUDIENCE
+    from flow_sdk.utils.networking import is_loopback
+
+    if is_loopback(request.url.hostname):
+        response = RedirectResponse(url=_gate_next(next, cookie_gate.verify_query_param(request)), status_code=302)
+        if cookie_gate.verify_cookie(request):
+            header = cookie_gate.set_cookie_header(request)
+            if header:
+                response.headers.append("set-cookie", header)
+        return response
 
     landing = safe_next(next)
     traded = grants.exchange(ticket, audience=SYSTEM_AUDIENCE, landing=landing)
@@ -131,12 +161,9 @@ async def revoke(request: Request):
     from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
     from flow_sdk.responses.response import ApiSuccessResponse
     from flow_sdk.server import grants
-    from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
     from flow_sdk.server.service_serving import fail
 
-    secret = get_cookie_gate()
-    presented = request.headers.get(HEADER_NAME) or ""
-    if not secret or not compare_digest(presented, secret):
+    if not _carries_gate_secret(request, get_cookie_gate()):
         return fail(403, "the hub's hop only")
     body = await request.json()
     caller = body.get("caller") if isinstance(body, dict) else None
@@ -147,8 +174,18 @@ async def revoke(request: Request):
     return JSONResponse(status_code=200, content=ApiSuccessResponse(data={"revoked": count}).model_dump(mode="json"))
 
 
+def _gate_next(candidate: str | None, linked_with_token: bool) -> str:
+    """An absolute ``http(s)`` URL as given when the link carried the token in its URL,
+    else a same-origin path (``safe_next``)."""
+    parts = urlsplit(candidate or "")
+    if linked_with_token and parts.scheme in ("http", "https") and parts.netloc:
+        return candidate
+    return safe_next(candidate)
+
+
 @router.get("/login_callback", response_class=HTMLResponse)
 async def login_callback(
+    request: Request,
     flowpad_api_key: str = Query(None, alias="flowpad-api-key"),
     next: str = Query(None),
     cookie_gate: str = Query(None, alias="cookie-gate"),
@@ -213,6 +250,37 @@ async def login_callback(
 
         user_info = await validate_api_key_async(flowpad_api_key)
 
+        # Only the hub may turn an ALREADY-OWNED box over. Switching the logged-in
+        # identity or re-arming the gate is a hub-driven act — the hub reaches this
+        # route over loopback carrying the gate SECRET as the machine header (see
+        # `_configure_box`), exactly as `/auth/revoke` requires. A browser that merely
+        # passed the door holds a ticket or grant, NOT the raw secret. A CLEAN box (no
+        # user, no gate) still takes a first login with no secret — the real open. Only
+        # an ARMED box needs protecting: an unarmed box has no public gate (the sandbox
+        # middleware refuses every outside caller when no secret is set), so a switch
+        # there is the local/first-login/shared-reclaim path. Without this a second
+        # principal who reached the public URL could log the owner out and re-arm the
+        # gate to their own secret — a full takeover.
+        from flow_sdk.cli.app_config import get_user
+        from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
+
+        armed = get_cookie_gate()
+        current = get_user()
+        incoming_id = user_info["id"]
+        switching = current and current.get("id") != incoming_id
+        rearming = cookie_gate and cookie_gate != armed
+        if armed and (switching or rearming) and not _carries_gate_secret(request, armed):
+            logger.warning("login_callback: refused switch/re-arm without the gate secret")
+            return _render_result_page(
+                title="Login Failed",
+                heading="Not permitted",
+                subheading="This box is already in use.",
+                detail_html="",
+                color="#ef4444",
+                icon="✗",
+                status_code=403,
+            )
+
         # A shared sandbox has exactly one logged-in identity for the whole
         # instance — see `purge_outgoing_user_if_switching` for the shared
         # switch-detection this and the sandbox-reclaim path both run.
@@ -238,10 +306,10 @@ async def login_callback(
         # request would let an anonymous caller lock the instance with a secret
         # only they hold.
         if cookie_gate:
-            from flow_sdk.instance_settings.cookie_gate import DesktopGateRefused, set_cookie_gate
+            from flow_sdk.instance_settings.cookie_gate import DesktopGateRefused, set_cookie
 
             try:
-                set_cookie_gate(cookie_gate)
+                set_cookie(cookie_gate)
                 logger.info("login_callback: cookie-gate armed for this instance")
             except DesktopGateRefused as e:
                 # Same posture as an unassignable runtime below: a login must not
@@ -267,19 +335,13 @@ async def login_callback(
             return RedirectResponse(url=safe_next(next), status_code=302)
 
         user_id = user_info.get("id", "Unknown")
-        s = get_instance_settings()
         detail_html = (
-            f'<div class="detail-box">'
-            f"<strong>Account Details:</strong><br>User ID: {user_id}<br>"
-            f"<strong>Encrypted credentials:</strong><br>"
-            f"sodot=<code>{s.sodot_path}</code><br>"
-            f"keychain key=<code>Flowpad.ai.sod_key / {s.instance_name}</code>"
-            f"</div>"
+            f'<div class="detail-box"><strong>Account Details:</strong><br>User ID: {user_id}</div>'
         )
         return _render_result_page(
             title="Login Successful",
             heading="Login Successful!",
-            subheading="You have been successfully logged in to Flowpad.",
+            subheading="You have been successfully logged in to Flowpad. You can close this tab.",
             detail_html=detail_html,
             color="#22c55e",
             icon="✓",

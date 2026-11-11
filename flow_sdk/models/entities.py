@@ -86,11 +86,6 @@ except ImportError as e:
     print(f"[WARN] Failed to import GraphContext: {e}")
 
 try:
-    from flow_sdk.builtin.contact_permission import ContactPermission  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import ContactPermission: {e}")
-
-try:
     from flow_sdk.builtin.annotation import Annotation  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Annotation: {e}")
@@ -116,11 +111,6 @@ except ImportError as e:
     print(f"[WARN] Failed to import PromptCompletion: {e}")
 
 try:
-    from flow_sdk.builtin.cron_event import CronEvent  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import CronEvent: {e}")
-
-try:
     from flow_sdk.builtin.skill import Skill  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Skill: {e}")
@@ -144,6 +134,11 @@ try:
     from flow_sdk.builtin.spreadsheet import Spreadsheet  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Spreadsheet: {e}")
+
+try:
+    from flow_sdk.builtin.document_file import DocumentFile  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import DocumentFile: {e}")
 
 try:
     from flow_sdk.builtin.group import Group  # noqa: F401
@@ -314,3 +309,13 @@ except ImportError as e:
     print(f"[WARN] Failed to import StreamInboxManager: {e}")
 
 __all__ = []
+
+try:
+    from flow_sdk.builtin.webhook import Webhook  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Webhook: {e}")
+
+try:
+    from flow_sdk.builtin.issue import Issue  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Issue: {e}")

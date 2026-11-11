@@ -18,6 +18,9 @@ import { editorsFor } from './editors';
 import { projectScope, scopeFilterToDockOptions } from '../utils/scope-filter';
 import { ViewType } from '../utils/ui/view-types';
 import { appOption, applyHostTheme, navigateHost } from './host';
+import { DataDriver } from '../entities/data-driver';
+import { DataSource } from '../entities/data-source';
+import { QueryRequest } from '../FlowSync/query';
 
 /** A row a run answered and nobody has labelled yet -- what a reviewer works through. */
 export function needsLabel(row: { output?: unknown; ground_truth?: unknown }): boolean {
@@ -75,6 +78,7 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   showCounts();
   const filter = h('select', { 'data-testid': 'dataset-editor-filter' },
     ...[['', 'all'], ['needs-label', 'needs label'], ['train', 'train'], ['eval', 'eval'], ['test', 'test']].map(([v, t]) => h('option', { value: v }, t))) as HTMLSelectElement;
+  const place = locationBar(dataset, () => location.reload());
   const list = h('div', { 'data-testid': 'dataset-editor-rows' });
   const detail = h('div', { class: 'detail', 'data-testid': 'dataset-editor-form' });
   const split = h('div', { class: 'split closed' }, list, detail);
@@ -88,6 +92,7 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
       h('button', { 'data-testid': 'dataset-editor-schema', onclick: openSchema }, 'Schema'),
       h('button', { 'data-testid': 'dataset-editor-validate', onclick: () => void validate() }, 'Validate'),
       status),
+    place,
     split,
   );
 
@@ -203,4 +208,51 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   await Promise.all([renderList(), renderDetail()]);
   status.textContent = 'Live';
   status.className = 'small ok';
+}
+
+/** Where the rows live, and moving them: "Stored in <rows_at>" and, on Move, a picker of the
+ *  places rows can go -- the project's data store, or one of the project's data sources whose driver
+ *  can hold rows (`DataDriver.holds_rows`, so no provider is named here). */
+function locationBar(dataset: any, moved: () => void): HTMLElement {
+  const shown = h('span', { class: 'mono small', 'data-testid': 'dataset-editor-location' }, dataset.rows_at || '');
+  const said = h('span', { class: 'small', 'data-testid': 'dataset-editor-move-status' });
+  const where = h('select', { 'data-testid': 'dataset-editor-move-kind' },
+    h('option', { value: '' }, 'Project data store')) as HTMLSelectElement;
+  const go = h('button', { class: 'primary', 'data-testid': 'dataset-editor-move-go' }, 'Move rows') as HTMLButtonElement;
+  // Shown by `display`, not `hidden`: the `bar` class sets `display: flex`, which wins over `hidden`.
+  const form = h('span', { class: 'bar', style: 'margin:0;display:none' }, where, go) as HTMLElement;
+  const open = h('button', { 'data-testid': 'dataset-editor-move' }, 'Move…');
+  let listed = false;
+  open.addEventListener('click', async () => {
+    const showing = form.style.display === 'none';
+    form.style.display = showing ? '' : 'none';
+    if (!showing || listed) return;
+    listed = true;
+    const drivers = await DataDriver.query(new QueryRequest({ type: DataDriver.type, scope: [], name: 'dataset-editor:row-stores' }));
+    const stores = new Set((drivers as any[]).filter((d) => d.holds_rows).map((d) => d.name));
+    const sources = await DataSource.query(new QueryRequest({ type: DataSource.type, name: 'dataset-editor:data-sources' }));
+    for (const s of sources as any[]) {
+      if (s.name && stores.has(s.provider) && (!dataset.project_id || !s.project_id || s.project_id === dataset.project_id)) {
+        where.append(h('option', { value: s.name }, `${s.name} · ${s.provider}`));
+      }
+    }
+  });
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    said.className = 'small muted';
+    said.textContent = 'Moving…';
+    try {
+      const done = await dataset.moveRows(where.value ? { data_source: where.value } : {});
+      said.className = 'small ok';
+      said.textContent = `${done.rows} rows in ${done.to}`;
+      moved();
+    } catch (error: any) {
+      said.className = 'small err';
+      said.textContent = String(error?.response?.data?.message ?? error?.message ?? error);
+    } finally {
+      go.disabled = false;
+    }
+  });
+  return h('div', { class: 'bar', style: 'padding:.4rem 1rem;margin:0;border-bottom:1px solid hsl(var(--border))' },
+    h('span', { class: 'muted small' }, 'Stored in'), shown, open, form, said);
 }

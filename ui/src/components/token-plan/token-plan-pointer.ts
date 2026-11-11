@@ -32,10 +32,6 @@ export function tokenPlanPointer(kind: TokenPlanScopeKind, id?: string): string 
   return kind;
 }
 
-export function scopePointer(scope: Pick<TokenPlanScope, 'kind' | 'id'>): string {
-  return tokenPlanPointer(scope.kind, scope.kind === 'team' ? scope.id : undefined);
-}
-
 /** The scope a pointer selects, or the first (`me`) when it names none. */
 export function selectScope<S extends Pick<TokenPlanScope, 'kind' | 'id'>>(
   scopes: readonly S[],

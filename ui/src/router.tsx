@@ -5,6 +5,7 @@ import DeveloperLayout from '@src/components/developer-layout/developer-layout';
 import { FloatingChatWindow } from '@src/components/floating-chat';
 import { WizardHost } from '@src/components/wizard/WizardHost';
 import { TerminalPool } from '@src/components/terminal/TerminalPool';
+import { AppPool } from '@src/components/app-pool/AppPool';
 import { HooksView } from '@src/components/hooks-view/hooks-view';
 import { SessionsView } from '@src/components/sessions-view/sessions-view';
 // `WorkflowTracePreviewPage` was a dev-only standalone preview that bypassed
@@ -21,10 +22,12 @@ import WrongAccountPage from '@src/pages/entry/WrongAccountPage';
 import MessageLanding from '@src/pages/entry/MessageLanding';
 import LaunchLanding from '@src/pages/entry/LaunchLanding';
 import OpenSandboxLanding from '@src/pages/entry/OpenSandboxLanding';
+import OpenPcLanding from '@src/pages/entry/OpenPcLanding';
 import InstallLanding from '@src/pages/entry/InstallLanding';
 import EntityLanding from '@src/pages/entry/EntityLanding';
 import ProjectShareLanding from '@src/pages/entry/ProjectShareLanding';
 import DiagnosisRequestLanding from '@src/pages/entry/DiagnosisRequestLanding';
+import ServiceEndpointLanding from '@src/pages/entry/ServiceEndpointLanding';
 import { HubOnly } from '@src/pages/entry/entry-shell';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
@@ -117,6 +120,7 @@ function RootLayout() {
           tab — a layout swap moves a terminal, it never rebuilds one
           (docs/navigation/dock-loading.md, I6). */}
       <TerminalPool />
+      <AppPool />
     </App>
   );
 }
@@ -125,6 +129,7 @@ function RootLayout() {
 import { loadHomePage } from './routes/loaders/home-loader';
 import { loadAgentApp } from './routes/loaders/main-loader';
 import { loadRoot } from './routes/loaders/root-loader';
+import { redirectHistoryStrategy } from './routes/loaders/redirect-history';
 
 function shouldRevalidateDock({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs): boolean {
   if (
@@ -195,6 +200,8 @@ export const router = createBrowserRouter(
           post-accept landing, so nothing has to steer the invitation here. */}
       <Route path="compute_node/:nodeId" element={<OpenSandboxLanding />} />
       <Route path="launch" element={<LaunchLanding />} />
+      {/* An agent's public deployment: a visitor's invite code opens that code's own sandbox. */}
+      <Route path="open-pc/:agentId" element={<OpenPcLanding />} />
       <Route path="install" element={<InstallLanding />} />
       {/* Project share landing: `Project.share` sets it as the invitation's `callback_override`. */}
       <Route
@@ -211,6 +218,15 @@ export const router = createBrowserRouter(
         element={
           <HubOnly>
             <DiagnosisRequestLanding />
+          </HubOnly>
+        }
+      />
+      {/* Where a shared app's link lands: its "Open" goes into the app, not to the endpoint's record. */}
+      <Route
+        path="service_endpoint/:endpointId"
+        element={
+          <HubOnly>
+            <ServiceEndpointLanding />
           </HubOnly>
         }
       />
@@ -274,6 +290,8 @@ export const router = createBrowserRouter(
   ),
   {
     basename: BASE_PATH,
+    // I7: every loader redirect takes the place of the URL being loaded, and only that URL.
+    dataStrategy: redirectHistoryStrategy,
   },
 );
 

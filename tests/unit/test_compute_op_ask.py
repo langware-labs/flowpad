@@ -147,6 +147,35 @@ async def test_the_op_words_its_own_buttons(tmp_path):
     assert payload["cancel_label"] == "Skip"
 
 
+async def test_field_labels_and_the_questions_place_in_a_sequence_reach_the_window(tmp_path):
+    """`labels` name the fields of a record answer for a person; `stage` says which of how many questions
+    this is — both travel to the payload as the op wrote them, and are absent when it wrote none."""
+    exe = {"prompt": "Paste the token", "labels": {"user_token": "User OAuth Token"},
+           "stage": {"label": "Paste the token", "index": 2, "total": 2}, "verify": {"source_step": "app"}}
+    run = asyncio.create_task(_run(_spec(tmp_path, exe_data=exe), tmp_path, timeout=5))
+    for _ in range(200):
+        if open_questions():
+            break
+        await asyncio.sleep(0.01)
+    payload = open_questions()[0].to_payload()
+    cancel(payload["id"])
+    await run
+
+    assert payload["labels"] == {"user_token": "User OAuth Token"}
+    assert payload["stage"] == {"label": "Paste the token", "index": 2, "total": 2}
+    assert payload["verify"] == {"label": "Verify", "source_step": "app"}, "a check of the typed value, by that source step"
+
+    plain = asyncio.create_task(_run(_spec(tmp_path), tmp_path, timeout=5))
+    for _ in range(200):
+        if open_questions():
+            break
+        await asyncio.sleep(0.01)
+    bare = open_questions()[0].to_payload()
+    cancel(bare["id"])
+    await plain
+    assert bare["labels"] == {} and bare["stage"] is None and bare["verify"] is None
+
+
 async def test_unworded_buttons_leave_the_defaults_to_the_window(tmp_path):
     """Empty labels: the window draws its own Send / Cancel."""
     run = asyncio.create_task(_run(_spec(tmp_path), tmp_path, timeout=5))

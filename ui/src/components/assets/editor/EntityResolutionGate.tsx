@@ -1,5 +1,8 @@
 import { usePrimaryContentPending } from '@sdk/react/primary-content';
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useRef } from 'react';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useNestedHost } from './nested-host';
 import { APIEntity, FSRef } from '@sdk';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { MissingAssetCard } from './MissingAssetCard';
@@ -58,9 +61,24 @@ export function EntityResolutionGate<T extends APIEntity<T>>({
     resolvedEntity ? null : fsRef,
   );
   const entity = resolvedEntity ?? pathEntity;
+
+  // Shown, then deleted (the sidebar, another window): leave the way the editor's
+  // own delete does — back to the host editor when nested, else to the type's list.
+  const { navigation } = useDockNavigation();
+  const nested = useNestedHost();
+  const showing = !!entity && (!!resolvedEntity || state === 'resolved');
+  const wasShown = useRef(false);
+  useEffect(() => {
+    if (showing) wasShown.current = true;
+    else if (state === 'missing_asset' && wasShown.current && type) {
+      wasShown.current = false;
+      if (nested) nested.close();
+      else navigation.openDock(DockPointer.forAssetList(type));
+    }
+  }, [showing, state, type, nested, navigation]);
   usePrimaryContentPending(!resolvedEntity && (state === 'querying' || state === 'discovering'));
 
-  if (entity && (resolvedEntity || state === 'resolved')) return <>{render(entity)}</>;
+  if (showing) return <>{render(entity!)}</>;
 
   if (state === 'querying' || state === 'discovering') {
     const label = state === 'discovering' ? t`Discovering ${typeLabel}…` : t`Loading ${typeLabel}…`;

@@ -5,6 +5,7 @@ import {
   RECEIPT_LINGER_MS,
   __resetActivityStoreForTest,
   dismissActivityReceipt,
+  dropActivity,
   getActivities,
   getActivity,
   handleActivitySnapshot,
@@ -126,6 +127,22 @@ describe('activity store', () => {
     },
   );
 
+  it('a root that ends with errors leaves the footer and lists each error as a warning', async () => {
+    const { useAlertStore } = await import('@src/notifications/alerts-store');
+    useAlertStore.setState({ alerts: [] });
+    const error = { message: 'docs/a/CHART.md: did not find expected key', ref: 'docs/a', code: 'index.parse' };
+    const chart = spec({ path: 'index/chart', name: 'chart', state: 'completed', errors_count: 1, errors: [error] });
+
+    handleActivitySnapshot(spec({ state: 'completed', seq: 2, children: [chart] }));
+
+    expect(getActivities()).toEqual([]);
+    const { result } = renderHook(() => useActivityReceipt());
+    expect(result.current).toBeNull();
+    const [alert] = useAlertStore.getState().alerts;
+    expect(alert).toMatchObject({ level: 'error', message: error.message });
+    useAlertStore.setState({ alerts: [] });
+  });
+
   it('keeps the last finished root as a receipt past the linger, until dismissed', () => {
     const { result } = renderHook(() => useActivityReceipt());
     act(() => handleActivitySnapshot(spec({ seq: 2, state: 'failed', message: '1 RED' })));
@@ -186,5 +203,16 @@ describe('activity store', () => {
     unsubscribe();
     handleActivitySnapshot(spec({ seq: 3, done: 3 }));
     expect(notifications).toBe(2);
+  });
+
+  it('drops a root the backend no longer has, and only that one', () => {
+    const subject = 'project-8750320f-c81b-43fa-807f-e4018171d0a7';
+    handleActivitySnapshot(spec({ path: 'setup-ghost', subject_entity: subject }));
+    handleActivitySnapshot(spec({ activity_id: 'a2', path: 'index' }));
+
+    dropActivity('setup-ghost', subject);
+
+    expect(getActivity('setup-ghost', subject)).toBeNull();
+    expect(getActivities().map((s) => s.path)).toEqual(['index']);
   });
 });

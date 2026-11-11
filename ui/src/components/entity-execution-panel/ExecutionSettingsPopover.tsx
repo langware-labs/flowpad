@@ -1,9 +1,10 @@
 import { useMemo, type ReactNode } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Trans } from '@lingui/react/macro';
-import { AgenticProcess, PrefKey, Project, QueryRequest } from '@sdk';
+import { Agent, AgenticProcess, PrefKey, Project, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { usePreference } from '@src/hooks/use-preference';
+import { LaunchingAgentRow } from '@src/components/agents/LaunchingAgentRow';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
@@ -20,6 +21,8 @@ interface ExecutionSettingsPopoverProps {
   modelControl?: ReactNode;
   workerControl?: ReactNode;
   showProject?: boolean;
+  /** The agent this session was launched through; the row opens its page. */
+  agent?: Agent | null;
   /** Host-supplied actions under the settings (e.g. Vibe's "Open terminal"). */
   actions?: ReactNode;
   trigger: ReactNode;
@@ -32,6 +35,7 @@ export function ExecutionSettingsPopover({
   modelControl,
   workerControl,
   showProject = true,
+  agent,
   actions,
   trigger,
 }: ExecutionSettingsPopoverProps) {
@@ -84,6 +88,7 @@ export function ExecutionSettingsPopover({
               </Select>
             </div>
           )}
+          {agent && <LaunchingAgentRow agent={agent} testId="execution-settings-agent" className="w-full" />}
           {modelControl && (
             <div className="space-y-1.5" data-testid="execution-settings-model-section">
               <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">

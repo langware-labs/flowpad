@@ -72,3 +72,19 @@ def test_only_a_value_of_a_registered_kind_can_be_stored(tmp_path):
 
     with pytest.raises(ValueError):
         save_value(Loose(), tmp_path)
+
+
+def test_kind_of_value_file_reads_the_spec_kind_of_a_value_file_only(tmp_path):
+    from flow_sdk.values import kind_of_value_file
+
+    value = tmp_path / "diagnosis.value.json"
+    value.write_text('{"spec_kind": "diagnosis", "title": "x"}', encoding="utf-8")
+    plain = tmp_path / "data.json"
+    plain.write_text('{"spec_kind": "diagnosis"}', encoding="utf-8")
+    broken = tmp_path / "broken.value.json"
+    broken.write_text("not json", encoding="utf-8")
+
+    assert kind_of_value_file(value) == "diagnosis"
+    assert kind_of_value_file(plain) is None  # not a value file: never read
+    assert kind_of_value_file(broken) is None
+    assert kind_of_value_file(tmp_path / "missing.value.json") is None

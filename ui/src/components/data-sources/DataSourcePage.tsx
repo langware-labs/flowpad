@@ -34,9 +34,11 @@ import { ownerOf, sourceConversationsRequest } from '@src/components/stream-inbo
 import { BusStream } from '@src/components/automations/BusStream';
 import { sourceGlyphs } from './source-icon';
 import { SourceActions, SourceSetupDetails, SourceStatusLine } from './source-parts';
+import { useSourceVerify } from './use-source-verify';
 import { SourceFiles } from './SourceFiles';
 import { openDriver, openSource, openSourceFile, type SourceTab } from './data-sources-pointer';
 import { OpenFolderButton } from './OpenFolderButton';
+import { HostedDatasets, useHostedDatasets } from './HostedDatasets';
 import { isMessageDriverSpec, isObjectDriverSpec } from './use-source-specs';
 
 interface Props {
@@ -57,7 +59,10 @@ interface Props {
 
 export function DataSourcePage({ source, id, tab, conversation, thread, files, spec, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
+  // Verify is pressed in the actions and answered on the status line beside them, never in a toast.
+  const { verify, busy: verifying, last: verdict } = useSourceVerify(source, { quiet: true });
   const { navigation } = useDockNavigation();
+  const hosted = useHostedDatasets(source);
   if (!source) {
     return (
       <p className="text-sm text-muted-foreground" data-testid="data-source-page-missing">
@@ -87,8 +92,11 @@ export function DataSourcePage({ source, id, tab, conversation, thread, files, s
   // The simple view is what the source IS: a channel's messages, a file source's files, else its events (the
   // events of a message or file source are under Advanced). Nothing until its driver is known, so a file source
   // never opens a live event stream first.
+  // A source that hosts datasets holds rows, not a feed: its simple view is what it hosts.
   const simpleView =
-    spec === undefined ? null : carriesMessages ? (
+    hosted ? (
+      <HostedDatasets datasets={hosted} />
+    ) : spec === undefined ? null : carriesMessages ? (
       <div className="min-h-[24rem] flex-1 overflow-hidden rounded-lg border border-border">
         <SourceStream source={source} agentId={agentId} />
       </div>
@@ -111,7 +119,7 @@ export function DataSourcePage({ source, id, tab, conversation, thread, files, s
             </p>
           )}
         </div>
-        <SourceStatusLine source={source} className="ms-2" />
+        <SourceStatusLine source={source} className="ms-2" verifying={verifying} verdict={verdict} />
         {advanced && (
           <>
             <span className="text-xs text-muted-foreground" title={t`Last successful sync`}>
@@ -135,7 +143,15 @@ export function DataSourcePage({ source, id, tab, conversation, thread, files, s
             <SlidersHorizontal className="size-3.5" />
             <Trans>Advanced</Trans>
           </Button>
-          <SourceActions source={source} spec={spec} onEdit={onEdit} onReplay={onReplay} onDelete={onDelete} />
+          <SourceActions
+            source={source}
+            spec={spec}
+            onEdit={onEdit}
+            onReplay={onReplay}
+            onDelete={onDelete}
+            onVerify={verify}
+            verifying={verifying}
+          />
         </div>
       </div>
 

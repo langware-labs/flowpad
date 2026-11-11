@@ -66,6 +66,33 @@ async def owning_asset_for_removed_path(path: str):
     return row, (not alive and not source_unreachable(root))
 
 
+async def retire_or_adopt(row) -> bool:
+    """Reap ``row`` now that its source is gone — unless another copy of the same asset id
+    (a second clone of its repository: ``asset_occurrences``) is still on disk, which then
+    becomes the row's source. True when a copy was adopted, False when the row was reaped.
+    One row stands for every copy of an id: the indexer keeps one as primary, lists the rest.
+    """
+    from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+    from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
+
+    gone = canonical_posix_path(row.asset_ref or "")
+    for occurrence in row.asset_occurrences or []:
+        path = occurrence.get("path") or ""
+        if not path or canonical_posix_path(path) == gone or not Path(path).exists():
+            continue
+        try:
+            resolved = await resolve_asset(path, write=False, type_name=row.get_type(), owner_id=str(row.id))
+        except NotAnAsset:
+            continue
+        if str(resolved.id) != str(row.id):
+            continue
+        if await index_one(resolved, notify=True) is not None:
+            return True
+    await remove_orphan_row(str(row.id), row.get_type())
+    return False
+
+
 @dataclass
 class ReindexResult:
     reindexed: list[str] = field(default_factory=list)
@@ -143,20 +170,51 @@ async def sources_gone_under(root: str | Path) -> list[str]:
     """The ``asset_ref`` of every row stored under ``root`` whose source is gone.
 
     A walk of ``root`` sees only what is still there, so a deleted asset needs this
-    lookup to be reconciled (``reindex_paths(deleted_paths=...)``).
+    lookup to be reconciled (``reindex_paths(deleted_paths=...)``). Empty for the home
+    folder or above it — that would stat every row on the machine.
     """
     import asyncio  # noqa: PLC0415
 
+    from flow_sdk.fs_store.indexer.roots import is_home_or_ancestor  # noqa: PLC0415
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    if is_home_or_ancestor(root, Path(get_instance_settings().user_home)):
+        return []
+
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-    from flow_sdk.fs_store.path_utils import asset_refs_under, source_gone  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import (  # noqa: PLC0415
+        asset_refs_under,
+        canonical_posix_path,
+        is_path_under,
+        source_gone,
+    )
 
     likes = [ExpressionNode(op=QueryOp.LIKE, operands=["asset_ref", pattern]) for pattern in asset_refs_under(root)]
     match = likes[0] if len(likes) == 1 else ExpressionNode(op=QueryOp.OR, operands=likes)
     owners = Entity.asset_owner_classes()
     found = await asyncio.gather(*[o.get_all(QueryFilter(type=o.get_type(), match=match)) for o in owners])
     refs = list(dict.fromkeys(str(row.asset_ref) for rows in found for row in rows or [] if getattr(row, "asset_ref", None)))
-    return await asyncio.to_thread(lambda: [ref for ref in refs if source_gone(ref)])
+    # LIKE only narrows (`_` and `%` in a folder name are wildcards); containment is decided here.
+    under = canonical_posix_path(root)
+    return await asyncio.to_thread(
+        lambda: [ref for ref in refs if is_path_under(canonical_posix_path(ref), under) and source_gone(ref)]
+    )
+
+
+async def reconcile_under(root: str | Path, *, write: bool = True) -> tuple[ReindexResult, list]:
+    """Bring the index in line with what is under ``root`` now: every asset there re-indexed, and every
+    row stored under it whose source is gone (``sources_gone_under``) reconciled away. For a folder
+    changed outside an editor -- a git pull. Returns the result and the walk's scan issues.
+    ``write=False`` for a checkout whose bytes are the publisher's."""
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.assets.scanning import scan_repo_tree  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    scan = await asyncio.to_thread(scan_repo_tree, Path(root), SchemaRegistry.repo_family_to_info())
+    present = [str(c.path) for c in scan.candidates if c.included]
+    return await reindex_paths(present, await sources_gone_under(root), write=write), list(scan.issues)
 
 
 async def reindex_paths(
@@ -188,7 +246,6 @@ async def reindex_paths(
     became a dynamic workflow owned by no project, and so listed under all of them.
     """
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-    from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
     from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
@@ -238,8 +295,8 @@ async def reindex_paths(
             if exact is not None:
                 rec = await exact.get_record()
                 if rec is not None and rec.orphan:
-                    await remove_orphan_row(str(exact.id), exact.get_type())
-                    result.orphaned.append(path)
+                    adopted = await retire_or_adopt(exact)
+                    (result.reindexed if adopted else result.orphaned).append(path)
                 elif rec is not None and source_unreachable(path):
                     # `rec.orphan` already declined; without this we would fall
                     # through to a resync on the same unreadable path.
@@ -260,8 +317,8 @@ async def reindex_paths(
                 if root and not Path(root).exists() and not source_unreachable(root):
                     # The whole asset is gone — reap it, or deleting a skill would
                     # leave a row pointing at nothing, searchable forever.
-                    await remove_orphan_row(str(folder.id), folder.get_type())
-                    result.orphaned.append(path)
+                    adopted = await retire_or_adopt(folder)
+                    (result.reindexed if adopted else result.orphaned).append(path)
                 else:
                     # Root still there: ONE inner file went away. Never reap on
                     # this branch — that asymmetry is load-bearing.

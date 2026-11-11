@@ -39,7 +39,10 @@ export const chromeGlyphClassName = 'size-[18px]';
  * else). Boxes only — each button keeps whatever glyph size its own contract
  * asked for, so an explicit `size={…}` prop stays honest.
  */
-export const chromeActionClusterClassName = '[&_button]:h-8 [&_button]:w-8';
+export const chromeActionClusterClassName = '[&_button]:h-8 [&_button:not([data-wide])]:w-8';
+
+/** Marks a cluster button that carries text (a timer, a label) and must keep its own width. */
+export const wideClusterButtonAttrs = { 'data-wide': '' } as const;
 
 /**
  * A bare ~12px glyph that is itself the button (the location glyphs on

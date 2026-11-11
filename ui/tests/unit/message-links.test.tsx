@@ -17,7 +17,11 @@ vi.mock('@src/navigation', async (importOriginal) => ({
     navigation: { openLink: mocks.openLink, openLinkInBrowser: vi.fn(), openLinkInVibe: mocks.openLinkInVibe, openLinkInBrowserProfile: vi.fn() },
   }),
 }));
-vi.mock('@src/lib/browser-profiles', () => ({ fetchBrowserProfiles: () => Promise.resolve([]) }));
+vi.mock('@src/lib/browser-profiles', () => ({
+  fetchBrowserProfiles: () => Promise.resolve([]),
+  useBrowserProfiles: () => [],
+  browserProfileManager: { selected: null, select: () => {}, command: (c: string) => Promise.resolve(c) },
+}));
 
 const { MessageBubble } = await import('@src/components/conversation/MessageBubble');
 
@@ -42,8 +46,10 @@ describe('message links behave like terminal links', () => {
     const links = screen.getAllByRole('link');
     expect(links.map((link) => link.textContent)).toEqual([URL, 'src/a.ts:3']);
     expect(links[0].getAttribute('dir')).toBe('ltr');
-    const body = container.querySelector('.whitespace-pre-wrap');
-    expect(body?.textContent).toBe(BODY);
+    // The body is markdown now: each authored newline is a hard <br>, the text otherwise intact.
+    const para = container.querySelector('p');
+    expect(para?.querySelectorAll('br')).toHaveLength(2);
+    expect(para?.textContent?.replace(/\n/g, '')).toBe(BODY.replace(/\n/g, ''));
   });
 
   it('a click opens the link against the message, like a terminal against its shell', async () => {

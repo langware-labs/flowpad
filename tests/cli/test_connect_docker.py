@@ -15,6 +15,7 @@ import pytest
 
 from flow_sdk.cli.auth.device_enroll import write_marker
 from flow_sdk.cli.commands import _docker_enroll as de
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 
 @pytest.mark.parametrize(
@@ -76,13 +77,15 @@ def test_marker_round_trip_and_partial_reads(tmp_path):
 async def test_host_approves_the_container_code_over_the_shared_hub_client(monkeypatch):
     calls: list[tuple[str, str, dict]] = []
 
-    async def fake_hub_post(entity_type, body, entity_id=None, action=None, **kwargs):
+    async def fake_hub_post(method, entity_type, entity_id=None, action=None, *_, payload=None, **kwargs):
+        assert method == "POST"
+        body = payload
         calls.append((entity_type, action, body))
         if action == "lookup":
             return {"hostname": "box", "os_type": "Linux"}
         return {"node_id": "n-1", "node_name": body["node_name"]}
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake_hub_post)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_hub_post))
     result = await de.approve_container_code("WDJB-MJHT", "@docker-box")
 
     assert [(t, a) for t, a, _ in calls] == [("machine-enroll", "lookup"), ("machine-enroll", "approve")]
@@ -96,7 +99,7 @@ async def test_a_refused_code_surfaces_the_hubs_reason(monkeypatch):
     async def fake_hub_post(*_args, **_kwargs):
         raise HubError(404, "No pending enrollment for that code")
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake_hub_post)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_hub_post))
     with pytest.raises(HubError, match="No pending enrollment"):
         await de.approve_container_code("ZZZZ-ZZZZ", "@docker-box")
 

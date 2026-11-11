@@ -30,8 +30,11 @@ from __future__ import annotations
 import logging
 import sys
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
+
+from pydantic import BaseModel
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.core.compute.declared_value import MISSING, DeclaredShapeError, to_declared
@@ -44,6 +47,7 @@ from flow_sdk.schema.data_spec.wizard_spec import (
     EXIT_ERROR_STEP,
     ON_FAIL_ABORT,
     ON_FAIL_STOP,
+    ResultReturn,
     StepKind,
     WizardSpec,
     WizardStepSpec,
@@ -214,9 +218,10 @@ async def run_wizard(
     (``SharedShell``); asked for its own (``isolated_shell``), it opens one for its subtree.
     Nested wizards and ops are handed the shell they run in, so they reuse it.
     """
+    invocation_id = getattr(context, "invocation_id", None) or str(mint_uuid())
     async with shell_for(spec.isolated_shell, shell) as shell:
         if not trusted:
-            return wizard_refused(spec.name)
+            return wizard_refused(spec.name).model_copy(update={"invocation_id": invocation_id})
 
         from flow_sdk.activity import Activity  # noqa: PLC0415 — keeps this module entity-free at import
 
@@ -229,7 +234,7 @@ async def run_wizard(
             values=dict(inputs or {}),
             input=input,
             context=context,
-            invocation_id=getattr(context, "invocation_id", None) or str(mint_uuid()),
+            invocation_id=invocation_id,
             workdir=workdir,
             platform=platform,
             subject_entity=subject_entity,
@@ -266,7 +271,7 @@ async def run_wizard(
             if claimed:
                 raise
             # The address is a slot, and another run holds it: nothing ran, try later.
-            return WizardResult.held(f"{spec.name or activity_path} is already running: {busy}")
+            return WizardResult.held(f"{spec.name or activity_path} is already running: {busy}", invocation_id=invocation_id)
 
 
 async def _steps(run: _Run, root: Any) -> WizardResult:
@@ -291,7 +296,20 @@ async def _steps(run: _Run, root: Any) -> WizardResult:
             # A refusal stops the run whatever ``on_fail`` says: continuing past
             # an untrusted callee is exactly what the gate exists to prevent.
             child.fail(answer.detail)
-            return _answer(run, WizardResult.refused, answer.detail)
+            return _answer(run, WizardResult.refused, answer.detail).model_copy(
+                update={"value": None, "value_present": False})
+        returned = _result_return(run, step, answer)
+        if returned is not None:
+            if returned.ok:
+                child.done(returned.detail or "returned")
+                if returned.exit_code is ExitCode.NOT_APPLICABLE:
+                    root.inc_skipped()
+                else:
+                    root.inc_success()
+            else:
+                child.fail(returned.detail or "failed")
+                root.inc_error(returned.detail, ref=step.id)
+            return returned
         if answer.ok and not answer.ran:
             child.done(answer.detail or "already done")
             root.inc_skipped()
@@ -410,6 +428,35 @@ def _unmatched(values: dict, step: WizardStepSpec) -> str:
     return ""
 
 
+def _result_field(answer: ReturnedValue, path: str) -> Any:
+    """Read data fields only: no properties, methods, indexing, or missing-to-null coercion."""
+    value: Any = answer
+    for part in path.split("."):
+        if isinstance(value, BaseModel) and part in type(value).model_fields:
+            value = getattr(value, part)
+        elif isinstance(value, dict) and part in value:
+            value = value[part]
+        else:
+            return MISSING
+    return value.value if isinstance(value, Enum) else value
+
+
+def _result_return(run: _Run, step: WizardStepSpec, answer: ReturnedValue) -> Optional[WizardResult]:
+    for rule in step.on_result:
+        if not all(type(actual := _result_field(answer, path)) is type(wanted) and actual == wanted
+                   for path, wanted in rule.when.items()):
+            continue
+        code = answer.exit_code
+        if rule.return_ is ResultReturn.NOT_APPLICABLE and not (answer.busy or answer.timed_out):
+            code = ExitCode.NOT_APPLICABLE
+        result = _answer(run, lambda detail, **fields: WizardResult(exit_code=code, detail=detail, **fields),
+                         answer.detail, stopped_at=step.id, busy=answer.busy, timed_out=answer.timed_out)
+        if code is not ExitCode.OK:
+            return result.model_copy(update={"value": None, "value_present": False})
+        return _held_to_output(run, result)
+    return None
+
+
 def _answer(run: _Run, make: Callable[..., WizardResult], detail: str, **fields: Any) -> WizardResult:
     """The wizard's answer; its value is what each step that reached its goal returned.
 
@@ -427,6 +474,7 @@ def _answer(run: _Run, make: Callable[..., WizardResult], detail: str, **fields:
     return make(
         detail,
         value=outputs or None,
+        invocation_id=run.invocation_id,
         steps=run.steps,
         ran=any(answer.ran for answer in run.steps.values()),
         **fields,
@@ -478,7 +526,7 @@ def _held_to_output(run: _Run, result: WizardResult) -> WizardResult:
             value=None,
             steps=result.steps,
             ran=result.ran,
-            **({"value_present": False, "invocation_id": result.invocation_id} if run.spec.output_from is not None else {}),
+            value_present=False, invocation_id=result.invocation_id,
         )
     return result.model_copy(update={"value": value})
 

@@ -21,6 +21,17 @@ const NONE: never[] = [];
  * are never fetched by a second query.
  */
 export function useEntityBatch<U extends APIEntity<any>>(type: string, ids: readonly string[]): U[] {
+  return useEntityBatchState<U>(type, ids).data;
+}
+
+/**
+ * The batch plus whether it has settled (answered or failed; trivially, with no ids), for a
+ * caller that waits for the batch before mounting what reads it.
+ */
+export function useEntityBatchState<U extends APIEntity<any>>(
+  type: string,
+  ids: readonly string[],
+): { data: U[]; settled: boolean } {
   // Sorted, so the same set in a new order is the same request (and the same
   // cache key as any other query built from those ids).
   const sortedIds = useMemo(() => [...new Set(ids)].sort(), [ids]);
@@ -38,8 +49,9 @@ export function useEntityBatch<U extends APIEntity<any>>(type: string, ids: read
   useLayoutEffect(() => {
     if (idsKey) void dataManager.query(request).catch(() => undefined);
   }, [request, idsKey]);
-  const { data } = useEntitiesQuery<U>(request, { enabled: !!idsKey });
-  return data ?? NONE;
+  const { data, isLoading, isError } = useEntitiesQuery<U>(request, { enabled: !!idsKey });
+  // Before its first answer the query reads "not loading" with no data; settled means it answered.
+  return { data: data ?? NONE, settled: !idsKey || isError || (data !== undefined && !isLoading) };
 }
 
 export function EntityBatchHydrator({ type, ids }: { type: string; ids: readonly string[] }) {

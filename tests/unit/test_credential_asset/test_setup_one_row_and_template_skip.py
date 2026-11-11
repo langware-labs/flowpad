@@ -12,6 +12,7 @@ from flow_sdk.schema.data_spec.project_setup_spec import (
     REQUIREMENT_PACK,
     REQUIREMENT_SOURCE,
     REQUIREMENT_WEBAPP,
+    RootRef,
     SetupRequirementSpec,
     SetupVarSpec,
 )
@@ -27,8 +28,9 @@ def _source(name: str) -> SetupRequirementSpec:
 
 
 def _pack(*, used_by: list[str], vars=MISSING, declared: bool = True) -> SetupRequirementSpec:
+    roots = [RootRef(typeid=f"data_source-{name}", kind="data_source", name=name) for name in used_by]
     return SetupRequirementSpec(kind=REQUIREMENT_PACK, name="gmail", typeid=TEMPLATE_TYPEID, used_by=used_by,
-                                vars=list(vars), declared=declared)
+                                roots=roots, vars=list(vars), declared=declared)
 
 
 async def test_a_source_waiting_on_a_listed_credential_is_folded_into_its_row():
@@ -48,7 +50,7 @@ async def test_skipping_an_undeclared_template_marks_this_project_not_the_templa
     async def listed(_project, *_a, **_k):
         return [template_req]
 
-    async def nothing_running(_project):
+    async def nothing_running(_project, *_a, **_k):
         return []
 
     async def no_record(_req):
@@ -64,3 +66,48 @@ async def test_skipping_an_undeclared_template_marks_this_project_not_the_templa
 
     await project_setup.unskip_requirement(project, TEMPLATE_TYPEID)
     assert "credential:gmail" not in (project.setup_skipped or {})
+
+
+async def test_a_setup_question_skips_the_step_that_asked(project, monkeypatch):
+    """The question's own Skip is the row's local skip, of the step stamped on the question."""
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.core.setup.walk import SetupControl
+
+    source, template_req = _source("Gmail"), _pack(used_by=["Gmail"], declared=False)
+
+    async def listed(_project, *_a, **_k):
+        return [source, template_req]
+
+    async def nothing_running(_project, *_a, **_k):
+        return []
+
+    async def this_project(_query):
+        return project
+
+    monkeypatch.setattr(project_setup, "collect_requirements", listed)
+    monkeypatch.setattr(project_setup, "_running_here", nothing_running)
+    monkeypatch.setattr(Project, "get_one", this_project)
+    control = SetupControl()
+    monkeypatch.setitem(project_setup._CONTROLS, (str(project.id), ""), control)
+    run = project_setup.setup_run_address(str(project.id))
+
+    assert not await project_setup.skip_asking("setup-somebody-else", "credential:gmail")
+    assert await project_setup.skip_asking(run, "credential:gmail")
+    assert "credential:gmail" in (project.setup_skipped or {})
+    assert "credential:gmail" in control.skips and source.typeid not in control.skips
+
+
+async def test_only_a_question_a_setup_step_asked_offers_skip_and_cards_carry_no_guide():
+    from flow_sdk.core.compute_op.ask import ASKING_STEP, Question, forget, open_question
+    from flow_sdk.schema.data_spec.compute_op_spec import AskChoiceSpec
+
+    assert Question(id="q", op_name="op", prompt="?", shape="string").to_payload()["skippable"] is False
+    token = ASKING_STEP.set("credential:gmail")
+    try:
+        asked = open_question("op", "?", "string", guide="run `flow credentials set`",
+                              choices=[AskChoiceSpec(value="google", label="Google")])
+    finally:
+        ASKING_STEP.reset(token)
+    payload = asked.to_payload()
+    forget(asked.id)
+    assert payload["skippable"] is True and payload["guide"] == ""

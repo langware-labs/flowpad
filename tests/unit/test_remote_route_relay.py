@@ -4,12 +4,12 @@ Mirror of the hub's own ``test_deployed_agent_chat_proxy.py`` one tier up: a
 session opened on a placement that is not on this machine goes through the hub
 (``Deployment._use_on_hub``), the process is adopted AT THE HUB'S ID as a route
 row (``AgenticProcess.adopt_route``), and every process action on that row
-forwards — SDK bodies unchanged, streams verbatim through ``CloudProxy``, the
+forwards — SDK bodies unchanged, streams verbatim through ``HubProxy.forward``, the
 projection re-read afterwards so the local WS ``data_op`` fires for the chat
 panel. Verbs that only make sense next to the worker refuse with 409.
 
 The hub is faked at the two seams the relay uses: the shared hub verbs
-(``hub_http.hub_get/hub_post/hub_delete``) and the request proxy. No network.
+(``HubProxy.call/try_call``) and the request proxy (``HubProxy.forward``). No network.
 """
 
 import uuid
@@ -22,6 +22,7 @@ from starlette.responses import StreamingResponse
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -50,6 +51,20 @@ class _FakeHub:
         self.streams_open = 0
         self.stream_status = 200
 
+    async def call(self, method, etype, eid=None, action=None, sub=None, *, payload=None, **kw):
+        if method == "GET":
+            data = await self.get(etype, eid, action)
+            if data is None:
+                raise HubError(503, "hub unreachable")
+            return data
+        if method == "DELETE":
+            return await self.delete(etype, eid, action)
+        return await self.post(etype, payload, eid, action)
+
+    async def try_call(self, method, etype, eid=None, action=None, sub=None, **kw):
+        assert method == "GET"
+        return await self.get(etype, eid, action)
+
     async def post(self, etype, payload, eid=None, action=None, **_):
         self.calls.append(("POST", etype, eid, action, payload))
         if self.fail:
@@ -70,7 +85,7 @@ class _FakeHub:
             raise HubError(0, "box unreachable")
         return {"deleted": True}
 
-    async def proxy(self, request, url):  # bound in place of CloudProxy.__call__
+    async def proxy(self, request, url):  # bound in place of HubProxy.forward
         self.calls.append(("STREAM", url))
         self.streams_open += 1
 
@@ -92,10 +107,9 @@ class _FakeHub:
 @pytest.fixture
 def hub(monkeypatch):
     fake = _FakeHub()
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake.post)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", fake.get)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_delete", fake.delete)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.proxy.CloudProxy.__call__", fake.proxy)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake.call))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake.try_call))
+    monkeypatch.setattr(HubProxy, "forward", staticmethod(fake.proxy))
     return fake
 
 
@@ -111,14 +125,33 @@ def _request(body: dict, monkeypatch, *, someone="user-11111111-1111-4111-8111-1
     return info
 
 
+async def _project_id() -> str:
+    """A project for the agent: a deployment places a project, its agent the main one."""
+    import tempfile
+    from pathlib import Path
+
+    from tests.unit.agent._seed import seed_project
+
+    return str((await seed_project(Path(tempfile.mkdtemp()) / "proj")).id)
+
+
 async def _agent(name="relay-agent") -> Agent:
-    a = Agent(name=name, system_prompt="relay me", worker_type="claude", model="haiku")
+    a = Agent(name=name, system_prompt="relay me", worker_type="claude", model="haiku", project_id=await _project_id())
     await a.save()
     return a
 
 
 async def _remote_placement(agent: Agent):
-    there = await agent.deploy("e2b")
+    from flow_sdk.builtin.deployment import Deployment
+
+    there = Deployment(
+        name=f"{agent.name} (e2b)",
+        parent_type_id=f"project-{agent.project_id}",
+        main_agent_id=str(agent.typeid),
+        target={"provider": "e2b", "scope": "machine"},
+        origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
+    )
+    await there.save()
     assert there.is_local is False
     return there
 
@@ -172,7 +205,7 @@ async def test_use_action_selects_the_exact_deployment_and_rejects_a_foreign_one
 async def test_the_auto_prompt_opt_in_never_rides_the_hub_body(hub):
     """FLOWPAD-2180: the placement machine sees its deployment as local, so the
     opt-in must stay on the originating tier — the hub body is built here."""
-    agent = Agent(name="prompted-relay", system_prompt="relay me", auto_launch_prompt="Say hello")
+    agent = Agent(name="prompted-relay", system_prompt="relay me", auto_launch_prompt="Say hello", project_id=await _project_id())
     await agent.save()
     there = await _remote_placement(agent)
 
@@ -186,9 +219,11 @@ async def test_the_auto_prompt_opt_in_never_rides_the_hub_body(hub):
 async def test_a_relayed_use_on_the_placement_machine_queues_no_auto_prompt(monkeypatch):
     """The placement machine's side of a hub relay: ``use_action`` with the body
     the hub forwards (``deployment_id`` only) on a deployment local HERE."""
-    agent = Agent(name="placement-side", system_prompt="relay me", auto_launch_prompt="Say hello")
+    agent = Agent(
+        name="placement-side", system_prompt="relay me", auto_launch_prompt="Say hello", project_id=await _project_id()
+    )
     await agent.save()
-    here = await agent.local_deployment()
+    here = await agent.deploy("local")  # the box's deployment: this agent is its main one
     assert here.is_local is True
 
     _request({"deployment_id": here.id}, monkeypatch)
@@ -234,7 +269,8 @@ async def test_reads_and_terminal_verbs_relay_without_a_projection_round_trip(hu
 async def test_status_relay_is_itself_the_projection(hub, monkeypatch):
     route = await _route(hub)
     monkeypatch.setattr(
-        "flow_sdk.cloud_client.transport.hub_http.hub_get",
+        HubProxy,
+        "try_call",
         AsyncMock(return_value={"status": "running", "busy": True, "worker_status": "working"}),
     )
     result = await route.get_status()

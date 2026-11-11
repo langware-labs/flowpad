@@ -82,6 +82,9 @@ class Source:
     #: False for a source that lists a window (a feed's recent entries, a mailbox since last week),
     #: where absence proves nothing.
     lists_everything: ClassVar[bool] = False
+    #: A first read (no cursor) starts at the row's window floor (``window_days`` back). False for a
+    #: source whose whole current set is small and live however old (open pull requests): it lists all of it.
+    windowed: ClassVar[bool] = True
     #: Pages one pass may read; ``None`` reads a traversal to its end. A provider whose rate cap
     #: allows one request per interval declares 1.
     pages_per_pass: ClassVar[Optional[int]] = None
@@ -99,7 +102,8 @@ class Source:
     # defines when it has them, discovered with ``hasattr``: ``message_for`` (how the application's
     # send arguments address this channel), ``choices_for`` (a field whose options are application
     # state), ``webhook_challenge`` / ``webhook_account`` / ``events_from_webhook`` (push delivery),
-    # ``webhook_authentic`` (the provider's signature over a delivery's raw body; declared, it is required).
+    # ``webhook_authentic`` (the provider's signature over a delivery's raw body; declared, it is required),
+    # ``ensure_sources`` (the sources of this kind the signed-in user should have, made on login and start).
 
     @classmethod
     def build(cls, binding: SourceBinding) -> "Source":
@@ -149,6 +153,18 @@ class Source:
         return cls.origin_kind or cls.provider
 
     @classmethod
+    def connection_probe_url(cls, config: Mapping[str, Any]) -> Optional[str]:
+        """Where this configuration's connection is verified, when it reads a host other than the
+        provider's own (a configured API base); ``None`` keeps the provider's probe URL."""
+        return None
+
+    @classmethod
+    def set_up_by_config(cls, config: Mapping[str, Any]) -> bool:
+        """Whether *config* alone already completes this driver's setup, so a new source starts ACTIVE rather than
+        waiting in SETUP for a person to verify it (a source no person sets up, e.g. on an agent's machine)."""
+        return False
+
+    @classmethod
     def account_part(cls, config: Mapping[str, Any]) -> str:
         """What narrows a source to PART of its account (one group of a number), or ``""`` for a source
         that is its whole account. Two sources on one account are twins only when this agrees."""
@@ -192,6 +208,8 @@ class Source:
         return self
 
     async def __aexit__(self, exc_type, exc, traceback) -> None:
+        if isinstance(exc, SourceError) and not exc.provider:
+            exc.provider = self.provider    # whatever a session raised says which data source said it
         self._session = None
         self._handler = None
         await self._close()
@@ -387,9 +405,14 @@ class Scope:
         self.namespace = namespace
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
-        """``namespace`` joined with ``within`` — ``<account>/<container>``, or whichever exists."""
+        """``namespace`` joined with ``within`` — ``<account>/<container>``, or whichever exists.
+
+        The origin also carries its account-free ``scope_of(*within)`` (in-process), which is what
+        a stored item's identity is built from: the account never joins identity."""
         namespace = "/".join(part for part in (self.namespace, *within) if part)
-        return CloudOrigin(kind=self.kind, namespace=namespace, key=key)
+        origin = CloudOrigin(kind=self.kind, namespace=namespace, key=key)
+        origin._scope = scope_of(*within)
+        return origin
 
     def key(self, origin: object) -> str:
         if not isinstance(origin, CloudOrigin):
@@ -397,6 +420,39 @@ class Scope:
         if origin.kind != self.kind or origin.namespace != self.namespace:
             raise ValueError(f"{origin!r} is outside this source's scope")
         return origin.key
+
+
+def _escape_part(part: str) -> str:
+    return part.replace("%", "%25").replace("/", "%2F")
+
+
+def scope_of(*within: str) -> str:
+    """THE scope of an item: the container parts a source narrows its ids by (a channel, a feed
+    url, ``tasks``/<task id>), each percent-escaped for ``%`` and ``/`` and joined with ``/`` — a
+    feed url keeps its slashes inside its own part. The account is not a part: an item's identity
+    is ``(data_source_id, scope, key)``, so a source whose account changes keeps its rows."""
+    return "/".join(_escape_part(str(part)) for part in within if part)
+
+
+def scope_parts(scope: str) -> list[str]:
+    """``scope_of`` undone: the container parts a scope joins."""
+    return [part.replace("%2F", "/").replace("%25", "%") for part in scope.split("/") if part]
+
+
+def scope_in(origin: CloudOrigin, account: str = "") -> str:
+    """The scope ``origin`` was built in. Exact for an origin a ``Scope`` minted (it carries it);
+    otherwise recovered from ``namespace`` by stripping the ``account`` prefix — the remainder is
+    taken as ONE part, which is exact for every single-container source and for a lifted flat
+    envelope (namespace = account, or the kind for an account-less source → ``""``)."""
+    known = origin._scope
+    if known is not None:
+        return known
+    namespace = origin.namespace
+    if namespace in (account, origin.kind):
+        return ""
+    if account and namespace.startswith(account + "/"):
+        namespace = namespace[len(account) + 1:]
+    return scope_of(namespace)
 
 
 def positive_int(value: object, name: str, maximum: Optional[int] = None) -> int:
@@ -424,4 +480,4 @@ async def _settle(future: "asyncio.Future[T]", undo: Optional[Callable[[T], obje
         undo(future.result())
 
 
-__all__ = ["Altitude", "CollectionSource", "Family", "Scope", "Source", "positive_int"]
+__all__ = ["Altitude", "CollectionSource", "Family", "Scope", "Source", "positive_int", "scope_in", "scope_of", "scope_parts"]

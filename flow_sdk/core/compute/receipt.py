@@ -85,7 +85,7 @@ def receipt_path(workdir: Path, step_id: str) -> Path:
     return Path(workdir) / "steps" / step_id / RESULT_FILENAME
 
 
-def result_contract(path: Path, output: str, shape: Any = None) -> str:
+def result_contract(path: Path, output: str, shape: Any = None, cap: int = RESULT_VALUE_CAP) -> str:
     """The ``## Your result`` block appended to a step's prompt.
 
     Injected by the runner rather than written by the wizard author: a contract
@@ -120,7 +120,7 @@ On failure:
 Rules:
 - Write the file even when you fail. No file means the step FAILED and the
   caller says so.
-- `data.{output}` is required on success, and under {RESULT_VALUE_CAP} bytes of
+- `data.{output}` is required on success, and under {cap} bytes of
   JSON. If what you produced is bigger than that, write it somewhere and return
   its path here instead.
 - `status` is one of: {", ".join(f"`{s}`" for s in STATUSES)}.
@@ -128,7 +128,7 @@ Rules:
 """
 
 
-def read_step_result(path: Path, *, output: str) -> StepResult:
+def read_step_result(path: Path, *, output: str, cap: int = RESULT_VALUE_CAP) -> StepResult:
     """Read one receipt and decide what it says.
 
     A MISSING receipt is a FAILED step, not an empty one — the distinction the
@@ -176,13 +176,14 @@ def read_step_result(path: Path, *, output: str) -> StepResult:
         )
     value = values[output]
     try:
-        size = len(json.dumps(value))
+        # UTF-8 bytes, as the value is stored and sent: escaped JSON counts a Hebrew letter as 6 bytes.
+        size = len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
     except (TypeError, ValueError) as exc:
         return StepResult(ok=False, summary=summary, error=f"{output!r} is not JSON-serializable: {exc}", path=where)
-    if size > RESULT_VALUE_CAP:
+    if size > cap:
         return StepResult(
             ok=False, summary=summary,
-            error=(f"{output!r} is {size} bytes, over the {RESULT_VALUE_CAP}-byte value cap — "
+            error=(f"{output!r} is {size} bytes, over the {cap}-byte value cap — "
                    "return a path, not the payload"),
             path=where,
         )

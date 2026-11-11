@@ -481,6 +481,8 @@ async def test_a_live_tab_gets_the_popup_and_waits_for_start_instead_of_racing_a
         return CliResult.satisfied("funded")
 
     async def _wizard(spec, **kwargs):
+        if kwargs.get("check_only"):
+            return WizardResult.not_yet("git is missing")  # something to install: the popup has a job
         called.append("wizard")
         return WizardResult.satisfied("stubbed")
 
@@ -503,6 +505,44 @@ async def test_a_live_tab_gets_the_popup_and_waits_for_start_instead_of_racing_a
 
         assert navigated == [str(wizard.id)], "the popup opens"
         assert called == [], "nothing runs until Start is pressed"
+    finally:
+        await _cleanup(wizard, trigger)
+
+
+async def test_a_box_with_everything_installed_gets_no_popup(monkeypatch):
+    """Every step already validates: the popup would only show a column of green ticks, so it is
+    never opened. Nothing is installed or asked either."""
+    from flow_sdk.config import system_projects_root
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.core.wizard import start as wizard_start
+    from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
+    from flow_sdk.server.builtin_triggers import _run_llm_setup_trigger
+    from flow_sdk.server.routes import websocket as ws_routes
+
+    runs: list[bool] = []
+
+    async def _wizard(spec, **kwargs):
+        runs.append(bool(kwargs.get("check_only")))
+        return WizardResult.satisfied("all there")
+
+    navigated: list[str] = []
+
+    async def _navigate(wizard):
+        navigated.append(str(wizard.id))
+
+    monkeypatch.setattr(ws_routes, "get_active_connection", lambda: ("conn-1", object()))
+    monkeypatch.setattr(wizard_start, "navigate_to_wizard", _navigate)
+    monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
+    trigger = await _trigger_for(wizard)
+    try:
+        await _run_llm_setup_trigger(trigger, [])
+
+        assert navigated == [], "no popup over an all-green setup"
+        assert runs == [True], "only the check ran"
     finally:
         await _cleanup(wizard, trigger)
 

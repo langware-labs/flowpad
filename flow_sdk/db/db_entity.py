@@ -513,9 +513,7 @@ class DBEntity(DBBaseRecord):
 
     async def delete(self):
         try:
-            await self.add_entity_op_notification(
-                DataOpMessage(data=None, op=OperationType.DELETE, to_entity=self.typeid)
-            )
+            await self.notify_deleted(self.typeid)
             deleted_ids = await self._db.delete(self.typeid)
             if not deleted_ids:
                 raise DeletionFailedException(self.typeid, message="Deletion failed for entity.")
@@ -677,8 +675,7 @@ class DBEntity(DBBaseRecord):
             if not fetched_to_e:
                 raise ValueError(f"Entity {to_e} not found")
             to_e = fetched_to_e
-        visitor_role = getattr(to_e, "visitor_role", None)
-        visitor_roles = [visitor_role] if visitor_role else []
+        visitor_roles = list(getattr(to_e, "visitor_roles", None) or [])
         if self.type == BuiltinEntityType.VISITOR.value:
             return visitor_roles, [[]], to_e
 
@@ -688,8 +685,7 @@ class DBEntity(DBBaseRecord):
         if len(paths) == 0:  # no roles, still return the to_e entity
             return visitor_roles, [[]], to_e
         roles, scope_typeid_list = self._resolve_paths_to_roles(paths, scope)
-        if visitor_role and visitor_role not in roles:
-            roles.append(visitor_role)
+        roles.extend(role for role in visitor_roles if role not in roles)
         return roles, scope_typeid_list, paths[0].end if paths else None
 
     @staticmethod
@@ -875,6 +871,11 @@ class DBEntity(DBBaseRecord):
 
         return _all
 
+    @classmethod
+    async def get_all_rows(cls) -> list[dict]:
+        """Every row of this type as stored fields, without building entities (see the driver)."""
+        return await cls._db.get_all_rows(cls.get_type())
+
     @property
     def is_private(self) -> bool | None:
         if self.expand:
@@ -939,12 +940,17 @@ class DBEntity(DBBaseRecord):
             source_entity,
         )
 
+    @staticmethod
+    async def notify_deleted(typeid: TypeId) -> None:
+        """Tell watching clients ``typeid`` is gone — the one DELETE op every delete path sends."""
+        await DBEntity.add_entity_op_notification(DataOpMessage(data=None, op=OperationType.DELETE, to_entity=typeid))
+
     @classmethod
     async def delete_by_id(cls, eid: str):
         e_type = cls.get_type()
         typeid = TypeId(type=e_type, id=eid)
 
-        await cls.add_entity_op_notification(DataOpMessage(data=None, op=OperationType.DELETE, to_entity=typeid))
+        await cls.notify_deleted(typeid)
         deleted = await cls._db.delete_by_id(eid, e_type)
         return deleted
 

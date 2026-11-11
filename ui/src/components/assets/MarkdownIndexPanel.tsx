@@ -216,7 +216,9 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
               <div>
                 inputs_hash: <code>{data.inputs_hash.slice(0, 12)}…</code>
               </div>
-              <div>generated: {new Date(data.generated_at).toLocaleString()}</div>
+              <div>
+                <Trans>generated:</Trans> {new Date(data.generated_at).toLocaleString()}
+              </div>
             </footer>
           </div>
         )}

@@ -15,14 +15,17 @@ import base64
 import logging
 from collections import OrderedDict
 
+from flow_sdk.instance_settings import cookie_gate
+
 logger = logging.getLogger(__name__)
 
 #: Delivery ids handled here → the status this app answered. Bounded: the hub re-pushes only what it has not
 #: had acked, which is a handful at a time.
 _HANDLED: "OrderedDict[str, int]" = OrderedDict()
 _HANDLED_CAP = 512
-#: Hop-by-hop headers the local request makes for itself.
-_DROP = frozenset({"host", "content-length", "transfer-encoding", "connection"})
+#: Hop-by-hop headers the local request makes for itself, plus any cookie on the delivery. A gate header on
+#: it is replaced by this app's own token (``CookieGateAuthHttpx``).
+_DROP = frozenset({"host", "content-length", "transfer-encoding", "connection", "cookie"})
 #: Replays in flight, held so the loop never collects one mid-flight (and a test can await).
 _tasks: "set[asyncio.Task]" = set()
 
@@ -55,14 +58,13 @@ async def _replay(message: dict) -> int:
     import httpx  # noqa: PLC0415
 
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-
     path = "/" + str(message.get("path") or "").lstrip("/")
     query = str(message.get("query") or "")
     url = f"http://127.0.0.1:{get_instance_settings().port}{path}" + (f"?{query}" if query else "")
     headers = [(k, v) for k, v in (message.get("headers") or []) if str(k).lower() not in _DROP]
     try:
         body = base64.b64decode(str(message.get("body_b64") or ""))
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0), auth=cookie_gate.CookieGateAuthHttpx()) as client:
             resp = await client.request(str(message.get("method") or "POST"), url, headers=headers, content=body)
         return resp.status_code
     except Exception as exc:  # noqa: BLE001 — an unreachable route is a status, the hub keeps the delivery
@@ -71,22 +73,40 @@ async def _replay(message: dict) -> int:
 
 
 async def _ack(webhook_id: str, delivery_id: str, status: int) -> None:
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
 
     try:
-        await hub_post("webhook", {"delivery_id": delivery_id, "status": status}, webhook_id, "ack")
+        await HubProxy.call("POST", "webhook", webhook_id, "ack", payload={"delivery_id": delivery_id, "status": status})
     except HubError as exc:
         # Not acked: the hub pushes it again on the next event, and it is acked from _HANDLED then.
         logger.warning("[webhook-relay] ack of %s refused: %s", delivery_id, exc)
 
 
+#: The signed-in principal the hub refused ``catch_up`` to (403). A box signed in as an agent holds no
+#: desktop webhooks, and its socket reconnects all day: asking again on each one was ~450 refusals a day
+#: per box. Keyed by principal, so a different sign-in asks again.
+_refused_for: str | None = None
+
+
+def _principal() -> str:
+    from flow_sdk.cli import app_config  # noqa: PLC0415
+
+    return str((app_config.get_user() or {}).get("id") or "")
+
+
 async def catch_up() -> None:
     """This desktop (re)connected to the hub: ask it to push what waited while it was away."""
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
 
+    global _refused_for
+    principal = _principal()
+    if _refused_for is not None and _refused_for == principal:
+        return
     try:
-        await hub_post("webhook", {}, None, "catch_up")
+        await HubProxy.call("POST", "webhook", None, "catch_up", payload={})
     except HubError as exc:
+        if exc.status_code == 403:
+            _refused_for = principal
         logger.debug("[webhook-relay] catch-up refused: %s", exc)

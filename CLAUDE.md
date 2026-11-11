@@ -1,9 +1,8 @@
 ---
 id: 91856acd-d005-470d-b3c8-0e762229408a
-version: 2
+version: 3
 ---
 # Claude Guidelines for flow-cli
-
 
 ## Quick Start
 
@@ -142,7 +141,7 @@ That means, on every click handler that changes "what is shown":
 
 If you find yourself writing `dataContext.set*(...)` immediately before `navigation.openDock(...)` in a click path, stop. That is the broken pattern. Delete the writes and make the active-key derivation URL-first.
 
-The full algorithm — seven steps, six invariants (one entry, one redirect decided before any write, no runtime work in loaders, a warm visit asks the backend for nothing, one layout rule, a runtime lives as long as its tab) and the test enforcing each — is **[`docs/navigation/dock-loading.md`](docs/navigation/dock-loading.md)**. A new view type needs a row in `ui/tests/unit/dock-loader/dock-loader-matrix.test.ts`; the coverage guard fails without one.
+The full algorithm — seven steps, seven invariants (one entry, one redirect decided before any write, no runtime work in loaders, a warm visit asks the backend for nothing, one layout rule, a runtime lives as long as its tab, a redirect takes the place of only the URL being loaded) and the test enforcing each — is **[`docs/navigation/dock-loading.md`](docs/navigation/dock-loading.md)**. A new view type needs a row in `ui/tests/unit/dock-loader/dock-loader-matrix.test.ts`; the coverage guard fails without one.
 
 ## Test timeouts (non-negotiable)
 
@@ -192,7 +191,23 @@ Commit a rig only when the user explicitly asks to keep it. If a rig turns out t
 generally useful, say so and ask — don't decide by committing it.
 
 **Why:** a rig is sized to one change and rots the moment the code moves (the
-host-tabs A/B rig was 1,454 lines against ~157 lines of product code).
+host-tabs A/B rig was 1,454 lines against \~157 lines of product code).
+
+## We don't take a dump on the source code (non-negotiable)
+
+Every line that lands in the tree is a line someone maintains forever. Before you
+commit, once everything passes, **clean up after yourself**:
+
+* **Tests stay proportional to the change.** Keep the few durable tests that pin the
+  behavior; cut duplicates, near-identical cases and scaffolding. Thousands of test
+  lines for a ~1k-line feature is a dump, not coverage.
+* **No rigs, fakes, stress suites or temp files** in the tree (`*_tmp*`, `zz_*`,
+  repro scripts, one-off harnesses). They live in your scratchpad.
+* **Report your footprint.** Say how many lines you added, split into product and
+  tests, and what you removed.
+
+**Why:** on 2026-11-03 one feature left ~6,800 uncommitted lines on agent-sharing-5,
+of which ~970 were product code and ~3,500 were tests and one-off rigs.
 
 ## Entity id policy (non-negotiable)
 
@@ -202,9 +217,9 @@ Why the exception and nothing else: a read-only asset has no row of its own to l
 
 **Never invent a new deterministic id.** If you catch yourself writing `uuid5(...)` to make a re-run "converge on the same row", stop: query for the row instead. `SourceItem.find_existing` (`flow_sdk/builtin/source_item.py`) and `DataSource.find_for_account` are the shape — the lookup gives the same idempotency, works on rows minted before the key existed, and does not silently break when a key component changes.
 
-* **Mint through one place.** Construct ids only via `mint_uuid(key=None, *, namespace=...)` in `flow_sdk/api/api_types/identifier.py`: `uuid5(namespace, key)` when a stable key is given, else `uuid4`. Don't hand-roll `uuid.uuid4()` / `uuid5(...)` at call sites — route through the minter (or `Entity.allocate_id` for a row-only entity, or `TypeInfo.mint_entity_id` for a filesystem asset — both use it). New code passes no key.
+* **Mint through one place.** Construct ids only via `mint_uuid(key=None, *, namespace=...)` in `flow_sdk/api/api_types/identifier.py`: `uuid5(namespace, key)` when a stable key is given, else `uuid4`. Don't hand-roll `uuid.uuid4()` / `uuid5(...)` at call sites — route through the minter (or `Entity.allocate_id` for a row-only entity, or `TypeInfo.mint` for a filesystem asset — both use it). New code passes no key.
 
-* **Validate on adopt.** Any id taken from outside the minter — a markdown/asset **frontmatter** **`id:`**, a slug, a client-supplied id — must pass `is_valid_entity_id` (UUID v4/v5) before it's adopted. If it doesn't (e.g. a hand-authored v7), **ignore it and derive a stable v5 instead** — never let a foreign id become an entity id. `TypeInfo.mint_entity_id` is the filesystem adoption gate around the pure per-type carrier readers; `Entity.allocate_id` enforces the row-only entity-side gate. New id-adopting paths must use one of those seams.
+* **Validate on adopt.** Any id taken from outside the minter — a markdown/asset **frontmatter** **`id:`**, a slug, a client-supplied id — must pass `is_valid_entity_id` (UUID v4/v5) before it's adopted. If it doesn't (e.g. a hand-authored v7), it never becomes an entity id: `TypeInfo.mint` (`fs_store/schema_registry.py`) raises `ForeignId` on a foreign carrier id (`read_id` / `read_identity` are the pure reads, never write); `Entity.allocate_id` re-hashes it into `uuid5(DNS, "<type>:<id>")`. Those two are the adoption gates — filesystem and row-only. New id-adopting paths must use one of those seams.
 
 * **Two predicates, don't confuse them.** `is_valid_uuid` / `UUID_PATTERN` are deliberately **version-agnostic** (URL/VFS path matchers and `@local` parsing depend on that) — do NOT tighten them. `is_valid_entity_id` is the **mint/adopt policy gate** — use it wherever an id is born or adopted. It keeps accepting **v4 and v5**: read-only assets are v5 by design, and so are rows minted before this rule. Tightening it to v4-only would orphan both.
 
@@ -228,7 +243,9 @@ If a backend route can't be called through `apiClient` because it doesn't return
 Three words, never mixed up (`docs/glossary.md`):
 
 * **kind** — a NAME, a dot-path tag (`navigator.decision`, `ingest.source_item`): what a schema is registered and looked up by.
+
 * **schema** — the DEFINITION registered under a kind: a `DataSpec` subclass in Python, or a `agentic-assets/data_schema/<kind>/` folder (`data_schema.json` + `description.md`) that compiles into one. Same registry, same viewers either way.
+
 * **value** — an INSTANCE of a schema: the object in memory, or its JSON / folder on disk.
 
 Say "the `diagnosis` schema" and "a diagnosis value" — never "a DataSpec" on its own.
@@ -245,19 +262,29 @@ Three tiers, one base:
 
 * **`extra="forbid"`** **on a plain** **`DataSpec`** **is the point.** A caller who misspells a key gets an error, not a row with an empty field. So a constructor that reads a FOREIGN dict (a vendor config entry, a provider payload) must **project field by field — never** **`**body`**. That makes the hop deliberately lossy: a vendor key we don't model is dropped, and that is the contract, not a bug.
 
-* **Register a** **`spec_kind`** **when the schema should be nameable** (`"ingest.source_item"`, `"folder"`) — its kind, resolved through the ONE `SchemaRegistry`. Reserved primitives are `string` / `int` / `float` / `bool` / `binary`; anything else is a registered kind or anonymous.
+* **Register a** **`spec_kind`** **when the schema should be nameable** (`"ingest.source_item"`, `"folder"`) — its kind, resolved through the ONE `SchemaRegistry`. Reserved primitives are `string` / `int` / `float` / `bool` / `date` (`PRIMITIVES` in `_kinds.py`) plus `binary` (`io/native.py`); anything else is a registered kind or anonymous.
 
 * **Registration is import-time, and forgetting it fails SILENTLY.** `__pydantic_init_subclass__` only fires once the module is imported; an unreachable kind resolves to `Any` — *"legal, opaque, never minted"* — so you get an untyped field and no error anywhere. Make it reachable from `register_builtin_kinds()` (`data_spec/_kinds.py`), the way `dataset_spec` is.
 
-* **The authoring form** (how a schema is written as data — `data_schema.json`, an agent's `input`/`output`) is `"string"`, `{field: shape}`, `[shape]`, plus `?shape` (optional), `enum:a|b` (closed set) and `{"*": shape}` (map). Those extras are INPUT only: `to_authoring_form` renders a hand-written class back without them, and a `dict[...]` field renders ONLY on a class carrying a `spec_kind` (it short-circuits to the kind). `FolderSpec.files` is the precedent; the same field on an unregistered class raises `no authoring form for ...`.
+* **The authoring form** (how a schema is written as data — `data_schema.json`, an agent's `input`/`output`) is `"string"`, `{field: shape}`, `[shape]`, plus `?shape` (optional) and `"?[shape]"` (an optional list), `enum:a|b` (closed set), `{"*": shape}` (map), and a kind name as a field (`"crm.company"` — a value or a `<kind>.id.<uuid>` reference; `"a|b"` for several kinds, reference only). Those extras are INPUT only: `to_authoring_form` renders a hand-written class back without them, and a `dict[...]` field renders ONLY on a class carrying a `spec_kind` (it short-circuits to the kind). `FolderSpec.files` is the precedent; the same field on an unregistered class raises `no authoring form for ...`.
+
+## Nothing from a project runs without the user's approval (non-negotiable)
+
+**An automation's on/off belongs to the machine it runs on and is never read from or written to git.** A
+project can only *recommend* an automation (`recommended` in its `trigger.json`); one that arrives with a
+project stays off until the user turns it on here — the project's setup window offers it (Enable / Disable),
+and a `git pull` that changes it never moves the choice. The one writer is `set_trigger_on`
+(`flow_sdk/builtin/trigger.py`); the rules are in [`docs/automations.md`](docs/automations.md) "On, off and
+recommended". A machine the hub runs only for a deployed agent is the exception: the deploy was its owner's
+approval, so recommended rules are on there.
 
 ## Data sources are self-contained assets (non-negotiable)
 
-**A data driver is an asset, and EVERYTHING one driver needs lives in its asset folder** — `agentic-assets/data_driver/<name>/`: `data_driver.json` (the `DataDriverSpec`), `source.py` (the one `flow_sdk.sources.Source` subclass, with the source's own `query()` and classmethods for send addressing, cache roots, webhooks, permalinks), any helper modules it splits into (`transport.py`, a mapper), its `tests/`, its editor webapp and its `README.md`. The manifest `name` is the folder name and the registry key. Shipped and authored sources are the same kind of thing and load through the same loader.
+**A data driver is an asset, and EVERYTHING one driver needs lives in its asset folder** — `agentic-assets/data_driver/<name>/`: `data_driver.json` (the `DataDriverSpec`), `source.py` (the one `flow_sdk.sources.Source` subclass, with the source's own `query()` and classmethods for send addressing, cache roots, webhooks, permalinks), any helper modules it splits into (`transport.py`, a mapper), its `tests/`, its editor webapp, and a `README.md` when the driver needs explaining. The manifest `name` is the folder name and the registry key. Shipped and authored sources are the same kind of thing and load through the same loader.
 
-* **A configured data source is its own asset** — `agentic-assets/data_source/<name>/data_source.json` (the `DataSourceSpec`: `data_driver_name`, `data_driver_config`, owner, cadence — never a secret). The standard for every asset: the `XSpec` schema is the file, the FSRecord holds internal metadata, the `X(Entity)` row is the index to query. `DataDriver` (`flow_sdk/builtin/data_driver.py`) is the row AND the loaded driver: `await DataDriver.get(name)`, then `driver.create_config(**fields)` (the typed, validated `Config`) and `driver.create_source(config, name=...)` build a `DataSource` in memory, and `save()` writes it.
+* **A configured data source is its own asset** — `agentic-assets/data_source/<name>/data_source.json` (the `DataSourceSpec`: file keys `data_driver_name` / `data_driver_config` are aliases of the fields `provider` / `config`; owner, `poll_interval_seconds`, `window_days` — never a secret). The standard for every asset: the `XSpec` schema is the file, the FSRecord holds internal metadata, the `X(Entity)` row is the index to query. `DataDriver` (`flow_sdk/builtin/data_driver.py`) is the row AND the loaded driver: `await DataDriver.get(name)`, then `driver.create_config(**fields)` (the typed, validated `Config`) and `driver.create_source(config, name=...)` build a `DataSource` in memory, and `save()` writes it.
 
-* **Outside an asset folder only GENERIC machinery may exist** — the contract (`flow_sdk/sources/`: values, protocols, errors, base classes, conformance kit, test doubles), the loader/registry, the sync engine, reflection, projection, generic routes and generic UI. **No provider name used as a key, no provider module import, no provider-specific branch or table** anywhere in `flow_sdk/`, `ts_sdk/src`, `ui/src`. If machinery needs a fact about a source, the source declares it (a manifest field or a classmethod) and the machinery asks.
+* **Outside an asset folder only GENERIC machinery may exist** — the contract (`flow_sdk/sources/`: values, protocols, errors, base classes, conformance kit, test doubles), the loader/registry, the sync engine, reflection, projection, generic routes and generic UI. **No provider name used as a key, no provider module import, no provider-specific branch or table** anywhere in `flow_sdk/`, `ts_sdk/src`, `ui/src`. If machinery needs a fact about a source, the source declares it (a manifest field or a classmethod) and the machinery asks. The gate also fails on provider-named modules, `PROVIDER`/`SOURCE`/`DRIVER` constants naming a driver, and `<Driver>MessageSpec` classes outside asset folders.
 
 * **Asset code may import the public SDK** (`flow_sdk.sources`, `flow_sdk.connections`, `token_for`, the hub client, `instance_settings`). It never imports another asset.
 
@@ -291,3 +318,15 @@ to record a child executor rather than searching by process name or start time.
 
 * **`Agent`** **is reserved; the** **`.claude/agents/*.md`** **prompt asset is** **`SubAgent`** (type value `subagent`) — Claude Code's own word for it. The bare noun is held for the hub-level launchable principal. Note the deliberate split: the **entity** is `subagent`, the **directory and family** stay `agents` because Claude Code owns that path, and `AGENTS_SPEC_FIELDS` mirrors its `--agents` JSON verbatim. Also don't confuse the graph **node kind** `node_type: "agent"` (a spawned worker station, which *references* a SubAgent) with the entity type.
 
+
+## Notifications = message arrival only (non-negotiable)
+
+**A toast/notification is shown for one thing: a message arriving in a conversation.** Results, status and next
+steps (a diagnosis finished, a fix is ready, "report it") are messages in the conversation, never a custom
+notification with its own buttons. The message's arrival raises the standard new-message notification — that's it.
+
+**The one exception: the desktop's "Update Ready" toast** (`ui/src/components/update-ready/`). It is app status,
+not a conversation result: there is no conversation to put it in, and the update flow must not block on a modal.
+It is raised only by `electron/main.js` when a downloaded or prepared update is ready (and on its 90-minute
+reminder), with id `update-ready` (one at a time), Restart / Later actions, and a top-bar indicator that keeps
+the update reachable after the toast closes. Don't use it as a precedent for other custom notifications.

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+<defs>
+<linearGradient id="sn-face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFEB6B"/><stop offset="1" stop-color="#FFD83A"/></linearGradient>
+<linearGradient id="sn-flap" x1="17.25" y1="17.25" x2="14.6" y2="14.6" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#E3AE00"/><stop offset=".35" stop-color="#FFE15A"/><stop offset="1" stop-color="#FFF6BF"/></linearGradient>
+<filter id="sn-b1" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation=".5"/></filter>
+<filter id="sn-b2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation=".28"/></filter>
+</defs>
+<path d="M4 6h16v8.5L14.5 20H4z" fill="#000" opacity=".3" filter="url(#sn-b1)" transform="translate(.3 .8)"/>
+<path d="M3.5 3.5h17v10.5L14 20.5H3.5z" fill="url(#sn-face)"/>
+<rect x="3.5" y="3.5" width="17" height="2.4" fill="#D9B200" opacity=".28"/>
+<path d="M20.5 14L14 20.5Q13.7 17 13.9 14.3Q16.9 14 20.5 14z" fill="#5a4000" opacity=".5" filter="url(#sn-b2)" transform="translate(-.25 -.25)"/>
+<path d="M20.5 14L14 20.5Q14.2 17.2 14.6 14.6Q17.2 14.2 20.5 14z" fill="url(#sn-flap)"/>
+<path d="M20.5 14L14 20.5" stroke="#B07E00" stroke-width=".35" stroke-linecap="round"/>
+</svg>

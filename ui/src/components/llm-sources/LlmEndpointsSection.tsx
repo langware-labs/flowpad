@@ -18,8 +18,21 @@ import { Button } from '@src/components/ui/button';
 import { TONE } from '@src/components/llm-endpoints/tone';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 
-import { useHubRemaining } from './use-hub-remaining';
+import { useEndpointSponsor, useHubRemaining } from './use-hub-remaining';
 import { hubFunded, hubOffers } from './use-llm-sources';
+
+/** "Organization: X · Team: Y" — who allocated this hub endpoint; nothing when neither is known. */
+export function EndpointSponsorLine({ typeid }: { typeid: string }) {
+  const { organization, team } = useEndpointSponsor(typeid);
+  if (!organization && !team) return null;
+  return (
+    <span className="truncate text-xs text-muted-foreground" data-testid={`endpoint-sponsor-${typeid}`}>
+      {organization && <Trans>Organization: {organization}</Trans>}
+      {organization && team && ' · '}
+      {team && <Trans>Team: {team}</Trans>}
+    </span>
+  );
+}
 
 export function LlmEndpointsSection({
   funding,
@@ -65,6 +78,7 @@ export function LlmEndpointsSection({
                     </Badge>
                   )}
                 </span>
+                <EndpointSponsorLine typeid={typeid} />
                 {r ? (
                   <LimitBar limitKey={r.key} remaining={r.remaining} resetsText="" testId={`endpoint-left-${e.id}`} />
                 ) : (

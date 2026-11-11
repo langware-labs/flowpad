@@ -11,6 +11,7 @@
  *   event arrives.
  */
 import { useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { functionRuntime, type GraphWorkflowDocNode } from '@sdk/services/graph-workflows';
 import { asStr, nodeStatusLine } from '../fmt';
@@ -34,12 +35,7 @@ export function InletNode({ data, selected, id }: NodeProps) {
 
   return (
     <div
-      className={[
-        'afl-tag',
-        selected ? 'selected' : '',
-        hot ? 'hot' : '',
-        inlet.external ? 'external' : '',
-      ].join(' ')}
+      className={['afl-tag', selected ? 'selected' : '', hot ? 'hot' : '', inlet.external ? 'external' : ''].join(' ')}
       title={inlet.target ? `${inlet.label} → target ${inlet.target}` : inlet.label}
     >
       <div className="card">
@@ -90,13 +86,15 @@ export function TriggerNode({ data, selected }: NodeProps) {
       <div className="card">
         <div className="kic">
           <span className="pip trigger" />
-          trigger
+          <Trans>trigger</Trans>
         </div>
         <div className="ttl">{def.name || '(unnamed trigger)'}</div>
         <div className="sub" title={typeid}>
           {typeid || 'no trigger linked'}
         </div>
-        <div className="evt">fired ⟶</div>
+        <div className="evt">
+          <Trans>fired ⟶</Trans>
+        </div>
         {(live?.active ?? 0) > 0 && <span className="deg">▶{live?.active}</span>}
         <Handle type="source" position={Position.Right} />
       </div>
@@ -105,6 +103,7 @@ export function TriggerNode({ data, selected }: NodeProps) {
 }
 
 export function StationCard({ data, selected }: NodeProps) {
+  const { t } = useLingui();
   const def = (data as { def: GraphWorkflowDocNode }).def;
   const nd = def.node_data as {
     program_kind?: string;
@@ -140,9 +139,10 @@ export function StationCard({ data, selected }: NodeProps) {
     });
   };
 
-  const agentRef = !isFunction && typeof nd.typeid === 'string' && nd.typeid.startsWith('subagent-')
-    ? nd.typeid.slice('subagent-'.length)
-    : '';
+  const agentRef =
+    !isFunction && typeof nd.typeid === 'string' && nd.typeid.startsWith('subagent-')
+      ? nd.typeid.slice('subagent-'.length)
+      : '';
   const sub = isFunction
     ? nd.function || 'no function'
     : agentRef
@@ -152,7 +152,9 @@ export function StationCard({ data, selected }: NodeProps) {
         : nd.program_ref || nd.prompt || '';
 
   return (
-    <div className={['afl-node', selected ? 'selected' : '', running ? 'running' : '', failed ? 'failed' : ''].join(' ')}>
+    <div
+      className={['afl-node', selected ? 'selected' : '', running ? 'running' : '', failed ? 'failed' : ''].join(' ')}
+    >
       <div className="card">
         <Handle type="target" position={Position.Left} />
         <div className="kic">
@@ -186,7 +188,7 @@ export function StationCard({ data, selected }: NodeProps) {
           {live?.processId && running && (
             <a
               className="lnk nodrag"
-              title="show this station's runs"
+              title={t`show this station's runs`}
               onClick={(e) => {
                 e.stopPropagation();
                 previewRuns?.({
@@ -196,7 +198,7 @@ export function StationCard({ data, selected }: NodeProps) {
                 });
               }}
             >
-              runs ⬈
+              <Trans>runs ⬈</Trans>
             </a>
           )}
         </div>

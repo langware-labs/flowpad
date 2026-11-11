@@ -105,7 +105,7 @@ async def test_a_page_saves_a_screenshot_and_reads_it_back_over_http(tmp_path):
     resp = await call_local("POST", f"{base}/put-row",
                             {"key": "m-setup-1", "row": {"input": {"text": "too small", "screenshot": PNG_URL}}})
     assert resp.status_code == 200, resp.text
-    on_disk = list(tmp_path.rglob("screenshot.*"))
+    on_disk = list(d._rows_root().rglob("screenshot.*"))
     assert [p.name for p in on_disk] == ["screenshot.png"] and on_disk[0].read_bytes() == PNG
     rows = (await call_local("GET", f"{base}/rows")).json()["data"]["rows"]
     assert rows[0]["input"]["screenshot"] == PNG_URL

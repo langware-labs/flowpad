@@ -1,6 +1,6 @@
 /**
  * ProcessToolbar — the top bar of a running AgenticProcess, the same on every
- * surface: [debug] [restart] — title — [surface switch] | [Fork] [session actions].
+ * surface: [debug] [restart] — title — [chips] [Fork] | [surface switch] [session actions].
  *
  * Every session action other than Fork lives in the session actions menu
  * (`SessionActionsMenu`); the terminal surface also shows Restart as a button. The debug menu (`DebugMenu` — CLI flags, gutters,
@@ -14,19 +14,18 @@
  */
 
 import { AgenticProcess, dataManager, Shell } from '@sdk';
-import { hasWorkerStarted, isProcessRunning, WorkerStatus } from '@sdk/process/agentic-types.js';
+import { WorkerStatus } from '@sdk/process/agentic-types.js';
 import { InteractiveTabHeader } from './InteractiveTabHeader';
 import { CompactIconAction } from '@src/components/entity-actions/CompactIconAction';
 import { TooltipProvider } from '@src/components/ui/tooltip';
-import { GitFork, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { useSessionSurface } from '@src/contexts/view-mode-context';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DebugMenu } from './DebugMenu';
+import { ProcessSourceChips } from './ProcessSourceChips';
 import { RestartButton } from './RestartButton';
-import { SessionActionsMenu } from './SessionActionsMenu';
-import { SessionSurfaceSwitch } from './SessionSurfaceSwitch';
+import { SessionAnchor } from './SessionAnchor';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 
@@ -60,7 +59,6 @@ export function ProcessToolbar({
 }: ProcessToolbarProps) {
   const { t } = useLingui();
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
-  const { navigation } = useDockNavigation();
   // An embedded terminal is always an xterm, whatever the app's mode says.
   const onTerminalSurface = useSessionSurface() === 'terminal' || !!embedded;
 
@@ -74,15 +72,6 @@ export function ProcessToolbar({
     snapshot,
   );
 
-  const hasSession = !!process.session_id;
-  const workerStatus = process.workerStatus;
-  // started: process is live RIGHT NOW
-  const started = isProcessRunning(process.status);
-  // hasTranscript: at least one real assistant turn happened (gates Fork, Open Transcript)
-  const hasTranscript = hasSession && hasWorkerStarted(workerStatus) && workerStatus !== WorkerStatus.IDLE;
-
-  const [isForking, setIsForking] = useState(false);
-
   // Console-only warning on API_TIMEOUT; the effect re-runs on status
   // transitions, so this fires once per stall.
   useEffect(() => {
@@ -92,17 +81,6 @@ export function ProcessToolbar({
       );
     }
   }, [process.workerStatus, process.typeId]);
-
-  const handleFork = async () => {
-    if (isForking) return;
-    setIsForking(true);
-    try {
-      const newProcess = await process.fork(true);
-      void navigation.openShellProcess(newProcess.id);
-    } finally {
-      setIsForking(false);
-    }
-  };
 
   const processDisplayName = useMemo(() => resolveProcessDisplayName(process), [process.name]);
 
@@ -132,52 +110,27 @@ export function ProcessToolbar({
     </span>
   );
 
-  // Switch this session to the two OTHER surfaces (Terminal ⇄ Chat ⇄ Vibe).
-  const surfaceSwitchSlot = embedded ? null : <SessionSurfaceSwitch process={process} />;
-
+  // Optional bits (source chips, Close) sit left of the anchor so they never move it.
   const rightSlot = (
     <>
-      {/* Fork — a chat session forks too; hidden in embedded mode. */}
-      {!embedded && (
-        <CompactIconAction
-          icon={GitFork}
-          testId="process-toolbar-fork"
-          label={
-            isForking
-              ? t`Forking…`
-              : hasTranscript
-                ? t`Fork session — new tab, same conversation history`
-                : !hasSession
-                  ? t`Launch a session first`
-                  : !started
-                    ? t`Session is not running`
-                    : t`Send a message first — fork requires conversation history`
-          }
-          disabled={!hasTranscript || isForking}
-          onClick={() => void handleFork()}
-        />
-      )}
-
-      <SessionActionsMenu
-        process={process}
-        hasTranscript={hasTranscript}
-        sessionStartTime={sessionStartTime}
-        lastMessageTime={lastMessageTime}
-        embedded={embedded}
-        onInjectPrompt={handleInjectPrompt}
-        glowOnRestart={!onTerminalSurface}
-      />
-
-      {/* Close — only in embedded mode */}
+      {!embedded && <ProcessSourceChips process={process} />}
       {embedded && onClose && (
         <CompactIconAction icon={X} testId="process-toolbar-close" label={t`Close terminal`} onClick={onClose} />
       )}
+      <SessionAnchor
+        process={process}
+        embedded={embedded}
+        sessionStartTime={sessionStartTime}
+        lastMessageTime={lastMessageTime}
+        onInjectPrompt={handleInjectPrompt}
+        glowOnRestart={!onTerminalSurface}
+      />
     </>
   );
 
   return (
     <TooltipProvider delayDuration={300}>
-      <InteractiveTabHeader debug={debugSlot} title={titleSlot} right={rightSlot} modes={surfaceSwitchSlot} />
+      <InteractiveTabHeader debug={debugSlot} title={titleSlot} right={rightSlot} />
     </TooltipProvider>
   );
 }

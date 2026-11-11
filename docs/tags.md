@@ -74,23 +74,48 @@ unchanged: the bus never consults an entity to route.
 
 ## Binding things to tags — the carriers ARE the store
 
-Docs, code, and skills point *at* tags; nothing points back. The join is derived at
-query time, so a moved file or renamed doc can't leave a dangling edge.
+Things point *at* tags; nothing points back. The join is derived at query time, so a
+moved file or renamed doc can't leave a dangling edge.
 
 | Carrier | Where | Binds |
 |---------|-------|-------|
-| markdown frontmatter `tags: [...]` | the doc | a document to its subjects |
+| an entity's `tags` field | EVERY entity type | the entity to what it is about |
 | `tag` capsule (line-comment block) | a source file | code to the subjects it implements |
-| `tags:` in SKILL.md frontmatter | rides `skill.metadata` generically | a skill to its subjects |
 | `[[dot.tag.name]]` | any wiki body | a mention (blessed tags resolve by canonical name) |
+
+### An entity's `tags` — the one classification field
+
+`Entity.tags` is a list of tag names: what the thing is ABOUT, many, attached. (Its
+`kind` says what shape it IS: one, derived — [`ontology.md`](ontology.md).) There is
+no second field: `labels` is gone, and the two things it held have their own
+(`Annotation.subkind`, `User.desktop` / `name_overridden`).
+
+- **A stored tag is always valid.** Every way in — a file header, an API save, the
+  CLI — converts through `grammar.to_tags`: `Meeting Notes` becomes `meeting-notes`,
+  `project/alpha` becomes `project.alpha`, what cannot be a tag is dropped. `to_tag`
+  is the lenient door for a name a person typed; `normalize_tag` stays the strict
+  gate for a kind and for a `Tag` entity's name.
+- **One write door:** `Entity.set_tags` (`add_tag` / `remove_tag`), reached as
+  `POST|DELETE /graph/<type>/<id>/tags/<name>` and `flow tag add|remove <name> <type-id>`.
+  The action is `tags`, not `tag`: `tag` is an entity type.
+- **Where the tag is kept follows the type.** A type whose file header declares
+  `tags` (a doc, a task, a skill) keeps them in that file, so they travel with it.
+  Every other type keeps them in the row and its record shadow (`Persist.TRUE`):
+  private to this machine, never written into the asset's file, and back after a
+  full index rebuild. Tags are not sent to the hub.
+- **Attaching never blesses.** A tag under a system root (`agent.review`) can be
+  attached to anything; only creating the `Tag` entity for it is reserved.
+- **Reading:** `Entity.has_tag("crm")` and the search `tags` filter match a tag or
+  anything under it (`crm` finds `crm.lead`). `GET /api/v1/tags/names` lists the
+  blessed names and the ones in use, for the input that suggests them.
 
 A source file carries one `tag` capsule **per annotated position** (the name is
 repeatable — see `docs/data-management/asset-capsules.md`), so a test module
 points each of its tests at its own subject and every block reports its own line.
 
 `flow tag <name> get [--mode line|block|full]` assembles that join for an agent:
-blessed header plus ancestors, bound docs, capsule-carrying code sites, and wiki
-mentions. The three modes are LLMIndex's summary tiers (`flow_sdk/llm_index/sizes.py`),
+blessed header plus ancestors, bound docs, every other tagged entity, capsule-carrying
+code sites, and wiki mentions. The three modes are LLMIndex's summary tiers (`flow_sdk/llm_index/sizes.py`),
 resolved without an LLM call. The `tag-context` skill teaches agents the trigger (a
 capsule or `tags:` in a file you are about to change) and the line → block → full
 escalation. Asking for a tag includes its descendants (`tag_is_within`).
@@ -158,6 +183,28 @@ EventBus.on(tag_pattern, handler, {target?, scope?}) → unsub
 - **Adapter files**: each legacy family gets a small, deletable bridge named
   `<family>_on_tag.py` (Python — dots don't make importable modules) /
   `<family>.onTag.ts` (TS) beside it.
+
+### Another process's events — `POST /api/v1/tags/relay`
+
+The bus is per process, and the app's bus is the one with the TAG triggers and the
+clients. A process of the instance that is not the app — a project's server, a
+trigger's `run_script` — puts its own event there by posting an envelope to the app:
+
+```
+POST /api/v1/tags/relay
+{"tag": "user_app.qa.worker.silent", "target": "<type:id>", "data": {...}}
+```
+
+- **`user_app.*` is the family for such events.** Flowpad never emits it. A TAG trigger
+  catches it (`"tag": {"on": "user_app.qa.*"}`), and the app's clients get it as a
+  `tag_msg` frame.
+- **Only the relayed patterns are taken** (`tags/relay.py RELAYED_TAG_PATTERNS`); any
+  other tag answers 400. The relay is not a way to inject any tag into the app.
+- `target`, `data` and `ctx` are optional and kept as sent. The app emits the event on
+  its own bus, so it gets a new `id`.
+- The app's port is in the instance's `server.json`. A gated instance (a cloud box)
+  also wants its cookie-gate secret ([`cookie-gate.md`](cookie-gate.md)). Best-effort:
+  if the app is not up, the event is lost.
 
 ## Laws
 

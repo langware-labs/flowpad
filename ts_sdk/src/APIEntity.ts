@@ -1,3 +1,4 @@
+import { normalizeMembershipRoles, normalizeRetainedRoles, roleCapabilities } from './models/roles';
 import type { FSRefJson } from './fs/FSRef';
 import { v4 as uuidv4 } from 'uuid';
 import { ActionInfo } from './models/ActionInfo';
@@ -41,7 +42,7 @@ export type ReceiveShowTarget = ShowTarget;
 /**
  * One row of an entity's member roster, as returned by the generic ``members``
  * action (``APIEntity.fetchMembers``). The hub normalizes ``user_email`` →
- * ``email`` etc. server-side (see ``_hub_reflect._normalize_hub_response``);
+ * ``email`` etc. server-side (see ``_hub_reflect.normalize_hub_response``);
  * extra hub keys (``status``, ``role``, ``invitation_id``, …) pass through, so
  * this is intentionally open. ``Participant`` in ``entities/members.ts`` is the
  * structurally-compatible alias kept for existing import sites. */
@@ -49,14 +50,14 @@ export interface EntityMember {
   user_id?: string | null;
   email?: string | null;
   name?: string | null;
-  role?: string | null;
+  roles?: string[] | null;
   status?: string | null;
   [key: string]: unknown;
 }
 
 /**
  * The hub's roster keys (``user_email`` / ``user_name`` / ``user_picture``) in the client form.
- * The local server does this in ``_normalize_hub_response``, but a hub-only frontend reads the hub
+ * The local server does this in ``normalize_hub_response``, but a hub-only frontend reads the hub
  * directly and skips it — so an invited user with no name rendered as "unknown".
  */
 export function normalizeMember(m: EntityMember): EntityMember {
@@ -96,6 +97,7 @@ export interface AssetOccurrence {
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';
 import type { HttpMethod } from './models/ApiUrl';
+import { deepEqual } from './utils/deep-equal';
 
 /**
  * True when ``v`` is a string with at least one non-whitespace character.
@@ -107,23 +109,37 @@ export function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim().length > 0;
 }
 
-/** One person a ``share`` invites: a bare ``idOrEmail``, or ``{idOrEmail, role?}``. */
-export type ShareInvitee = string | { idOrEmail: string; role?: string };
+/** One person a ``share`` invites: a bare ``idOrEmail``, or ``{idOrEmail, roles?}``. */
+export type ShareInvitee = string | { idOrEmail: string; roles?: string[] };
 
 /**
  * ``users`` as the ``share`` action's ``recipients`` wire list — trimmed, blanks
  * dropped, a role only when there is one (``ShareRequestSpec`` in
  * ``flow_sdk/app/actions/share_action.py`` validates it).
  */
-export function shareRecipients(users: ShareInvitee[]): (string | { idOrEmail: string; role: string })[] {
-  const recipients: (string | { idOrEmail: string; role: string })[] = [];
-  for (const u of users) {
-    const { idOrEmail, role } = typeof u === 'string' ? { idOrEmail: u, role: undefined } : u;
+export function shareRecipients(users: ShareInvitee[]): (string | { idOrEmail: string; roles: string[] })[] {
+  return users.flatMap(u => {
+    const { idOrEmail, roles } = typeof u === 'string' ? { idOrEmail: u, roles: undefined } : u;
     const trimmed = idOrEmail.trim();
-    if (!trimmed) continue;
-    recipients.push(role ? { idOrEmail: trimmed, role } : trimmed);
-  }
-  return recipients;
+    return trimmed ? [roles ? { idOrEmail: trimmed, roles: normalizeMembershipRoles(roles) } : trimmed] : [];
+  });
+}
+
+/**
+ * While an entity is being constructed (the rest of the current task), the cached instance it replaced
+ * under the same id — so its field writes notify only what really changed. See `getProxy`'s `set`.
+ */
+const replacedByConstruction = new WeakMap<object, Record<PropertyKey, unknown>>();
+
+/** The write repeats the replaced instance's value. Entity-valued fields compare by reference, never by walking the graph. */
+function sameAsReplaced(target: object, property: PropertyKey, value: unknown): boolean {
+  const replaced = replacedByConstruction.get(target);
+  if (replaced === undefined) return false;
+  const old = replaced[property];
+  if (old === value) return true;
+  const isEntity = (v: unknown) => typeof v === 'object' && v !== null && 'typeId' in v;
+  if (isEntity(old) || isEntity(value)) return false;
+  return deepEqual(old, value);
 }
 
 export function getProxy<T extends Manageable & { [key: string | symbol]: any }>(target: T) {
@@ -146,7 +162,10 @@ export function getProxy<T extends Manageable & { [key: string | symbol]: any }>
         // mutated `_flowDataStream` during a sibling component's render and
         // synchronously dispatched setState across all subscribers.
         const isInternal = typeof property === 'string' && property.startsWith('_');
-        if (!isInternal && property !== 'dirty') {
+        // A constructor writing the same data the replaced cached instance already held is not a change:
+        // re-notifying it re-rendered every subscriber, and a component that built an entity while
+        // rendering re-rendered itself forever (the 2026-10-23 freeze). Real changes still notify.
+        if (!isInternal && property !== 'dirty' && !sameAsReplaced(target, property, value)) {
           target.dirty = true;
           dataManager.notifyPropertyChanged(target.typeId, property as string);
         }
@@ -178,7 +197,6 @@ const BASE_WIRE_FIELDS = new Set<string>([
   'key',
   'namespace',
   'tags',
-  'labels',
   'system',
   'created_by',
   'created_date',
@@ -189,7 +207,7 @@ const BASE_WIRE_FIELDS = new Set<string>([
   'schema_version',
   'root_vfs_path',
   'fs_storage_mount_path',
-  'visitor_role',
+  'visitor_roles', 'authenticated_roles', 'public_roles',
   'last_edited_at',
 ]);
 
@@ -260,18 +278,18 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * though `deepAssign` puts it on the instance.
    */
   last_active_at?: number | string | null;
-  labels?: string[];
   root_vfs_path?: string;
   fs_storage_mount_path?: string | null;
-  visitor_role?: string;
+  visitor_roles?: string[];
+  authenticated_roles?: string[];
+  public_roles?: string[];
   /** Epoch-ms of the last successful content edit. */
   last_edited_at?: number | string | null;
   /**
    * Hub role roster cache: one row per member with their hub-set role. Membership
    * is a generic capability of any remote entity; the hub is the source of truth
    * (RoleRelationship edges) and this is a READ CACHE. ``deepAssign`` populates it
-   * from the wire ``members`` field. The conversation WIRE key is ``participants``
-   * (hub contract) and is adapted to ``members`` in Conversation.onEntityUpdate.
+   * from the wire ``members`` field.
    */
   members?: EntityMember[];
   _expand?: EntityExpansion;
@@ -514,31 +532,31 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   get ImAdmin(): boolean {
-    return this.expand?.roles?.includes('admin') || false;
+    return roleCapabilities(this.expand?.roles ?? []).has('admin');
   }
 
   get ImEditor(): boolean {
-    return this.expand?.roles?.includes('editor') || false;
+    return roleCapabilities(this.expand?.roles ?? []).has('editor');
   }
 
   get ImReader(): boolean {
-    return this.expand?.roles?.includes('reader') || false;
+    return roleCapabilities(this.expand?.roles ?? []).has('reader');
   }
 
-  get ImGuest(): boolean {
-    return this.expand?.roles?.includes('guest') || false;
-  }
-
-  get ImAnonymousViewer(): boolean {
-    return this.expand?.roles?.includes('anonymous_viewer') || false;
+  get ImRunner(): boolean {
+    return roleCapabilities(this.expand?.roles ?? []).has('runner');
   }
 
   isAllowedAction(action: ActionType): boolean {
     if (!this.isExpanded('permissions')) {
       throw new Error(`Permissions not expanded on entity ${this.getType()}, can not check action permissions`);
     }
-    if (!this.expand?.allowed_actions) return false;
-    return this.expand?.allowed_actions.includes(action);
+    const allowed = (this.expand?.allowed_actions ?? []) as string[];
+    // `*`: the desktop backend's answer for an item's owner -- every action.
+    if (allowed.includes('*')) return true;
+    // An owner's expansion names a type's own actions type-qualified (`llm_endpoint.allocate`),
+    // an admin's plain (`allocate`): either answers yes.
+    return allowed.includes(action) || allowed.includes(`${this.getType()}.${action}`);
   }
 
   addToAllowedActions(action: ActionType) {
@@ -642,6 +660,11 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     delete (this as any).private_context_entity_data;
 
     const proxy = getProxy(this);
+    const replaced = dataManager.getByTypeIdFromCache(this.typeId) as Record<PropertyKey, unknown> | null;
+    if (replaced && replaced !== proxy) {
+      replacedByConstruction.set(this, replaced);
+      queueMicrotask(() => replacedByConstruction.delete(this));
+    }
     dataManager.register_new_entity(this.typeId, proxy);
     return proxy;
   }
@@ -1013,7 +1036,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * pattern (one ``POST /graph/<type>/<id>/members`` per recipient — see
    * ``Conversation.share`` / ``Project.share`` on the Python side). Each
    * entry is either a bare ``idOrEmail`` string — for a caller with no role
-   * to send — or ``{idOrEmail, role?}`` when one is needed. ``idOrEmail`` is
+   * to send — or ``{idOrEmail, roles?}`` when one is needed. ``idOrEmail`` is
    * either an email — for anyone, including someone with no account yet —
    * or a hub user id, for a contact the address book knows only by id (the
    * hub never discloses other people's emails, so those contacts have no
@@ -1026,8 +1049,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * ``{idOrEmail, role}``) — the local backend's ``share`` action validates it.
    */
   public async share(users: ShareInvitee[] = []): Promise<T> {
-    const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
     const recipients = shareRecipients(users);
+    const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = recipients.length ? { ...this.toJSON(), recipients } : {};
     // Not one fixed shape — a full entity or a bare receipt, depending on entity type — hence a guarded dict, not a named response type.
     const response = await dataManager.callAction<unknown, Record<string, unknown>>(info);
@@ -1046,7 +1069,11 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       String(response.id) === this.id &&
       String(response.type) === this.typeId.type
     ) {
-      return dataManager.updateEntityFromJson<T>(response);
+      const canonical = dataManager.updateEntityFromJson<T>(response);
+      // The cache may hold ANOTHER instance of this entity (a broadcast registered it while the
+      // call was in flight). The caller's own object must not be left saying it was never shared.
+      if (canonical !== (this as unknown as T)) dataManager.deepAssign(this, response);
+      return canonical;
     }
     // Some specialized share actions return a receipt rather than an entity.
     // They update their local cache server-side and broadcast that canonical
@@ -1067,7 +1094,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * The ``members`` action is ``reflect="hub"`` server-side: for a ``remote``
    * entity the local server forwards to the hub and mirrors the roster back
    * onto the local row; for a local-only entity it returns the cached
-   * participants. Either way this returns the normalized ``EntityMember[]``.
+   * members. Either way this returns the normalized ``EntityMember[]``.
    *
    * ``cache`` (default ``true``): return the per-instance cached roster when
    * present, so incidental reads are free. Pass ``cache: false`` to force a
@@ -1089,7 +1116,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 
   /**
    * Invite a member by email — POST ``<type>/<id>/members`` with a
-   * ``MembershipRequest`` (``{recipient_email, invitation_targets:[{typeid, role}]}``).
+   * ``MembershipRequest`` (``{recipient_email, invitation_targets:[{typeid, roles}]}``).
    * Reflected to the hub (``info.hubReflect``): for a ``remote`` entity (e.g. an
    * organization or team) the hub creates the Invitation + emails the recipient.
    * Unlike ``share([email])`` (which is Conversation-shaped and also creates the
@@ -1115,12 +1142,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    *    false, so the body of every existing caller is unchanged.
    */
   public async inviteMember(
-    email: string,
-    role: string = 'member',
+    /** An email — for anyone — or a hub user id, for a contact known only by id. */
+    idOrEmail: string,
+    roles: string[] | string = this.typeId.type === 'conversation' ? ['reader', 'runner'] : ['reader'],
     opts?: {
       callbackOverride?: string;
       transfer?: boolean;
-      roleToKeep?: string | null;
+      rolesToKeep?: string[] | null;
       /**
        * Entities to grant ALONGSIDE this one, in the same invitation.
        *
@@ -1134,7 +1162,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
        * companion granted at a lower role rides along as an ordinary
        * membership instead of being refused.
        */
-      extraTargets?: { typeid: string; role: string }[];
+      extraTargets?: { typeid: string; roles: string[]; is_final?: boolean }[];
       /**
        * Send the invitation email? Defaults to true (the hub's own default).
        *
@@ -1147,10 +1175,12 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
-      recipient_email: normalizeEmail(email) ?? '',
-      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }, ...(opts?.extraTargets ?? [])],
+      ...(idOrEmail.includes('@')
+        ? { recipient_email: normalizeEmail(idOrEmail) ?? '' }
+        : { recipient_user_id: idOrEmail.replace(/^user-/, '') }),
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, roles: normalizeMembershipRoles(roles) }, ...(opts?.extraTargets ?? []).map(target => ({...target, roles: normalizeMembershipRoles(target.roles)}))],
       ...(opts?.callbackOverride ? { callback_override: opts.callbackOverride } : {}),
-      ...(opts?.transfer ? { transfer: true, role_to_keep: opts.roleToKeep ?? null } : {}),
+      ...(opts?.transfer ? { transfer: true, roles_to_keep: normalizeRetainedRoles(opts.rolesToKeep) } : {}),
       ...(opts?.notifyByEmail === false ? { notify_by_email: false } : {}),
     };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
@@ -1171,12 +1201,12 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Direction, since it is easy to get backwards: this makes `principal` a MEMBER
    * OF this entity (a class inside a school), not the other way round.
    */
-  public async addGroupMember(principal: TypeId, role: string = 'member'): Promise<void> {
+  public async addGroupMember(principal: TypeId, roles: string[] | string = ['reader']): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
       principal: `${principal.type}-${principal.id}`,
-      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, roles: normalizeMembershipRoles(roles) }],
     };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
     this._membersCache = Array.isArray(res) ? res : undefined;
@@ -1220,10 +1250,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * returns it as the action response — seed the cache from it so the next
    * ``fetchMembers`` is free (falls back to invalidation on any other shape).
    */
-  public async setMemberRole(userId: string, role: string): Promise<void> {
+  public async setMemberRole(userId: string, roles: string[] | string): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'PUT');
     info.hubReflect = true; // role change is hub-owned — reflect to the hub
-    info.bodyParameters = { user_id: userId, role };
+    info.bodyParameters = { user_id: userId, roles: normalizeMembershipRoles(roles) };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
     this._membersCache = Array.isArray(res) ? res : undefined;
   }
@@ -1449,43 +1479,6 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     }
   }
 
-  /**
-   * Add a label to the entity locally (does not save to server).
-   */
-  public add_label_local(label: string): void {
-    if (!this.labels) {
-      this.labels = [];
-    }
-    // Check if label already exists
-    if (!this.labels.includes(label)) {
-      this.labels.push(label);
-      this.dirty = true;
-    }
-  }
-
-  /**
-   * Remove a label from the entity locally (does not save to server). Returns true if removed, false if not found.
-   */
-  public remove_label_local(label: string): boolean {
-    if (!this.labels) {
-      return false;
-    }
-    const originalCount = this.labels.length;
-    this.labels = this.labels.filter((l) => l !== label);
-    if (this.labels.length < originalCount) {
-      this.dirty = true;
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Get all labels for the entity.
-   */
-  public get_labels(): string[] {
-    return [...(this.labels || [])];
-  }
-
   // ── context_entities surface ──────────────────────────────────────────
   //
   // Two buckets, split by the rule "if it came over the wire it is shared,
@@ -1586,17 +1579,32 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * On success the backend returns the updated shared list; we apply it
    * locally so the next render sees the change without waiting for the WS
    * broadcast. Returns the post-update list as TypeIds.
+   *
+   * ``opts.data`` is per-entry sidecar stored with each entry (read back via
+   * ``getContextEntryData``), e.g. ``{role: 'session'}`` on a conversation.
    */
-  public async shareContextEntities(input: TypeId | TypeId[]): Promise<TypeId[]> {
+  public async shareContextEntities(
+    input: TypeId | TypeId[],
+    opts?: { data?: Record<string, unknown> },
+  ): Promise<TypeId[]> {
     const targets = this._normalizeContextEntities(input);
     if (targets.length === 0) return [...this._shared_context_entities_];
     const info = new ActionInfo('share-context', this.typeId.type, this.typeId.id, 'POST');
-    info.bodyParameters =
-      targets.length === 1 ? { typeid: targets[0].toString() } : { typeids: targets.map((t) => t.toString()) };
+    info.bodyParameters = {
+      ...(targets.length === 1 ? { typeid: targets[0].toString() } : { typeids: targets.map((t) => t.toString()) }),
+      ...(opts?.data ? { data: opts.data } : {}),
+    };
     const result = await dataManager.callAction<
-      { typeid?: string; typeids?: string[] },
-      { ok: boolean; id: string; type: string; shared_context_entities: string[] }
+      { typeid?: string; typeids?: string[]; data?: Record<string, unknown> },
+      {
+        ok: boolean;
+        id: string;
+        type: string;
+        shared_context_entities: string[];
+        shared_context_entity_data?: Record<string, Record<string, unknown>>;
+      }
     >(info);
+    if (result?.shared_context_entity_data) this._shared_context_entity_data = { ...result.shared_context_entity_data };
     return this._applySharedFromResponse(result?.shared_context_entities);
   }
 
@@ -1634,71 +1642,25 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return [...parsed];
   }
 
-  /**
-   * Add a label to the entity using the label API.
-   */
-  public async add_label(label: string, description?: string, color?: string): Promise<boolean> {
-    try {
-      // POST to label action with the new label, returns full labels list
-      const actionInfo = new ActionInfo('label', this.typeId.type, this.typeId.id, 'POST');
-      actionInfo.subpath = label; // Include label name in URL path
-      actionInfo.bodyParameters = {
-        description: description,
-        color: color,
-      };
-
-      const result = await dataManager.callAction<any, string[]>(actionInfo);
-
-      // Update local labels with the returned full list
-      if (Array.isArray(result)) {
-        this.labels = result;
-        this.dirty = true;
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Failed to add label:', error);
-      return false;
-    }
+  /** Add a tag to this entity; `tags` becomes the list the backend returns. */
+  public async addTag(name: string): Promise<void> {
+    await this.callTagAction(name, 'POST');
   }
 
-  /**
-   * Remove a label from the entity using the label API.
-   */
-  public async remove_label(label: string): Promise<boolean> {
-    try {
-      // DELETE to label action with the label to remove, returns full labels list
-      const actionInfo = new ActionInfo('label', this.typeId.type, this.typeId.id, 'DELETE');
-      actionInfo.subpath = label; // Include label name in URL path
-
-      const result = await dataManager.callAction<any, string[]>(actionInfo);
-
-      // Update local labels with the returned full list
-      if (Array.isArray(result)) {
-        this.labels = result;
-        this.dirty = true;
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Failed to remove label:', error);
-      return false;
-    }
+  /** Remove a tag from this entity; `tags` becomes the list the backend returns. */
+  public async removeTag(name: string): Promise<void> {
+    await this.callTagAction(name, 'DELETE');
   }
 
-  /**
-   * Get all available labels from the ontology.
-   */
-  public async get_ontology_labels(): Promise<any[]> {
-    try {
-      const actionInfo = new ActionInfo('ontology', this.typeId.type, this.typeId.id, 'GET');
-      const result = await dataManager.callAction(actionInfo);
-
-      return (result as any)?.labels || [];
-    } catch (error) {
-      console.error('Failed to get ontology labels:', error);
-      return [];
-    }
+  private async callTagAction(name: string, method: 'POST' | 'DELETE'): Promise<void> {
+    const actionInfo = new ActionInfo('tags', this.typeId.type, this.typeId.id, method);
+    actionInfo.subpath = name;
+    const result = await dataManager.callAction<undefined, { tags: string[] }>(actionInfo);
+    if (!Array.isArray(result?.tags)) return;
+    // The backend already stored it: assigning notifies subscribers, and must not leave the entity dirty.
+    const wasDirty = this.dirty;
+    this.tags = result.tags;
+    this.dirty = wasDirty;
   }
 
   /**

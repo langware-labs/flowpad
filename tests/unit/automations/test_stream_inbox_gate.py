@@ -308,3 +308,55 @@ def test_an_attachment_only_message_still_says_what_it_carried():
         ],
     )
     assert state_of(fm, set()).files == ["claude_session", "screenshot.png"]
+
+
+async def test_negative_test_run_does_not_launch_or_spend_fire_once(initialize_test_db, decision_double, mock_driver):
+    driver = mock_driver(lambda turn: "must not run")
+    decision_double["answers"]["match"] = 0.1
+    source, agent = await _source(), await _agent()
+    rule = await _rule(source, agent, enabled=False)
+    rule.fire_once = True
+    await rule.update()
+    _, message = await _message(source, "No refund wanted.")
+    from tests.unit.automations._helpers import settle
+
+    try:
+        started = await run_once(rule, message_id=message.id)
+        await settle()
+    finally:
+        tag_triggers.unregister_tag_trigger(rule.id)
+    (row,) = history(rule)
+    assert row["id"] == started.run_id and row["is_test"]
+    assert row["reason_code"] == "decision_no" and row["wizard"]["exit_code"] == 3
+    assert not driver.received_prompts and (await Trigger.get_by_id(rule.id)).counter == 0
+
+
+async def test_a_rule_with_no_gate_is_still_handed_the_message_that_woke_it(initialize_test_db):
+    """No ``if`` asks nothing of a decision API, but the agent the rule wakes takes the message and its
+    conversation: the subject's state is built in `prepare` as a gated rule's is."""
+    from flow_sdk.automations.execution import AutomationCallContext, AutomationMode, PreparedAutomation
+    from flow_sdk.automations.operations import prepare
+    from flow_sdk.tags import target_of
+    from flow_sdk.tags.bus import make_tag_event
+
+    source = await _source()
+    _, fm = await _message(source, "approve", sent_by=str(uuid.uuid4()))
+    rule = Trigger(
+        name=f"no-gate-{uuid.uuid4().hex[:8]}",
+        trigger_type="tag",
+        tag_pattern="stream_inbox.*.message.projected",
+        then={"run_agent": {"agent": "agent-" + str(uuid.uuid4()), "prompt": "Handle it."}},
+    )
+    event = make_tag_event(
+        "stream_inbox.flowpad.message.projected",
+        target_of("flow_message", fm.id),
+        {"entity_id": fm.id, "conversation_id": fm.conversation_id},
+    )
+    context = AutomationCallContext(
+        asset_folder=None, workdir=None, invocation_id="run", trigger=rule, event=event, mode=AutomationMode.REAL
+    )
+
+    prepared = await prepare(PreparedAutomation(run_id="run", inputs={}, scope_key=""), context=context)
+
+    assert prepared.value.state.message_id == fm.id and prepared.value.state.conversation_id == fm.conversation_id
+    assert prepared.value.scope_key

@@ -7,7 +7,7 @@
  * (`useLlmEndpoint`, `TestEndpointButton`, `dataManager.save`) — nothing new on the hub, and no
  * second implementation to drift from the first.
  */
-import { TypeId, dataManager, type LLMEndpointFilters, type LLMEndpointTestResult } from '@sdk';
+import { TypeId, dataManager, llmEndpointsService, type LLMEndpointFilters, type LLMEndpointTestResult } from '@sdk';
 import { Check, Loader2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -15,11 +15,20 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { TestEndpointButton } from '@src/components/llm-endpoints/TestEndpointButton';
 import { endpointIdFromTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { TONE } from '@src/components/llm-endpoints/tone';
-import { useLlmEndpoint, useLlmEndpointModels, useLlmEndpoints } from '@src/components/llm-endpoints/use-llm-endpoints';
+import { useLlmEndpoint, useLlmEndpoints, useLlmProviderSizes } from '@src/components/llm-endpoints/use-llm-endpoints';
 import { Switch } from '@src/components/ui/switch';
 import { notify } from '@src/notifications';
 
-import { aliasesForPinnedModel, SEED_BY_SCOPE, type BudgetScope } from './budget-models';
+import {
+  aliasesForPinnedModel,
+  MODEL_FAMILY_PRESETS,
+  presetEntries,
+  reconcileAliases,
+  sameAliases,
+  SEED_BY_SCOPE,
+  withModelEntries,
+  type BudgetScope,
+} from './budget-models';
 import { useInvalidateBudgets } from './use-budgets';
 
 export interface EndpointControlsProps {
@@ -50,6 +59,8 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
   // re-read, an admin narrows a team and every member below it goes on showing the old models.
   const { refetch: refetchEndpoints } = useLlmEndpoints();
   const invalidate = useInvalidateBudgets();
+  // Only a row below the org writes sizes, so only those rows ask; the answer is cached once for all of them.
+  const providerSizes = useLlmProviderSizes(scope === 'org' ? undefined : id);
   // The probe's own answer, mirrored out of the button so it can be drawn OVER the model list
   // instead of beside the icon. Rendered inline, the verdict wrapped the row's flex container onto
   // a second line and every row grew taller the moment somebody pressed test — on a table, that
@@ -64,25 +75,17 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
   const seeding = useRef(false);
 
   const models = endpoint?.filters.models_allow ?? [];
-  // An empty list INHERITS, and the row used to say so in words. What a reader wants to know is
-  // which models that leaves them, and the answer is one action away (`models` -- the roots'
-  // catalogs already narrowed by this chain's effective allow/deny), so the row shows it.
-  //
-  // Fetched ONLY for a row that actually inherits. Every row on this page mounts one of these, so
-  // an unconditional read would be a per-row fan-out across every team and person -- the same cost
-  // `BudgetSection` opens its people lists lazily to avoid. The hub seeds a list on every creation
-  // path (`_seed_models`), so an inheriting row is the exception, not the rule.
-  const inherits = !!endpoint && models.length === 0;
-  const inherited = useLlmEndpointModels(inherits ? id : undefined);
-  const shown = models.length > 0 ? models : (inherited.data ?? []).map((m) => m.id);
+  // The row shows ITS OWN list and nothing else: an empty list is shown empty. It used to print the models an
+  // empty list inherits, which made a cleared row look as full as before the press.
+  const shown = models;
   // A pinned row whose redirect is missing or stale. Every row pinned BEFORE aliasing existed is in
   // exactly this state: the right `models_allow`, no `aliases`, and no way for anyone to fix it by
   // hand — re-typing the same model is a no-op at `commit`, and the empty-list seed below never
   // fires on a row that already has a model. Without this they would refuse every `md`-tier caller
   // forever. Comparing the whole map (not just its presence) also repairs a row pinned to a slug
   // whose sibling tiers have since changed.
-  const wantedAliases = aliasesForPinnedModel(models);
-  const aliasesStale = !!endpoint && JSON.stringify(endpoint.filters.aliases ?? {}) !== JSON.stringify(wantedAliases);
+  const wantedAliases = reconcileAliases(endpoint?.filters.aliases ?? {}, models);
+  const aliasesStale = !!endpoint && !sameAliases(endpoint.filters.aliases ?? {}, wantedAliases);
 
   // Repairs a STALE REDIRECT, and nothing else. It used to also seed an empty list, and that was
   // the bug: a wallet was restricted because somebody opened this screen, so a person nobody had
@@ -148,6 +151,46 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
           id: 'models-allow',
         });
       }
+    } catch (e) {
+      notify.error({ title: t`Could not save the allowed models`, message: String(e), id: 'models-allow' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // The one-press lists. `next` is the whole new list ([] clears it): a family press appends to the
+  // row's OWN list, so pressing two of them chains the two.
+  const applyModels = async (next: string[], { clearRedirects = false } = {}) => {
+    setSaving(true);
+    try {
+      await saveModels(endpoint.typeId.toString(), endpoint.filters, next, clearRedirects);
+      await invalidate();
+      await refetchEndpoints();
+    } catch (e) {
+      notify.error({ title: t`Could not save the allowed models`, message: String(e), id: 'models-allow' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // "All": every model the provider offers, written out as the list. Done in two writes because the
+  // `models` action answers with the catalog narrowed by THIS chain's allow list, row included: clear
+  // the row first, so what comes back is the whole catalog the budget above lets through, then write
+  // exactly that. A redirect derived from a list this long would point every family at its first
+  // member, so the row's redirects are cleared and none are derived.
+  const applyAllModels = async () => {
+    setSaving(true);
+    try {
+      await saveModels(endpoint.typeId.toString(), endpoint.filters, [], true);
+      const offered = (await llmEndpointsService.listModels(id)).map((m) => m.id);
+      await saveModels(
+        endpoint.typeId.toString(),
+        { ...endpoint.filters, models_allow: [], aliases: {} },
+        offered,
+        true,
+      );
+      await invalidate();
+      await refetchEndpoints();
     } catch (e) {
       notify.error({ title: t`Could not save the allowed models`, message: String(e), id: 'models-allow' });
     } finally {
@@ -232,7 +275,7 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
             // Narrow enough that the test button stays on the row with it. The container wraps, so a
             // wide list did not overflow -- it pushed the probe onto a second line, where a control
             // people press constantly reads as belonging to the row below.
-            className="min-w-0 max-w-48 truncate rounded px-1.5 py-0.5 text-left font-mono text-[11px] text-muted-foreground enabled:hover:bg-muted"
+            className="min-h-5 min-w-8 max-w-48 truncate rounded px-1.5 py-0.5 text-left font-mono text-[11px] text-muted-foreground enabled:hover:bg-muted"
             data-testid={`${testIdPrefix}-models`}
             // Trimmed text always carries the whole of itself in the tooltip; the hint follows it.
             title={[shown.join(', '), manage ? t`Click to edit which models this budget may call` : '']
@@ -240,15 +283,49 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
               .join('\n')}
             onClick={startEdit}
           >
-            {saving || inherited.isLoading ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              // An inherited list is shown as the models it actually leaves this row. The old wording
-              // is the honest fallback for the one case that has no list to print -- the read failed,
-              // or the chain above allows nothing this row can name.
-              shown.join(', ') || t`inherits the budget above`
-            )}
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : shown.join(', ')}
           </button>
+        </span>
+      )}
+
+      {manage && (
+        <span className="flex shrink-0 items-center gap-1" data-testid={`${testIdPrefix}-model-presets`}>
+          <button
+            type="button"
+            disabled={saving}
+            className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground enabled:hover:bg-muted disabled:opacity-50"
+            data-testid={`${testIdPrefix}-models-clear`}
+            title={t`Remove every model and every redirect from this list`}
+            onClick={() => void applyModels([], { clearRedirects: true })}
+          >
+            <Trans>Clear</Trans>
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground enabled:hover:bg-muted disabled:opacity-50"
+            data-testid={`${testIdPrefix}-models-all`}
+            title={t`Puts everything that is available on OpenRouter`}
+            onClick={() => void applyAllModels()}
+          >
+            <Trans>All</Trans>
+          </button>
+          {MODEL_FAMILY_PRESETS.map((preset) => {
+            const entries = presetEntries(preset, scope, providerSizes.data);
+            return (
+              <button
+                key={preset.key}
+                type="button"
+                disabled={saving || !entries || entries.every((entry) => models.includes(entry))}
+                className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground enabled:hover:bg-muted disabled:opacity-50"
+                data-testid={`${testIdPrefix}-models-add-${preset.key}`}
+                title={entries ? t`Allow ${entries.join(', ')}` : t`No sizes are declared for ${preset.label}`}
+                onClick={() => entries && void applyModels(withModelEntries(models, entries))}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
         </span>
       )}
 
@@ -259,16 +336,24 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
   );
 }
 
-async function saveModels(typeId: string, currentFilters: LLMEndpointFilters, models_allow: string[]): Promise<void> {
+async function saveModels(
+  typeId: string,
+  currentFilters: LLMEndpointFilters,
+  models_allow: string[],
+  clearRedirects = false,
+): Promise<void> {
   // `filters` is a whole-object PUT on the hub, not a merge (only `limits`/`member_default_limits`
   // are) — sending just `{models_allow}` would silently reset every other filter (streaming,
   // max_tokens_ceiling, …) to its default. Rebuilding the full object from what the entity already
   // has, with only this one field changed, is what keeps the rest of the filters untouched.
   //
-  // `aliases` is rewritten from the new list on every save, never merged into what was there. It is
-  // derived state — "whatever this wallet is pinned to" — so widening a wallet back to the globs
-  // must CLEAR the redirect, or a wallet that visibly allows everything would go on quietly forcing
-  // the model it used to be pinned to.
-  const aliases = aliasesForPinnedModel(models_allow);
+  // `aliases` is rebuilt from the new list on every save: it is derived state — "whatever this wallet
+  // is pinned to" — so widening a wallet back to the globs must CLEAR the redirect, or a wallet that
+  // visibly allows everything would go on quietly forcing the model it used to be pinned to. The one
+  // thing carried over is what an admin wrote by hand across families (Claude -> Gemini), which the
+  // derivation cannot produce and which still points at an allowed model.
+  // `clearRedirects` is the "Clear" / "All" presses: they start the row over, so a hand-written redirect
+  // goes too instead of being carried across.
+  const aliases = clearRedirects ? {} : reconcileAliases(currentFilters.aliases ?? {}, models_allow);
   await dataManager.save(new TypeId(typeId), [], { filters: { ...currentFilters, models_allow, aliases } } as never);
 }

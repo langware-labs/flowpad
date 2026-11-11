@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import noEntityConstructInRender from './eslint-rules/no-entity-construct-in-render.js';
 
 export default tseslint.config(
   {
@@ -36,9 +37,12 @@ export default tseslint.config(
     },
     plugins: {
       'react-hooks': reactHooks,
+      flowpad: { rules: { 'no-entity-construct-in-render': noEntityConstructInRender } },
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // Building an entity while rendering froze the app (2026-10-23): eslint-rules/no-entity-construct-in-render.js
+      'flowpad/no-entity-construct-in-render': 'error',
       '@typescript-eslint/no-unused-vars': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unsafe-assignment': 'off',
@@ -48,6 +52,26 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-argument': 'off',
       '@typescript-eslint/unbound-method': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
+    },
+  },
+  {
+    // I7 (docs/navigation/dock-loading.md): the router decides whether a loader
+    // redirect replaces (src/routes/loaders/redirect-history.ts). Loaders just
+    // `redirect()`; a hand-picked `replace()` would only mislead the reader.
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'react-router',
+              importNames: ['replace'],
+              message: 'Use redirect(): the router decides push or replace (redirect-history.ts, dock-loading.md I7).',
+            },
+          ],
+        },
+      ],
     },
   },
 );

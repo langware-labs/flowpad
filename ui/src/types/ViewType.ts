@@ -375,8 +375,15 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   },
   // Inbound routing (page=hub AND desk): the hub's webhook claims and where each one's messages go. No pointer.
   [ViewType.INBOUND]: {
-    title: msg`Inbound`,
+    title: msg`Channels`,
     iconName: 'Webhook',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
+  // Machines (page=hub): sandboxes and connected computers. No pointer.
+  [ViewType.MACHINES]: {
+    title: msg`Machines`,
+    iconName: 'Monitor',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
@@ -495,7 +502,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: true,
   },
   [ViewType.SCHEMA_TREE]: {
-    title: msg`Schema`,
+    title: msg`Data model`,
     iconName: 'ListTree',
     tabLocation: 'dedicated',
     canAddAsTab: true,

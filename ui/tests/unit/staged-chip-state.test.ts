@@ -134,3 +134,12 @@ describe('chipStateFor — git shares', () => {
     expect(chipStateFor(true, gitInstalled, true)).toBe('installed');
   });
 });
+
+describe('chipStateFor — Git + copy shares', () => {
+  it('a newer version stays staged while an older share of the same file resolves', () => {
+    const both = new MessageAttachment({
+      id: 'bbbbbbb3-3333-4333-8333-333333333333', asset_type: 'artifact', transfer_mode: 'both', scope: null,
+    });
+    expect(chipStateFor(true, both, true)).toBe('staged');
+  });
+});

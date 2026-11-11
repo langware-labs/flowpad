@@ -2,10 +2,11 @@
 
 import platform
 from enum import Enum
-from flow_sdk._compat import StrEnum
 from typing import Optional
 
 from pydantic import BaseModel
+
+from flow_sdk._compat import StrEnum
 
 try:
     import distro
@@ -98,12 +99,26 @@ class RuntimeEnvironment(BaseModel):
 
 
 class ComputeNodeSize(StrEnum):
-    """Compute node size enumeration."""
+    """Compute node size — the hub's own values (``sm`` / ``md`` / ``lg``), so a machine the hub
+    sends validates here and a size chosen here means the same thing there."""
 
-    SMALL = "small"
-    MEDIUM = "medium"
-    LARGE = "large"
-    XLARGE = "xlarge"
+    SMALL = "sm"
+    MEDIUM = "md"
+    LARGE = "lg"
+    XLARGE = "xl"
+
+    @classmethod
+    def _missing_(cls, value):
+        # Rows and agent files written before the values matched the hub's.
+        return _LEGACY_SIZES.get(value) if isinstance(value, str) else None
+
+
+_LEGACY_SIZES = {
+    "small": ComputeNodeSize.SMALL,
+    "medium": ComputeNodeSize.MEDIUM,
+    "large": ComputeNodeSize.LARGE,
+    "xlarge": ComputeNodeSize.XLARGE,
+}
 
 
 class ExecutionEnvironmentStatus(StrEnum):
@@ -114,3 +129,5 @@ class ExecutionEnvironmentStatus(StrEnum):
     PAUSED = "PAUSED"
     ERROR = "ERROR"
     NOT_FOUND = "NOT_FOUND"
+    #: An enrolled machine with no live connection; only `flow connect` on it brings it back.
+    DISCONNECTED = "DISCONNECTED"

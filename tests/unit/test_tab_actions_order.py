@@ -21,9 +21,9 @@ from flow_sdk.builtin.tab import (
     _build_list,
     _http_close,
     _http_close_many,
-    _http_list,
     _http_new_tab,
     _http_order,
+    _http_set_name,
     drain_pending_teardowns,
     ensure_tab,
     tab_id_for,
@@ -33,6 +33,7 @@ from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.request_context.request_info import RequestInfo
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
@@ -119,6 +120,19 @@ async def test_reopen_keeps_slot() -> None:
     again = await ensure_tab("r/b", project_id=P1)  # reopen same pointer
     assert again.id == b.id
     assert await _order(P1) == before == [a.id, b.id, c.id]
+
+
+async def test_open_tab_moves_beside_an_explicit_opener() -> None:
+    # A show of an already-open tab from a second session lands beside that session.
+    first = await ensure_tab("m/first-session", project_id=P1)
+    await ensure_tab("m/filler", project_id=P1)
+    second = await ensure_tab("m/second-session", project_id=P1)
+    shown = await ensure_tab("m/shown", project_id=P1, after_tab_id=first.id)
+    await ensure_tab("m/shown", project_id=P1, after_tab_id=second.id)
+    order = await _order(P1)
+    assert order.index(shown.id) == order.index(second.id) + 1
+    await ensure_tab("m/shown", project_id=P1)  # no opener: keeps its slot
+    assert await _order(P1) == order
 
 
 async def test_order_action_reorders_globally() -> None:
@@ -302,12 +316,6 @@ async def test_switching_a_vibe_tab_to_its_terminal_carries_its_children_out() -
     proc = "agentic_process-%s" % uuid.uuid4()
     host = await ensure_tab('{"viewType":"vibe","pointer":"%s","tabHash":"shell|%s"}' % (proc, proc), project_id=P1)
     child = await ensure_tab('{"viewType":"editor","pointer":"t/c.md"}', project_id=P1, parent_tab_id=host.id)
-    display = await ensure_tab(
-        '{"viewType":"editor","pointer":"t/shown.md","options":{"activeDisplay":"1"},"tabHash":"workspaceActive|%s","workspaceContent":true}'
-        % proc,
-        project_id=P1,
-        parent_tab_id=host.id,
-    )
     other = await ensure_tab("t/other", project_id=P1)
 
     await ensure_tab('{"viewType":"shell","pointer":"%s"}' % proc, project_id=P1)
@@ -316,8 +324,6 @@ async def test_switching_a_vibe_tab_to_its_terminal_carries_its_children_out() -
     assert moved is not None and moved.parent_tab_id is None and moved.visible is True
     ids = await _order(P1)
     assert ids.index(child.id) == ids.index(host.id) + 1, "carried out right after the terminal tab"
-    shown = await Tab.get_one({"id": display.id})
-    assert shown is not None and shown.parent_tab_id == host.id, "the active display stays workspace chrome"
 
 
 async def test_http_close_returns_before_teardown() -> None:
@@ -389,3 +395,49 @@ async def test_display_row_reap_keeps_order_contiguous() -> None:
     d = await ensure_tab("g/d", project_id=P1)
     order = await _order(P1)
     assert order == [a.id, c.id, d.id] or order.index(d.id) == order.index(c.id) + 1
+
+
+class _Window:
+    """An open window as ``_active_connections`` holds it, counting its tabs pings."""
+
+    def __init__(self) -> None:
+        self.ws = self
+        self.pings = 0
+
+    async def send_text(self, message: str) -> None:
+        self.pings += "tabs_changed" in message
+
+
+@pytest.mark.parametrize("write", ["new_tab", "set_name"])
+@pytest.mark.parametrize(
+    ("ping_caller", "named", "pinged"),
+    [
+        (False, "caller", {"other"}),
+        (True, "caller", {"caller", "other"}),
+        (False, "", {"caller", "other"}),
+    ],
+    ids=["opted-out-caller-skipped", "default-pings-everyone", "no-connection-id-pings-everyone"],
+)
+async def test_a_tab_write_leaves_out_only_a_caller_that_opted_out(monkeypatch, write, ping_caller, named, pinged) -> None:
+    """A write that says ``ping_caller=False`` and names its connection is the one window
+    not pinged: it re-reads the list itself. Everyone else depends on the ping."""
+    from flow_sdk.server.routes import websocket as ws_routes  # noqa: PLC0415
+
+    tab = await ensure_tab(f"ping/{uuid.uuid4()}", project_id=P1)
+    windows = {"caller": _Window(), "other": _Window()}
+    monkeypatch.setattr(ws_routes, "_active_connections", windows)
+
+    async def post_data() -> dict:
+        return {"name": "renamed"}
+
+    request = RequestInfo()
+    request.initiator_connection_id = named
+    request.get_post_data = post_data
+    monkeypatch.setattr("flow_sdk.request_context.methods.get_current_request_info", lambda: request)
+
+    if write == "new_tab":
+        await _http_new_tab(Tab, pointer=f"ping/{uuid.uuid4()}", project_id=P1, ping_caller=ping_caller)
+    else:
+        await _http_set_name(tab, ping_caller=ping_caller)
+
+    assert {name for name, window in windows.items() if window.pings} == pinged

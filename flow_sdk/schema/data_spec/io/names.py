@@ -48,7 +48,7 @@ class UnsafeName(ValueError):
     value is still in hand and the author can be told which key."""
 
 
-def kind_of(spec: type) -> str:
+def spec_kind_of(spec: type) -> str:
     """The registered kind of *spec* — its type name, or its declared alias.
 
     Falls back to the class name for an anonymous shape, which is the only case
@@ -69,7 +69,7 @@ def kind_of(spec: type) -> str:
     # none of which belong in a filename. Ask the origin instead.
     origin = (getattr(spec, "__pydantic_generic_metadata__", {}) or {}).get("origin")
     if origin is not None and origin is not spec:
-        return kind_of(origin)
+        return spec_kind_of(origin)
     # NOT ``spec.spec_kind``: a ClassVar is inherited, so an unregistered
     # subclass would be named after its parent. An anonymous shape has only its
     # own class name.
@@ -83,7 +83,7 @@ def bare(kind: str) -> str:
 
 def main_document(spec: type) -> str:
     """The name of the json that holds *spec*'s own fields."""
-    return f"{bare(kind_of(spec))}.json"
+    return f"{bare(spec_kind_of(spec))}.json"
 
 
 def field_file(field: str, ext: str) -> str:
@@ -165,7 +165,7 @@ def ext_for(spec: type, default: str = ".md") -> str:
     """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415 — cycle-safe: lazy
 
-    info = SchemaRegistry.get(kind_of(spec))
+    info = SchemaRegistry.get(spec_kind_of(spec))
     shape = getattr(info, "shape", None) if info is not None else None
     return getattr(shape, "ext", None) or default
 
@@ -177,7 +177,7 @@ __all__ = [
     "dict_element",
     "ext_for",
     "field_file",
-    "kind_of",
+    "spec_kind_of",
     "list_element",
     "main_document",
     "safe_component",

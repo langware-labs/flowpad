@@ -50,7 +50,7 @@ class TypeInfo:
 
     # --- Runtime refs (NOT in hash, NOT persisted) ---
     entity_cls: type | None            # the Entity subclass (db_base_record)
-    asset_spec: type | None            # the DataSpec that IS the type's layout
+    asset_spec: type | None            # the schema (a DataSpec subclass) that IS the type's layout
     post_sync_fn / from_disk_fn / asset_hash_fn / default_body_fn / derive_fields_fn: Any
     identity_carrier: IdentityCarrier | None   # Frontmatter | Sidecar | JsonRoot | Derived
     identity_key_fn / id_stable_key_fn: Any   # v5 key (preferred / escape hatch)

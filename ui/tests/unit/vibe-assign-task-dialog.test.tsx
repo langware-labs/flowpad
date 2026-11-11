@@ -6,8 +6,9 @@
  *   not shared with me, not another project's) are listed, each opening the conversation it was
  *   asked in; the icon counts the messages waiting across them; with none open it asks anew.
  * - Asking the same person again in the same project offers the open conversation.
- * - Asking is ONE `ask-for-help` call (a person recipient, files multipart) — the backend writes the
- *   task, the conversation and the message, and delivers them (docs/collab/ask-for-help.md).
+ * - Asking is a 3-card wizard (what is wrong → diagnosis & context → who gets it), then ONE
+ *   `ask-for-help` call (recipients, files multipart): the backend writes the conversation and its one
+ *   help request message, and delivers it.
  */
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -43,6 +44,7 @@ import { dataManager, Task, TaskKind } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
 import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
+import { png } from '../utils/ask-for-help';
 
 afterEach(() => {
   cleanup();
@@ -84,17 +86,47 @@ describe('ContactPicker', () => {
   });
 });
 
-describe('AskForHelpDialog', () => {
-  it('enables Assign when the email was typed and the user moved on to the title', () => {
-    render(<AskForHelpDialog open onOpenChange={() => {}} projectId={null} sessionTypeId={null} origin="vibe" />);
+/** Write what is wrong — the one screen holds everything else already. */
+function describeIt(text = 'Popout button is disabled') {
+  fireEvent.change(screen.getByTestId('vibe-assign-notes'), { target: { value: text } });
+}
 
-    // The user's path: type the email, move straight on to the title — no Enter.
-    const person = screen.getByTestId('vibe-assign-person');
-    fireEvent.change(person, { target: { value: 'alice@example.com' } });
-    fireEvent.blur(person);
-    fireEvent.change(screen.getByTestId('vibe-assign-title'), { target: { value: 'Popout button is disabled' } });
+function pickPerson(email: string) {
+  const person = screen.getByTestId('vibe-assign-person');
+  fireEvent.change(person, { target: { value: email } });
+  fireEvent.blur(person);
+}
 
+describe('AskForHelpDialog — one screen', () => {
+  it('everything is on one screen, and sending needs something written', () => {
+    render(<AskForHelpDialog open onOpenChange={() => {}} projectId={null} origin="vibe" />);
+
+    expect(screen.getByTestId('vibe-assign-submit')).toBeDisabled();
+    expect(screen.getByTestId('ask-for-help-run-diagnosis')).toBeInTheDocument();
+    expect(screen.getByTestId('vibe-assign-person')).toBeInTheDocument();
+    expect(screen.getByTestId('ask-for-help-helpdesk-button')).toBeInTheDocument();
+    describeIt('it broke');
     expect(screen.getByTestId('vibe-assign-submit')).toBeEnabled();
+  });
+
+  it('to nobody it stays private and the button reads Diagnose; a person makes it Diagnose and Send', async () => {
+    vi.spyOn(dataManager, 'callAction').mockResolvedValue({ desks: [], default_state: 'not_configured' });
+    render(<AskForHelpDialog open onOpenChange={() => {}} projectId={null} origin="vibe" />);
+    describeIt();
+
+    expect(await screen.findByTestId('ask-for-help-private')).toBeInTheDocument();
+    expect(screen.getByTestId('vibe-assign-submit')).toHaveTextContent(/^Diagnose$/);
+    pickPerson('bob@x.com');
+    expect(screen.getByTestId('vibe-assign-submit')).toHaveTextContent('Diagnose and Send');
+  });
+
+  it('an image pasted into the box is attached', async () => {
+    render(<AskForHelpDialog open onOpenChange={() => {}} projectId={null} origin="vibe" />);
+    const shot = png('pasted.png', 16);
+    fireEvent.paste(screen.getByTestId('vibe-assign-notes'), {
+      clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => shot }], files: [shot], getData: () => '' },
+    });
+    expect(await screen.findByText('pasted.png')).toBeInTheDocument();
   });
 });
 
@@ -104,7 +136,7 @@ describe('AskForHelpButton — the current task button', () => {
 
     fireEvent.click(screen.getByTestId('vibe-assign-task'));
 
-    expect(screen.getByTestId('vibe-assign-submit')).toBeInTheDocument();
+    expect(screen.getByTestId('ask-for-help-form')).toBeInTheDocument();
   });
 
   it('lists my open help tasks here, each opening the conversation it was asked in', async () => {
@@ -154,6 +186,30 @@ describe('AskForHelpButton — the current task button', () => {
     expect(screen.getByTestId('vibe-assign-task')).toHaveTextContent('7');
   });
 
+  it('lists my open desk tickets too, and a click opens the ticket', async () => {
+    const ticket = {
+      conversation_id: 'ticket-1',
+      task_id: null,
+      kind: 'desk',
+      recipient_label: 'Help desk',
+      title: 'Login fails',
+      status: 'open',
+      delivery: { header: 'sent', body: null, failure: null },
+      delivered: true,
+      unread: 2,
+    };
+    vi.spyOn(dataManager, 'callAction').mockResolvedValue({ requests: [ticket] });
+    render(<AskForHelpButton projectId={P1} sessionTypeId={null} origin="vibe" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('vibe-assign-task').getAttribute('title')).toBe('Your help requests'),
+    );
+    fireEvent.pointerDown(screen.getByTestId('vibe-assign-task'), { button: 0 });
+    fireEvent.click(screen.getByTestId('vibe-assign-task'));
+    fireEvent.click(await screen.findByTestId('help-request-ticket-1'));
+    expect(h.openDock).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps asking anew from the list', async () => {
     h.tasks = [helpTask()];
     render(<AskForHelpButton projectId={P1} sessionTypeId={null} origin="vibe" />);
@@ -163,7 +219,7 @@ describe('AskForHelpButton — the current task button', () => {
     });
     fireEvent.click(await screen.findByTestId('vibe-help-new'));
 
-    expect(screen.getByTestId('vibe-assign-submit')).toBeInTheDocument();
+    expect(screen.getByTestId('ask-for-help-form')).toBeInTheDocument();
   });
 });
 
@@ -181,9 +237,8 @@ describe('AskForHelpDialog — asking again', () => {
         onOpenExisting={onOpenExisting}
       />,
     );
-    const person = screen.getByTestId('vibe-assign-person');
-    fireEvent.change(person, { target: { value: email } });
-    fireEvent.blur(person);
+    describeIt();
+    pickPerson(email);
     return { row, onOpenExisting };
   };
 
@@ -193,7 +248,6 @@ describe('AskForHelpDialog — asking again', () => {
     fireEvent.click(screen.getByTestId('vibe-assign-open-existing'));
 
     expect(onOpenExisting).toHaveBeenCalledWith(row);
-    expect(screen.getByTestId('vibe-assign-already-asked').className).toContain('text-foreground');
   });
 
   it('offers nothing for someone not yet asked', () => {
@@ -202,9 +256,10 @@ describe('AskForHelpDialog — asking again', () => {
     expect(screen.queryByTestId('vibe-assign-already-asked')).not.toBeInTheDocument();
   });
 
-  /** Fill the required fields, run `attach`, submit; returns the one `ask-for-help` call. */
-  async function submit(attach: () => void | Promise<void> = () => {}) {
+  /** Write what is wrong, run `before`, pick bob, send; returns the one `ask-for-help` call. */
+  async function submit(before: () => void | Promise<void> = () => {}) {
     const calls: unknown[] = [];
+    // eslint-disable-next-line @typescript-eslint/require-await -- the mock stands in for an async action
     vi.spyOn(dataManager, 'callAction').mockImplementation(async (info) => {
       if (info.name === 'ask-for-help') {
         calls.push(info.bodyParameters);
@@ -213,16 +268,17 @@ describe('AskForHelpDialog — asking again', () => {
           task_id: 't-9',
           message_id: 'm-9',
           delivery: { header: 'sent', body: null, failure: null },
+          shared: true,
+          context_shared: true,
         };
       }
+      if (info.name === 'help-request-preview') return { title: 'Popout disabled', items: [] };
       return { desks: [], default_state: 'known' };
     });
     render(<AskForHelpDialog open onOpenChange={() => {}} projectId={P1} sessionTypeId={null} origin="vibe" />);
-    const person = screen.getByTestId('vibe-assign-person');
-    fireEvent.change(person, { target: { value: 'bob@x.com' } });
-    fireEvent.blur(person);
-    fireEvent.change(screen.getByTestId('vibe-assign-title'), { target: { value: 'Popout button is disabled' } });
-    await attach();
+    describeIt();
+    await before();
+    pickPerson('bob@x.com');
     act(() => {
       fireEvent.click(screen.getByTestId('vibe-assign-submit'));
     });
@@ -230,28 +286,49 @@ describe('AskForHelpDialog — asking again', () => {
     return calls[0];
   }
 
-  it('asking a person is one request, to them, from this project', async () => {
+  it('asking a person is one request, to them, from this project; the server titles it', async () => {
     const body = (await submit()) as Record<string, unknown>;
     expect(body).toMatchObject({
-      recipient: { kind: 'person', email: 'bob@x.com' },
-      title: 'Popout button is disabled',
+      recipients: [{ kind: 'person', email: 'bob@x.com' }],
+      text: 'Popout button is disabled',
       project_id: P1,
       origin: 'vibe',
+      send: 'when_diagnosed',
     });
     expect(typeof body.conversation_id).toBe('string'); // the asker's id: a resend is the same request
   });
 
-  it('"Send diagnostic" is on by default and replaces the transcript: nothing is attached for it', async () => {
+  it('runs the diagnosis and shares the context by default', async () => {
     const body = (await submit()) as Record<string, unknown>;
-    expect(body.diagnose).toBe(true);
-    expect(body.context ?? []).toEqual([]);
+    expect(body).toMatchObject({ diagnose: true, share_context: true, left_out: [] });
   });
 
-  it('unticking "Send diagnostic" asks without one', async () => {
+  it('unticking them asks without a diagnosis and keeps the context here', async () => {
     const body = (await submit(() => {
-      fireEvent.click(screen.getByTestId('ask-for-help-send-diagnostic'));
+      fireEvent.click(screen.getByTestId('ask-for-help-run-diagnosis'));
+      fireEvent.click(screen.getByTestId('ask-for-help-share-context'));
     })) as Record<string, unknown>;
-    expect(body.diagnose).toBe(false);
+    expect(body).toMatchObject({ diagnose: false, share_context: false });
+  });
+
+  it('a diagnosis already taken goes as it stands, and nothing is diagnosed again', async () => {
+    const calls: Record<string, unknown>[] = [];
+    // eslint-disable-next-line @typescript-eslint/require-await -- the mock stands in for an async action
+    vi.spyOn(dataManager, 'callAction').mockImplementation(async (info) => {
+      if (info.name === 'ask-for-help') {
+        calls.push(info.bodyParameters as Record<string, unknown>);
+        return { conversation_id: 'c', task_id: null, message_id: 'm', delivery: { header: 'sent', body: null, failure: null } };
+      }
+      if (info.name === 'help-request-preview') return { title: 'Hub down', items: [] };
+      return { desks: [{ kind: 'desk', desk_project_id: 'd1', name: 'Support' }], default_state: 'known' };
+    });
+    render(
+      <AskForHelpDialog open onOpenChange={() => {}} projectId={P1} origin="footer" diagnosisId="diag-1" initialTitle="Hub down" />,
+    );
+    await screen.findByTestId('ask-for-help-desks');
+    fireEvent.click(screen.getByTestId('vibe-assign-submit'));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toMatchObject({ diagnosis_id: 'diag-1', diagnose: false, recipients: [{ kind: 'desk', desk_project_id: 'd1' }] });
   });
 
   it('a file picked with "+" rides with the request', async () => {
@@ -261,25 +338,6 @@ describe('AskForHelpDialog — asking again', () => {
     })) as FormData;
 
     expect(form.getAll('files').map((f) => (f as File).name)).toEqual(['shot.png']);
-    expect(JSON.parse(form.get('request') as string).recipient.email).toBe('bob@x.com');
-  });
-
-  it('a pasted screenshot goes through the annotator and rides with the request', async () => {
-    const form = (await submit(async () => {
-      const image = new File([new Uint8Array([9])], 'image.png', { type: 'image/png' });
-      fireEvent.paste(screen.getByTestId('vibe-assign-notes'), {
-        clipboardData: {
-          items: [{ kind: 'file', type: 'image/png', getAsFile: () => image }],
-          files: [image],
-          types: ['Files'],
-          getData: () => '',
-        },
-      });
-      await waitFor(() => expect(screen.getByText(/screenshot/i)).toBeInTheDocument());
-    })) as FormData;
-
-    const names = form.getAll('files').map((f) => (f as File).name);
-    expect(names).toHaveLength(1);
-    expect(names[0]).toMatch(/^screenshot.*\.png$/);
+    expect(JSON.parse(form.get('request') as string).recipients[0].email).toBe('bob@x.com');
   });
 });

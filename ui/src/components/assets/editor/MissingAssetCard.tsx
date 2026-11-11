@@ -62,8 +62,10 @@ export function MissingAssetCard<T extends APIEntity<T>>({
           </div>
           {entity && (
             <div className="mt-2 break-all text-xs text-muted-foreground">
-              Stale entity: id <code className="font-mono">{entity.id}</code>
-              {lastSeen ? <>, last seen on {lastSeen}</> : null}
+              <Trans>
+                Stale entity: id <code className="font-mono">{entity.id}</code>
+              </Trans>
+              {lastSeen ? <Trans>, last seen on {lastSeen}</Trans> : null}
             </div>
           )}
         </div>

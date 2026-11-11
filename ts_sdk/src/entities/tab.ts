@@ -2,11 +2,12 @@ import { APIEntity, dataManager, registerEntity, type AnyEntity } from '../APIEn
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models';
 import { IDockPointer } from '../models/DockPointer';
+import { editorForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { ViewType } from '../utils/ui/view-types';
-import { TypeId } from '../models/TypeId';
+import { isValidEntityId, TypeId } from '../models/TypeId';
 import { EntityTypes } from '../schema/types';
-import { dockOptionsToScopeFilter } from '../utils/scope-filter';
+import { parseScopeFilterKey, pinnedProjectId } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
 import { normalizeRetiredDockPointer } from '../utils/ui/retired-views';
 import { normalizeWorldViewDockPointer } from '../worldview/dock-pointer';
@@ -184,9 +185,20 @@ export interface TabEnsureResult {
   created: boolean;
 }
 
+/** `pingCaller: false` is for a caller that re-reads the list right after the write: the
+ *  backend leaves this window out of the write's `tabs_changed` ping. The default pings
+ *  everyone, and a caller with no re-read of its own depends on that ping. */
+function applyPingCaller(info: ActionInfo, pingCaller: boolean | undefined): void {
+  if (pingCaller !== false) return;
+  info.carriesInitiator = true;
+  info.bodyParameters = { ...info.bodyParameters, ping_caller: false };
+}
+
 export interface INewTabOpts extends IEnsureTabOpts {
   /** The opener (current active tab id): a fresh tab lands right after it. */
   afterTabId?: string | null;
+  /** False: this caller re-reads the list itself (`applyPingCaller`). */
+  pingCaller?: boolean;
 }
 
 /** Backward-compatible name for older call sites/tests during the Tab migration. */
@@ -213,6 +225,124 @@ export interface TabRow extends ITab {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface Tab extends EntityMerge<ITab> {}
 
+/** The fields `resolveTabProject` reads off a dock's resolved target entity. */
+export type TabProjectTarget = {
+  typeId?: TypeId | null;
+  project_id?: string | null;
+  effective_project_id?: string | null;
+  cwd?: string | null;
+  workdir?: string | null;
+} | null;
+
+/** A content sub-pointer (an editor or wiki page) names ONE document, never a browse
+ *  scope. Mirrors the backend's `_is_content_sub_pointer`. */
+export function isContentSubPointer(pointer: string | null | undefined): boolean {
+  return /^(editor|wiki)\//.test(pointer ?? '');
+}
+
+/**
+ * `[scopeKeyed, project]` read off a tab hash — the backend's `_pointer_scope_project`:
+ * a scope-keyed row (`assets|<scopeFilterKey>`, optionally `|@<host>`) belongs to the
+ * project its scope pins; every other scope is Global.
+ */
+function tabHashScopeProject(tabHash: string | null | undefined): [boolean, string | null] {
+  const hash = (tabHash ?? '').split('|@', 1)[0];
+  if (!hash.includes('|')) return [false, null];
+  const scope = parseScopeFilterKey(hash.slice(hash.lastIndexOf('|') + 1));
+  if (!scope) return [false, null];
+  const pinned = pinnedProjectId(scope);
+  return [true, pinned && isValidEntityId(pinned) ? pinned : null];
+}
+
+/** The live project ids when the project list is already cached — no request; null
+ *  when it is not loaded yet. */
+async function cachedProjectIds(): Promise<Set<string> | null> {
+  const { lazyAssets, LazyAsset } = await import('../lazy');
+  const projects = lazyAssets.client.getQueryData<Project[]>(lazyAssets.key(LazyAsset.Projects));
+  return projects ? new Set(projects.map((p) => p.id)) : null;
+}
+
+/** A project id named by a URL/pointer (steps 1, 3), or null when it cannot be one:
+ *  checked against the cached project list like the backend's existence check, and
+ *  by shape alone while that list isn't loaded. */
+async function namedProject(id: string | null | undefined): Promise<string | null> {
+  if (!id || !isValidEntityId(id)) return null;
+  const live = await cachedProjectIds();
+  return !live || live.has(id) ? id : null;
+}
+
+/** A project id stamped on the target (step 5), or null when no such project exists: an asset
+ *  indexed from a folder that is not a project carries that folder's derived id. Never trusted by
+ *  shape like `namedProject` — on a cold load the list isn't cached yet and the derived id is a
+ *  valid uuid — so an id the cached list lacks is looked up (a 404 is negative-cached). */
+async function existingProject(id: string | null | undefined): Promise<string | null> {
+  if (!id) return null;
+  if ((await cachedProjectIds())?.has(id)) return id;
+  return (await dataManager.getByTypeId(new TypeId(EntityTypes.Project, id)).catch(() => null)) ? id : null;
+}
+
+/**
+ * The asset's OWN project — `resolveTabProject`'s steps 2, 5, 6 (the loader's redirect
+ * target, the tab's `target_project_id`); mirrors the backend's `tab_owner_project`, except
+ * that a step-5 stamp must name an existing project.
+ */
+export async function tabOwnerProject(dock: IDockPointer, target: TabProjectTarget): Promise<string | null> {
+  const targetTypeId = dock.targetTypeId ?? target?.typeId ?? null;
+  // 2
+  if (targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
+  // 5 — a stamp naming no project (a non-project folder's derived id) falls through to the path.
+  const own = await existingProject(target?.project_id ?? target?.effective_project_id);
+  if (own) return own;
+  // 6 — an unminted file still sits inside a project folder.
+  for (const path of [dock.vfsPath?.machinePath, target?.cwd ?? target?.workdir]) {
+    if (!path) continue;
+    const byPath = await Project.getProjectByPath(path);
+    if (byPath) return byPath.id;
+  }
+  return null;
+}
+
+/**
+ * The project a dock's tab belongs to — THE rule order, mirrored by the backend's
+ * `resolve_tab_project` (docs/tab-management.md §tab project):
+ *
+ *   1. dependency home              → its consumer project
+ *   2. Project target / landing     → that project
+ *   3. presenting project in URL    → `/dock/project/<P>/…` (set only by `flow show`
+ *                                     / presentation; a guest tab when ≠ the asset's)
+ *   4. scope-keyed BROWSE row       → its scope's project (`all` → Global); an
+ *                                     editor/wiki sub-pointer is content, not browse
+ *   5. target entity                → its (effective) project
+ *   6. path (vfs, then cwd/workdir) → the deepest project mount holding it
+ *   7. the project it was opened in (the active project) — only for a target-less
+ *      dock, a target that no longer resolves, or a plain shell; an existing
+ *      projectless target is Global.
+ *
+ * Steps 2, 5, 6 alone are `tabOwnerProject`. Cache-first: project checks read the
+ * cached project list, `target` is passed in resolved.
+ */
+export async function resolveTabProject(dock: IDockPointer, target: TabProjectTarget): Promise<string | null> {
+  const targetTypeId = dock.targetTypeId ?? target?.typeId ?? null;
+  // 1
+  const consumer = dock.options?.providerProject ? await namedProject(dock.options.consumerProject) : null;
+  if (consumer) return consumer;
+  // 2
+  if (targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
+  // 3
+  const named = dock.viewType === ViewType.PROJECT && dock.pointer ? dock.pointer.split('/', 1)[0] : dock.presentedIn;
+  const presenting = named ? await namedProject(named) : null;
+  if (presenting) return presenting;
+  // 4
+  const [scopeKeyed, scopeProject] = tabHashScopeProject(dock.tabHash);
+  if (scopeKeyed && !isContentSubPointer(dock.pointer)) return scopeProject;
+  // 5, 6
+  const owner = await tabOwnerProject(dock, target);
+  if (owner) return owner;
+  // 7
+  const takesOpenedIn = !targetTypeId || !target || targetTypeId.type === EntityTypes.Shell;
+  return takesOpenedIn ? (dataContext.project?.id ?? null) : null;
+}
+
 @registerEntity
 export class Tab extends APIEntity<Tab> implements ITab {
   static type: string = 'tab';
@@ -237,7 +367,15 @@ export class Tab extends APIEntity<Tab> implements ITab {
   get dockPointer(): IDockPointer | null {
     if (!this.pointer) return null;
     try {
-      const parsed = JSON.parse(this.pointer) as IDockPointer;
+      const parsed = JSON.parse(this.pointer) as IDockPointer & { workspaceContent?: boolean };
+      // Older Assets children stored only their scope key, folding away the
+      // document address. Reopen their recorded target, not the browser root.
+      if (this.parent_tab_id && parsed.viewType === ViewType.ASSETS && !parsed.pointer && parsed.workspaceContent) {
+        const editor = this.target_type ? editorForType(this.target_type) : undefined;
+        if (editor && this.target_id) {
+          parsed.pointer = `editor/${editor}/typeid/${this.target_type}-${this.target_id}`;
+        }
+      }
       return withCanonicalTabHash(parsed);
     } catch {
       const normalized = normalizeLegacyPointer(this.pointer, this.target_type, this.target_id);
@@ -285,6 +423,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       after_tab_id: opts.afterTabId ?? null,
       parent_tab_id: opts.parentTabId ?? null,
     };
+    applyPingCaller(info, opts.pingCaller);
     const res = await dataManager.callAction<unknown, { tabs: ITab[]; created?: boolean }>(info);
     return { tabs: Tab.fromResponse(res?.tabs ?? []), created: res?.created ?? false };
   }
@@ -332,50 +471,14 @@ export class Tab extends APIEntity<Tab> implements ITab {
       | null;
     if (!targetTypeId && target) targetTypeId = target.typeId;
 
-    // A target-less dock (assets list/folder) has no entity to inherit a project
-    // from — but if its scope is pinned to a single project (`mode: 'project'`),
-    // the tab belongs to THAT project. This is what makes a project-scoped assets
-    // tab attach to its project (and render project-colored) instead of global.
-    const scope = dockOptionsToScopeFilter(dock.options);
-    const scopeProjectId = scope?.mode === 'project' ? (scope.activeProjectId ?? null) : null;
-    // Project resolution precedence: a project IS its own; else the target's
-    // denormalized project_id; else — for a cwd-bearing target whose entity was
-    // never stamped (codex/copilot session, received transcript, shell) — the
-    // project that OWNS its cwd/workdir, via the same getProjectByPath the
-    // loaders use; else a project-pinned scope; else null. Without the cwd
-    // fallback the tab renders project-less even though the loader resolves the
-    // active project from the same cwd.
-    let projectId: string | null;
-    if (dock.options?.providerProject && dock.options?.consumerProject) {
-      // A dependency home executes in its provider, but the tab belongs to the
-      // explicitly named consumer. This context survives URL/storage reloads.
-      projectId = dock.options.consumerProject;
-    } else if (targetTypeId?.type === EntityTypes.Project) {
-      projectId = targetTypeId.id;
-    } else if (target?.project_id) {
-      projectId = target.project_id;
-    } else {
-      const cwd = target?.cwd ?? target?.workdir ?? null;
-      const byPath = cwd ? await Project.getProjectByPath(cwd) : null;
-      // An existing target that resolves to no project is GLOBAL. Never let an
-      // ambient project scope in the URL adopt it while the target loader is
-      // concurrently clearing context to Global. Scope is a valid ownership
-      // hint only for target-less surfaces (assets/project home).
-      projectId = byPath?.id ?? (target ? null : scopeProjectId) ?? null;
-      // A web page is target-less and usually opened by a bare URL (`flow show`,
-      // a link, a paste) that names no scope. It belongs to the project it is
-      // opened IN: left Global, that project's strip has no chip to light.
-      if (!projectId && !scope && dock.viewType === ViewType.WEB_APP) {
-        projectId = dataContext.project?.id ?? null;
-      }
-    }
+    const projectId = await resolveTabProject(dock, target);
 
     return { targetTypeId, target, projectId };
   }
 
   static async getFromDockPointer(
     dock: IDockPointer,
-    opts: { parentTabId?: string | null; afterTabId?: string | null } = {},
+    opts: { parentTabId?: string | null; afterTabId?: string | null; pingCaller?: boolean } = {},
   ): Promise<TabEnsureResult> {
     const pointerJson = dock.toJSON?.();
     if (!pointerJson) return { tabs: [], created: false };
@@ -398,6 +501,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       // navigating (`flow show` outside vibe) has no such opener, so it names
       // the tab it belongs beside.
       afterTabId: opts.afterTabId ?? null,
+      pingCaller: opts.pingCaller,
     });
   }
 
@@ -484,9 +588,10 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  already saved the live name onto its Shell/AgenticProcess; this keeps the
    *  durable `Tab.name` in step so the chip stays right once inactive. NOT `rename`
    *  (which would pin `auto_rename=false` and stop future auto-titles). */
-  static async setNameById(id: string, name: string): Promise<Tab[]> {
+  static async setNameById(id: string, name: string, opts: { pingCaller?: boolean } = {}): Promise<Tab[]> {
     const info = new ActionInfo('set_name', Tab.type, id, 'POST');
     info.bodyParameters = { name };
+    applyPingCaller(info, opts.pingCaller);
     const res = await dataManager.callAction<{ name: string }, { tabs: ITab[] }>(info);
     return Tab.fromResponse(res?.tabs ?? []);
   }

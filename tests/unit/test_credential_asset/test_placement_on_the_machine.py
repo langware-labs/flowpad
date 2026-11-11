@@ -36,7 +36,7 @@ async def _agent_deployment(project):
                   requirements=[RequirementSpec(kind="credential", name="stripe", vars=["STRIPE_KEY"])])
     await agent.save()
     deployment = await make_deployment("production", name="placed")
-    deployment.parent_type_id = str(agent.typeid)
+    deployment.parent_type_id, deployment.main_agent_id = str(project.typeid), str(agent.typeid)
     await deployment.save()
     return deployment
 
@@ -120,7 +120,7 @@ async def test_a_placed_name_is_declared_from_its_shipped_template(home, project
                   requirements=[RequirementSpec(kind="credential", name="telegram", vars=["TELEGRAM_BOT_TOKEN"])])
     await agent.save()
     deployment = await make_deployment("production", name="bot")
-    deployment.parent_type_id = str(agent.typeid)
+    deployment.parent_type_id, deployment.main_agent_id = str(project.typeid), str(agent.typeid)
     await deployment.save()
 
     outcome = await place_values(str(deployment.id), str(project.id), _drop({"TELEGRAM_BOT_TOKEN": "123:abc"}))
@@ -128,3 +128,16 @@ async def test_a_placed_name_is_declared_from_its_shipped_template(home, project
     assert outcome == {"placed": ["TELEGRAM_BOT_TOKEN"], "failed": {}, "verified": {}}
     declared, template = (await declared_vars(project))["TELEGRAM_BOT_TOKEN"].spec, await template_named("telegram")
     assert declared.setup == template.setup and declared.vars["TELEGRAM_BOT_TOKEN"] == template.vars["TELEGRAM_BOT_TOKEN"]
+
+
+async def test_a_value_placed_before_the_project_arrived_is_still_read_once_the_project_declares_it(home, project):
+    """An invite box: the hub places before the project is cloned, so nothing declares the name yet and it lands
+    in this machine's user-scope catch-all. The project then arrives declaring the same name with no value of its
+    own; its process must still read the placed value (seen: a reset student box had no XHOSTD_TOKEN)."""
+    await place_values("", "", _drop({"XHOSTD_TOKEN": "tok-placed"}))
+    await save_credential(scope="project", project_id=str(project.id),
+                          manifest={"name": "xhostd", "vars": {"XHOSTD_TOKEN": {}}, "setup": "x"})
+
+    values = await resolve_project_secrets(project, placement=await Placement.of(None))
+
+    assert {k: v.get_secret_value() for k, v in values.items()} == {"XHOSTD_TOKEN": "tok-placed"}

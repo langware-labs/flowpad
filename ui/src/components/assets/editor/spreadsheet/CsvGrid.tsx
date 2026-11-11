@@ -1,15 +1,11 @@
+import { Trans } from '@lingui/react/macro';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { RevoGrid } from '@revolist/react-datagrid';
 import type { DataType } from '@revolist/react-datagrid';
 import type { FSRef } from '@sdk';
 import { useFSRefContent } from '@src/hooks/use-fs-ref-content';
-import {
-  applyEditToSource,
-  parseCsvToGrid,
-  serializeGridToCsv,
-  type GridData,
-} from './grid-data';
+import { applyEditToSource, parseCsvToGrid, serializeGridToCsv, type GridData } from './grid-data';
 
 const EMPTY_GRID: GridData = { columns: [], source: [] };
 
@@ -75,16 +71,17 @@ export function CsvGrid({ fsRef, reloadKey, onDirtyChange, onUserEdit }: CsvGrid
   );
 
   if (loadError) {
+    const errorMessage = loadError.message;
     return (
       <div className="flex h-full items-center justify-center text-sm text-destructive">
-        Failed to load spreadsheet: {loadError.message}
+        <Trans>Failed to load spreadsheet: {errorMessage}</Trans>
       </div>
     );
   }
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading…
+        <Trans>Loading…</Trans>
       </div>
     );
   }

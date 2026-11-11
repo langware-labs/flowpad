@@ -22,7 +22,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, TranscriptFetchError, type WorkerType } from '@src/hooks/use-transcript';
 import { useSyncTranscriptTabName } from '@src/tabs/use-tab-manager';
 
-import { WorkerToolbar, WORKER_ICON_BUTTON_CLASS } from '@src/components/workers/WorkerToolbar';
+import { ContextWorkerToolbar, WORKER_ICON_BUTTON_CLASS } from '@src/components/workers/ContextWorkerToolbar';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { ViewModeToggle } from '../ViewModeToggle';
 import { AnalysisSidePanel, useAnalysisControls } from './AnalysisControls';
@@ -113,7 +113,7 @@ export function TranscriptViewer({
   const received = data?.received ?? false;
   const transcriptSession = useTranscriptSession(workerType, received ? sessionId : null);
   // Vendor icon for the worker backing this transcript — used by the "open in
-  // terminal" affordance so it matches the WorkerToolbar icon-row.
+  // terminal" affordance so it matches the ContextWorkerToolbar icon-row.
   const VendorIcon = workerIcon(workerType);
 
   // ── Live process / worker status for the session backing this transcript ──
@@ -703,7 +703,7 @@ export function TranscriptViewer({
               data-testid={received ? 'transcript-analyze-toolbar' : 'transcript-viewer-toolbar'}
             >
               {received ? (
-                <WorkerToolbar
+                <ContextWorkerToolbar
                   hasProcess={!!transcriptSession.process}
                   starting={transcriptSession.starting}
                   onOpen={transcriptSession.open}
@@ -713,7 +713,7 @@ export function TranscriptViewer({
                 />
               ) : (
                 // Own (resumable) session: open its live terminal. Presented as the
-                // worker's vendor icon — matching the WorkerToolbar icon-row on the
+                // worker's vendor icon — matching the ContextWorkerToolbar icon-row on the
                 // received branch — rather than a dedicated labelled button.
                 <button
                   type="button"

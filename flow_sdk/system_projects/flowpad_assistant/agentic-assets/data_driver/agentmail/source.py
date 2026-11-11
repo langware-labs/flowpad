@@ -249,8 +249,6 @@ class AgentMailSource(EmailAddressing, MessageSource):
             raise Unsupported("an AgentMail send has exactly one recipient")
         to = data.recipients[0].address or data.recipients[0].origin.key
         body: dict[str, Any] = {"to": [to], **await asyncio.to_thread(_content, data)}
-        if getattr(data, "subject", None):
-            body["subject"] = data.subject
         return self._sent(await self._api("POST", f"/inboxes/{self.inbox}/messages/send", json=body), data, None)
 
     async def reply(self, origin: CloudOrigin, data: MessageData) -> MessageItem:
@@ -332,6 +330,8 @@ def _check_outgoing(data: object) -> None:
 def _content(data: MessageData) -> dict[str, Any]:
     """The body and files of a send or reply, as AgentMail's JSON takes them. Reads the files: run it off the loop."""
     content: dict[str, Any] = {"text": data.text or ""}
+    if getattr(data, "subject", None):
+        content["subject"] = data.subject
     if data.attachments:
         content["attachments"] = [
             {

@@ -1,94 +1,68 @@
 /**
- * Token plan — "what's my budget, how much did I burn, when does it reset" for
- * me / my team / my org. URL: `/dock/hub/token-plan[/me|team[/<id>]|org]`.
- *
- * URL-first like the endpoints view: the active scope comes from the pointer
- * and the segmented control navigates. Everything shown comes from one hub
- * read (`token_plan/me`); the admin actions are a plain endpoint update (the
- * sheet) and the two setups. The expert page is one link away.
+ * Token plan -- the caller's token sources (left) and, in the centre, one stable summary: every source
+ * together by default, or the selected row (which includes everything allocated from it).
+ * URL: `/dock/hub/token-plan[/llm_endpoint-<uuid>]`.
  */
-import { PageId, ViewType, type TokenPlanScope } from '@sdk';
+import { PageId, ViewType, type LLMEndpoint } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowUpRight, Gauge } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
-import { Button } from '@src/components/ui/button';
-import { ScopeBar } from '@src/components/ui/scope-bar';
+import { LlmEndpointDialog } from '@src/components/llm-endpoints/LlmEndpointDialog';
+import {
+  endpointIdFromTypeId,
+  endpointTypeId,
+  openLlmEndpoint,
+} from '@src/components/llm-endpoints/llm-endpoints-pointer';
+import { useLlmEndpoints } from '@src/components/llm-endpoints/use-llm-endpoints';
 import { Skeleton } from '@src/components/ui/skeleton';
-import { errorMessage } from '@src/lib/error-message';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { notify } from '@src/notifications';
 
-import { BudgetHero } from './BudgetHero';
-import { ConsumptionPanel } from './ConsumptionPanel';
-import { MembersTable } from './MembersTable';
-import { ScopePath } from './ScopePath';
-import { SetBudgetSheet } from './SetBudgetSheet';
-import { scopeLabel } from './token-plan-math';
-import { parseTokenPlanPointer, scopePointer, selectScope } from './token-plan-pointer';
-import { useSetupScope, useTokenPlan } from './use-token-plan';
+import { AllocateDialog } from './AllocateDialog';
+import { FundedThroughCard, useResetLabel } from './FundingChain';
+import { SourceSummary } from './SourceSummary';
+import { TokenSourcesTree } from './TokenSourcesTree';
+import { childrenOf, costLeft, resetOf, sourceRows } from './source-tree';
+import { useInvalidateTokenPlan, useTokenPlan } from './use-token-plan';
 
-function ScopeSetup({ scope }: { scope: TokenPlanScope }) {
-  const { t } = useLingui();
-  const setup = useSetupScope();
-  const run = async () => {
-    try {
-      await setup.mutateAsync({ kind: scope.kind as 'team' | 'org', id: scope.id });
-      notify.success({ title: t`Budget endpoint created for ${scope.name}` });
-    } catch (e) {
-      notify.error({ title: t`Could not set up the budget`, message: errorMessage(e, '') });
-    }
-  };
-  return (
-    <section className="rounded-xl border border-dashed p-5" data-testid="scope-setup">
-      <div className="text-base font-semibold">
-        {scope.kind === 'team' ? <Trans>No team budget yet</Trans> : <Trans>No organization budget yet</Trans>}
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {scope.can_configure ? (
-          <Trans>Create the shared budget endpoint; members' defaults are then routed through it.</Trans>
-        ) : (
-          <Trans>Ask an admin to set one up.</Trans>
-        )}
-      </p>
-      {scope.can_configure && (
-        <Button
-          size="sm"
-          className="mt-3"
-          onClick={() => void run()}
-          disabled={setup.isPending}
-          data-testid="scope-setup-run"
-        >
-          {scope.kind === 'team' ? <Trans>Set up team budget</Trans> : <Trans>Set up org budget</Trans>}
-        </Button>
-      )}
-    </section>
-  );
+/** The selected row: an endpoint typeid pointer; anything else selects nothing (all sources). */
+function pointedEndpointId(pointer: string | undefined): string | null {
+  return pointer?.startsWith('llm_endpoint-') ? endpointIdFromTypeId(pointer) : null;
 }
 
 export function TokenPlanView({ pointer }: { pointer?: string }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { data, isLoading, error } = useTokenPlan();
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const { endpoints, refetch } = useLlmEndpoints();
+  const invalidate = useInvalidateTokenPlan();
+  const [adding, setAdding] = useState(false);
+  const [allocating, setAllocating] = useState<LLMEndpoint | null>(null);
 
   const scopes = useMemo(() => data?.scopes ?? [], [data]);
-  const parsed = parseTokenPlanPointer(pointer);
-  const scope = selectScope(scopes, parsed);
-  const me = scopes.find((s) => s.kind === 'me');
-  const remainingByHop = useMemo(() => {
-    const out: Record<string, TokenPlanScope['remaining']> = {};
-    for (const s of scopes) if (s.endpoint_id) out[s.endpoint_id] = s.remaining;
-    return out;
-  }, [scopes]);
+  const hiddenTeams = scopes.filter((s) => s.kind === 'team' && !s.endpoint_id).length;
+  const sources = useMemo(() => sourceRows(endpoints), [endpoints]);
 
-  const options = scopes.map((s) => {
-    const label = scopeLabel(s);
-    return { value: scopePointer(s), label: typeof label === 'string' ? label : t(label) };
-  });
-  const active = scope ? scopePointer(scope) : '';
+  // One row, or -- with nothing selected -- every source together.
+  const treeId = pointedEndpointId(pointer);
+  const selected = (treeId && endpoints.find((e) => e.id === treeId)) || null;
+  const label = (e: LLMEndpoint) =>
+    sources.find((r) => r.endpoint.id === e.id)?.flowpadAccount ? t`Flowpad account` : e.name || t`Unnamed`;
+
+  // The window the headline is judged over: the selected row's own, or the only source's.
+  const resetLabel = useResetLabel();
+  const headlineOf = selected ?? (sources.length === 1 ? sources[0].endpoint : null);
+  const headlineLeft = headlineOf ? costLeft(headlineOf) : null;
+  const headlineReset = resetOf(headlineLeft);
+  const subtitle = headlineLeft
+    ? [resetLabel(headlineLeft), headlineReset?.inHours != null ? t`resets in ${headlineReset.inHours}h` : null]
+        .filter(Boolean)
+        .join(' · ')
+    : null;
+
   const go = (next: string) => navigation.openPage(PageId.HUB, ViewType.TOKEN_PLAN, next || undefined);
+  const open = (e: LLMEndpoint) => go(endpointTypeId(e.id));
+  const refresh = () => void Promise.all([invalidate(), refetch()]);
 
   return (
     <div className="flex h-full flex-col overflow-y-auto p-6">
@@ -102,12 +76,6 @@ export function TokenPlanView({ pointer }: { pointer?: string }) {
         <Trans>Your budget, what you burned, and when it resets — for you, your team and your organization.</Trans>
       </p>
 
-      {options.length > 1 && (
-        <div className="mb-4" data-testid="scope-bar">
-          <ScopeBar value={active} options={options} onChange={go} />
-        </div>
-      )}
-
       {isLoading && !data && (
         <div className="space-y-3" data-testid="token-plan-loading">
           <Skeleton className="h-6 w-64" />
@@ -120,48 +88,82 @@ export function TokenPlanView({ pointer }: { pointer?: string }) {
         </p>
       )}
 
-      {scope && (
-        <div className="mx-auto w-full max-w-3xl space-y-6">
-          {scope.path.length > 0 && <ScopePath path={scope.path} remainingByHop={remainingByHop} />}
-          {scope.endpoint_id ? (
-            <>
-              <BudgetHero scope={scope} onSetBudget={scope.can_configure ? () => setSheetOpen(true) : undefined} />
-              <ConsumptionPanel scope={scope} />
-              {scope.kind !== 'me' && (
-                <MembersTable
-                  endpointId={scope.endpoint_id}
-                  canConfigure={scope.can_configure}
-                  myEndpointId={me?.endpoint_id ?? null}
-                />
-              )}
-              <footer className="pt-2">
+      {data && (
+        <div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-[minmax(0,44rem)_minmax(0,1fr)]">
+          <TokenSourcesTree
+            endpoints={endpoints}
+            selectedId={selected?.id ?? null}
+            hiddenTeams={hiddenTeams}
+            onSelect={(e) => go(endpointTypeId(e.id))}
+            onAllocate={setAllocating}
+            onConfigure={(e) => openLlmEndpoint(navigation, e.id)}
+            onAdd={() => setAdding(true)}
+            onAllEndpoints={() => navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS)}
+            onRenamed={refresh}
+          />
+          <div className="w-full min-w-0 space-y-3">
+            {selected && (
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => go('')}
+                  data-testid="show-all"
+                >
+                  <Trans>← All sources</Trans>
+                </button>
                 <button
                   type="button"
                   className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                   data-testid="expert-link"
-                  onClick={() => openLlmEndpoint(navigation, scope.endpoint_id as string, 'usage')}
+                  onClick={() => openLlmEndpoint(navigation, selected.id, 'usage')}
                 >
                   <Trans>Expert details</Trans>
                   <ArrowUpRight className="h-3 w-3" />
                 </button>
-              </footer>
-            </>
-          ) : (
-            <ScopeSetup scope={scope} />
-          )}
+              </div>
+            )}
+            <SourceSummary
+              key={selected?.id ?? 'all'}
+              title={selected ? label(selected) : t`All sources`}
+              subject={selected ? [selected] : sources.map((r) => r.endpoint)}
+              breakdown={(selected
+                ? childrenOf(selected, endpoints).filter((k) => k.enabled !== false)
+                : sources.map((r) => r.endpoint)
+              ).map((e) => ({ endpoint: e, label: label(e) }))}
+              breakdownTitle={selected ? t`Allocated from this source` : t`Sources`}
+              onOpen={open}
+              subtitle={subtitle}
+              afterBudget={
+                selected ? (
+                  <FundedThroughCard
+                    endpointId={selected.id}
+                    entryName={
+                      sources.find((r) => r.endpoint.id === selected.id)?.flowpadAccount
+                        ? t`Flowpad account`
+                        : selected.name
+                    }
+                  />
+                ) : null
+              }
+            />
+          </div>
         </div>
       )}
 
-      {/* Mounted only while open: the sheet fetches the endpoint it edits, so a
-          visit to this screen costs no endpoint request. */}
-      {scope && scope.endpoint_id && sheetOpen && (
-        <SetBudgetSheet
-          open={sheetOpen}
-          onOpenChange={setSheetOpen}
-          endpointId={scope.endpoint_id}
-          scopeKind={scope.kind}
-          scopeName={scope.name}
+      {adding && (
+        <LlmEndpointDialog
+          open
+          onOpenChange={(next) => !next && setAdding(false)}
+          all={endpoints}
+          onSaved={() => {
+            refresh();
+            setAdding(false);
+          }}
         />
+      )}
+      {allocating && (
+        <AllocateDialog source={allocating} scopes={scopes} onClose={() => setAllocating(null)} onDone={refresh} />
       )}
     </div>
   );

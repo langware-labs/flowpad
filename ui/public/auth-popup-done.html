@@ -80,6 +80,17 @@
           next = '/';
         }
 
+        // The hub marks a first sign-in with `signup` on this page's URL, and the
+        // opener reloads without it. Holding it under the key `pending-signup.ts`
+        // reads reports it as a sign-up, after the visitor's cookie choice.
+        try {
+          if (new URLSearchParams(window.location.search).has('signup')) {
+            localStorage.setItem('_pending_signup', String(Date.now()));
+          }
+        } catch (e) {
+          /* private mode: this sign-up goes unreported */
+        }
+
         try {
           localStorage.setItem('loginCallbackUrl', next);
         } catch (e) {

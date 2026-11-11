@@ -8,12 +8,15 @@ location, history loading, and the prompt-composition compatibility hook.
 
 from __future__ import annotations
 
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import launch_screen
+
 import json
 import logging
+import os
 import re
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 from uuid import uuid4
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
@@ -40,6 +43,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.goal import goal_met
 from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (
     to_mcp_config_json,
@@ -135,6 +139,23 @@ _BUILTIN_HOOKS: tuple[tuple[HookEventType, dict[str, Any]], ...] = (
     ),
 )
 
+#: Added for an app launch only — the surface that gets ``common_ui.md``'s language
+#: rule. Repeats that rule beside each user message (``reply_language_hook.py``).
+_APP_LAUNCH_HOOKS: tuple[tuple[HookEventType, dict[str, Any]], ...] = (
+    (
+        HookEventType.USER_PROMPT_SUBMIT,
+        {
+            "hooks": [
+                {
+                    "args": ["-m", "flow_sdk.i18n.reply_language_hook"],
+                    "command": sys.executable,
+                    "type": "command",
+                }
+            ],
+        },
+    ),
+)
+
 _HOOK_CAPABILITIES: "HookCapabilities" = {
     **settings_file_scopes(),
     HookScope.PROCESS: HookCapability(events=_PROCESS_EVENTS, response_events=_RESPONSE_EVENTS),
@@ -178,6 +199,16 @@ async def _fill_resolved_model_slug(process: "AgenticProcess", transcript: Path 
             return
 
 
+def headless_parent_model(cli_cfg: dict, env: Mapping[str, str]) -> str | None:
+    """The ``--model`` a headless claude turn passes, or None to pass none.
+
+    Defaults to sonnet (opus's parent-side latency blows the long-test budget). A shell that
+    names its own model (``eval "$(flow llm use …)"``) keeps it: a forced ``--model sonnet``
+    beats ANTHROPIC_MODEL and sends a bare id the endpoint's gateway rejects with a 400.
+    """
+    return cli_cfg.get("model") or (None if env.get("ANTHROPIC_MODEL") else "sonnet")
+
+
 class ClaudeDriver:
     """Vendor glue for Claude Code. Implements the ``WorkerDriver`` Protocol."""
 
@@ -194,6 +225,7 @@ class ClaudeDriver:
     #: it gets its embedded agents as prompt text; a Chief of Staff on it delegates through tasks.
     spawns_subagents = True
     pty_submits_on_paste = True
+    pty_shell_escape = "!"
     # Real Claude Code PTY captures expose two grounded blank-composer frames:
     # a fresh boot paints the rotating ``Try "…"`` placeholder (2.1.207+),
     # while a resumed session can paint a bare prompt followed immediately by
@@ -205,6 +237,7 @@ class ClaudeDriver:
     # real ``\r\r\n`` — so one line break may separate the two.
     pty_composer_ready_pattern = re.compile(r'❯[ \t\u00a0]+(?:Try "|\n?─{3,})')
     pins_resume_cwd = True  # pins CLAUDE_PROJECT_DIR + workdir to the source session's cwd
+    launch_screen = launch_screen  # blocking launch prompts, refused credentials, the card's fixes
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -271,9 +304,11 @@ class ClaudeDriver:
         assets: AssetDir,
         process_id: str,
         events: Sequence[HookEventType],
+        *,
+        app_launch: bool = False,
     ) -> ProcessHookRuntime:
         normalized = normalize_process_hook_events(events, provider=self.name, supported=_PROCESS_EVENTS)
-        if not normalized:
+        if not normalized and not app_launch:
             assets.remove(_PROCESS_HOOK_PLUGIN)
             return ProcessHookRuntime()
         if not is_valid_entity_id(process_id):
@@ -304,7 +339,7 @@ class ClaudeDriver:
                 for event in normalized
             },
         }
-        for event, entry in _BUILTIN_HOOKS:
+        for event, entry in (*_BUILTIN_HOOKS, *(_APP_LAUNCH_HOOKS if app_launch else ())):
             hooks["hooks"].setdefault(event.value, []).append(entry)
         manifest = {
             "author": {"name": "Flowpad"},
@@ -447,10 +482,7 @@ class ClaudeDriver:
         fork_source = cli_cfg.get("fork_session_id")
         if fork_source and self.transcript_path(process) is not None:
             fork_source = None
-        # Default the headless parent to sonnet — opus's parent-side latency
-        # blows past the 28-s long-test budget on multi-step flows. Callers
-        # can override via cli_config["model"] / ["effort"].
-        parent_model = cli_cfg.get("model") or "sonnet"
+        parent_model = headless_parent_model(cli_cfg, os.environ)
         parent_effort = cli_cfg.get("effort")
         # Mirror PTY path's FLOWPAD_EXECUTION_SCOPE injection
         # (agentic_process.py:786-788) so headless workers can route
@@ -592,19 +624,17 @@ class ClaudeDriver:
         """Path to the Claude session JSONL — None when no session_id yet."""
         if not process.session_id:
             return None
-        from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import find_claude_session_path
 
-        record = get_claude_session(process.session_id)
-        if record and record.jsonl_path:
-            path = Path(record.jsonl_path)
-            if path.exists():
-                return TranscriptDescriptor(
-                    path=path,
-                    format=TranscriptFormat.CLAUDE_JSONL,
-                    source=TranscriptSource.WORKER_SESSION,
-                    session_id=process.session_id,
-                )
-        return None
+        path = find_claude_session_path(process.session_id, process.workdir)
+        if path is None:
+            return None
+        return TranscriptDescriptor(
+            path=path,
+            format=TranscriptFormat.CLAUDE_JSONL,
+            source=TranscriptSource.WORKER_SESSION,
+            session_id=process.session_id,
+        )
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
@@ -644,10 +674,10 @@ class ClaudeDriver:
         )
         return roots
 
-    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str]) -> bool:
+    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str], own: Sequence[str] = ()) -> bool:
         from flow_sdk.assets.process_projection import link_mounted_skills
 
-        return link_mounted_skills(assets_dir, add_dirs, native_mount=".claude/skills")
+        return link_mounted_skills(assets_dir, add_dirs, native_mount=".claude/skills", own=own)
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
         """Claude discovers skills from ``.claude/skills`` under the mounted
@@ -657,6 +687,10 @@ class ClaudeDriver:
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         """Map the tail of the Claude JSONL to a WorkerStatus."""
         return _tail_status(transcript_path)
+
+    def goal_met(self, transcript_path: Path) -> bool:
+        """The session's ``/goal`` was judged met (newest goal check in the JSONL)."""
+        return goal_met(transcript_path)
 
     def has_resumable_session(self, process: "AgenticProcess") -> bool:
         from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session

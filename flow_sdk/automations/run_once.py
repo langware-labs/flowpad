@@ -98,9 +98,8 @@ async def run_once(trigger: "Trigger", event: Optional[dict[str, Any]] = None, *
                    message_id: Optional[str] = None) -> RunOnceStarted:
     """Start one test run of ``trigger``. Raises ``RunOnceRefused`` with a fix-it message.
     ``message_id`` runs a stream inbox rule on that message (its real envelope)."""
-    from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired  # noqa: PLC0415
-
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired  # noqa: PLC0415
 
     kind = TriggerType(str(trigger.trigger_type))
     tid = trigger.id or ""
@@ -159,28 +158,12 @@ async def _run_hook_rule_once(trigger: "Trigger") -> RunOnceStarted:
     """A hook rule's test is quick and local: run its rule against a sample event."""
     from pathlib import Path  # noqa: PLC0415
 
-    from flow_sdk.automations.fingerprint import spec_hash  # noqa: PLC0415
-    from flow_sdk.fs_store.operations.trigger_log import append_entry  # noqa: PLC0415
-
     if not trigger.path:
         raise RunOnceRefused("This agent rule has no rule folder, so there is nothing to run.")
     record_file = Path(trigger.path) / "record.json"
     if not record_file.exists():
         raise RunOnceRefused(f"The rule folder has no record.json ({trigger.path}).")
-    from flow_sdk.rules.activation_rule import ActivationRule  # noqa: PLC0415
-
-    rule = ActivationRule.load_record(record_file)
-    result = rule.run({"hookEvent": "UserPromptSubmit", "hook_event_name": "UserPromptSubmit",
-                       "prompt": "", "cwd": ""}, [])
-    append_entry(rule.name, {
-        "hook_event": "UserPromptSubmit",
-        "trigger": result.trigger,
-        "reason": result.reason or "",
-        "is_test": True,
-        "rule_name": rule.name,
-        "trigger_id": trigger.id,
-        "trigger_type": str(trigger.trigger_type),
-        "actions": [a.type for a in result.actions] if result.actions else [],
-        "spec_hash": spec_hash(trigger),
-    })
-    return RunOnceStarted(trigger_id=trigger.id or "", background=False, detail=result.to_dict())
+    raise RunOnceRefused(
+        "This legacy agent rule uses the removed ActivationRule engine and cannot be tested. "
+        "Use an event automation or a callable hook trigger."
+    )

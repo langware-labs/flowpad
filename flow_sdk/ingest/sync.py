@@ -25,7 +25,7 @@ from typing import Optional
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.driver_runtime import Pass, position_of
-from flow_sdk.ingest.health import MIRROR_CODES, SourceHealth, classify, stamp_error
+from flow_sdk.ingest.health import SourceHealth, classify, stamp_error
 from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode, IngestReport
@@ -63,6 +63,11 @@ async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) ->
     if not await source.capabilities_ready():
         await _fail_source(source, "capability_unavailable", f"requires {', '.join(source.required_capabilities)}", now)
         return report
+
+    # A source that hosts datasets holds their rows, not a feed: the datasets read and write it themselves
+    # (datasets/stores.py), so a poll only proves it is still set up -- nothing is fetched or ingested.
+    if hosted := await source.datasets():
+        return await _verify_only(source, stype, report, now, hosted)
 
     # `reflect` is a property of the SOURCE, knowable before any I/O: a reflecting source has no
     # record destination, and with a mode that has no reflector its files would be dropped while
@@ -122,8 +127,7 @@ async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) ->
     # Idle and clean: nothing arrived, the position did not move and the row already reads healthy,
     # so the steady state is one request and zero writes per tick (the poller stamped the next poll).
     idle = found.unchanged and found.cursor == source.cursor and (found.manifest or {}) == (source.manifest or {})
-    clean = (source.health == SourceHealth.OK.value and (not source.error_code or source.error_code in MIRROR_CODES)
-             and not source.consecutive_failures)
+    clean = source.health == SourceHealth.OK.value and not source.error_code and not source.consecutive_failures
     # Waiting on a person, not broken: the source keeps polling and its card says what to resolve.
     waiting = ("write_back_held", written.sentence()) if written is not None and written.needs_a_person else (None, None)
     if idle and clean and waiting[0] is None:
@@ -141,6 +145,32 @@ async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) ->
     await source.save_runtime()
     emit_sync_tag(source.provider, source.id, "completed", report=report)
     logger.info("[ingest] %s/%s %s", source.provider, source.name or source.account_key, report.as_counts())
+    return report
+
+
+async def _verify_only(source: DataSource, stype, report: IngestReport, now: datetime, hosted: list) -> IngestReport:
+    """One poll of a source that hosts datasets: its setup check, stamped like any run's ending."""
+    emit_sync_tag(source.provider, source.id, "started")
+    source.last_attempted_at = now
+    try:
+        if stype.has_setup:
+            verdict = await source.verify(hosted)
+            if verdict.get("transient"):
+                raise SourceUnavailable(str(verdict.get("detail") or ""))
+            if not verdict.get("ready"):   # verify moved the row to setup and said why
+                emit_sync_tag(source.provider, source.id, "completed", report=report)
+                return report
+    except Exception as exc:  # noqa: BLE001 — classified, recorded, never re-raised
+        health, code, detail = classify(exc)
+        source.consecutive_failures = (source.consecutive_failures or 0) + 1
+        await _fail_source(source, code, detail, now, health=health)
+        emit_sync_tag(source.provider, source.id, "completed", report=report)
+        return report
+    source.consecutive_failures = 0
+    source.last_synced_at = now
+    _stamp_source(source, SourceHealth.OK, None, None, now)
+    await source.save_runtime()
+    emit_sync_tag(source.provider, source.id, "completed", report=report)
     return report
 
 

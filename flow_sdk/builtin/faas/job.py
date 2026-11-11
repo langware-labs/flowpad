@@ -15,6 +15,7 @@ from flow_sdk.builtin.faas.job_execution import JobExecution
 from flow_sdk.config import default_service_config
 from flow_sdk.core import Entity, ExpressionNode, QueryFilter, QueryOp, action
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.db.drivers.query import sort_in_order
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses import ApiFailResponse, ApiResponse
@@ -122,11 +123,22 @@ class Job(Entity):
         if isinstance(entities_filter, dict):
             entities_filter = QueryFilter.parse(entities_filter, cls.get_type())
         entities_filter = entities_filter or QueryFilter(type=cls.get_type())
+        merges_system = cls.get_type() == BuiltinEntityType.JOB.value
+        paged = bool(entities_filter.limit or entities_filter.offset)
+        if merges_system and paged:
+            # System jobs are merged in after the read, so a page cut by the database would repeat them on
+            # every page and run past the limit. Merge everything, order it as the database would, then cut.
+            unpaged = entities_filter.model_copy(update={"limit": None, "offset": None})
+            merged = await cls.get_all(unpaged, source_entity)
+            ordered = sort_in_order(list(merged), entities_filter.order_by, paged=True)
+            start = entities_filter.offset or 0
+            end = start + entities_filter.limit if entities_filter.limit else None
+            return ordered[start:end]
         user_jobs = await super().get_all(entities_filter=entities_filter, source_entity=source_entity)
 
         # Only add system jobs when querying for Job type (not SystemJob)
         # SystemJob should not merge additional system jobs as it's already querying system jobs directly
-        if cls.get_type() == BuiltinEntityType.JOB.value:
+        if merges_system:
             # Get system jobs
             system_jobs = await cls.get_system_jobs()
 

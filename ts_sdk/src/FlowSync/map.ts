@@ -98,6 +98,7 @@ export class WatchQueryMap<T> {
     let watchedQuery = this.watchedQueries.get(key);
     if (!watchedQuery) {
       watchedQuery = new WatchedQuery<T>(request, results, pendingPromise);
+      if (results) watchedQuery.setPage(results);
       this.watchedQueries.set(key, watchedQuery);
     } else {
       // Add callback to existing watched query
@@ -105,6 +106,7 @@ export class WatchQueryMap<T> {
       // Update results if provided
       if (results && results !== watchedQuery.results) {
         watchedQuery.results = results;
+        watchedQuery.setPage(results);
       }
       // Update pending promise if provided
       if (pendingPromise) {
@@ -217,7 +219,11 @@ export class WatchQueryMap<T> {
   /**
    * Remove entity from query results and notify callbacks
    */
-  public removeEntityFromResults(type: string, entityTypeId: TypeId): void {
+  public removeEntityFromResults(
+    type: string,
+    entityTypeId: TypeId,
+    refill?: (watchedQuery: WatchedQuery<T>) => void,
+  ): void {
     // Iterate and filter by type
     for (const watchedQuery of this.watchedQueries.values()) {
       if (watchedQuery.request.type === type && watchedQuery.results) {
@@ -229,6 +235,9 @@ export class WatchQueryMap<T> {
           if (beforeLength !== watchedQuery.results.length) {
             watchedQuery.notifyCallbacks();
           }
+          // A page with more behind it is one row short now: ask the server for it again, so it
+          // stays full.
+          if (watchedQuery.hasMore && refill) refill(watchedQuery);
         }
       }
     }
@@ -262,9 +271,39 @@ export class WatchQueryMap<T> {
       if (watchedQuery.request.query && !watchedQuery.request.query.validate(data)) continue;
       const exists = watchedQuery.results.some((e: any) => e.typeId.equals(entityTypeId));
       if (exists) continue;
-      watchedQuery.results.push(entity);
+      const query = watchedQuery.request.query;
+      if (!query?.ordering) {
+        watchedQuery.results.push(entity);
+        watchedQuery.notifyCallbacks();
+        continue;
+      }
+      // An ordered (or paged) list keeps the server's order: the row goes where the server would
+      // put it, and a page stays its size — a row pushed past the limit is on the next page now.
+      const at = watchedQuery.results.findIndex((row: any) => query.compare(entity, row) < 0);
+      const position = at === -1 ? watchedQuery.results.length : at;
+      if (query.limit != null && position >= query.limit) {
+        watchedQuery.hasMore = true;
+        continue;
+      }
+      watchedQuery.results.splice(position, 0, entity);
+      if (query.limit != null && watchedQuery.results.length > query.limit) {
+        watchedQuery.results.length = query.limit;
+        watchedQuery.hasMore = true;
+      }
       watchedQuery.notifyCallbacks();
     }
+  }
+
+  /**
+   * Re-sort an ordered query's results after a row in it changed (a no-op for an unordered one). The
+   * changed row is read with `data` over it: the update may not have been merged into it yet.
+   */
+  public static reorder<T>(watchedQuery: WatchedQuery<T>, changed?: { typeId: TypeId; data: object }): void {
+    const query = watchedQuery.request.query;
+    if (!query?.ordering || !watchedQuery.results) return;
+    const view = (row: any) =>
+      changed && row?.typeId?.equals?.(changed.typeId) ? Object.assign(Object.create(row), changed.data) : row;
+    watchedQuery.results.sort((a, b) => query.compare(view(a), view(b)));
   }
 
   /**

@@ -14,6 +14,7 @@
  * Enforced by `ui/tests/unit/sdk-module-layering.test.ts`.
  */
 import { IEntity } from '../../IEntity';
+import type { ComputeNodeSize } from './machine-status';
 
 /**
  * Available compute provider types.
@@ -75,6 +76,8 @@ export enum ExecutionEnvironmentStatus {
   PAUSED = 'PAUSED',
   ERROR = 'ERROR',
   NOT_FOUND = 'NOT_FOUND',
+  /** An enrolled machine with no live connection. The hub cannot wake it — only `flow connect` on it can. */
+  DISCONNECTED = 'DISCONNECTED',
 }
 
 /**
@@ -107,6 +110,10 @@ export interface NodeStatus {
   end_at?: string | null;
   cpu_count?: number;
   memory_mb?: number;
+  /** Why the machine is in this state, in words a person can act on. */
+  status_msg?: string | null;
+  /** The machine's own hostname — where to run `flow connect` when it is disconnected. */
+  hostname?: string | null;
 }
 
 /**
@@ -204,6 +211,8 @@ export interface IComputeNode extends Omit<IEntity, 'status'> {
   node_provider_type?: ComputeProviderType;
   node_provider_id?: string;
   node_config?: Record<string, unknown>;
+  /** The box's size. Set at create; the hub's default applies when absent. */
+  node_size?: ComputeNodeSize;
   fs_storage_mount_path?: string | null;
   home_dir?: string | null;
   /** Whether the box belongs to a single person. Owner-only to change, and only

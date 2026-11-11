@@ -2,6 +2,7 @@
  * Shared drivers for api-tier tests of "Ask someone for help" and support tickets: a backend
  * logged in to a hub, and the real dialog driven the way a person does it.
  */
+import { adjusted } from '../adjustableTimeout';
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import { dataContext } from '@sdk';
 import { cloudManager } from '@sdk/services/cloud_login';
@@ -42,7 +43,7 @@ export interface AskOutcome {
   ms: number;
 }
 
-/** One ask through the real dialog: person, title, files, Ask — until it is saved or shows its
+/** One ask through the real dialog: what is wrong, files, the person, Send — until it is saved or shows its
  *  error row. Scoped to its own dialog, so several can run at once. */
 export async function askForHelp(opts: {
   projectId: string | null;
@@ -58,22 +59,23 @@ export async function askForHelp(opts: {
   const dialogs = container.ownerDocument.querySelectorAll('[role="dialog"]');
   const dialog = dialogs[dialogs.length - 1] as HTMLElement;
   const q = within(dialog);
-  const person = q.getByTestId('vibe-assign-person');
-  fireEvent.change(person, { target: { value: opts.to } });
-  fireEvent.blur(person);
-  fireEvent.change(q.getByTestId('vibe-assign-title'), { target: { value: opts.title } });
+  // One screen: what is wrong, the files, the person.
+  fireEvent.change(q.getByTestId('vibe-assign-notes'), { target: { value: opts.title } });
   const files = opts.files ?? [];
   if (files.length) {
     fireEvent.change(dialog.querySelector('input[type="file"]')!, { target: { files } });
     await waitFor(() => expect(q.getAllByText(files[files.length - 1].name).length).toBeGreaterThan(0));
   }
+  const person = q.getByTestId('vibe-assign-person');
+  fireEvent.change(person, { target: { value: opts.to } });
+  fireEvent.blur(person);
 
   const started = performance.now();
   fireEvent.click(q.getByTestId('vibe-assign-submit'));
   const errorRow = () => dialog.querySelector('p.border-destructive\\/60');
   // The tier's own test cap; an ask that takes longer is a finding.
   await waitFor(() => expect(onAsked.mock.calls.length > 0 || errorRow() !== null).toBe(true), {
-    timeout: 15000,
+    timeout: adjusted(15000),
   });
   const asked = onAsked.mock.calls[0]?.[0] as { task_id?: string; conversation_id?: string } | undefined;
   const outcome: AskOutcome = {

@@ -86,7 +86,7 @@ async def _run_delete(mode: str, leave_error: Exception | None):
             "flow_sdk.cloud_client.hub_bridge.hub_ws_bridge.suppress_conversation_materialization",
             new=suppress,
         ),
-        patch("flow_sdk.utils.hub.hub_base_url", return_value="https://hub.test"),
+        patch("flow_sdk.cloud_client.transport.hub_http.hub_base_url", return_value="https://hub.test"),
         patch(f"{_MOD}.hub_base_url", return_value="https://hub.test"),
     ):
         resp = await handle_conversation_delete(CONV_ID, mode, "user-x")

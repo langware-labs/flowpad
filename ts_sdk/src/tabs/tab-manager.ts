@@ -11,6 +11,7 @@ import { resolveNextTabPure } from './tab-selection';
 import {
   tabForDockKey,
   tabForTargetId,
+  tabOwnsTarget,
   tabsForProject,
   terminalTabsForScope,
   type TabScope,
@@ -26,14 +27,14 @@ export interface TabGateway {
   newTab(pointer: string, options?: INewTabOpts): Promise<Tab[]>;
   getFromDockPointer(
     dock: IDockPointer,
-    options?: { parentTabId?: string | null; afterTabId?: string | null },
+    options?: { parentTabId?: string | null; afterTabId?: string | null; pingCaller?: boolean },
   ): Promise<TabEnsureResult>;
   resolveDockTarget(dock: IDockPointer): ReturnType<typeof Tab.resolveDockTarget>;
   activateById(tabId: string): Promise<void>;
   closeById(tabId: string): Promise<Tab[]>;
   closeManyByIds(tabIds: string[], projectId?: string | null): Promise<Tab[]>;
   renameById(tabId: string, name: string): Promise<Tab[]>;
-  setNameById(tabId: string, name: string): Promise<Tab[]>;
+  setNameById(tabId: string, name: string, options?: { pingCaller?: boolean }): Promise<Tab[]>;
   reorder(
     tabId: string,
     afterId: string | null,
@@ -274,7 +275,12 @@ export class TabManager {
    *  a minted row reports it to view-mode memory as `TabCreate`. */
   async ensureDock(
     dock: IDockPointer,
-    options: { parentTabId?: string | null; afterTabId?: string | null; viewMode?: string | null } = {},
+    options: {
+      parentTabId?: string | null;
+      afterTabId?: string | null;
+      viewMode?: string | null;
+      pingCaller?: boolean;
+    } = {},
   ): Promise<TabEnsureResult> {
     const { viewMode, ...placement } = options;
     const result = await this.gateway.getFromDockPointer(dock, placement);
@@ -301,8 +307,18 @@ export class TabManager {
 
   activate(tabId: string): Promise<void> {
     this.stampRecencyLocally(tabId);
-    return this.gateway.activateById(tabId);
+    // One navigation activates its tab twice (the warm open and the loader's recency stamp):
+    // a second activate of a tab already being activated joins that request.
+    const open = this.activating.get(tabId);
+    if (open) return open;
+    const request = this.gateway.activateById(tabId).finally(() => {
+      if (this.activating.get(tabId) === request) this.activating.delete(tabId);
+    });
+    this.activating.set(tabId, request);
+    return request;
   }
+
+  private readonly activating = new Map<string, Promise<void>>();
 
   /**
    * `activate` broadcasts no `tabs_changed`, so the snapshot would keep the old
@@ -327,8 +343,8 @@ export class TabManager {
     return this.gateway.renameById(tabId, name);
   }
 
-  setName(tabId: string, name: string): Promise<Tab[]> {
-    return this.gateway.setNameById(tabId, name);
+  setName(tabId: string, name: string, options?: { pingCaller?: boolean }): Promise<Tab[]> {
+    return this.gateway.setNameById(tabId, name, options);
   }
 
   reorder(
@@ -368,7 +384,7 @@ export class TabManager {
     if (!tabHash || !trimmed) return;
     const tab = this.findByDockKey(tabHash);
     if (!tab || tab.name === trimmed) return;
-    await this.setName(tab.id, trimmed);
+    await this.setName(tab.id, trimmed, { pingCaller: false });
     await this.refresh();
   }
 
@@ -382,15 +398,13 @@ export class TabManager {
       const name = (data as { name?: string | null } | null)?.name;
       const remote = (data as { remote?: unknown } | null)?.remote;
       if (!type || !id) return;
-      const tab = this.snapshot.find(
-        (candidate) => candidate.target_type === type && candidate.target_id === id,
-      );
+      const tab = this.snapshot.find((candidate) => tabOwnsTarget(candidate, id, type));
       if (!tab) return;
       const nameChanged = typeof name === 'string' && name.length > 0 && tab.name !== name;
       const remoteChanged = typeof remote === 'boolean' && tab.target_remote !== remote;
       if (!nameChanged && !remoteChanged) return;
       void (async () => {
-        if (nameChanged) await this.setName(tab.id, name);
+        if (nameChanged) await this.setName(tab.id, name, { pingCaller: false });
         await this.refresh();
       })().catch(() => undefined);
     };
@@ -399,7 +413,7 @@ export class TabManager {
   }
 
   stampTargetRecency(targetType: string, targetId: string): void {
-    const matches = (tab: Tab): boolean => tab.target_type === targetType && tab.target_id === targetId;
+    const matches = (tab: Tab): boolean => tabOwnsTarget(tab, targetId, targetType);
     const cachedId = this.snapshot.find(matches)?.id;
     const resolvedId =
       cachedId !== undefined

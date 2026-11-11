@@ -9,15 +9,17 @@ ordinary `Trigger` (`flow_sdk/builtin/trigger.py`) of kind TAG listening to
 `stream_inbox.*.message.projected`, with two things settled:
 
 * **`if`** is a **decision op** — the ComputeOp subkind `decision` ([decisions](decisions.md) §9),
-  a Decision API question asked of the message. The trigger runs it as its *gate*, before the
+  a Decision API question asked of the message. The compiled wizard runs it as its *gate*, before the
   counter, so a "no" costs one call and spends nothing.
 * **`then`** is a **wizard** — the sequence engine that already exists ([wizards](wizards.md)).
   `run_agent` is sugar for a one-step wizard of an `agent` op. The message reaches the wizard
   as its input and the agent step mounts it as the agent's input.
 
-The trigger owns *when* and *policy* (scope, enabled, storm cap, `fire_once`, `confirm`, the
-gate). The wizard owns *what happens*. Nothing else is new: the test panel, the Runs
-screen, the bus map and the `trigger.json` form all apply unchanged.
+The trigger owns delivery (scope, enabled state, execution location, cycle and storm
+protection). The backend compiles confirmation, subject preparation, the decision,
+acceptance and work into one wizard. Acceptance accounts for a real fire before
+effects; a negative decision never reaches it. The test panel, Runs screen, bus
+map and `trigger.json` form all apply unchanged; no Wizard entity is created.
 
 Every python fence runs, in order, as one session in
 `tests/unit/test_stream_inbox_automations_snippets.py` (the Decision API doubled, the agent on the
@@ -147,10 +149,11 @@ message.
 
 ## 5. The fire path, and what it leaves behind
 
-The gate sits after every cheap check and before the counter:
+The gate is a wizard step after the delivery checks and before acceptance:
 
 ```
-disabled → already_fired → self_loop → storm → confirm → GATE → counter → trigger.fired → run_wizard(then, inputs={MESSAGE, LAUNCH, EVENT})
+delivery checks → call wizard
+  confirm → prepare subject → decision → accept (counter, trigger.fired) → activate → then
 ```
 
 | The gate says | Log row | `reason_code` | On the bus |
@@ -237,8 +240,10 @@ rule's `then`:
 } }
 ```
 
-The gate on the trigger stays where it is: a step runs after the fire has been counted; the
-gate runs before.
+The declaration's `if` becomes a step before acceptance in the enclosing wizard.
+Steps authored under `then` run after acceptance. Use `on_result` when a branch
+must distinguish a negative answer from unavailable decision service; `on_fail:
+stop` retains its existing quiet-success behavior.
 
 ## 8. The verbs the screens use
 
@@ -253,7 +258,8 @@ started = await Trigger.started_last_hour()     # the top-bar counter: real fire
 ```
 
 "Run on this one" is `run_once(rule, message_id=…)` (`automations/run_once.py`): the real
-envelope of that message, every guard off, rows carrying `is_test`. Every verb is an action
+envelope of that message, delivery/accounting guards off, decision still evaluated,
+rows carrying `is_test`. Every verb is an action
 on `Trigger` reached through `ts_sdk/src/entities/trigger.ts`, so no component builds a
 request (`ui/tests/unit/triggers-view-url.test.ts`).
 
@@ -265,7 +271,7 @@ import { Trigger } from '@sdk';
 const rule = await Trigger.onMessage({ catch: 'asks for a refund or disputes a charge', sources: [workMail.id], agent: billing.id, prompt });
 const verdict = await Trigger.decideOn(rule.id, { text: 'I was billed twice…' });   // { met, confidence, reason, answers }
 const tries = await Trigger.decideOnRecent(rule.id, { limit: 20 });
-const rows = await Trigger.overview();                                             // the list, one pass over every rule's log
+const rows = (await Trigger.overview()).rows;                                         // the list, one pass over every rule's log
 const started = await Trigger.startedLastHour();                                   // the top-bar counter: the person's own rules, one light call
 ```
 
@@ -273,12 +279,14 @@ Pinned by `ui/tests/unit/stream-inbox-automations-snippet.test.ts`.
 
 ## What is deliberately not here
 
-* **No new entity, no new engine.** A rule is a `Trigger`; its then is a `WizardSpec`; a run
+* **No new entity, no new engine.** A rule is a `Trigger`; its execution compiles to a `WizardSpec`; a run
   is a log row folded with the wizard's result; the session is an `AgenticProcess`. The
   chip rides the process because `trigger.*` is never forwarded to the app and a process
   already is.
-* **The gate is not a step.** A step runs after the fire is counted, `fire_once` spent and
-  `trigger.fired` emitted. The gate runs before any of that, which is what makes a "no" free.
+* **The gate precedes acceptance.** Both are wizard steps. A "no" ends the wizard
+  before the counter, `fire_once` or `trigger.fired`; unavailable service remains
+  a distinct unsuccessful outcome. The original decision verdict remains available
+  to previews and history.
 * **No stored state.** The row keeps `subject_id`; the state is rebuilt from the message when
   anyone asks.
 * **No provider names, no deterministic ids.** The subject registry keys on the target

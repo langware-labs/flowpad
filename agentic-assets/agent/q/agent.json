@@ -2,7 +2,7 @@
   "type": "agent",
   "id": "004f3ab7-d33b-48c0-ae0e-6e61e181a343",
   "name": "Q",
-  "version": 3,
+  "version": 4,
   "title": "QA manager",
   "description": "Flowpad's QA manager for evidence-driven end-to-end validation.",
   "avatar": "./avatar.png",
@@ -14,5 +14,6 @@
   "additional_dirs": [],
   "load_flowpad_assistant": false,
   "cli_options": {},
-  "enabled": true
+  "enabled": true,
+  "machine_size": "lg"
 }

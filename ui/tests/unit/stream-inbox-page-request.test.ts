@@ -5,6 +5,7 @@ import { TypeId, User } from '@sdk';
 import {
   conversationsPageRequest,
   newerBoundaryRequest,
+  newerPageBefore,
   STREAM_INBOX_PAGE_SIZE,
 } from '@src/components/stream-inbox-view/channel-owner';
 
@@ -25,6 +26,35 @@ describe('conversationsPageRequest', () => {
     expect(q.validate(row({ archived: false }))).toBe(true);
     expect(q.validate(row({}))).toBe(true);
     expect(q.validate(row({ archived: true }))).toBe(false);
+  });
+
+  it('channel marks narrow the page itself to the picked sources, so a filtered page is full', () => {
+    const narrowed = { owner: OWNER, sourceIds: ['src-slack'] };
+    const page = conversationsPageRequest(narrowed, 'all', null).query!;
+    expect(page.validate(row({ channel_source_id: 'src-slack' }))).toBe(true);
+    expect(page.validate(row({ channel_source_id: 'src-mail' }))).toBe(false);
+    // The newer-page boundary is asked of the same narrowed rows, so Newer pages agree.
+    const above = newerBoundaryRequest(narrowed, 'all', '2026-10-01T00:00:00.000Z').query!;
+    expect(above.validate(row({ channel_source_id: 'src-mail' }))).toBe(false);
+    // No pick is the whole stream inbox.
+    expect(conversationsPageRequest(scope, 'all', null).query!.validate(row({ channel_source_id: 'src-mail' }))).toBe(true);
+  });
+
+  it('the Diagnosis mark narrows to the conversations on that channel, alone or beside a source', () => {
+    const diagnosis = conversationsPageRequest({ owner: OWNER, channels: ['diagnosis'] }, 'all', null).query!;
+    expect(diagnosis.validate(row({ channel: 'diagnosis' }))).toBe(true);
+    expect(diagnosis.validate(row({ channel: 'flowpad' }))).toBe(false);
+    const both = conversationsPageRequest({ owner: OWNER, sourceIds: ['src-slack'], channels: ['diagnosis'] }, 'all', null)
+      .query!;
+    expect(both.validate(row({ channel: 'diagnosis' }))).toBe(true);
+    expect(both.validate(row({ channel: 'slack', channel_source_id: 'src-slack' }))).toBe(true);
+    expect(both.validate(row({ channel: 'gmail', channel_source_id: 'src-mail' }))).toBe(false);
+  });
+
+  it('a conversation deleted on the hub is not listed; a row kept here (no deleted_at) is', () => {
+    const q = conversationsPageRequest(scope, 'all', null).query!;
+    expect(q.validate(row({}))).toBe(true);
+    expect(q.validate(row({ deleted_at: '2026-10-20T00:00:00.000Z' }))).toBe(false);
   });
 
   it('unread and archived are their own pages', () => {
@@ -50,11 +80,22 @@ describe('conversationsPageRequest', () => {
 });
 
 describe('newerBoundaryRequest', () => {
-  it('reads the one row a page + 1 above the newest row, oldest first', () => {
+  it('reads the page of rows above the newest row by keyset, oldest first — no offset', () => {
     const q = newerBoundaryRequest(scope, 'all', '2026-10-10T00:00:00.000Z').query!;
-    expect([q.limit, q.offset]).toEqual([1, STREAM_INBOX_PAGE_SIZE]);
+    expect([q.limit, q.offset]).toEqual([STREAM_INBOX_PAGE_SIZE, undefined]);
     expect(q.order_by).toEqual([{ updated_date: 'asc' }, { id: 'asc' }]);
     expect(q.validate(row({ updated_date: '2026-10-11T00:00:00.000Z' }))).toBe(true);
     expect(q.validate(row({ updated_date: '2026-10-09T00:00:00.000Z' }))).toBe(false);
+    const wire = JSON.stringify(q.toJSON());
+    expect(wire).not.toContain('offset');
+  });
+
+  it('bounds the newer page just past the last row above, or is now when no full page is above', () => {
+    const above = Array.from({ length: STREAM_INBOX_PAGE_SIZE }, (_, i) => ({
+      updated_date: new Date(Date.UTC(2026, 9, 11, 0, 0, i)).toISOString(),
+    }));
+    expect(newerPageBefore(above, true)).toBe('2026-10-11T00:01:39.001Z');
+    expect(newerPageBefore(above, false)).toBeNull();
+    expect(newerPageBefore(above.slice(1), true)).toBeNull();
   });
 });

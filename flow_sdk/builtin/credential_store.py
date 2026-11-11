@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Iterable, Optional
 
 from pydantic import SecretStr
 
+from flow_sdk.core.project_status import changes_status
 from flow_sdk.schema.data_spec.credential_contract import (
     DEFAULT_ENVIRONMENT,
     SCOPE_PROJECT,
@@ -36,11 +37,13 @@ from flow_sdk.schema.data_spec.credential_contract import (
 from flow_sdk.schema.data_spec.credential_status_spec import StoreForgottenSpec
 from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec
 from flow_sdk.secrets import SecretStore, SecretStoreRef, load_all
+from flow_sdk.secrets.errors import SecretStoreError
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.credential import Credential
     from flow_sdk.builtin.deployment import Deployment
     from flow_sdk.builtin.project import Project
+    from flow_sdk.schema.data_spec.secret_vault_spec import SecretVaultSpec
 
 logger = logging.getLogger(__name__)
 
@@ -138,18 +141,40 @@ class Placement:
 
     @classmethod
     async def of(cls, deployment: Optional["Deployment"] = None) -> "Placement":
-        """``deployment``'s placement; ``None`` is this computer's."""
-        if deployment is None:
-            from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        """``deployment``'s placement; ``None`` is this computer's. This computer's environment is the
+        instance default however its row was loaded: the stored one is whatever it was when the row was
+        first saved (a cloud box's template still says ``development``)."""
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.instance_settings.environment import get_default_environment  # noqa: PLC0415
 
+        if deployment is None or _runs_on_this_machine(deployment):
+            # A cloud machine's OWN placement reads where the hub placed its values: this machine's
+            # store (``credential_service.place_values``), never the write-only hub store a desktop
+            # binds that same row to -- seen: an invite box's agent got none of its approved Env.
             deployment = await Deployment.this_computer()
-        return cls(await deployment.secrets_binding(), deployment.environment or DEFAULT_ENVIRONMENT, str(deployment.id))
+        environment = get_default_environment() if deployment.is_this_computer else deployment.environment
+        return cls(await deployment.secrets_binding(), environment or DEFAULT_ENVIRONMENT, str(deployment.id))
 
     def required(self, spec: "Credential") -> list[str]:
         """``spec``'s variables that must have a value here: its own required ones, plus what this
         deployment additionally requires."""
         extra = set(self.secrets.require)
         return [name for name, var in (spec.vars or {}).items() if var.is_must or name in extra]
+
+
+def _runs_on_this_machine(deployment: "Deployment") -> bool:
+    """Whether ``deployment`` is placed on THIS machine: a cloud box running its own deployment.
+    A desktop has no assigned node, so a cloud deployment it looks at never matches."""
+    from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+    from flow_sdk.instance_settings.runtime import get_assigned_compute_node  # noqa: PLC0415
+
+    if deployment.is_this_computer:
+        return False
+    # This machine by either name: its own local node (a project deployed here, provider ``local``) or the
+    # node the hub assigned it (a cloud box's own placement). Such a row's stored environment is the
+    # template's (``development``); the values were placed in this machine's default environment.
+    mine = {ComputeNode._local_id(), (get_assigned_compute_node() or "").removeprefix("compute_node-")} - {""}
+    return (deployment.compute_node_id or "") in mine
 
 
 def secret_store_ref(spec: "Credential", scope: CredentialScope, env_var: str, placement: Placement) -> SecretStoreRef:
@@ -173,6 +198,48 @@ def secret_store_ref(spec: "Credential", scope: CredentialScope, env_var: str, p
     return ref
 
 
+class UnknownVault(SecretStoreError, LookupError):
+    """A vault name the project's ``secret_vaults`` does not declare."""
+
+    code = "unknown_vault"
+
+    def __init__(self, name: str, known: Iterable[str] = ()) -> None:
+        known = sorted(known)
+        super().__init__(f"no secret vault named {name!r} in this project" + (f" (has: {', '.join(known)})" if known else ""))
+        self.name = name
+
+
+def vaults_of(project: Optional["Project"]) -> dict[str, "SecretVaultSpec"]:
+    """The project's declared vaults (``secret_vaults`` in ``project_manifest.json``), by name — the ONE
+    reader of them. Never raises: no project, no local root, or an unreadable manifest is ``{}`` (the
+    manifest reader is lenient; a vault list is read on every share, receive and setup derive)."""
+    from flow_sdk.assets.project_manifest import read_secret_vaults  # noqa: PLC0415
+
+    root = getattr(project, "fs_storage_mount_path", None) if project is not None else None
+    return read_secret_vaults(Path(root)) if root else {}
+
+
+def project_vaults(project: Optional["Project"]) -> dict[str, SecretStore]:
+    """The project's named vaults (:func:`vaults_of`), each as the store it names: where its shared
+    values live and where a teammate fetches them from — not where any process reads (that is each
+    deployment's binding, above). Empty: no project, or it names none. No I/O beyond the manifest
+    read; each store's ``.where`` is its place in words."""
+    from flow_sdk.secrets.managers import store_for  # noqa: PLC0415  (lazy: managers load assets)
+
+    return {name: store_for(vault) for name, vault in vaults_of(project).items()}
+
+
+def project_vault(project: Optional["Project"], name: str) -> SecretStore:
+    """The project's vault ``name`` as a store. Raises :class:`UnknownVault` when it declares none by that name."""
+    from flow_sdk.secrets.managers import store_for  # noqa: PLC0415
+
+    vaults = vaults_of(project)
+    if name not in vaults:
+        raise UnknownVault(name, vaults)
+    return store_for(vaults[name])
+
+
+@changes_status
 async def write_value(
     spec: "Credential", scope: CredentialScope, env_var: str, value: str, placement: Placement
 ) -> None:
@@ -205,6 +272,7 @@ async def read_values(
     return out
 
 
+@changes_status
 async def forget_in(refs: Iterable[SecretStoreRef], names: Iterable[str]) -> list[StoreForgottenSpec]:
     """Remove ``names`` from every store in ``refs`` (each place once), one report per store.
 

@@ -161,20 +161,13 @@ export function useTerminalStripController({
           mode: mode ?? ViewMode.Advanced,
         });
       } catch (error: unknown) {
-        // The spawn failed. ASK what is wrong rather than assuming, because the
-        // two likely causes want different screens and the pre-flight cannot
-        // tell them apart: it reads the capability row, which is what let us
-        // through here.
-        //
-        // A harness gone from disk gets the install dialog. A harness that is
-        // PRESENT but has nothing to run on — no sign-in, no key, no budget —
-        // gets the sign-in modal; sending that one to the Capabilities view (an
-        // inventory of what is installed) offered a re-check and an installer
-        // for something already installed, which is what a real Windows report
-        // looked like. Anything else keeps the Capabilities view rather than
-        // being mislabelled as either.
-        confirmMissingThen(requiredKind, error, () =>
-          navigation.openTab(ViewType.CAPABILITIES, { capabilityKind: requiredKind }),
+        // Launch failure → its card (Try again re-runs this opener); a missing
+        // harness → the install dialog; anything else → Capabilities.
+        confirmMissingThen(
+          requiredKind,
+          error,
+          () => navigation.openTab(ViewType.CAPABILITIES, { capabilityKind: requiredKind }),
+          () => startAgenticTab(kind, workerType, mode),
         );
       } finally {
         clearPending();
@@ -452,7 +445,7 @@ export function useTerminalStripController({
         onOpenChange={setResumeByIdOpen}
         title={t`Resume Claude session`}
         description={t`Paste a Claude CLI session id (UUID) to resume it in a new tab.`}
-        placeholder="e.g. 0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa"
+        placeholder={t`e.g. 0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa`}
         confirmLabel={t`Resume`}
         onConfirm={(sessionId) =>
           resumeInTerminal(sessionId, undefined, undefined, undefined, { viewMode: ViewMode.Advanced })
@@ -461,11 +454,14 @@ export function useTerminalStripController({
     </>
   );
 
+  // Every opener starts a terminal or a local session: none can run where terminals can't (the hub).
+  const canOpenTabs = dataContext.caps.terminals;
+
   return {
     tabsProjectId,
-    newTabMenuItems,
+    newTabMenuItems: canOpenTabs ? newTabMenuItems : [],
     closeShortcutLabel: `${modLabel}+W`,
-    trailing,
+    trailing: canOpenTabs ? trailing : null,
     openers,
     modals,
     isTabCreationPending,

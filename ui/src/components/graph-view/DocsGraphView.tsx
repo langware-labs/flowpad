@@ -4,6 +4,7 @@
 // (/dock/k-browser/<vfs|typeid>/<value>) and renders the Knowledge Atlas
 // canvas (the Claude Design "The Atlas" handoff) for it.
 
+import { Trans } from '@lingui/react/macro';
 import { useMemo } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -20,7 +21,7 @@ export function DocsGraphView() {
   if (!root) {
     return (
       <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
-        No docs root in the URL — open the knowledge browser from a docs vault.
+        <Trans>No docs root in the URL — open the knowledge browser from a docs vault.</Trans>
       </div>
     );
   }

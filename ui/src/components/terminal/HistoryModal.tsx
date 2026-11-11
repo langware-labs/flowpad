@@ -1,4 +1,4 @@
-import { AgenticProcess, PrefKey } from '@sdk';
+import { AgenticProcess, PrefKey, isValidUuid } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Checkbox } from '@src/components/ui/checkbox';
@@ -15,11 +15,10 @@ import { ArrowDown, ArrowUp, MessageSquare, RotateCw, Search, X } from 'lucide-r
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function pickName(entry: WorkerHistoryEntry): string | null {
   const name = (entry.name ?? '').trim();
-  if (name && !UUID_RE.test(name) && name !== entry.worker_id) {
+  if (name && !isValidUuid(name) && name !== entry.worker_id) {
     return name.length > 80 ? `${name.slice(0, 80)}…` : name;
   }
   return null;

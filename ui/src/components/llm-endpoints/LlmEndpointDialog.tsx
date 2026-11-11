@@ -31,6 +31,7 @@ import {
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Switch } from '@src/components/ui/switch';
+import { Textarea } from '@src/components/ui/textarea';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
@@ -39,11 +40,13 @@ import { FiltersEditor } from './FiltersEditor';
 import { LimitsEditor } from './LimitsEditor';
 import { endpointIdFromTypeId } from './llm-endpoints-pointer';
 import { SourcePicker } from './SourcePicker';
-import { useLlmEndpointChain } from './use-llm-endpoints';
+import { TiersEditor } from './TiersEditor';
+import { useLlmEndpointChain, useLlmEndpointModels } from './use-llm-endpoints';
 import {
   buildAllocateBody,
   buildEntityJson,
   canConfigure,
+  catalogFromText,
   draftFrom,
   emptyDraft,
   kindFromChain,
@@ -77,6 +80,9 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
   // chain to ask, so fetch one here. Cheap: react-query, and the detail's fetch is the same key.
   const ownChain = useLlmEndpointChain(open && editing && !editingKind ? editing.id : undefined);
   const resolvedKind = editingKind ?? (editing ? kindFromChain(ownChain.data, editing.id) : null);
+  // Sizes: what each one resolves to today (for "Inherit"), and the models the chain may name.
+  const tierChain = useLlmEndpointChain(open && editing ? editing.id : undefined);
+  const allowedModels = useLlmEndpointModels(open && editing ? editing.id : undefined);
   const [draft, setDraft] = useState<EndpointDraft>(() => emptyDraft('root'));
   const [busy, setBusy] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -100,6 +106,10 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
   }, [open, editing, resolvedKind]);
 
   const problems = useMemo(() => validateDraft(draft), [draft]);
+  const rootCatalog = useMemo(
+    () => (draft.kind === 'root' ? catalogFromText(draft.models) : []),
+    [draft.kind, draft.models],
+  );
   const isEdit = !!editing;
   const readOnly = !!editing && !canConfigure(editing);
 
@@ -158,9 +168,9 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
           <DialogTitle>{isEdit ? t`Edit endpoint` : t`New endpoint`}</DialogTitle>
           <DialogDescription>
             {draft.kind === 'root' ? (
-              <Trans>A root talks to a provider with its own key.</Trans>
+              <Trans>Funded by a provider API key you supply.</Trans>
             ) : (
-              <Trans>A chain draws on another endpoint and can only narrow what passes.</Trans>
+              <Trans>Funded by an existing source; it can only narrow what that source allows.</Trans>
             )}
           </DialogDescription>
         </DialogHeader>
@@ -169,7 +179,7 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
           {!isEdit && (
             <div className="space-y-1">
               <Label>
-                <Trans>Kind</Trans>
+                <Trans>Funding source</Trans>
               </Label>
               <div className="grid grid-cols-2 gap-2">
                 {(['root', 'chain'] as const).map((kind) => (
@@ -182,9 +192,9 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
                       draft.kind === kind ? 'border-primary bg-primary/5' : 'border-border'
                     }`}
                   >
-                    <span className="block font-medium">{kind === 'root' ? t`Root` : t`Chain`}</span>
+                    <span className="block font-medium">{kind === 'root' ? t`API key` : t`Existing source`}</span>
                     <span className="block text-muted-foreground">
-                      {kind === 'root' ? t`Provider + credential` : t`Sources + filters + limits`}
+                      {kind === 'root' ? t`Your own provider key` : t`Draw from a source you can use`}
                     </span>
                   </button>
                 ))}
@@ -199,6 +209,7 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
             </Label>
             <Input
               id="llm-name"
+              autoComplete="off"
               value={draft.name}
               disabled={readOnly}
               onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
@@ -241,6 +252,8 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
                 </Label>
                 <Input
                   id="llm-base-url"
+                  type="url"
+                  autoComplete="url"
                   value={draft.base_url}
                   disabled={isEdit}
                   placeholder={spec?.defaultBaseUrl}
@@ -279,6 +292,36 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
               checked={draft.enabled}
               disabled={readOnly}
               onCheckedChange={(v) => setDraft((d) => ({ ...d, enabled: v }))}
+            />
+          </div>
+
+          {draft.kind === 'root' && (
+            <div className="space-y-1">
+              <Label htmlFor="llm-models">
+                <Trans>Model catalog</Trans>
+              </Label>
+              <Textarea
+                id="llm-models"
+                data-testid="llm-models"
+                rows={3}
+                value={draft.models}
+                disabled={readOnly}
+                placeholder={t`One model per line. Empty = whatever the provider lists.`}
+                onChange={(e) => setDraft((d) => ({ ...d, models: e.target.value }))}
+              />
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">
+              <Trans>Model sizes</Trans>
+            </h4>
+            <TiersEditor
+              value={draft.tiers}
+              onChange={(tiers) => setDraft((d) => ({ ...d, tiers }))}
+              models={rootCatalog.length ? rootCatalog : (allowedModels.data ?? []).map((m) => m.id)}
+              effective={tierChain.data?.effective_tiers}
+              disabled={readOnly}
             />
           </div>
 

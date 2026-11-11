@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Check, CheckCheck, Clock, FileText, Loader2, Zap } from 'lucide-react';
+import { Check, CheckCheck, Clock, FileText, Forward, Loader2, Reply, Zap } from 'lucide-react';
 import type { AutomationState } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
@@ -7,22 +7,29 @@ import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
 import { TaskChips, type TaskPeople } from './task-it';
 import { MessageActionsMenu } from './MessageActionsMenu';
+import {
+  MESSAGE_ROW_ICON_BUTTON_CLASS,
+  OpenSessionButton,
+  QuickWorkerButton,
+} from '@src/components/workers/ContextWorkerToolbar';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { CHIP_LAYOUT } from './EntityChip';
 import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useLinks } from '@src/components/links/LinkMenu';
-import { LinkifiedText } from '@src/components/links/LinkifiedText';
+import { withHardBreaks } from './message-markdown';
 import type { LinkHandlers } from '@src/components/links/link-events';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
+import { messageDirection } from './message-direction';
 import { avatarColorForMessage } from './avatar-color';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { MessageMarkChip, QuotedMessage, ReactionChips } from './ChannelMessageExtras';
 import type { IMessageReaction } from '@sdk/entities/flow-message';
 import type { WorkerType } from './conversation-session-constants';
+import { personName } from '@src/components/conversation/participant-display';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -40,12 +47,16 @@ interface MessageBubbleProps {
    *  local user is allowed to remove. Choosing it opens a destructive confirm
    *  dialog; on confirm this fires. */
   onDeleteMessage?: () => void;
+  /** The delete only drops Flowpad's copy: the message stays on the channel it was sent on. */
+  deleteLocalCopyOnly?: boolean;
   /** When set, the ⋮ menu offers Forward. Choosing it opens the parent's
    *  share dialog to pick the target conversation; the backend then clones the
    *  message (cloned_from_id provenance) into it. */
   onForwardMessage?: () => void;
   /** Start a worker pinned to this message (⋮ menu, the header's launch bar). */
   onLaunchWorker?: (worker: WorkerType) => void;
+  /** The session started from this message, if any: an Open button with its name on the header row. */
+  messageSession?: { name: string; onOpen: () => void } | null;
   /** "Task it": make this message a task (a ⋮ menu item) — or, once it is one (`task`), open it
    *  from the chips under the body, which also show its status and owner. */
   taskIt?: { onClick: () => void; task?: Task | null; people?: TaskPeople };
@@ -93,6 +104,8 @@ interface MessageBubbleProps {
   onReply?: () => void;
   /** The channel's replies only thread (`ChannelSpec.quotes` false): Reply says "Reply in thread". */
   replyInThread?: boolean;
+  /** Same sender as the message just above, moments later: no avatar or name; time and actions on hover. */
+  continuation?: boolean;
 }
 
 /**
@@ -146,10 +159,30 @@ function NotDelivered({ message }: { message: FlowMessage }) {
   );
 }
 
+/** The recipient agent is working on an answer. A stale mark (it never cleared) stops showing after a while. */
+const WORKING_MAX_MS = 15 * 60 * 1000;
+function isWorking(message?: FlowMessage): boolean {
+  const at = message?.handling_at ? new Date(message.handling_at).getTime() : NaN;
+  return !Number.isNaN(at) && Date.now() - at < WORKING_MAX_MS;
+}
+
 function DeliveryReceipt({ status, message }: { status: DeliveryStatus | undefined; message?: FlowMessage }) {
   const { t } = useLingui();
-  const owed = status === 'created' || status === 'pending_send' || message?.body_status === 'failed';
+  const raw: string | undefined = status;
+  const owed = raw === 'created' || raw === 'pending_send' || (message?.body_status as string | undefined) === 'failed';
   if (message?.outbound && message.delivery_failure && owed) return <NotDelivered message={message} />;
+  if (isWorking(message)) {
+    return (
+      <span
+        title={t`Working…`}
+        className="inline-flex items-center gap-1 text-[10px] text-sky-500"
+        data-testid="message-working"
+      >
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <Trans>working…</Trans>
+      </span>
+    );
+  }
   if (!status) return null;
   if (status === 'created' || status === 'pending_send') {
     // `created` = written to the local store, NOT yet accepted by the hub.
@@ -235,8 +268,16 @@ function MessageBody({ content, isBot, links }: { content: string; isBot: boolea
     );
   }
   // Without a message to resolve against, a link could only fail — keep it text.
-  return <div className={bodyClass}>{links ? <LinkifiedText text={content} handlers={links} /> : content}</div>;
+  if (!links) return <div className={bodyClass}>{content}</div>;
+  return (
+    <div className={`break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
+      <MarkdownView value={withHardBreaks(content)} compact dense links={links} />
+    </div>
+  );
 }
+
+/** Reply / Forward: icon-only on the row, shown on hover like Slack and Teams. */
+const HOVER_ICON_BUTTON_CLASS = `self-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ${MESSAGE_ROW_ICON_BUTTON_CLASS}`;
 
 export function MessageBubble({
   message,
@@ -247,8 +288,10 @@ export function MessageBubble({
   onSenderClick,
   onEditName,
   onDeleteMessage,
+  deleteLocalCopyOnly = false,
   onForwardMessage,
   onLaunchWorker,
+  messageSession,
   taskIt,
   onAutomate,
   automation,
@@ -263,6 +306,7 @@ export function MessageBubble({
   onReact,
   onReply,
   replyInThread,
+  continuation = false,
 }: MessageBubbleProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
@@ -277,10 +321,11 @@ export function MessageBubble({
     [flowMessageId, conversationId, message.content],
   );
   linkSource.current = flowMessage ?? null;
-  const links = useLinks(linkSource, run);
-
-  const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
-  const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
+  const direction = messageDirection(flowMessage, localUser?.id);
+  const isFromOther = direction === 'received';
+  // A command someone else wrote never runs on a click: it opens the menu.
+  const links = useLinks(linkSource, run, { trusted: !isFromOther });
+  const isOutgoing = direction === 'sent';
   const showReceipt = isOutgoing && !flowMessage?.is_draft;
 
   // Attachment-action pairs: every CTA (View/Implement Plan, …) comes from
@@ -317,7 +362,7 @@ export function MessageBubble({
   };
 
   const isBot = message.role === 'bot';
-  const displayName = isBot ? t`Claude` : senderName || t`Unknown`;
+  const displayName = isBot ? t`Claude` : personName({ name: senderName });
   const initial = (displayName.trim()[0] ?? '?').toUpperCase();
   const time = formatTime(message.timestamp);
   const ago = formatTimeAgo(message.timestamp);
@@ -338,7 +383,7 @@ export function MessageBubble({
 
   return (
     <div
-      className={`group flex gap-2 rounded p-1 transition-colors ${
+      className={`group relative flex gap-2 rounded p-1 transition-colors ${continuation ? '-mt-3 pt-0' : ''} ${
         onSelect ? 'cursor-pointer' : ''
       } ${isSelected ? 'bg-muted/30 ring-1 ring-ring/40' : ''}`}
       onClick={handleBubbleClick}
@@ -346,13 +391,21 @@ export function MessageBubble({
     >
       <SenderTag
         {...senderProps}
-        aria-label={onSenderClick ? t`Open ${displayName}` : undefined}
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarColorForMessage(message.role, message.sender_id)}`}
+        aria-hidden={continuation || undefined}
+        tabIndex={continuation ? -1 : undefined}
+        aria-label={onSenderClick && !continuation ? t`Open ${displayName}` : undefined}
+        className={`${continuation ? 'invisible h-0' : 'h-8'} flex w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarColorForMessage(message.role, message.sender_id)}`}
       >
         {initial}
       </SenderTag>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-baseline gap-2">
+        <div
+          className={
+            continuation
+              ? 'absolute end-1 top-0 z-10 flex items-baseline gap-2 rounded bg-background px-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100'
+              : 'flex items-baseline gap-2'
+          }
+        >
           {!isBot && editing ? (
             <input
               className="border-b border-input bg-transparent text-sm font-semibold text-foreground focus:outline-none"
@@ -365,7 +418,7 @@ export function MessageBubble({
               }}
               autoFocus
             />
-          ) : (
+          ) : continuation ? null : (
             <SenderTag
               {...senderProps}
               className={`text-sm font-semibold text-foreground ${onSenderClick ? 'hover:underline' : ''}`}
@@ -380,11 +433,42 @@ export function MessageBubble({
               {ago && <span className="ms-1 opacity-70">· {ago}</span>}
             </span>
           )}
-          {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} message={flowMessage} />}
+          {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} message={flowMessage ?? undefined} />}
           {!editing && favoriteRef && (
             <span className="self-center" data-testid={`message-favorite-star-${flowMessageId}`}>
               <FavoriteStar {...favoriteRef} size={12} hoverSurface="none" revealOnHover className="p-0.5" />
             </span>
+          )}
+          {!editing && flowMessageId && onLaunchWorker && (
+            <QuickWorkerButton
+              onLaunch={onLaunchWorker}
+              testId={`message-quick-worker-${flowMessageId}`}
+              className="self-center"
+            />
+          )}
+          {!editing && onReply && (
+            <button
+              type="button"
+              onClick={onReply}
+              title={replyInThread ? t`Reply in thread` : t`Reply`}
+              aria-label={replyInThread ? t`Reply in thread` : t`Reply`}
+              className={HOVER_ICON_BUTTON_CLASS}
+              data-testid="message-reply"
+            >
+              <Reply className="size-3" />
+            </button>
+          )}
+          {!editing && onForwardMessage && (
+            <button
+              type="button"
+              onClick={onForwardMessage}
+              title={t`Forward`}
+              aria-label={t`Forward`}
+              className={HOVER_ICON_BUTTON_CLASS}
+              data-testid="message-forward"
+            >
+              <Forward className="size-3 rtl:-scale-x-100" />
+            </button>
           )}
           {!editing && onAutomate && (
             <button
@@ -392,7 +476,7 @@ export function MessageBubble({
               onClick={onAutomate}
               title={t`Automate messages like this`}
               aria-label={t`Automate messages like this`}
-              className="self-center rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+              className={`self-center ${MESSAGE_ROW_ICON_BUTTON_CLASS}`}
               data-testid={`message-automate-quick-${flowMessageId}`}
             >
               <Zap className="size-3" />
@@ -406,15 +490,23 @@ export function MessageBubble({
                 messageText={message.content}
                 origin={flowMessage?.origin}
                 forwarded={!!flowMessage?.cloned_from_id}
-                onReply={onReply}
-                replyInThread={replyInThread}
                 onReact={onReact ? (emoji) => onReact(emoji, false) : undefined}
-                onForward={onForwardMessage}
                 onLaunchWorker={onLaunchWorker}
                 onTaskIt={taskIt && !taskIt.task ? taskIt.onClick : undefined}
                 onAutomate={onAutomate}
                 onEditName={!isBot && onEditName ? startEdit : undefined}
                 onDelete={onDeleteMessage ? () => setConfirmingDelete(true) : undefined}
+                deleteLocalCopyOnly={deleteLocalCopyOnly}
+              />
+            </span>
+          )}
+          {!editing && messageSession && (
+            <span className="self-center">
+              <OpenSessionButton
+                onOpen={messageSession.onOpen}
+                name={messageSession.name}
+                title={t`Open the session started from this message`}
+                testIdPrefix={`message-${flowMessageId}`}
               />
             </span>
           )}
@@ -483,13 +575,13 @@ export function MessageBubble({
         <ConfirmDialog
           open={confirmingDelete}
           onOpenChange={setConfirmingDelete}
-          title={flowMessage?.origin ? t`Remove this message from Flowpad?` : t`Delete this message?`}
+          title={deleteLocalCopyOnly ? t`Remove this message from Flowpad?` : t`Delete this message?`}
           description={
-            flowMessage?.origin
+            deleteLocalCopyOnly
               ? t`Removes Flowpad's copy. The message stays where it was sent.`
               : t`This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone.`
           }
-          confirmLabel={flowMessage?.origin ? t`Remove` : t`Delete`}
+          confirmLabel={deleteLocalCopyOnly ? t`Remove` : t`Delete`}
           variant="destructive"
           onConfirm={onDeleteMessage}
         />

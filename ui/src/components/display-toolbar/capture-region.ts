@@ -1,3 +1,5 @@
+import { stampedFileName } from '@src/utils/stamped-file-name';
+
 interface CaptureRegion {
   x: number;
   y: number;
@@ -16,8 +18,7 @@ interface CaptureWindow {
 }
 
 function imageName(prefix = 'display-annotation') {
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  return `${prefix}-${stamp}.png`;
+  return stampedFileName(prefix, 'png');
 }
 
 export async function captureElementAsImageFile(element: HTMLElement, name = imageName()): Promise<File> {

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { Conversation, QueryRequest } from '@sdk';
+import { Conversation, ExpressionNode, QueryRequest } from '@sdk';
+import { recentConversationsRequest } from '@src/components/stream-inbox-view/channel-owner';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
-import { compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 
 export interface ProjectCollaboration {
   /** The most-recent collaboration conversation's id for this project, or null
@@ -9,10 +9,17 @@ export interface ProjectCollaboration {
   conversationId: string | null;
 }
 
-// Module-const query — a fresh QueryRequest per render makes useEntitiesQuery
-// infinite-loop (see project_useentitiesquery_memoize_request). Fetch all
-// conversations; we filter by project client-side.
-const conversationsQuery = new QueryRequest({ type: Conversation.type });
+/** The project's newest open conversation (one row). */
+function collaborationQuery(projectId: string): QueryRequest {
+  return recentConversationsRequest(
+    [
+      new ExpressionNode({ op: '$EQ', operands: ['project_id', projectId] }),
+      new ExpressionNode({ op: '$IS_NULL', operands: ['archived_at'] }),
+    ],
+    1,
+    `collaboration:${projectId}`,
+  );
+}
 
 /**
  * Resolve whether a collaboration has already been started for a vibe workspace
@@ -24,16 +31,11 @@ const conversationsQuery = new QueryRequest({ type: Conversation.type });
 export function useCollaborationForProject(
   projectId: string | null | undefined,
 ): ProjectCollaboration {
+  // Memoized — a fresh QueryRequest per render makes useEntitiesQuery re-subscribe.
+  const conversationsQuery = useMemo(() => collaborationQuery(projectId ?? ''), [projectId]);
   const { data: conversations = [] } = useEntitiesQuery<Conversation>(conversationsQuery, {
     enabled: !!projectId,
   });
 
-  return useMemo(() => {
-    const conv = projectId
-      ? conversations
-          .filter((c) => c.project_id === projectId && !c.archived_at)
-          .sort(compareConversationsByRecency)[0] ?? null
-      : null;
-    return { conversationId: conv?.id ?? null };
-  }, [conversations, projectId]);
+  return { conversationId: (projectId && conversations[0]?.id) || null };
 }

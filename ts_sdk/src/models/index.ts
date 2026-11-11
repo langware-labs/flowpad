@@ -9,8 +9,6 @@ export * from './ChannelSpec';
 export * from './MessageSender';
 export * from './BootstrapInfo';
 export * from './JobItem';
-export * from './LabelInfo';
-export * from './Ontology';
 export * from './ResultType';
 export * from './env_var';
 export * from './FSOptions';
@@ -24,3 +22,4 @@ export * from './ProcessCall';
 export * from './ReturnedValue';
 // The `flow show` contract (target, placement, history entry) — models, not a process's own.
 export * from './ShowTarget';
+export * from './roles';

@@ -1,5 +1,5 @@
 /**
- * The data-viewer contract — how a VALUE of a kind is shown, inside any app's page.
+ * The value-viewer contract — how a VALUE of a kind is shown, inside any app's page.
  *
  * A viewer is a webapp asset with `kind: application.web.viewer` whose `views` say, per kind, whether
  * it shows a `single` value, a `collection`, or both (`flow_sdk/schema/data_spec/webapp_spec.py`).
@@ -28,9 +28,10 @@ export interface FieldDef {
   shape: Shape;
   description?: string;
   required?: boolean;
-  /** The outside system this field's value is a copy of (`"crm"`), when the schema says so
-   *  (`owned_by`): show it read-only — only a writer that writes as that owner (`{by}`) sets it. */
-  owned_by?: string;
+  /** Where the field's value is true (`"data.title"`, `"external_id"`, `{link, by, path}`, `{value}`):
+   *  when the dataset's data source is a system of record, the field is held there — show it
+   *  read-only; only a writer that writes as the system of record (`{by: "soc"}`) sets it. */
+  truth?: unknown;
 }
 
 /** A rule across rows a record declares — Flowpad enforces it on every write and read; an app may
@@ -92,7 +93,7 @@ export interface ViewRequest {
   /** What the host knows that the value does not (an eval's `dataset_spec`, metric words).
    *  `omit: string[]` — fields edit mode leaves out (a producer-only field, like a confidence). */
   meta?: Record<string, unknown>;
-  /** Something happened the host may act on (`select`, `slice`, `verdict`, `label`). */
+  /** Something happened the host may act on: `slice` and `cause` (a string), `verdict`. */
   on?: (event: string, detail?: unknown) => void;
 }
 
@@ -102,6 +103,8 @@ export interface CollectionRequest {
   /** Highlight one item (an index into `items`). */
   selected?: number;
   meta?: Record<string, unknown>;
+  /** `select`: the item at an index into `items` was picked — always that index (a number).
+   *  `cause`: a cause (a string) was picked. */
   on?: (event: string, detail?: unknown) => void;
 }
 

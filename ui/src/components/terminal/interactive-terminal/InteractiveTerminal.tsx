@@ -1,4 +1,4 @@
-import { registerTerminalLinks } from './terminal-links';
+import { registerJoinedCopy, registerTerminalLinks, selectionText } from './terminal-links';
 import { useLinks } from '@src/components/links/LinkMenu';
 // InteractiveTerminal.tsx
 import '@src/styles/xterm.css';
@@ -18,8 +18,11 @@ import {
   shellQuote,
   toplog,
   type AgenticProcess,
+  Artifact,
+  TypeId,
 } from '@sdk';
 import type { DisplayEntry } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { historyEntryDock } from '@src/pages/flow-page/display-stack';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -483,7 +486,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         // Full-resolution fallback: the inline copy the CLI keeps may be downsized,
         // so also reference the file by path.
         const fullPath = `${inputDirInfo.absPath}/${file.name}`;
-        await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
+        await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${shellQuote(fullPath)}\n`);
         // The caption rides as a note after the file line — bracketed, so a
         // multi-line note is typed into the prompt, never submitted line by line.
         if (caption) await shellRef.current?.sendInput(bracketedPaste(`User note: ${caption}`));
@@ -585,9 +588,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // the markdown-docs chip, which inferred "the run produced something" from an
   // authored `.md` instead of the run saying so.
   const { data: artifacts } = useProcessArtifacts(process);
-  // The click opens the REFERENCED ASSET, never the artifact row — via the
-  // shared file dispatch, the chokepoint every "open this file" surface uses.
-  const handleOpenArtifact = useCallback((assetRef: string) => navigation.openFile(assetRef), [navigation]);
+  // Opens the referenced asset via the shared file dispatch; an artifact with no
+  // `asset_ref` (a webapp, say) opens as an app tab addressed by the artifact.
+  const handleOpenArtifact = useCallback(
+    (artifact: Artifact) => {
+      if (artifact.asset_ref) navigation.openFile(artifact.asset_ref);
+      else navigation.openDock(DockPointer.forAppEntity(new TypeId(`${Artifact.type}-${artifact.id}`)));
+    },
+    [navigation],
+  );
 
   // Shown chip: every `flow show` this run made (`context_data.display_stack`).
   // A row opens the target as its own tab, rebased onto the process's project
@@ -652,6 +661,18 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (enterRefetchTimerRef.current) clearTimeout(enterRefetchTimerRef.current);
     },
     [],
+  );
+
+  // A quick prompt: pasted as ONE bracketed paste (a multi-line prompt stays one prompt), then Enter as
+  // its own write so the CLI reads it as a submit, not as part of the paste.
+  const handleSendQuickPrompt = useCallback(
+    (text: string) => {
+      const shell = shellRef.current;
+      if (!shell || !text.trim()) return;
+      void shell.sendInput(bracketedPaste(text)).then(() => shell.sendInput('\r'));
+      scheduleEnterRefetch();
+    },
+    [scheduleEnterRefetch],
   );
 
   // Build a {timestamp → absRow} index from prompt annotations so we can
@@ -917,7 +938,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
         if (event.type === 'keydown' && (event.ctrlKey || event.metaKey)) {
           if (event.key === 'c' && term.hasSelection()) {
-            navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+            // Written here, so the browser's own copy (and the copy listener) must not run again.
+            event.preventDefault();
+            navigator.clipboard.writeText(selectionText(term)).catch(() => {});
             term.clearSelection();
             return false;
           }
@@ -937,6 +960,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       try {
         term.open(container);
         registerTerminalLinks(term, terminalLinks.handlers);
+        registerJoinedCopy(term);
         // Stamp the RTL/bidi contract on THIS container. The vendor-keyed
         // effect below re-decides when worker_type resolves, but it cannot be
         // the only writer: the container is conditionally mounted
@@ -1550,7 +1574,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       await Promise.all(uploads.map((u) => u.waitForCompletion()));
       for (const file of files) {
         const fullPath = `${inputDirInfo.absPath}/${file.name}`;
-        await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
+        await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${shellQuote(fullPath)}\n`);
       }
       openSideTab(SideTabId.Files);
       requestAnimationFrame(() => terminalRef.current?.focus());
@@ -1583,7 +1607,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       const uploads = await fsStore.getState().uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, files);
       await Promise.all(uploads.map((u) => u.waitForCompletion()));
       openSideTab(SideTabId.Files);
-      const refs = files.map((file) => `File ${file.name} is available here: ${inputDirInfo.absPath}/${file.name}`);
+      const refs = files.map(
+        (file) => `File ${file.name} is available here: ${shellQuote(`${inputDirInfo.absPath}/${file.name}`)}`,
+      );
       // The caption is the user's own prompt text — it follows the refs as-is.
       return caption ? [...refs, caption] : refs;
     },
@@ -1696,7 +1722,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             />
           </FrozenWhenHidden>
         )}
-        {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
+        {activePane === 'shell' && sidecarShellId && (
+          <PaneBar label={t`Shell`} onClose={() => void handleKillSidecar()} />
+        )}
 
         {/* Runtime-error banner — populated by the shell-dock loader on soft
           ProcessLoadError (PTY dead, process stopped, project missing,
@@ -1918,6 +1946,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               onOpenArtifact={handleOpenArtifact}
               shown={shownStack}
               onOpenShown={handleOpenShown}
+              onSendPrompt={handleSendQuickPrompt}
               composer={
                 showSimpleChat && process ? (
                   <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} composerRef={composerRef} />

@@ -12,17 +12,16 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const openNewChat = vi.hoisted(() => vi.fn(() => Promise.resolve({ id: 'p1' })));
-const openCapabilitiesForWorker = vi.hoisted(() => vi.fn());
 const lastWorker = vi.hoisted(() => ({ current: null as string | null }));
 
-vi.mock('@src/navigation/open-new-chat', () => ({ openNewChat }));
-vi.mock('@src/navigation/open-capabilities', () => ({ openCapabilitiesForWorker }));
+vi.mock('@src/navigation/open-new-chat', () => ({ openNewChatOrExplain: openNewChat }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openTab: vi.fn() }, currentDock: null }),
 }));
 vi.mock('@src/components/terminal/openers/useLastWorkerType', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@src/components/terminal/openers/useLastWorkerType')>()),
-  useLastWorkerType: () => ({ lastWorker: lastWorker.current, rememberWorker: vi.fn() }),
+  // No capabilities provider here, so the default is claude_code.
+  usePrimaryWorkerType: () => lastWorker.current ?? 'claude_code',
 }));
 
 import { NewChatButton } from '@src/components/top-nav-bar/NewChatButton';
@@ -42,7 +41,6 @@ describe('NewChatButton', () => {
   beforeEach(() => {
     lastWorker.current = null;
     openNewChat.mockClear();
-    openCapabilitiesForWorker.mockClear();
     openNewChat.mockResolvedValue({ id: 'p1' });
   });
   afterEach(cleanup);
@@ -79,11 +77,4 @@ describe('NewChatButton', () => {
     expect(glyph?.getAttribute('style')).toContain('copilot.svg');
   });
 
-  it('sends a failed launch to Capabilities for that harness', async () => {
-    lastWorker.current = 'opencode';
-    openNewChat.mockRejectedValue(new Error('no binary'));
-    renderButton();
-    await userEvent.click(screen.getByTestId('top-nav-new-chat'));
-    expect(openCapabilitiesForWorker).toHaveBeenCalledWith(expect.anything(), 'opencode');
-  });
 });

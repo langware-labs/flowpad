@@ -36,7 +36,7 @@ export interface GitStatus {
 }
 
 /** What a conflicted tree is stopped in; null with paths = only a pull's autostash clashed. */
-export type ConflictOperation = 'rebase' | 'merge';
+export type ConflictOperation = 'rebase' | 'merge' | 'cherry-pick';
 
 /** A working tree left mid-conflict — mirror of `GitConflict` in git_repo.py. */
 export interface GitConflict {
@@ -105,6 +105,7 @@ export interface GitPushResult {
 /** Typed pull outcome — mirror of `PullKind` in git_repo.py. */
 export type PullKind =
   | 'pulled'
+  | 'picked'
   | 'nothing'
   | 'conflict'
   | 'permission'
@@ -270,6 +271,11 @@ export class GitWorkdir {
     return this._post<GitPushResult>('push');
   }
 
+  /** Plain push: sync and push the commits already made — stages and commits nothing. */
+  async pushCommits(): Promise<GitPushResult> {
+    return this._post<GitPushResult>('push-commits');
+  }
+
   /**
    * Fetch the upstream's remote, then the status — the one call that refreshes
    * `behind` (`getStatus` never touches the network). A failed fetch still
@@ -302,5 +308,15 @@ export class GitWorkdir {
   /** Unstage just this file (`git restore --staged -- <file>`). */
   async unstageFile(file: string): Promise<GitRestoreResult> {
     return this._post<GitRestoreResult>('unstage-file', { file });
+  }
+
+  /** Commit just this file (no push); anything else staged stays out. */
+  async commitFile(file: string): Promise<GitRestoreResult> {
+    return this._post<GitRestoreResult>('commit-file', { file });
+  }
+
+  /** Commit every pending change (no push). */
+  async commitAll(): Promise<GitRestoreResult> {
+    return this._post<GitRestoreResult>('commit-all');
   }
 }

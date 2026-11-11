@@ -18,6 +18,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoNewShell, apiBase } from './_ap_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 /**
  * The History modal defaults to PROJECT-SCOPED (`effectiveAllProjects =
@@ -31,7 +32,7 @@ import { dismissSetupModal, gotoNewShell, apiBase } from './_ap_helpers';
  */
 async function ensureAllProjects(page: import('@playwright/test').Page) {
   const box = page.locator('[data-testid="history-all-projects"] button[role="checkbox"]');
-  await expect(box).toBeVisible({ timeout: 10_000 });
+  await expect(box).toBeVisible({ timeout: adjusted(10_000) });
   if ((await box.getAttribute('aria-checked')) !== 'true') {
     await page.locator('[data-testid="history-all-projects"]').click();
     await expect(box).toHaveAttribute('aria-checked', 'true');
@@ -51,7 +52,7 @@ async function countProcesses(page: import('@playwright/test').Page): Promise<nu
 
 test.describe('resume session from recent', () => {
   test('test 1: clicking a recent session opens a live AgenticProcess (one per session)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
 
     // Precondition: at least one worker-history entry from ~/.claude.
@@ -65,7 +66,7 @@ test.describe('resume session from recent', () => {
     // Open the History modal via the + opener menu.
     await page.locator('[data-testid="opener-plus-button"]').click();
     await page.locator('[data-testid="opener-menu-row-history"]').click();
-    await expect(page.getByText('Recent Sessions')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Recent Sessions')).toBeVisible({ timeout: adjusted(10_000) });
     await ensureAllProjects(page);
     // Rows come from the worker-history compute_node action, which scans
     // ~/.claude — a real ~7s filesystem load for 30 sessions — so we let the
@@ -82,7 +83,7 @@ test.describe('resume session from recent', () => {
     await rows.first().locator('button:not([role="checkbox"])').first().click();
 
     // Lands on the agentic_process terminal view for the resumed session.
-    await page.waitForURL(/\/dock\/shell\/agentic_process-[\w-]+/, { timeout: 30_000 });
+    await page.waitForURL(/\/dock\/shell\/agentic_process-[\w-]+/, { timeout: adjusted(30_000) });
     const pid = page.url().match(/agentic_process-([\w-]+)/)![1];
 
     // The Info popover Session ID is populated (a real session was resumed).
@@ -90,7 +91,7 @@ test.describe('resume session from recent', () => {
       const res = await page.request.get(`${apiBase()}/api/v1/graph/agentic_process/${pid}`);
       const data = (await res.json())?.data ?? {};
       expect(data.session_id).toBeTruthy();
-    }).toPass({ timeout: 30_000 });
+    }).toPass({ timeout: adjusted(30_000) });
 
     // No runaway duplicate creation: at most one new process row appeared.
     const after = await countProcesses(page);
@@ -99,11 +100,11 @@ test.describe('resume session from recent', () => {
     // Resuming the SAME session again reuses the same process (upsert by worker_id).
     await page.locator('[data-testid="opener-plus-button"]').click();
     await page.locator('[data-testid="opener-menu-row-history"]').click();
-    await expect(page.getByText('Recent Sessions')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Recent Sessions')).toBeVisible({ timeout: adjusted(10_000) });
     await ensureAllProjects(page);
     await expect(page.locator('[data-testid="history-row"]').first()).toBeVisible();
     await page.locator('[data-testid="history-row"]').first().locator('button').first().click();
-    await page.waitForURL(/\/dock\/shell\/agentic_process-[\w-]+/, { timeout: 30_000 });
+    await page.waitForURL(/\/dock\/shell\/agentic_process-[\w-]+/, { timeout: adjusted(30_000) });
     const after2 = await countProcesses(page);
     expect(after2).toBe(after);
   });

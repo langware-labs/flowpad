@@ -23,13 +23,13 @@ afterEach(() => i18n.activate('en-US'));
 describe('a notification in Hebrew', () => {
   beforeEach(() => i18n.activate('he'));
 
-  it('says "פתח" on its button, not "Open"', () => {
+  it('says "פתחו" on its button, not "Open"', () => {
     renderDesktopNotification({
       title: 'Bob Stone',
       body: INVITE,
       click_target: { view_type: 'project', pointer: 'x' },
     });
-    expect(h.notify.mock.calls[0][0].actions[0].label).toBe('פתח');
+    expect(h.notify.mock.calls[0][0].actions[0].label).toBe('פתחו');
   });
 
   it('translates the invite sentence and keeps the project name', () => {

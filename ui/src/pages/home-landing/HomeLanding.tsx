@@ -3,9 +3,7 @@ import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchB
 import { NotificationFeed } from '@src/notifications';
 import { RecentConversationsStrip } from '@src/components/project-activity-strip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
-import { useQuickCreatePick } from '@src/components/quick-create';
-import { QuickCreateModal } from '@src/components/quick-create/QuickCreateModal';
-import { Button } from '@src/components/ui/button';
+import { QuickCreateNewSection } from '@src/components/quick-create';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
 import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
 import { SessionInput } from '@src/components/session-input/session-input';
@@ -23,7 +21,7 @@ import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
 import { HomeFeedColumn } from './feed';
-import { X, CheckCircle2, Plus } from 'lucide-react';
+import { X, CheckCircle2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -71,8 +69,6 @@ export function HomeLanding() {
   const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
 
   const [draftPrompt, setDraftPrompt] = useState('');
-  const [newOpen, setNewOpen] = useState(false);
-  const { panelProps, dialogs: quickCreateDialogs } = useQuickCreatePick();
 
   // Stream inbox unread count: backend-owned (StreamInboxManager.unread) — the sidebar pip
   // reads it via useStreamInboxManager(); no per-view recount here anymore.
@@ -247,30 +243,7 @@ export function HomeLanding() {
                       {/* Same four project starting points as the Vibe hero —
                           one shared row, so the modes can't drift apart. */}
                       <ProjectActionsRow className="w-full self-start" />
-                      {/* Same "New" as Project Home; the modal's project chip picks the target. */}
-                      <section className="self-start text-start">
-                        <h3 className="mb-2 text-sm font-semibold">
-                          <Trans>New</Trans>
-                        </h3>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          aria-label={t`Create new`}
-                          data-testid="home-new"
-                          onClick={() => setNewOpen(true)}
-                        >
-                          <Plus className="size-5" />
-                        </Button>
-                      </section>
-                      <QuickCreateModal
-                        open={newOpen}
-                        onOpenChange={setNewOpen}
-                        panelProps={panelProps}
-                        sections={['build', 'write', 'connect', 'project']}
-                        showAddExisting
-                        allUserTypes
-                      />
-                      {quickCreateDialogs}
+                      <QuickCreateNewSection testId="home-new" />
                       <ProjectAgentsStrip className="w-full self-start" />
                     </div>
                   </div>

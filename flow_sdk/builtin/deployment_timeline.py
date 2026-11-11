@@ -95,7 +95,7 @@ async def _scan(deployment, *, conversation: Optional[str] = None, per_conversat
         scan.processes.setdefault(_conversation_of(process), process)
     scan.processes.pop("", None)
 
-    agent = await deployment.agent()
+    agent = await deployment.main_agent()
     scan.agent_name = str(getattr(agent, "name", "") or "") if agent else ""
     # Every channel this deployment answers — live ones (a call) included, which the drain leaves out.
     sources = {str(s.id): s for s in (await agent.channels() if agent else []) if await answers_here(s, deployment)}

@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "name": "s3",
+  "title": "Amazon S3",
+  "icon_name": "Archive",
+  "description": "Objects in an S3 bucket (or an S3-compatible store), listed and read; a dataset's rows can live under a prefix (location s3:<bucket>/<prefix>). Reads the AWS keys from this machine's credentials.",
+  "kind": "datasource.fs.s3",
+  "auth": {
+    "env": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]
+  },
+  "reflect": [
+    "none",
+    "copy"
+  ],
+  "config": {
+    "bucket": {
+      "type": "text",
+      "account_key": true,
+      "label": "Bucket",
+      "placeholder": "acme-data",
+      "hint": "The bucket's name (the s3:// prefix is optional). This names WHICH remote account the source serves."
+    },
+    "prefix": {
+      "type": "text",
+      "label": "Prefix",
+      "placeholder": "gtm/leads",
+      "hint": "Leave empty for the whole bucket. S3 has no directories: a prefix is a query."
+    },
+    "region": {
+      "type": "text",
+      "label": "Region",
+      "placeholder": "us-east-1",
+      "hint": "The bucket's AWS region."
+    },
+    "cache_root": {
+      "type": "path",
+      "advanced": true,
+      "label": "Cache folder",
+      "hint": "Where downloaded bytes land. Defaults to this instance's own directory."
+    },
+    "base_url": {
+      "type": "text",
+      "advanced": true,
+      "label": "Endpoint",
+      "hint": "An S3-compatible endpoint (MinIO, R2). Requests then address the bucket by path."
+    }
+  }
+}

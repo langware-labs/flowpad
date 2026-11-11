@@ -89,12 +89,6 @@ router = APIRouter()
 # Constants (migrated from desktop_loader.py)
 # ---------------------------------------------------------------------------
 
-DESKTOP_LABEL = "--user-type--.desktop"
-
-# Marks a user whose `name` was set manually via the UI — bootstrap will not
-# overwrite it from `git config user.name` on subsequent server starts.
-NAME_OVERRIDE_LABEL = "--user--.name-overridden"
-
 # Domain for default desktop user email
 DESKTOP_EMAIL_DOMAIN = "desktop.local"
 
@@ -452,7 +446,7 @@ def build_app_paths() -> AppPaths:
 
     home = _vfs_relative(str(get_instance_settings().user_home))
     # This instance's workspace, not prod's: ``~/Flowpad workspace`` belongs to prod, every other instance has
-    # ``~/Flowpad workspaces/<name>`` (``workspace_root``). The UI places new projects and session cwds here.
+    # ``<flow_home>/instances/<name>/workspace`` (``workspace_root``). The UI places new projects and session cwds here.
     workspace = _vfs_relative(str(agent_workspace_root()))
     skills = f"{workspace}/.claude/skills"
     user_skills = f"{home}/.claude/skills"
@@ -593,7 +587,7 @@ async def get_desktop_user() -> Optional[Entity]:
     """
     try:
         all_users = await User.get_all(entities_filter=None)
-        desktop_users = [user for user in all_users if DESKTOP_LABEL in (user.labels or [])]
+        desktop_users = [user for user in all_users if user.desktop]
 
         if len(desktop_users) == 0:
             return None
@@ -717,7 +711,7 @@ async def get_or_create_local_user() -> User:
             desktop_user.email = default_email
             await desktop_user.save()
         # Refresh name from git config user.name unless the user manually overrode it
-        manually_overridden = NAME_OVERRIDE_LABEL in (desktop_user.labels or [])
+        manually_overridden = desktop_user.name_overridden
         git_name = await asyncio.to_thread(get_name)
         if not manually_overridden and git_name and desktop_user.name != git_name:
             old_name = desktop_user.name
@@ -737,15 +731,14 @@ async def get_or_create_local_user() -> User:
                 existing_by_uname.id,
                 local_id,
             )
-        # Ensure it has the desktop label
-        if DESKTOP_LABEL not in (existing_by_uname.labels or []):
-            existing_by_uname.add_label(DESKTOP_LABEL)
+        if not existing_by_uname.desktop:
+            existing_by_uname.desktop = True
             await existing_by_uname.save()
         # Update email/name: prefer git config user.name unless manually overridden
         email = await asyncio.to_thread(get_email) or get_default_desktop_email()
         git_name = await asyncio.to_thread(get_name)
         name_from_email = email.split("@")[0].replace(".", " ").title()
-        manually_overridden = NAME_OVERRIDE_LABEL in (existing_by_uname.labels or [])
+        manually_overridden = existing_by_uname.name_overridden
         needs_email_update = not existing_by_uname.email
         needs_name_update = not manually_overridden and (
             existing_by_uname.name == "Local Desktop User" or (git_name and existing_by_uname.name != git_name)
@@ -775,9 +768,9 @@ async def get_or_create_local_user() -> User:
         uname="local",
         name=name,
         email=email,
-        visitor_role="owner",
+        visitor_roles=["owner"],
+        desktop=True,
     )
-    user.add_label(DESKTOP_LABEL)
 
     # Try to save - if it fails due to existing email, delete the old user and retry
     try:
@@ -803,7 +796,7 @@ async def _get_or_create_local(cls, *, name: str, owner: Optional[Entity]):
 
     Both are the same recipe: a stable per-machine id, a ``uname="local"``
     fallback lookup for rows minted before that id existed, and a create with
-    ``visitor_role="owner"`` that tolerates a concurrent creator.
+    ``visitor_roles=["owner"]`` that tolerates a concurrent creator.
 
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     (init_local_project / init_local_workspace).
@@ -834,7 +827,7 @@ async def _get_or_create_local(cls, *, name: str, owner: Optional[Entity]):
         type=entity_type,
         uname="local",
         name=name,
-        visitor_role="owner",
+        visitor_roles=["owner"],
     )
     try:
         await entity.save(owner=owner)
@@ -846,18 +839,18 @@ async def _get_or_create_local(cls, *, name: str, owner: Optional[Entity]):
             if existing:
                 return existing
         raise save_error
-    await entity.set_visitor_role("owner")
+    await entity.set_visitor_roles(["owner"])
     logging.info("Created @local %s: %s with owner: %s", entity_type, entity.id, owner.id if owner else "None")
     return entity
 
 
 async def get_or_create_local_project(desktop_user: Optional[Entity] = None) -> Project:
-    """Get or create the @local project (uname="local", visitor_role="owner")."""
+    """Get or create the @local project (uname="local", visitor_roles=["owner"])."""
     return await _get_or_create_local(Project, name="my_first_project", owner=desktop_user)
 
 
 async def get_or_create_local_workspace(desktop_user: Optional[Entity] = None) -> Workspace:
-    """Get or create the @local workspace (uname="local", visitor_role="owner")."""
+    """Get or create the @local workspace (uname="local", visitor_roles=["owner"])."""
     return await _get_or_create_local(Workspace, name="Local Desktop Workspace", owner=desktop_user)
 
 
@@ -988,7 +981,7 @@ async def get_or_create_sandbox_compute_node(
             node_provider_type=ComputeProviderType.E2B,
             fs_storage_provider=StorageProvider.SANDBOX,
             fs_storage_mount_path=sandbox_mount_path,
-            visitor_role="owner",
+            visitor_roles=["owner"],
         )
         try:
             await compute_node.save(owner=desktop_user)
@@ -1010,7 +1003,7 @@ async def get_or_create_sandbox_compute_node(
     if not already_existed:
         if local_project:
             await local_project.add_child(compute_node)
-        await compute_node.set_visitor_role("owner")
+        await compute_node.set_visitor_roles(["owner"])
 
     if not compute_node.node_provider_id:
         try:
@@ -1073,7 +1066,7 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
             name=display_name,
             fs_storage_mount_path=mount_path,
             fs_storage_provider=StorageProvider.LOCAL.value,
-            visitor_role="owner",
+            visitor_roles=["owner"],
             system=True,
         )
         try:
@@ -1085,7 +1078,7 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
                     ensured.append(retry)
                     continue
             raise
-        await project.set_visitor_role("owner")
+        await project.set_visitor_roles(["owner"])
         ensured.append(project)
         logging.info(f"[bootstrap] Created system project '{uname}' at {mount_path}")
 
@@ -1983,6 +1976,7 @@ def setup_desktop_filesystem() -> None:
     default_prefs = {
         "preferences.general.show_system_skills": True,
         "preferences.general.default_terminal": "builtin_xterm",
+        "preferences.general.it_sessions": False,
         "preferences.terminal.buffer_sync_updates": False,
         "preferences.notifications.sound_enabled": False,
         "preferences.notifications.sound_key": "supershort-ping",
@@ -2130,7 +2124,7 @@ def entity_to_dict(entity) -> dict:
         "name": getattr(entity, "name", None) or getattr(entity, "title", None),
         "title": getattr(entity, "title", None),
         "email": getattr(entity, "email", None),
-        "visitor_role": entity.visitor_role,
+        "visitor_roles": entity.visitor_roles,
     }
 
 

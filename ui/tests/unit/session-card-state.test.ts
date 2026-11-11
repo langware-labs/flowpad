@@ -24,15 +24,15 @@ describe('isSessionExpired', () => {
   const approved = '2026-10-07T10:00:00Z';
   const at = (iso: string) => Date.parse(iso);
 
-  it('a live session is over at the 2-hour cap, counted from approval', () => {
+  it('a live session is over at the 4-hour cap, counted from approval', () => {
     const s = { status: RemoteWorkerSessionStatus.IDLE, approved_at: approved };
-    expect(isSessionExpired(s, at('2026-10-07T11:59:59Z'))).toBe(false);
-    expect(isSessionExpired(s, at('2026-10-07T12:00:00Z'))).toBe(true);
+    expect(isSessionExpired(s, at('2026-10-07T13:59:59Z'))).toBe(false);
+    expect(isSessionExpired(s, at('2026-10-07T14:00:00Z'))).toBe(true);
   });
 
   it('falls back to the start stamp before approval', () => {
     const s = { status: RemoteWorkerSessionStatus.PENDING, started_at: approved };
-    expect(isSessionExpired(s, at('2026-10-07T12:00:01Z'))).toBe(true);
+    expect(isSessionExpired(s, at('2026-10-07T14:00:01Z'))).toBe(true);
   });
 
   it('a terminal or unstamped session never reads as expired', () => {

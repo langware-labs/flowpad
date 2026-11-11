@@ -50,19 +50,20 @@ is **hub-authoritative** — stamped by `Project.start_guest_conversation` on th
 hub and **never** honored from a client-supplied payload (anti-spoof). Treat any
 `kind` arriving in a client write as untrusted.
 
-### `created_by` (`:126`)
-The hub-side owner, mirroring `Conversation.initiated_by` on the hub. Consumed by
-`handle_conversation_delete_archived` to classify an archived row as own-delete vs
-leave vs decline. **It MAY be null:** the hub only stamps `initiated_by` for
-project-created conversations, so share- and diagnostics-created conversations
-carry no owner. The two receive paths handle that gap differently — the HTTP
-accept/upsert mirror (`_upsert_hub_conversation_metadata`) preserves `None`
-*verbatim*, while the passive WS upsert substitutes a neutral `'system'` sentinel
-(see [`./hub-fanout-and-loader.md`](./hub-fanout-and-loader.md) §`_handle_conversation_op`).
-Neither path ever stamps the *local* user. Because `created_by` is thus
-unreliable as an owner key, every `created_by ==` comparison is written null-safe
-and ownership for display/authz resolves from the roster (see
-[Ownership](#ownership-semantics)), not from this field.
+### `initiated_by`
+The hub-side owner, copied as is from the hub's `Conversation.initiated_by` (a
+plain `HUB_READ` field, same name on both sides). Owner checks read it: the
+delete kind (`handle_conversation_delete_archived`: own-delete vs leave vs
+decline, and delete-for-everyone), the message-delete gate, ConversationView's
+`isConversationOwner`, and StreamInboxView's `deleteKindOf(conv, cloudUserId)`.
+**It MAY be null:** the hub only stamps `initiated_by` for project-created
+conversations, so share- and diagnostics-created conversations carry no owner,
+and a conversation that never left this machine has none (its owner is the
+local user; `remote` is false). Every receive path keeps a null as null and
+never stamps the *local* user, so every `initiated_by ==` comparison is written
+null-safe.
+
+`created_by` is only the local row's attribution, not the owner.
 
 ### `remote_project_id` / `remote_project_name` (`:127-128`)
 The *sender's* project identity, carried across the machine boundary. A project id
@@ -70,7 +71,7 @@ is local to one machine, so these preserve "which project this came from over
 there" for display and for the receiver's own project mapping. They are descriptive
 metadata, never used as a local foreign key.
 
-### `participants` (`:131`)
+### `members`
 The roster, shape `[{user_id, email, name, role}]`. This is the authoritative
 membership + role list and the basis for ownership/authz decisions. Roles
 (`owner`, `member`, …) are detailed in
@@ -81,6 +82,13 @@ membership + role list and the basis for ownership/authz decisions. Roles
 [The projection guard](#the-projection-guard). `message_ids` is a JSON-encoded
 list of typed pointers `[{"typeid": "flow_message-<id>", "ts": "<ISO>"}, …]`
 ordered oldest-first by jsonl append order; `message_count` is its length.
+
+A hub row keeps no pointer log. It carries `message_count` and its newest message as
+`latest_message_id` / `latest_message_at` instead, read-only and recomputed from the real child
+messages on every add/remove. The TS SDK reads a row's newest message through
+`Conversation.latestMessagePointer` — the log's latest pointer, or the hub's named message when there
+is no log — so the stream inbox batches every row's preview into one `$IN` read on both backends.
+`conversationMessageIds` stays the log only: a hub row has none.
 
 ### Message-status sharing
 Receipt sharing is not Conversation state. Each FlowPad installation controls
@@ -198,19 +206,17 @@ The receiver side handles project mapping only in that scenario.
 
 ## Ownership semantics
 
-Ownership for display and authorization resolves from the **participant roster's
-`owner` role**, not from `created_by ==` identity checks. The reasons:
+Ownership resolves from the hub's owner, never from `created_by` (the local
+row's attribution, a local user uuid that is no cross-machine owner key):
 
-- `created_by` MAY be null (share/diagnostics conversations), so an equality check
-  against it is unreliable — hence all such checks are null-safe.
-- `created_by` is a *local* user uuid on the creator's machine but a *cloud-user*
-  id when mirrored from the hub; it is not a stable cross-machine owner key.
-- The roster is the cross-machine authoritative membership list, carried in
-  `participants`, and `role == "owner"` is the same signal the hub gates on.
+- `initiated_by` is the hub's owner field, copied as is; the owner checks (delete
+  kind, delete-for-everyone, message-delete gate, `isConversationOwner`,
+  `deleteKindOf`) compare against it null-safe, since it MAY be null.
+- The roster, carried in `members`, holds the same owner as its `owner` role —
+  the signal the hub gates on — for display and role decisions.
 
-So: to ask "is this user the owner?", walk `participants` for the `owner` role —
-do not compare ids. (Details and the roster's hub/local/UI three-way resolution
-live in [`./invites-members-identity.md`](./invites-members-identity.md).)
+(Details and the roster's hub/local/UI three-way resolution live in
+[`./invites-members-identity.md`](./invites-members-identity.md).)
 
 ### `task_id` lives in shared context
 

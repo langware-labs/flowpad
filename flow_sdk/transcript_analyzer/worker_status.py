@@ -189,28 +189,15 @@ _TAIL_MAX_BYTES = 2 * 1024 * 1024
 
 # Content-free Claude/Flowpad transcript line types — they carry no worker-state
 # signal and MUST be skipped when scanning the tail for the last meaningful entry.
-# Kept in sync with ``transcript_analyzer/parsers/claude.py`` ``_META_TYPES``
-# (minus ``last-prompt``, which ``_tail_status`` classifies explicitly). The
-# contract test ``test_ignored_types_match_meta_types`` enforces that parity, so a
-# future Claude format-drift — which is exactly how ``mode`` / ``agent-name`` /
-# ``bridge-session`` slipped in and regressed this set to masking real status as
-# UNKNOWN — can't silently happen again.
-_IGNORED_TYPES: frozenset[str] = frozenset(
-    {
-        "file-history-snapshot",
-        "queue-operation",
-        "custom-title",
-        "ai-title",
-        "pr-link",
-        "attachment",
-        "permission-mode",
-        "mode",
-        "agent-name",
-        "bridge-session",
-        "atis-latch",
-        "cost-state",
-    }
-)
+# Derived from the parser's ``_META_TYPES`` (one list to keep up with Claude's format
+# drift) minus ``last-prompt``, which ``_tail_status`` classifies explicitly.
+def _ignored_types() -> frozenset[str]:
+    from flow_sdk.transcript_analyzer.parsers.claude import _META_TYPES  # noqa: PLC0415
+
+    return _META_TYPES - {"last-prompt"}
+
+
+_IGNORED_TYPES: frozenset[str] = _ignored_types()
 
 
 # ``system`` lines Claude writes AFTER a turn has ended — bookkeeping about the turn,
@@ -530,6 +517,13 @@ def _scan_reversed(
         # the previous turn's ``end_turn`` from reading as this turn's.
         if last_type is None and _is_stop_report(entry):
             continue
+        # A compaction summary is Claude's own rewrite of the finished history, not a prompt: nothing
+        # answers it, so read as a user turn it pins an idle session at ``working`` for good. It closes
+        # that history like an ``end_turn`` — and stopping here keeps the tail read from widening past it.
+        if t == "user" and entry.get("isCompactSummary"):
+            last_type = last_type or t
+            last_stop_reason = last_stop_reason or "end_turn"
+            break
         if last_type is None:
             last_type = t
             if t == "system":
@@ -639,6 +633,12 @@ def tail_status_detail(path: "str | _Path") -> StatusDetail | None:
         if text:
             return StatusDetail(text=text, entry_id=entry.get("uuid") or None)
     return None
+
+
+# A prompt or tool result with nothing after it for this long reads as API_TIMEOUT. Claude writes a
+# streamed reply to the JSONL only when it ends, so minutes of silence are normal mid-turn (a reply
+# launching 15 agents ran 2m13s silent); a real hang ends in Claude's own api_error line first.
+API_TIMEOUT_SECONDS = 600
 
 
 def _tail_status(path: "str | _Path") -> WorkerStatus:
@@ -808,7 +808,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     if last_type == "progress":
         return WorkerStatus.TOOL_RUNNING
     if last_type == "user":
-        if last_user_ts and (_time.time() - last_user_ts) > 90:
+        if last_user_ts and (_time.time() - last_user_ts) > API_TIMEOUT_SECONDS:
             return WorkerStatus.API_TIMEOUT
         return WorkerStatus.WORKING
 

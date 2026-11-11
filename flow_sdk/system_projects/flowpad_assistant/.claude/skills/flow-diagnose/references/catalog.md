@@ -11,15 +11,16 @@ platform, repair class, and repair action or workaround.
 ## A. Runtime / Backend — AUTO-REPAIRABLE
 
 ### A1 Port occupied ($PORT, default 9007)
-- **Cause**: A previous backend process did not exit cleanly and is still holding the port.
+- **Cause**: a process OTHER than this instance's live backend holds the port — a foreign program, or a stale/dead backend. The port being held by this instance's own healthy backend (`server_pid` in `server.json`) is the normal running state, NOT A1.
 - **Detection**:
   - macOS/Linux: `lsof -ti tcp:$PORT`
   - Windows: `netstat -ano | findstr ":$PORT"`
-- **Repair**: `flow stop` → if still held, SIGTERM/SIGKILL (mac/linux) or `taskkill /PID <pid> /F` (win). Tell user to relaunch.
+  - Then compare the PID to `server_pid` in `server.json`: if it matches and the backend answers healthy, there is no conflict — stop.
+- **Repair**: only when the holder is NOT this instance's live `server_pid`: free the port. Prefer `flow proc kill <pid>` — the broker refuses by `server.json` identity, not by "who holds the port": it spares any live FlowPad process (this and other instances' backends/monitors, and their workers), while a stale/dead or foreign holder stays killable. A `refused_protected` PID in its JSON means the target was a live FlowPad process — leave it; if it is this instance's own `server_pid`, report no conflict. Fall back to SIGTERM/SIGKILL (mac/linux) or `taskkill /PID <pid> /F` (win) only where `flow` is unavailable. Then tell the user to relaunch. Never `flow stop` or signal the live `server_pid` of the instance you run inside — it kills the backend this skill runs in.
 
 ### A2 Backend unhealthy / failed to respond within 30 s
 - **Cause**: Stale lock from dead PID, DB corruption, or disk full.
-- **Detection**: `curl -fsS http://localhost:$PORT/health/status` → not `{"data":true}`.
+- **Detection**: `curl -fsS -H "X-Cookie-Gate: $(cat ~/.flow/instances/${FLOW_INSTANCE:-prod}/.cookie_gate)" http://localhost:$PORT/health/status` → not `{"data":true}` (a 403 is the cookie gate: up, but the token was not sent).
 - **Repair**:
   - Stale lock: verify `server.pid` PID is dead → delete `server.lock` + `server.pid` → relaunch.
   - DB corruption: backend auto-recovers from `~/.flow/instances/<name>/backups/` on next launch.

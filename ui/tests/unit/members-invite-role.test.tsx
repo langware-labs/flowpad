@@ -15,9 +15,9 @@ vi.mock('@sdk/react/hooks', () => ({
 vi.mock('@src/hooks/use-members', () => ({
   useMembers: () => ({
     members: [
-      { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: myRole },
-      { user_id: 'dana-id', email: 'dana@example.com', name: 'Dana', role: 'member' },
-      { user_id: 'ari-id', email: 'ari@example.com', name: 'Ari', role: 'admin' },
+      { user_id: 'me-id', email: 'me@example.com', name: 'Me', roles: [myRole] },
+      { user_id: 'dana-id', email: 'dana@example.com', name: 'Dana', roles: ['reader'] },
+      { user_id: 'ari-id', email: 'ari@example.com', name: 'Ari', roles: ['admin'] },
     ],
     addMembers,
     removeMember: vi.fn(),
@@ -37,7 +37,6 @@ vi.mock('@src/components/login-required-dialog', () => ({ ActionType: { MEMBERS:
 vi.mock('@src/components/conversation/useLocalUser', () => ({
   useLocalUser: () => ({ localUser: { id: 'me-id', email: 'me@example.com' } }),
 }));
-vi.mock('@src/components/conversation/ContactPermissionsDialog', () => ({ ContactPermissionsDialog: () => null }));
 
 // The address book (contact store). Bob Stone is known only by hub id — the
 // hub doesn't disclose other people's emails to a non-admin.
@@ -73,7 +72,7 @@ vi.mock('@src/components/contact-picker/AddressBookButton', () => ({
 }));
 
 const PROJECT = new TypeId('project', '11111111-1111-4111-8111-111111111111');
-const PROJECT_ROLES = ['member', 'admin'];
+const PROJECT_ROLES = ['reader', 'admin'];
 
 function openInvite(inviteRoles?: readonly string[]) {
   render(<MembersAvatarStack typeId={PROJECT} inviteRoles={inviteRoles} />);
@@ -83,15 +82,28 @@ function openInvite(inviteRoles?: readonly string[]) {
 const input = () => screen.getByTestId('members-invite-input');
 const addRole = () => screen.getByTestId('members-invite-role');
 const rowRole = (key: string) => screen.getByTestId(`members-invite-role-${key}`);
-const options = (select: HTMLSelectElement) => Array.from(select.options).map((o) => o.value);
+// The roles picker: a button carrying its chosen roles (`data-value`) and its offer (`data-roles`).
+const options = (picker: HTMLElement) => (picker.dataset.roles ?? '').split(',').filter(Boolean);
+const roleValue = (picker: HTMLElement) => picker.dataset.value ?? '';
 const addButton = () => screen.getByTestId('members-invite-add');
 const applyButton = () => screen.getByTestId('members-invite-submit');
 
 function type(text: string) {
   fireEvent.change(input(), { target: { value: text } });
 }
+/** Make `role` the add row's only role: tick it, then untick the rest. */
+function setRole(picker: () => HTMLElement, role: string) {
+  const testId = picker().dataset.testid;
+  const pick = (r: string) => {
+    fireEvent.keyDown(picker(), { key: 'Enter' });
+    fireEvent.click(screen.getByTestId(`${testId}-${r}`));
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+  };
+  if (!roleValue(picker()).split(',').includes(role)) pick(role);
+  for (const r of roleValue(picker()).split(',')) if (r && r !== role) pick(r);
+}
 function chooseRole(role: string) {
-  fireEvent.change(addRole(), { target: { value: role } });
+  setRole(addRole, role);
 }
 function add() {
   fireEvent.click(addButton());
@@ -107,27 +119,26 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
     it('offers member and admin to an owner, defaulting to member', () => {
       openInvite(PROJECT_ROLES);
 
-      expect(addRole().value).toBe('member');
-      expect(options(addRole())).toEqual(['member', 'admin']);
+      expect(roleValue(addRole())).toBe('reader');
+      expect(options(addRole())).toEqual(['reader', 'admin']);
     });
 
     it('caps the offer below my own rank — an admin cannot grant admin', () => {
       myRole = 'admin';
       openInvite(PROJECT_ROLES);
 
-      expect(options(addRole())).toEqual(['member']);
+      expect(options(addRole())).toEqual(['reader']);
     });
 
-    it('lets an editor invite, capped below their own rank', () => {
+    it('does not let a project editor invite', () => {
       myRole = 'editor';
       openInvite(PROJECT_ROLES);
 
-      expect(screen.getByTestId('members-invite-form')).toBeTruthy();
-      expect(options(addRole())).toEqual(['member']);
+      expect(screen.queryByTestId('members-invite-form')).toBeNull();
     });
 
     it('shows a plain member the roster only — no invite form', () => {
-      myRole = 'member';
+      myRole = 'reader';
       openInvite(PROJECT_ROLES);
 
       expect(screen.queryByTestId('members-invite-form')).toBeNull();
@@ -151,7 +162,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       chooseRole('admin');
       add();
 
-      expect(rowRole('new@example.com').value).toBe('admin');
+      expect(roleValue(rowRole('new@example.com'))).toBe('admin');
       expect(input().value).toBe('');
       expect(addMembers).not.toHaveBeenCalled();
     });
@@ -163,7 +174,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       type('new@example.com');
       add();
 
-      expect(rowRole('new@example.com').value).toBe('admin');
+      expect(roleValue(rowRole('new@example.com'))).toBe('admin');
     });
 
     it('resolves a typed name to the contact it names', () => {
@@ -173,7 +184,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       type('Bob');
       add();
 
-      expect(rowRole('bob@example.com').value).toBe('member');
+      expect(roleValue(rowRole('bob@example.com'))).toBe('reader');
     });
 
     it('adds the contact picked from the suggestions', () => {
@@ -213,11 +224,11 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       chooseRole('admin');
       add();
       type('Bob');
-      chooseRole('member');
+      chooseRole('reader');
       add();
 
-      expect(rowRole('noa@example.com').value).toBe('admin');
-      expect(rowRole('bob@example.com').value).toBe('member');
+      expect(roleValue(rowRole('noa@example.com'))).toBe('admin');
+      expect(roleValue(rowRole('bob@example.com'))).toBe('reader');
       expect(screen.getByTestId('members-invite-count').textContent).toBe('2 to invite');
     });
 
@@ -231,7 +242,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       add();
 
       expect(screen.getAllByTestId(/^members-invite-row-/)).toHaveLength(1);
-      expect(rowRole('noa@example.com').value).toBe('admin');
+      expect(roleValue(rowRole('noa@example.com'))).toBe('admin');
     });
 
     it('refuses text that names no one', () => {
@@ -268,7 +279,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       chooseRole('admin');
       fireEvent.click(screen.getByTestId('address-book-tick-stone'));
 
-      expect(rowRole('hub-id-only').value).toBe('admin');
+      expect(roleValue(rowRole('hub-id-only'))).toBe('admin');
     });
 
     it('drops a row with its remove button', () => {
@@ -298,13 +309,13 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       type('Bob');
       add();
       // A row's role can still change after Add.
-      fireEvent.change(rowRole('noa@example.com'), { target: { value: 'admin' } });
+      setRole(() => rowRole('noa@example.com'), 'admin');
       fireEvent.click(applyButton());
 
       await waitFor(() =>
         expect(addMembers).toHaveBeenCalledWith([
-          { idOrEmail: 'noa@example.com', role: 'admin' },
-          { idOrEmail: 'bob@example.com', role: 'member' },
+          { idOrEmail: 'noa@example.com', roles: ['admin'] },
+          { idOrEmail: 'bob@example.com', roles: ['reader'] },
         ]),
       );
       await waitFor(() => expect(screen.queryByTestId('members-invite-list')).toBeNull());
@@ -318,10 +329,10 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
 
       type('stone');
       add();
-      fireEvent.change(rowRole('hub-id-only'), { target: { value: 'admin' } });
+      setRole(() => rowRole('hub-id-only'), 'admin');
       fireEvent.click(applyButton());
 
-      await waitFor(() => expect(addMembers).toHaveBeenCalledWith([{ idOrEmail: 'hub-id-only', role: 'admin' }]));
+      await waitFor(() => expect(addMembers).toHaveBeenCalledWith([{ idOrEmail: 'hub-id-only', roles: ['admin'] }]));
       expect(screen.queryByRole('alert')).toBeNull();
     });
 
@@ -335,8 +346,8 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
 
       await waitFor(() =>
         expect(addMembers).toHaveBeenCalledWith([
-          { idOrEmail: 'noa@example.com', role: undefined },
-          { idOrEmail: 'hub-id-only', role: undefined },
+          { idOrEmail: 'noa@example.com', roles: undefined },
+          { idOrEmail: 'hub-id-only', roles: undefined },
         ]),
       );
     });
@@ -374,11 +385,11 @@ describe('roster — remove (✕) follows the hub ladder', () => {
     expect(removable()).toEqual(['Remove Dana', 'Remove Ari']);
   });
 
-  it('lets a project editor remove a member, not an admin', () => {
+  it('does not let a project editor remove members', () => {
     myRole = 'editor';
     openRoster();
 
-    expect(removable()).toEqual(['Remove Dana']);
+    expect(removable()).toEqual([]);
   });
 
   it('lets a project admin remove a member, not a peer admin', () => {
@@ -389,7 +400,7 @@ describe('roster — remove (✕) follows the hub ladder', () => {
   });
 
   it('gives a plain project member no remove at all', () => {
-    myRole = 'member';
+    myRole = 'reader';
     openRoster();
 
     expect(removable()).toEqual([]);
@@ -410,9 +421,9 @@ describe('roster — remove (✕) follows the hub ladder', () => {
 
 describe('roster — change-role dropdown offers the backend share roles', () => {
   /** The backend's `share-roles` answer, as ProjectHome passes it. */
-  const SHARE_ROLES = ['editor', 'member', 'admin'];
+  const SHARE_ROLES = ['editor', 'reader', 'admin'];
   const rowOptions = (name: string) =>
-    Array.from(screen.getByLabelText(`Change role of ${name}`).options).map((o) => o.value);
+    options(screen.getByLabelText(`Change role of ${name}`));
 
   function openRoster(inviteRoles?: readonly string[]) {
     render(<MembersAvatarStack typeId={PROJECT} inviteRoles={inviteRoles} />);
@@ -426,19 +437,19 @@ describe('roster — change-role dropdown offers the backend share roles', () =>
   it('offers an owner the share roles only — no reader', () => {
     openRoster(SHARE_ROLES);
 
-    expect(rowOptions('Dana')).toEqual(['editor', 'member', 'admin']);
+    expect(rowOptions('Dana')).toEqual(['editor', 'reader', 'admin']);
   });
 
   it('caps the share roles below my rank — an editor may set member only', () => {
     myRole = 'editor';
     openRoster(SHARE_ROLES);
 
-    expect(rowOptions('Dana')).toEqual(['member']);
+    expect(screen.queryByLabelText('Change role of Dana')).toBeNull();
   });
 
   it('falls back to the full ladder where the surface passes no roles', () => {
     openRoster();
 
-    expect(rowOptions('Dana')).toEqual(['admin', 'editor', 'member', 'reader']);
+    expect(rowOptions('Dana')).toEqual(['admin', 'editor', 'reader', 'runner']);
   });
 });

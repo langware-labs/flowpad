@@ -1,4 +1,4 @@
-import { Trans } from '@lingui/react/macro';
+import { Plural, Trans } from '@lingui/react/macro';
 import { ContactsGroup, ConversationParticipant, normalizeEmail, Team, User } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Input } from '@src/components/ui/input';
@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import { EMAIL_RE, filterContacts, participantFromContact, participantKey, useContacts } from './use-contacts';
 import { filterGroups, mergeGroupMembers, useContactsGroups } from './use-contacts-groups';
 import { filterTeams, useMessageableTeams, type MessageableTeam } from './use-team-suggestions';
+import { participantSubtitle, personName } from '@src/components/conversation/participant-display';
 
 interface ContactPickerProps {
   /** Currently selected contacts as ConversationParticipant entries. */
@@ -52,6 +53,7 @@ export function ContactPicker({
   includeTeams = false,
 }: ContactPickerProps) {
   const [filterText, setFilterText] = useState('');
+  const typedEmail = filterText.trim();
   const [listOpen, setListOpen] = useState(false);
 
   const { contacts } = useContacts(excludeUserId, enabled);
@@ -136,12 +138,12 @@ export function ContactPicker({
               key={participantKey(p)}
               className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
             >
-              {p.name || p.email || 'unknown'}
+              {personName(p)}
               <button
                 type="button"
                 className="rounded-full p-0.5 hover:bg-muted-foreground/20"
                 onClick={() => removeParticipant(p)}
-                aria-label={`Remove ${p.name || p.email || 'unknown'}`}
+                aria-label={`Remove ${personName(p)}`}
                 disabled={disabled}
               >
                 <X className="h-3 w-3" />
@@ -196,9 +198,15 @@ export function ContactPicker({
               <span className="flex min-w-0 items-center gap-1.5">
                 <UsersRound className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                 <span className="truncate">{g.displayName}</span>
-                {g.computed && <span className="shrink-0 text-[10px] uppercase text-muted-foreground/70">auto</span>}
+                {g.computed && (
+                  <span className="shrink-0 text-[10px] uppercase text-muted-foreground/70">
+                    <Trans>auto</Trans>
+                  </span>
+                )}
               </span>
-              <span className="shrink-0 text-xs text-muted-foreground">{(g.contacts ?? []).length} members</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                <Plural value={(g.contacts ?? []).length} one="# member" other="# members" />
+              </span>
             </button>
           ))}
           {/* Teams — one click adds every member of the team. */}
@@ -228,8 +236,8 @@ export function ContactPicker({
               onClick={() => addContact(u)}
               disabled={alreadyAdded(participantFromContact(u)) || disabled}
             >
-              <span className="truncate">{u.name || u.email || 'unknown'}</span>
-              {u.name && u.email && <span className="truncate text-xs text-muted-foreground">{u.email}</span>}
+              <span className="truncate">{personName(u)}</span>
+              {participantSubtitle(u) && <span className="truncate text-xs text-muted-foreground">{participantSubtitle(u)}</span>}
             </button>
           ))}
         </div>
@@ -246,7 +254,9 @@ export function ContactPicker({
             onClick={addFreeFormEmail}
             disabled={disabled}
           >
-            Add <span className="font-medium text-foreground">{filterText.trim()}</span>
+            <Trans>
+              Add <span className="font-medium text-foreground">{typedEmail}</span>
+            </Trans>
           </button>
         )}
     </div>

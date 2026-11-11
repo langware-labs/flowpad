@@ -30,6 +30,7 @@ class AttachmentScope(StrEnum):
 class TransferMode(StrEnum):
     COPY = "copy"   # bytes ride in the bundle; install = copy from staging
     GIT = "git"     # git-transfer entry; install = clone/pull via metadata
+    BOTH = "both"   # git pointer AND bytes; install tries git, falls back to the bytes
 
 
 class MessageAttachment(Entity):
@@ -41,10 +42,17 @@ class MessageAttachment(Entity):
     # The shared asset's identity as sent (sender-pinned frontmatter id).
     asset_type: str = APIField(default="")
     asset_id: str = APIField(default="")
+    # The id of the entity a copy install put on THIS machine, when it is not ``asset_id``:
+    # an asset keyed on its path (a webapp, a document) is minted from the installed folder.
+    # ``asset_id`` stays what the message names; ``local_asset_id`` is what opens here.
+    installed_asset_id: str = APIField(default="")
 
     # Display snapshot taken from the bundle at unpack time.
     name: Optional[str] = APIField(default=None)
     description: Optional[str] = APIField(default=None)
+    # The kind a ``*.value.json`` file carries (its ``spec_kind``), read once at stage time,
+    # so a chip names the value's kind without reading the file.
+    value_kind: Optional[str] = APIField(default=None)
 
     # Staging location, RELATIVE to the FlowMessage data dir
     # (e.g. "unpacked/attachment/skill-@<id>").
@@ -87,6 +95,11 @@ class MessageAttachment(Entity):
     @property
     def installed(self) -> bool:
         return bool(self.scope)
+
+    @property
+    def local_asset_id(self) -> str:
+        """The id of the asset's entity on this machine (see ``installed_asset_id``)."""
+        return self.installed_asset_id or self.asset_id
 
     @staticmethod
     def allocate_deterministic_id(flow_message_id: str, entry_key: str) -> str:

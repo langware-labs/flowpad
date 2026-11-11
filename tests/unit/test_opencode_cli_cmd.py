@@ -111,8 +111,9 @@ def test_permission_mode_gates_auto():
 def test_model_tier_resolves_but_raw_intent_is_preserved():
     cmd = OpenCodeAgentOptions(workdir="/repo", model="sm")
     assert cmd.model == "sm"  # persisted intent stays portable
-    assert cmd.resolved_model == "openrouter/z-ai/glm-4.7-flash"
-    assert "openrouter/z-ai/glm-4.7-flash" in cmd.cli_cmd()
+    # A funded spawn must stamp the endpoint's slug before command emission.
+    with pytest.raises(ValueError, match="has no mapping"):
+        cmd.cli_cmd()
 
 
 def test_concrete_model_passes_through():

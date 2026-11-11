@@ -17,8 +17,8 @@ conversation ("test3", deleted 2026-07-09) was found fully resurrected locally
 with all its messages, re-triggered on every single stream inbox open.
 
 This test drives the REAL ``handle_conversation_list`` handler — only the hub
-HTTP boundary (``hub_get``) is mocked, matching the established pattern in
-``test_conversation_list_logged_out_gate.py`` (hub_get is an external network
+HTTP boundary (``HubProxy.walk`` / ``HubProxy.try_call``) is mocked, matching the established pattern in
+``test_conversation_list_logged_out_gate.py`` (the hub is an external network
 call, not the code under test).
 """
 
@@ -26,9 +26,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from types import SimpleNamespace
 
 import pytest
+
+from flow_sdk.cloud_client.hub_proxy import HubProxy, HubWalk
 
 
 @pytest.mark.asyncio
@@ -51,19 +52,23 @@ async def test_deleted_conversation_is_not_dispatched_for_message_fetch(monkeypa
         # The hub-authoritative deletion signal — audit-only soft delete, same
         # shape confirmed on the live hub for the real resurrected conversation.
         "deleted_at": "2026-07-09T19:12:05.118504+00:00",
-        "participants": [],
+        "members": [],
     }
 
-    async def _fake_hub_get(entity_type, *args, **kwargs):
-        if entity_type == BuiltinEntityType.CONVERSATION and not args and "action" not in kwargs:
-            return [hub_conv]
+    async def _fake_hub_get(_method, entity_type, *args, **kwargs):
         if entity_type == BuiltinEntityType.INVITATION:
             return []
-        raise AssertionError(f"unexpected hub_get call: {entity_type=} {args=} {kwargs=}")
+        raise AssertionError(f"unexpected HubProxy.try_call: {entity_type=} {args=} {kwargs=}")
 
-    monkeypatch.setattr(fma, "hub_get", _fake_hub_get)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_fake_hub_get))
 
-    resp = await fma.handle_conversation_list(SimpleNamespace(id="local-someone-typeid"))
+    async def _fake_walk(entity_type, **_kw):
+        assert entity_type == BuiltinEntityType.CONVERSATION
+        return HubWalk(rows=[hub_conv], complete=True, pages=1)
+
+    monkeypatch.setattr(HubProxy, "walk", staticmethod(_fake_walk))
+
+    resp = await fma.handle_conversation_list(f"user-{uuid.uuid4()}")
 
     # BUG (unfixed): the deleted conversation's id ends up in bg_fetch_dispatched
     # anyway, so a background task re-downloads and resurrects its messages.

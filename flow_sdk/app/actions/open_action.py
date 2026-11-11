@@ -103,7 +103,7 @@ async def install_project_from_hub() -> ApiResponse:
             data=await e.conflict(name),
         )
     except HubError as e:
-        return ApiFailResponse(message=f"The hub can't be reached: {e}", status_code=502)
+        return e.fail_response("Could not open the project")
     if project is None:
         return ApiFailResponse(message="That project is no longer available.", status_code=404)
     try:

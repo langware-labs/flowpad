@@ -105,8 +105,13 @@ def build_dir_zip(local_path: str) -> BytesIO:
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in sorted(root.rglob("*"), key=str):
-            if p.is_file() and not p.is_symlink() and not is_under(p, ignored):
+            if p.is_symlink() or is_under(p, ignored):
+                continue
+            if p.is_file():
                 zf.write(p, p.relative_to(root).as_posix())
+            elif p.is_dir() and not any(p.iterdir()):
+                # An empty folder is kept: a git dir without its empty ``refs/`` is not a repository.
+                zf.writestr(p.relative_to(root).as_posix() + "/", "")
     buf.seek(0)
     return buf
 
@@ -309,7 +314,18 @@ class ComputeNode(
             node = await cls._get_local_legacy()
         if node is None and create:
             node = await cls.create_local()
+        if node is not None:
+            await node._adopt_assigned_size()
         return node
+
+    async def _adopt_assigned_size(self) -> None:
+        """On a hub box, report the size the hub created it at (``configure-box`` stored it), not the default."""
+        from flow_sdk.instance_settings.runtime import get_assigned_node_size  # noqa: PLC0415
+
+        size = get_assigned_node_size()
+        if size and self.node_size != size:
+            self.node_size = ComputeNodeSize(size)
+            await self.update()
 
     @classmethod
     async def create_local(cls, *, owner: "Any | None" = None) -> "ComputeNode":
@@ -344,7 +360,7 @@ class ComputeNode(
             node_provider_type=ComputeProviderType.LOCAL_MACHINE,
             fs_storage_provider=StorageProvider.SANDBOX,
             fs_storage_mount_path=os_root,
-            visitor_role="owner",
+            visitor_roles=["owner"],
             # Stable per-process provider id, needed for PTY ops. Set up-front so
             # the create is a single atomic write (no follow-up save).
             node_provider_id=f"name_{uuid.uuid4()}",
@@ -359,7 +375,7 @@ class ComputeNode(
                     logging.info("[compute-node] @local create raced; adopting %s", existing.id)
                     return existing
             raise
-        await node.set_visitor_role("owner")
+        await node.set_visitor_roles(["owner"])
         logging.info("[compute-node] created @local singleton %s mount=%s", node.id, os_root)
         return node
 
@@ -611,11 +627,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         script_path = self.compute_provider.path_join(temp_folder, "_machine_id.py")
         await self.write_files(script_path, machine_id_script)
         python_cmd = sys.executable if self.node_provider_type == ComputeProviderEnum.LOCAL_MACHINE.value else "python"
-        cmd = await self.run_command(f"{python_cmd} {script_path}", background=False)
-        await cmd.wait()
-        if cmd.exit_code != 0:
-            raise RuntimeError(f"Failed to get machine ID: {cmd.all_stderr}")
-        machine_id = cmd.all_stdout.strip()
+        # argv, quoted by the executor for this node's OS: the script path may hold spaces.
+        result = await self.get_command_executor().run([python_cmd, script_path])
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to get machine ID: {result.stderr}")
+        machine_id = result.stdout.strip()
         if len(machine_id) != 64:
             raise RuntimeError(f"Invalid machine ID format: {machine_id}")
         return machine_id
@@ -1210,10 +1226,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             )
 
         target_dir = os.path.join(workspace_root, leaf)
-        suggested = self._next_free_leaf(leaf, base=workspace_root)
+        suggested = await self._free_project_leaf(leaf, base=workspace_root)
         if suggested != leaf:
-            # The caller chose this name and it is taken — refuse; offer the
-            # next-free `<leaf>-N` so the dialog can suggest it.
+            # The name is taken — by a folder here, or by another project (a hub
+            # project not set up here holds its name too): refuse BEFORE cloning,
+            # and offer the next `<leaf>-N` free both ways so the dialog suggests it.
             return ApiFailResponse(
                 message=f"'{leaf}' already exists in workspace",
                 data={"suggested_name": suggested, "attempted_name": leaf},
@@ -1264,6 +1281,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 "dependencies": _dependencies_report(declared),
             }
         )
+
+    @classmethod
+    async def _free_project_leaf(cls, leaf: str, base: str | None = None) -> str:
+        """``leaf``, or the first ``leaf-N`` that is both a free folder under ``base`` and
+        a name no visible project holds — a clone's folder name becomes its project's name."""
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        return await Project.free_name(leaf, taken=lambda name: cls._next_free_leaf(name, base=base) != name)
 
     @staticmethod
     def _next_free_leaf(leaf: str, base: str | None = None) -> str:
@@ -1369,13 +1394,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
             from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-            from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+            from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
             creds = load_credentials()
             if not creds or not creds.api_key:
                 return
-            async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-                hub_project = await client.get(f"/graph/project/{project.id}")
+            hub_project = await HubProxy.call("GET", "project", project.id, strict=True)
             if not isinstance(hub_project, dict) or not hub_project.get("id"):
                 return
             await materialize_remote_membership_entity(Project, hub_project)
@@ -2051,7 +2075,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     async def search_cloud_errors_action(self) -> ApiResponse:
         """Proxy error fingerprint search to the Flowpad cloud, then apply results to local records."""
         from flow_sdk.cli.auth.hub_login import get_api_key as get_flowpad_api_key
-        from flow_sdk.cloud_client import ApiConfig, FlowpadClient
+        from flow_sdk.cloud_client.hub_proxy import HubProxy
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data()
@@ -2064,15 +2088,15 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if not flowpad_api_key:
             return ApiFailResponse(message="Not logged in to Flowpad cloud")
 
-        config = ApiConfig()
-
         try:
-            async with FlowpadClient(config) as client:
-                client.set_api_key(flowpad_api_key)
-                result = await client.post(
-                    "/graph/analysis/search",
-                    {"analysis_type": "claude_error", "fingerprints": fingerprints, "data": {}},
-                )
+            result = await HubProxy.call(
+                "POST",
+                "analysis",
+                None,
+                "search",
+                payload={"analysis_type": "claude_error", "fingerprints": fingerprints, "data": {}},
+                strict=True,
+            )
             await self._apply_cloud_results(result.get("results", []))
             return ApiSuccessResponse(data=result)
         except Exception as e:

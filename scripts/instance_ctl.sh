@@ -16,7 +16,7 @@
 #
 # Usage:
 #   scripts/instance_ctl.sh launch <name> [--email E] [--password P] [--hub URL]
-#   scripts/instance_ctl.sh kill   <name> [--keep-env]
+#   scripts/instance_ctl.sh kill   <name> [--keep-env | --purge]
 #   scripts/instance_ctl.sh status [<name>]
 #   scripts/instance_ctl.sh list
 #   scripts/instance_ctl.sh gc     [--yes] [--age DAYS]
@@ -124,14 +124,18 @@ spawn_detached() {
 #   * it is not on the protected list (long-lived instances),
 #   * no live process carries FLOW_INSTANCE=<name> in its environment
 #     (ownership check — port checks lie once the 500X/600X band is recycled),
-#   * no file under its data dir was touched within the age window.
+#   * no file under its data dir was touched within the age window (1 day),
+#   * no git repo in its workspace has uncommitted changes (kept, and said so).
+# The instance dir holds everything: DB, records, its projects (workspace/),
+# workspaces/ and user-scope assets (home/). Pre-move instances also left
+# ~/Flowpad workspaces/{<name>,.home/<name>,.workspaces/<name>}; gc sweeps those too.
 # Runs automatically (with --yes) at the start of every launch, so leftovers
 # from abandoned scratch instances can't accumulate again.
 # ---------------------------------------------------------------------------
 PROTECTED_INSTANCES="${PROTECTED_INSTANCES:-prod oss dev-1 dev-2}"
 
 cmd_gc() {
-  local yes=0 age_days=7
+  local yes=0 age_days=1
   while [ $# -gt 0 ]; do
     case "$1" in
       --yes) yes=1; shift;;
@@ -169,11 +173,16 @@ cmd_gc() {
     in_list "$name" "$PROTECTED_INSTANCES" && continue
     [[ "$ps_env_dump" =~ (^|[[:space:]])FLOW_INSTANCE=$name([[:space:]]|$) ]] && continue
     [ -n "$(find "$d" -type f -mtime "-$age_days" -print -quit 2>/dev/null)" ] && continue
+    if has_dirty_repo "$d/workspace" || has_dirty_repo "$(legacy_workspace "$name")"; then
+      log "gc: keeping '$name' — a repo in its workspace has uncommitted changes"
+      continue
+    fi
     candidates[${#candidates[@]}]="$name"; count=$((count + 1))
   done
 
   if [ "$count" = 0 ]; then
     log "gc: nothing to clean (dead + idle >${age_days}d; protected: $PROTECTED_INSTANCES)"
+    gc_legacy_workspaces "$ps_env_dump" "$age_days"
     return 0
   fi
 
@@ -195,10 +204,53 @@ cmd_gc() {
       log "gc: refusing to delete protected instance '$n'"
       continue
     fi
-    rm -rf "$(instance_dir "$n")"
-    rm -f "$(env_file "$n")"
+    purge_instance_files "$n" || true
   done
   log "gc: removed $count instance dir(s)"
+  gc_legacy_workspaces "$ps_env_dump" "$age_days"
+}
+
+# The pre-move home of a non-prod instance's projects (now <instance_dir>/workspace).
+LEGACY_WORKSPACES="$HOME/Flowpad workspaces"
+legacy_workspace() { echo "$LEGACY_WORKSPACES/$1"; }
+
+# Whether any git repo up to 3 levels under $1 has uncommitted changes.
+has_dirty_repo() {
+  local root="$1" g
+  [ -d "$root" ] || return 1
+  while IFS= read -r g; do
+    [ -n "$(git -C "$(dirname "$g")" status --porcelain 2>/dev/null | head -1)" ] && return 0
+  done < <(find "$root" -maxdepth 4 -name .git -type d 2>/dev/null)
+  return 1
+}
+
+# Everything one instance owns on disk: its dir (DB, records, workspace, home) and env file,
+# plus its pre-move folders under ~/Flowpad workspaces.
+purge_instance_files() {
+  local n="$1"
+  in_list "$n" "$PROTECTED_INSTANCES" && { warn "refusing to purge protected instance '$n'"; return 1; }
+  rm -rf "$(instance_dir "$n")"
+  rm -f "$(env_file "$n")"
+  rm -rf "$(legacy_workspace "$n")" "$LEGACY_WORKSPACES/.home/$n" "$LEGACY_WORKSPACES/.workspaces/$n"
+}
+
+# Leftovers under ~/Flowpad workspaces whose instance is dead and has no dir any more
+# (the sweep above only sees names that still have an instance dir).
+gc_legacy_workspaces() {
+  local ps_env_dump="$1" age_days="${2:-1}" d name
+  [ -d "$LEGACY_WORKSPACES" ] || return 0
+  for d in "$LEGACY_WORKSPACES"/*/ "$LEGACY_WORKSPACES"/.home/*/ "$LEGACY_WORKSPACES"/.workspaces/*/; do
+    [ -d "$d" ] || continue
+    name="$(basename "$d")"
+    case "$name" in *[[:space:]]*|*/*) continue;; esac
+    in_list "$name" "$PROTECTED_INSTANCES" && continue
+    [ -d "$(instance_dir "$name")" ] && continue
+    [[ "$ps_env_dump" =~ (^|[[:space:]])FLOW_INSTANCE=$name([[:space:]]|$) ]] && continue
+    [ -n "$(find "$d" -mtime "-$age_days" -print -quit 2>/dev/null)" ] && continue
+    if has_dirty_repo "$d"; then log "gc: keeping $d — uncommitted changes"; continue; fi
+    rm -rf "$d"
+  done
+  rmdir "$LEGACY_WORKSPACES/.home" "$LEGACY_WORKSPACES/.workspaces" "$LEGACY_WORKSPACES" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -300,6 +352,8 @@ FLOWPAD_CLOUD_USER_PASSWORD=$password
 MINIHUB_RELOAD=False
 FLOWPAD_SKIP_DOTENV=true
 FLOWPAD_SKIP_FIRST_RUN_SETUP=true
+# The UI is a Vite dev server on another port: no local cookie-gate token (docs/cookie-gate.md).
+FLOWPAD_COOKIE_GATE=off
 EOF
   # The isolated backend intentionally skips the repo dotenv so its injected
   # ports/identity cannot be clobbered. Carry the explicitly exported E2B
@@ -384,8 +438,9 @@ EOF
 cmd_kill() {
   local name="${1:-}"; shift || true
   [ -n "$name" ] || die "kill needs an instance name"
-  local keep_env=0
+  local keep_env=0 purge=0
   [ "${1:-}" = "--keep-env" ] && keep_env=1
+  [ "${1:-}" = "--purge" ] && purge=1
 
   local reg; reg="$(registry "$name")"
   local fe_port="" be_port="" be_pid="" fe_pid="" ef=""
@@ -438,6 +493,13 @@ cmd_kill() {
   if [ "$keep_env" = 0 ] && [ -n "$ef" ] && [ -f "$ef" ]; then
     rm -f "$ef"; log "removed env file $ef"
   fi
+  if [ "$purge" = 1 ]; then
+    if has_dirty_repo "$(instance_dir "$name")/workspace" || has_dirty_repo "$(legacy_workspace "$name")"; then
+      warn "not purging '$name': a repo in its workspace has uncommitted changes"
+    else
+      purge_instance_files "$name" && log "purged '$name' (data, workspace, assets)"
+    fi
+  fi
   log "instance '$name' stopped"
 }
 
@@ -464,18 +526,62 @@ cmd_status() { _ctl_py status "$@"; }
 cmd_list()   { _ctl_py list "$@"; }
 
 # ---------------------------------------------------------------------------
+# restart-backend — kill <name>'s backend and start it again with the SAME env
+# file and data dir (no DB wipe), then wait for bootstrap. The frontend keeps
+# running. Used by the webapp-lifecycle e2e suite (S3: backend restart).
+# ---------------------------------------------------------------------------
+cmd_restart_backend() {
+  local name="${1:-}"
+  [ -n "$name" ] || die "restart-backend needs an instance name"
+  local reg; reg="$(registry "$name")"
+  [ -f "$reg" ] || die "no registry for '$name' — launch it first"
+  local be_pid be_port ef dir
+  be_pid=$(grep -oE '"backend_pid": *[0-9]+' "$reg" | grep -oE '[0-9]+' || true)
+  be_port=$(registry_port "$name" backend)
+  ef=$(grep -oE '"env_file": *"[^"]+"' "$reg" | sed -E 's/.*"env_file": *"([^"]+)".*/\1/' || true)
+  [ -n "$be_port" ] && [ -f "$ef" ] || die "registry for '$name' lacks backend_port/env_file"
+  dir="$(instance_dir "$name")"
+  if [ -n "$be_pid" ]; then
+    kill -TERM -- "-$be_pid" 2>/dev/null || kill -TERM "$be_pid" 2>/dev/null || true
+    local i
+    for i in $(seq 1 30); do kill -0 "$be_pid" 2>/dev/null || break; sleep 1; done
+  fi
+  local pids; pids=$(lsof -nP -tiTCP:"$be_port" -sTCP:LISTEN 2>/dev/null || true)
+  # shellcheck disable=SC2086
+  [ -n "$pids" ] && kill -TERM $pids 2>/dev/null || true
+  local be_log="$dir/launcher-backend.log" new_pid
+  new_pid=$(spawn_detached "$be_log" bash -c "
+    set -a; source '$ef'; set +a
+    cd '$REPO_ROOT'
+    exec uv run -m flow_sdk.server.run
+  ")
+  sed -i.bak -E "s/\"backend_pid\": *[0-9]+/\"backend_pid\": $new_pid/" "$reg" && rm -f "$reg.bak"
+  local up=0 i
+  for i in $(seq 1 60); do   # seconds — do not raise; a slower boot is a bug to fix
+    if curl -fsS -m 2 "http://localhost:$be_port/api/v1/graph/bootstrap" 2>/dev/null | grep -q '"types"'; then
+      up=1; break
+    fi
+    sleep 1
+  done
+  [ "$up" = 1 ] || die "backend for '$name' did not come back within 60s — see $be_log"
+  log "backend for '$name' restarted (pid $new_pid, port $be_port)"
+}
+
+# ---------------------------------------------------------------------------
 main() {
   local cmd="${1:-}"; shift || true
   case "$cmd" in
     launch) cmd_launch "$@";;
     kill)   cmd_kill   "$@";;
+    restart-backend) cmd_restart_backend "$@";;
     status) cmd_status "$@";;
     list)   cmd_list   "$@";;
     gc)     cmd_gc     "$@";;
     *) cat >&2 <<EOF
 usage:
   scripts/instance_ctl.sh launch <name> [--email E] [--password P] [--hub URL]
-  scripts/instance_ctl.sh kill   <name> [--keep-env]
+  scripts/instance_ctl.sh kill   <name> [--keep-env | --purge]
+  scripts/instance_ctl.sh restart-backend <name>
   scripts/instance_ctl.sh status [<name>]
   scripts/instance_ctl.sh list
   scripts/instance_ctl.sh gc     [--yes] [--age DAYS]

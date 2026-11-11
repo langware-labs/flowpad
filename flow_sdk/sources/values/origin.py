@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Optional
 
-from pydantic import ValidationInfo, model_validator
+from pydantic import PrivateAttr, ValidationInfo, model_validator
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values._types import NonBlank
@@ -42,6 +42,11 @@ class CloudOrigin(DataSpec):
     namespace: NonBlank
     key: NonBlank
     url: Optional[NonBlank] = None
+    #: The account-free scope a source built this origin in (``Scope.origin``: the escaped join of
+    #: its ``within`` parts), carried in-process only — never serialized, never compared. ``None``
+    #: when the origin did not come from a ``Scope`` (a lifted envelope, a deserialized value);
+    #: ``scope_in`` then recovers it from ``namespace``.
+    _scope: Optional[str] = PrivateAttr(default=None)
 
     @model_validator(mode="before")
     @classmethod

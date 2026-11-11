@@ -12,14 +12,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.core.entity.entity_model import Entity, remote_reflection
 from flow_sdk.db.db_entity import DBEntity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.load_context import lenient_entity_load
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.type_id import TypeId
-
-from .transport.hub_http import hub_get
 
 
 class HubWikiCacheError(RuntimeError):
@@ -89,12 +88,13 @@ async def resolve_hub_wiki(
     resolver result.
     """
 
-    hub_wiki = await hub_get(BuiltinEntityType.WIKI, wiki_ref)
+    hub_wiki = await HubProxy.try_call("GET", BuiltinEntityType.WIKI, wiki_ref)
     if not isinstance(hub_wiki, dict) or not hub_wiki.get("id"):
         raise HubWikiCacheError(f"Hub Wiki not found or unavailable: {wiki_ref}")
     wiki = await materialize_hub_entity(hub_wiki, owner=owner)
 
-    result = await hub_get(
+    result = await HubProxy.try_call(
+        "GET",
         BuiltinEntityType.WIKI,
         str(wiki.id),
         action="resolve",
@@ -115,7 +115,7 @@ async def resolve_hub_wiki(
     except (KeyError, TypeError, ValueError) as exc:
         raise HubWikiCacheError("Invalid Hub Wiki target identity") from exc
 
-    hub_target = await hub_get(target_type, target.id)
+    hub_target = await HubProxy.try_call("GET", target_type, target.id)
     if not isinstance(hub_target, dict) or not hub_target.get("id"):
         raise HubWikiCacheError(f"Hub Wiki target not found or unavailable: {target}")
     await materialize_hub_entity(hub_target, owner=owner)

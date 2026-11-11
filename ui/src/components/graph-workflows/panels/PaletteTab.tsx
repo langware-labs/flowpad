@@ -7,6 +7,7 @@
  */
 import type { GraphWorkflowDocNode } from '@sdk/services/graph-workflows';
 import { newNodeId, useStudio } from '../store';
+import { Trans } from '@lingui/react/macro';
 
 export const PALETTE_DRAG_MIME = 'application/x-flowpad-node';
 
@@ -14,8 +15,18 @@ type NodeType = GraphWorkflowDocNode['node_type'];
 
 const ITEMS: { type: NodeType; label: string; glyph: string; blurb: string }[] = [
   { type: 'trigger', label: 'Trigger', glyph: '◈', blurb: 'Fires the flow — links a Trigger entity, emits `fired`.' },
-  { type: 'agent', label: 'SubAgent', glyph: '▣', blurb: 'Spawned worker (skill / instruction). Auto-emits `done` with its output + artifacts.' },
-  { type: 'function', label: 'Function', glyph: '⌁', blurb: 'A GraphWorkflowFunction — on_graph_workflow_event(name, data, flow_ctx); inline or subprocess.' },
+  {
+    type: 'agent',
+    label: 'SubAgent',
+    glyph: '▣',
+    blurb: 'Spawned worker (skill / instruction). Auto-emits `done` with its output + artifacts.',
+  },
+  {
+    type: 'function',
+    label: 'Function',
+    glyph: '⌁',
+    blurb: 'A GraphWorkflowFunction — on_graph_workflow_event(name, data, flow_ctx); inline or subprocess.',
+  },
 ];
 
 export function paletteLabel(type: NodeType): string {
@@ -45,8 +56,12 @@ function paletteClickPlace(type: NodeType) {
 export function PaletteTab() {
   return (
     <div className="afl-panel afl-palette">
-      <div className="eye">palette</div>
-      <p className="afl-note">Drag onto the canvas, or click to place.</p>
+      <div className="eye">
+        <Trans>palette</Trans>
+      </div>
+      <p className="afl-note">
+        <Trans>Drag onto the canvas, or click to place.</Trans>
+      </p>
       {ITEMS.map((item) => (
         <div
           key={item.type}

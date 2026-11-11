@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Switch } from '@src/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { notify } from '@src/notifications';
-import { Trans } from '@lingui/react/macro';
+import { Plural, Trans } from '@lingui/react/macro';
 import {
   ERROR_TIME_SPANS,
   ErrorCategory,
@@ -252,6 +252,7 @@ function ErrorCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const isHook = error.error_category === ErrorCategory.HOOK;
+  const occurrences = error.occurrence_count;
   const Icon = isHook ? AlertTriangle : OctagonAlert;
   const iconColor = isHook ? 'text-amber-400' : 'text-orange-400';
   const needsTruncation =
@@ -287,7 +288,9 @@ function ErrorCard({
             <TooltipTrigger asChild>
               <Icon className={cn('h-4 w-4 cursor-default', iconColor)} />
             </TooltipTrigger>
-            <TooltipContent>fingerprint: {error.fingerprint}</TooltipContent>
+            <TooltipContent>
+              <Trans>fingerprint: {error.fingerprint}</Trans>
+            </TooltipContent>
           </Tooltip>
           {needsTruncation && (
             <span className="text-muted-foreground/50">
@@ -308,8 +311,11 @@ function ErrorCard({
               </span>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {error.occurrence_count} occurrences across {error.session_ids.length} session
-              {error.session_ids.length !== 1 ? 's' : ''}
+              <Plural
+                value={error.session_ids.length}
+                one={`${occurrences} occurrences across # session`}
+                other={`${occurrences} occurrences across # sessions`}
+              />
             </TooltipContent>
           </Tooltip>
         )}
@@ -344,8 +350,11 @@ function ErrorCard({
 
           {/* Occurrence info — compact single line */}
           <p className="text-[10px] text-muted-foreground">
-            {error.occurrence_count}× across {error.session_ids.length} session
-            {error.session_ids.length !== 1 ? 's' : ''}
+            <Plural
+              value={error.session_ids.length}
+              one={`${occurrences}× across # session`}
+              other={`${occurrences}× across # sessions`}
+            />
             {error.last_seen && error.last_seen !== UNKNOWN_TIMESTAMP && (
               <span className="text-muted-foreground/60"> · {timeAgo(new Date(error.last_seen))}</span>
             )}
@@ -517,7 +526,9 @@ function OccurrenceCard({
             <TooltipTrigger asChild>
               <Icon className={cn('h-3.5 w-3.5 cursor-default', iconColor)} />
             </TooltipTrigger>
-            <TooltipContent>fingerprint: {parentError.fingerprint}</TooltipContent>
+            <TooltipContent>
+              <Trans>fingerprint: {parentError.fingerprint}</Trans>
+            </TooltipContent>
           </Tooltip>
           {needsTruncation && (
             <span className="text-muted-foreground/50">
@@ -850,7 +861,19 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                   {openDisplayCount}
                 </span>
                 <span className="text-[10px] text-muted-foreground">
-                  {deduplicate ? 'grouped' : ''} open error{openDisplayCount !== 1 ? 's' : ''} in the last 24 hours
+                  {deduplicate ? (
+                    <Plural
+                      value={openDisplayCount}
+                      one="grouped open error in the last 24 hours"
+                      other="grouped open errors in the last 24 hours"
+                    />
+                  ) : (
+                    <Plural
+                      value={openDisplayCount}
+                      one="open error in the last 24 hours"
+                      other="open errors in the last 24 hours"
+                    />
+                  )}
                 </span>
               </>
             )}
@@ -1049,6 +1072,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                 break;
               }
             }
+            const widerSpanLabel = widerSpan ? i18n._(widerSpan.label) : '';
             return (
               <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                 <CheckCircle2 className="mb-2 h-8 w-8 opacity-30" />
@@ -1057,15 +1081,19 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                 </p>
                 <p className="mt-1 text-xs">
                   {statusFilter === ErrorStatus.OPEN && !widerSpan
-                    ? 'All errors have been triaged.'
-                    : 'No errors match the current filters.'}
+                    ? t`All errors have been triaged.`
+                    : t`No errors match the current filters.`}
                 </p>
                 {widerSpan && (
                   <button
                     className="mt-3 rounded bg-muted px-3 py-1 text-xs font-medium transition-colors hover:bg-muted/80"
                     onClick={() => setTimeSpan(widerSpan.value)}
                   >
-                    {widerCount} error{widerCount !== 1 ? 's' : ''} in the last {i18n._(widerSpan.label)} — switch
+                    <Plural
+                      value={widerCount}
+                      one={`# error in the last ${widerSpanLabel} — switch`}
+                      other={`# errors in the last ${widerSpanLabel} — switch`}
+                    />
                   </button>
                 )}
               </div>

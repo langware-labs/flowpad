@@ -13,14 +13,25 @@
  *   not — which is exactly when someone is watching.
  */
 
+import { Trans } from '@lingui/react/macro';
 import { memo, useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronRight, Circle, Loader2, PauseCircle, TriangleAlert, XCircle } from 'lucide-react';
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  Loader2,
+  PauseCircle,
+  TriangleAlert,
+  XCircle,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ActivityProgressSpec } from '@sdk/activity';
 import { fraction } from '@sdk/activity';
 import { cn } from '@src/lib/utils';
 import { humanizeSeconds } from '@src/utils/duration';
 import { iconForActivity } from './activity-icon';
+import { activityWord } from './activity-words';
 import { useElapsedMs } from '@src/hooks/useActivity';
 
 /**
@@ -92,6 +103,7 @@ export const ActivityRow = memo(function ActivityRow({
   const hasChildren = spec.children.length > 0;
   const glyph = STATE_GLYPH[spec.state] ?? STATE_GLYPH.pending;
   const counters = Object.entries(spec.counters ?? {}).filter(([, n]) => n > 0);
+  const moreErrors = (spec.errors_count - spec.errors.length).toLocaleString();
 
   return (
     <li data-testid="activity-row" data-path={spec.path} data-state={spec.state}>
@@ -131,7 +143,7 @@ export const ActivityRow = memo(function ActivityRow({
         >
           <span className="flex w-full min-w-0 items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-sm font-medium" title={spec.label || spec.name}>
-              {spec.label || spec.name}
+              {activityWord(spec.label || spec.name)}
             </span>
             {detail &&
               counters.map(([name, n]) => (
@@ -144,12 +156,12 @@ export const ActivityRow = memo(function ActivityRow({
                 </span>
               ))}
             {progressText && (
-              <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground" data-testid="activity-progress">
+              <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground" data-testid="activity-progress">
                 {progressText}
               </span>
             )}
             {elapsedMs > 0 && (
-              <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground" data-testid="activity-elapsed">
+              <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground" data-testid="activity-elapsed">
                 {humanizeSeconds(elapsedMs / 1000)}
               </span>
             )}
@@ -172,7 +184,10 @@ export const ActivityRow = memo(function ActivityRow({
                 </span>
               )}
               {spec.current && (
-                <span className="w-full truncate font-mono text-[10px] text-muted-foreground" data-testid="activity-current">
+                <span
+                  className="w-full truncate font-mono text-[10px] text-muted-foreground"
+                  data-testid="activity-current"
+                >
                   {spec.current}
                 </span>
               )}
@@ -193,7 +208,11 @@ export const ActivityRow = memo(function ActivityRow({
         </div>
       )}
       {detail && spec.errors.length > 0 && (
-        <ul className="mb-1 flex flex-col gap-0.5" style={{ marginLeft: 28 + depth * 12 }} data-testid="activity-error-list">
+        <ul
+          className="mb-1 flex flex-col gap-0.5"
+          style={{ marginLeft: 28 + depth * 12 }}
+          data-testid="activity-error-list"
+        >
           {spec.errors.map((e, i) => (
             <li
               key={`${e.ref ?? ''}:${i}`}
@@ -208,7 +227,7 @@ export const ActivityRow = memo(function ActivityRow({
           ))}
           {spec.errors_count > spec.errors.length && (
             <li className="px-2 text-[10px] text-muted-foreground">
-              +{(spec.errors_count - spec.errors.length).toLocaleString()} more
+              <Trans>+{moreErrors} more</Trans>
             </li>
           )}
         </ul>

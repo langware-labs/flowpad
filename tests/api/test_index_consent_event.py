@@ -64,7 +64,7 @@ async def test_index_consent_event_reaches_listen_route(bootstrapped_client):
 
     # 2. Local sink the real emitter can discover + POST to.
     _CaptureHandler.captured = []
-    sink = ThreadingHTTPServer(("localhost", 0), _CaptureHandler)
+    sink = ThreadingHTTPServer(("127.0.0.1", 0), _CaptureHandler)
     threading.Thread(target=lambda: sink.serve_forever(poll_interval=0.01), daemon=True).start()
 
     sink_instance = instance_dir(f"consent-sink-{uuid.uuid4().hex[:8]}")

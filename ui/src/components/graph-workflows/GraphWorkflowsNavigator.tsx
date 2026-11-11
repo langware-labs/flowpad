@@ -5,6 +5,7 @@
  * (`graph_workflow-<id>` pointer — URL-first; the view loads from the pointer).
  */
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { GraphWorkflow, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
@@ -89,7 +90,7 @@ export function GraphWorkflowsNavigator() {
               <input
                 autoFocus
                 value={newName}
-                placeholder="flow name…"
+                placeholder={t`flow name…`}
                 onChange={(e) => setNewName(e.target.value)}
                 onBlur={() => setCreating(false)}
                 onKeyDown={(e) => {
@@ -99,7 +100,7 @@ export function GraphWorkflowsNavigator() {
               />
             ) : (
               <button className="afl-nav-new" onClick={() => setCreating(true)}>
-                + New flow
+                <Trans>+ New flow</Trans>
               </button>
             )}
           </div>
@@ -117,14 +118,18 @@ export function GraphWorkflowsNavigator() {
                 title={f.description || f.name}
               >
                 <span className={`dot ${f.enabled ? 'ok' : ''}`} />
-                <span className="name">{f.name || '(unnamed flow)'}</span>
-                {(f as { scope?: string }).scope === 'system' && <span className="sys">sys</span>}
+                <span className="name">{f.name || t`(unnamed flow)`}</span>
+                {(f as { scope?: string }).scope === 'system' && (
+                  <span className="sys">
+                    <Trans>sys</Trans>
+                  </span>
+                )}
               </button>
             );
           })}
           {!sorted.length && (
             <div className="afl-note" style={{ padding: 12 }}>
-              No flows yet.
+              <Trans>No flows yet.</Trans>
             </div>
           )}
         </div>

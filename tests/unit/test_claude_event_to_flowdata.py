@@ -54,10 +54,12 @@ def test_system_without_subtype_falls_back_to_system():
 
 
 def test_assistant_text_block_becomes_chat():
-    out = convert_event({
-        "type": "assistant",
-        "message": {"content": [{"type": "text", "text": "hello"}]},
-    })
+    out = convert_event(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "hello"}]},
+        }
+    )
     assert len(out) == 1
     assert out[0].attributes["element-type"] == FlowElementType.CHAT
     assert out[0].attributes["role"] == "assistant"
@@ -65,29 +67,33 @@ def test_assistant_text_block_becomes_chat():
 
 
 def test_assistant_thinking_block_becomes_reasoning():
-    out = convert_event({
-        "type": "assistant",
-        "message": {"content": [{"type": "thinking", "thinking": "hmm"}]},
-    })
+    out = convert_event(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "thinking", "thinking": "hmm"}]},
+        }
+    )
     assert len(out) == 1
     assert out[0].attributes["element-type"] == FlowElementType.REASONING
     assert out[0].flow_value == "hmm"
 
 
 def test_assistant_tool_use_block_becomes_tool_call():
-    out = convert_event({
-        "type": "assistant",
-        "message": {
-            "content": [
-                {
-                    "type": "tool_use",
-                    "id": "toolu_abc",
-                    "name": "Bash",
-                    "input": {"command": "ls -1"},
-                }
-            ]
-        },
-    })
+    out = convert_event(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_abc",
+                        "name": "Bash",
+                        "input": {"command": "ls -1"},
+                    }
+                ]
+            },
+        }
+    )
     assert len(out) == 1
     fd = out[0]
     assert fd.attributes["element-type"] == FlowElementType.TOOL_CALL
@@ -99,18 +105,63 @@ def test_assistant_tool_use_block_becomes_tool_call():
 
 
 def test_assistant_with_multiple_blocks_yields_multiple_flowdata():
-    out = convert_event({
-        "type": "assistant",
-        "message": {
-            "content": [
-                {"type": "text", "text": "ok"},
-                {"type": "tool_use", "id": "t1", "name": "Bash", "input": {}},
-            ]
-        },
-    })
+    out = convert_event(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "ok"},
+                    {"type": "tool_use", "id": "t1", "name": "Bash", "input": {}},
+                ]
+            },
+        }
+    )
     assert len(out) == 2
     assert out[0].attributes["element-type"] == FlowElementType.CHAT
     assert out[1].attributes["element-type"] == FlowElementType.TOOL_CALL
+
+
+def test_split_message_lines_share_the_first_lines_time():
+    """One answer with thinking is two transcript lines under one message.id; the
+    transcript folds them into one entry stamped with the first line's time, so the
+    live text frame must carry that time too, or the pane shows the answer twice."""
+    thinking_line = {
+        "type": "assistant",
+        "uuid": "5dc29b24-8338-4fc5-b46b-f70f9db30b6a",
+        "timestamp": "2026-10-21T09:29:48.157Z",
+        "message": {"id": "msg_011CgF9WAf4o", "content": [{"type": "thinking", "thinking": "hmm"}]},
+    }
+    text_line = {
+        "type": "assistant",
+        "uuid": "326fb90a-0000-4000-8000-000000000000",
+        "timestamp": "2026-10-21T09:29:48.166Z",
+        "message": {"id": "msg_011CgF9WAf4o", "content": [{"type": "text", "text": "hi"}]},
+    }
+    convert_event(thinking_line)
+    (chat,) = convert_event(text_line)
+    assert chat.created_time == "2026-10-21T09:29:48.157Z"
+
+
+def test_tool_call_keeps_its_own_line_time():
+    """A tool call is its own transcript row with its own time — never the folded one."""
+    convert_event(
+        {
+            "type": "assistant",
+            "timestamp": "2026-10-19T12:20:29.443Z",
+            "message": {"id": "msg_011CgBauHD", "content": [{"type": "thinking", "thinking": "open the lesson"}]},
+        }
+    )
+    (call,) = convert_event(
+        {
+            "type": "assistant",
+            "timestamp": "2026-10-19T12:20:29.446Z",
+            "message": {
+                "id": "msg_011CgBauHD",
+                "content": [{"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "ls"}}],
+            },
+        }
+    )
+    assert call.created_time == "2026-10-19T12:20:29.446Z"
 
 
 def test_assistant_empty_text_is_skipped():
@@ -119,10 +170,12 @@ def test_assistant_empty_text_is_skipped():
 
 
 def test_assistant_unknown_block_type_is_ignored():
-    out = convert_event({
-        "type": "assistant",
-        "message": {"content": [{"type": "some-future-thing", "data": 1}]},
-    })
+    out = convert_event(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "some-future-thing", "data": 1}]},
+        }
+    )
     assert out == []
 
 
@@ -138,10 +191,12 @@ def test_weekly_limit_live_flowdata_matches_replay_shape():
         "message": {
             "model": "<synthetic>",
             "stop_reason": "stop_sequence",
-            "content": [{
-                "type": "text",
-                "text": "You've hit your weekly limit · resets 3pm (Asia/Jerusalem)",
-            }],
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You've hit your weekly limit · resets 3pm (Asia/Jerusalem)",
+                }
+            ],
         },
     }
 
@@ -163,18 +218,20 @@ def test_weekly_limit_live_flowdata_matches_replay_shape():
 
 
 def test_user_tool_result_becomes_tool_result_flowdata():
-    out = convert_event({
-        "type": "user",
-        "message": {
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "toolu_abc",
-                    "content": [{"type": "text", "text": "stdout…"}],
-                }
-            ]
-        },
-    })
+    out = convert_event(
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_abc",
+                        "content": [{"type": "text", "text": "stdout…"}],
+                    }
+                ]
+            },
+        }
+    )
     assert len(out) == 1
     fd = out[0]
     assert fd.attributes["element-type"] == FlowElementType.TOOL_RESULT
@@ -209,12 +266,14 @@ def test_rate_limit_event_becomes_status():
 
 
 def test_result_success_yields_result_then_end():
-    out = convert_event({
-        "type": "result",
-        "subtype": "success",
-        "total_cost_usd": 0.21,
-        "duration_ms": 12000,
-    })
+    out = convert_event(
+        {
+            "type": "result",
+            "subtype": "success",
+            "total_cost_usd": 0.21,
+            "duration_ms": 12000,
+        }
+    )
     assert len(out) == 2
     result_fd, end_fd = out
     assert result_fd.attributes["element-type"] == FlowElementType.RESULT
@@ -299,36 +358,40 @@ _TOOL_BLOCKS = [
 
 
 def _live(tool_name: str, tool_input: dict):
-    out = convert_event({
-        "type": "assistant",
-        "uuid": "a1",
-        "sessionId": "s1",
-        "timestamp": "2026-07-23T10:00:00Z",
-        "message": {
-            "id": "msg_1",
-            "role": "assistant",
-            "content": [{"type": "tool_use", "id": "toolu_1", "name": tool_name, "input": tool_input}],
-        },
-    })
+    out = convert_event(
+        {
+            "type": "assistant",
+            "uuid": "a1",
+            "sessionId": "s1",
+            "timestamp": "2026-07-23T10:00:00Z",
+            "message": {
+                "id": "msg_1",
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "toolu_1", "name": tool_name, "input": tool_input}],
+            },
+        }
+    )
     assert len(out) == 1
     return out[0]
 
 
 def _history(tool_name: str, tool_input: dict):
-    entry = derive_entry(build_semantic_tool_entry(
-        tool_name=tool_name,
-        tool_use_id="toolu_1",
-        tool_input=tool_input,
-        envelope={},
-        base={
-            "id": "a1",
-            "session_id": "s1",
-            "timestamp": "2026-07-23T10:00:00Z",
-            "worker": "claude",
-            "parent_id": None,
-            "is_sidechain": False,
-        },
-    ))
+    entry = derive_entry(
+        build_semantic_tool_entry(
+            tool_name=tool_name,
+            tool_use_id="toolu_1",
+            tool_input=tool_input,
+            envelope={},
+            base={
+                "id": "a1",
+                "session_id": "s1",
+                "timestamp": "2026-07-23T10:00:00Z",
+                "worker": "claude",
+                "parent_id": None,
+                "is_sidechain": False,
+            },
+        )
+    )
     return entry_to_flowdata(entry, observation_kind="replay")[0]
 
 

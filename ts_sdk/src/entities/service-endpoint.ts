@@ -164,6 +164,44 @@ export function serviceUrlOf(endpointId: string, path: string = '', route?: stri
 }
 
 /**
+ * `…/service_endpoint/<id>/open` — the hub's browser door into a web audience's app, or null for an
+ * endpoint that has none. The hub admits the caller and 302s into the app on its own host; the
+ * client names the door, never a host.
+ */
+export function browserDoorUrl(endpoint: Pick<IServiceEndpoint, 'id' | 'subkind'>): string | null {
+  if (!WEB_AUDIENCES.includes(endpoint.subkind as WebAudience)) return null;
+  return new ActionInfo('open', 'service_endpoint', endpoint.id, 'GET').fullActionUrl;
+}
+
+/**
+/** One thing the app's page threw while it loaded (`server/reporter_relay.py`). */
+export interface PageError {
+  source: 'page' | 'console' | 'network' | string;
+  text: string;
+}
+
+/** The backend's decision on a page report (`service_endpoint/<id>/page-report`). */
+export interface PageReportVerdict {
+  usable: boolean;
+  /** The report was for a document other than the one the record is about (`load_id`): ignored. */
+  stale?: boolean;
+  /** The backend started recovering the app from this report. */
+  recovering?: boolean;
+  settled: boolean;
+  webapp_id: string;
+  /** The app's folder on this machine (its `setup/` lives there). */
+  app_folder: string;
+  decisions: {
+    source: string;
+    text: string;
+    fingerprint?: string;
+    action: string;
+    rule: string | null;
+    fix: string;
+  }[];
+}
+
+/**
  * One app as it is served on a placement — what a display loads, probes and repairs.
  *
  * An app is a ROUTE of its placement's audience proxy (`mount` on `endpoint`), so its address is
@@ -189,6 +227,15 @@ export class ServedApp {
   get backend(): StaticBackend | ProxyBackend | ChannelBackend | null {
     const backend = this.endpoint.backend;
     return backend.type === 'routed' ? (this.route?.backend ?? null) : backend;
+  }
+
+  /** What produces the app's bytes, in words: `proxy → localhost:3300`, `static → <root>`, else the type. */
+  get backendLabel(): string {
+    const backend = this.backend;
+    if (!backend) return '';
+    if (backend.type === 'proxy') return `proxy → localhost:${backend.port}`;
+    if (backend.type === 'static') return `static → ${backend.root}`;
+    return backend.type;
   }
 
   get webapp_id(): string | null {
@@ -224,6 +271,11 @@ export class ServedApp {
   /** What is wrong with the app's process, asked of the machine it runs on. */
   probe<T = Record<string, unknown>>(): Promise<T> {
     return this.endpoint.probe<T>(this.mount);
+  }
+
+  /** Hand the page's reported errors to the backend; answers whether the app is usable. */
+  pageReport(errors: PageError[], settled = true, loadId = ''): Promise<PageReportVerdict | null> {
+    return this.endpoint.pageReport(errors, settled, this.mount, loadId);
   }
 }
 
@@ -302,6 +354,25 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
     const info = new ActionInfo('probe', this.getType(), this.id, 'POST' as HttpMethod);
     if (route !== null && route !== undefined) info.queryParameters = { route };
     return (await dataManager.callAction<undefined, T>(info)) as T;
+  }
+
+  /** `POST page-report` — the page's errors, decided by the app's `setup/webapp_errors.json`. */
+  /** Forward one report of the page's reporter. `loadId` is the served document's id, verbatim: the backend
+   *  ignores a report about any other document than the one its record is about. */
+  async pageReport(
+    errors: PageError[],
+    settled = true,
+    route?: string | null,
+    loadId = '',
+  ): Promise<PageReportVerdict | null> {
+    const info = new ActionInfo('page-report', this.getType(), this.id, 'POST' as HttpMethod);
+    info.bodyParameters = {
+      errors,
+      settled,
+      load_id: loadId,
+      ...(route !== null && route !== undefined ? { route } : {}),
+    };
+    return (await dataManager.callAction<unknown, PageReportVerdict>(info)) ?? null;
   }
 
   /** Check the service now, where it runs; the result is also recorded on the row. */

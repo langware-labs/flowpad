@@ -8,7 +8,7 @@ import type {
   PlacementOrigin,
 } from '../entities/deployment';
 import type { FSOriginField } from '../models/FSOrigin';
-import { isValidUUIDv4 } from '../models/TypeId';
+import { isValidEntityId } from '../models/TypeId';
 import { isWorldViewProjection, type WorldViewProjection } from './projection';
 
 /** Edge kinds are backend-owned ontology values and deliberately remain open. */
@@ -125,7 +125,7 @@ function trimmedStringAt(value: unknown, path: string): string {
 }
 
 function entityIdAt(value: unknown, path: string): string {
-  if (typeof value !== 'string' || value !== value.toLowerCase() || !isValidUUIDv4(value)) {
+  if (typeof value !== 'string' || value !== value.toLowerCase() || !isValidEntityId(value)) {
     throw new Error(`${path} must be a UUID v4 or v5`);
   }
   return value;

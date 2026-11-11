@@ -20,6 +20,7 @@ import contextlib
 import json
 import logging
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from flow_sdk.agentic_warmup import await_worker_started
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.cli.commands._common import quiet_logs
 from flow_sdk.cli.commands._common import safe_echo as _safe_echo
+from flow_sdk.diagnose.report_text import describes_a_problem, no_description_instruction
 
 # The id keys report.py's result JSON carries. ``diagnosis_id`` is always an id;
 # the support pair is either both ids (an issue) or both ``None`` (a clean sweep).
@@ -250,12 +252,18 @@ async def _load_recorded_diagnosis(diagnosis_cls, diagnosis_id: str | None):
     return last
 
 
-async def _sweep(message: str, project_id: str | None, *, origin: str, emit):
+async def _sweep(message: str, project_id: str | None, *, origin: str, emit, connection_id: str | None = None):
     """Step 1: the Flowpad Assistant's diagnose — ALWAYS, whatever project is open (only Ask for
     help takes a project's own) — its progress narrated on ``emit``."""
-    from flow_sdk.diagnose import DiagnosePurpose, FlowContextSpec, resolve_shipped, run_diagnose  # noqa: PLC0415
+    from flow_sdk.diagnose import DiagnosePurpose, build_flow_context, resolve_shipped, run_diagnose  # noqa: PLC0415
 
-    ctx = FlowContextSpec(purpose=DiagnosePurpose.REPAIR, project_id=project_id, user_report=message, origin=origin)
+    ctx = await build_flow_context(
+        purpose=DiagnosePurpose.REPAIR,
+        project_id=project_id,
+        user_report=message,
+        origin=origin,
+        connection_id=connection_id,
+    )
     emit({"type": "status", "text": "  Checking this machine…"})
     sweep = await run_diagnose(
         ctx,
@@ -280,16 +288,20 @@ def _sweep_for_prompt(sweep) -> str:
     return json.dumps(value, indent=1)
 
 
-def _merge_agent_into(sweep, diag, status: str | None = None):
+def _merge_agent_into(sweep, diag, status: str | None = None, cause: str | None = None, cause_asset: str = ""):
     """The recorded diagnosis: the sweep's findings, machine and logs, under the agent's verdict
-    (its record's headline, and the ``--status`` its report.py printed)."""
+    (its record's headline, and the ``--status`` / ``--cause`` its report.py printed)."""
     from flow_sdk.diagnose import DiagnosisStatus  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisCause  # noqa: PLC0415
 
     update: dict = {}
     if diag is not None:
         update = {k: v for k in ("title", "summary", "symptoms", "rca", "fix") if (v := getattr(diag, k, None))}
     if status in {s.value for s in DiagnosisStatus}:
         update["status"] = DiagnosisStatus(status)
+    if cause in {c.value for c in DiagnosisCause}:
+        update["cause"] = DiagnosisCause(cause)
+        update["cause_asset"] = (cause_asset or "")[:200]
     return sweep.model_copy(update=update)
 
 
@@ -413,6 +425,8 @@ async def _run_diagnose(
     step_context: str = "",
     prompt_extra: str = "",
     report_only: bool = False,
+    connection_id: str | None = None,
+    feed: bool = True,
 ) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
 
@@ -426,7 +440,7 @@ async def _run_diagnose(
     ``_TerminalSink`` so the CLI renders exactly as before; the UI's HTTP endpoint
     passes its own ``emit`` to forward the same events as SSE.
 
-    Every completed run posts exactly one Home-Feed card through
+    Every completed run posts exactly one Home-Feed card (unless ``feed=False``: Diagnose & fix answers in its conversation) through
     ``_post_home_feed_entry`` — an issue card carrying the report buttons when
     report.py created a support Conversation/FlowMessage, otherwise a no-issue card
     carrying the summary. This holds for both surfaces (the CLI and the UI modal), so
@@ -461,8 +475,10 @@ async def _run_diagnose(
     await _bootstrap_local()
 
     # Step 1 — the diagnose spec. Never raises; a failing or hanging diagnose answers its baseline.
-    sweep = await _sweep(message, project_id, origin="cli" if isinstance(emit, _TerminalSink) else "footer", emit=emit)
+    origin = "cli" if isinstance(emit, _TerminalSink) else "footer"
+    sweep = await _sweep(message, project_id, origin=origin, emit=emit, connection_id=connection_id)
 
+    no_description_note = f"{no_description_instruction(message)}\n\n" if not describes_a_problem(message) else ""
     prompt_text = (
         f"Read the flow-diagnose skill at {skill_dir}/SKILL.md and follow it to "
         "diagnose Flowpad and record the result.\n\n"
@@ -475,6 +491,7 @@ async def _run_diagnose(
         "--status ok). Do NOT end your turn before it has printed its JSON.\n\n"
         "User-reported text — free text or a pasted error; empty means run a full "
         f'sweep:\n"{message}"\n\n'
+        f"{no_description_note}"
         "A fixed diagnostic sweep ALREADY RAN on this machine. Start from what it found — do not "
         "repeat those checks — and use its findings in what you record:\n"
         f"```json\n{_sweep_for_prompt(sweep)}\n```"
@@ -644,7 +661,9 @@ async def _run_diagnose(
             )
             done(False, sweep)
             return 1
-        feed_entry_id = await _post_home_feed_entry(summary=sweep.summary or sweep.title or "", diagnosis_id=did)
+        feed_entry_id = (
+            await _post_home_feed_entry(summary=sweep.summary or sweep.title or "", diagnosis_id=did) if feed else None
+        )
         emit({"type": "status", "text": "  ! The agent could not finish. Recorded what the checks found instead."})
         done(False, sweep, diagnosis_id=did, feed_entry_id=feed_entry_id)
         return 0
@@ -687,9 +706,11 @@ async def _run_diagnose(
             # on Windows, where its uv-run subprocess doesn't inherit
             # FLOWPAD_EXECUTION_SCOPE).
             diag = await _load_recorded_diagnosis(_diag_cls, did)
-            merged = _merge_agent_into(sweep, diag, recorded.get("status"))
+            merged = _merge_agent_into(
+                sweep, diag, recorded.get("status"), recorded.get("cause"), recorded.get("cause_asset") or ""
+            )
             # What only this runner knows, set on the ONE copy that is saved: the person's own words
-            # (report.py sees only the agent's ``symptoms``, and the "Report issue" email reads them),
+            # (report.py sees only the agent's ``symptoms``),
             # the project they were in (named, so a helper on another machine sees where it
             # happened), and the merged diagnosis. A second writer beside this copy is how the
             # record once lost all three: the cross-link saved the copy loaded before them.
@@ -713,11 +734,16 @@ async def _run_diagnose(
             # card carrying the summary. Either way the result reaches the Home feed,
             # from the CLI or the UI modal, watched or not.
             summary = (getattr(diag, "summary", None) or getattr(diag, "title", None) or "") if diag else ""
-            feed_entry_id = await _post_home_feed_entry(
-                summary=summary,
-                conversation_id=conv_id,
-                flow_message_id=msg_id,
-                diagnosis_id=did,
+            # ``feed=False``: the caller answers in a conversation (Diagnose & fix) — one place for the answer.
+            feed_entry_id = (
+                await _post_home_feed_entry(
+                    summary=summary,
+                    conversation_id=conv_id,
+                    flow_message_id=msg_id,
+                    diagnosis_id=did,
+                )
+                if feed
+                else None
             )
             emit({"type": "status", "text": "  ✓ Diagnostic complete — diagnosis recorded."})
             done(
@@ -786,7 +812,7 @@ def _request_context(attach_dir: Path, received: list[dict]) -> str:
         "This run only DIAGNOSES: change nothing on this computer -- repair nothing, edit or delete no "
         "file (the file-editing tools are off for this run). Describe the fix for the person who asked "
         "instead. Write what they should see with a shell command, e.g. "
-        f"`cat > {attach_dir}/<short-name>.txt`."
+        f"`cat > {shlex.quote(f'{attach_dir}/<short-name>.txt')}`."
     )
     return "\n\n".join(parts)
 
@@ -829,8 +855,8 @@ async def _receive_attachments(request_id: str, attachments: list[dict], workdir
     ``.claude/skills/<name>/`` so the agent finds it as a project skill; a file lands in
     ``from-supporter/``. Unpacking refuses traversal, symlinks and zip bombs (``safe_extract_zip``).
     A failed attachment is reported and skipped -- it must not stop the diagnosis."""
+    from flow_sdk.cloud_client.hub_proxy import ANONYMOUS_TIMEOUT, HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_anonymous_request  # noqa: PLC0415
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
     from flow_sdk.utils.archive import UnsafeArchiveError, safe_extract_zip  # noqa: PLC0415
 
@@ -840,9 +866,10 @@ async def _receive_attachments(request_id: str, attachments: list[dict], workdir
         if kind not in ("files", "skills") or not name:
             continue
         try:
-            content = await hub_anonymous_request(
-                "GET", EntityType.DIAGNOSIS_REQUEST.value, request_id, f"brief/attachment/{kind}/{name}", raw=True
-            )
+            content = await HubProxy.call(
+                "GET", EntityType.DIAGNOSIS_REQUEST.value, request_id, f"brief/attachment/{kind}/{name}",
+                anonymous=True, raw=True, timeout=ANONYMOUS_TIMEOUT,
+            )  # fmt: skip
         except HubError as e:
             typer.echo(f"  ! Could not fetch {name}: {e.reason}", err=True)
             continue
@@ -901,18 +928,18 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
     """``flow diagnose <id>``: read the request's brief from the hub, ask this user how to approve
     the supporter's instructions, run the diagnosis on the request's budget, and submit the result.
 
-    No hub login is needed anywhere here: the id is the credential (``hub_anonymous_request``).
+    No hub login is needed anywhere here: the id is the credential (``HubProxy.call(..., anonymous=True)``).
     """
     import tempfile  # noqa: PLC0415
 
+    from flow_sdk.cloud_client.hub_proxy import ANONYMOUS_TIMEOUT, HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_anonymous_request  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
     kind = EntityType.DIAGNOSIS_REQUEST.value
     try:
-        brief = await hub_anonymous_request("GET", kind, request_id, "brief")
+        brief = await HubProxy.call("GET", kind, request_id, "brief", anonymous=True, timeout=ANONYMOUS_TIMEOUT)
     except HubError as e:
         typer.echo(
             "ERROR: no diagnosis request with that id -- check the command you were sent."
@@ -1029,7 +1056,10 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
         typer.echo("Not sent. The diagnosis stays on this computer only.")
         return 1
     try:
-        sent = await hub_anonymous_request("POST", kind, request_id, "submit", run.model_dump(mode="json"))
+        sent = await HubProxy.call(
+            "POST", kind, request_id, "submit",
+            payload=run.model_dump(mode="json"), anonymous=True, timeout=ANONYMOUS_TIMEOUT,
+        )  # fmt: skip
     except HubError as e:
         typer.echo(f"ERROR: the diagnosis ran but could not be sent ({e.reason}).", err=True)
         return 1

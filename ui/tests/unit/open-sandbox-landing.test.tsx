@@ -75,6 +75,13 @@ const { workspaceServiceUrl } = await import('@src/hooks/use-sandboxes');
 // of the branch under test.
 const NODE_ID = '11111111-2222-4333-8444-555555555555';
 
+/**
+ * Where every exit to the box goes: the hub's `open/system`, landing on the project's
+ * home page. Without `next` the hub lands on `/`, which does not ask for it, so only the
+ * first visitor (through auto-launch) ever saw the agent an author set as the home page.
+ */
+const BOX_URL = workspaceServiceUrl(NODE_ID, '/?homePage=open');
+
 /** Only the two fields the page reads. `node_provider_id` IS the launched flag. */
 const node = (over: Record<string, unknown> = {}) => ({ id: NODE_ID, node_provider_id: null, ...over });
 
@@ -130,7 +137,7 @@ describe('compute_node landing', () => {
 
     renderLanding();
 
-    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(BOX_URL));
     // The box has a VM. Re-running setup on it would overwrite `node_provider_id`
     // and orphan the machine it names.
     expect(mocks.launchSandbox).not.toHaveBeenCalled();
@@ -147,7 +154,7 @@ describe('compute_node landing', () => {
     expect(mocks.launchSandbox.mock.calls[0][1]).toEqual({ autoLogin: true });
     // The redirect waits for the launch. Going first would be the 409 all over
     // again, just with a spinner in front of it.
-    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(BOX_URL));
   });
 
   it('shows the launch checklist while it boots', async () => {
@@ -215,7 +222,7 @@ describe('compute_node landing', () => {
 
     renderLanding();
 
-    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(BOX_URL));
     expect(mocks.launchSandbox).not.toHaveBeenCalled();
   });
 
@@ -226,7 +233,7 @@ describe('compute_node landing', () => {
 
     renderLanding();
 
-    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(BOX_URL));
     expect(mocks.launchSandbox).not.toHaveBeenCalled();
   });
 });
@@ -290,7 +297,7 @@ describe('compute_node landing — accepting the invitation', () => {
 
     renderLanding();
 
-    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(BOX_URL));
     expect(mocks.acceptOnHub).not.toHaveBeenCalled();
   });
 
@@ -301,7 +308,7 @@ describe('compute_node landing — accepting the invitation', () => {
 
     renderLanding();
 
-    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(BOX_URL));
     expect(mocks.acceptOnHub).not.toHaveBeenCalled();
   });
 
@@ -314,7 +321,7 @@ describe('compute_node landing — accepting the invitation', () => {
 
     renderLanding();
 
-    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(BOX_URL));
   });
 
   it('says what it is doing while the handover runs', async () => {
@@ -376,7 +383,7 @@ describe('compute_node landing — arriving signed out', () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(BOX_URL));
     expect(mocks.loginUrl).not.toHaveBeenCalled();
   });
 

@@ -416,3 +416,57 @@ async def test_a_codex_agent_refuses_a_name_codex_cannot_address(home, agent_nam
     with pytest.raises(ValueError, match="contains '.'"):
         await agent.add_mcp(McpSpec(name="claude.ai", command="/bin/true"))
     assert not (agent_dir / "agentic-assets" / "mcp").exists(), "must refuse BEFORE writing"
+
+
+async def test_a_recloned_agent_writes_its_mcp_under_its_new_folder_not_the_old_one(home, agent_name):
+    """A deleted clone's MCP rows keep the agent as parent (its id rides in git), so the new
+    clone's launch must not re-save them at the old path and recreate the deleted folder."""
+    import shutil
+
+    old_dir = home / "old-clone" / "agentic-assets" / "agent" / agent_name
+    old_dir.mkdir(parents=True)
+    _write_agent_document(old_dir, agent_name, "claude")
+    await _index(home / "old-clone")
+    agent = await Agent.get_one({"name": agent_name})
+    assert await agent.add_mcp(SPEC) is True
+
+    new_dir = home / "new-clone" / "agentic-assets" / "agent" / agent_name
+    new_dir.parent.mkdir(parents=True)
+    shutil.copytree(old_dir, new_dir, ignore=shutil.ignore_patterns("agentic-assets"))  # agent.json + identity capsule
+    shutil.rmtree(home / "old-clone")
+    await _index(home / "new-clone")
+    agent = await Agent.get_one({"name": agent_name})
+    assert Path(agent.asset_ref) == new_dir, "the re-clone keeps the agent's id at its new folder"
+
+    moved = SPEC.model_copy(update={"args": ["/tmp/new_clone_mcp.py"]})
+    assert await agent.add_mcp(moved) is True
+    assert (new_dir / "agentic-assets" / "mcp" / "dummy" / "mcp.json").is_file()
+    assert not (home / "old-clone").exists(), "the deleted clone's folder came back"
+    assert [Path(m.asset_ref).parent.parent.parent for m in await agent.mcp_assets()] == [new_dir]
+
+
+async def test_deleting_the_kept_clone_moves_its_agent_to_the_surviving_clone(home, agent_name):
+    """Two clones of one repo carry the same agent id: one row stands for both, its source the
+    clone indexed first. Deleting that clone must leave the agent on the other one, not reap it."""
+    import shutil
+
+    from flow_sdk.fs_store.reindex import reindex_paths
+
+    first = home / "clone-a" / "agentic-assets" / "agent" / agent_name
+    first.mkdir(parents=True)
+    _write_agent_document(first, agent_name, "claude")
+    await _index(home / "clone-a")
+    second = home / "clone-b" / "agentic-assets" / "agent" / agent_name
+    second.parent.mkdir(parents=True)
+    shutil.copytree(first, second)                       # the second clone: same files, same identity capsule
+    await _index(home / "clone-b")
+    agent = await Agent.get_one({"name": agent_name})
+    assert Path(agent.asset_ref) == first
+    assert [Path(o["path"]) for o in agent.asset_occurrences] == [first, second]
+
+    shutil.rmtree(home / "clone-a")
+    await reindex_paths([], [str(first / "agent.json")])
+
+    agent = await Agent.get_one({"name": agent_name})
+    assert agent is not None, "the surviving clone lost its agent"
+    assert Path(agent.asset_ref) == second

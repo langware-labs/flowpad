@@ -1,9 +1,7 @@
 import { t } from '@lingui/core/macro';
-import { ViewType, WorldViewProjection } from '@sdk';
-import { Building2, Gauge, Globe, KeyRound, Mail, Waypoints } from 'lucide-react';
+import { ViewType } from '@sdk';
+import { Building2, Gauge, KeyRound, Mail } from 'lucide-react';
 import type React from 'react';
-
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 
 import type { HubRailItemId } from './rail-visibility';
 
@@ -11,7 +9,7 @@ import type { HubRailItemId } from './rail-visibility';
 export type RailIcon = React.ComponentType<{ className?: string }>;
 
 /** One HUB rail entry. Always a real dock target, and `pointer` distinguishes
- *  same-viewType destinations (WorldView world vs organization, records/<type>). */
+ *  same-viewType destinations (e.g. records/<type>). */
 export type HubItem = {
   id: HubRailItemId;
   title: string;
@@ -31,13 +29,9 @@ export type HubItem = {
  *
  * `t` is passed in so the caller's `useLingui` owns re-translation on locale change.
  *
- * Glyphs come from the backend type registry via `iconForType(pointer)` wherever
- * the entry IS a type — the view it opens resolves its rows the same way, so a
- * hardcoded glyph would disagree with the destination it leads to. Entries that
- * name a lucide icon directly are the ones that are a PLACE rather than a type
- * (WorldView, Credentials) — and Stream Inbox, deliberately: it happens to open a
- * `conversation` list, but the slot is the desk's Stream Inbox, so it keeps that slot's
- * `Mail` (see `navMeta` in `collapsed-sidebar.tsx`) rather than the type's glyph.
+ * Glyphs are lucide icons: every entry is a PLACE rather than a type. Stream Inbox
+ * opens the Stream Inbox but keeps the desk slot's `Mail` (see `navMeta` in
+ * `collapsed-sidebar.tsx`) rather than the type's glyph.
  */
 export function buildHubRailItems(t: (s: TemplateStringsArray) => string): readonly HubItem[] {
   return [
@@ -46,27 +40,16 @@ export function buildHubRailItems(t: (s: TemplateStringsArray) => string): reado
     // Home button keeps hub navigation under `page=hub`, and the project is the
     // leading breadcrumb). Two buttons for one destination is the thing the
     // rail has always avoided.
-    // Stream Inbox, matching the desk's Stream Inbox slot (same `Mail` glyph). It lists the
-    // hub's `conversation` entities over `graph/conversation`; the desk
-    // `StreamInboxView` is NOT reusable here, because everything it reads is desk-only
-    // (`conversation-list` action → 404 on the hub, `stream_inbox_manager` → 422), so it
-    // would render an empty shell. That also means no unread badge on the hub.
+    // Stream Inbox, the desk's own view (same `Mail` glyph) over the hub's conversations. Unread,
+    // archive and search are per-machine state, so the hub page shows no badge and none of those
+    // controls. Pointer-less, so the icon stays lit while `?conversation=` selects a row.
     {
       id: 'stream_inbox',
       title: t`Stream Inbox`,
       icon: Mail,
-      viewType: ViewType.HUB_RECORDS,
-      pointer: 'conversation',
+      viewType: ViewType.STREAM_INBOX,
     },
-    { id: 'tasks', title: t`Tasks`, icon: iconForType('task'), viewType: ViewType.HUB_RECORDS, pointer: 'task' },
-    { id: 'docs', title: t`Docs`, icon: iconForType('markdown'), viewType: ViewType.HUB_RECORDS, pointer: 'markdown' },
-    {
-      id: 'world',
-      title: t`Your world`,
-      icon: Globe,
-      viewType: ViewType.WORLDVIEW,
-      pointer: WorldViewProjection.WORLD,
-    },
+    // Tasks and Docs are hidden for now (ids stay in HubRailItemId to bring them back).
     {
       // The plain people-and-teams screen. The org WORLDVIEW shows the same data
       // as a graph and is reachable from inside it — the graph is the advanced
@@ -87,7 +70,6 @@ export function buildHubRailItems(t: (s: TemplateStringsArray) => string): reado
     { id: 'token-plan', title: t`Token plan`, icon: Gauge, viewType: ViewType.TOKEN_PLAN },
     // Pointer-less for the same reason: the pointer is the selected endpoint +
     // tab, and the icon must stay lit while the user drills into one.
-    { id: 'llm-endpoints', title: t`LLM Endpoints`, icon: Waypoints, viewType: ViewType.LLM_ENDPOINTS },
     { id: 'credentials', title: t`Credentials`, icon: KeyRound, viewType: ViewType.CREDENTIALS },
   ];
 }

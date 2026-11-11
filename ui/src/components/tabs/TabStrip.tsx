@@ -6,11 +6,10 @@
  *   - Chrome-style equal-width chips: every tab is always visible; chips share
  *     the row width (flex basis 200px, min 40px) and shrink in lockstep as tabs
  *     are added — the strip never scrolls
- *   - density degradation: as the shared chip width falls, the popout button,
- *     then the close button (overlay-on-hover), then the title drop out
+ *   - density degradation: as the shared chip width falls, the title drops out
  *   - double-click / context-menu rename editing (the OWNER validates+saves;
  *     the strip only manages the input UI and emits the trimmed name)
- *   - per-chip popout + close buttons, close-all / close-others / close-right
+ *   - a close button per chip (full screen + popout live in the hover card), close-all / close-others / close-right
  *     context-menu actions, the close-all badge button
  *   - per-chip tooltips (the primary way to read a heavily-truncated title)
  *
@@ -30,13 +29,18 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { TabTipBodyContext, TabTooltipName } from '@src/components/tabs/TabTooltipName';
 import { TabFavoriteStar } from '@src/components/tabs/TabFavoriteStar';
 import type { FavoriteRef } from '@src/hooks/use-favorites';
+import type { Annotation } from '@sdk';
+import { notesByTarget, useAllNotes, type NoteTarget } from '@src/hooks/use-entity-notes';
+import { TabNoteButton, TabNotesBadge, TabNotesPopover, type TabNotesView } from '@src/components/notes/TabNotes';
 import { useLocaleInfo } from '@src/contexts/locale-context';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useCloseOnIframeFocus } from '@src/hooks/use-close-on-iframe-focus';
 import { animateGlow } from '@src/lib/animate-glow';
+import { chipSizing } from '@src/components/tabs/close-freeze';
+import { useCloseFreeze } from '@src/components/tabs/use-close-freeze';
 import { consumeTabHighlight, TAB_HIGHLIGHT_MS, useTabHighlights } from '@src/tabs/tab-highlight';
-import { ExternalLink, X, type LucideIcon } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ExternalLink, Maximize2, X, type LucideIcon } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 
@@ -98,6 +102,9 @@ export interface TabStripItem {
   /** What bookmarking THIS tab means (`favoriteTargetForDock`) — present iff the
    *  tab is bookmarkable; the chip then leads with its own star. */
   favorite?: FavoriteRef | null;
+  /** The entity this tab's sticky notes sit on — present iff the tab can carry
+   *  notes; the chip then offers "Add a note" beside its star and a notes badge. */
+  notes?: NoteTarget | null;
   /** Whether the chip can be closed (default true). A `closable: false` chip
    *  hides its X, is excluded from close-all/close-others/close-right, and shows
    *  no "Close" context item — for pinned fixtures like the vibe "Display" chip. */
@@ -143,6 +150,8 @@ export interface TabStripProps {
   onRename?: (key: string, name: string) => void;
   /** Pop the tab out (Part 3 §7/§8). */
   onPopout?: (key: string) => void;
+  /** Show the tab's content over the whole window. */
+  onFullScreen?: (key: string) => void;
   /** Extra "new tab" context-menu entries (owner-specific openers). */
   newTabMenuItems?: TabStripContextMenuItem[];
   /** Shortcut label for the Close entry (e.g. "Ctrl+W"). */
@@ -163,20 +172,20 @@ export interface TabStripProps {
 
 /** Strip-wide chip density, derived from the SHARED chip width (all chips are
  *  equal-width by construction, so one number describes every chip):
- *  `normal` = icon + title + in-flow hover buttons; `compact` = no popout,
- *  close is an overlay; `icon` = icon only, close overlay on hover/active. */
-type ChipDensity = 'normal' | 'compact' | 'icon';
+ *  `normal` = icon + title; `icon` = icon only. Close is an overlay either way. */
+type ChipDensity = 'normal' | 'icon';
 
 /** Preferred/max chip width — the SAME constant drives the flex layout (inline
  *  style) and the density thresholds, so the two can't drift apart. */
 const CHIP_MAX_PX = 200;
 /** Icon-only floor — chips never shrink below this; past it the row clips. */
 const CHIP_MIN_PX = 40;
-const COMPACT_BELOW_PX = 110;
 const ICON_ONLY_BELOW_PX = 64;
 /** Hover time before a tab's icon turns into its favorite star, so a plain tab click never lands on the star. 0 = immediate. */
 const TAB_STAR_HOVER_DELAY_MS = 1500;
 /** Visibility flips after the hover delay; leaving the tab flips it back at once. */
+/** Shared empty list: a chip without notes gets the same array every render. */
+const NO_NOTES: readonly Annotation[] = [];
 const TAB_STAR_SWAP = 'transition-[visibility] duration-0 group-hover:[transition-delay:var(--tab-star-delay)]';
 
 export const TabStrip: React.FC<TabStripProps> = ({
@@ -187,6 +196,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
   onCloseMany,
   onRename,
   onPopout,
+  onFullScreen,
   newTabMenuItems,
   closeShortcutLabel,
   trailing,
@@ -205,6 +215,15 @@ export const TabStrip: React.FC<TabStripProps> = ({
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const highlights = useTabHighlights();
+  // Close-in-place: a mouse close holds every tab's width until the pointer leaves.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const keyList = items.map((i) => i.key).join('\n');
+  const keys = useMemo(() => (keyList ? keyList.split('\n') : []), [keyList]);
+  const { frozenPx, leadPad, closeByMouse, onPointerLeave, onPointerEnter } = useCloseFreeze(
+    keys,
+    stripRef,
+    CHIP_MAX_PX,
+  );
 
   useEffect(() => {
     for (const [key, token] of highlights) {
@@ -215,9 +234,22 @@ export const TabStrip: React.FC<TabStripProps> = ({
     }
   }, [highlights, items]);
 
+  // Sticky notes: ONE query for every chip, grouped by the entity each sits on,
+  // and ONE popover (compose / list / note) anchored to the chip that opened it.
+  const allNotes = useAllNotes(items.some((i) => i.notes));
+  const notesFor = useMemo(() => notesByTarget(allNotes), [allNotes]);
+  const [notesView, setNotesView] = useState<TabNotesView | null>(null);
+  const notesItem = notesView ? items.find((i) => i.key === notesView.key) : undefined;
+
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
+  // Rename chosen from a chip's context menu, waiting for that menu to close. Opening the editor inside
+  // onSelect mounted the input while the menu's focus trap was still live: the trap pulled focus back,
+  // the input's blur COMMITTED the unchanged name and closed the editor (handleNameBlur) -- choosing
+  // Rename did nothing. The menu's close (onCloseAutoFocus) opens the editor instead, with nothing left
+  // to take focus from it.
+  const renameFromMenuRef = useRef<{ key: string; title: string } | null>(null);
   const shouldSelectRenameInputRef = useRef(false);
 
   // Density: one ResizeObserver on the row; all chips share one width
@@ -232,14 +264,15 @@ export const TabStrip: React.FC<TabStripProps> = ({
       // stay at 'normal' rather than degrading on a bogus measurement.
       const width = container.clientWidth;
       if (!width) return;
-      const per = Math.min(width / (items.length || 1), CHIP_MAX_PX);
-      setDensity(per >= COMPACT_BELOW_PX ? 'normal' : per >= ICON_ONLY_BELOW_PX ? 'compact' : 'icon');
+      // While frozen every tab keeps its width, so its density must not change either.
+      const per = frozenPx ?? Math.min(width / (items.length || 1), CHIP_MAX_PX);
+      setDensity(per >= ICON_ONLY_BELOW_PX ? 'normal' : 'icon');
     };
     compute();
     const observer = new ResizeObserver(compute);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [items.length]);
+  }, [items.length, frozenPx]);
 
   // Keep the ACTIVE chip on screen.
   //
@@ -421,37 +454,43 @@ export const TabStrip: React.FC<TabStripProps> = ({
 
   const activeIndex = allVisibleItems.findIndex((i) => i.key === activeKey);
 
-  // Popout + close live in an absolute overlay at EVERY density (the Chrome
-  // model): in-flow buttons would reserve ~48px of every chip even while
-  // invisible and crush the title. The overlay is backed by the chip surface
-  // color so it reads over truncated text; close is always visible on the
-  // active chip, hover-revealed on inactive ones; popout is hover-only, sits
-  // just before close, and drops out below normal density.
-  const renderButtonOverlay = (key: string, isActive: boolean, isDisabled: boolean, closable: boolean, showPopout: boolean) => (
+  // Full screen + open external sit in the tab's hover card, beside its name;
+  // the chip itself keeps only close.
+  const renderCardAction = (
+    key: string,
+    isDisabled: boolean,
+    onAct: (key: string) => void,
+    label: string,
+    testId: string,
+    Icon: LucideIcon,
+  ) => (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onAct(key);
+      }}
+      disabled={isDisabled}
+      className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground"
+      aria-label={label}
+      title={label}
+      data-testid={testId}
+    >
+      <Icon className="h-3 w-3" />
+    </button>
+  );
+
+  const renderButtonOverlay = (key: string, isActive: boolean, isDisabled: boolean, closable: boolean) => (
     <div
       className={`absolute end-0.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded transition-opacity ${
         isActive ? 'bg-background opacity-100' : 'bg-muted opacity-0 group-hover:opacity-100'
       }`}
     >
-      {showPopout && onPopout && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onPopout(key);
-          }}
-          disabled={isDisabled}
-          className={`rounded p-0.5 hover:bg-muted-foreground/20 ${isActive ? 'opacity-0 group-hover:opacity-100' : ''}`}
-          aria-label={t`Open in external browser`}
-          title={t`Open in external browser`}
-          data-testid={`tab-open-external-${key}`}
-        >
-          <ExternalLink className="h-3 w-3" />
-        </button>
-      )}
       {closable && (
         <button
           onClick={(e) => {
             e.stopPropagation();
+            const chip = tabRefs.current[key];
+            if (chip) closeByMouse(key, chip);
             onClose(key);
           }}
           disabled={isDisabled}
@@ -474,18 +513,18 @@ export const TabStrip: React.FC<TabStripProps> = ({
     const displayTitle = item.standsFor?.title ?? item.title;
     const iconOnly = density === 'icon' && !isEditing;
     const closable = item.closable !== false;
-    const showPopout = density === 'normal' && !!onPopout;
-    // The bookmark star takes the icon's place while the pointer is on the tab.
-    const showStar = !!item.favorite && !isEditing;
+    // On the active tab only, the bookmark star takes the icon's place on hover.
+    const showStar = !!item.favorite && !isEditing && isActive;
+    const noteTarget = !isEditing ? item.notes : null;
+    const chipNotes = (noteTarget && notesFor.get(noteTarget.typeId.toString())) || NO_NOTES;
 
     // Chrome model: equal flex share for every chip — all tabs stay visible and
     // shrink in lockstep; the strip never scrolls. Inline style (not Tailwind
     // literals) so the widths come from the same constants the density math
     // uses. An editing chip is temporarily pinned to the full preferred width
     // so the rename input is usable; neighbors re-equalize around it.
-    const sizing: React.CSSProperties = isEditing
-      ? { width: CHIP_MAX_PX, flex: 'none' }
-      : { flex: `1 1 ${CHIP_MAX_PX}px`, minWidth: CHIP_MIN_PX, maxWidth: CHIP_MAX_PX };
+    // While frozen (close-in-place) every chip keeps one fixed width.
+    const sizing = chipSizing(frozenPx, isEditing, { maxPx: CHIP_MAX_PX, minPx: CHIP_MIN_PX });
 
     const tabContent = (
       <div
@@ -499,7 +538,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
         // clipped into a straight chord across the corner curve — the ends came
         // out visibly pointed. Uniform on all states so activation never changes
         // a chip's metrics.
-        className={`group relative flex select-none items-center overflow-hidden rounded-t-lg border border-t-2 py-1.5 transition-colors ${
+        className={`group relative flex select-none items-center overflow-hidden rounded-t-lg border border-t-2 py-1.5 transition-colors motion-safe:transition-[color,background-color,border-color,flex-basis,min-width,max-width] ${
           iconOnly ? 'justify-center gap-0 px-1' : 'gap-2 px-3'
         } ${
           isDisabled
@@ -542,6 +581,15 @@ export const TabStrip: React.FC<TabStripProps> = ({
               <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
             </span>
           )}
+          {noteTarget && isActive && !iconOnly && (
+            // Beside the star, after the same hover delay; it floats over the
+            // title's first letters rather than reserving width on every chip.
+            <span
+              className={`invisible absolute start-full ms-1 flex items-center rounded bg-muted px-0.5 ${TAB_STAR_SWAP} group-hover:visible`}
+            >
+              <TabNoteButton onClick={() => setNotesView({ key, mode: 'compose' })} />
+            </span>
+          )}
         </span>
         {!iconOnly && item.badge}
         {isEditing ? (
@@ -566,7 +614,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
             <span
               // The active chip's close button is persistent (overlay) — keep
               // the title clear of it; inactive titles reclaim the full width.
-              className={`min-w-0 flex-1 truncate text-sm font-medium ${isActive ? 'pe-4' : ''} ${item.titleClassName ?? ''}`}
+              className={`min-w-0 flex-1 truncate text-sm font-medium ${isActive && chipNotes.length === 0 ? 'pe-4' : ''} ${item.titleClassName ?? ''}`}
               onDoubleClick={(e) => {
                 if (!item.renameable) return;
                 e.stopPropagation();
@@ -577,8 +625,13 @@ export const TabStrip: React.FC<TabStripProps> = ({
             </span>
           )
         )}
+        {!iconOnly && chipNotes.length > 0 && (
+          <span className={`inline-flex shrink-0 ${isActive ? 'pe-4' : ''}`}>
+            <TabNotesBadge notes={chipNotes} onClick={() => setNotesView({ key, mode: 'list' })} />
+          </span>
+        )}
 
-        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable, showPopout)}
+        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable)}
         {item.guestNote && (
           <span
             aria-hidden
@@ -623,12 +676,46 @@ export const TabStrip: React.FC<TabStripProps> = ({
               <TooltipContent side="bottom" className="p-0">
                 {displayTitle && (
                   <div className="px-3 py-1.5">
-                    <TabTooltipName name={displayTitle} className={tipBody ? undefined : 'font-normal'} />
+                    <div className="flex items-center gap-1">
+                      <TabTooltipName name={displayTitle} className={tipBody ? undefined : 'font-normal'} />
+                      {onFullScreen &&
+                        renderCardAction(
+                          key,
+                          isDisabled,
+                          onFullScreen,
+                          t`Full screen (Esc to exit)`,
+                          `tab-full-screen-${key}`,
+                          Maximize2,
+                        )}
+                      {onPopout &&
+                        renderCardAction(
+                          key,
+                          isDisabled,
+                          onPopout,
+                          t`Open in external browser`,
+                          `tab-open-external-${key}`,
+                          ExternalLink,
+                        )}
+                    </div>
                     {item.guestNote && (
                       <p className="text-[11px] text-emerald-500" data-testid="tab-guest-note">
                         {item.guestNote}
                       </p>
                     )}
+                  </div>
+                )}
+                {noteTarget && (
+                  <div className="flex items-center gap-1.5 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+                    <span className="flex-1">
+                      {chipNotes.length > 0 ? t`${chipNotes.length} notes` : t`No notes yet`}
+                    </span>
+                    <button
+                      type="button"
+                      className="rounded px-1.5 py-0.5 text-foreground hover:bg-muted"
+                      onClick={() => setNotesView({ key, mode: chipNotes.length ? 'list' : 'compose' })}
+                    >
+                      {chipNotes.length > 0 ? t`Show notes` : t`+ Add note`}
+                    </button>
                   </div>
                 )}
                 {/* A body may turn out empty once it has loaded: no divider then. */}
@@ -640,14 +727,26 @@ export const TabStrip: React.FC<TabStripProps> = ({
               </TooltipContent>
             )}
           </TabChipTooltip>
-          <ContextMenuContent>
+          <ContextMenuContent
+            onCloseAutoFocus={(e) => {
+              const pending = renameFromMenuRef.current;
+              if (!pending) return;
+              renameFromMenuRef.current = null;
+              e.preventDefault(); // the editor takes focus, not the trigger
+              startRename(pending.key, pending.title);
+            }}
+          >
             {/* Emphasized shortcuts (e.g. "Open Project") sit above the tab
                 operations as an accented header group — they navigate, they
                 don't mutate the tab, so they must not read as one more entry. */}
             {renderMenuGroup(item.contextMenuItems?.filter((e) => e.emphasized))}
             {item.renameable && (
               <>
-                <ContextMenuItem onSelect={() => startRename(key, item.title)}>
+                <ContextMenuItem
+                  onSelect={() => {
+                    renameFromMenuRef.current = { key, title: item.title };
+                  }}
+                >
                   <Trans>Rename</Trans>
                 </ContextMenuItem>
                 <ContextMenuSeparator />
@@ -691,15 +790,41 @@ export const TabStrip: React.FC<TabStripProps> = ({
     // One tooltip provider for the whole strip: the first tip waits, and sliding
     // on to the next chip shows its tip at once.
     <TooltipProvider delayDuration={600}>
-      <div className={`flex min-w-0 max-w-full items-end bg-muted ${TAB_LINE_HEIGHT_CLASS}`} data-testid={testId}>
+      {notesView && notesItem?.notes && (
+        <TabNotesPopover
+          view={notesView}
+          target={notesItem.notes}
+          notes={notesFor.get(notesItem.notes.typeId.toString()) ?? NO_NOTES}
+          anchor={tabRefs.current[notesView.key] ?? null}
+          onView={setNotesView}
+          onClose={() => setNotesView(null)}
+        />
+      )}
+      <div
+        className={`flex min-w-0 max-w-full items-end bg-muted ${TAB_LINE_HEIGHT_CLASS}`}
+        ref={stripRef}
+        data-testid={testId}
+        onPointerLeave={onPointerLeave}
+        onPointerEnter={onPointerEnter}
+      >
         {/* Tab row — chips share this width equally and are ALL always visible
             (Chrome model). overflow-hidden only matters past the 40px/chip floor
             (~25+ tabs at 1000px), where the row clips instead of scrolling. */}
         <div
           ref={tabContainerRef}
           data-testid="terminal-tabs-row"
+          data-frozen={frozenPx !== null ? 'true' : undefined}
           className="flex min-w-0 flex-1 items-end overflow-hidden pe-1"
         >
+          {/* Closing tabs from the end grows this spacer, so the tabs shift toward the cursor. */}
+          {leadPad > 0 && (
+            <div
+              aria-hidden
+              data-testid="tab-strip-lead-pad"
+              className="shrink-0"
+              style={{ flex: `0 0 ${leadPad}px` }}
+            />
+          )}
           {items.map((item, index) => renderChip(item, index, items))}
         </div>
 
@@ -717,7 +842,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
               <Button
                 variant="outline"
                 size="sm"
-                className="ms-3 me-1 h-7 shrink-0 gap-1 rounded-md border-border bg-background px-1.5 text-foreground shadow-sm hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
+                className="me-1 ms-3 h-7 shrink-0 gap-1 rounded-md border-border bg-background px-1.5 text-foreground shadow-sm hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => closeMany(allVisibleItems.map((i) => i.key))}
                 aria-label={t`Close all ${allVisibleItems.length} tabs`}
                 data-testid="close-all-tabs-button"

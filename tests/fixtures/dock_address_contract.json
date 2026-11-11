@@ -85,7 +85,8 @@
     "llm-setup",
     "assistant",
     "vibe",
-    "inbound"
+    "inbound",
+    "machines"
   ],
   "subview_vocabularies": {
     "credentials": [
@@ -146,6 +147,14 @@
     "signals": {
       "view_type": "automations",
       "pointer": "bus"
+    }
+  },
+  "retired_pointers": {
+    "data-sources": {
+      "channels": {
+        "view_type": "inbound",
+        "pointer": ""
+      }
     }
   },
   "view_meta": {
@@ -748,6 +757,14 @@
       "scope_keyed": false,
       "folds_sub_pointer": false,
       "chrome": "workspace"
+    },
+    "machines": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "folds_sub_pointer": false,
+      "chrome": "workspace"
     }
   },
   "tab_identity_cases": [
@@ -866,12 +883,6 @@
       "url": "/dock/schema-tree/--acme--.crm.lead/--acme--.crm.company"
     },
     {
-      "name": "every message channel and where it is routed",
-      "view_type": "data-sources",
-      "pointer": "channels",
-      "url": "/dock/data-sources/channels"
-    },
-    {
       "name": "one data source's page",
       "view_type": "data-sources",
       "pointer": "5b112f8f-06d9-46ff-9ff0-d09748a4d512",
@@ -969,6 +980,12 @@
       "url": "/dock/assets/editor/markdown/typeid/markdown-550e8400-e29b-41d4-a716-446655440000"
     },
     {
+      "name": "assets app editor by typeid",
+      "view_type": "assets",
+      "pointer": "editor/app/typeid/micro_app-550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/assets/editor/app/typeid/micro_app-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
       "name": "assets editor by vfs (@ is escaped)",
       "view_type": "assets",
       "pointer": "editor/skill/vfs/compute_node-@local/skills/demo/SKILL.md",
@@ -1003,6 +1020,18 @@
       "view_type": "assets",
       "pointer": "project-home",
       "url": "/dock/assets/project-home"
+    },
+    {
+      "name": "assets project-setup",
+      "view_type": "assets",
+      "pointer": "project-setup",
+      "url": "/dock/assets/project-setup"
+    },
+    {
+      "name": "assets project-deployments",
+      "view_type": "assets",
+      "pointer": "project-deployments",
+      "url": "/dock/assets/project-deployments"
     },
     {
       "name": "lens transcript",
@@ -1262,6 +1291,25 @@
       "page": "desk",
       "view_type": "llm-sources",
       "pointer": "endpoints"
+    },
+    {
+      "name": "hub channels list",
+      "view_type": "inbound",
+      "page": "hub",
+      "url": "/dock/hub/inbound"
+    },
+    {
+      "name": "hub channel routing",
+      "view_type": "inbound",
+      "page": "hub",
+      "pointer": "550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/hub/inbound/550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "desk channel routing (a mailbox)",
+      "view_type": "inbound",
+      "pointer": "mailbox-550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/inbound/mailbox-550e8400-e29b-41d4-a716-446655440000"
     }
   ]
 }

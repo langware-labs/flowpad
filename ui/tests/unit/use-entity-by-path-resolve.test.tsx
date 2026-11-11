@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   getEntityByPath: vi.fn(),
   updateEntityFromJson: vi.fn(),
   getByTypeId: vi.fn(),
+  openDock: vi.fn(),
+  onOp: null as null | ((typeId: { id: string }, op: string) => void),
 }));
 
 vi.mock('@sdk', async (importOriginal) => {
@@ -37,9 +39,16 @@ vi.mock('@sdk', async (importOriginal) => {
 });
 
 vi.mock('@sdk/react/hooks', () => ({
-  useEntityOps: () => undefined,
+  useEntityOps: (_types: unknown, listener: typeof mocks.onOp) => {
+    mocks.onOp = listener;
+  },
 }));
 
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: { openDock: mocks.openDock } }),
+}));
+
+import { act } from '@testing-library/react';
 import { FSRef, TypeId } from '@sdk';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -185,6 +194,33 @@ describe('useEntityByPath — path-only resolve', () => {
     await waitFor(() => expect(result.current.state).toBe('resolved'));
     expect(result.current.resolvedType).toBe('markdown');
     expect(mocks.resolveByPath).not.toHaveBeenCalled();
+  });
+});
+
+describe('a shown entity deleted elsewhere', () => {
+  function showSkill() {
+    mocks.getEntityByPath.mockResolvedValue({ type: 'skill', id: SKILL_ID, asset_ref: SKILL_DIR });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><EntityResolutionGate type="skill" fsRef={new FSRef(SKILL_DIR, COMPUTE_NODE)}
+      typeLabel="skill" render={() => <div>Skill editor</div>} /></QueryClientProvider>);
+  }
+
+  it('leaves to the type list, without re-resolving the path', async () => {
+    showSkill();
+    await waitFor(() => expect(screen.getByText('Skill editor')).toBeTruthy());
+    act(() => mocks.onOp!({ id: SKILL_ID }, 'delete'));
+    await waitFor(() => expect(mocks.openDock).toHaveBeenCalledTimes(1));
+    expect(String(mocks.openDock.mock.calls[0][0].pointer ?? '')).toContain('skill');
+    expect(mocks.resolveByPath).not.toHaveBeenCalled();
+  });
+
+  it('ignores the delete of another entity', async () => {
+    showSkill();
+    await waitFor(() => expect(screen.getByText('Skill editor')).toBeTruthy());
+    act(() => mocks.onOp!({ id: 'another-id' }, 'delete'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByText('Skill editor')).toBeTruthy();
+    expect(mocks.openDock).not.toHaveBeenCalled();
   });
 });
 

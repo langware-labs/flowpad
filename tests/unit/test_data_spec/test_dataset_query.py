@@ -117,7 +117,7 @@ async def test_query_answers_matching_rows_with_their_key_ref_and_version(tmp_pa
 
 async def test_a_filter_never_hides_a_row_that_does_not_fit(tmp_path):
     d = await _filled(tmp_path)
-    doc = next((tmp_path / "rows/t2/input").glob("*.json"))
+    doc = next((d._rows_root() / "rows/t2/input").glob("*.json"))
     doc.write_text(doc.read_text().replace('"sent"', "7"))
     got = d.query({"input.metric": "reply"})
     assert got["total"] == 3 and [p["key"] for p in got["problems"]] == ["t2"]

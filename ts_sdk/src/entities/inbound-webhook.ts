@@ -6,13 +6,12 @@
  * place (`target`); a claim with no place (`none`) falls through to its parent's. Nothing here decides a route —
  * this is the screen's data layer, and the hub answers every question.
  *
- * Transport: on the hub page the API base IS the hub, so the `webhook` actions are called directly; on a desktop
- * the local backend forwards each verb to the hub (`data_source/inbound/<verb>`, flow_sdk/app/actions/inbound_action.py).
+ * Transport: the same `webhook/<verb>` calls on both backends — `webhook` is a hub-only type on a desktop
+ * (flow_sdk/builtin/webhook.py), so the local backend forwards each one to the hub verbatim.
  */
 import { ActionInfo } from '../models/ActionInfo';
 import type { HttpMethod } from '../models/ApiUrl';
 import { dataManager } from '../APIEntity';
-import { isHubOnly } from '../utils/hub-runtime';
 
 /** Where a hub webhook claim hands its messages (the hub's `DeliveryTarget`). `none` = its parent's place. */
 export interface ChannelRouteTarget {
@@ -65,7 +64,14 @@ export interface InboundChainBody {
   /** `@<provider>` for the vendor's root, or the id of a claim (a number) to chain a rule under. */
   parent: string;
   claim: { kind: 'account' | 'user' | 'group'; key?: string };
-  proof?: { credential: string; app_secret?: string; verify_token?: string; graph_url?: string };
+  proof?: {
+    credential: string;
+    app_secret?: string;
+    verify_token?: string;
+    graph_url?: string;
+    /** The vendor's business account (Meta's WhatsApp account id): the hub subscribes it to the app when given. */
+    business_account?: string;
+  };
   target?: ChannelRouteTarget;
 }
 
@@ -135,12 +141,14 @@ export function accountChainBody(input: {
   appSecret?: string;
   verifyToken?: string;
   graphUrl?: string;
+  businessAccount?: string;
   target?: ChannelRouteTarget;
 }): InboundChainBody {
   const proof: InboundChainBody['proof'] = { credential: input.credential.trim() };
   if (input.appSecret?.trim()) proof.app_secret = input.appSecret.trim();
   if (input.verifyToken?.trim()) proof.verify_token = input.verifyToken.trim();
   if (input.graphUrl?.trim()) proof.graph_url = input.graphUrl.trim();
+  if (input.businessAccount?.trim()) proof.business_account = input.businessAccount.trim();
   const body: InboundChainBody = {
     parent: `@${input.provider}`,
     claim: { kind: 'account', key: input.phoneNumberId.trim() },
@@ -169,14 +177,10 @@ export function ruleChainBody(
 
 // ── transport ─────────────────────────────────────────────────────────────
 
+/** `webhook/mine`, `webhook/chain`, `webhook/<id>/<verb>`, `DELETE webhook/<id>` — the same on both backends: the hub
+ *  page calls the hub, a desktop forwards the hub-only `webhook` type to it verbatim. */
 function call(method: HttpMethod, verb: string, id: string | null = null): ActionInfo {
-  if (isHubOnly()) {
-    // `webhook/mine`, `webhook/chain`, `webhook/<id>/<verb>`, `DELETE webhook/<id>`.
-    return new ActionInfo(verb, 'webhook', id, method);
-  }
-  const info = new ActionInfo('inbound', 'data_source', null, method);
-  info.subpath = [id, verb].filter(Boolean).join('/');
-  return info;
+  return new ActionInfo(verb, 'webhook', id, method);
 }
 
 /** The hub's `webhook` chain, for the Inbound screen. Every call reads or writes the hub — nothing is cached. */
@@ -211,13 +215,6 @@ export const InboundWebhooks = {
   /** Delete a claim and everything chained under it. */
   async remove(id: string): Promise<void> {
     await dataManager.callAction<unknown, unknown>(call('DELETE', '', id));
-  },
-
-  /** This desktop's instance id — what a `desktop` target names. Null on the hub page (no "this computer"). */
-  async here(): Promise<string | null> {
-    if (isHubOnly()) return null;
-    const data = await dataManager.callAction<unknown, { instance_id?: string }>(call('GET', 'here'));
-    return data?.instance_id || null;
   },
 };
 

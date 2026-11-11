@@ -173,10 +173,13 @@ def embedded_assets(ref_paths) -> list[Asset]:
     return list(found.values())
 
 
-def link_mounted_skills(assets_dir: Path, directories: Sequence[str], *, native_mount: str) -> bool:
+def link_mounted_skills(assets_dir: Path, directories: Sequence[str], *, native_mount: str,
+                        own: Sequence[str] = ()) -> bool:
     """Project shared skills into a worker's process-local native mount.
 
     Native and explicitly embedded skills win by name. Authored folders stay untouched.
+    ``own`` are an agent's own skill folders (``<agent>/skills``, each holding ``<name>/SKILL.md``): linked
+    last, so a skill of the same name the project has — in its native mount or a shared one — wins.
     """
     from flow_sdk.assets.placement import AssetClass, scan_mounts
 
@@ -203,4 +206,15 @@ def link_mounted_skills(assets_dir: Path, directories: Sequence[str], *, native_
                     continue
                 target.mkdir(parents=True, exist_ok=True)
                 link.symlink_to(skill, target_is_directory=True)
+    project_native = Path(directories[0]).resolve() / native_mount if directories else None
+    for folder in own:
+        source = Path(folder)
+        for skill in sorted(source.iterdir()) if source.is_dir() else ():
+            link = target / skill.name
+            if not (skill / "SKILL.md").is_file() or link.exists() or link.is_symlink():
+                continue
+            if project_native is not None and (project_native / skill.name / "SKILL.md").is_file():
+                continue  # the project replaces the agent's skill by having its own of the same name
+            target.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(skill, target_is_directory=True)
     return target.is_dir() and any((skill / "SKILL.md").is_file() for skill in target.iterdir())

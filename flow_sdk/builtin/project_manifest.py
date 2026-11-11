@@ -21,6 +21,7 @@ from flow_sdk.schema.data_spec.project_manifest_spec import (
     split_typeid,
 )
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.data_spec.secret_vault_spec import SecretVaultSpec
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,10 @@ class ProjectManifest(Entity):
     env_files: list[str] = APIField(
         default_factory=list,
         description="Project-relative env files credentials also read, after the root .env.local.",
+    )
+    secret_vaults: dict[str, SecretVaultSpec] = APIField(
+        default_factory=dict,
+        description="The project's named secret vaults {name: {manager, config}} — where its shared values live. Empty = none.",
     )
     subkind: ProjectSubkind = APIField(
         default=ProjectSubkind.STANDARD,
@@ -145,19 +150,21 @@ def ensure_project_namespace(project) -> None:
         namespace_roots.remember(spec.ns, mount)
 
 
-async def origin_for_asset(asset_ref: str):
+async def origin_for_asset(asset_ref: str, rel_path: str):
     """WHERE a reader can fetch this asset: its repo's ``GitOrigin`` (repo,
-    branch, commit, rel_path) when the checkout has a usable remote, else the
-    ``LocalOrigin`` of the asset root — enough for a reader on this machine and
-    honestly ``missing`` for anyone else. Blocking git reads run in a thread."""
+    branch, commit, rel_path) when the checkout has a usable remote, else a
+    ``LocalOrigin`` that names it INSIDE its project (``rel_path``, no base). A
+    manifest is a shared file, so no path of this machine goes into it: a reader
+    finds the publishing project's folder itself (``_source_root``) — on this
+    machine, and honestly ``missing`` for anyone else. Blocking git reads run in a thread."""
     from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
-    from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
 
     try:
         origin = await asyncio.to_thread(GitOrigin.for_asset_path, str(asset_ref))
     except Exception:  # noqa: BLE001 — a broken checkout is not a publish failure
         origin = None
-    return origin or local_origin_for_path(asset_ref)
+    return origin or LocalOrigin(rel_path=rel_path)
 
 
 async def set_published(entity: Entity, *, published: bool, project_id: str | None = None, actor=None) -> Entity:
@@ -217,7 +224,7 @@ async def set_published(entity: Entity, *, published: bool, project_id: str | No
                 rel_path=rel_path,
                 name=str(getattr(entity, "name", "") or ""),
                 description=str(getattr(entity, "description", "") or ""),
-                origin=published_origin(entity) or await origin_for_asset(asset_ref),
+                origin=published_origin(entity) or await origin_for_asset(asset_ref, rel_path),
             ),
         )
         await ensure_manifest_indexed(project)
@@ -250,15 +257,24 @@ async def _default_worker() -> str:
         return "claude"
 
 
-async def _source_root(origin) -> Path:
-    """Where the published bytes are on THIS machine — the origin's own path for
-    a local origin, a materialized checkout joined with ``rel_path`` otherwise."""
+async def _source_root(origin, source_project_id: str = "") -> Path:
+    """Where the published bytes are on THIS machine — inside the publishing
+    project's folder for a local origin (a row written before origins were
+    project-relative holds its own absolute base), a materialized checkout
+    joined with ``rel_path`` otherwise."""
     from flow_sdk.builtin.drivers.local_driver import _resolve_local_path  # noqa: PLC0415
     from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.fs_store.origin.fs_origin import safe_join  # noqa: PLC0415
 
     if getattr(origin, "kind", "") == "local":
-        return _resolve_local_path(origin)
+        if getattr(origin, "base", ""):
+            return _resolve_local_path(origin)
+        mount = _mount_of(await Project.get_one({"id": source_project_id})) if source_project_id else None
+        inside = safe_join(mount, origin.rel_path or ".") if mount is not None else None
+        if inside is None:
+            raise PublishRefused("missing", "the project that published this asset is not on this machine")
+        return inside
     local_root, _pid = await get_origin_driver(origin.kind).materialize(origin)
     joined = safe_join(Path(local_root), origin.rel_path or ".")
     if joined is None:
@@ -270,13 +286,13 @@ async def resolve_published_row(typeid: str) -> dict:
     """A bare typeid → its published row plus publisher, from the hub's
     ``project/published_asset`` lookup — the ``install_request`` shape, so the
     CLI's ``flow asset install <typeid>`` walks the same path as the dialog."""
-    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     try:
         split_typeid(typeid)
     except ValueError as exc:
         raise PublishRefused("bad_request", str(exc)) from exc
-    data = await hub_get("project", None, action="published_asset", params={"typeid": typeid})
+    data = await HubProxy.try_call("GET", "project", None, action="published_asset", params={"typeid": typeid})
     if not isinstance(data, dict) or not data.get("typeid"):
         raise PublishRefused(
             "not_published",
@@ -315,7 +331,7 @@ async def install_published(project, request: dict, *, overwrite: bool = False) 
     if mount is None:
         raise PublishRefused("no_project", "the target project has no folder")
 
-    src = await _source_root(entry.origin)
+    src = await _source_root(entry.origin, str(request.get("source_project_id") or ""))
     if not src.exists():
         raise PublishRefused("missing", f"the published files are not reachable from this machine ({src})")
     if rel_path_for(mount, src) is not None:
@@ -374,7 +390,7 @@ async def reflect_manifest_to_hub(project) -> bool:
     failure means "not reflected", never a failed publish. The file on disk
     stays the truth; re-sends converge (the hub replaces the whole document)."""
     from flow_sdk.assets.project_manifest import ManifestError, read_manifest  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     mount = _mount_of(project)
     if mount is None:
@@ -385,7 +401,7 @@ async def reflect_manifest_to_hub(project) -> bool:
         return False
     document = spec.to_document() if spec is not None else None
     try:
-        result = await hub_post("project", {"manifest": document}, str(project.id), action="publish_manifest")
+        result = await HubProxy.call("POST", "project", str(project.id), "publish_manifest", payload={"manifest": document})
     except Exception as exc:  # noqa: BLE001 — logged, never raised into the toggle
         logger.info("[project_manifest] hub reflection skipped for %s: %s", project.id, exc)
         return False

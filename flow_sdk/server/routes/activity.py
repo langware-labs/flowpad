@@ -124,10 +124,10 @@ VERB_TABLE: "dict[str, Callable[[Activity, VerbBody], None]]" = {
 }
 
 
-#: Verbs that continue a node somebody already started. A finished root is evicted, so
-#: find-or-create would answer them with a fresh, unplanned, unlabelled root that nothing
-#: will ever end — the footer then shows it running forever. They are refused instead.
-_CONTINUING_VERBS = frozenset({"resume", "rerun"})
+#: Verbs that continue (or end) a node somebody already started. A finished root is evicted, so
+#: find-or-create would answer them with a fresh, unplanned, unlabelled root — one nothing will ever
+#: end, or for ``cancel`` one minted only to be cancelled. They are refused with ``NOT_LIVE`` instead.
+_CONTINUING_VERBS = frozenset({"resume", "rerun", "cancel"})
 
 
 @router.get("/api/v1/activity")
@@ -145,6 +145,14 @@ async def list_activities(
     validates the whole list away to ``null``.
     """
     rows = monitor.list(subject_entity=_subject(subject_entity), all_subjects=all_subjects)
+    from flow_sdk.activity.emit import keep_hearing  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    # A tab shown a root here hears it until it ends, even one whose subject it does not watch.
+    request_info = get_current_request_info()
+    connection_id = request_info.initiator_connection_id if request_info else ""
+    for spec in rows:
+        keep_hearing(spec, connection_id)
     return ApiResponse.success([spec.model_dump(mode="json") for spec in rows])
 
 

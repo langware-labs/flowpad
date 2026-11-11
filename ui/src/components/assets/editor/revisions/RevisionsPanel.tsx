@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { GitWorkdir, type GitRevision } from '@sdk';
 import { GitBranch, GitCompare, RotateCcw } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
@@ -33,6 +34,7 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
   refresh,
   onRestored,
 }) => {
+  const { t } = useLingui();
   const [compare, setCompare] = useState<GitRevision | null>(null);
   const [restoringHash, setRestoringHash] = useState<string | null>(null);
   const [settingUp, setSettingUp] = useState(false);
@@ -49,7 +51,7 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
     try {
       const gw = await project.getGitWorkdir();
       if (!gw) {
-        setSetupError('No working directory for this project.');
+        setSetupError(t`No working directory for this project.`);
         return;
       }
       const result = await gw.init();
@@ -63,7 +65,7 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
     } finally {
       setSettingUp(false);
     }
-  }, [project, refresh]);
+  }, [project, refresh, t]);
 
   const handleRestore = useCallback(
     async (rev: GitRevision) => {
@@ -89,7 +91,7 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
         data-testid="revisions-no-repo"
       >
         <p className="text-xs text-muted-foreground">
-          Revisions require git. Set it up to record local revisions for this project.
+          <Trans>Revisions require git. Set it up to record local revisions for this project.</Trans>
         </p>
         <Button
           variant="outline"
@@ -102,7 +104,7 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
           data-testid="revisions-setup-git"
         >
           <GitBranch className="h-3.5 w-3.5" />
-          {settingUp ? 'Setting up…' : 'Setup git'}
+          {settingUp ? <Trans>Setting up…</Trans> : <Trans>Setup git</Trans>}
         </Button>
         {setupError && <p className="text-[10px] text-red-500">{setupError}</p>}
       </div>
@@ -112,7 +114,7 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
   if (revisions.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-center text-xs text-muted-foreground">
-        No revision history yet. Saving this asset records its first revision.
+        <Trans>No revision history yet. Saving this asset records its first revision.</Trans>
       </div>
     );
   }
@@ -131,7 +133,11 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
                 v{rev.version}
               </span>
             )}
-            {idx === 0 && <span className="text-[10px] font-medium text-muted-foreground">current</span>}
+            {idx === 0 && (
+              <span className="text-[10px] font-medium text-muted-foreground">
+                <Trans>current</Trans>
+              </span>
+            )}
             <span className="ms-auto text-[10px] text-muted-foreground">{formatTimeAgo(rev.date) ?? ''}</span>
           </div>
           <span className="truncate text-xs text-foreground" title={rev.message}>
@@ -144,7 +150,7 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
               className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
               data-testid="revision-compare"
             >
-              <GitCompare className="h-3 w-3" /> Compare
+              <GitCompare className="h-3 w-3" /> <Trans>Compare</Trans>
             </button>
             {idx !== 0 && (
               <button
@@ -154,7 +160,8 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
                 className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
                 data-testid="revision-restore"
               >
-                <RotateCcw className="h-3 w-3" /> {restoringHash === rev.hash ? 'Restoring…' : 'Restore'}
+                <RotateCcw className="h-3 w-3" />{' '}
+                {restoringHash === rev.hash ? <Trans>Restoring…</Trans> : <Trans>Restore</Trans>}
               </button>
             )}
           </div>
