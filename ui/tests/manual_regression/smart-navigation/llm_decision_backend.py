@@ -1,4 +1,5 @@
-"""A real backend whose Decision API is answered by an LLM, through the hub's own LLM endpoint.
+"""A real backend whose Decision API is answered by an LLM, through the hub's own LLM endpoint -- for
+``navigation_sentences.md.ts`` beside this file, on a hub that offers no decision API.
 
 The product's decision calls (``flow_sdk.decision``) speak Jev's wire (``POST v1/systemone``) to a hub
 API endpoint marked ``decision``. A QA hub has no Jev account, so this launcher stands a decider in at the
@@ -7,7 +8,7 @@ instance's bound hub LLM endpoint (the funded OpenRouter public endpoint) to ans
 replies in Jev's wire shape, so the dialect's translation, the navigator's thresholds and the log all run for real.
 
     set -a; source .env.<name>.local; set +a
-    uv run python tests/e2e/llm_decision_backend.py          # MOCK_WORKER=1: agent turns on MockDriver too
+    uv run python ui/tests/manual_regression/smart-navigation/llm_decision_backend.py          # MOCK_WORKER=1: agent turns on MockDriver too
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ import re
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO))
 
 import httpx  # noqa: E402
