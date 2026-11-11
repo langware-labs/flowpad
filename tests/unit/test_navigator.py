@@ -222,6 +222,13 @@ def test_a_clear_lead_acts_below_the_confidence_bar():
     assert navigator._acted_on(_result({"view:a": 0.6, "view:b": 0.2, "agentic": 0.2})) == "view:a"
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
 def test_a_search_match_that_only_leads_on_a_plain_request_is_not_a_place_to_open():
     # Live: "open the README" (no README in the project) opened the doc 'Markdown documents' at 0.57
     # on PLAIN_LEAD. A full-text match is a guess at the thing, not a place on the map.
@@ -241,6 +248,13 @@ def test_the_search_matches_are_told_apart_from_what_the_context_offers():
     assert f"entity:{TASK}" in keys and f"entity:{proj}" not in keys
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
 async def test_the_target_question_agrees_with_scope_on_where_a_thing_is_changed_or_shown(hub):
     # SCOPE already said a question a screen answers, or a change made on a screen, is no detail; the
     # target question did not, so "change the view mode" split 0.40 / agentic 0.42 and was handed on.
@@ -252,6 +266,13 @@ async def test_the_target_question_agrees_with_scope_on_where_a_thing_is_changed
     assert "a question a listed screen shows the answer to" in said
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
 def test_a_screens_default_tab_is_offered_once_as_the_screen():
     # Live: "general preferences" split 0.33 / 0.33 between Preferences and Preferences > General --
     # one place (the bare address shows General) -- and neither cleared the bar.
@@ -268,6 +289,13 @@ def test_a_type_name_opens_its_list_and_a_screen_name_still_wins():
     assert navigator.rule_hit("open the help desk") is None, "a screen that needs a pointer owns its name too"
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
 def test_a_display_name_two_types_share_opens_the_type_with_a_section_of_its_own():
     # markdown and document_file are both "Documents"; document files are listed inside the markdown
     # tree (browseable_by=None), so "my documents" is the markdown list -- not the alphabetically first.
@@ -275,18 +303,39 @@ def test_a_display_name_two_types_share_opens_the_type_with_a_section_of_its_own
     assert navigator.rule_hit("show my document files").value == "assets/list/document_file"
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
 def test_a_retired_screens_name_opens_where_it_forwards():
     # /dock/signals forwards to the event bus (RETIRED_DOCK_VIEWS): the word does too.
     assert navigator.rule_hit("show signals").value == "automations/bus"
     assert navigator.rule_hit("open events").value == "automations"
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
 def test_the_list_of_every_asset_is_a_place_on_the_map():
     # Live: without it "show all my assets" opened the Assets tree at 0.45; offered, 0.94 x3.
     assert "view:assets/list/all" in navigator.static_options()[0]
     assert parse_dock_url("/dock/assets/list/all") is not None
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
 def test_a_search_match_is_offered_as_what_it_is_not_only_its_name():
     # Live: compute op 'automation-activate' alone was opened for "open the nightly report automation"
     # (0.47); described ("Turns an automation on"), the model handed it on (0.29-0.32).
@@ -317,6 +366,13 @@ async def test_a_search_match_is_titled_by_its_label_and_carries_its_description
                      "about": "Flowpad works best with a few tools."}
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
 def test_the_or_my_inside_a_screens_name_still_names_it_but_a_new_one_does_not():
     # Live: "set up my LLM" went to the model, which opened the setup wizard (0.60-0.77) -- the
     # screen's own label is "Set up LLM".
@@ -324,6 +380,13 @@ def test_the_or_my_inside_a_screens_name_still_names_it_but_a_new_one_does_not()
     assert navigator.rule_hit("open a terminal") is None, "'a terminal' is a new one, not the Worker screen"
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
 def test_a_screen_that_opens_on_a_project_named_with_one_in_context_opens_on_it():
     # Live: "open the help desk" on Home went to the model, which picked the data driver "Help desk"
     # (no address, so it asked) at 0.73-0.83; the help desk of the current project was at 0.07-0.15.

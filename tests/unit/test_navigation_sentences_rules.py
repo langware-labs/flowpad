@@ -29,6 +29,13 @@ RULED = [
 ]
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
 @pytest.mark.parametrize("n,sentence,target,landed", RULED, ids=[f"{n}" for n, *_ in RULED])
 def test_a_sentence_a_rule_answers_lands_where_the_doc_says(n, sentence, target, landed):
     if n in OWNER_DECISION:

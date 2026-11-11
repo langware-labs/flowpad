@@ -20,6 +20,13 @@ function Host({ ids, onRun }: { ids: string[]; onRun: (id: string) => void }) {
   return null;
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.view_mode_switch.rules: FAILING? read this tag's rules before
+//       changing switchMode or DockPointer's view-mode drop
+// flowpad:endcapsule tag
 describe('UI actions', () => {
   it('every action the navigator can pick has a handler, and every handler is in the catalog', () => {
     expect(Object.keys(UI_ACTIONS).sort()).toEqual(Object.keys(catalog.actions).sort());
