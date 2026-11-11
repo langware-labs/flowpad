@@ -1,19 +1,31 @@
 """A help desk's turn text is sent back only until the agent has said something in the ticket."""
 
-from flow_sdk.builtin.agent_serve import sends_turn_text, spoke_before
+from flow_sdk.builtin.agent_serve import own_sender_ids, sends_turn_text, spoke_before
+from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+
+AGENT_ID = "9f379204-e729-4472-bb5a-4f6bb1a8c332"
+OURS = own_sender_ids(AGENT_ID, {"local-user", "cloud-user"})
+#: How an agent-owned source stamps the agent's own reply (the acknowledgement).
+ACK = MessageSender.agent(AGENT_ID).wire_id
 
 
 def test_a_ticket_the_agent_never_wrote_in_is_not_answered_before():
-    assert spoke_before(["customer-1", "customer-1"], {"agent-1"}) is False
-    assert spoke_before([], {"agent-1"}) is False
+    assert spoke_before(["customer-1", "helpdesk:customer-1"], OURS) is False
+    assert spoke_before([], OURS) is False
 
 
-def test_a_ticket_with_a_message_of_ours_is_answered_before():
-    assert spoke_before(["customer-1", "agent-1", "customer-1"], {"agent-1"}) is True
+def test_the_agents_acknowledgement_counts_as_answered():
+    """The agent's reply is stamped ``agent:<id>``, not with a user id: it must still count as ours, or
+    every later turn's text (an internal summary) goes back to the customer."""
+    assert spoke_before(["customer-1", "helpdesk:customer-1", ACK], OURS) is True
+
+
+def test_another_agents_reply_is_not_ours():
+    assert spoke_before([MessageSender.agent("someone-else").wire_id], OURS) is False
 
 
 def test_a_missing_sender_is_nobody():
-    assert spoke_before([None, ""], {"agent-1"}) is False
+    assert spoke_before([None, ""], OURS) is False
 
 
 class _Plain:

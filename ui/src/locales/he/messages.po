@@ -20736,7 +20736,7 @@ msgstr "לא זמין במצב מקומי"
 
 #: src/components/assets/editor/agent-profile/deployment/use-deployment-threads.ts
 msgid "Not available yet. The machine is still starting."
-msgstr ""
+msgstr "עדיין לא זמין. המחשב עדיין עולה."
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/connections-manager/connection-state-visual.ts
@@ -28092,7 +28092,7 @@ msgstr "שולח…"
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
-msgstr "משלח…"
+msgstr "שולח…"
 
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 msgid "Sends every ready comment on this doc as one turn."
