@@ -58,7 +58,7 @@ async def test_status_logged_in(client):
     """GET /api/v1/cloud/status returns logged_in=True when credentials are stored."""
     with (
         patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=True),
-        patch("flow_sdk.cli.app_config.get_user", return_value=USER_INFO),
+        patch("flow_sdk.cli.app_config.get_principal", return_value={**USER_INFO, "type": "user"}),
     ):
         response = await client.get("/api/v1/cloud/status")
 
@@ -428,7 +428,7 @@ async def test_bootstrap_carries_the_cloud_identity(bootstrapped_client):
     user = {"id": "b0b00000-0000-4000-8000-000000000001", "type": "user", "email": "bob@local.test"}
     with (
         patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=True),
-        patch("flow_sdk.cli.app_config.get_user", return_value=user),
+        patch("flow_sdk.cli.app_config.get_principal", return_value=user),
     ):
         response = await bootstrapped_client.get("/api/v1/graph/bootstrap")
 

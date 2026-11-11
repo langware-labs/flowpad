@@ -20,7 +20,7 @@ source_hash: ffca550d61830b11
 
 ## Improved
 
-- **Inbox** — channels move to the top row; channels that need attention share one chip.
+- **StreamInbox** — channels move to the top row; channels that need attention share one chip.
 - **Toasts** — **Clear all** above a stack of more than two, **Dismiss** beside a toast's own buttons.
 - **Help desk** — one status control, the status on every ticket row, and staff can read a ticket's messages before picking it up.
 - **Automations** — a saved rule opens as three plain lines, and the time zone is no longer hidden under "Advanced".

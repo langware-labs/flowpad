@@ -26,7 +26,7 @@ def _repo(tmp_path: Path) -> Path:
         subprocess.run(["git", "-C", str(tmp_path), "config", k, v], check=True)
     _commit(tmp_path, "a.py", "start")
     subprocess.run(["git", "-C", str(tmp_path), "tag", "v1.0.0"], check=True)
-    _commit(tmp_path, "a.py", "Inbox: channels move to the top row")
+    _commit(tmp_path, "a.py", "StreamInbox: channels move to the top row")
     return tmp_path
 
 
@@ -39,7 +39,7 @@ def _write_notes(repo: Path, result: dict) -> None:
 def test_missing_then_fresh_then_stale_only_on_a_user_visible_commit(tmp_path):
     repo = _repo(tmp_path)
     first = plan_mod.plan(repo, "1.0.1", None, "HEAD")
-    assert (first["status"], first["from"], first["commits"]) == ("missing", "v1.0.0", ["Inbox: channels move to the top row"])
+    assert (first["status"], first["from"], first["commits"]) == ("missing", "v1.0.0", ["StreamInbox: channels move to the top row"])
     _write_notes(repo, first)
 
     _commit(repo, "tests/unit/test_a.py", "a test")

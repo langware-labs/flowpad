@@ -15,20 +15,23 @@ import { dataContext } from '@sdk';
 const h = vi.hoisted(() => ({ install: 'not_installed' }));
 // The status record, as the backend serves it once the boot sweep has looked: every CLI
 // `h.install`. Funding is not read here (null), so only the install warning can fire.
-vi.mock('@sdk/react/hooks/useLazyAsset', () => ({
-  useLazyAsset: (asset: string) => ({
-    data:
-      asset === 'status'
-        ? {
-            harnesses: ['claude', 'codex', 'copilot', 'opencode'].map((w) => ({
-              kind: `harness.${w}.cli`,
-              install: h.install,
-            })),
-          }
-        : null,
-    isLoading: false,
-  }),
-}));
+vi.mock('@sdk/react/hooks/useLazyAsset', () => {
+  // One record per `h.install`, as the real hook returns its cached value: a fresh object every render
+  // would be a new dependency every render, and the warnings would recompute forever.
+  const records = new Map<string, unknown>();
+  const status = () => {
+    if (!records.has(h.install)) {
+      records.set(h.install, {
+        harnesses: ['claude', 'codex', 'copilot', 'opencode'].map((w) => ({
+          kind: `harness.${w}.cli`,
+          install: h.install,
+        })),
+      });
+    }
+    return records.get(h.install);
+  };
+  return { useLazyAsset: (asset: string) => ({ data: asset === 'status' ? status() : null, isLoading: false }) };
+});
 
 vi.mock('sonner', () => ({
   toast: { custom: vi.fn(), dismiss: vi.fn() },
@@ -165,7 +168,11 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
     const row = rowFor('No harness found');
     await user.click(within(row).getByTestId('warnings-popover-warning-diagnose-fix'));
 
-    expect(diagnoseAndFix).toHaveBeenCalledWith(expect.stringContaining('No harness found'), 'warning', expect.any(String));
+    expect(diagnoseAndFix).toHaveBeenCalledWith(
+      expect.stringContaining('No harness found'),
+      'warning',
+      expect.any(String),
+    );
   });
 
   it('an informational warning offers its review screen, not Diagnose & fix', async () => {
