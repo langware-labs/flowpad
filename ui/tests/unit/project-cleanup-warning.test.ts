@@ -12,9 +12,10 @@ import {
   getCleanupSummary,
   ingestCleanupSummary,
   shouldWarnAboutEmptyProjects,
+  shouldWarnAboutOrphanedProjects,
   subscribeToCleanupSummary,
 } from '@sdk/stores/project-cleanup-store';
-import { createEmptyProjectsWarning, WARNING_IDS } from '@sdk/models/UserWarning';
+import { createEmptyProjectsWarning, createOrphanedProjectsWarning, WARNING_IDS } from '@sdk/models/UserWarning';
 import { ViewType } from '@sdk/utils/ui/view-types';
 
 const summary = (over: Partial<ReturnType<typeof base>> = {}) => ({ ...base(), ...over });
@@ -106,5 +107,25 @@ describe('empty-projects warning', () => {
     // Nothing is broken and nothing is at risk; an orange/red warning here
     // would be crying wolf next to genuine connection failures.
     expect(createEmptyProjectsWarning(570).color).toBe('gray');
+  });
+});
+
+describe('orphaned-projects warning', () => {
+  it('warns on a single project whose folder is gone', () => {
+    // Unlike empty folders, an orphan is not a pile to sweep: one stale row is
+    // enough to refuse opening a folder under its name or around its path.
+    ingestCleanupSummary(summary({ orphaned_count: 0 }));
+    expect(shouldWarnAboutOrphanedProjects(getCleanupSummary())).toBe(false);
+
+    ingestCleanupSummary(summary({ orphaned_count: 1 }));
+    expect(shouldWarnAboutOrphanedProjects(getCleanupSummary())).toBe(true);
+  });
+
+  it('opens the cleanup lens on its own tab', () => {
+    const warning = createOrphanedProjectsWarning(6);
+    expect(warning.id).toBe(WARNING_IDS.ORPHANED_PROJECTS);
+    expect(warning.targetView).toBe(ViewType.LENS);
+    expect(warning.targetPointer).toBe('projects/cleanup/orphaned');
+    expect(warning.message).toContain('6');
   });
 });

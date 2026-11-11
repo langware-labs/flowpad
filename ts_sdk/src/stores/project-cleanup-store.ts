@@ -73,6 +73,14 @@ export function shouldWarnAboutEmptyProjects(next: CleanupSummary | null): boole
   return !!next && next.empty_count > next.threshold;
 }
 
+/**
+ * Whether the footer should name projects whose folder is gone. No threshold: one
+ * such row is enough to refuse opening a folder under its name or around its path.
+ */
+export function shouldWarnAboutOrphanedProjects(next: CleanupSummary | null): boolean {
+  return !!next && next.orphaned_count > 0;
+}
+
 /** Test seam: forget the last scan. */
 export function __resetCleanupStoreForTest(): void {
   summary = null;

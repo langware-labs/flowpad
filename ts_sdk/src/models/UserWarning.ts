@@ -64,6 +64,7 @@ export const WARNING_IDS = {
   SNIFFER_ACTIVE: 'sniffer-active',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
   EMPTY_PROJECTS: 'empty-projects',
+  ORPHANED_PROJECTS: 'orphaned-projects',
   SETUP_INCOMPLETE: 'setup-incomplete',
 } as const;
 
@@ -231,6 +232,23 @@ export function createEmptyProjectsWarning(count: number): UserWarning {
     description: 'Old workspace folders with no sessions or files. Click to review and clean up.',
     targetView: ViewType.LENS,
     targetPointer: 'projects/cleanup',
+  };
+}
+
+/**
+ * Projects whose folder is gone — deleted or moved outside Flowpad. Only the row
+ * is left, and it still holds its name and its path, so it can refuse opening
+ * another folder. Clicking opens the cleanup screen on its "Missing folder" tab.
+ */
+export function createOrphanedProjectsWarning(count: number): UserWarning {
+  return {
+    id: WARNING_IDS.ORPHANED_PROJECTS,
+    icon: 'FolderX',
+    color: 'gray',
+    message: count === 1 ? '1 project without a folder' : `${count.toLocaleString()} projects without a folder`,
+    description: 'Their folders were deleted or moved. Click to review and remove them.',
+    targetView: ViewType.LENS,
+    targetPointer: 'projects/cleanup/orphaned',
   };
 }
 

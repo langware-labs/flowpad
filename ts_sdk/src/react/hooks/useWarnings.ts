@@ -6,6 +6,7 @@ import {
   createHarnessLoginWarning,
   createHubRequestFailedWarning,
   createEmptyProjectsWarning,
+  createOrphanedProjectsWarning,
   createNoComputeNodeWarning,
   createNoHarnessWarning,
   SNIFFER_ACTIVE_WARNING,
@@ -14,7 +15,7 @@ import {
 } from '../../models/UserWarning';
 import { dataContext } from '../../FlowSync/context';
 import { cloudManager, type HubClientErrorInfo } from '../../services/cloud_login';
-import { shouldWarnAboutEmptyProjects } from '../../stores/project-cleanup-store';
+import { shouldWarnAboutEmptyProjects, shouldWarnAboutOrphanedProjects } from '../../stores/project-cleanup-store';
 import { useCleanupSummary } from './use-cleanup-summary';
 import type { ProjectReadiness } from '../../entities/project';
 import {
@@ -94,6 +95,7 @@ export function useWarnings() {
 
   const cleanup = useCleanupSummary();
   const emptyProjects = shouldWarnAboutEmptyProjects(cleanup) ? cleanup!.empty_count : 0;
+  const orphanedProjects = shouldWarnAboutOrphanedProjects(cleanup) ? cleanup!.orphaned_count : 0;
 
   // Status and funding, both pushed by the backend on change: the warnings re-read them and
   // derive nothing of their own.
@@ -175,10 +177,14 @@ export function useWarnings() {
     if (emptyProjects > 0) {
       warnings.push(createEmptyProjectsWarning(emptyProjects));
     }
+    if (orphanedProjects > 0) {
+      warnings.push(createOrphanedProjectsWarning(orphanedProjects));
+    }
 
     return warnings;
   }, [
     emptyProjects,
+    orphanedProjects,
     isDesktop,
     cloudLoginAvailable,
     cloudConnectionStatus,
