@@ -1647,13 +1647,16 @@ export class Project extends APIEntity<Project> {
    * The project folder on disk — the user's own files — is kept unless
    * `deleteFolder: true` asks for it.
    */
-  async deleteWithChildren({
-    deleteChats = true,
-    deleteFolder = false,
-  }: { deleteChats?: boolean; deleteFolder?: boolean } = {}): Promise<{
+  async deleteWithChildren(options: { deleteChats?: boolean; deleteFolder?: boolean } = {}): Promise<{
     project_id: string;
     deleted_children: number;
   } | null> {
+    // The old positional form `deleteWithChildren(false)` would destructure to the
+    // defaults and delete the chats it asked to keep: refuse it outright.
+    if (typeof options !== 'object' || options === null) {
+      throw new TypeError('deleteWithChildren takes { deleteChats, deleteFolder }');
+    }
+    const { deleteChats = true, deleteFolder = false } = options;
     return await this.post<{ project_id: string; deleted_children: number }>('delete-with-children', {
       delete_chats: deleteChats,
       delete_folder: deleteFolder,

@@ -4352,6 +4352,9 @@ class Project(SetupSkippable, Entity):
             return f"{mount} is a protected folder and is never deleted"
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
+        # Any row on or below the folder blocks it, hidden or not: its files would go
+        # too. An enclosing row blocks only when visible, the rule nesting uses:
+        # hidden rows (the workspace root, shipped assets) enclose every project.
         others = [p for p in await self._mount_owners(mount) if str(p.id) != str(self.id)]
         others += [p for p in await self._enclosing_owners(mount) if p._visible()]
         others += [
@@ -4359,6 +4362,8 @@ class Project(SetupSkippable, Entity):
             for p in await type(self).get_all(
                 QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["fs_storage_mount_path", f"{mount}/%"]))
             )
+            # LIKE over-fetches (`_`/`%` in a path are wildcards, and it ignores case):
+            # this prefix check is what makes the match exact. Do not drop it.
             if (p.fs_storage_mount_path or "").startswith(f"{mount}/")
         ]
         if others:

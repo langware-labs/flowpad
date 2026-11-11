@@ -94,3 +94,12 @@ it('the SDK call is safe by default: no folder unless asked', async () => {
 
   expect(post.mock.calls[0][1]).toEqual({ delete_chats: true, delete_folder: false });
 });
+
+it('refuses the old positional form instead of deleting the chats it meant to keep', async () => {
+  const post = vi.spyOn(apiClient, 'post');
+
+  // @ts-expect-error -- an untyped caller still on `deleteWithChildren(false)`
+  await expect(new Project({ id: ID }).deleteWithChildren(false)).rejects.toThrow(TypeError);
+
+  expect(post).not.toHaveBeenCalled();
+});
