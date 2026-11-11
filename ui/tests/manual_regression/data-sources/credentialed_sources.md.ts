@@ -89,48 +89,36 @@ test('slack: channel ids only — no account key in the form; a non-channel-id f
     'the account credential is deliberately NOT a form field — it belongs to the connection',
   ).toBeFalsy();
 
-  // Adding: Slack is set up by its guided wizard (slack-connect), so the add form asks for a
-  // name only — no channel box, no account key — and hands the rest to the wizard.
-  const add = await openProvider(page, 'slack');
-  await expect(add.getByTestId('ds-by-wizard')).toBeVisible();
-  await expect(add.locator(`#ds-${channelKey}`)).toHaveCount(0);
-  await expect(add.locator('input[id*="token" i], input[id*="key" i], input[id*="secret" i]')).toHaveCount(0);
-  await add.getByRole('button', { name: 'Cancel' }).click();
-
-  // Editing an existing source is where its channel is typed: a non-channel-id must be refused
-  // (the channel's pattern) and nothing stored.
-  const api = await apiContext();
+  const dialog = await openProvider(page, 'slack');
   const name = `e2etest-slack-gate-${Date.now()}`;
-  const created = await api.post('/api/v1/graph/data_source', { data: { name, provider: 'slack', config: {} } });
-  expect(created.ok(), await created.text()).toBeTruthy();
-  const sourceId = ((await created.json()) as { data: { id: string } }).data.id;
-  try {
-    await page.goto('/dock/data-sources');
-    await expect(page.getByTestId('data-sources-view')).toBeVisible();
-    await page.getByTestId(`source-more-${sourceId}`).click();
-    await page.getByRole('menuitem', { name: 'Edit' }).click();
-    const dialog = page.getByRole('dialog').filter({ has: page.locator('#ds-name') });
-    await expect(dialog).toBeVisible();
-    // `channel` is a ChoiceField (`choices: true`) — a picker whose listing fires ON OPEN; with no
-    // Slack connection on a QA instance the listing is refused and the picker hands back a text box.
-    const picker = dialog.getByTestId(`ds-choice-${channelKey}`);
-    if (await picker.isVisible().catch(() => false)) {
-      await picker.click();
-      await expect(dialog.getByTestId(`ds-choice-detail-${channelKey}`)).toBeVisible();
-    }
-    await dialog.locator(`#ds-${channelKey}`).fill('definitely-not-a-channel-id');
-    await dialog.getByRole('button', { name: /^(Save|Save changes)$/ }).click();
-    // Problems are shown once Save is pressed: the channel's pattern refuses it and the dialog stays.
-    await expect(dialog, 'the channel pattern must refuse a non-channel-id').toContainText('not valid');
-    await expect(dialog).toBeVisible();
-    const row = ((await (await api.get(`/api/v1/graph/data_source/${sourceId}`)).json()).data ?? {}) as {
-      config?: Record<string, unknown>;
-    };
-    expect(row.config?.[channelKey!], 'the refused channel was stored anyway').toBeFalsy();
-  } finally {
-    await api.delete(`/api/v1/graph/data_source/${sourceId}`).catch(() => undefined);
-    await api.dispose();
+  await dialog.locator('#ds-name').fill(name);
+
+  // `channel` is a ChoiceField (`type: text`, `choices: true`) — a picker,
+  // not a bare input. Its listing fires ON OPEN, not on mount, so the plain-input
+  // fallback only appears once the picker has tried to list and been refused
+  // (`fallsBackToTyping`). With no Slack connection on a QA instance that refusal
+  // IS the expected outcome, so drive the real flow: open the picker, let it fail,
+  // then type into the fallback the component hands back.
+  const picker = dialog.getByTestId(`ds-choice-${channelKey}`);
+  if (await picker.isVisible().catch(() => false)) {
+    await picker.click();
+    // A refusal unmounts the popover and hands back the text box in its place, so there
+    // is nothing left to dismiss — an Escape here would reach the dialog and close it.
+    await expect(dialog.getByTestId(`ds-choice-detail-${channelKey}`)).toBeVisible();
   }
+  await dialog.locator(`#ds-${channelKey}`).fill('definitely-not-a-channel-id');
+  // Problems are shown once Add source is pressed, not before — so pressing it is what
+  // must refuse: the pattern's problem appears, the dialog stays, and nothing is created.
+  await dialog.getByRole('button', { name: 'Add source' }).click();
+  await expect(
+    dialog,
+    "the manifest's pattern must reject a non-channel-id when Add source is pressed",
+  ).toContainText('not valid');
+  await expect(dialog).toBeVisible();
+  const api = await apiContext();
+  const rows = ((await (await api.get('/api/v1/graph/data_source')).json()).data ?? []) as { name: string }[];
+  await api.dispose();
+  expect(rows.map((r) => r.name), 'the refused slack source was created anyway').not.toContain(name);
 });
 
 test('agent: the connector field is what names the channel', async ({ page }) => {

@@ -14,22 +14,29 @@ test.describe('Search Filters — Scope & Type', () => {
     await dismissSetupModal(page);
   });
 
-  // ── Test 1: the search view shows its filter panel ────────────────────────
-  // The home bar no longer carries a Tools toggle (RecordSearchBar `showTools` is off
-  // everywhere); the full search view opens with the filter panel shown.
-  test('search view shows the filter panel', async ({ page }) => {
-    await page.goto('/dock/search');
+  // ── Test 1: Tools button toggles filter panel ─────────────────────────────
+  test('Tools button on home bar toggles the filter panel', async ({ page }) => {
+    await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
+    const toolsBtn = page.locator('[data-testid="search-tools-btn"]').first();
+    await expect(toolsBtn).toBeVisible({ timeout: 10_000 });
+
     const filterPanel = page.locator('[data-testid="search-filter-panel"]').first();
-    await expect(filterPanel).toBeVisible({ timeout: 10_000 });
+    await expect(filterPanel).not.toBeVisible();
+
+    await toolsBtn.click();
+    await expect(filterPanel).toBeVisible({ timeout: 5_000 });
+
+    await toolsBtn.click();
+    await expect(filterPanel).not.toBeVisible();
   });
 
   // ── Test 2: API — scope=user returns user-scoped results only ────────────
   test('GET /search?scope=user returns only user-scoped results', async ({ request }) => {
     await request.post(`${CN_FS_BASE}/index?type=skill`);
 
-    const res = await request.get(`${CN_FS_BASE}/search?user=true&record_type=skill`);
+    const res = await request.get(`${CN_FS_BASE}/search?scope=user&record_type=skill`);
     expect(res.status()).toBe(200);
 
     const body = await res.json();

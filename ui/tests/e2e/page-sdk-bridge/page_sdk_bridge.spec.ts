@@ -171,7 +171,7 @@ test('sandbox contract: an MCP sandbox page with the backend CSP and injected gl
   const shownFile = join(dir, `${Date.now()}-sandbox.mcp.html`);
   writeFileSync(shownFile, '<html><head></head><body>shown</body></html>');
   // The server resolves the path (on macOS /var → /private/var); compare to its answer.
-  const shown = (await call('POST', `${GRAPH}/agentic_process/${processId}/show`, { path: shownFile })).value.path;
+  const shown = (await call('POST', `${GRAPH}/agentic_process/${processId}/show`, { path: shownFile })).path;
 
   // A document on the backend origin plays the host, exactly as McpAppPreview
   // would: load the proxy, wait for proxy-ready, hand it the page.
@@ -213,7 +213,7 @@ for (const host of [
     writeFileSync(path, probePage(nonce));
     const { withLog } = collectProbeLogs(page);
 
-    const shownPath = (await call('POST', `${GRAPH}/agentic_process/${processId}/show`, { path })).value.path;
+    const shownPath = (await call('POST', `${GRAPH}/agentic_process/${processId}/show`, { path })).path;
     await page.goto(`/dock/shell/agentic_process-${processId}?viewMode=vibe`);
 
     // enqueue: the page can wake the agent.

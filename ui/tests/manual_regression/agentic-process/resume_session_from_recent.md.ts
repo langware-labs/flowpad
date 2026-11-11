@@ -6,7 +6,7 @@
  * tab-opener "+" → "Open from history" (opener-menu-row-history). It lists
  * worker-history entries (scanned from ~/.claude, independent of the search
  * index). Clicking a row routes through AgenticProcess.getByWorkerId →
- * navigation.openShellProcess, landing on /dock/<last mode>/agentic_process-<id> (shell or vibe).
+ * navigation.openShellProcess, landing on /dock/shell/agentic_process-<id>.
  * The same worker_id always upserts to one process (no duplicates).
  *
  * test 2 (error-notification entry point) and test 3 (global search dock card)
@@ -50,9 +50,6 @@ async function countProcesses(page: import('@playwright/test').Page): Promise<nu
   }, apiBase());
 }
 
-/** An agentic process opened in either of its views. */
-const SESSION_VIEW = /\/dock\/(shell|vibe)\/agentic_process-[\w-]+/;
-
 test.describe('resume session from recent', () => {
   test('test 1: clicking a recent session opens a live AgenticProcess (one per session)', async ({ page }) => {
     test.setTimeout(adjusted(60_000));
@@ -85,9 +82,8 @@ test.describe('resume session from recent', () => {
     // <button role="checkbox"> — exclude it or the click selects instead of opening.
     await rows.first().locator('button:not([role="checkbox"])').first().click();
 
-    // Lands on the resumed session's own view: no mode is asked for, so it reopens in the one it
-    // was last shown in (`last_mode`: shell or vibe; useTerminalStripController's history select).
-    await page.waitForURL(SESSION_VIEW, { timeout: adjusted(30_000) });
+    // Lands on the agentic_process terminal view for the resumed session.
+    await page.waitForURL(/\/dock\/shell\/agentic_process-[\w-]+/, { timeout: adjusted(30_000) });
     const pid = page.url().match(/agentic_process-([\w-]+)/)![1];
 
     // The Info popover Session ID is populated (a real session was resumed).
@@ -108,7 +104,7 @@ test.describe('resume session from recent', () => {
     await ensureAllProjects(page);
     await expect(page.locator('[data-testid="history-row"]').first()).toBeVisible();
     await page.locator('[data-testid="history-row"]').first().locator('button').first().click();
-    await page.waitForURL(SESSION_VIEW, { timeout: adjusted(30_000) });
+    await page.waitForURL(/\/dock\/shell\/agentic_process-[\w-]+/, { timeout: adjusted(30_000) });
     const after2 = await countProcesses(page);
     expect(after2).toBe(after);
   });

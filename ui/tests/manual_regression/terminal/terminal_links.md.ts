@@ -45,12 +45,10 @@ async function openFixtureTerminal(page: Page) {
   await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
   await page.goto('/dock/shell/new_terminal?viewMode=advanced');
   await expect(page).toHaveURL(/\/dock\/shell\/shell-/);
-  // The project is named after its own temp root: names are unique (d0c2a3ee8), and a worker restart
-  // after a failure makes a fresh root, so a fixed name was refused (400) for every later test.
   const shellId = await page.evaluate(async ({ sdkModule, root }) => {
     const sdk = await import(sdkModule);
     const project = await sdk.Project.getProjectByPath(root) ??
-      await new sdk.Project({ name: `Terminal link project ${root.split('/').pop()}`, fs_storage_mount_path: root }).save();
+      await new sdk.Project({ name: 'Terminal link project', fs_storage_mount_path: root }).save();
     const cn = sdk.dataContext.computeNode;
     const shell = sdk.Shell.create(cn, { name: 'Link terminal', workdir: root });
     shell.project_id = project.id;
@@ -95,13 +93,7 @@ for (const kind of ['python', 'skill', 'url', 'temp'] as const) {
         await expect(page.getByRole('button', { name: 'Open in browser', exact: true })).toBeVisible();
       } else if (kind === 'skill') {
         await expect(page).toHaveURL(/typeid\/skill-/);
-        // The skill opens on its SKILL.md: rendered (a heading) or in the source editor ("# Skill link content").
-        await expect(
-          page
-            .getByText('Skill link content', { exact: true })
-            .or(page.locator('.monaco-editor:visible .view-lines', { hasText: 'Skill link content' }))
-            .first(),
-        ).toBeVisible();
+        await expect(page.getByText('Skill link content', { exact: true }).first()).toBeVisible();
       } else {
         await expect(page.locator('.monaco-editor:visible .view-lines').first()).toContainText(
           kind === 'python' ? 'python-link-content' : 'Temporary file link content',

@@ -24,7 +24,7 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { adjusted } from '../../adjustableTimeout';
 import { apiContext } from '../_shared/api';
-import { AP_WORKER_TYPE, dismissSetupModal, restoreStandardMode, selectAdvancedMode } from './_ap_helpers';
+import { AP_WORKER_TYPE, dismissSetupModal } from './_ap_helpers';
 
 /** Resolve the bootstrap default project's id + real workdir (mount path). */
 async function defaultProject(rq: APIRequestContext): Promise<{ id: string; workdir: string }> {
@@ -118,15 +118,6 @@ function pidFromUrl(page: Page): string {
  */
 async function launchSession(page: Page, rq: APIRequestContext, convId: string): Promise<string> {
   await page.goto(`/dock/conversation/${convId}`);
-  // A new session starts on the transport of the LAST SELECTED mode (8fbb4fd9a, `sessionOpenViewMode`),
-  // not the one this page shows: Standard launches a headless chat, Advanced a visible PTY. This runbook
-  // asserts the PTY branch, so it switches to Advanced the way the footer pill does (`window.setView`,
-  // the one persisting switch) instead of inheriting whatever mode the instance was left in. The page's
-  // own `data-view` does not move (this address states no mode, so it shows the unstated one): the
-  // stored last-selected mode is what the launch reads. afterAll switches back to Standard, the mode a
-  // QA instance is pinned to (`_pin_view_mode_for_qa`), so the next runbook does not inherit Advanced.
-  await selectAdvancedMode(page);
-  switchedMode = true;
   // The header worker toolbar defaults to `lastOpened` mode in Standard view:
   // only the last-used worker shows up front, the rest behind a "Show other
   // workers" chevron. Expand it when claude_code isn't already surfaced so this
@@ -147,13 +138,6 @@ async function launchSession(page: Page, rq: APIRequestContext, convId: string):
   }).toPass({ timeout: adjusted(30_000) });
   return pid;
 }
-
-/** This suite switched the instance's last-selected mode to Advanced; afterAll puts Standard back. */
-let switchedMode = false;
-
-test.afterAll(async ({ browser }, info) => {
-  if (switchedMode) await restoreStandardMode(browser, info.project.use.baseURL);
-});
 
 test.beforeEach(async ({ page }) => {
   await dismissSetupModal(page);

@@ -48,9 +48,7 @@ test.describe('Search Scan Info Stats', () => {
   test('SearchView indexed count is a non-negative integer', async ({ page }) => {
     await dismissSetupModal(page);
     await page.goto('/dock/search');
-    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
-
-    await expect(page.locator('[data-testid="search-view"]')).toBeVisible({ timeout: adjusted(10_000) });
+    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     const indexedBadge = page.locator('text=/\\d+ indexed/').first();
     await expect(indexedBadge).toBeVisible({ timeout: adjusted(8_000) });

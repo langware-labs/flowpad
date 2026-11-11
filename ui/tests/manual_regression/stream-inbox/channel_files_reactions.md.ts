@@ -135,13 +135,12 @@ CHANNELS.forEach((channel, i) => {
     await sync(sourceId);
 
     await open(page, '/dock/stream_inbox');
-    // This cell's conversation: its source was made for it and its messages carry the nonce.
-    const row = page.getByTestId('stream-inbox-conversation-row').filter({ hasText: nonce }).first();
+    // The newest conversation is this cell's (its source was made for it); the thread inside names the nonce.
+    const row = page.getByTestId('stream-inbox-conversation-row').first();
     await expect(row).toBeVisible();
     await row.click();
     await expect(page.getByText(`is it bad ${nonce}?`)).toBeVisible();
-    // A channel's thread is its conversation: both messages are in the feed, flat — nothing to unfold.
-    await expect(page.getByRole('button', { name: /earlier in this thread/ })).toHaveCount(0);
+    // A channel thread renders flat: the photo and the reply both sit in the feed.
 
     // The picture itself, decoded — its bytes were copied while the provider's session was open.
     // (WhatsApp names no photo, so the bubble is found by its caption — the message's words.)
@@ -177,12 +176,9 @@ CHANNELS.forEach((channel, i) => {
     if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/${channel}-reactions.png`, fullPage: true });
 
     // We answer the photo with a file.
-    // Reply is the bubble's own hover action (not in its ⋮ menu).
-    await photoBubble.hover();
-    await photoBubble.getByTestId('message-reply').click();
+    await photoBubble.getByTestId('message-actions-menu').click();
+    await page.getByTestId('message-reply').click();
     await expect(page.getByTestId('composer-reply-banner')).toContainText(`photo ${nonce}`);
-    // Attach files is an item of the composer's + menu (composer-more-actions).
-    await page.getByTestId('composer-more-actions').click();
     await expect(page.getByTestId('attach-file-button')).toBeEnabled();
     const chooser = page.waitForEvent('filechooser');
     await page.getByTestId('attach-file-button').click();

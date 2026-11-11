@@ -33,11 +33,12 @@ if `slack` or `agent` is missing, the manifests did not index and nothing below 
 
 ## slack
 
-1. Add → **Slack**. The form asks for a name only (the guided wizard does the rest); editing a source asks for its channel id, and the account key is deliberately
+1. Add → **Slack**. The form asks for channel ids, and the account key is deliberately
    EMPTY — the workspace belongs to the connection, not the form.
-2. Edit the source and enter one channel id (`C…`). A value that is not a channel id must be
-   refused by its `pattern`: pressing Save shows the problem ("not valid"), the dialog stays
-   open, and the channel is not stored.
+2. Enter one channel id (`C…`). A value that is not a channel id must be rejected by the
+   manifest's `pattern`: pressing Add source shows the problem ("not valid"), the dialog
+   stays open, and no source is created. (Problems are shown once Add source is pressed,
+   not before anything is typed.)
 3. Save. The card must land in **setup**, not active — Slack has a `verify` step.
 4. Press **Verify** with the bot NOT yet invited. Expect a refusal naming the channel, in
    words a person can act on ("invite the Flowpad bot to #eng").

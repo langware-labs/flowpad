@@ -2,10 +2,10 @@ import { test, expect } from '@playwright/test';
 
 test.describe('TraceGutter', () => {
   test('renders trace-gutter element when a process is attached', async ({ page }) => {
-    // Open a terminal itself: the root is the home screen now, which holds no terminal tab.
-    await page.goto('http://localhost:4097/dock/shell/new_terminal');
-    const terminal = page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows').first();
-    await terminal.waitFor({ state: 'attached', timeout: 15_000 });
+    await page.goto('http://localhost:4097');
+    // Wait for the app to load and a terminal tab to be available
+    const terminal = page.locator('[data-testid="interactive-terminal"]').first();
+    await terminal.waitFor({ timeout: 15_000 });
 
     // The trace gutter should be present if events are enabled
     const gutter = page.locator('[data-testid="trace-gutter"]');

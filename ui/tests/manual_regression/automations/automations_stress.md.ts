@@ -52,16 +52,6 @@ async function shot(page: Page, name: string) {
 }
 
 /** Time from a navigation to the place's own test id being visible. */
-/** The list follows its scope bar, which defaults to the current project when there is one; the seeded
- *  automations are the user's own, so the list is read with every scope shown. */
-async function showAllScopes(page: Page) {
-  const list = page.getByTestId('automations-list');
-  await list.waitFor();
-  const all = list.getByRole('button', { name: 'All', exact: true });
-  if ((await all.getAttribute('aria-pressed')) !== 'true') await all.click();
-  await expect(all).toHaveAttribute('aria-pressed', 'true');
-}
-
 async function timed(page: Page, go: () => Promise<unknown>, testId: string): Promise<number> {
   const started = Date.now();
   await go();
@@ -140,7 +130,7 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
     await page.goto('/dock/automations');
     const skip = page.getByRole('button', { name: 'Skip' });
     if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
-    await showAllScopes(page);
+    await page.getByTestId('automations-list').waitFor();
     for (const a of created) await expect(page.getByTestId(`automation-row-${a.id}`)).toHaveCount(1);
     await shot(page, '01-list');
 
@@ -239,14 +229,11 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
 
     // ── Failures are named up front, and the Runs filter shows them with their error ─
     await page.goto('/dock/automations');
-    await showAllScopes(page);
     await expect(page.getByTestId('automations-attention')).toBeVisible();
     await expect(page.getByTestId('automations-nav-failing')).toBeVisible();
     await shot(page, '04-list-with-failures');
     await page.getByTestId('automations-attention').click();
     await expect(page).toHaveURL(/\/dock\/automations\/runs\?status=failed/);
-    // The instance keeps earlier runs' failures (other automations, other reasons): open THIS run's own.
-    await page.goto(`/dock/automations/runs?trigger=${failing[0].id}&status=failed`);
     const firstFailed = page.locator('[data-testid^="run-row-"][data-status="failed"]').first();
     await firstFailed.click();
     await expect(page.getByTestId('run-detail-error')).toContainText('no agent to run');
@@ -258,7 +245,7 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
 
     // ── Rapid switches: off and on, ten rows, twice each ─────────────────────────────
     await page.goto('/dock/automations');
-    await showAllScopes(page);
+    await page.getByTestId('automations-list').waitFor();
     const flips = [...ok, ...schedules].slice(0, 10);
     for (const round of [0, 1]) {
       for (const a of flips) await page.getByTestId(`automation-toggle-${a.id}`).click();
@@ -288,12 +275,12 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
 
     // ── 100 warm navigations across the three places, by clicking (URL-first) ───────
     await page.goto('/dock/automations');
-    await showAllScopes(page);
+    await page.getByTestId('automations-list').waitFor();
     const steps: Array<[() => Promise<unknown>, string]> = [
       [() => page.getByTestId('automations-nav-runs').click(), 'automations-runs'],
       [() => page.getByTestId('automations-nav-bus').click(), 'automations-bus'],
       [() => page.getByTestId('automations-nav-list').click(), 'automations-list'],
-      [async () => { await showAllScopes(page); await page.getByTestId(`automation-row-${ok[2].id}`).click(); }, 'automation-page'],
+      [() => page.getByTestId(`automation-row-${ok[2].id}`).click(), 'automation-page'],
     ];
     const timings: number[] = [];
     for (let i = 0; i < 100; i++) {
@@ -308,7 +295,7 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
 
     // ── No duplicate rows, nothing thrown, no unexpected error answers ───────────────
     await page.goto('/dock/automations');
-    await showAllScopes(page);
+    await page.getByTestId('automations-list').waitFor();
     const ids = await page.locator('[data-automation-id]').evaluateAll((els) => els.map((e) => e.getAttribute('data-automation-id')));
     expect(new Set(ids).size).toBe(ids.length);
     await shot(page, '07-list-final');

@@ -51,14 +51,6 @@ test.describe('Wiki link layer', () => {
   test('backend actions and parser handle ghost, wiki URL, and invalid sub-path contracts', async ({
     request,
   }) => {
-    // The ghost id keeps the edges this test indexes for it; drop what an earlier run left so the
-    // "no links yet" check below holds on any instance, and again at the end so a rerun starts clean.
-    const clearGhost = async () => {
-      await data(
-        await request.post(`${API}/api/v1/graph/skill/${UNKNOWN_ID}/wiki/reindex`, { data: { body: '' } }),
-      );
-    };
-    await clearGhost();
     expect(await data(await request.get(
       `${API}/api/v1/graph/skill/${UNKNOWN_ID}/wiki/links`,
     ))).toEqual([]);
@@ -97,7 +89,6 @@ test.describe('Wiki link layer', () => {
     );
     expect(invalid.status()).toBe(404);
     expect((await invalid.json()).status).toBe('FAIL');
-    await clearGhost();
   });
 
   test('three backlinks converge through source edit/delete and target delete without rewriting source text', async ({

@@ -3,9 +3,9 @@
  *
  * Per channel, the person writes a root and two more messages in its thread (the way that channel
  * continues a thread, quoting the root where it can). From the base stream inbox we open the
- * conversation and check, as receiver: the thread's messages stay flat in the conversation (a channel's
- * thread is its conversation, never a stack), and quotes render where the channel carries them.
- * As sender: the conversation's composer lands a send in THAT provider
+ * conversation and check, as receiver: the thread packs into one stack with the right count, opens
+ * by URL (`?thread=`) under a header naming it, quotes render where the channel carries them, and
+ * "All messages" leads back. As sender: the open thread's composer lands a send in THAT provider
  * thread, and Reply on the root reaches the provider as a reply to the root; our copy joins the thread.
  *
  * Providers are the loopback doubles `tests/e2e/channel_doubles.py` hosts (spawned under the
@@ -212,7 +212,6 @@ for (const [i, channel] of WANTED.entries()) {
     const row = page.getByTestId('stream-inbox-conversation-row').filter({ hasText: nonce }).first();
     await expect(row).toBeVisible();
     await row.click();
-    const bodyOf = (t: string) => page.locator('[data-testid^="message-bubble-"] p', { hasText: t }).first();
     // A channel's thread IS its conversation, so the feed lays it out flat (2f0ae8c0a): every message
     // shows, no "N earlier in this thread" stack.
     for (const t of [`root ${nonce}`, `second ${nonce}`, `third ${nonce}`]) {
@@ -236,9 +235,10 @@ for (const [i, channel] of WANTED.entries()) {
     if (spec.quotesInbound) {
       await expect(page.getByTestId('message-quote').filter({ hasText: `root ${nonce}` }).first()).toBeVisible();
     }
-    if (shots) await page.screenshot({ path: `${shots}/${channel}-1-flat.png`, fullPage: true });
+    if (shots) await page.screenshot({ path: `${shots}/${channel}-2-thread.png`, fullPage: true });
 
-    // ── sender: the conversation's composer writes into THIS provider thread ──
+    // ── sender: the open thread's composer writes into THIS provider thread ──
+    await expect(page.getByTestId('composer-thread-banner')).toBeVisible();
     const composer = page.getByPlaceholder(/^Reply in /);
     await composer.fill(`in thread ${nonce}`);
     await sendButton(page).click();
@@ -252,14 +252,13 @@ for (const [i, channel] of WANTED.entries()) {
     } else {
       expect(intoThread.thread ?? null, `${channel}: a plain thread send must quote nobody`).toBeFalsy();
     }
-    // Our copy joins the conversation.
-    await expect(bodyOf(`in thread ${nonce}`)).toBeVisible({ timeout: adjusted(15_000) });
+    // Our copy joins the thread.
+    await expect(page.getByTestId('thread-header-count')).toContainText('4 messages', { timeout: 15_000 });
 
     // Reply on the root (⋮ → Reply): the provider sees a reply to the root.
     const rootBubble = page.locator('[data-testid^="message-bubble-"]').filter({ hasText: `root ${nonce}` }).first();
-    // Reply is the bubble's own hover action (not in its ⋮ menu).
-    await rootBubble.hover();
-    await rootBubble.getByTestId('message-reply').click();
+    await rootBubble.getByTestId('message-actions-menu').click();
+    await page.getByTestId('message-reply').click();
     await expect(page.getByTestId('composer-reply-banner')).toContainText(`root ${nonce}`);
     await composer.fill(`answer ${nonce}`);
     await sendButton(page).click();

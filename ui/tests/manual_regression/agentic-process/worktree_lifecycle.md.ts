@@ -22,7 +22,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
 import { adjusted } from '../../adjustableTimeout';
 import { apiContext } from '../_shared/api';
-import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, sessionPopover, sessionAction, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER, restoreStandardMode, selectAdvancedMode } from './_ap_helpers';
+import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, sessionPopover, sessionAction, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER } from './_ap_helpers';
 
 // The instance's OWN project folder, asked of the backend — a named instance's
 // workspace is `~/Flowpad workspaces/<name>/`, so a hardcoded prod path both
@@ -56,13 +56,6 @@ const worktreeItem = (page: import('@playwright/test').Page) => sessionAction(pa
 const commitMergeItem = (page: import('@playwright/test').Page) => sessionAction(page, 'session-action-commit-merge');
 
 test.describe('worktree lifecycle', () => {
-  // The worktree sibling opens without a stated mode, so on the instance's last SELECTED mode: on
-  // Standard the UI switch-modes it to a headless chat, which SIGTERMs the new PTY within seconds (exit
-  // 143) and the sibling reads `stopped`. This lifecycle is the PTY branch: select Advanced, restore after.
-  let switchedMode = false;
-  test.afterAll(async ({ browser }, info) => {
-    if (switchedMode) await restoreStandardMode(browser, info.project.use.baseURL);
-  });
   test.beforeAll(async () => { PROJECT_DIR = await resolveProjectDir(); });
   test.afterEach(() => { if (PROJECT_DIR) cleanGit(PROJECT_DIR); });
 
@@ -92,8 +85,6 @@ test.describe('worktree lifecycle', () => {
 
     await dismissSetupModal(page);
     await gotoNewShell(page);
-    await selectAdvancedMode(page);
-    switchedMode = true;
     await startClaude(page);
     const pid = processIdFromUrl(page);
     await waitForRunningSession(page, apiBase(), pid);

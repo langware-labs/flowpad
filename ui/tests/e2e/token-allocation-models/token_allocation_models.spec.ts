@@ -50,8 +50,6 @@ test('the model is picked from a searchable list of the models the source offers
   const dialog = page.getByTestId('new-deployment-dialog');
   await dialog.getByTestId('new-deployment-size-sm').click();
   await dialog.getByTestId('new-deployment-next').click();
-  // Setup is three tabs (aeb735d41): the token allocation lives with the machine's values.
-  await dialog.getByTestId('new-deployment-tab-values-button').click();
   await dialog.getByTestId('token-allocation-toggle').click();
   await dialog.getByTestId('token-allocation-source').selectOption(`llm_endpoint-${SOURCE_ID}`);
 
@@ -59,8 +57,7 @@ test('the model is picked from a searchable list of the models the source offers
   const picker = dialog.getByTestId('token-allocation-model');
   await expect(picker).toHaveAttribute('role', 'combobox');
   await picker.click();
-  // The source's sizes (sm/md/lg → model) head the list when nothing is typed; the models follow, one row each.
-  const options = page.locator('[role="option"][data-testid^="token-allocation-model-"]');
+  const options = page.getByRole('option');
   await expect(options).toHaveCount(offered.length);
   expect(await options.allTextContents()).toEqual(offered);
 

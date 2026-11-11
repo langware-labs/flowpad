@@ -12,7 +12,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { apiContext } from '../_shared/api';
-import { adjusted } from '../../adjustableTimeout';
 
 const SCREEN = '/dock/data-sources';
 
@@ -109,13 +108,14 @@ async function createSource(
   const submit = dialog.getByRole('button', { name: 'Add source' });
   await expect(submit).toBeEnabled();
   await submit.click();
-  // A source with a setup step (a folder, a repository, a drive) keeps the dialog open on the Setup
-  // panel — "<name> is listening · 1 of 1 set up" — until the person presses Done; one with none closes.
-  // A setup that cannot finish (Drive has no token yet) offers "Finish later" instead.
-  const done = dialog.getByRole('button', { name: /^(Done|Finish later)$/ });
-  await expect.poll(async () => !(await dialog.isVisible()) || (await done.isVisible()), { timeout: adjusted(15_000) }).toBe(true);
-  if (await done.isVisible()) await done.click();
-  await expect(dialog).toBeHidden();
+  // A source the backend parks in setup (a driver with a verify step: folder, git, gdrive) opens
+  // its setup step in place of closing (afb341f78); close that step, the source is already added.
+  const setupStep = page.getByRole('dialog').filter({ has: page.getByRole('link', { name: 'Setup' }) });
+  await expect(async () => {
+    expect((await setupStep.isVisible()) || !(await dialog.isVisible())).toBe(true);
+  }).toPass();
+  if (await setupStep.isVisible()) await setupStep.getByRole('button', { name: 'Close' }).first().click();
+  await expect(page.getByRole('dialog')).toBeHidden();
 
   const card = page.locator(`[data-testid="source-card"][data-provider="${provider}"]`).filter({
     hasText: name,
@@ -246,14 +246,13 @@ test.describe('Data sources are served by the backend', () => {
     });
     await expect(card).toHaveAttribute('data-status', 'setup');
 
-    // Verify answers on the card's own status line (DataSourceRow's quiet `useSourceVerify`):
-    // "Verifying…" while it runs, then the verdict's sentence under the status word — no toast.
+    // Verify reports through a notification, like every verb on the screen — the card
+    // carries no second result channel (see DataSourceRow's `pull`).
     await card.locator('[data-testid^="source-verify-"]').click();
-    await expect(card.locator('[data-testid^="source-status-"]')).not.toHaveAttribute('data-verifying', /.*/);
     await expect(
-      card.locator('[data-testid^="source-verdict-"]'),
+      page.locator('section[aria-label^="Notifications"] [data-sonner-toast]').filter({ hasText: /Google/i }),
       'Verify did not name Google as what is missing',
-    ).toHaveText(/Google/i);
+    ).toBeVisible();
     await expect(card).toHaveAttribute('data-status', 'setup');
   });
 

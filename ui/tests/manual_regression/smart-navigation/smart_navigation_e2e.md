@@ -15,7 +15,7 @@ Jev).
    has 3 new `train` rows: each with `input.here`, the decision as `output`, what was done in `data`
    (`address` or `prompt`), no gold. Validate reports no problems.
 5. **Review.** Open its editor (`/dock/app/<editor>?subject=dataset-<id>`). Filter **needs label**,
-   open a row, **Start from what the run answered**, **Save the right answer** → its gold is written (`ground_truth/decision.json`) and it leaves the
+   click **Correct** on a row → its gold is written (`ground_truth/decision.json`) and it leaves the
    filter.
 6. **Train / evaluate.** `python -m flow_sdk.evals <log folder> --kinds train`
    scores the reviewed rows. Run it with the instance's env (`set -a; . ./.env.<instance>.local`) so the

@@ -3,10 +3,9 @@
  * (`agentic-assets/project_manifest/project_manifest.json`).
  *
  *   1. Configure: pick the project's agent in Customize → Home → Home page (the
- *      shared asset picker). Launching the project then lands in the agent's
- *      chat in Vibe; the Home button steps off to Flowpad's home; launching
- *      again RESUMES the same chat. Only a launch lands there — the project page
- *      itself (no ask) stays on its page.
+ *      shared asset picker). Home then lands in the agent's chat in Vibe; Home
+ *      from there steps off to the default home; Home again RESUMES the same
+ *      chat. Only Home lands there — opening the project stays on its page.
  *   2. Deleting: resetting the setting, or deleting the agent it names, means
  *      Home no longer lands anywhere but the default home.
  *   3. Malformed: a manifest naming an unknown type, a bad id, or neither, or a
@@ -20,7 +19,6 @@
  * written straight into the project's manifest, the way a cloned repo would
  * carry them.
  */
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -87,13 +85,6 @@ const declaredHomePage = () => readManifest(home.root)?.home_page;
 function writeManifestText(text: string): void {
   mkdirSync(manifestDir(home.root), { recursive: true });
   writeFileSync(manifestFile(home.root), text, 'utf8');
-  // The card reads the indexed ProjectManifest row, which nothing watches the file for:
-  // index it the way the machine indexes a changed asset folder (`flow record index`).
-  execFileSync(
-    'curl',
-    ['-s', '-X', 'POST', '--max-time', '20', `${GRAPH}/compute_node/@local/fs-records/index?${new URLSearchParams({ type: 'project_manifest', path: manifestDir(home.root) })}`],
-    { stdio: 'ignore' },
-  );
 }
 
 /**
@@ -134,13 +125,6 @@ async function openCustomize(page: Page, projectId: string) {
 
 async function clickHome(page: Page) {
   await page.getByTestId('top-nav-home').click();
-}
-
-/** Launch the project the way picking or opening one does: its dock, asking for the home page
- *  (`withHomePage(DockPointer.forProject(id))`). The Home button no longer asks (4380657ba): it is
- *  Flowpad's own home. */
-async function launchProject(page: Page, projectId: string) {
-  await page.goto(`/dock/project/${projectId}?homePage=open`);
 }
 
 /** On a default home: the root, not a session — and the app is still rendered. */
@@ -204,8 +188,8 @@ test.describe('project home page', () => {
     // The choice is the manifest, naming the agent's TypeId.
     await expect.poll(declaredHomePage).toBe(`agent-${homeAgent.id}`);
 
-    // And launching the project honours it.
-    await launchProject(page, home.id);
+    // And Home honours it.
+    await clickHome(page);
     await expect(page).toHaveURL(SESSION_URL);
 
     declare(null);
@@ -244,21 +228,16 @@ test.describe('project home page', () => {
     await expect(picker).toContainText(appName);
     await expect.poll(declaredHomePage).toBe(appTypeId);
 
-    // Launching the project lands on the app RUNNING, pinned to the project — and the app is not handed the scope.
-    await launchProject(page, home.id);
+    // Home lands on the app RUNNING, pinned to the project — and the app is not handed the scope.
+    await clickHome(page);
     await expect(page).toHaveURL(new RegExp(`/dock/app/${appTypeId}\\?.*scope-activeProjectId=${home.id}`));
     const frame = page.frameLocator('[data-testid="vibe-app-frame"]');
     await expect(frame.getByTestId('app-first-title')).toHaveText(appName, { timeout: adjusted(30_000) });
     const src = await page.getByTestId('vibe-app-frame').first().getAttribute('src');
     expect(src ?? '').not.toContain('scope-');
 
-    // Every launch asks for the home page: the app again.
-    await launchProject(page, home.id);
-    await expect(page).toHaveURL(new RegExp(`/dock/app/${appTypeId}\\?.*scope-activeProjectId=${home.id}`));
-    // The Home button is Flowpad's home, never the project's home page.
+    // Home from the app steps off it; the card still names the app after a reload.
     await clickHome(page);
-    await expectDefaultHome(page);
-    await page.goto('/');
     await expectDefaultHome(page);
     const reloaded = await openCustomize(page, home.id);
     await expect(reloaded.getByTestId('home-page-picker')).toContainText(appName);
@@ -273,22 +252,22 @@ test.describe('project home page', () => {
     await page.goto(projectHomeUrl(home.id));
     await expect(page.getByTestId('top-nav-home')).toBeVisible();
 
-    // 2. Launching the project → the agent's chat, in Vibe.
-    await launchProject(page, home.id);
+    // 2. Home → the agent's chat, in Vibe.
+    await clickHome(page);
     await expect(page).toHaveURL(SESSION_URL);
     const firstProcess = SESSION_URL.exec(page.url())?.[1];
     expect(firstProcess).toBeTruthy();
 
-    // 3. The Home button steps off the chat to Flowpad's home (it never asks for the project's home page).
+    // 3. Home from the home page itself → the default home (the way out).
     await clickHome(page);
     await expectDefaultHome(page);
 
-    // 4. Launching the project again → the SAME chat, resumed rather than a new one.
-    await launchProject(page, home.id);
+    // 4. Home again → the SAME chat, resumed rather than a new one.
+    await clickHome(page);
     await expect(page).toHaveURL(SESSION_URL);
     expect(SESSION_URL.exec(page.url())?.[1]).toBe(firstProcess);
 
-    // 5. Only a launch lands there: the project page without the ask stays on the project page,
+    // 5. Only Home lands there: opening the project stays on the project page,
     //    where the home page is configured.
     await page.goto(`/dock/project/${home.id}`);
     await expect(page).toHaveURL(new RegExp(`/dock/project/${home.id}`));

@@ -18,7 +18,7 @@ test.describe('AI configuration', () => {
   test('fresh app exposes API-key and harness configuration', async ({ page }) => {
     await page.goto('/dock/ai-config');
 
-    await expect(page.getByRole('heading', { name: 'AI Configuration', exact: true })).toBeVisible();
+    await expect(page.getByText('AI Configuration', { exact: true })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'LLM APIs' })).toBeVisible();
     await expect(page.getByText('FlowPad API Key', { exact: true })).toBeVisible();
 

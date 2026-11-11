@@ -134,8 +134,6 @@ function editorFrame(page: Page) {
 test('4. the editor: config form + live items in the asset dock', async ({ page }) => {
   await openScreen(page);
   await page.getByTestId(`source-more-${sourceId}`).click();
-  // The definition's editor apps live under the menu's Advanced submenu.
-  await page.getByTestId(`source-advanced-${sourceId}`).click();
   await page.getByTestId('source-open-editor-editor').click();
   await expect(page).toHaveURL(/\/dock\/app\/micro_app-[0-9a-f-]+/);
   const frame = editorFrame(page);
@@ -176,13 +174,13 @@ test('5. define + annotate: a dataset bound to the source, one labelled example'
   const rows = ((await (await api.get(`/api/v1/graph/dataset?filter=${encodeURIComponent(JSON.stringify({ source_id: sourceId }))}`)).json()).data ?? []) as {
     id: string; num_rows: number; num_annotated: number; asset_ref: string; spec: unknown;
   }[];
+  await api.dispose();
   expect(rows).toHaveLength(1);
   datasetId = rows[0].id;
   datasetFolder = rows[0].asset_ref;
   expect(rows[0].num_rows).toBe(1);
   expect(rows[0].num_annotated).toBe(1);
   expect(rows[0].spec).toEqual({ rows: [{ input: 'ingest.source_item', output: { sentiment: 'string' } }] });
-  await api.dispose();
   // The promoted row reads back typed: the item as its input, the label as its gold.
   const rowsApi = await apiContext();
   const stored = (await (await rowsApi.get(`/api/v1/graph/dataset/${datasetId}/rows`)).json()).data as {

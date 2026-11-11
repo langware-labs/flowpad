@@ -115,7 +115,6 @@ async function logRows(): Promise<LogRow[]> {
   return ((await (await api.get(`/api/v1/graph/dataset/${datasetId}/rows`)).json()).data.rows ?? []) as LogRow[];
 }
 
-const api = () => apiContext();
 const ROWS = sentences();
 let page: Page;
 
@@ -175,10 +174,6 @@ test.describe.serial('navigation sentences', () => {
       appendFileSync(JSONL, JSON.stringify(record) + '\n');
       expect(answered, 'the decision left a SmartNavigationLog row').not.toBeNull();
       if (asked) await page.keyboard.press('Escape');
-      // Sentence "log out" really signs the instance out of the hub, which is the decision API's only
-      // door: every later sentence would then be decided with no endpoint. Sign back in (env mode, no body).
-      const status = await (await api().then((a) => a.get('/api/v1/cloud/status'))).json();
-      if (status?.data?.login?.status === 'logged_out') await (await api()).post('/api/v1/cloud/login');
     });
   }
 

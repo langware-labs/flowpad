@@ -62,24 +62,13 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
   const agentEditorUrl = new RegExp(`/dock/(assets|project/${project.id})/editor/agent/typeid/agent-${agent.id}`);
   // Opening an agent of another project switches the app into that project, which
   // re-mounts the editor; act only once the switch has landed, or an open dialog is lost.
-  // The project in context is named by the top bar's project pill (the list button beside it shows a count).
-  await expect(page.getByTestId('top-nav-project')).toContainText(project.name);
+  await expect(page.getByRole('button', { name: 'Open project list' })).toContainText(project.name);
 
   // ── deploy to this computer: a schedule runs on a deployment ──────────────
-  // This computer is the project Deployments page's "Run on this computer" switch (a deployment places a
-  // project; aeb735d41). The agent's Deploy opens that page with the agent preset as the main agent.
+  // This computer is the Summary tab's switch, not a New deployment choice.
   await page.getByTestId('agent-tab-summary').click();
-  await page.getByTestId('agent-summary-new-deployment').click();
-  // The page opens on a New deployment dialog (cloud) for the preset agent; this computer is the switch behind it.
-  const newDeployment = page.getByTestId('new-deployment-dialog');
-  await expect(newDeployment).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(newDeployment).toHaveCount(0);
-  const localSwitch = page.getByTestId('project-local-toggle-switch');
-  await localSwitch.click();
-  await expect(localSwitch).toBeChecked();
-  await page.goBack();
-  await expect(page).toHaveURL(agentEditorUrl);
+  await page.getByTestId('agent-local-toggle-switch').click();
+  await expect(page.getByTestId('agent-local-toggle-switch')).toBeChecked();
   await page.getByTestId('agent-tab-deployments').click();
   await expect(page.getByTestId('agent-places-list')).toBeVisible();
 

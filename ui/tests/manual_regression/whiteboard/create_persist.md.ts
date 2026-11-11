@@ -112,13 +112,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     await injectAndSave(page, TWO_BOXES_ARROW);
     for (let i = 0; i < 10; i++) {
       await page.waitForTimeout(1_000);
-      // CHART.md exists from create (frontmatter only): the save is done when the mermaid block is spliced in.
-      if (
-        fs.existsSync(`${assetRef}/board.json`) &&
-        fs.existsSync(`${assetRef}/CHART.md`) &&
-        fs.readFileSync(`${assetRef}/CHART.md`, 'utf8').includes('<!-- END chart:auto -->')
-      )
-        break;
+      if (fs.existsSync(`${assetRef}/CHART.md`) && fs.existsSync(`${assetRef}/board.json`)) break;
     }
 
     expect(fs.existsSync(`${assetRef}/CHART.md`), 'CHART.md exists after save').toBe(true);

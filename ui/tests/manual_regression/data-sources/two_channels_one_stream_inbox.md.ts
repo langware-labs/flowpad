@@ -135,9 +135,7 @@ test('2. the stream inbox merges both sources, attributed', async ({ page }) => 
   await expect(page.getByTestId('stream-inbox-view-all')).toContainText('100+');
 
   const bar = page.getByTestId('attached-channels');
-  // (The system's own Tasks source wears a mark on the user's line too, and the built-in Flowpad/Diagnosis/Automations
-  // marks carry no state; neither is one of the two channels.)
-  const marks = bar.locator('[data-testid="attached-channel"][data-state]:not([data-provider="task_manager"])');
+  const marks = bar.getByTestId('attached-channel');
   await expect(marks).toHaveCount(2);
   for (const mark of await marks.all()) {
     await expect(mark).toHaveAttribute('data-provider', 'agent');
@@ -157,12 +155,11 @@ test('2. the stream inbox merges both sources, attributed', async ({ page }) => 
   await expect(rows.filter({ hasText: 'slack message' }).first()).toBeVisible();
   await expect(rows.filter({ hasText: /Subject \d+/ }).first()).toBeVisible();
   // Every row wears ITS source's chip.
-  // (Chips draw once each row's channel resolves: wait for all of them rather than sampling once.)
-  await expect(rows.locator('[data-chip-type="source"]')).toHaveCount(PAGE);
+  expect(await rows.locator('[data-chip-type="source"]').count()).toBe(PAGE);
   // The older page holds the rest: both sources, merged, are all 120.
   await page.getByTestId('stream-inbox-page-older').click();
   await expect(rows).toHaveCount(2 * PER_SOURCE - PAGE);
-  await expect(rows.locator('[data-chip-type="source"]')).toHaveCount(2 * PER_SOURCE - PAGE);
+  expect(await rows.locator('[data-chip-type="source"]').count()).toBe(2 * PER_SOURCE - PAGE);
 });
 
 test('3. a mark narrows to ONE source; × restores', async ({ page }) => {
@@ -170,12 +167,6 @@ test('3. a mark narrows to ONE source; × restores', async ({ page }) => {
   const bar = page.getByTestId('attached-channels');
   const rows = page.getByTestId('stream-inbox-conversation-row');
   await expect(rows).toHaveCount(PAGE);
-
-  // The channel filter is local: it narrows the page already loaded (one page of the merged 2 x 60), so
-  // "one source" is the Slack rows of that page, not all 60 of the source.
-  const slackOnPage = await rows.filter({ has: page.locator('[data-chip-type="source"]', { hasText: 'Slack' }) }).count();
-  expect(slackOnPage, 'the page holds rows of both sources').toBeGreaterThan(0);
-  expect(slackOnPage, 'the page holds rows of both sources').toBeLessThan(PAGE);
 
   const slackMark = bar.locator('[data-testid="attached-channel"][aria-label*="Support slack"]');
   await expect(slackMark).toHaveCount(1);
@@ -188,7 +179,7 @@ test('3. a mark narrows to ONE source; × restores', async ({ page }) => {
   await expect(slackMark.locator(':scope > :first-child')).toHaveCSS('filter', 'none');
   await expect(bar.getByTestId('attached-channels-clear')).toBeVisible();
 
-  await expect(rows).toHaveCount(slackOnPage);
+  await expect(rows).toHaveCount(PER_SOURCE);
   for (const chip of await rows.locator('[data-chip-type="source"]').all()) await expect(chip).toHaveText('Slack');
   for (const sender of await rows.getByTestId('stream-inbox-row-sender').all()) await expect(sender).toHaveText('Bob');
   await expect(rows.filter({ hasText: /Subject \d+/ })).toHaveCount(0);

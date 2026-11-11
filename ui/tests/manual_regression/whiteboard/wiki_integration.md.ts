@@ -98,14 +98,7 @@ test.describe('Whiteboard participates in the wiki graph', () => {
     // Query the links table for the edge whiteboard -> target name. The raw wiki
     // target name lives in `target_raw` (there is no `target_name` column).
     const q = `SELECT count(*) FROM links WHERE src_type='chart' AND target_raw='${targetName}';`;
-    // No sqlite3 binary on a bare box: python's sqlite3 module reads the same file. Read-only: a
-    // read-write connection's close can checkpoint and delete the live backend's -wal/-shm.
-    const count = parseInt(
-      execSync(`python3 -c "import sqlite3,sys;print(sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True).execute(sys.argv[2]).fetchone()[0])" "${DB}" "${q}"`)
-        .toString()
-        .trim(),
-      10,
-    );
+    const count = parseInt(execSync(`sqlite3 "${DB}" "${q}"`).toString().trim(), 10);
     expect(count, 'links-table edge from whiteboard to target').toBeGreaterThanOrEqual(1);
 
     // Cleanup (best-effort).

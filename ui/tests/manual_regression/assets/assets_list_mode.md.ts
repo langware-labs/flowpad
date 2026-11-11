@@ -59,14 +59,13 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
     // to each type row, not to a page-level rebuild button.
     await expect(page.getByTestId('navigator-search-open')).toBeVisible();
     await expect(page.getByRole('button', { name: 'All assets (user + every project)' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'My assets only' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'User assets only' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Pick specific projects…' })).toBeVisible();
     // An EXPLICIT global scope (`scope-mode=all`) never inherits a default
     // project (adoptScopeProject, load-dock-pointer.ts), and this is a fresh
     // browser with no remembered one — so the Project option is present, not
     // selected, and says so, instead of naming a project nobody chose.
-    // The Dependencies option says "No current project" too: the Project option is the first.
-    const projectOption = page.getByRole('button', { name: 'No current project' }).first();
+    const projectOption = page.getByRole('button', { name: 'No current project' });
     await expect(projectOption).toBeVisible();
     await expect(projectOption).toHaveAttribute('aria-pressed', 'false');
   });
