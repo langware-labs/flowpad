@@ -562,7 +562,7 @@ for (const surface of SURFACES) {
         return;
       }
       for (const kind of kinds) {
-        const item = surface.item!(page, kind);
+        const item = surface.item(page, kind);
         const link = kind.link();
         if (link) await expect(item.locator(`[data-link="${link}"]`)).toHaveCount(1);
         else await expect(item.locator('[data-link^="/dock"]')).toHaveCount(0);
