@@ -5,8 +5,8 @@
  * registry plus a reader callback, so it needs no backend and no live instance.
  * The render half uses PrefControl through a thin harness rather than mounting
  * PreferencesView, which drags in useDockNavigation for no benefit here — the
- * filtering under test happens in the parent, so a harness that calls
- * `visiblePrefsForCategory` exercises exactly the production path.
+ * filtering under test happens in the parent, so a harness that
+ * filters the Auto index tab's keys with `isPrefVisible` takes exactly the production path.
  */
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -14,16 +14,13 @@ import {
   AUTO_INDEX_FUNCTION_OPTIONS,
   AUTO_INDEX_TRIGGER_OPTIONS,
   AUTO_INDEX_TYPE_OPTIONS,
-  CATEGORY_AUTO_INDEX,
   getAllPrefInfos,
   getSurfacedPrefInfos,
   isPrefVisible,
-  PREF_CATEGORIES,
   PREF_REGISTRY,
   PrefDataType,
   PrefKey,
-  prefsForCategory,
-  visiblePrefsForCategory,
+  PREF_GROUPS,
 } from '@sdk';
 import { SettingsCard } from '@src/components/settings/settings-card';
 import { PrefControl } from '@src/components/preferences-view/PrefControl';
@@ -86,10 +83,11 @@ describe('visibleWhen registry invariants', () => {
   });
 });
 
+const AUTO_INDEX_TAB = PREF_GROUPS.find((g) => g.id === 'indexing')!.tabs.find((t) => t.id === 'auto-index')!;
+
 describe('the Auto Index section', () => {
   it('is one tab holding the four auto-index prefs in order', () => {
-    expect(PREF_CATEGORIES).toContain(CATEGORY_AUTO_INDEX);
-    expect(prefsForCategory(CATEGORY_AUTO_INDEX).map((i) => i.key)).toEqual([
+    expect(AUTO_INDEX_TAB.keys).toEqual([
       PrefKey.AUTO_INDEX_ENABLED,
       PrefKey.AUTO_INDEX_TYPE,
       PrefKey.AUTO_INDEX_TRIGGER,
@@ -120,7 +118,10 @@ describe('rendering the Auto Index rows', () => {
   const renderRows = (values: Partial<Record<PrefKey, unknown>>) =>
     render(
       <SettingsCard>
-        {visiblePrefsForCategory(CATEGORY_AUTO_INDEX, reader(values)).map((info) => (
+        {AUTO_INDEX_TAB.keys
+          .map((key) => PREF_REGISTRY[key])
+          .filter((info) => isPrefVisible(info, reader(values)))
+          .map((info) => (
           <PrefControl key={info.key} info={info} />
         ))}
       </SettingsCard>,

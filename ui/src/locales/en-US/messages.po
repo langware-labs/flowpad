@@ -1208,12 +1208,20 @@ msgid "{cloudPlaces} cloud deployments"
 msgstr "{cloudPlaces} cloud deployments"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} pinned_source_unavailable {It isn't set up on this computer} other {}}"
-msgstr "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+msgstr "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
-msgstr "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+#~ msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+#~ msgstr "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+msgstr "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+#~ msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+#~ msgstr "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
 
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "{completedCount}/{totalCount} completed"
@@ -5020,6 +5028,7 @@ msgstr "Automation created"
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/conversation/channel-attribution.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/types/ViewType.ts
 msgid "Automations"
 msgstr "Automations"
@@ -5848,6 +5857,10 @@ msgstr "Cancel request"
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "cancelled"
+
+#: src/components/automations/AutomationRow.tsx
+msgid "Cancelled · ran {runs}"
+msgstr "Cancelled · ran {runs}"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Cancelled by user"
@@ -6823,6 +6836,10 @@ msgstr "Click to view"
 msgid "Click to view full prompt"
 msgstr "Click to view full prompt"
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Click: show only this · ⌘/Ctrl-click: add or remove"
+msgstr "Click: show only this · ⌘/Ctrl-click: add or remove"
+
 #: src/components/image-annotator/image-annotator-store.tsx
 #: src/components/ui/media-lightbox.tsx
 msgid "Clipboard not updated"
@@ -6835,10 +6852,6 @@ msgstr "Clipboard unavailable"
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Clone"
 msgstr "Clone"
-
-#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
-msgid "Click: show only this · ⌘/Ctrl-click: add or remove"
-msgstr "Click: show only this · ⌘/Ctrl-click: add or remove"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Clone @ {branch}"
@@ -7061,6 +7074,11 @@ msgstr "Cloud link prompt when sharing"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "Cloud machine"
 msgstr "Cloud machine"
+
+#: src/components/terminal/project-list-menu.tsx
+#: src/components/terminal/project-list-menu.tsx
+msgid "Cloud project {cloudUrl}"
+msgstr "Cloud project {cloudUrl}"
 
 #: src/notifications/ingest.ts
 msgid "Cloud request rejected"
@@ -10841,6 +10859,7 @@ msgstr "Diagnosing… you'll get a message when it's done"
 #: src/components/conversation/channel-attribution.tsx
 #: src/components/diagnosis-viewer/DiagnosisViewer.tsx
 #: src/components/help/AskForHelpDialog.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
 #: src/types/ViewType.ts
 msgid "Diagnosis"
@@ -11252,6 +11271,10 @@ msgstr "Done"
 #: src/components/conversation/ShareReplyCard.tsx
 msgid "Done — access given"
 msgstr "Done — access given"
+
+#: src/components/automations/AutomationRow.tsx
+msgid "Done · ran {runs}"
+msgstr "Done · ran {runs}"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Done editing"
@@ -11951,6 +11974,10 @@ msgstr "Ended"
 #: src/components/conversation/ConversationActions.tsx
 msgid "Ended · {when}"
 msgstr "Ended · {when}"
+
+#: src/components/automations/AutomationRow.tsx
+msgid "Ended · ran {runs}"
+msgstr "Ended · ran {runs}"
 
 #: src/notifications/error-detail.ts
 msgid "Endpoint"
@@ -17162,6 +17189,10 @@ msgstr "LLM sources"
 msgid "LLM: <0>{sourceName}</0>, <1>${0}</1> per user"
 msgstr "LLM: <0>{sourceName}</0>, <1>${0}</1> per user"
 
+#: src/components/entity-execution-panel/EarlierHistoryButton.tsx
+msgid "Load earlier messages"
+msgstr "Load earlier messages"
+
 #: src/components/data-sources/DataDriversView.tsx
 msgid "load error"
 msgstr "load error"
@@ -17298,6 +17329,10 @@ msgstr "Loading diff…"
 #: src/components/vfs-markdown-pane.tsx
 msgid "Loading document..."
 msgstr "Loading document..."
+
+#: src/components/entity-execution-panel/EarlierHistoryButton.tsx
+msgid "Loading earlier messages…"
+msgstr "Loading earlier messages…"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Loading errors..."
@@ -17564,6 +17599,11 @@ msgstr "Local only — permanent"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Local path"
 msgstr "Local path"
+
+#: src/components/terminal/project-list-menu.tsx
+#: src/components/terminal/project-list-menu.tsx
+msgid "Local project {projectPath}"
+msgstr "Local project {projectPath}"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Locally"
@@ -19060,6 +19100,8 @@ msgstr "New organization"
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
+#: src/components/terminal/project-list-menu.tsx
+#: src/components/terminal/project-list-menu.tsx
 msgid "New project"
 msgstr "New project"
 
@@ -22017,6 +22059,8 @@ msgstr "Open folder: {projectPath}"
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/project-actions-row.tsx
+#: src/components/terminal/project-list-menu.tsx
+#: src/components/terminal/project-list-menu.tsx
 msgid "Open from git"
 msgstr "Open from git"
 
@@ -22066,6 +22110,7 @@ msgstr "Open in a new tab"
 #: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
 #: src/pages/flow-page/app-display-viewer.tsx
+#: src/tabs/doc-tab-card.tsx
 msgid "Open in browser"
 msgstr "Open in browser"
 
@@ -22101,8 +22146,6 @@ msgstr "Open in Files"
 msgid "Open in Finder"
 msgstr "Open in Finder"
 
-#: src/components/terminal/project-list-menu.tsx
-#: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/tabs/doc-tab-card.tsx
@@ -22261,8 +22304,6 @@ msgid "Open project home"
 msgstr "Open project home"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-#: src/components/terminal/project-list-menu.tsx
-#: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
 msgid "Open project in cloud"
@@ -24738,6 +24779,20 @@ msgstr "RAM:"
 msgid "ran {0}×"
 msgstr "ran {0}×"
 
+#: src/components/automations/AutomationRow.tsx
+msgid "ran {runs} · until {until}"
+msgstr "ran {runs} · until {until}"
+
+#. placeholder {0}: a.max_runs
+#: src/components/automations/AutomationRow.tsx
+msgid "ran {runs} of {0}"
+msgstr "ran {runs} of {0}"
+
+#. placeholder {0}: a.max_runs
+#: src/components/automations/AutomationRow.tsx
+msgid "ran {runs} of {0} · until {until}"
+msgstr "ran {runs} of {0} · until {until}"
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
 msgstr "Re-check {title}"
@@ -25327,6 +25382,14 @@ msgstr "release"
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Release"
 msgstr "Release"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Release notes"
+msgstr "Release notes"
+
+#: src/components/version-popover/release-notes-select.tsx
+msgid "Release notes version"
+msgstr "Release notes version"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/TerminalPanel.tsx
@@ -26345,6 +26408,7 @@ msgstr "Reveal the message this task was derived from"
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/help/AskForHelpDialog.tsx
+#: src/components/warnings-popover/warnings-popover.tsx
 msgid "Review"
 msgstr "Review"
 
@@ -28840,7 +28904,6 @@ msgid "Shared with me"
 msgstr "Shared with me"
 
 #: src/components/machine-overview/shared-machine.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Shared with you"
 msgstr "Shared with you"
 
@@ -29201,6 +29264,11 @@ msgstr "Showing stats for project: <0>{projectName}</0>"
 msgid "Showing the raw execution trace — run analysis to add goals & verdict."
 msgstr "Showing the raw execution trace — run analysis to add goals & verdict."
 
+#. placeholder {0}: allKeys .filter((k) => selected.has(k)) .map(nameOf) .join(', ')
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Showing: {0}"
+msgstr "Showing: {0}"
+
 #: src/components/connections-manager.tsx
 msgid "Shown at approval"
 msgstr "Shown at approval"
@@ -29264,11 +29332,6 @@ msgstr "Sign in to {0}"
 
 #. placeholder {0}: chosen.title
 #: src/components/credentials/SecretVaultPicker.tsx
-#. placeholder {0}: allKeys .filter((k) => selected.has(k)) .map(nameOf) .join(', ')
-#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
-msgid "Showing: {0}"
-msgstr "Showing: {0}"
-
 msgid "Sign in to {0} first, then save again."
 msgstr "Sign in to {0} first, then save again."
 

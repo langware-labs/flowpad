@@ -171,18 +171,18 @@ async def test_trigger_callback_reapplies_from_file(_toplog_file):
 # ── restart semantics: seed_file resets unless persisted ─────────────────────
 
 
-def test_seed_creates_quiet_file_when_missing(_toplog_file):
+def test_seed_creates_default_file_when_missing(_toplog_file):
     toplog.seed_file(True)
-    assert _read(_toplog_file) == {"enabled": True, "filter": {}}
+    assert _read(_toplog_file) == {"enabled": True, "filter": {"flow_show": True}}
     assert toplog.is_enabled() is True
-    assert toplog.active_tags() == set()
+    assert toplog.active_tags() == {"flow_show"}
 
 
 def test_seed_resets_tags_and_master_switch_by_default(_toplog_file):
     toplog.disable()
     toplog.on("pty")
     toplog.seed_file(False)  # a restart on a prod-like instance
-    assert _read(_toplog_file) == {"enabled": False, "filter": {}}
+    assert _read(_toplog_file) == {"enabled": False, "filter": {"flow_show": True}}
     assert toplog.is_on("pty") is False
     # And the master switch returns to the instance default, not the last value.
     toplog.enable()
@@ -268,3 +268,9 @@ def test_toplog_enabled_defaults_dev_on_prod_off():
 
     assert DevInstanceSettings.from_env().toplog_enabled is True
     assert BaseInstanceSettings.from_env().toplog_enabled is False
+
+
+def test_tags_route_lists_the_catalog_and_the_default_on_tags(_toplog_file):
+    rows = _client().get("/api/v1/toplog/tags").json()["data"]
+    assert {r["tag"] for r in rows} == set(toplog.TAG_CATALOG)
+    assert [r["tag"] for r in rows if r["default_on"]] == ["flow_show"]

@@ -1208,12 +1208,20 @@ msgid "{cloudPlaces} cloud deployments"
 msgstr "{cloudPlaces} عمليات نشر سحابية"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}"
 msgstr ""
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+#~ msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+#~ msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
 msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+#~ msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+#~ msgstr ""
 
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "{completedCount}/{totalCount} completed"
@@ -5020,6 +5028,7 @@ msgstr "تم إنشاء الأتمتة"
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/conversation/channel-attribution.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/types/ViewType.ts
 msgid "Automations"
 msgstr "الأتمتة"
@@ -5848,6 +5857,10 @@ msgstr "إلغاء الطلب"
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "أُلغي"
+
+#: src/components/automations/AutomationRow.tsx
+msgid "Cancelled · ran {runs}"
+msgstr ""
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Cancelled by user"
@@ -6823,6 +6836,10 @@ msgstr "يُرجى النقر للعرض"
 msgid "Click to view full prompt"
 msgstr "انقروا لعرض الطلب الكامل"
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Click: show only this · ⌘/Ctrl-click: add or remove"
+msgstr "نقرة: اعرض هذا فقط · ⌘/Ctrl-نقرة: أضف أو أزل"
+
 #: src/components/image-annotator/image-annotator-store.tsx
 #: src/components/ui/media-lightbox.tsx
 msgid "Clipboard not updated"
@@ -6835,10 +6852,6 @@ msgstr "الحافظة غير متاحة"
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Clone"
 msgstr "استنساخ"
-
-#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
-msgid "Click: show only this · ⌘/Ctrl-click: add or remove"
-msgstr "نقرة: اعرض هذا فقط · ⌘/Ctrl-نقرة: أضف أو أزل"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Clone @ {branch}"
@@ -7061,6 +7074,11 @@ msgstr "طلب ربط السحابة عند المشاركة"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "Cloud machine"
 msgstr "جهاز سحابي"
+
+#: src/components/terminal/project-list-menu.tsx
+#: src/components/terminal/project-list-menu.tsx
+msgid "Cloud project {cloudUrl}"
+msgstr ""
 
 #: src/notifications/ingest.ts
 msgid "Cloud request rejected"
@@ -10841,6 +10859,7 @@ msgstr "جارٍ التشخيص… ستصلك رسالة عند الانتهاء
 #: src/components/conversation/channel-attribution.tsx
 #: src/components/diagnosis-viewer/DiagnosisViewer.tsx
 #: src/components/help/AskForHelpDialog.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
 #: src/types/ViewType.ts
 msgid "Diagnosis"
@@ -11252,6 +11271,10 @@ msgstr "مكتمل"
 #: src/components/conversation/ShareReplyCard.tsx
 msgid "Done — access given"
 msgstr "تم منح الوصول"
+
+#: src/components/automations/AutomationRow.tsx
+msgid "Done · ran {runs}"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Done editing"
@@ -11951,6 +11974,10 @@ msgstr "منتهية"
 #: src/components/conversation/ConversationActions.tsx
 msgid "Ended · {when}"
 msgstr "انتهت · {when}"
+
+#: src/components/automations/AutomationRow.tsx
+msgid "Ended · ran {runs}"
+msgstr ""
 
 #: src/notifications/error-detail.ts
 msgid "Endpoint"
@@ -17162,6 +17189,10 @@ msgstr "مصادر LLM"
 msgid "LLM: <0>{sourceName}</0>, <1>${0}</1> per user"
 msgstr ""
 
+#: src/components/entity-execution-panel/EarlierHistoryButton.tsx
+msgid "Load earlier messages"
+msgstr ""
+
 #: src/components/data-sources/DataDriversView.tsx
 msgid "load error"
 msgstr "خطأ في التحميل"
@@ -17298,6 +17329,10 @@ msgstr "جاري تحميل الفروقات…"
 #: src/components/vfs-markdown-pane.tsx
 msgid "Loading document..."
 msgstr "جاري تحميل المستند..."
+
+#: src/components/entity-execution-panel/EarlierHistoryButton.tsx
+msgid "Loading earlier messages…"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Loading errors..."
@@ -17564,6 +17599,11 @@ msgstr "محلي فقط — دائم"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Local path"
 msgstr "المسار المحلي"
+
+#: src/components/terminal/project-list-menu.tsx
+#: src/components/terminal/project-list-menu.tsx
+msgid "Local project {projectPath}"
+msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Locally"
@@ -19060,6 +19100,8 @@ msgstr "مؤسسة جديدة"
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
+#: src/components/terminal/project-list-menu.tsx
+#: src/components/terminal/project-list-menu.tsx
 msgid "New project"
 msgstr "مشروع جديد"
 
@@ -22017,6 +22059,8 @@ msgstr "فتح المجلد: {projectPath}"
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/project-actions-row.tsx
+#: src/components/terminal/project-list-menu.tsx
+#: src/components/terminal/project-list-menu.tsx
 msgid "Open from git"
 msgstr "فتح من Git"
 
@@ -22066,6 +22110,7 @@ msgstr "فتح في علامة تبويب جديدة"
 #: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
 #: src/pages/flow-page/app-display-viewer.tsx
+#: src/tabs/doc-tab-card.tsx
 msgid "Open in browser"
 msgstr "فتح في المتصفح"
 
@@ -22101,8 +22146,6 @@ msgstr "فتح في الملفات"
 msgid "Open in Finder"
 msgstr "فتح في Finder"
 
-#: src/components/terminal/project-list-menu.tsx
-#: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/tabs/doc-tab-card.tsx
@@ -22261,8 +22304,6 @@ msgid "Open project home"
 msgstr "فتح الصفحة الرئيسية للمشروع"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-#: src/components/terminal/project-list-menu.tsx
-#: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
 msgid "Open project in cloud"
@@ -24738,6 +24779,20 @@ msgstr "ذاكرة الوصول العشوائي:"
 msgid "ran {0}×"
 msgstr "شُغِّل {0}×"
 
+#: src/components/automations/AutomationRow.tsx
+msgid "ran {runs} · until {until}"
+msgstr ""
+
+#. placeholder {0}: a.max_runs
+#: src/components/automations/AutomationRow.tsx
+msgid "ran {runs} of {0}"
+msgstr ""
+
+#. placeholder {0}: a.max_runs
+#: src/components/automations/AutomationRow.tsx
+msgid "ran {runs} of {0} · until {until}"
+msgstr ""
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Re-check {title}"
 msgstr "إعادة التحقق من {title}"
@@ -25327,6 +25382,14 @@ msgstr "إصدار"
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Release"
 msgstr "إصدار"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Release notes"
+msgstr ""
+
+#: src/components/version-popover/release-notes-select.tsx
+msgid "Release notes version"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/TerminalPanel.tsx
@@ -26345,6 +26408,7 @@ msgstr "إظهار الرسالة التي اشتُقت منها هذه المه
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/help/AskForHelpDialog.tsx
+#: src/components/warnings-popover/warnings-popover.tsx
 msgid "Review"
 msgstr "مراجعة"
 
@@ -28840,7 +28904,6 @@ msgid "Shared with me"
 msgstr ""
 
 #: src/components/machine-overview/shared-machine.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Shared with you"
 msgstr ""
 
@@ -29201,6 +29264,11 @@ msgstr "عرض الإحصاءات للمشروع: <0>{projectName}</0>"
 msgid "Showing the raw execution trace — run analysis to add goals & verdict."
 msgstr "يتم عرض أثر التنفيذ الخام — شغّل التحليل لإضافة الأهداف والحكم."
 
+#. placeholder {0}: allKeys .filter((k) => selected.has(k)) .map(nameOf) .join(', ')
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Showing: {0}"
+msgstr "المعروض: {0}"
+
 #: src/components/connections-manager.tsx
 msgid "Shown at approval"
 msgstr "تظهر عند الموافقة"
@@ -29264,11 +29332,6 @@ msgstr "تسجيل الدخول إلى {0}"
 
 #. placeholder {0}: chosen.title
 #: src/components/credentials/SecretVaultPicker.tsx
-#. placeholder {0}: allKeys .filter((k) => selected.has(k)) .map(nameOf) .join(', ')
-#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
-msgid "Showing: {0}"
-msgstr "المعروض: {0}"
-
 msgid "Sign in to {0} first, then save again."
 msgstr ""
 

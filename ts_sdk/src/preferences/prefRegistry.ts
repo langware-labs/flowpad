@@ -825,42 +825,6 @@ export function storageKeyFor(info: PrefInfo): string {
 }
 
 /**
- * Ordered, de-duplicated category list — **surfaced prefs only**, since this drives
- * the Preferences screen's tabs. Hidden contextual prefs never get a tab.
- */
-export const PREF_CATEGORIES: string[] = (() => {
-  const seen = new Set<string>();
-  const ordered: string[] = [];
-  for (const info of getSurfacedPrefInfos()) {
-    if (!seen.has(info.category)) {
-      seen.add(info.category);
-      ordered.push(info.category);
-    }
-  }
-  return ordered;
-})();
-
-/** Surfaced preferences belonging to a category, in registry order. */
-/**
- * Surfaced prefs bucketed by category, computed once at module load.
- *
- * `prefsForCategory` used to re-scan the whole registry on every call, and the
- * Preferences screen calls it per category on every store change — so a single
- * unrelated `set()` re-filtered ~60 entries eight times over.
- */
-const PREFS_BY_CATEGORY: Record<string, PrefInfo[]> = (() => {
-  const out: Record<string, PrefInfo[]> = {};
-  for (const info of getSurfacedPrefInfos()) {
-    (out[info.category] ??= []).push(info);
-  }
-  return out;
-})();
-
-export function prefsForCategory(category: string): PrefInfo[] {
-  return PREFS_BY_CATEGORY[category] ?? [];
-}
-
-/**
  * Is `info` visible, given a reader for other prefs' current values?
  *
  * True whenever the pref declares no `visibleWhen`. The reader is injected so
@@ -873,11 +837,6 @@ export function prefsForCategory(category: string): PrefInfo[] {
 export function isPrefVisible(info: PrefInfo, read: (key: PrefKey) => unknown): boolean {
   const rule = info.visibleWhen;
   return !rule || read(rule.key) === rule.equals;
-}
-
-/** Surfaced prefs for a category, minus rows hidden by an unmet `visibleWhen`. */
-export function visiblePrefsForCategory(category: string, read: (key: PrefKey) => unknown): PrefInfo[] {
-  return prefsForCategory(category).filter((info) => isPrefVisible(info, read));
 }
 
 /** Default-value map keyed by dotted PrefKey — seeds the store. */

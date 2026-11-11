@@ -58,6 +58,8 @@ class ToplogManager {
   private _queue: ClientLine[] = [];
   private _dropped = 0;
   private _flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private _listeners = new Set<() => void>();
+  private _snapshot = this._buildState();
 
   get enabled(): boolean {
     return this._enabled;
@@ -68,8 +70,18 @@ class ToplogManager {
     return Array.from(this._active);
   }
 
-  /** Current state as the backend serializes it. */
+  /** Current state as the backend serializes it. Stable between changes (a `useSyncExternalStore` snapshot). */
   state(): { enabled: boolean; filter: Record<string, boolean>; persist: boolean } {
+    return this._snapshot;
+  }
+
+  /** Call `listener` whenever the state changes (a toggle here, or a WS push from anywhere). */
+  subscribe(listener: () => void): () => void {
+    this._listeners.add(listener);
+    return () => this._listeners.delete(listener);
+  }
+
+  private _buildState(): { enabled: boolean; filter: Record<string, boolean>; persist: boolean } {
     const filter: Record<string, boolean> = {};
     for (const t of this._active) filter[t] = true;
     return { enabled: this._enabled, filter, persist: this._persist };
@@ -200,6 +212,7 @@ class ToplogManager {
   }
 
   private _apply(state: ToplogState): void {
+    const before = JSON.stringify(this._snapshot);
     this._enabled = !!state.enabled;
     this._persist = !!state.persist;
     this._active = new Set(
@@ -207,6 +220,10 @@ class ToplogManager {
         .filter(([, v]) => !!v)
         .map(([k]) => k),
     );
+    const next = this._buildState();
+    if (JSON.stringify(next) === before) return;
+    this._snapshot = next;
+    for (const listener of this._listeners) listener();
   }
 }
 

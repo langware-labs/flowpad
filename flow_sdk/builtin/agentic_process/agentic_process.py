@@ -126,6 +126,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: toplog tag for `flow show`: who showed what, when, why, and on which page.
+SHOW_TAG = "flow_show"
+
 # Detached background tasks that must outlive the request that spawned them
 # (e.g. ``self-restart``, which kills the very worker — and therefore the CLI
 # child process — that issued the request). ``asyncio`` only holds a weak
@@ -3489,6 +3492,7 @@ class AgenticProcess(Entity):
         body = await _read_json_body()
         if isinstance(body, ApiFailResponse):
             return body
+        self._log_show_request(body)
 
         try:
             link = str(body.get("link") or "").strip()
@@ -3521,11 +3525,34 @@ class AgenticProcess(Entity):
         except DisplayTargetNotFound as e:
             from flow_sdk.schema.data_spec.returned_value_spec import NavigateResult  # noqa: PLC0415
 
+            toplog.log(SHOW_TAG, "show not_found process=%s error=%s", self.id, e)
             return ApiSuccessResponse(
                 data=NavigateResult.not_found(str(e), verdict="not_found").model_dump(mode="json")
             )
 
         return await self._show_answer(payload)
+
+    def _log_show_request(self, body: dict) -> None:
+        """One ``flow_show`` line per show: who asked, what, why, and the page it lands on."""
+        if not toplog.is_on(SHOW_TAG):
+            return
+        ctx = self.context_data if isinstance(self.context_data, dict) else {}
+        target = {k: body[k] for k in ("typeid", "path", "port", "artifact_id", "view", "url", "link") if body.get(k)}
+        last = ctx.get("last_shown")
+        display = ctx.get(DISPLAY_CONTEXT_KEY)
+        toplog.log(
+            SHOW_TAG,
+            "show request process=%s name=%r worker=%s project=%s via=%s target=%s why=%r page=%s last_shown=%s",
+            self.id,
+            getattr(self, "name", None),
+            getattr(self, "worker_type", None),
+            getattr(self, "project_id", None),
+            "link-click" if body.get("link") else "cli",
+            target,
+            body.get("why"),
+            display.get("address") if isinstance(display, dict) else None,
+            (last.get("kind") or last.get("type")) if isinstance(last, dict) else None,
+        )
 
     async def _show_answer(self, payload: dict) -> ApiSuccessResponse:
         """Show *payload* in this process's display and answer a ``NavigateResult``
@@ -3534,6 +3561,13 @@ class AgenticProcess(Entity):
         from flow_sdk.core.navigate import show_target  # noqa: PLC0415
 
         result = await show_target(payload, process=self)
+        toplog.log(
+            SHOW_TAG,
+            "show done process=%s kind=%s verdict=%s",
+            self.id,
+            payload.get("kind") or payload.get("type"),
+            getattr(result, "verdict", None),
+        )
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
     # ── Agent-facing terminal ───────────────────────────────────────────────

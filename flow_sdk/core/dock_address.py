@@ -390,6 +390,9 @@ class ViewMeta:
     #: pointer starting ``?`` is the screen's options (``?creating=schedule``); one starting ``/``
     #: is a whole address of its own (``/hub/worldview/world``, a projection the hub renders).
     subplaces: tuple[tuple[str, str], ...] = ()
+    #: ``(pointer, names)``: what a person calls a subplace, for the navigator's rules -- a name
+    #: here opens that subplace with no model call ("toplog settings").
+    subplace_names: tuple[tuple[str, tuple[str, ...]], ...] = ()
     #: ``(entity type, pointer form, name)``: how this screen opens ON an entity in context when
     #: that is more than its bare id -- ``("agentic_process", "<harness>/transcript/<session>",
     #: "transcript")``. The form's placeholders are ``<id>``, ``<type>``, ``<path>`` and any field
@@ -401,6 +404,31 @@ class ViewMeta:
     #: are one place, so ``canonical_address`` folds the tab away.
     default_tab: str = ""
 
+
+#: ``(pointer, name, names)`` for every Preferences tab -- the tabs of ``PREF_GROUPS``
+#: (``ts_sdk/src/preferences/prefLayout.ts``; ``test_navigation_map`` checks they agree), named by
+#: what is in them, plus what a person calls the tab when that is not its name.
+PREFERENCE_TABS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("general/appearance", "General > Appearance: view mode (vibe, standard, advanced), language, system projects and skills", ()),
+    ("general/notifications", "General > Notifications: turn the sound on or off when an agent waits, which sound", ()),
+    ("terminal/behavior", "Terminal > Behavior: external OS terminal, ask before running a command link", ()),
+    ("terminal/display", "Terminal > Display: buffer sync updates, scrollback lines", ()),
+    ("ai/models", "AI & chat > Models: default model size, token source order", ()),
+    ("ai/chat", "AI & chat > Chat: show tool calls", ()),
+    ("indexing/auto-index", "Indexing > Auto index: index a project on selection, depth, when, where the walk runs", ()),
+    ("indexing/engine", "Indexing > Engine: disk I/O backend (Python or Rust)", ()),
+    ("sharing/sharing", "Sharing & privacy > Sharing: message status, cloud link prompt, sign-in prompt", ()),
+    ("sharing/this-machine", "Sharing & privacy > This machine: IT messages", ()),
+    (
+        "developer/trace-logging",
+        "Developer > Trace logging: toplog tags, debug log on or off, keep after restart",
+        ("toplog", "toplog settings", "toplog preferences", "trace logging", "tracing", "tracing settings", "debug logging"),
+    ),
+    ("developer/hook-sniffer", "Developer > Hook sniffer: max sniffer events", ()),
+    ("developer/errors", "Developer > Errors: de-duplicate errors", ()),
+    ("developer/smart-navigation", "Developer > Smart navigation: turn the smart navigation log on or off", ()),
+    ("developer/experimental", "Developer > Experimental: experimental flags, regenerate onboarding", ()),
+)
 
 #: The table below builds rows directly. ``pointer`` leads and ``addressable``
 #: defaults to True, so a row is `_m(_OPT, label="…")` — a pass-through wrapper
@@ -553,23 +581,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         folds_pointer=True,
         label="Preferences",
         aliases=("my preferences", "appearance"),
-        # The tabs of ``PREF_CATEGORIES`` (ts_sdk/src/preferences/prefRegistry.ts), named by what is in them.
-        subplaces=tuple(
-            (tab, f"Preferences > {name}")
-            for tab, name in (
-                ("general", "General: show system skills"),
-                ("terminal", "Terminal: scrollback sync, history, terminal openers"),
-                ("notifications", "Notifications: turn the sound on or off when an agent waits, message status, sign-in ask"),
-                ("advanced", "Advanced: turn the smart navigation log on or off, terminal scrollback lines"),
-                ("auto_index", "Auto index: which folders are indexed automatically"),
-                ("i18n", "Language"),
-                ("ui", "Interface: choose the view mode (vibe or terminal), the vibe model, system projects"),
-                ("chat", "Chat: show tool calls"),
-                ("errors", "Errors: time span, status filter, de-duplication"),
-                ("debug", "Debug: event sniffer"),
-                ("onboarding", "Onboarding"),
-            )
-        ),
+        subplaces=tuple((pointer, f"Preferences > {name}") for pointer, name, _ in PREFERENCE_TABS),
+        subplace_names=tuple((pointer, names) for pointer, _, names in PREFERENCE_TABS if names),
     ),
     ViewType.AGENTIC_PROCESS: _m(_REQ, label="Process", provides=("entity", "process"), opens=("agentic_process",)),
     ViewType.SEARCH: _m(_NONE, label="Search", aliases=("find",)),

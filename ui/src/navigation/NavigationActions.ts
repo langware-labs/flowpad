@@ -1312,10 +1312,10 @@ export class NavigationActions {
 
   /**
    * Open the user Preferences screen
-   * @param category - Optional category whose tab should be active
+   * @param tab - Optional `<group>/<tab>` to open (`developer/trace-logging`)
    */
-  openPreferences(category?: string): void {
-    const pointer = DockPointer.forPreferences(category);
+  openPreferences(tab?: string): void {
+    const pointer = DockPointer.forPreferences(tab);
     this.openDock(pointer);
   }
 

@@ -2303,10 +2303,10 @@ export class DockPointer implements IDockPointer {
 
   /**
    * Create dock pointer for the user Preferences screen.
-   * @param category - Optional category whose tab should be active
+   * @param tab - Optional `<group>/<tab>` to open (`developer/trace-logging`); see `prefLayout.ts`
    */
-  static forPreferences(category?: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.PREFERENCES, category, {}, layout);
+  static forPreferences(tab?: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.PREFERENCES, tab, {}, layout);
   }
 
   /**
