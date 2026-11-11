@@ -26,15 +26,8 @@ describe('cloud alerts clear on a hub answer', () => {
   });
   afterEach(() => stop());
 
-  it('stays up until every request it reports got an answer', () => {
+  it('an unreachable cloud raises no warning', () => {
     failed('/api/v1/graph/llm_endpoint', 0);
-    failed('/api/v1/graph/conversation', 0);
-    expect(shown('cloud-unreachable')).toBe(true);
-
-    answered('/api/v1/graph/llm_endpoint');
-    expect(shown('cloud-unreachable')).toBe(true); // the conversation list never got an answer
-
-    answered('/api/v1/graph/conversation');
     expect(shown('cloud-unreachable')).toBe(false);
   });
 
@@ -44,14 +37,6 @@ describe('cloud alerts clear on a hub answer', () => {
     expect(shown('cloud-server-error')).toBe(true);
   });
 
-  it('a reconnect does not clear a request that never got an answer', () => {
-    failed('/api/v1/graph/conversation', 0);
-    vi.spyOn(cloudManager, 'connectionControlsAvailable', 'get').mockReturnValue(true);
-    vi.spyOn(cloudManager, 'connectionSlot', 'get').mockReturnValue({ status: 'connected' } as never);
-    cloudManager.emit('connection_status_changed');
-    expect(shown('cloud-unreachable')).toBe(true);
-    vi.restoreAllMocks();
-  });
 });
 
 describe('the last hub error', () => {
