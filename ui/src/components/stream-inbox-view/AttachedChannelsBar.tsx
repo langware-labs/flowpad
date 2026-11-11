@@ -173,6 +173,9 @@ interface Props {
   /** Where there is no list to narrow, a mark press goes here with the channel's key instead of
    *  toggling the filter — the caller opens the owner's stream inbox on that channel. */
   onMarkPress?: (key: string) => void;
+  /** Told when the bar's add dialog opens and closes: a caller that swaps this bar out once a source
+   *  exists keeps it mounted until then, or the dialog dies before it can hand over to setup. */
+  onAddingChange?: (open: boolean) => void;
   className?: string;
 }
 
@@ -187,12 +190,17 @@ export function AttachedChannelsBar({
   selected = NO_SELECTION,
   onSelectedChange,
   onMarkPress,
+  onAddingChange,
   className,
 }: Props) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   // The add dialog, and the channel it opens on when an offer was pressed.
   const [adding, setAdding] = useState<{ initial?: DataDriver } | null>(null);
+  const addingOpen = adding !== null;
+  useEffect(() => {
+    onAddingChange?.(addingOpen);
+  }, [addingOpen, onAddingChange]);
   const { deleting, setDeleting, remove, confirm } = useSourceDelete();
   const filtering = selected.size > 0;
   const groups = useMemo(() => groupChannels(rows), [rows]);
