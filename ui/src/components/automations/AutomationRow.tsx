@@ -57,9 +57,34 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
       }
     >
       <IfThenLine when={sentence.when} then={sentence.then} />
+      <Life automation={a} />
       {project}
       <Problem automation={a} />
     </LineShell>
+  );
+}
+
+/** Where the rule stands in its own life: "ran 2 of 4 · until 08:39" while it runs, "Done · ran 4" once it ended. */
+function Life({ automation: a }: { automation: AutomationSummary }) {
+  const { t, i18n } = useLingui();
+  const runs = a.fires ?? 0;
+  const until = a.until ? new Intl.DateTimeFormat(i18n.locale || undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(a.until)) : '';
+  let text = '';
+  if (a.status === 'done') text = t`Done · ran ${runs}`;
+  else if (a.status === 'expired') text = t`Ended · ran ${runs}`;
+  else if (a.status === 'cancelled') text = t`Cancelled · ran ${runs}`;
+  else if (a.max_runs) text = until ? t`ran ${runs} of ${a.max_runs} · until ${until}` : t`ran ${runs} of ${a.max_runs}`;
+  else if (until) text = t`ran ${runs} · until ${until}`;
+  if (!text) return null;
+  const ended = a.status === 'done' || a.status === 'expired' || a.status === 'cancelled';
+  return (
+    <span
+      data-testid={`automation-life-${a.id}`}
+      data-status={a.status}
+      className={`shrink-0 whitespace-nowrap text-xs tabular-nums ${ended ? 'text-muted-foreground' : 'text-foreground/80'}`}
+    >
+      {text}
+    </span>
   );
 }
 

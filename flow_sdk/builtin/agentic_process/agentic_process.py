@@ -2891,11 +2891,18 @@ class AgenticProcess(Entity):
         """GET /graph/agentic_process/<id>/scheduled-prompts — the callbacks this session has waiting."""
         from flow_sdk.builtin.trigger import pending_callbacks  # noqa: PLC0415
 
-        return ApiSuccessResponse(data=[
-            {"id": t.id, "name": t.name, "at": t.expr,
-             "prompt": next((a.prompt for a in t.actions if a.prompt), "")}
-            for t in await pending_callbacks(self)
-        ])
+        from flow_sdk.automations import lifecycle  # noqa: PLC0415
+
+        def _row(t) -> dict:
+            repeats = t.sched_trigger_type in ("interval", "cron")
+            return {"id": t.id, "name": t.name, "prompt": next((a.prompt for a in t.actions if a.prompt), ""),
+                    "status": lifecycle.status(t), "runs": int(t.counter or 0), "max_runs": lifecycle.run_limit(t),
+                    "next": t.next_run.isoformat() if t.next_run else None,
+                    "until": t.expires_at.isoformat() if t.expires_at else None,
+                    **({"every": t.expr} if repeats else {"at": t.expr} if t.sched_trigger_type == "date" else {}),
+                    **({"awaits_reply": t.awaits_reply} if t.awaits_reply else {})}
+
+        return ApiSuccessResponse(data=[_row(t) for t in await pending_callbacks(self)])
 
     @action.post(action_name="drain-queue")
     async def _drain_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:

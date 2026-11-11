@@ -300,6 +300,10 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         if not await runs_here(entity):
             await disarm_trigger(trigger_id)
             return
+        from flow_sdk.automations.lifecycle import may_run  # noqa: PLC0415
+
+        if not await may_run(entity):
+            return
         await run_schedule_fire(entity, None, is_test=False)
     except Exception:
         logger.exception("Schedule trigger fire error for %s", trigger_id)
@@ -316,7 +320,9 @@ async def pending_callbacks(process: Any) -> list["Trigger"]:
     from flow_sdk.db.drivers.query import ExpressionNode, QueryOp  # noqa: PLC0415
 
     rows = await Trigger.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids])))
-    return [t for t in rows if t.calls_back(process) and not t.last_run]
+    from flow_sdk.automations.lifecycle import status  # noqa: PLC0415
+
+    return [t for t in rows if t.calls_back(process) and status(t) in ("active", "off")]
 
 
 async def drop_callbacks(process: Any) -> None:
@@ -474,6 +480,15 @@ class Trigger(ProjectedFields, Entity):
     #: What it does, as a WIZARD (`trigger.then`): a ref, inline steps, or the run_agent / run_script sugar.
     #: Runs instead of `actions` when set.
     then: Optional[dict[str, Any]] = APIField(None, description="What runs on a fire, as a wizard: {ref} | {steps, ops} | {run_agent} | {run_script}.")
+    #: A session waiting for the reply to one message (``flow conversation send --on-reply``): the
+    #: message, ``flow_message-<id>``. Row-only, like every callback (builtin/reply_callbacks.py).
+    awaits_reply: Optional[str] = APIField(None, description="The message (flow_message-<id>) whose reply fires this rule (TAG only).")
+    #: After this the rule never fires; an unanswered reply wait posts that it was cancelled.
+    expires_at: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="When the rule stops by itself.")
+    #: Its life (automations/lifecycle.py): at most this many real runs; when and why it ended.
+    max_runs: Optional[int] = APIField(None, description="It ends after this many real runs. Empty = no limit.")
+    ended_at: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="When it ended by itself or was cancelled.")
+    ended_reason: Optional[str] = APIField(None, persist=Persist.TRUE, description="max_runs | expired | cancelled")
 
     _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = []
@@ -697,8 +712,13 @@ class Trigger(ProjectedFields, Entity):
         be saved, in words — or None (also for a rule that is not a callback)."""
         if not self.calls_back():
             return None
-        if self.trigger_type != TriggerType.SCHEDULE or (self.sched_trigger_type or "cron") != "date":
-            return "A callback into a session runs once, at a set time."
+        waits_for_reply = self.trigger_type == TriggerType.TAG and bool(self.awaits_reply)
+        one_shot = self.trigger_type == TriggerType.SCHEDULE and (self.sched_trigger_type or "cron") == "date"
+        repeats = self.trigger_type == TriggerType.SCHEDULE and not one_shot
+        if repeats and not (self.max_runs or self.expires_at):
+            return "A repeating callback needs an end: a number of runs or an end time."
+        if not (waits_for_reply or one_shot or repeats):
+            return "A callback into a session runs at a set time, on a repeat with an end, or when a message is answered."
         process = await self.target_process()
         if process is None:
             return "The session to call back does not exist."
@@ -855,6 +875,14 @@ class Trigger(ProjectedFields, Entity):
         await arm_trigger(entity, replace=True)
 
         return ApiSuccessResponse(data=entity)
+
+    @core_action.post(action_name="cancel")
+    async def cancel_action(self, request: Request) -> ApiResponse:
+        """POST /graph/trigger/<id>/cancel — end it now (status ``cancelled``); the row and its runs stay."""
+        from flow_sdk.automations.lifecycle import end, status  # noqa: PLC0415
+
+        await end(self, "cancelled")
+        return ApiSuccessResponse(data={"id": self.id, "status": status(self)})
 
     @core_action.all(action_name="update")
     async def update_action(self, request: Request) -> ApiResponse:
@@ -1555,3 +1583,7 @@ def _project_setup_changed(trigger: Trigger) -> None:
     from flow_sdk.core.project_status import SETUP, mark_stale  # noqa: PLC0415
 
     mark_stale(str(trigger.project_id), [SETUP])
+
+
+# A reply wait says when it ended unanswered: its on-end hook registers on import (automations/lifecycle.on_end).
+import flow_sdk.builtin.reply_callbacks  # noqa: E402, F401

@@ -244,6 +244,17 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
     # recorded rather than silently dropped: "the rule is armed, the event
     # matched, and nothing happened" is the single most confusing non-fire in
     # the design, which is exactly what Automations › Runs exists to explain.
+    from flow_sdk.automations.lifecycle import may_run  # noqa: PLC0415
+
+    if not await may_run(trigger):
+        return  # ended (or just ended): its life is over, not a declined fire
+    if trigger.awaits_reply:
+        # A session waiting for a reply: every other message in the conversation passes silently.
+        from flow_sdk.builtin import reply_callbacks  # noqa: PLC0415
+
+        if not await reply_callbacks.is_reply(trigger, reply_callbacks.reply_of(event)):
+            return
+
     if trigger.fire_once and trigger.counter >= 1:
         _suppressed(trigger, "already_fired",
                     f"rule is fire-once and already fired at {trigger.last_run}", event)

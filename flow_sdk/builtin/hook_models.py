@@ -480,13 +480,27 @@ async def _finish_agent_run(process: Any) -> None:
         _log.exception("RUN_AGENT: could not finish run %s", getattr(process, "id", "?"))
 
 
-def callback_text(trigger_id: str, prompt: str) -> str:
-    """What a session reads when a trigger it set calls it back, as one line."""
+def callback_text(trigger_id: str, prompt: str, repeat: str = "") -> str:
+    """What a session reads when a trigger it set calls it back, as one line. ``repeat`` says where a
+    repeating one stands ("run 2 of 3, every 10m"), so the session does not schedule it again."""
+    where = f" ({repeat} — it repeats by itself; do not schedule it again)" if repeat else ""
     return (
-        f"This is trigger {trigger_id} callback: {' '.join(prompt.split())} "
+        f"This is trigger {trigger_id} callback{where}: {' '.join(prompt.split())} "
         "(You set this earlier in this session. Before acting, check it is still relevant and still "
         "makes sense; if it is not, say so in one line and do nothing else.)"
     )
+
+
+def _repeat_words(trigger: Any) -> str:
+    """"run 2 of 3, every 10s" for a repeating schedule; "" for anything that runs once."""
+    from flow_sdk.automations.lifecycle import run_limit  # noqa: PLC0415
+
+    limit = run_limit(trigger)
+    if limit == 1 or str(getattr(trigger, "trigger_type", "")) != "schedule":
+        return ""
+    run = f"run {trigger.counter or 0}" + (f" of {limit}" if limit else "")
+    every = f"every {trigger.expr}" if trigger.sched_trigger_type == "interval" else f"on {trigger.expr}"
+    return f"{run}, {every}"
 
 
 class PromptProcessActionHandler(TriggerActionHandler):
@@ -502,6 +516,7 @@ class PromptProcessActionHandler(TriggerActionHandler):
         trigger: Any,
         action: Optional["TriggerAction"] = None,
         changes: Optional[list["ChangeEvent"]] = None,
+        event: Any = None,
     ) -> Any:
         from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
 
@@ -511,9 +526,12 @@ class PromptProcessActionHandler(TriggerActionHandler):
         process = await trigger.target_process()
         if process is None:
             return PromptResult.not_found("The session this was set from no longer exists.")
-        return await process.deliver_when_idle(
-            callback_text(str(getattr(trigger, "id", "") or ""), prompt), source="trigger"
-        )
+        text = callback_text(str(getattr(trigger, "id", "") or ""), prompt, _repeat_words(trigger))
+        if getattr(trigger, "awaits_reply", None):
+            from flow_sdk.builtin.reply_callbacks import reply_text  # noqa: PLC0415
+
+            text = f"{text} {await reply_text(trigger, event)}".strip()
+        return await process.deliver_when_idle(text, source="trigger")
 
 
 _ACTION_HANDLERS: dict[ActionType, TriggerActionHandler] = {

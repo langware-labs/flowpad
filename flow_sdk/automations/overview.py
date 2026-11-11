@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from flow_sdk.automations import lifecycle
 from flow_sdk.schema.data_spec.automation_spec import (
     LOCAL_PLACE,
     AutomationGroup,
@@ -152,6 +153,12 @@ async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = Non
         agent_type_id=agent_of(trigger),
         parent_type_id=parent,
         parent_name=await names.name(parent) if parent and names is not None else None,
+        status=lifecycle.status(trigger),
+        max_runs=lifecycle.run_limit(trigger),
+        runs_left=lifecycle.runs_left(trigger),
+        until=trigger.expires_at.isoformat() if trigger.expires_at else None,
+        ended_at=trigger.ended_at.isoformat() if trigger.ended_at else None,
+        ended_reason=trigger.ended_reason,
     )
 
 
