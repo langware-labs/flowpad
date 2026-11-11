@@ -78,8 +78,8 @@ The single source of truth is the per-instance file `~/.flow/instances/<name>/to
 ```
 
 - **`enabled`** — the master switch. When `false`, every `log()` is a no-op regardless of tags.
-- **`filter`** — `tag → bool`. A tag is *on* when present and truthy. **Everything is off by
-  default** (empty filter).
+- **`filter`** — `tag → bool`. A tag is *on* when present and truthy. On a fresh boot the filter holds
+  only `DEFAULT_ON_TAGS` (`flow_show`); everything else is off.
 - **`persist`** — optional. Absent/false means the state does **not** survive a backend restart.
 
 You can edit this file by hand; the change is picked up live (see the watcher below).
@@ -87,7 +87,7 @@ You can edit this file by hand; the change is picked up live (see the watcher be
 ### Restart resets tracing (unless `persist`)
 
 Tracing is a per-debug-session state, so on every backend boot `seed_file()` resets the file to
-`{"enabled": <toplog_enabled>, "filter": {}}` — no tags, master switch back to the
+`{"enabled": <toplog_enabled>, "filter": {<DEFAULT_ON_TAGS>}}` — only the default tags, master switch back to the
 `toplog_enabled` instance setting (`flow_sdk/instance_settings/base_settings.py`: **ON for the `dev`
 instance, OFF everywhere else**). While the backend runs, the file is authority and runtime
 `enable()/disable()/on()/off()` mutate it.

@@ -83,6 +83,13 @@ The registry is every `### <tag>` heading below. Add entries in this format:
 - **Use for:** "sending a message takes seconds" — with `hub` on, a send reads as: `hub http POST /…/conversation`, `/members`, `hub ws add_message`, then this line. Big `hub` lines are the hub (compare with the LB `httpRequest.latency` to split network from server); a big `materialize`/`reread` is local; small steps far apart in time mean the loop was busy between them — add `loop_stall`.
 - **Verified 2026-11-03** on tlog-1 → tlog-2 (local hub): 1 line per send (materialize 609–840ms, reread 16–201ms over 3 sends); tag off: 0 new lines.
 
+### flow_show
+- **On by default** (`DEFAULT_ON_TAGS` in `flow_sdk/toplog.py`; still gated by the master switch, which is off outside `dev`).
+- **Traces:** every `flow show` (and every link click resolved by a process): `show request` — who (`process`, `name`, `worker`, `project`), how (`via=cli|link-click`), what (`target`), why (`why=` from `flow show --why "…"`), context (`page` the user is on, `last_shown`); then `show done kind= verdict=` or `show not_found error=`. The log timestamp is the "when".
+- **Where:** `flow_sdk/builtin/agentic_process/agentic_process.py` (`_http_show`, `_log_show_request`, `_show_answer`); `--why` in `flow_sdk/cli/commands/show_cmd.py`.
+- **Use for:** "a tab opened by itself", "who showed this", a show that landed on the wrong page, a show that silently did nothing.
+- **Verified:** unit tests only (2026-11-11); no live instance walk yet.
+
 ### hub
 - **Traces:** every hub hop with its time. HTTP: `http METHOD /path status= ms=` from `HubProxy.send` (every HTTP call to the hub goes through it). WebSocket: `ws <message type> ms=` from `send_request` (a request awaiting its `response_msg`, e.g. `add_message`). `ms` is the round trip seen locally: network + hub server time + any time the local loop took to pick the reply up.
 - **Where:** `flow_sdk/cloud_client/hub_proxy.py` (`HubProxy.send`), `flow_sdk/cloud_client/ws_client.py` (`HubWebSocketClient.send_request`).
