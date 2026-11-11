@@ -6,7 +6,7 @@ Simplified for minihub: uses in-memory tracking instead of database relationship
 from starlette.requests import Request
 
 from flow_sdk.actions import action
-from flow_sdk.app.actions.watch_registry import create_watch, delete_watch, get_watches
+from flow_sdk.app.actions.watch_registry import create_watch, delete_watch, get_watches, watch_chat_list
 from flow_sdk.request_context import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse
 
@@ -27,7 +27,11 @@ async def watch(request: Request):
         if not connection_id:
             return ApiFailResponse(message="connection_id is required")
 
-        return await create_watch(connection_id, request_info.target_entity_typeid)
+        target = request_info.target_entity_typeid
+        # `project/<id>/watch/chats`: that project's chat-history list, one subscription per list.
+        if request_info.sub_path == "chats" and target.type == "project":
+            return await watch_chat_list(connection_id, target.id, on=True)
+        return await create_watch(connection_id, target)
 
     if request.method.lower() == "get":
         return await get_watches(request_info.target_entity_typeid)
@@ -42,4 +46,7 @@ async def unwatch(connection_id: str):
     if request_info is None or request_info.target_entity_typeid is None:
         return ApiFailResponse(message="target not available")
 
-    return await delete_watch(connection_id, request_info.target_entity_typeid)
+    target = request_info.target_entity_typeid
+    if request_info.sub_path == "chats" and target.type == "project":
+        return await watch_chat_list(connection_id, target.id, on=False)
+    return await delete_watch(connection_id, target)

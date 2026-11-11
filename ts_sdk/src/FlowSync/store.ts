@@ -291,6 +291,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   private subscriptions: SubscriptionMap<T> = new SubscriptionMap<T>();
   private _inFlightGets: Map<string, Promise<unknown>> = new Map();
   private watches: WatchMap = new WatchMap();
+  /** Holders per project of its chat-history list subscription (see `watchChatList`). */
+  private chatListWatches = new Map<string, number>();
   /** The `/watch` request open for a key, if any (see `postWatch`). */
   private watchPosts = new TypeIdMap<Promise<void>>();
   private readScope: string | undefined;
@@ -543,6 +545,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // number of holders, and each holder still has its own release to call.
     for (const typeId of Array.from(this.watches.keys())) {
       void this.postWatch(typeId);
+    }
+    for (const projectId of Array.from(this.chatListWatches.keys())) {
+      void this.postChatList(projectId, 'watch');
     }
   }
 
@@ -2286,6 +2291,38 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         this.evictIfUnreferenced(typeId);
       }
     };
+  }
+
+  /**
+   * Subscribe this connection to one project's chat-history list: the backend then sends it the
+   * rename of every process in that project (a lightweight update), with no per-row watch.
+   * Counted per project; the last release unsubscribes.
+   */
+  watchChatList(projectId: string): () => void {
+    const holders = this.chatListWatches.get(projectId) ?? 0;
+    this.chatListWatches.set(projectId, holders + 1);
+    if (holders === 0) void this.postChatList(projectId, 'watch');
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const left = (this.chatListWatches.get(projectId) ?? 1) - 1;
+      if (left > 0) return void this.chatListWatches.set(projectId, left);
+      this.chatListWatches.delete(projectId);
+      void this.postChatList(projectId, 'unwatch');
+    };
+  }
+
+  private async postChatList(projectId: string, action: 'watch' | 'unwatch'): Promise<void> {
+    const connection_manager = ConnectionManager.getInstance();
+    if (!connection_manager.connected) return; // registered again on (re)connect
+    try {
+      await apiClient.post(`${config.API_PREFIXES.graph}/project/${projectId}/${action}/chats`, {
+        connection_id: connection_manager.id,
+      });
+    } catch (e) {
+      console.warn(`[Store] chat list ${action} failed for project ${projectId}:`, e);
+    }
   }
 
   /**
