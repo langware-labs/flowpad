@@ -260,6 +260,11 @@ neither its ID nor its name is a new schema kind.
   `call.py:call`; this does not introduce a `FlowCallBlock` entity or a second
   schema registry. See [typed blocks](snippets/flowcall-blocks.md).
 
+* Annotation has a `subkind` (`note | quick_prompt | comment | prompt | plan | lock_break`,
+  `SUBKINDS` in `flow_sdk/builtin/annotation.py`): how the annotation is read and drawn. It
+  replaced the `labels` markers (`note:`, `comment:`, ...); a row or a peer that still sends
+  those is read once, by the model's own validator.
+
 * Project has a `subkind` (`standard | controller | addon`, `ProjectSubkind` in
   `flow_sdk/schema/data_spec/project_manifest_spec.py`), declared in the project's
   `project_manifest.json` so a clone knows it before anything opens — `standard` is the

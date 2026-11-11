@@ -1,11 +1,11 @@
-import { Annotation, QueryFilter, QueryRequest, TypeId } from '@sdk';
+import { Annotation, ExpressionNode, QueryFilter, QueryRequest, TypeId, type AnnotationSubkind } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { DEFAULT_NOTE_COLOR, type NoteColorToken } from '@src/components/notes/note-palette';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useMemo } from 'react';
 
 /**
- * Sticky notes are `Annotation` rows labelled `note:`, pointing at the entity
+ * Sticky notes are `Annotation` rows of subkind `note`, pointing at the entity
  * they sit on through `target_type` / `target_id`; `data.color` is a note
  * palette token, `data.name` the entity's name and `data.dock` the tab's
  * `DockPointer` JSON when the note was written — what "Open" goes back to, the
@@ -16,7 +16,8 @@ import { useMemo } from 'react';
  * The hub has no `annotation` entity, so notes are off in hub mode — the same
  * rule bookmarks follow.
  */
-export const NOTE_LABEL = 'note:';
+/** A quick prompt is a note too, so both subkinds are notes. */
+export const NOTE_SUBKINDS: readonly AnnotationSubkind[] = ['note', 'quick_prompt'];
 
 /** Where a note sits: the entity, its name and the view it was written on. */
 export interface NoteTarget {
@@ -28,7 +29,7 @@ export interface NoteTarget {
 /** The notes among `annotations`, newest first — the first one colours the tab badge. */
 export function notesOf(annotations: readonly Annotation[]): Annotation[] {
   return annotations
-    .filter((a) => a.labels?.includes(NOTE_LABEL))
+    .filter((a) => !!a.subkind && NOTE_SUBKINDS.includes(a.subkind))
     .sort((a, b) => noteTime(b).localeCompare(noteTime(a)));
 }
 
@@ -63,10 +64,10 @@ export function newNote(
   target: NoteTarget,
   content: string,
   color: NoteColorToken = DEFAULT_NOTE_COLOR,
-  extra: { labels?: string[]; data?: Record<string, unknown> } = {},
+  extra: { subkind?: AnnotationSubkind; data?: Record<string, unknown> } = {},
 ): Annotation {
   return new Annotation({
-    labels: [NOTE_LABEL, ...(extra.labels ?? [])],
+    subkind: extra.subkind ?? 'note',
     target_type: target.typeId.type,
     target_id: target.typeId.id,
     content,
@@ -93,7 +94,7 @@ export async function deleteNote(note: Annotation): Promise<void> {
   await note.delete();
 }
 
-/** Every note, on any entity, newest first. The label is matched on the server, so other annotations
+/** Every note, on any entity, newest first. The subkind is matched on the server, so other annotations
  *  (terminal comments, lock flags) never come down. */
 export function useAllNotes(enabled = true): Annotation[] {
   const request = useMemo(
@@ -101,7 +102,7 @@ export function useAllNotes(enabled = true): Annotation[] {
       new QueryRequest({
         type: Annotation.type,
         scope: [],
-        query: new QueryFilter({ match: { op: '$LIKE', operands: ['labels', NOTE_LABEL] } }),
+        query: new QueryFilter({ match: new ExpressionNode({ op: '$IN', operands: ['subkind', [...NOTE_SUBKINDS]] }) }),
         name: 'allNotes',
       }),
     [],
@@ -111,12 +112,10 @@ export function useAllNotes(enabled = true): Annotation[] {
 }
 
 /**
- * Quick prompts are notes too — labelled `quick-prompt:` as well as `note:`, so they keep every note
+ * Quick prompts are notes too — subkind `quick_prompt` counts as a note, so they keep every note
  * behaviour. Scope is the target: the user (`Mine`, every project) or the project. `data.last_used_at`
  * orders the list; a click or a "save last prompt" stamps it.
  */
-export const QUICK_PROMPT_LABEL = 'quick-prompt:';
-
 export interface QuickPromptOwners {
   userId?: string | null;
   projectId?: string | null;
@@ -133,7 +132,7 @@ export function quickPromptsFor(annotations: readonly Annotation[], owners: Quic
   return annotations
     .filter((a) => {
       const id = a.target_type ? ownerOf[a.target_type] : null;
-      return !!id && a.target_id === id && a.labels?.includes(QUICK_PROMPT_LABEL);
+      return !!id && a.target_id === id && a.subkind === 'quick_prompt';
     })
     .sort((a, b) => quickPromptTime(b).localeCompare(quickPromptTime(a)));
 }
@@ -144,14 +143,14 @@ export async function addQuickPrompt(
 ): Promise<void> {
   const target = { typeId: new TypeId(owner.type, owner.id), name: owner.name };
   const used = { last_used_at: new Date().toISOString() };
-  await newNote(target, content, DEFAULT_NOTE_COLOR, { labels: [QUICK_PROMPT_LABEL], data: used }).save([]);
+  await newNote(target, content, DEFAULT_NOTE_COLOR, { subkind: 'quick_prompt', data: used }).save([]);
 }
 
 export async function touchQuickPrompt(note: Annotation): Promise<void> {
   await saveNote(note, { data: { last_used_at: new Date().toISOString() } });
 }
 
-/** Quick prompts carry `note:`, so they ride the one notes query — no second subscription. */
+/** Quick prompts are notes, so they ride the one notes query — no second subscription. */
 export function useQuickPrompts(owners: QuickPromptOwners, enabled = true): Annotation[] {
   const notes = useAllNotes(enabled);
   return useMemo(() => quickPromptsFor(notes, owners), [notes, owners.userId, owners.projectId]);

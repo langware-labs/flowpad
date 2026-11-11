@@ -44,6 +44,7 @@ import {
   type AutomationDraft,
 } from './automation-draft';
 import { RunsOnPicker } from '@src/components/assets/editor/agent-profile/RunsOnPicker';
+import { usePlaceBadge } from '@src/components/assets/editor/agent-profile/use-place-display';
 import { isMove, type RunsOn } from '@src/components/assets/editor/agent-profile/runs-on';
 import { useAgentPlaces } from '@src/components/assets/editor/agent-profile/use-agent-places';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
@@ -51,6 +52,7 @@ import { useContext } from '@src/hooks/useContext';
 import { canSwitch } from './AutomationRow';
 import { recipeById } from './automation-recipes';
 import { sentenceText, useAutomationWords } from './automation-words';
+import { localZone } from './time-zone';
 import type { AutomationsRoute } from './automations-pointer';
 import { ThenBlock } from './blocks/ThenBlock';
 import { Advanced, Block, WhenBlock } from './blocks/WhenBlock';
@@ -59,7 +61,7 @@ import { RunsList } from './RunsList';
 import { TestPanel } from './TestPanel';
 import { definitionFile, useAutomationOpen } from './use-automation-open';
 import { MessageRulePage } from './MessageRulePage';
-import { ThenSteps } from './ThenSteps';
+import { ThenLine, ThenSteps } from './ThenSteps';
 
 /** One automation's page. Which page depends on the rule, and an existing rule's kind is only known once its
  *  row is read — so nothing kind-specific (the general page's polling list subscription among it) mounts first. */
@@ -89,7 +91,7 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
   const triggerQuery = useAutomationTrigger(triggerId);
   const projectId = useContext().project?.id ?? null;
   const cloudGate = useCloudLoginGate();
-  const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
+  const timezone = localZone();
   const save = useSaveAutomation();
   const remove = useDeleteAutomation();
   const setEnabled = useSetAutomationEnabled();
@@ -381,7 +383,8 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">
           <div className="grid gap-5 px-6 py-5 lg:grid-cols-[minmax(0,3fr)_minmax(16rem,2fr)]">
-            <div className="flex min-w-0 flex-col gap-4">
+            {/* `key`: each rule gets its own folded / unfolded blocks. */}
+            <div key={loadKey} className="flex min-w-0 flex-col gap-4">
               {readOnly && (
                 <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                   <Trans>Flowpad runs this one itself. You can check it, run it and see its runs, not change it.</Trans>
@@ -397,19 +400,41 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
                   ))}
                 </ul>
               )}
-              <WhenBlock draft={draft} onChange={setDraft} readOnly={readOnly || isRuleFolder} />
+              <WhenBlock
+                draft={draft}
+                onChange={setDraft}
+                readOnly={readOnly || isRuleFolder}
+                summary={automation ? words.when(automation.when) : undefined}
+                defaultOpen={isNew}
+              />
               {draft.kind === 'schedule' && !readOnly && (
-                <RunsOnBlock draft={draft} onChange={setDraft} saved={isNew ? null : (loaded?.base.runsOn ?? null)} />
+                <RunsOnBlock
+                  draft={draft}
+                  onChange={setDraft}
+                  saved={isNew ? null : (loaded?.base.runsOn ?? null)}
+                  defaultOpen={isNew}
+                />
               )}
               {isRuleFolder ? (
                 <RuleCodeBlock triggerId={triggerId as string} />
               ) : readOnly && automation ? (
                 // Nothing to edit: say what it does, and let each step be opened.
-                <Block testId="automation-then" title={<Trans>Then</Trans>}>
+                <Block
+                  testId="automation-then"
+                  title={<Trans>Then</Trans>}
+                  summary={<ThenLine steps={automation.then} />}
+                  defaultOpen={false}
+                >
                   <ThenSteps steps={automation.then} />
                 </Block>
               ) : (
-                <ThenBlock draft={draft} onChange={setDraft} readOnly={readOnly} savedThen={automation?.then} />
+                <ThenBlock
+                  draft={draft}
+                  onChange={setDraft}
+                  readOnly={readOnly}
+                  savedThen={automation?.then}
+                  defaultOpen={isNew}
+                />
               )}
               <Block testId="automation-advanced" title={<Trans>More</Trans>}>
                 <Advanced testId="automation-advanced-toggle">
@@ -643,16 +668,31 @@ function RunsOnBlock({
   draft,
   onChange,
   saved,
+  defaultOpen,
 }: {
   draft: AutomationDraft;
   onChange: (next: AutomationDraft) => void;
   saved: RunsOn | null;
+  defaultOpen: boolean;
 }) {
   const { data: agents = [] } = useRunnableAgents();
   const agent = agents.find((a) => `agent-${a.id}` === draft.then.agentTypeId || a.id === draft.then.agentTypeId);
   const { places } = useAgentPlaces(draft.then.choice === 'run_agent' ? agent : null);
+  const badge = usePlaceBadge(places ?? []);
   return (
-    <Block testId="automation-runs-on" title={<Trans>Where</Trans>}>
+    <Block
+      testId="automation-runs-on"
+      title={<Trans>Where</Trans>}
+      summary={
+        defaultOpen
+          ? undefined
+          : badge({
+              kind: draft.runsOn.kind,
+              deployment_id: draft.runsOn.kind === 'cloud_machine' ? draft.runsOn.deploymentId : undefined,
+            }).label
+      }
+      defaultOpen={defaultOpen}
+    >
       <RunsOnPicker
         value={draft.runsOn}
         onChange={(runsOn) => onChange({ ...draft, runsOn })}

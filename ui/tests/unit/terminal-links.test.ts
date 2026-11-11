@@ -216,6 +216,18 @@ describe('terminal links', () => {
     return terminal;
   }
 
+  it('keeps the space of a path a TUI word-wrapped at a space in a folder name', async () => {
+    const path = '/Users/alice/Flowpad workspace/ai-course/class-4-report.html';
+    const first = `● The report is open in a new tab next to this session. The file is ${path.slice(0, 20)}`;
+    const terminal = await drawn(first.length + 6, [first, `  ${path.slice(21)}.`, '', '✻ Worked for 8s']);
+    try {
+      expect(linkAtCell(terminal as unknown as Terminal, first.length - 3, 1)).toBe(path);
+      expect(linkAtCell(terminal as unknown as Terminal, 10, 2)).toBe(path);
+    } finally {
+      terminal.dispose();
+    }
+  });
+
   it('joins a path a fullscreen TUI broke across rows after the terminal was narrowed', async () => {
     const path = '/private/tmp/claude-501/43be7b79-ac3c/scratchpad/memory_todo.md';
     const terminal = new HeadlessTerminal({ cols: 42, rows: 8, allowProposedApi: true });

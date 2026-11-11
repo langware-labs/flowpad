@@ -66,12 +66,19 @@ import { AutomationMessageActions } from './AutomationMessageActions';
 import { DiagnosisMessageActions } from './DiagnosisMessageActions';
 import { HelpRequestLine } from './HelpRequestLine';
 import { ItReplyLine } from './ItReplyLine';
+import { ItSendTable } from './ItSendTable';
+import type { ItSend } from './it-sends';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
 import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
-import { participantLabelByUserId, personName, unresolvedSenderLabel, warnUnresolvedSender } from './participant-display';
+import {
+  participantLabelByUserId,
+  personName,
+  unresolvedSenderLabel,
+  warnUnresolvedSender,
+} from './participant-display';
 import { useAttachments, type AttachmentTypeChipView } from './useAttachments';
 import { AttachmentDownloadWarning } from './AttachmentDownloadWarning';
 import { dockPointerForLocalFile } from './attachment-url';
@@ -92,6 +99,11 @@ import { FormAnswersCard } from './FormAnswersCard';
 import type { AnswersEntry, MessageForm } from './message-form';
 import type { ProcessCall, ReturnedValue } from '@sdk';
 import { messageDirection } from './message-direction';
+
+/** How long a sender may delete their own message on a hub conversation — the backend's
+ *  `OWN_MESSAGE_DELETE_WINDOW`; the hub enforces it. */
+const OWN_MESSAGE_DELETE_WINDOW_MS = 15 * 60 * 1000;
+const NO_IDS: ReadonlyArray<string> = [];
 
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
@@ -207,12 +219,15 @@ interface FlowMessageBubbleProps {
   /** Click on the bubble fires this so the parent can mark this message selected. */
   onSelect?: () => void;
   /** True when the local user owns the parent conversation (initiated_by). The
-   *  conversation owner may delete ANY message; everyone may delete their own.
-   *  Together with `isCurrentUser` this gates the delete affordance. */
+   *  conversation owner may delete ANY message, at any time. */
   isConversationOwner?: boolean;
-  /** Delete this message everywhere. The bubble only wires it through when the
-   *  local user is allowed (sender of this message OR conversation owner). */
+  /** Delete this message everywhere. The bubble only wires it through when the local user is
+   *  allowed: the conversation owner, or the message's sender for `OWN_MESSAGE_DELETE_WINDOW_MS`. */
   onDeleteMessage?: (messageId: string) => void;
+  /** The conversation lives on the hub, so a delete removes the message for everyone in it. */
+  deleteForEveryone?: boolean;
+  /** Every id this account sends under (cloud user, local user) — the backend's `User.self_ids`. */
+  selfIds?: ReadonlyArray<string | null | undefined>;
   participants?: ConversationParticipant[];
   /** True once the parent has resolved the canonical hub roster (success
    *  OR explicit failure). The bubble only escalates to the UNRESOLVED
@@ -265,6 +280,8 @@ interface FlowMessageBubbleProps {
   /** The answers this message carries; `latest`: the newest for its form. */
   formAnswers?: { entry: AnswersEntry; form: MessageForm | null; latest: boolean } | null;
   promptCall?: { call: ProcessCall; answer: ReturnedValue | null; running: boolean } | null;
+  /** An IT request's send: each machine's answer to it, drawn as a table under the request. */
+  itSend?: ItSend | null;
   /** The conversation's other participant — the machine a prompt call I send runs on. */
   callPeerName?: string | null;
   /** Same sender as the bubble above, moments later — drawn without avatar and name. */
@@ -288,6 +305,8 @@ export function FlowMessageBubble({
   onSelect,
   isConversationOwner = false,
   onDeleteMessage,
+  deleteForEveryone = false,
+  selfIds = NO_IDS,
   participants,
   rosterReady = false,
   isHelpdesk = false,
@@ -299,6 +318,7 @@ export function FlowMessageBubble({
   taskPeople,
   onLaunchWorker,
   promptCall = null,
+  itSend = null,
   messageForm = null,
   formAnswers = null,
   callPeerName = null,
@@ -477,6 +497,12 @@ export function FlowMessageBubble({
     cloudUserId: viewerCloudUserId,
     localUserId: localUser?.id ?? null,
   });
+  // The conversation owner deletes any message; its sender, their own — on a hub conversation only
+  // while it is fresh. `selfIds`, not `isCurrentUser`: a message a channel projected as ours names
+  // the backend's local user, which `localUser` is not while signed in.
+  const sentByMe = isCurrentUser || (!!fm.sender_id && selfIds.includes(fm.sender_id));
+  const fresh = Date.now() - new Date(fm.occurredAt ?? 0).getTime() < OWN_MESSAGE_DELETE_WINDOW_MS;
+  const canDelete = isConversationOwner || (sentByMe && (!deleteForEveryone || fresh));
   const hasCreator = !!(creator?.name?.trim() || creator?.email?.trim());
   const creatorLabel = !creatorIsLocalArtifact && hasCreator ? personName(creator) : null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
@@ -805,6 +831,7 @@ export function FlowMessageBubble({
       {fm.it_reply && (
         <ItReplyLine reply={fm.it_reply} agentId={fm.sender_id ?? ''} conversationId={fm.conversation_id ?? ''} />
       )}
+      {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
       {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {fm.kind === FlowMessageKind.AUTOMATION_RESULT && (
@@ -871,9 +898,8 @@ export function FlowMessageBubble({
               }
             : undefined
         }
-        onDeleteMessage={
-          onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
-        }
+        onDeleteMessage={onDeleteMessage && canDelete ? () => onDeleteMessage(messageId) : undefined}
+        deleteLocalCopyOnly={!!fm.origin && !deleteForEveryone}
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
         onLaunchWorker={onLaunchWorker && !fm.is_draft ? (worker) => onLaunchWorker(messageId, worker) : undefined}
         messageSession={
@@ -1114,7 +1140,12 @@ function ProjectMessageChip({
 function LocalAttachmentChip({
   localPath,
   ...chip
-}: { url: string; filename: string; state?: AttachmentChipState; localPath: string | null }) {
+}: {
+  url: string;
+  filename: string;
+  state?: AttachmentChipState;
+  localPath: string | null;
+}) {
   const { navigation } = useDockNavigation();
   return (
     <AttachmentChip
@@ -1150,7 +1181,9 @@ export function MessageEntityChip({
   const { run: openGitShare } = useOpenGitShare(attachment, projectId);
   const [openOutcome, setOpenOutcome] = useState<OpenShareOutcome | null>(null);
 
-  const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
+  // Installed here, the asset may answer to its own id (a webapp or a document is keyed on its path).
+  const hereTypeId = (attachment?.installed && attachment.localTypeId) || typeId;
+  const { data, notFound, isError } = useEntity<AnyEntity>(hereTypeId);
   // A project the message staged (its bundle carried it) is an ordinary
   // attachment chip below. A project reference with no staged attachment — an
   // invite sent before projects rode the bundle — keeps the project chip,
@@ -1309,7 +1342,7 @@ export function MessageEntityChip({
     <>
       <span className="inline-flex items-center gap-1">
         <ContextEntityChip
-          typeId={typeId}
+          typeId={hereTypeId}
           inside={{ type: 'conversation', id: conversationId }}
           onClick={
             artifactData

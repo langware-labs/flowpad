@@ -5,6 +5,7 @@ from pydantic import field_validator
 
 from flow_sdk.schema.data_spec import FrontMatter
 from flow_sdk.schema.data_spec.io.native import Text
+from flow_sdk.tags.grammar import to_tags
 
 
 class MarkdownSpec(FrontMatter):
@@ -24,9 +25,7 @@ class MarkdownSpec(FrontMatter):
     @field_validator("tags", mode="before")
     @classmethod
     def _tags_list(cls, value: Any) -> Any:
-        if isinstance(value, str):
-            return [t.strip() for t in value.split(",") if t.strip()]
-        return value
+        return None if value is None else to_tags(value)
 
 
 class ClaudeMdSpec(FrontMatter):

@@ -22,6 +22,8 @@ from flow_sdk.tags.grammar import (
     tag_pattern_problem,
     tag_tree,
     namespace_from_name,
+    to_tag,
+    to_tags,
 )
 
 GRAMMAR = json.loads(
@@ -55,6 +57,14 @@ def test_within_contract_cases():
 def test_namespace_contract_cases():
     for case in GRAMMAR["namespace_cases"]:
         assert split_namespace(case["tag"]) == (case["namespace"], case["rest"]), case
+
+
+def test_convert_contract_cases():
+    for case in GRAMMAR["convert_cases"]:
+        assert to_tag(case["raw"]) == case["tag"], case
+    for case in GRAMMAR["convert_list_cases"]:
+        assert to_tags(case["raw"]) == case["tags"], case
+    assert to_tag(None) is None and to_tags(None) == []
 
 
 def test_within_never_raises_on_untrusted_input():

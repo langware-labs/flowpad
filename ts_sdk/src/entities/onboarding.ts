@@ -39,7 +39,8 @@ export interface ChannelSetupBody {
   source: string;
   config?: Record<string, unknown>;
   access?: { open_to_all?: boolean; allowed_senders?: string[] };
-  credential?: { name: string; values: Record<string, string> };
+  /** `choice` names the credential's way when that way holds no value: a sign-in (`signin`). */
+  credential?: { name: string; values: Record<string, string>; choice?: string };
   steps?: { step: string; values?: Record<string, string> }[];
   /** Turn off this sandbox's other sources of the same driver (a polled bot is read by one agent only). */
   exclusive?: boolean;
@@ -73,6 +74,11 @@ export const Onboarding = {
   /** A sandbox of the agent's project with the agent as its main agent; answers once it is up and serving it. */
   deploy(projectId: string, agentId: string): Promise<DeployedAgent> {
     return call('deploy', 'project', projectId, 'POST', { provider: 'e2b', main_agent_id: `agent-${agentId}` });
+  },
+
+  /** Remove a deployment and shut its sandbox down (the wizard was left before the agent went live). */
+  removeDeployment(deploymentId: string): Promise<unknown> {
+    return call('', 'deployment', deploymentId, 'DELETE');
   },
 
   /** Set up the agent's channel source on its sandbox (config, who may write, a credential, then verify). */

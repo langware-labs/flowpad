@@ -59,7 +59,7 @@ from pydantic import StringConstraints
 from flow_sdk.builtin.source_item import MessageSpec
 from flow_sdk.sources import http
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.config import Sharing, SourceConfig, config_field
 from flow_sdk.sources.credentials import ResolvedSecrets
 from flow_sdk.sources.errors import (
     AccessDenied,
@@ -181,7 +181,7 @@ class WhatsAppConfig(SourceConfig):
     #: The WhatsApp Business Account the number is in — what the app is subscribed to.
     waba_id: Annotated[str, StringConstraints(strip_whitespace=True)] = ""
     #: The person's own number the test mode was proven on (a Meta test recipient).
-    test_recipient: str = ""
+    test_recipient: str = config_field("", sharing=Sharing.PRIVATE)
     #: Who may drive the owning agent from this number (wa_ids); the row keeps it as allowed_senders.
     allowed_senders: list[Annotated[str, StringConstraints(pattern=r"^[0-9]+$")]] = []
     #: Where Graph is. Empty means Meta's own host; a test names a loopback double. Never a secret.

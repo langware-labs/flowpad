@@ -26,14 +26,16 @@ describe('ChatHistoryRow', () => {
     expect(options).not.toHaveProperty('watch', true);
   });
 
+  // Every row shows its real worker status — no blank gutter; no status known reads as unknown.
   it.each([
-    ['pending_user', true],
-    ['error', true],
-    ['interrupted', true],
-    ['idle', false],
-    ['complete', false],
-    ['inactive', false],
-  ])('status gutter for worker_status=%s', (status, shown) => {
+    ['pending_user', 'pending_user'],
+    ['error', 'error'],
+    ['interrupted', 'interrupted'],
+    ['idle', 'idle'],
+    ['complete', 'complete'],
+    ['inactive', 'inactive'],
+    [undefined, 'unknown'],
+  ])('status gutter for worker_status=%s', (status, key) => {
     const id = '0f2b8a3e-6d1c-4e0a-9b7f-2c5d8e1a4b6c';
     vi.spyOn(AgenticProcess, 'getByIdFromCache').mockReturnValue({ id, name: 'x', workerStatus: status } as never);
     const entry = { worker_type: 'claude', worker_id: 'w', agentic_process_id: id } as WorkerHistoryEntry;
@@ -41,8 +43,19 @@ describe('ChatHistoryRow', () => {
       <ChatHistoryRow entry={entry} selected={false} hasOpenTab onSelect={vi.fn()} onToggleFavorite={vi.fn()} onDelete={vi.fn()} />,
     );
     const gutter = getByTestId('chat-history-row-busy');
-    expect(gutter.dataset.status).toBe(shown ? status : undefined);
-    expect(gutter.querySelector('svg') !== null).toBe(shown);
+    expect(gutter.dataset.status).toBe(key);
+    expect(gutter.querySelector('svg')).not.toBeNull();
+  });
+
+  it('a past session with no process reads as inactive', () => {
+    vi.spyOn(AgenticProcess, 'getByIdFromCache').mockReturnValue(undefined as never);
+    const entry = { worker_type: 'claude', worker_id: 'w', agentic_process_id: null } as WorkerHistoryEntry;
+    const { getByTestId } = render(
+      <ChatHistoryRow entry={entry} selected={false} hasOpenTab onSelect={vi.fn()} onToggleFavorite={vi.fn()} onDelete={vi.fn()} />,
+    );
+    const gutter = getByTestId('chat-history-row-busy');
+    expect(gutter.dataset.status).toBe('inactive');
+    expect(gutter.querySelector('svg')).not.toBeNull();
   });
 
   it('a met goal shows the green check over the worker status', () => {

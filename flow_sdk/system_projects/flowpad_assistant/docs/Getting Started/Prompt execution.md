@@ -35,17 +35,11 @@ through the session view without asking again. **Pause** holds the session —
 new prompts bounce with a visible line until you **Resume**. **Disconnect** ends
 it for good; the sender has to send a fresh prompt to start another.
 
-## Always allow sessions from someone
+## Every session asks you
 
-Ticking **Always allow sessions from {name}** when you approve grants a standing
-permission: their future sessions start approved without asking. By default it
-is scoped to **this project only** — the safest choice — so trust you extend in
-one project doesn't leak into the others. Choose **everywhere** only for a
-sender you fully trust across all your work.
-
-A standing permission is remembered as a per-contact permission. You can review
-or revoke it at any time from the contact's permissions, or from any session's
-header. Revoking returns you to being asked when their next session opens.
+Nothing someone sends you ever runs without your click. Approving a session
+covers that session only: the next session from the same person waits for
+your approval again. There is no setting that approves sessions for you.
 
 ## Replies: auto-send or review
 

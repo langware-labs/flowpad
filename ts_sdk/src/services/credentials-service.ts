@@ -537,11 +537,30 @@ export class CredentialsService {
     return ((await dataManager.callAction<unknown, SealedSent[]>(action)) ?? []) as SealedSent[];
   }
 
-  async sealedFill(conversationId: string, messageId: string, projectId?: string | null): Promise<{ filled: string[]; credential: string }> {
+  /**
+   * Fill a sealed value in. A typed key (no credential behind it) is saved in `place` — a project id or
+   * `'personal'`; `replace` overwrites a value already there.
+   */
+  async sealedFill(
+    conversationId: string,
+    messageId: string,
+    { projectId, place, replace }: { projectId?: string | null; place?: string; replace?: boolean } = {},
+  ): Promise<{ filled: string[]; credential: string }> {
     const action = this.action('sealed/fill', 'POST');
-    action.bodyParameters = projectId ? { conversation_id: conversationId, message_id: messageId, project_id: projectId }
-      : { conversation_id: conversationId, message_id: messageId };
+    action.bodyParameters = {
+      conversation_id: conversationId,
+      message_id: messageId,
+      ...(projectId ? { project_id: projectId } : {}),
+      ...(place ? { place, replace: !!replace } : {}),
+    };
     return (await dataManager.callAction<unknown, { filled: string[]; credential: string }>(action)) as { filled: string[]; credential: string };
+  }
+
+  /** Seal a typed name + key for the conversation's members — no credential needed on this machine. */
+  async sealedSend(conversationId: string, name: string, value: string): Promise<{ sealed_for: string[]; no_key: string[] }> {
+    const action = this.action('sealed/send', 'POST');
+    action.bodyParameters = { conversation_id: conversationId, name, value };
+    return (await dataManager.callAction<unknown, { sealed_for: string[]; no_key: string[] }>(action)) as { sealed_for: string[]; no_key: string[] };
   }
 
   /** "Get the secret": publish this install's key and ask the sender's Flowpad for values promised before it could receive. */
@@ -579,6 +598,8 @@ export interface SealedCard {
   credential_name?: string;
   credential_title?: string;
   variables?: string[];
+  /** A key typed into the send form: no credential behind it — the receiver picks where to save it. */
+  typed?: boolean;
   error?: string;
   /** Once filled: the credential's test, run on this machine right after. */
   test?: CredentialTestState;

@@ -12,6 +12,7 @@ import {
   chipsFor,
   conversationFacets,
   deskChipLabel,
+  isDeskTicket,
   ticketChip,
   ticketState,
   type CategoryInputs,
@@ -245,6 +246,19 @@ describe('ticket chip labels', () => {
     // A source-backed staff row drops the kind chip but keeps the state chip.
     const s = conversationFacets(ticketInputs({ viewerId: STAFF, staffView: true }));
     expect(chipsFor({ ...s, kind: 'direct' }).map((c) => c.key)).toEqual(['ticket-waiting']);
+  });
+  it('a list row of a desk ticket wears its state with no help desk message loaded and no requester id', () => {
+    // What a picked ticket's row is on the staff side: mirrored through the hub, kind and requester unknown.
+    const conv = { channel: 'helpdesk', status: ConversationStatus.CLOSED, members: [], archived_at: null };
+    const row = conv as unknown as Conversation;
+    expect(isDeskTicket(row)).toBe(true);
+    const f = conversationFacets({
+      conv: row,
+      viewer: { email: '', cloudUserId: STAFF, localUserId: null },
+      staffView: isDeskTicket(row) || undefined,
+    });
+    expect(chipsFor(f).map((c) => c.key)).toEqual(['ticket-closed']);
+    expect(isDeskTicket({ channel: 'flowpad' })).toBe(false);
   });
   it('direct conversations have no ticket facet', () => {
     expect(conversationFacets(makeInputs({ latestRead: true })).ticket).toBeUndefined();

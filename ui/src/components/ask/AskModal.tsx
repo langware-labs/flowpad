@@ -93,7 +93,11 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
             <DialogHeader className="pr-6">
               <DialogTitle className="whitespace-pre-line" data-testid="ask-modal-prompt">{bt(question.prompt)}</DialogTitle>
               {question.detail ? (
-                <DialogDescription data-testid="ask-modal-detail">{bt(question.detail)}</DialogDescription>
+                <DialogDescription asChild data-testid="ask-modal-detail">
+                  <div>
+                    <MarkdownView value={bt(question.detail)} compact dataImages />
+                  </div>
+                </DialogDescription>
               ) : null}
             </DialogHeader>
 

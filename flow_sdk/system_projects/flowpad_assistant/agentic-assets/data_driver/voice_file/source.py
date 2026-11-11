@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Optional
 
 from flow_sdk.external_apis.voice import speech
-from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.config import Sharing, SourceConfig, config_field
 from flow_sdk.sources.values.call import CallEvent, IncomingCall
 from flow_sdk.sources.values.items import FileData, MessageItem
 from flow_sdk.sources.voice import VoiceChannel
@@ -32,7 +32,7 @@ REPLY_SUFFIX = ".mp3"
 class VoiceFileConfig(SourceConfig):
     """Where the clips live. Its key is the credential's, never here."""
 
-    folder: str = DEFAULT_FOLDER
+    folder: str = config_field(DEFAULT_FOLDER, sharing=Sharing.PRIVATE)
     voice: str = ""
     #: OpenAI's API root. Empty means OpenAI's own; a test names a loopback double.
     base_url: str = ""

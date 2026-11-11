@@ -527,11 +527,13 @@ def apply_system_filter(
     ]
 
 
+def wanted_tags(raw: str | None) -> list[str]:
+    """The ``tags`` query parameter (a comma list a person typed) as valid tag names."""
+    from flow_sdk.tags.grammar import to_tags  # noqa: PLC0415
+
+    return to_tags(raw or "")
+
+
 def apply_tag_filter(entities: list, tag_list: list[str]) -> list:
-    """Keep entities whose `tags` field contains every tag in `tag_list` (AND)."""
-    if not tag_list:
-        return entities
-    return [
-        e for e in entities
-        if all(t in (getattr(e, "tags", None) or []) for t in tag_list)
-    ]
+    """Keep entities carrying EVERY wanted tag — itself or a tag under it (``crm`` finds ``crm.lead``)."""
+    return [e for e in entities if all(e.has_tag(want) for want in tag_list)] if tag_list else entities

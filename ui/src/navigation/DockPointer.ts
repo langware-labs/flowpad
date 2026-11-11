@@ -257,6 +257,18 @@ export const STREAM_INBOX_VIEW_PARAM = 'view';
 export const STREAM_INBOX_SEARCH_PARAM = 'q';
 /** The stream inbox's picked channel marks — the same `channel` key `forAgentStreamInbox` writes. */
 export const STREAM_INBOX_CHANNEL_PARAM = 'channel';
+/** The stream inbox's header-line column filters: sender text, subject text, date window. They narrow
+ *  the page already shown, so — unlike view / search / channel — changing one keeps `before`. Pairs with
+ *  `streamInboxColumns` / `withStreamInboxColumns()`. */
+export const STREAM_INBOX_FROM_PARAM = 'from';
+export const STREAM_INBOX_SUBJECT_PARAM = 'subject';
+export const STREAM_INBOX_DATE_PARAM = 'date';
+export type StreamInboxDateWindow = 'any' | 'today' | '7d' | '30d';
+export interface StreamInboxColumns {
+  from: string;
+  subject: string;
+  date: StreamInboxDateWindow;
+}
 
 /**
  * URL query-param key carrying the ACTIVE USER JOURNEY across the app. Null by
@@ -711,6 +723,23 @@ export class DockPointer implements IDockPointer {
     if (f.view !== undefined) next = next.withOption(STREAM_INBOX_VIEW_PARAM, f.view === 'all' ? null : f.view);
     if (f.search !== undefined) next = next.withOption(STREAM_INBOX_SEARCH_PARAM, f.search || null);
     return next;
+  }
+
+  /** The stream inbox's column filters; '' / 'any' where the URL names none. */
+  get streamInboxColumns(): StreamInboxColumns {
+    const date = this.options?.[STREAM_INBOX_DATE_PARAM];
+    return {
+      from: this.options?.[STREAM_INBOX_FROM_PARAM] ?? '',
+      subject: this.options?.[STREAM_INBOX_SUBJECT_PARAM] ?? '',
+      date: date === 'today' || date === '7d' || date === '30d' ? date : 'any',
+    };
+  }
+
+  /** Clone with these column filters ('' / 'any' clear one). They narrow the page shown, so the page stays. */
+  withStreamInboxColumns(f: StreamInboxColumns): DockPointer {
+    return this.withOption(STREAM_INBOX_FROM_PARAM, f.from || null)
+      .withOption(STREAM_INBOX_SUBJECT_PARAM, f.subject || null)
+      .withOption(STREAM_INBOX_DATE_PARAM, f.date === 'any' ? null : f.date);
   }
 
   /**

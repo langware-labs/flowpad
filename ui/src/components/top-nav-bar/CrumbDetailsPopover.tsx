@@ -2,8 +2,10 @@ import { useCallback, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { ExternalLink, FolderOpen } from 'lucide-react';
 import { FSRef, TypeId, dataContext } from '@sdk';
+import { EntityTags } from '@src/components/tags/EntityTags';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
 import { useCloseOnIframeFocus } from '@src/hooks/use-close-on-iframe-focus';
+import { useHoldOpenWhileTyping } from '@src/hooks/use-hold-open-while-typing';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { CopyPathButton } from './CopyPathButton';
@@ -35,6 +37,7 @@ export function CrumbDetailsPopover({
   filename,
   path,
   directory = false,
+  typeId,
   children,
 }: {
   label: string;
@@ -44,6 +47,8 @@ export function CrumbDetailsPopover({
   /** The path IS a folder (a Files dock). "Open in Files" then opens it rather
    *  than its parent, and the OS reveal opens it rather than selecting it. */
   directory?: boolean;
+  /** The entity behind the path, when there is one — its tags are edited here. */
+  typeId?: TypeId | null;
   children: React.ReactNode;
 }) {
   const { t } = useLingui();
@@ -60,11 +65,16 @@ export function CrumbDetailsPopover({
    *  inside `openDelay` had the stale timer re-open the card ~100ms later, with
    *  no new pointer or focus event. Only a fresh pointerenter may open it again. */
   const hoverOpenSuppressed = useRef(false);
-  const onOpenChange = useCallback((next: boolean) => {
-    if (next && hoverOpenSuppressed.current) return;
-    if (!next) hoverOpenSuppressed.current = true;
-    setOpen(next);
-  }, []);
+  const { holdsOpen, contentProps } = useHoldOpenWhileTyping();
+  const onOpenChange = useCallback(
+    (next: boolean) => {
+      if (next && hoverOpenSuppressed.current) return;
+      if (!next && holdsOpen()) return;
+      if (!next) hoverOpenSuppressed.current = true;
+      setOpen(next);
+    },
+    [holdsOpen],
+  );
 
   const close = useCallback(() => setOpen(false), []);
   useCloseOnIframeFocus(open, close);
@@ -99,12 +109,19 @@ export function CrumbDetailsPopover({
       >
         {children}
       </HoverCardTrigger>
-      <HoverCardContent side="bottom" align="start" className="w-96 p-3" data-testid="top-nav-crumb-details">
+      <HoverCardContent
+        {...contentProps}
+        side="bottom"
+        align="start"
+        className="w-96 p-3"
+        data-testid="top-nav-crumb-details"
+      >
         <div className="truncate text-sm font-medium text-foreground" title={filename || label}>
           {filename || label}
         </div>
 
         <CopyPathButton path={path} testId="top-nav-crumb-copy-path" className="mt-1.5 w-full" />
+        {typeId && <EntityTags typeId={typeId} className="mt-2" />}
 
         <div className="mt-2 flex items-center gap-1">
           <button

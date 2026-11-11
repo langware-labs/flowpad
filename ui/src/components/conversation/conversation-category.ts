@@ -97,6 +97,11 @@ export interface TicketFacet {
   pickedBy: string | null;
 }
 
+/** A conversation a help desk SOURCE delivered: the viewer is desk staff on it, whatever its messages say. */
+export function isDeskTicket(conv: Pick<Conversation, 'channel'> | null | undefined): boolean {
+  return conv?.channel === 'helpdesk';
+}
+
 /** The desk chip's label from the desk (source) name: "GTM Studio" → "GTM Studio help desk",
  *  "Flowpad Support" → "Flowpad help desk". */
 export function deskChipLabel(deskName: string): string {
@@ -164,8 +169,8 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
       members: inp.members ?? conv.members ?? [],
       // The hub computes these on the ticket itself. A requester's `picked_up_by` is masked empty,
       // so `staffed` is how their side learns a staffer joined; a pool row may supplement the ids.
-      pickedUpBy: inp.pickedUpBy ?? (conv as { picked_up_by?: string[] | null }).picked_up_by ?? null,
-      staffed: (conv as { staffed?: boolean | null }).staffed ?? null,
+      pickedUpBy: inp.pickedUpBy ?? conv.picked_up_by ?? null,
+      staffed: conv.staffed ?? null,
     };
     const state = ticketState(tin);
     const staffView = inp.staffView ?? (!!conv.initiated_by && !isViewer(conv.initiated_by, viewer));
@@ -208,8 +213,8 @@ export interface ChipSpec {
   className: string;
 }
 
-const VIOLET_CHIP = 'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400';
-const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
+export const VIOLET_CHIP = 'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400';
+export const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
 const SKY_CHIP = 'border-sky-500/40 bg-sky-500/15 text-sky-700 dark:text-sky-300';
 
 /** Whether `senderId` is the viewer. BOTH ids count: a locally written row is
@@ -220,8 +225,8 @@ export function isViewer(senderId: string | null | undefined, viewer: CategoryIn
   return !!senderId && (senderId === viewer.cloudUserId || senderId === viewer.localUserId);
 }
 
-const AMBER_CHIP = 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300';
-const EMERALD_CHIP = 'border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+export const AMBER_CHIP = 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300';
+export const EMERALD_CHIP = 'border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
 
 /** The state chip for a ticket facet, or none. Pick-up is the desk's own business: the requester sees a
  *  conversation someone answers, so their side shows only that a ticket was closed. */

@@ -40,7 +40,8 @@ export function attentionReason(source: DataSource): AttentionReason | null {
   return null;
 }
 
-/** How a channel mark draws one source: lit, dashed, or wearing "!" because a person must act. */
+/** How a channel draws one source: lit, dashed, or parked — a person must act, so it is counted in
+ *  the channel line's warnings chip instead of being drawn as a mark. */
 export type ChannelMark = 'on' | 'off' | 'parked';
 export type AttentionVerb = 'setup' | 'verify' | 'resume' | 'pull';
 
@@ -107,6 +108,12 @@ const needTitle = (need: SetupNeed): string => need.title || need.name || '';
 
 /** The first line a surface shows: the sign-in it waits on, the kind's one name when it has one, else what
  *  is wrong. */
+/** A source's mark, from the one classifier: lit unless its kind says otherwise. */
+export const markOf = (reason: AttentionReason | null): ChannelMark => (reason ? ATTENTION[reason.kind].mark : 'on');
+
+/** Whether a person must act on this source before it delivers again. */
+export const needsPerson = (source: DataSource): boolean => markOf(attentionReason(source)) === 'parked';
+
 export const attentionHeadline = (reason: AttentionReason): string => {
   if (reason.need) {
     const title = needTitle(reason.need);

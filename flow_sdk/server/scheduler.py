@@ -106,6 +106,14 @@ def _log_missed_job(event) -> None:
     from flow_sdk.server.memory_probe import memory_snapshot
 
     logger.warning("Scheduler job %s missed its run time | %s", event.job_id, memory_snapshot())
+    # A recurring job keeps its next run. A one-shot has none and is already gone from the jobstore.
+    if _scheduler is not None and _scheduler.get_job(event.job_id) is None:
+        from flow_sdk.builtin.trigger_arming import rearm_missed_one_shot
+
+        try:
+            asyncio.get_running_loop().create_task(rearm_missed_one_shot(str(event.job_id)))
+        except RuntimeError:
+            pass
 
 
 def start_scheduler():

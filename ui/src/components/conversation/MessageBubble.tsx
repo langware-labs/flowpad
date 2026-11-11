@@ -47,6 +47,8 @@ interface MessageBubbleProps {
    *  local user is allowed to remove. Choosing it opens a destructive confirm
    *  dialog; on confirm this fires. */
   onDeleteMessage?: () => void;
+  /** The delete only drops Flowpad's copy: the message stays on the channel it was sent on. */
+  deleteLocalCopyOnly?: boolean;
   /** When set, the ⋮ menu offers Forward. Choosing it opens the parent's
    *  share dialog to pick the target conversation; the backend then clones the
    *  message (cloned_from_id provenance) into it. */
@@ -286,6 +288,7 @@ export function MessageBubble({
   onSenderClick,
   onEditName,
   onDeleteMessage,
+  deleteLocalCopyOnly = false,
   onForwardMessage,
   onLaunchWorker,
   messageSession,
@@ -493,6 +496,7 @@ export function MessageBubble({
                 onAutomate={onAutomate}
                 onEditName={!isBot && onEditName ? startEdit : undefined}
                 onDelete={onDeleteMessage ? () => setConfirmingDelete(true) : undefined}
+                deleteLocalCopyOnly={deleteLocalCopyOnly}
               />
             </span>
           )}
@@ -571,13 +575,13 @@ export function MessageBubble({
         <ConfirmDialog
           open={confirmingDelete}
           onOpenChange={setConfirmingDelete}
-          title={flowMessage?.origin ? t`Remove this message from Flowpad?` : t`Delete this message?`}
+          title={deleteLocalCopyOnly ? t`Remove this message from Flowpad?` : t`Delete this message?`}
           description={
-            flowMessage?.origin
+            deleteLocalCopyOnly
               ? t`Removes Flowpad's copy. The message stays where it was sent.`
               : t`This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone.`
           }
-          confirmLabel={flowMessage?.origin ? t`Remove` : t`Delete`}
+          confirmLabel={deleteLocalCopyOnly ? t`Remove` : t`Delete`}
           variant="destructive"
           onConfirm={onDeleteMessage}
         />

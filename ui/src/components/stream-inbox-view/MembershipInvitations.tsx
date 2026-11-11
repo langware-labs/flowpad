@@ -1,7 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { MailPlus } from 'lucide-react';
 import {
   Invitation,
   QueryRequest,
@@ -105,6 +104,30 @@ function lineTime(v: { resolvedAt?: string | Date | null; sentAt?: string | Date
   return Number.isNaN(at) ? 0 : at;
 }
 
+/** "Shared with me": the share mark with an arrow coming in toward the reader. */
+function SharedWithMeIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <g transform="translate(7.5 0) scale(0.68)" strokeWidth={2.9}>
+        <circle cx="18" cy="5" r="3" />
+        <circle cx="6" cy="12" r="3" />
+        <circle cx="18" cy="19" r="3" />
+        <path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98" />
+      </g>
+      <path d="M9.5 14.5L2.5 21.5M2.5 15.5v6h6" />
+    </svg>
+  );
+}
+
 /** The Invites chip: first in the Stream Inbox's channel row. Its active state is the URL's (`?view=invites`). */
 export function InvitesChannelChip({
   active,
@@ -129,7 +152,7 @@ export function InvitesChannelChip({
         active ? 'border-violet-500' : 'border-border [&>:first-child]:opacity-45 [&>:first-child]:grayscale',
       )}
     >
-      <MailPlus className="size-[17px] text-violet-500" />
+      <SharedWithMeIcon className="size-[18px] text-violet-500" />
       {pending > 0 && (
         <span className="absolute -bottom-0.5 -end-0.5 grid min-w-3.5 place-items-center rounded-full border-2 border-background bg-violet-500 px-0.5 text-[9px] leading-none text-white">
           {pending}

@@ -102,9 +102,9 @@ export default function AskView() {
             {question.prompt}
           </h1>
           {question.detail ? (
-            <p className="mt-1 text-sm text-muted-foreground" data-testid="ask-detail">
-              {question.detail}
-            </p>
+            <div className="mt-1 text-sm text-muted-foreground" data-testid="ask-detail">
+              <MarkdownView value={question.detail} compact dataImages />
+            </div>
           ) : (
             <p className="text-xs text-muted-foreground">{question.op}</p>
           )}

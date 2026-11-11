@@ -13,7 +13,6 @@ import { Download, Loader2, PackagePlus, X } from 'lucide-react';
 import { type AssetDescriptor, checkShareAttachments, exportFlowMessage, type GitignoredReference } from '@sdk';
 import { GitignoredNotice } from '@src/components/share-to-conversation/GitignoredNotice';
 import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
-import { useProcessAssets } from '@src/components/asset-manager/useProcessAssets';
 import { displayLabelForDescriptor } from '@src/components/asset-manager/asset-row-helpers';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -54,7 +53,6 @@ export function DownloadMessageForm({ initial, active, onDone }: DownloadMessage
   const [text, setText] = useState('');
   const [carried, setCarried] = useState<CarriedEntity[]>(initial);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const packable = useProcessAssets(null, { enabled: pickerOpen, types: PACKABLE_TYPES });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Files git excludes the download would carry — shown first; "Download anyway" packs them.
@@ -168,7 +166,7 @@ export function DownloadMessageForm({ initial, active, onDone }: DownloadMessage
             open={pickerOpen}
             onOpenChange={setPickerOpen}
             onPick={add}
-            assets={packable}
+            types={PACKABLE_TYPES}
             selectedTypeIds={carried.map((c) => c.typeid)}
             searchPlaceholder={t`Search assets…`}
           />
