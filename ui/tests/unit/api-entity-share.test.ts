@@ -1,4 +1,4 @@
-import { dataManager, inviteFailure, Project, TypeId, type ShareResult } from '@sdk';
+import { Conversation, dataManager, inviteFailure, Project, TypeId, type ShareResult } from '@sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const PROJECT_ID = '91c340cb-a2cc-4f67-9fe1-f2a0e481a0e3';
@@ -41,6 +41,23 @@ describe('APIEntity.share', () => {
     expect(project.hub_published_at).toBe('2026-08-03T12:00:00+00:00');
     expect(project.origin).toEqual(canonical.origin);
     expect(call.mock.calls[0][0].bodyParameters).toEqual({});
+  });
+
+  it('updates the caller even when a WS push replaced the cached instance mid-share', async () => {
+    const id = '5d0c2b7e-6f1a-4c3e-9b8d-2a4f6e8c0b11';
+    const caller = new Conversation({ type: Conversation.type, id, title: 'mine', remote: false } as Partial<Conversation>);
+    vi.spyOn(dataManager, 'callAction').mockImplementation(async () => {
+      // While the share is in flight, a refetch / WS push replaces the cached instance with another one.
+      dataManager.removeEntityFromCache(caller.typeId);
+      const pushed = dataManager.updateEntityFromJson<Conversation>({ type: Conversation.type, id, title: 'mine', remote: false });
+      expect(pushed).not.toBe(caller);
+      return { type: Conversation.type, id, title: 'mine', remote: true };
+    });
+
+    await caller.share(['bob@example.com']);
+
+    // doc_comment_sync / plan_share: `conv.share([bob]); expect(conv.remote).toBe(true)` on the object they hold.
+    expect(caller.remote).toBe(true);
   });
 
   it('does not manufacture remote state for a non-entity publication receipt', async () => {
