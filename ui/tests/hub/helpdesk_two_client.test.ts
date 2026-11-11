@@ -9,9 +9,10 @@
  *      hub help desk project, landing locally as a `kind=helpdesk`, remote
  *      conversation. The guest gets only a minimal `guest` role on it.
  *   2. A guest CANNOT enumerate the staff queue (`helpdesk_conversations`) or
- *      resolve anyone via the `members` lookup — the `guest` role grants neither.
- *      (This is the exposure that the old `authenticated_role` broadcast opened;
- *      these assertions need only the guest and always run.)
+ *      resolve a staffer through the roster. As a conversation member the guest
+ *      does get the roster (hub d798de9bf), but MASKED: their own row plus one
+ *      row under the desk's brand; another person's single membership reads as
+ *      none. (The exposure the old `authenticated_role` broadcast opened.)
  *   3. Staff (a real member of the help desk project — see HELPDESK_STAFF_EMAILS)
  *      discover the ticket in the queue, pick it up, and reply.
  *   4. The guest receives the reply under the single BRAND identity
@@ -101,6 +102,38 @@ async function openTicket(text: string): Promise<{ conversation_id: string }> {
   return started;
 }
 
+/** The guest's view of a ticket's roster under the help desk mask. `list_members`: exactly their
+ *  own row plus the desk as ONE row under the brand, with no id, email or staffer's name; `members/<own id>`:
+ *  their own membership; `members/<staffer id>`: none. The staffer's id, email and name never appear. */
+async function expectMaskedRoster(convId: string, guestToken: string, guestId: string) {
+  const headers = { Authorization: `Bearer ${guestToken}` };
+  const staffAuth = await hubLogin(staff.email, staffPassword);
+  const staffer = [staffAuth.user.id, staff.email, staffAuth.user.name].filter(Boolean) as string[];
+  const get = async (p: string) => {
+    const r = await fetch(`${HUB_URL}/api/v1/graph/conversation/${convId}/${p}`, { headers });
+    const text = await r.text();
+    for (const leak of staffer) expect(text, `${p} leaks the staffer`).not.toContain(leak);
+    return { status: r.status, rows: (JSON.parse(text).data ?? []) as any[] };
+  };
+
+  const list = await get('list_members');
+  expect(list.status).toBe(200);
+  expect(list.rows.filter((m) => m.user_id === guestId)).toHaveLength(1);
+  const others = list.rows.filter((m) => m.user_id !== guestId);
+  expect(others).toHaveLength(1);
+  expect(others[0]).toMatchObject({ name: HELPDESK_DISPLAY_NAME, user_name: HELPDESK_DISPLAY_NAME });
+  expect(others[0].user_id ?? null).toBeNull();
+  expect(others[0].user_email ?? null).toBeNull();
+
+  const own = await get(`members/${guestId}`);
+  expect(own.status).toBe(200);
+  expect(own.rows.length).toBeGreaterThan(0);
+
+  const other = await get(`members/${staffAuth.user.id}`);
+  expect(other.status).toBe(200);
+  expect(other.rows).toEqual([]);
+}
+
 afterAll(async () => {
   if (!openedTickets.length) return;
   const { token } = await hubLogin(guest.email, guestPassword);
@@ -136,21 +169,10 @@ describe('help desk — authorization', () => {
     expect(queueResp.ok).toBe(false);
     expect(denied).toContain(queueResp.status);
 
-    // The `guest` role also does NOT allow the members lookup, so the guest
-    // cannot turn a wire `sender_id` into a staffer's real name/email — even on
-    // their OWN ticket. (Probe an arbitrary id; denial is role-level, not id-level.)
-    const membersResp = await fetch(
-      `${HUB_URL}/api/v1/graph/conversation/${convId}/members/${guestAuth.user.id}`,
-      { headers: authHeader },
-    );
-    expect(denied).toContain(membersResp.status);
-
-    // list_members is likewise outside the guest role.
-    const listResp = await fetch(
-      `${HUB_URL}/api/v1/graph/conversation/${convId}/list_members`,
-      { headers: authHeader },
-    );
-    expect(denied).toContain(listResp.status);
+    // The roster is open to a member — the guest is one — but masked (hub d798de9bf: the desktop
+    // raised the old 403 as a false "Cloud access denied" on every ticket). It must still never
+    // resolve a staffer: the guest's own row, the desk under its brand, nobody else.
+    await expectMaskedRoster(convId, guestAuth.token, guestAuth.user.id);
   });
 
   it('guest opens a ticket; staff discovers + picks up; reply is masked to the brand', async () => {
@@ -234,5 +256,9 @@ describe('help desk — authorization', () => {
     expect(reply.sender_id).toBe(staffAuth.user.id);
     expect(reply.sender_id).not.toBe(guestHubId);
     expect(reply.text).toBe(replyText);
+
+    // 6. Now that the staffer is on the ticket, the guest's roster still never resolves them.
+    const guestAuth = await hubLogin(guest.email, guestPassword);
+    await expectMaskedRoster(convId, guestAuth.token, guestAuth.user.id);
   });
 });
