@@ -9,6 +9,7 @@ cwds take. Drives the real SQLite persistence layer (no mocks of save/query).
 from pathlib import Path
 
 import asyncio
+import shutil
 import uuid
 
 import pytest
@@ -425,10 +426,13 @@ async def test_project_cleanup_keeps_a_project_on_a_disconnected_drive(project_d
     """A folder that is missing because its drive is not connected is not an orphan:
     the row (and its chats) must survive until the drive is back."""
     from flow_sdk.builtin.project import Project
+    from flow_sdk.fs_store.operations import project_cleanup
 
-    project = await Project(name="on-usb", fs_storage_mount_path=str(tmp_path / "usb" / "on-usb")).save()
-    project.fs_storage_mount_path = f"/flowpad-unplugged-{tmp_path.name}/on-usb"
-    await project.save()
+    volumes = tmp_path / "Volumes"
+    (volumes / "USB" / "on-usb").mkdir(parents=True)
+    monkeypatch.setattr(project_cleanup, "MOUNT_CONTAINERS", {volumes.as_posix()})
+    project = await Project(name="on-usb", fs_storage_mount_path=str(volumes / "USB" / "on-usb")).save()
+    shutil.rmtree(volumes / "USB")  # the drive is unplugged
 
     data = await _permanent_cleanup(monkeypatch, project)
 

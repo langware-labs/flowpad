@@ -193,6 +193,51 @@ def _int_field(row: dict[str, Any], key: str) -> int:
         return 0
 
 
+#: Folders whose children are drives that appear only while connected: a missing
+#: path whose nearest existing ancestor is one of these is unplugged, not deleted.
+MOUNT_CONTAINERS = {"/Volumes", "/media", "/mnt"}
+#: The same, one level down: udisks mounts at ``/run/media/<user>/<drive>``.
+PER_USER_MOUNT_CONTAINERS = {"/run/media"}
+FSTAB = Path("/etc/fstab")
+
+
+def _fstab_mount_points() -> set[str]:
+    try:
+        lines = FSTAB.read_text().splitlines()
+    except OSError:
+        return set()
+    points = set()
+    for line in lines:
+        fields = line.split()
+        if len(fields) >= 2 and not fields[0].startswith("#") and fields[1].startswith("/") and fields[1] != "/":
+            points.add(fields[1])
+    return points
+
+
+def on_unavailable_volume(path: str) -> bool:
+    """Whether a missing ``path`` is on a drive or share that is not connected,
+    rather than deleted. Decided by its nearest existing ancestor:
+
+    * nothing exists, not even the root: the drive or UNC share is absent (Windows);
+    * a mount container (``/Volumes/<drive>`` gone, ``/run/media/<user>/<drive>`` gone);
+    * an ``/etc/fstab`` mount point that is not mounted (Linux keeps it as a folder).
+
+    An existing root is NOT a disconnected drive: ``/scratch/proj`` with ``/scratch``
+    deleted is an ordinary orphan. Other mounts (autofs, a mount point outside
+    fstab) are not detected and read as orphans.
+    """
+    probe = Path(path)
+    while not os.path.lexists(probe):
+        if probe.parent == probe:
+            return True
+        probe = probe.parent
+    if probe.parent == probe:
+        return False
+    if probe.as_posix() in MOUNT_CONTAINERS or probe.parent.as_posix() in PER_USER_MOUNT_CONTAINERS:
+        return True
+    return probe.as_posix() in _fstab_mount_points() and not os.path.ismount(probe)
+
+
 def classify(
     row: dict[str, Any],
     *,
@@ -213,6 +258,10 @@ def classify(
     path = Path(cwd)
     info = stat if stat is not None else _stat_or_none(path)
     if info is None:
+        # A folder on an unplugged drive will come back with it: not a cleanup
+        # candidate, so not counted as orphaned (and never offered for removal).
+        if on_unavailable_volume(cwd):
+            return CleanupVerdict.ACTIVE
         # The folder is gone; only the row survives.
         return CleanupVerdict.ORPHANED
 

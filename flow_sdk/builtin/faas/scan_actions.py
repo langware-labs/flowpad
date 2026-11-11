@@ -149,20 +149,6 @@ def _refuse(code, worker_type: str, message: str, facts=None) -> ApiFailResponse
     return launch_refusal(message, LaunchError.of(code_for_refusal(code), message, worker_type).wire("preflight", evidence=message, facts=facts))
 
 
-_MOUNT_CONTAINERS = {"/Volumes", "/media", "/mnt", "/run/media"}
-
-
-def _on_unavailable_volume(path: str) -> bool:
-    """Whether a missing ``path`` sits on a drive or share that is not connected,
-    rather than having been deleted: its nearest existing ancestor is a mount
-    container (``/Volumes``, ``/media``…), a filesystem root, or nothing at all."""
-    probe = Path(path)
-    while not os.path.lexists(probe):
-        if probe.parent == probe:
-            return True  # nothing on the path exists, not even its drive (Windows / UNC)
-        probe = probe.parent
-    return probe.parent == probe or probe.as_posix() in _MOUNT_CONTAINERS or probe.parent.as_posix() == "/run/media"
-
 
 class ScanActionsMixin:
     async def _scan_scoped_roots(self):
@@ -392,6 +378,7 @@ class ScanActionsMixin:
             CleanupRefused,
             HarnessIndex,
             guard_deletable,
+            on_unavailable_volume,
             remove_from_harness,
         )
 
@@ -424,7 +411,7 @@ class ScanActionsMixin:
                     # guard, wherever the path was, and removing the row IS the
                     # whole job. "keep" makes sure no folder is ever touched.
                     orphan = not row["cwd"] or not os.path.lexists(row["cwd"])
-                    if orphan and row["cwd"] and _on_unavailable_volume(row["cwd"]):
+                    if orphan and row["cwd"] and on_unavailable_volume(row["cwd"]):
                         # Not gone, just unreachable: removing the row would also drop
                         # its chats while the folder may come back with its drive.
                         raise CleanupRefused(f"{row['cwd']} is on a drive that is not connected")
