@@ -87,6 +87,12 @@ async def _open_ticket(base: str, guest_token: str, desk_id: str, text: str) -> 
     return (await _hub(base, guest_token, "POST", f"/graph/project/{desk_id}/start_guest_conversation", {"text": text}))["id"]
 
 
+async def _pick_up(base: str, token: str, conv_id: str) -> None:
+    """The hub fans a ticket out to participants only: the desk owner reads it once picked up
+    (idempotent — the same call the helpdesk source makes before it answers)."""
+    await _hub(base, token, "POST", f"/graph/conversation/{conv_id}/pickup", {})
+
+
 async def _hub_messages(base: str, token: str, conv_id: str) -> list[dict]:
     # `messages`, not the `flow_message` child list: desk staff who have not picked the
     # ticket up hold no role on it, and `messages` is the read the helpdesk source uses.
@@ -130,6 +136,7 @@ async def test_a_guest_ticket_reaches_the_desk_owner_as_a_message_source_and_the
     base, me = hub_session["base_url"], hub_session["user_id"]
     ts = uuid.uuid4().hex[:8]
     ticket = await _open_ticket(base, bob_token, desk, f"my printer is broken {ts}")
+    await _pick_up(base, hub_session["api_key"], ticket)
     first = (await _hub_messages(base, hub_session["api_key"], ticket))[0]
 
     # The projection attributes our own replies to the LOCAL user; pytest never
@@ -244,6 +251,7 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
 
     nonce = f"okra{uuid.uuid4().hex[:8]}"
     ticket = await _open_ticket(base, bob_token, desk, f"Reply with exactly this word and nothing else: {nonce}")
+    await _pick_up(base, token, ticket)
     guest_id = str((await _hub_messages(base, token, ticket))[0].get("sender_id") or "")
     try:
         # One poll drives the chain: pool → ingest → project → announce → turn → reply.

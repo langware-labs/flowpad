@@ -11,6 +11,7 @@ import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRout
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { hubProjectAssetDock } from '@src/lib/hub-page-url';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
+import { AssetMode } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans } from '@lingui/react/macro';
@@ -93,10 +94,21 @@ export function HubProjectPage() {
       </div>
     );
   }
-  if (assetSubPointer) {
+  // The project's own pages (Setup, Deployments) are pages of Project Home, as on the desk's AssetsPage —
+  // not asset editors: handed to the editor router they rendered "Invalid asset pointer".
+  const setupPage = assetSubPointer === (AssetMode.PROJECT_SETUP as string);
+  const deploymentsPage = assetSubPointer === (AssetMode.PROJECT_DEPLOYMENTS as string);
+  if (assetSubPointer && !setupPage && !deploymentsPage) {
     return <AssetEditorRouter pointer={assetSubPointer} hubReflect />;
   }
-  return <ProjectHome spawnProjectId={projectId} cloudContent={<HubProjectAssets projectId={projectId} />} />;
+  return (
+    <ProjectHome
+      spawnProjectId={projectId}
+      setupPage={setupPage}
+      deploymentsPage={deploymentsPage}
+      cloudContent={<HubProjectAssets projectId={projectId} />}
+    />
+  );
 }
 
 export default HubProjectPage;

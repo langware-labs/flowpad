@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { apiBase, apiContext } from '../_shared/api';
 import { printedLinkPoint, sdkModule } from '../_shared/xterm';
 import { openVibe } from '../vibe/_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 const PROFILE = { browser: 'chrome', profile: 'Profile 7' };
@@ -42,7 +43,13 @@ const turn = () =>
     '',
     cmd('line'),
     '',
-    `Then the recap: you run "${cmd('quoted')}" in the prompt, or \`${cmd('inline')}\`, and tell me.`,
+    // Each form on a row of its own: a long sentence is word-wrapped at the terminal's width, and a command split
+    // over two rows is two half-commands to the link layer.
+    'Then the recap:',
+    '',
+    `You run "${cmd('quoted')}" in the prompt,`,
+    '',
+    `or \`${cmd('inline')}\`, and tell me.`,
     '',
     'Not a command: ! Important note.',
   ].join('\n');
@@ -119,12 +126,16 @@ const transcriptRows = async (processId: string) =>
   (await readFile(transcripts.get(processId)!, 'utf8'))
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as { type: string; message?: { content?: unknown } });
+    .map((line) => JSON.parse(line) as { type: string; timestamp?: string; message?: { content?: unknown } });
 
-/** Commands Claude Code ran in its shell mode (each is a `<bash-input>` user entry). */
-async function shellInputs(processId: string): Promise<number> {
+/**
+ * Commands Claude Code ran in its shell mode (each is a `<bash-input>` user entry), typed at or
+ * after `since`. Claude appends a run's rows a moment after the command itself has run, so a count
+ * taken right after an earlier test's run may not hold it yet; the row's own time says when it ran.
+ */
+async function shellInputs(processId: string, since: string): Promise<number> {
   return (await transcriptRows(processId)).filter(
-    (row) => row.type === 'user' && String(row.message?.content).startsWith('<bash-input>'),
+    (row) => row.type === 'user' && String(row.message?.content).startsWith('<bash-input>') && (row.timestamp ?? '') >= since,
   ).length;
 }
 
@@ -160,8 +171,36 @@ function domSurface(name: string, open: Surface['open']): Surface {
 }
 
 /** A form's command in the xterm — on its newest row, which may be Claude Code's echo of a run (`!  sh …`). */
-const xtermPoint = (page: Page, form: Form) =>
-  printedLinkPoint(page, new RegExp(`!\\s+sh mark\\.sh ${form}`), '', { scrollBack: true });
+const xtermPoint = async (page: Page, form: Form) => {
+  // Claude Code answers every `!` command, repainting the screen as it streams; a point read while
+  // the rows still move is a different row by the time the mouse lands. Read it from a still screen,
+  // the way a person clicks what they see.
+  const screen = page.locator('.xterm-rows:visible').first();
+  const still = async () => {
+    let last = '';
+    await expect
+      .poll(async () => {
+        const now = await screen.innerText();
+        const same = now === last;
+        last = now;
+        return same;
+      }, { intervals: [1_000], timeout: adjusted(120_000) })
+      .toBe(true);
+  };
+  const pattern = new RegExp(`!\\s+sh mark\\.sh ${form}`);
+  await still();
+  // An earlier form can have left the screen. Never scroll for it: in its fullscreen renderer
+  // Claude Code owns the wheel (there is no xterm scrollback) and its scrolled view paints a
+  // "Jump to bottom" pill over the rows. Give the terminal more rows instead: Claude Code repaints
+  // its view at the new size, earlier turns included.
+  const forForm = page.locator('.xterm-rows:visible > div').filter({ hasText: pattern });
+  for (let grow = 0; (await forForm.count()) === 0 && grow < 3; grow++) {
+    const size = page.viewportSize() ?? { width: 1280, height: 720 };
+    await page.setViewportSize({ width: size.width, height: size.height * 2 });
+    await still();
+  }
+  return printedLinkPoint(page, pattern);
+};
 
 const SURFACES: Surface[] = [
   {
@@ -203,6 +242,14 @@ test.beforeAll(async () => {
     '#!/bin/sh\nd=$(dirname "$0")/out; mkdir -p "$d"; printf %s "$BROWSER" > "$d/$1-$(date +%s)-$$"\n',
   );
   await chmod(join(root, 'mark.sh'), 0o755);
+  // Claude Code may answer a run, and its own Bash tool shares the shell that `!` runs in: once it
+  // ran `cd out` to look at the files, and the next `! sh mark.sh` found no mark.sh. Its tools are
+  // not under test, so the session folder denies them; `!` is the user's shell mode, not a tool.
+  await mkdir(join(root, '.claude'), { recursive: true });
+  await writeFile(
+    join(root, '.claude', 'settings.json'),
+    JSON.stringify({ permissions: { deny: ['Bash', 'Edit', 'Write', 'NotebookEdit'] } }),
+  );
   const rq = await apiContext();
   const project = await (
     await rq.post(`${API}/api/v1/graph/project`, { data: { name: `cmdlinks-${Date.now()}`, fs_storage_mount_path: root } })
@@ -360,7 +407,7 @@ for (const surface of SURFACES) {
         }
         return;
       }
-      const inputsBefore = await shellInputs(processId);
+      const since = new Date().toISOString();
       for (const form of surface.forms) {
         const before = (await runs(form)).length;
         await surface.click(page, form);
@@ -368,7 +415,7 @@ for (const surface of SURFACES) {
         expect(page.url()).toBe(surfaceUrl);
       }
       // Claude Code recorded each as its own shell input, never as a message to the model.
-      await expect.poll(() => shellInputs(processId)).toBe(inputsBefore + surface.forms.length);
+      await expect.poll(() => shellInputs(processId, since)).toBe(surface.forms.length);
       const asPrompt = (await transcriptRows(processId)).filter(
         (row) => row.type === 'user' && /^!?\s*sh mark\.sh/.test(String(row.message?.content)),
       );

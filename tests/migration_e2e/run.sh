@@ -5,7 +5,7 @@
 #   bash tests/migration_e2e/run.sh
 #
 # What it does:
-#   1. Asserts _version.py == "0.2.26" (the version the test expects)
+#   1. Reads the version under test from flow_sdk/_version.py (the NEW wheel the container upgrades to)
 #   2. Builds the UI assets + wheel on the host
 #   3. Builds the Docker image
 #   4. Stops any prior container of the same name
@@ -44,12 +44,13 @@ cleanup_on_success() {
 # -----------------------------------------------------------------------------
 banner "PRECHECK"
 # -----------------------------------------------------------------------------
-# 1. Version bump landed?
+# 1. The version under test: the wheel built below, which the container must report after the upgrade.
 ver=$(python3 -c "import sys; sys.path.insert(0, '${REPO_ROOT}'); from flow_sdk._version import __version__; print(__version__)")
-if [ "$ver" != "0.2.26" ]; then
-    fail "flow_sdk/_version.py is '$ver' — expected '0.2.26'. Bump first."
-fi
-echo "  ✓ _version.py == 0.2.26"
+test -n "$ver" || fail "could not read flow_sdk/_version.py"
+echo "  ✓ version under test: ${ver}"
+has_recipe=0
+[ -d "${REPO_ROOT}/flow_sdk/system_projects/flowpad_assistant/migrations/${ver}" ] && has_recipe=1
+echo "  ✓ migration recipe shipped for ${ver}: ${has_recipe}"
 
 # 2. Required tools
 command -v docker >/dev/null || fail "docker not found"
@@ -86,6 +87,8 @@ docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 docker run -d \
     --name "$CONTAINER_NAME" \
     -p "${PORT}:9711" \
+    -e "NEW_VERSION=${ver}" \
+    -e "NEW_HAS_RECIPE=${has_recipe}" \
     -v "${REPO_ROOT}/dist:/wheels:ro" \
     "$IMAGE_NAME" >/dev/null
 echo "  container '${CONTAINER_NAME}' started"

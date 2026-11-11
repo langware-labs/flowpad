@@ -15,8 +15,6 @@ const INSTANCE = process.env.FLOW_INSTANCE || '';
 const stamp = Date.now().toString(36);
 const USER_SOURCE = `Team slack ${stamp}`;
 const AGENT_SOURCE = `Agent slack ${stamp}`;
-/** A channel id the double does not host — the agent's row is its own, never the user's adopted. */
-const AGENT_CHANNEL = 'C0AGENT0001';
 
 let api: APIRequestContext;
 let doubles: ChildProcessWithoutNullStreams | undefined;
@@ -128,6 +126,13 @@ async function open(page: Page, route: string) {
   await page.goto(route);
 }
 
+/** The user's channel marks. The system's own task source ("Tasks") wears a mark on every user's line; it is
+ *  not one of the channels these runbooks attach, so it is left out of the count. */
+// A source's mark carries its state; the built-in marks (Flowpad, Diagnosis, Automations; 22785eb21, db913ec08)
+// share the testid but are not the user's channels.
+const userMarksOf = (bar: Locator) =>
+  bar.locator('[data-testid="attached-channel"][data-state]:not([data-provider="task_manager"])');
+
 /** What a glyph draws: the element's first child (an svg, or a brand mark's img/span) minus sizing. */
 const glyphOf = (el: Locator) =>
   el.evaluate((node) => (node.firstElementChild?.outerHTML ?? '').replace(/\sclass="[^"]*"/g, ''));
@@ -145,7 +150,7 @@ test('1. the header line shows the user\'s channels as round marks', async ({ pa
   const line = page.getByTestId('stream-inbox-select-all-row');
   await expect(line.getByTestId('attached-channels')).toHaveAttribute('data-owner', /^user-/);
 
-  const marks = bar.getByTestId('attached-channel');
+  const marks = userMarksOf(bar);
   await expect(marks).toHaveCount(1);
   const mark = marks.first();
   await expect(mark).toHaveAttribute('data-provider', 'slack');
@@ -157,20 +162,36 @@ test('1. the header line shows the user\'s channels as round marks', async ({ pa
   await expect(mark.locator(':scope > :first-child')).toHaveCSS('filter', 'none');
   const glyph = await glyphOf(mark);
   expect(glyph, 'the mark drew no glyph').toBeTruthy();
-  const chips = rows.locator('[data-chip-type="source"]');
-  await expect(chips).toHaveCount(await rows.count());
-  for (const chip of await chips.all()) expect(await glyphOf(chip)).toBe(glyph);
+  // Every message this runbook delivered wears the Slack glyph. (The StreamInbox also lists whatever else the
+  // instance's user holds — other conversations that have no channel — so only the delivered rows are read.)
+  for (const nonce of nonces) {
+    const chip = rows.filter({ hasText: nonce }).locator('[data-chip-type="source"]');
+    await expect(chip).toHaveCount(1);
+    expect(await glyphOf(chip)).toBe(glyph);
+  }
 });
 
 test('2. a mark filters; × shows everything again', async ({ page }) => {
   const { bar, rows } = await userStreamInbox(page);
+  // The list is still filling (the task source's row lands a beat after ours): count it once it holds still.
+  await expect
+    .poll(async () => {
+      const first = await rows.count();
+      await page.waitForTimeout(2_000);
+      return first === (await rows.count());
+    })
+    .toBe(true);
   const all = await rows.count();
-  const mark = bar.getByTestId('attached-channel');
-  const others = bar.locator('[data-testid="attached-channel"][aria-pressed="false"]');
-
-  await mark.click();
+  const mark = userMarksOf(bar);
+  // Every mark is lit (shown) by default and a press dims one (filters its channel out; 657023b9c):
+  // narrowing to the Slack source is dimming every other mark on the line.
   await expect(mark).toHaveAttribute('aria-pressed', 'true');
-  await expect(mark).toHaveClass(/ring-1/);
+  const others = bar.locator('[data-testid="attached-channel"]:not([data-provider="slack"])');
+  for (const other of await others.all()) {
+    await other.click();
+    await expect(other).toHaveAttribute('aria-pressed', 'false');
+  }
+  await expect(mark).toHaveAttribute('aria-pressed', 'true');
   for (const other of await others.all()) await expect(other.locator(':scope > :first-child')).toHaveCSS('filter', /grayscale/);
   await expect(bar.getByTestId('attached-channels-clear')).toBeVisible();
   await expect(bar.getByTestId('attached-channels-add')).toHaveCount(0);
@@ -183,18 +204,21 @@ test('2. a mark filters; × shows everything again', async ({ page }) => {
 
   await bar.getByTestId('attached-channels-clear').click();
   await expect(rows).toHaveCount(all);
-  await expect(mark).toHaveAttribute('aria-pressed', 'false');
+  // × lights every mark again.
+  await expect(mark).toHaveAttribute('aria-pressed', 'true');
+  for (const other of await others.all()) await expect(other).toHaveAttribute('aria-pressed', 'true');
   await expect(bar.getByTestId('attached-channels-add')).toBeVisible();
   await expect(bar.getByTestId('attached-channels-details')).toBeVisible();
 });
 
 test('3. the details popover is where on/off and delete live', async ({ page }) => {
   const { bar } = await userStreamInbox(page);
-  const mark = bar.getByTestId('attached-channel');
+  const mark = userMarksOf(bar);
 
   await bar.getByTestId('attached-channels-details').click();
   const list = page.getByRole('dialog').filter({ has: page.getByTestId('attached-channel-row') });
-  const row = list.getByTestId('attached-channel-row');
+  // The system's own task source is listed too (it is left out of the marks above): pick the user's row by name.
+  const row = list.getByTestId('attached-channel-row').filter({ hasText: USER_SOURCE });
   await expect(row).toHaveCount(1);
   await expect(row.getByTestId('attached-channel-switch')).toBeVisible();
   await expect(row.getByTestId('attached-channel-delete')).toBeVisible();
@@ -224,11 +248,11 @@ test('3. the details popover is where on/off and delete live', async ({ page }) 
 
   // Back on the stream inbox, the mark has its green dot.
   const back = await userStreamInbox(page);
-  await expect(back.bar.getByTestId('attached-channel')).toHaveAttribute('data-state', 'on');
+  await expect(userMarksOf(back.bar)).toHaveAttribute('data-state', 'on');
 
   // The trash asks first — cancel keeps the source.
   await back.bar.getByTestId('attached-channels-details').click();
-  await page.getByTestId('attached-channel-row').getByTestId('attached-channel-delete').click();
+  await page.getByTestId('attached-channel-row').filter({ hasText: USER_SOURCE }).getByTestId('attached-channel-delete').click();
   const confirm = page.getByRole('alertdialog');
   await expect(confirm).toContainText('Delete this data source?');
   await confirm.getByRole('button', { name: 'Cancel' }).click();
@@ -246,19 +270,16 @@ test('4. an agent\'s bar is its own', async ({ page }) => {
   await agentBar.getByTestId('attached-channels-add').click();
   const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('step-crumb-0').filter({ hasText: /^Add a channel$/ }) });
   await expect(dialog).toBeVisible();
-  // Slack is a group (Flow — no setup / your own Slack app): the tile asks which, then the member opens its form.
-  await dialog.getByTestId('provider-group-Slack').click();
-  await dialog.getByTestId('group-member-slack').click();
+  // Slack is set up by its guided wizard (96f7d89a6): the add form asks for a name only, then gives way to the
+  // wizard. Where Flow-Slack is offered too the tile is a group that asks which first.
+  await dialog.getByTestId('provider-group-Slack').or(dialog.getByTestId('provider-slack')).first().click();
+  const member = dialog.getByTestId('group-member-slack');
+  if (await member.isVisible().catch(() => false)) await member.click();
   await dialog.locator('#ds-name').fill(AGENT_SOURCE);
-  // `channel` is a picker that lists on open; asked of a workspace it cannot read, it hands the
-  // field back to typing — where the id is pasted.
-  const picker = dialog.getByTestId('ds-choice-channel');
-  if (await picker.isVisible().catch(() => false)) {
-    await picker.click();
-    await expect(dialog.getByTestId('ds-choice-detail-channel')).toBeVisible();
-  }
-  await dialog.locator('#ds-channel').fill(AGENT_CHANNEL);
-  await dialog.getByRole('button', { name: 'Add source' }).click();
+  await dialog.getByRole('button', { name: 'Add and set up' }).click();
+  // Closing the wizard closes both and leaves the source unverified — which is what parks it.
+  await expect(dialog.getByTestId('setup-wizard-panel')).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 
   // The stream inbox header line: the agent's own mark, parked on its Verify.
@@ -275,7 +296,7 @@ test('4. an agent\'s bar is its own', async ({ page }) => {
 
   // The user's bar shows only the user's source.
   const user = await userStreamInbox(page);
-  const userMarks = user.bar.getByTestId('attached-channel');
+  const userMarks = userMarksOf(user.bar);
   await expect(userMarks).toHaveCount(1);
   await expect(userMarks.first()).toHaveAttribute('aria-label', new RegExp(`^${USER_SOURCE}`));
 });

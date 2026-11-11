@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "demo-relay-chain",
+  "description": "Demo: an external `go` → two inline flow_relay hops → a subprocess stamp → inline flow_echo.",
+  "enabled": true,
+  "nodes": [
+    {"id": "relay-1", "node_type": "function", "name": "Relay 1", "node_data": {"function": "flow_relay", "runtime": "inline"}},
+    {"id": "relay-2", "node_type": "function", "name": "Relay 2", "node_data": {"function": "flow_relay", "runtime": "inline"}},
+    {"id": "stamp", "node_type": "function", "name": "Stamp (subprocess)", "node_data": {"function": "scripts/stamp.py", "runtime": "subprocess"}},
+    {"id": "echo", "node_type": "function", "name": "Log result", "node_data": {"function": "flow_echo", "runtime": "inline"}}
+  ],
+  "edges": [
+    {"id": "e1", "from": {"node": "$external", "event": "go"}, "to": {"node": "relay-1"}},
+    {"id": "e2", "from": {"node": "relay-1", "event": "done"}, "to": {"node": "relay-2"}},
+    {"id": "e3", "from": {"node": "relay-2", "event": "done"}, "to": {"node": "stamp"}},
+    {"id": "e4", "from": {"node": "stamp", "event": "done"}, "to": {"node": "echo"}}
+  ]
+}

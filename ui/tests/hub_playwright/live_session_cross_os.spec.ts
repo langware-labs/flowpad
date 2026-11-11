@@ -29,14 +29,20 @@ const ask = (i: number | string) => `Reply with exactly this word and nothing el
 const TURN_BUDGET = 240_000;
 
 type Row = Record<string, unknown>;
-const get = async (url: string) => ((await (await fetch(url)).json()) as { data: Row[] }).data;
+const get = async (url: string) => {
+  const body = (await (await fetch(url)).json()) as { status?: string; message?: string; data: Row[] };
+  if (!Array.isArray(body.data)) throw new Error(`${url}: ${body.status} ${body.message}`);
+  return body.data;
+};
+// A list's paging lives inside ``filter``, next to a ``match`` (a bare ``?limit=`` is refused with 400).
+const inConversation = (convId: string, limit: number) =>
+  `filter=${encodeURIComponent(JSON.stringify({ match: { op: '$EQ', operands: ['conversation_id', convId] }, limit }))}`;
 const sessionsOn = async (backend: string, convId: string) =>
-  (await get(`${backend}/api/v1/graph/remote_worker_session?limit=500`))
-    .filter((r) => r.conversation_id === convId)
+  (await get(`${backend}/api/v1/graph/remote_worker_session?${inConversation(convId, 500)}`))
     .sort((a, b) => String(a.started_at).localeCompare(String(b.started_at)));
 const latest = async (backend: string, convId: string) => (await sessionsOn(backend, convId)).at(-1);
 const guestMessages = async (convId: string) =>
-  (await get(`${ALICE.backendUrl}/api/v1/graph/flow_message?limit=5000`)).filter((m) => m.conversation_id === convId);
+  get(`${ALICE.backendUrl}/api/v1/graph/flow_message?${inConversation(convId, 5000)}`);
 const replies = async (convId: string) =>
   (await guestMessages(convId))
     .filter((m) => String(m.text ?? '').startsWith('Prompt response'))

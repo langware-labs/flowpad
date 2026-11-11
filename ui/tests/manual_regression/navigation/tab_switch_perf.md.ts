@@ -41,6 +41,14 @@ import { adjusted, adjustedBudget, ADJUSTABLE_PERF_FACTOR } from '../../adjustab
 
 test.skip(process.env.FLOWPAD_PERF_GATE !== '1', 'speed budgets run on a production build only (FLOWPAD_PERF_GATE=1)');
 
+// No Playwright trace while measuring. The shared config records one for every test
+// ('retain-on-first-failure' records always, keeps it on failure), and its snapshotter
+// serializes the WHOLE DOM on the page's main thread right after each click — inside the
+// windows this spec times. With the long chat pooled (~99k nodes) each snapshot is a
+// 120-150 ms task: the long-chat leave measured p90 2387 ms with it and 611 ms without, the
+// warm terminal switch 365 vs 291 (same host, same build, back to back). Budgets unchanged.
+test.use({ trace: 'off' });
+
 const BUDGET = { warmMs: 150, projectMs: 300, coldTerminalMs: 1000 };
 
 /**

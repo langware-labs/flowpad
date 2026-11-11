@@ -8,10 +8,10 @@
  *   1. The guest opens a ticket via `askForHelp` (to a desk) — routed through the
  *      hub help desk project, landing locally as a `kind=helpdesk`, remote
  *      conversation. The guest gets only a minimal `guest` role on it.
- *   2. A guest CANNOT enumerate the staff queue (`helpdesk_conversations`) or
- *      resolve anyone via the `members` lookup — the `guest` role grants neither.
- *      (This is the exposure that the old `authenticated_role` broadcast opened;
- *      these assertions need only the guest and always run.)
+ *   2. A guest CANNOT enumerate the staff queue (`helpdesk_conversations`), and the
+ *      ticket's roster is masked: the guest reads its own membership, a staffer's
+ *      reads as none, and `list_members` shows the desk as one row under its name.
+ *      (This is the exposure that the old `authenticated_role` broadcast opened.)
  *   3. Staff (a real member of the help desk project — see HELPDESK_STAFF_EMAILS)
  *      discover the ticket in the queue, pick it up, and reply.
  *   4. The guest receives the reply under the single BRAND identity
@@ -32,6 +32,7 @@ import {
   HUB_INST_2 as STAFF_INSTANCE,
   getInstance,
   instanceAvailable,
+  jsonApi,
   type ResolvedInstance,
 } from './_instances';
 
@@ -95,7 +96,7 @@ beforeEach((context: any) => {
 const openedTickets: string[] = [];
 
 async function openTicket(text: string): Promise<{ conversation_id: string }> {
-  const started = await guest.sdk.askForHelp({ recipient: { kind: 'desk' }, text });
+  const started = await guest.sdk.askForHelp({ recipient: { kind: 'desk' }, text, diagnose: false });
   if (started?.conversation_id) openedTickets.push(started.conversation_id);
   return started;
 }
@@ -135,21 +136,30 @@ describe('help desk — authorization', () => {
     expect(queueResp.ok).toBe(false);
     expect(denied).toContain(queueResp.status);
 
-    // The `guest` role also does NOT allow the members lookup, so the guest
-    // cannot turn a wire `sender_id` into a staffer's real name/email — even on
-    // their OWN ticket. (Probe an arbitrary id; denial is role-level, not id-level.)
-    const membersResp = await fetch(
-      `${HUB_URL}/api/v1/graph/conversation/${convId}/members/${guestAuth.user.id}`,
-      { headers: authHeader },
-    );
-    expect(denied).toContain(membersResp.status);
+    // The ticket's roster is masked, not refused (hub d798de9bf): a member always gets it, so the
+    // guest cannot turn a wire `sender_id` into a staffer's real name/email by reading it.
+    const rows = async (p: string): Promise<any[]> => {
+      const resp = await fetch(`${HUB_URL}/api/v1/graph/conversation/${convId}/${p}`, { headers: authHeader });
+      expect(resp.status, p).toBe(200);
+      return (await resp.json()).data ?? [];
+    };
+    const guestId = guestAuth.user.id;
+    const staffId = (await hubLogin(staff.email, staffPassword)).user.id;
 
-    // list_members is likewise outside the guest role.
-    const listResp = await fetch(
-      `${HUB_URL}/api/v1/graph/conversation/${convId}/list_members`,
-      { headers: authHeader },
-    );
-    expect(denied).toContain(listResp.status);
+    // Its own membership is the guest's to read; a staffer's reads as none.
+    const own = await rows(`members/${guestId}`);
+    expect(own.length).toBeGreaterThan(0);
+    expect(own.every((m) => m.user_id === guestId)).toBe(true);
+    expect(await rows(`members/${staffId}`)).toEqual([]);
+
+    // The roster: the guest's own row, and everyone else as ONE row under the desk's name.
+    const roster = await rows('list_members');
+    const others = roster.filter((m) => m.user_id !== guestId);
+    expect(roster.some((m) => m.user_id === guestId)).toBe(true);
+    expect(others.map((m) => m.name)).toEqual([HELPDESK_DISPLAY_NAME]);
+    expect(others[0].user_email ?? null).toBeNull();
+    expect(JSON.stringify(roster)).not.toContain(staffId);
+    expect(JSON.stringify(roster)).not.toContain(staff.email);
   });
 
   it('guest opens a ticket; staff discovers + picks up; reply is masked to the brand', async () => {
@@ -174,11 +184,16 @@ describe('help desk — authorization', () => {
     const convId = started.conversation_id;
     expect(convId).toBeTruthy();
 
-    // It lands locally as a hub-mirrored helpdesk ticket.
+    // It lands locally as a hub-mirrored helpdesk ticket. With no diagnosis (``openTicket``), Ask for help
+    // sends the ticket to the hub before it answers, so the mirror (``remote``) is there at once; read it
+    // from the backend rather than the realm's cache.
     const guestConv: any = await pollUntil(
-      () => guest.sdk.Conversation.getById(convId),
+      async () => {
+        const row = (await jsonApi(guest.apiUrl, `/graph/conversation/${convId}`))?.data;
+        return row?.remote === true ? row : null;
+      },
       3_000,
-      'guest local helpdesk conversation',
+      'guest local helpdesk conversation mirrored to the hub',
     );
     expect(guestConv.kind).toBe('helpdesk');
     expect(guestConv.remote).toBe(true);

@@ -64,7 +64,15 @@ test.beforeAll(async () => {
   // The doubles: one process, every driver's Double, credentials planted on this instance.
   doubles = spawn('uv', ['run', 'python', 'tests/e2e/channel_doubles.py', '--backend', apiOrigin()], {
     cwd: REPO_ROOT,
-    env: { ...process.env, ...configuredFileEnv(), FLOW_INSTANCE: INSTANCE, FLOWPAD_SKIP_DOTENV: 'true' },
+    // An explicitly exported hub URL beats the instance env file's: the doubles' mailbox driver must reach the
+    // same hub the run was pointed at (the file's launcher default is the cloud hub, which answers 301).
+    env: {
+      ...process.env,
+      ...configuredFileEnv(),
+      ...(process.env.FLOWPAD_HUB_URL ? { FLOWPAD_HUB_URL: process.env.FLOWPAD_HUB_URL } : {}),
+      FLOW_INSTANCE: INSTANCE,
+      FLOWPAD_SKIP_DOTENV: 'true',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderr = '';
@@ -137,6 +145,17 @@ async function open(page: Page, route: string) {
   await page.goto(route);
 }
 
+/** The owner's stream inbox showing EVERY channel: an agent's opens on its own mailbox
+ *  (AgentStreamInboxView's initialChannel), so its filter is cleared once that pick lands. */
+async function openInbox(page: Page, owner: Owner) {
+  await open(page, streamInboxPath(owner));
+  if (owner !== 'agent') return;
+  const clear = page.getByTestId('attached-channels-clear');
+  await expect(clear).toBeVisible();
+  await clear.click();
+  await expect(clear).toHaveCount(0);
+}
+
 /** The cell's source: the agent's own mailbox row for agent email, else a fresh row for the owner. */
 async function sourceFor(owner: Owner, channel: Channel): Promise<string> {
   if (channel === 'cloud_email') return agentMailboxSourceId;
@@ -180,7 +199,7 @@ for (const owner of OWNERS) {
       const other: Owner = owner === 'user' ? 'agent' : 'user';
 
       // The owner's stream inbox: the row, its chip, the bar's mark.
-      await open(page, streamInboxPath(owner));
+      await openInbox(page, owner);
       const row = page.getByTestId('stream-inbox-conversation-row').filter({ hasText: nonce });
       await expect(row).toHaveCount(1);
       // The chip wears the CHANNEL's title (a mailbox is "Email" whichever driver reads it), which the
@@ -210,7 +229,7 @@ for (const owner of OWNERS) {
         .toBe(true);
 
       // Nobody else's.
-      await open(page, streamInboxPath(other));
+      await openInbox(page, other);
       await expect(page.getByTestId('stream-inbox-conversation-row').filter({ hasText: nonce })).toHaveCount(0);
 
       // The cell's source goes now: the doubles are one account per channel, and a delivery is

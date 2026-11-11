@@ -94,7 +94,20 @@ test.describe('Q publish and cloud asset-editor flow', () => {
     });
     await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
 
+    // Opening the editor selects the fixture's project, whose auto-index records the agent's
+    // folder (``asset_occurrences``) and broadcasts the row. The share is stubbed, so that row
+    // still says ``remote: false``: a click before it lands is reverted by it. Publish after it.
+    const indexed = new Promise<void>((resolve) => {
+      page.on('websocket', (ws) =>
+        ws.on('framereceived', ({ payload }) => {
+          const text = String(payload);
+          if (text.includes('"data_op_msg"') && text.includes(`"id": "${fixture.agentId}"`) && text.includes('first_seen_at'))
+            resolve();
+        }),
+      );
+    });
     await page.goto(`${uiUrl}/dock/assets/editor/agent/typeid/agent-${fixture.agentId}`);
+    await indexed;
     await page.getByTestId('asset-cloud-publish').click();
     await expect(page.getByTestId('asset-cloud-publish')).toHaveAttribute('data-state', 'published');
 

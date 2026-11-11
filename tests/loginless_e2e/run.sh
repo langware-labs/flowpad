@@ -50,6 +50,6 @@ ENDPOINT_ID="${ENDPOINT_ID:-$(HUB="$HUB" uv run python tests/loginless_e2e/make_
 echo "public endpoint: $ENDPOINT_ID" >&2
 
 # THE two commands. Nothing before them, nothing between them.
-docker run --rm --add-host=host.docker.internal:host-gateway "$IMAGE" sh -c "
+docker run --rm --add-host=host.docker.internal:host-gateway -e LOGINLESS_MODEL "$IMAGE" sh -c "
   flow llm user use $ENDPOINT_ID --hub $HUB_IN_CONTAINER &&
   $SECOND"

@@ -44,7 +44,7 @@ function graphDoc(name: string, clickTarget: string, backendTag: string, backend
         node_type: 'guided_step',
         node_data: {
           status_line: 'Waiting for the tagged control',
-          present: { highlight: clickTarget },
+          present: { dock: { kind: 'stay' }, highlight: clickTarget },
           await: { tag: 'app.ui.button.clicked', target: clickTarget },
         },
       },
@@ -54,6 +54,7 @@ function graphDoc(name: string, clickTarget: string, backendTag: string, backend
         node_type: 'guided_step',
         node_data: {
           status_line: 'Waiting for the backend relay',
+          present: { dock: { kind: 'stay' } },
           await: { tag: backendTag, target: backendTarget },
         },
       },
@@ -80,10 +81,15 @@ async function postEntity(
   return body;
 }
 
-async function dismissSetup(page: Page) {
+/** Dismiss the setup modal and return the query that pins a project to a dock URL: the footer's `ProjectPage`
+ *  control (the tagged surface the journey clicks) renders only once a project is current, and a dock opened
+ *  by URL adopts the project its scope names (a fresh browser has none). */
+async function dismissSetup(page: Page, request: APIRequestContext): Promise<string> {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
   });
+  const projects = (await (await request.get(`${API}/api/v1/graph/project`)).json()) as { data: Array<{ id: string }> };
+  return `scope-mode=project&scope-activeProjectId=${projects.data[0].id}`;
 }
 
 const suiteCreated: Array<{ type: string; id: string }> = [];
@@ -94,6 +100,13 @@ test.afterAll(async ({ request }) => {
   }
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.project_page_tag.rules: FAILING? read this tag's rules before
+//       moving or renaming the ProjectPage tag
+// flowpad:endcapsule tag
 test('hard-cut tag vocabulary works across API, graph, taxonomy UI, and identity', async ({ page, request }) => {
   const stamp = Date.now().toString(36);
   const boundTag = `qa.e2e.naming.${stamp}`;
@@ -112,7 +125,7 @@ test('hard-cut tag vocabulary works across API, graph, taxonomy UI, and identity
     if (req.url().includes('/tag')) tagRequests.push(req.url());
   });
 
-  await dismissSetup(page);
+  const scope = await dismissSetup(page, request);
 
   const markdown = await postEntity(request, 'markdown', {
     name: `tag-browser-${stamp}`,
@@ -138,7 +151,7 @@ test('hard-cut tag vocabulary works across API, graph, taxonomy UI, and identity
   const graphResponsePromise = page.waitForResponse(
     (response) => response.request().method() === 'GET' && response.url().includes('/api/v1/subgraph/tag'),
   );
-  await page.goto(`/dock/tag/graph/${encodeURIComponent(boundTag)}`);
+  await page.goto(`/dock/tag/graph/${encodeURIComponent(boundTag)}?${scope}`);
   const graphResponse = await graphResponsePromise;
   expect(graphResponse.status()).toBe(200);
   const graphEnvelope = (await graphResponse.json()) as GraphResponse;
@@ -208,9 +221,11 @@ test('hard-cut tag vocabulary works across API, graph, taxonomy UI, and identity
   await boundRow.click();
   await expect(page).toHaveURL(new RegExp(`/dock/tag/graph/${boundTag.replaceAll('.', '\\.')}`));
 
+  await page.goto(`${page.url()}${page.url().includes('?') ? '&' : '?'}${scope}`);
   const taggedControl = page.locator(`[data-tag="${clickTarget}"]`).first();
   await expect(taggedControl).toBeVisible();
   expect(await page.locator(`[${['data-to', 'pic'].join('')}]`).count()).toBe(0);
+  await page.waitForLoadState('networkidle');
   await page.goto(`${page.url()}${page.url().includes('?') ? '&' : '?'}highlight=${encodeURIComponent(clickTarget)}`);
   await expect(page.locator(`[data-tag="${clickTarget}"]`).first()).toHaveAttribute('data-highlighted', 'true');
 
@@ -222,6 +237,13 @@ test('hard-cut tag vocabulary works across API, graph, taxonomy UI, and identity
   expect(consoleErrors.filter((message) => !/ResizeObserver|favicon/i.test(message))).toEqual([]);
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.project_page_tag.rules: FAILING? read this tag's rules before
+//       moving or renaming the ProjectPage tag
+// flowpad:endcapsule tag
 test('tag journey advances through UI and backend WebSocket events', async ({ page, request }) => {
   const stamp = Date.now().toString(36);
   const boundTag = `qa.e2e.journey.${stamp}`;
@@ -232,7 +254,7 @@ test('tag journey advances through UI and backend WebSocket events', async ({ pa
   const created: Array<{ type: string; id: string }> = [];
 
   try {
-    await dismissSetup(page);
+    const scope = await dismissSetup(page, request);
 
     const markdown = await postEntity(request, 'markdown', {
       name: `tag-journey-${stamp}`,
@@ -249,23 +271,27 @@ test('tag journey advances through UI and backend WebSocket events', async ({ pa
     });
     created.push({ type: 'tag', id: blessed.data.id });
 
-    fs.writeFileSync(
-      path.join(journeyDir, 'graph.json'),
-      `${JSON.stringify(graphDoc(`tag-browser-${stamp}`, clickTarget, backendTag, markdownTarget), null, 2)}\n`,
-    );
+    // A journey's folder must be empty when it is created (occupied bytes are not adopted); the scaffold
+    // it writes is then replaced by the graph under test.
     const journey = await postEntity(request, 'journey', {
       name: `tag-browser-${stamp}`,
       asset_ref: journeyDir,
       enabled: true,
     });
     created.push({ type: 'journey', id: journey.data.id });
+    fs.writeFileSync(
+      path.join(journeyDir, 'graph.json'),
+      `${JSON.stringify(graphDoc(`tag-browser-${stamp}`, clickTarget, backendTag, markdownTarget), null, 2)}\n`,
+    );
     const launch = await request.post(`${API}/api/v1/journeys/${journey.data.id}/launch`);
     expect(launch.status()).toBe(200);
     expect(((await launch.json()) as EntityResponse).status).toBe('SUCCESS');
 
-    await page.goto(`/dock/tag/graph/${encodeURIComponent(boundTag)}?journeyId=${encodeURIComponent(journey.data.id)}`);
+    await page.goto(`/dock/tag/graph/${encodeURIComponent(boundTag)}?journeyId=${encodeURIComponent(journey.data.id)}&journeyStep=1&${scope}`);
     await expect(page.getByText('Click the tagged control', { exact: true })).toBeVisible();
     await page.locator(`[data-tag="${clickTarget}"]`).first().click();
+    // Pressing Next is the commitment; the awaited click only opens its gate.
+    await page.getByTestId('journey-tray-continue').click();
     await expect(page.getByText('Receive the backend tag', { exact: true })).toBeVisible();
 
     const relay = await request.post(`${API}/api/v1/debug/emit_tag`, {
@@ -273,6 +299,7 @@ test('tag journey advances through UI and backend WebSocket events', async ({ pa
     });
     expect(relay.status()).toBe(200);
     expect(((await relay.json()) as EntityResponse).status).toBe('SUCCESS');
+    await page.getByTestId('journey-tray-continue').click();
     await expect
       .poll(async () => {
         const progress = await request.get(`${API}/api/v1/journeys/${journey.data.id}/progress`);

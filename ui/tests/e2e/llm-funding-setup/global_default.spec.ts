@@ -5,7 +5,7 @@
  *
  * Backend: `start_backend.py --scenario global-default` binds the box to a fake endpoint whose
  * chain carries no restriction at all, and accepts exactly the CLIENT'S OWN sm-tier default
- * (`DEEPAGENTS_MODEL_TIERS["sm"]`, read at backend-start time — never a literal copied into
+ * (the endpoint's own `sm` size, read at backend-start time — never a literal copied into
  * this spec, so a provider swap changes what this test expects right along with the app).
  *
  * Three steps, mirroring llm-setup's own shape:
@@ -65,10 +65,19 @@ test.afterAll(() => {
   for (const tool of ['cowsay', 'sl']) uninstall(tool);
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.asset_owner_project.rules: FAILING? read this tag's rules before
+//       touching assetDocumentAtOwner's owner check
+// flowpad:endcapsule tag
 test('a box with no hub LLMEndpoint falls back to the global default model', async ({ page, request }) => {
   let wizard: { id: string } | undefined;
   await expect(async () => {
-    const listing = await request.get(`http://localhost:${BE_PORT}/api/v1/graph/wizard?limit=200`);
+    const listing = await request.get(
+      `http://localhost:${BE_PORT}/api/v1/graph/wizard?filter=${encodeURIComponent(JSON.stringify({ name: WIZARD_NAME }))}`,
+    );
     wizard = (await listing.json()).data.find((w: { name: string }) => w.name === WIZARD_NAME);
     expect(wizard, `${WIZARD_NAME} is not indexed yet`).toBeTruthy();
   }).toPass({ timeout: adjusted(20_000) });
@@ -86,7 +95,8 @@ test('a box with no hub LLMEndpoint falls back to the global default model', asy
   const modal = page.getByTestId('ask-modal');
   await expect(async () => {
     if (await modal.isVisible()) {
-      await page.getByTestId('ask-modal-submit').click();
+      // One ask for everything up front (e4abf0232): an approvals list answers with its own submit.
+      await modal.getByTestId('ask-modal-submit').or(modal.getByTestId('ask-items-submit')).first().click();
     }
     const statuses = await stepStatuses(page);
     const pending = Object.entries(statuses).filter(([, s]) => UNSETTLED.has(s));

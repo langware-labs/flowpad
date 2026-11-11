@@ -24,7 +24,7 @@ async def _hub_conversation(service, token: str, title: str, invite: str | None 
         if invite:
             r = await h.post(
                 f"/api/v1/graph/conversation/{cid}/members",
-                json={"recipient_email": invite, "invitation_targets": [{"typeid": f"conversation-{cid}", "role": "member"}]},
+                json={"recipient_email": invite, "invitation_targets": [{"typeid": f"conversation-{cid}", "roles": ["reader", "runner"]}]},
             )
             assert r.status_code < 300, r.text
     return cid
