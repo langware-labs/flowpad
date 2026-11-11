@@ -680,6 +680,9 @@ class Entity(DBEntity):
     #: as the handle to retry — when the hub cannot. Every other remote row's hub mirror is
     #: best-effort (``handle_delete_by_id``).
     owns_hub_delete: ClassVar[bool] = False
+    #: How long the hub's DELETE of this row may take (``unshare``); ``None`` is the hub default. A row
+    #: whose hub delete tears a live resource down before it answers (a machine) needs that budget.
+    hub_delete_timeout: ClassVar[Any] = None
 
     def __init__(self, **kwargs):
         if type(self)._strict_init and not lenient_load_active():
@@ -2530,7 +2533,10 @@ class Entity(DBEntity):
             creds = load_credentials()
             if not creds or not creds.api_key:
                 raise HubError(0, "signed out", kind=HubFailureKind.SIGNED_OUT)
-            response = await HubProxy.send("DELETE", hub_public_url(build_hub_url(self)))
+            budget = type(self).hub_delete_timeout
+            response = await HubProxy.send(
+                "DELETE", hub_public_url(build_hub_url(self)), **({"timeout": budget} if budget is not None else {})
+            )
             if response.status_code >= 400 and response.status_code != 404:  # 404: already gone
                 raise HubError(
                     response.status_code,

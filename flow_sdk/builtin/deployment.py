@@ -44,6 +44,7 @@ from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.agentic_process.system_prompt import launch_surface_fields
+from flow_sdk.cloud_client.hub_proxy import DEPLOY_TIMEOUT
 from flow_sdk.core import Entity, action
 from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
 from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec, hub_store
@@ -151,6 +152,9 @@ class Deployment(Entity):
     # A remote placement's hub row owns the machine: deleting here without the hub would leave
     # the machine running with no handle to it.
     owns_hub_delete: ClassVar[bool] = True
+    # The hub deletes a machine before it answers (minutes for a cloud VM): with the 10 s default the
+    # delete read "Can't reach the hub" while the hub went on deleting, and the row stayed here.
+    hub_delete_timeout: ClassVar[Any] = DEPLOY_TIMEOUT
 
     type: str = APIField(default=EntityType.DEPLOYMENT.value)
     name: str = APIField(description="Display name")
