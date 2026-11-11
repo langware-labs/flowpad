@@ -60,7 +60,7 @@ export function ProjectDeploymentsPage({ project }: { project: Project }) {
   useDeployProgress(project, refetch);
 
   const go = (opts: { deploymentId?: string | null; mainAgentId?: string | null } = {}) =>
-    navigation.openDock(DockPointer.forProjectDeployments(String(project.id), opts));
+    navigation.openDockOnThisPage(DockPointer.forProjectDeployments(String(project.id), opts));
 
   const closeDialog = (open: boolean) => {
     if (open) return;

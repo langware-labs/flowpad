@@ -72,7 +72,8 @@ class LaunchErrorCode(StrEnum):
 CODE_TABLE = {c: ("transient_error" if f in ("wait", "retry") else "config_error", f) for c, f in (
     ("folder_not_trusted", "trust_folder"), ("first_run_setup", "finish_setup"), ("bypass_warning", "accept_bypass"),
     ("signed_out", "connect"), ("not_authenticated", "connect"), ("key_rejected", "replace_key"), ("budget_not_ready", "wait"),
-    ("not_installed", "install"), ("cli_crashed", "reinstall"), ("pinned_source_unavailable", "ask_owner"), ("unknown", "retry"))}
+    ("not_installed", "install"), ("cli_crashed", "reinstall"), ("pinned_source_unavailable", "ask_owner"),
+    ("model_unavailable", "ask_owner"), ("unknown", "retry"))}
 SERVER_FIXES = ("trust_folder", "finish_setup", "accept_bypass")  # done by the driver's apply_launch_fix
 BLOCKING_CODES = {code for code, (_, fix) in CODE_TABLE.items() if fix in SERVER_FIXES}  # prompts on screen
 CLI_CRASHES: dict[str, str] = {}  # worker_type → stderr of a CLI the last login probe saw crash
@@ -170,6 +171,8 @@ class LaunchError(Exception):
         same reason as ``ingest.health.classify``."""
         if isinstance(exc, LaunchError):
             return exc
+        if isinstance(code := getattr(exc, "code", None), LaunchErrorCode):  # the raiser named its verdict
+            return cls.of(code, str(exc), worker_type)
         if type(exc.__cause__).__name__ == "LLMSourceError":  # a spawn refused for funding
             return cls.classify(exc.__cause__, worker_type)
         name = type(exc).__name__
