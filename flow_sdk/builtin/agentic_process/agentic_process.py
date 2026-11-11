@@ -5596,6 +5596,14 @@ class AgenticProcess(Entity):
                 self.id,
                 exc_info=True,
             )
+            return
+        # Session adoption is a naming lifecycle edge: binding the native session is what tells
+        # the Chats list to refetch (``worker_history_changed``). A PTY harness that mints its id
+        # after launch (opencode) has no other edge once its session lands.
+        try:
+            await self.reconcile_name()
+        except Exception:
+            logger.warning("AgenticProcess %s transcript: name reconcile failed", self.id, exc_info=True)
 
     @action.post(action_name="transcript")
     async def transcript_action(self) -> ApiSuccessResponse | ApiFailResponse:
