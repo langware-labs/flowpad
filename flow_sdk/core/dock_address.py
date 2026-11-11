@@ -390,6 +390,9 @@ class ViewMeta:
     #: pointer starting ``?`` is the screen's options (``?creating=schedule``); one starting ``/``
     #: is a whole address of its own (``/hub/worldview/world``, a projection the hub renders).
     subplaces: tuple[tuple[str, str], ...] = ()
+    #: ``(pointer, aliases)``: what a person calls a subplace beside its whole name, as a screen's
+    #: ``aliases`` -- offered with it and a rule ("failed runs" is Automations > Runs that failed).
+    subplace_aliases: tuple[tuple[str, tuple[str, ...]], ...] = ()
     #: ``(entity type, pointer form, name)``: how this screen opens ON an entity in context when
     #: that is more than its bare id -- ``("agentic_process", "<harness>/transcript/<session>",
     #: "transcript")``. The form's placeholders are ``<id>``, ``<type>``, ``<path>`` and any field
@@ -593,6 +596,9 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
             ("?creating=file", "New file-watcher automation: runs when a file changes (an empty form)"),
             ("?creating=agent_hook", "New agent-hook automation (an empty form)"),
         ),
+        # The Runs screen's own "failed" badge is not in its address: this is the place that opens on
+        # only the failed ones.
+        subplace_aliases=(("runs?status=failed", ("failed runs",)),),
         open_forms=(("trigger", "?trigger=<id>", "page"), ("event", "?trigger=<id>", "page")),
     ),
     ViewType.EVENTS: _m(_NONE, addressable=False),

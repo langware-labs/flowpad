@@ -160,7 +160,10 @@ def _static_options() -> tuple[dict[str, str], dict[str, str]]:
         for sub in place.subplaces:
             if default and sub.pointer == default:
                 continue
-            options[f"view:{place_address(place, sub.pointer)}"] = f"Screen '{sub.label}'"
+            key = f"view:{place_address(place, sub.pointer)}"
+            options[key] = f"Screen '{sub.label}'" + (f" (also called: {', '.join(sub.aliases)})" if sub.aliases else "")
+            for name in sub.aliases:
+                names.setdefault(name.lower(), key)
     # A retired screen's name is where it forwards ("signals" is the event bus), as its address is.
     from flow_sdk.core.dock_address import RETIRED_DOCK_VIEWS  # noqa: PLC0415
 

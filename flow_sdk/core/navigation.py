@@ -178,6 +178,7 @@ def place_of(view: ViewType) -> dict[str, Any]:
     """One ``VIEW_META`` row as a ``navigation.place`` value."""
     meta = VIEW_META[view]
     subplaces = [*meta.subplaces, *(_GENERATED_SUBPLACES[view]() if view in _GENERATED_SUBPLACES else ())]
+    aka = dict(meta.subplace_aliases)
     return {
         "view": view.value,
         "label": meta.label,
@@ -187,7 +188,7 @@ def place_of(view: ViewType) -> dict[str, Any]:
         "pointer_form": meta.pointer_form if meta.pointer.value != "none" else None,
         "provides": list(meta.provides),
         "opens": list(meta.opens),
-        "subplaces": [{"pointer": p, "label": label} for p, label in subplaces],
+        "subplaces": [{"pointer": p, "label": label, "aliases": list(aka.get(p, ()))} for p, label in subplaces],
     }
 
 

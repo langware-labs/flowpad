@@ -396,6 +396,21 @@ def test_a_screen_that_opens_on_a_project_named_with_one_in_context_opens_on_it(
     assert navigator.context_rule("open the help desk", navigation.kind("navigation.here").model_validate({})) is None
 
 
+def test_a_subplace_is_called_what_people_call_it_and_that_name_is_a_rule():
+    # Live: "show failed runs" split between Runs (agent runs, 0.29-0.39) and Automations > Runs that
+    # failed (0.35-0.48) and was handed on 2 of 3 times: the subplace had no name a person uses -- a
+    # screen's aliases are offered with it and are rules, a subplace had none.
+    options, names = navigator.static_options()
+    key = "view:automations/runs?status=failed"
+    assert "(also called: failed runs)" in options[key] and names["failed runs"] == key
+    hit = navigator.rule_hit("show failed runs")
+    assert (hit.kind, hit.value) == ("view", "automations/runs?status=failed")
+    # The bare word is still the Runs screen ("open runs", "show my run history").
+    assert navigator.rule_hit("open runs").value == "process-runs"
+    sub = next(s for p in navigation.navigation_map().places if p.view == "automations" for s in p.subplaces if s.pointer == "runs?status=failed")
+    assert sub.aliases == ["failed runs"]
+
+
 def test_this_projects_or_sessions_thing_is_the_screen_that_opens_on_it():
     proj = "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
     here = navigation.kind("navigation.here").model_validate(
