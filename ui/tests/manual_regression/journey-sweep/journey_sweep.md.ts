@@ -155,16 +155,16 @@ test.describe('the journey demonstrates — the app really moves', () => {
     await expectStep(3);
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
 
-    await next(); // commentary
-    await expectStep(3);
+    await next(); // commentary — Next is the only way on
+    await expectStep(4);
 
     await next(); // the exit under review — the session's Chat button
-    await expectStep(4);
+    await expectStep(5);
     await expect(workspace()).toHaveCount(0);
     await expect(page.locator('html')).toHaveAttribute('data-view', 'standard');
 
-    await next(); // the way home — the session's Vibe button
-    await expectStep(5);
+    await next(); // the way home — the session's Vibe button (the loss and the way back are one step)
+    await expectStep(6);
     await expect(workspace()).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
 
@@ -238,15 +238,28 @@ test.describe('the gate holds a press, it does not drive', () => {
 
     // Step 2 waits for the workspace to exist. Its act (the wand) opens one, so the press
     // completes on its own — but only once the workspace is REALLY there, and never before.
+    // Watch every frame from the press on: the URL may name step 3 only while VibeDisplay is in the DOM.
     await expect(workspace()).toHaveCount(0);
+    await page.evaluate(() => {
+      const w = window as unknown as { __earlyLanding?: boolean; __watchGate?: boolean };
+      w.__earlyLanding = false;
+      w.__watchGate = true;
+      const tick = () => {
+        const step = new URL(location.href).searchParams.get('journeyStep');
+        if (step === '3' && !document.querySelector('[data-tag="VibeDisplay"]')) w.__earlyLanding = true;
+        if (w.__watchGate) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
     await next();
-    await page.waitForTimeout(2000);
-    await expectStep(1);
-
-    // Once the workspace is REALLY there, the same press completes.
-    await openBuildAt(1);
-    await next();
-    await expectStep(2);
+    await expect(workspace()).toBeVisible();
+    await expectStep(3);
+    const earlyLanding = await page.evaluate(() => {
+      const w = window as unknown as { __earlyLanding?: boolean; __watchGate?: boolean };
+      w.__watchGate = false;
+      return w.__earlyLanding;
+    });
+    expect(earlyLanding, 'step 3 landed before the workspace existed').toBe(false);
   });
 
   test('nothing advances without a press', async () => {
