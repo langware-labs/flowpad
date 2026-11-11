@@ -90,7 +90,8 @@ def decision_endpoint():
                 ).status_code
                 == 200
             )
-            opened = c.put(f"{base}/access/public/authenticated", headers=h, json={"role": "reader"})
+            # Read lists it in the catalog, run lets a caller invoke it: the hub grants them apart (roles, not role).
+            opened = c.put(f"{base}/access/public/authenticated", headers=h, json={"roles": ["reader", "runner"]})
             assert opened.status_code == 200, opened.text
             yield eid
         finally:
