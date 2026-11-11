@@ -164,26 +164,14 @@ function applyLocaleAttributes(code: string): void {
 // locale … not loaded" warning (and re-importing an already-loaded catalog).
 const _loaded = new Set<string>();
 
-// Each activation takes a ticket; only the latest one may activate. A first-time
-// catalog import is slow, so without this a switch started earlier (en-US, still
-// importing) finishes AFTER a later one (he, already loaded) and puts the app back
-// in the language the user just left.
-let _activationSeq = 0;
-
-/**
- * Load (if needed) and activate a locale's catalog in the shared i18n instance.
- * Resolves false when a later activation superseded this one (nothing activated).
- */
-async function loadAndActivate(code: string): Promise<boolean> {
-  const seq = ++_activationSeq;
+/** Load (if needed) and activate a locale's catalog in the shared i18n instance. */
+async function loadAndActivate(code: string): Promise<void> {
   if (!_loaded.has(code)) {
     const { messages } = await import(`../locales/${code}/messages.po`);
     i18n.load(code, messages);
     _loaded.add(code);
   }
-  if (seq !== _activationSeq) return false;
   i18n.activate(code);
-  return true;
 }
 
 /**
@@ -278,7 +266,8 @@ function setPersonalProjectLocale(projectId: string | null | undefined, code: st
 async function activateLocale(code: string): Promise<void> {
   instancePreferences.set(PrefKey.LOCALE, code); // mirrors to localStorage (boot key)
   pushRecent(code);
-  if (await loadAndActivate(code)) applyLocaleAttributes(code);
+  await loadAndActivate(code);
+  applyLocaleAttributes(code);
 }
 
 /**
@@ -433,7 +422,8 @@ export async function applySupportedLocales(
 async function onPrefLocaleChanged(): Promise<void> {
   const code = getLocale();
   if (i18n.locale !== code) {
-    if (await loadAndActivate(code)) applyLocaleAttributes(code);
+    await loadAndActivate(code);
+    applyLocaleAttributes(code);
   }
 }
 /**

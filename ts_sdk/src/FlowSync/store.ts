@@ -263,17 +263,6 @@ export interface Manageable {
  */
 const loggedMissingCtorTypes = new Set<string>();
 
-
-/** `../lazy`, loaded once per module graph. Not at module scope: see refreshScanInfo(). */
-let lazyModule: Promise<typeof import('../lazy')> | null = null;
-function loadLazy(): Promise<typeof import('../lazy')> {
-  lazyModule ??= import('../lazy').catch((error) => {
-    lazyModule = null;
-    throw error;
-  });
-  return lazyModule;
-}
-
 export class DataManager<T extends Manageable> extends EventEmitter {
   entities: TypeIdMap<EntityRef<T>> = new TypeIdMap<EntityRef<T>>();
 
@@ -471,7 +460,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       // import would put the base class in a cycle with itself, which is what made
       // `class X extends APIEntity` see `undefined`. See
       // ui/tests/unit/sdk-module-layering.test.ts.
-      const { lazyAssets, LazyAsset } = await loadLazy();
+      const { lazyAssets, LazyAsset } = await import('../lazy');
       const raw = await lazyAssets.refresh(LazyAsset.IndexStatus);
       this.setScanInfo({
         total_indexed: raw?.per_type?.reduce((s: number, t: any) => s + (t.entity_count ?? 0), 0) ?? 0,
@@ -511,10 +500,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     try {
       const info = await this.callAction<null, BootstrapInfo>(actionInfo);
-      // Resolve `lazy` now, while this SDK's module graph is live: a fire-and-forget
-      // refreshScanInfo() that runs after its graph was discarded (a test realm torn
-      // down, a module reset) then reuses this module instead of evaluating a second copy.
-      void loadLazy().catch(() => undefined);
       if (info.scan_info) this.setScanInfo(info.scan_info);
       if (info.records_root) this.recordsRoot = info.records_root;
       return info;

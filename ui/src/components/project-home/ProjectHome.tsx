@@ -258,16 +258,14 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full flex-col gap-6 px-4 py-6">
-          {/* The project's own pages come first: on the hub (cloudMode) too, where the hub project page
-              hands them over instead of its asset list. */}
-          {deploymentsPage && resolvedProject ? (
-            <ProjectDeploymentsPage project={resolvedProject} />
-          ) : setupPage && projectId ? (
-            <ProjectSetupPage projectId={projectId} projectName={resolvedProject?.name ?? project?.name ?? ''} />
-          ) : cloudMode ? (
+          {cloudMode ? (
             cloudContent
           ) : createOnly ? (
             overview
+          ) : deploymentsPage && resolvedProject ? (
+            <ProjectDeploymentsPage project={resolvedProject} />
+          ) : setupPage && projectId ? (
+            <ProjectSetupPage projectId={projectId} projectName={resolvedProject?.name ?? project?.name ?? ''} />
           ) : (
             <Tabs value={tab} onValueChange={setTab} data-testid="project-home-tabs">
               <TabsList>

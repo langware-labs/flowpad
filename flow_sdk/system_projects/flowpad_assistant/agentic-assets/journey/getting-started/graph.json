@@ -15,7 +15,7 @@
       "node_type": "guided_step",
       "name": "Open your project page",
       "node_data": {
-        "status_line": "Click your highlighted project name in the top bar to open its page.",
+        "status_line": "Click your highlighted project name in the footer to open its page.",
         "present": {
           "dock": {
             "kind": "root"

@@ -18,7 +18,6 @@ import {
   useProjectListMenu,
 } from '@src/components/terminal/project-list-menu';
 import { cn } from '@src/lib/utils';
-import { tagAttrs } from '@src/tags/tag-attrs';
 import { useRef, useState, type ReactNode } from 'react';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { RUNTIME_APPEARANCE } from './runtime-appearance';
@@ -180,8 +179,6 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                         navigation.openDock(!dataContext.caps.localFiles ? home.withPage(PageId.HUB) : home);
                       }}
                       data-testid="top-nav-project"
-                      // The project's page opener: the tag journeys and highlights name (the footer carried it before).
-                      {...tagAttrs('ProjectPage', 'button')}
                       aria-label={homeLabel}
                       className={cn(SEGMENT, 'gap-1.5 pl-3 pr-2.5')}
                     >
