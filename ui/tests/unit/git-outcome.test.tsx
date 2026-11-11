@@ -24,7 +24,7 @@ vi.mock('@src/components/status-bar/GitStatusContext', () => ({ useGitStatus: ()
 vi.mock('@src/hooks/use-git-push', () => ({ useGitPush: () => ({ push: vi.fn(), busy: false }) }));
 vi.mock('@src/hooks/use-git-pull', () => ({ useGitPull: () => ({ pull: vi.fn(), busy: false }) }));
 
-import { closeGitConflict, notifyGitOutcome } from '@src/lib/git-outcome';
+import { notifyGitOutcome } from '@src/lib/git-outcome';
 import { GitResolveButton } from '@src/components/status-bar/GitResolveButton';
 import { GitPushButton } from '@src/components/status-bar/GitPushButton';
 import { GitPullButton } from '@src/components/status-bar/GitPullButton';
@@ -42,27 +42,14 @@ const conflict = { kind: 'conflict' as const, branch: 'main', message: 'Conflict
 describe('notifyGitOutcome', () => {
   for (const mode of ['vibe', 'standard', 'advanced', 'dev']) {
     for (const op of ['push', 'pull', 'cherry-pick'] as const) {
-      it(`${op} conflict in ${mode}: forced toast with Resolve aimed at the repo`, () => {
+      it(`${op} conflict in ${mode}: no alert — the footer's Resolve chip is the one place it shows`, () => {
         viewMode.current = mode;
-        notifyGitOutcome(op, conflict, '/repo');
-        const toast = notifyMock.error.mock.calls[0][0];
-        expect(toast.forceToast).toBe(true);
-        expect(toast.actions).toEqual([
-          { label: 'Resolve', command: 'git.resolve-conflict', args: { branch: 'main', origin: op, workdir: '/repo' } },
-        ]);
+        expect(notifyGitOutcome(op, conflict, '/repo')).toBe(false);
+        expect(notifyMock.error).not.toHaveBeenCalled();
+        expect(notifyMock.success).not.toHaveBeenCalled();
       });
     }
   }
-
-  it('a conflict toast has a stable id per repo, which closeGitConflict takes down', () => {
-    notifyGitOutcome('pull', conflict, '/repo');
-    notifyGitOutcome('push', conflict, '/repo');
-    const [first, second] = notifyMock.error.mock.calls.map((c) => c[0].id);
-    expect(first).toBe('git.conflict:/repo');
-    expect(second).toBe(first); // replaces, never stacks
-    closeGitConflict('/repo');
-    expect(notifyMock.dismiss).toHaveBeenCalledWith('git.conflict:/repo');
-  });
 
   it('a non-conflict failure is forced too, with no Resolve', () => {
     viewMode.current = 'standard';
