@@ -90,7 +90,7 @@ describe('a project shared with me', () => {
     expect(screen.queryByTestId('invite-open')).toBeNull();
   });
 
-  it("the sharer's own card and the inbox line keep Open", () => {
+  it("the sharer's own card and the invite line keep Open", () => {
     render(<InviteCard invite={project('accepted')} layout="card" mine />);
     render(<InviteCard invite={project('accepted')} layout="line" />);
     expect(screen.queryByTestId('project-install-action')).toBeNull();

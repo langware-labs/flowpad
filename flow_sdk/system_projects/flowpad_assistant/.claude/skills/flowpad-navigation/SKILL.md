@@ -207,13 +207,13 @@ opens a different screen and reports success.
 | Docs | `docs` | documentation, flowpad documentation, help pages |
 | Files | `explorer` | file tree, folders |
 | Flowpad Assistant | `assistant` | assistant chat, help chat |
-| Graph Workflows | `graph-workflows` | workflows |
+| Graph Workflows | `graph-workflows` |  |
 | Home | `home` | landing, start |
 | Hooks | `hooks` | claude hooks |
 | Inbound routing | `inbound` | webhooks, inbound webhooks, message routing |
 | Machines *(hub)* | `machines` | sandboxes, computers |
 | Stream Inbox | `stream_inbox` | messages |
-| LLM Endpoints  *(hub)* | `llm-endpoints` | endpoints |
+| LLM Endpoints  *(hub)* | `llm-endpoints` | endpoints, endpoint usage, endpoints usage |
 | LLM sources | `llm-sources` | harness funding |
 | Set up LLM | `llm-setup` | llm setup, choose llm, connect llm |
 | Machine | `machine` | system, this machine |
