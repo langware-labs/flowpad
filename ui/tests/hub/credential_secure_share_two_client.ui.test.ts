@@ -12,9 +12,9 @@ import path from 'node:path';
 import type { Browser } from 'playwright';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { driveShareDialog, launchBrowser, openConversation, openInstancePage, type InstancePage } from './_browser';
-import { getAliceCreds, getBobCreds, hubAvailable, syncAssignedConversationAt } from './_hub';
+import { getAliceCreds, getBobCreds, hubAvailable, hubLogin, HUB_URL, syncAssignedConversationAt } from './_hub';
 import { pollUntil } from './_matrix';
-import { HUB_INST_1 as INST_1, HUB_INST_2 as INST_2, instanceAvailable, jsonApi, postApi } from './_instances';
+import { HUB_INST_1 as INST_1, HUB_INST_2 as INST_2, instanceAvailable, instanceDataDir, jsonApi, postApi } from './_instances';
 
 const SECRET = `sk-ui-${Math.random().toString(36).slice(2)}-SUPERSECRET`;
 const RUN = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -69,7 +69,7 @@ beforeAll(async () => {
 
 /** Bob's install: secure receiving on/off — off = "has not installed Flowpad yet" (no key). */
 function setBobReceiving(on: boolean) {
-  const prefs = path.join(os.homedir(), '.flow', 'instances', INST_2, 'preferences.json');
+  const prefs = path.join(instanceDataDir(INST_2), 'preferences.json');
   const cur = existsSync(prefs) ? JSON.parse(readFileSync(prefs, 'utf-8')) : {};
   writeFileSync(prefs, JSON.stringify({ ...cur, 'preferences.sharing.secure_receiving': on }));
 }
@@ -118,6 +118,13 @@ describe('secured transfer — the journey in the UI', () => {
     const conv = convs.sort((a, b) => String(b.created_date).localeCompare(String(a.created_date)))[0];
     expect(conv?.id).toBeTruthy();
 
+    // ── Alice watches the conversation: her card waits for Bob ──
+    await openConversation(alice, conv.id);
+    const sent = alice.page.getByTestId('sealed-sent').first();
+    await sent.waitFor({ timeout: 30_000 });
+    const receiver = sent.getByTestId('sealed-receiver').first();
+    expect(await receiver.getAttribute('data-stage')).toBe('pending');
+
     // ── Bob: the conversation → the card → Fill in ──
     await syncAssignedConversationAt(`${bob.apiUrl}/api/v1`, conv.id, INST_2);
     await openConversation(bob, conv.id);
@@ -133,17 +140,11 @@ describe('secured transfer — the journey in the UI', () => {
     const envFile = path.join(bobProject.fs_storage_mount_path, '.env.local');
     expect(existsSync(envFile) && readFileSync(envFile, 'utf-8')).toContain(SECRET);
 
-    // ── Alice: the card turns "Filled in" ──
-    await openConversation(alice, conv.id);
-    const sent = alice.page.getByTestId('sealed-sent').first();
-    await pollUntil(async () => {
-      await alice.page.reload({ waitUntil: 'domcontentloaded' });
-      await sent.waitFor({ timeout: 10_000 }).catch(() => undefined);
-      const line = sent.getByTestId('sealed-receiver').first();
-      return (await line.getAttribute('data-stage').catch(() => null)) === 'filled' ? true : null;
-    }, 30_000, 'Alice sees Delivered');
+    // ── Alice: her open card turns "Delivered" by itself — no reload. Bob's answer is a hub-only ack that reaches
+    // her as an unchanged conversation push; the card re-reads on it (SealedValuesPanel). ──
+    await pollUntil(async () => ((await receiver.getAttribute('data-stage')) === 'filled' ? true : null), 30_000, 'Alice sees Delivered');
     // Bob's Flowpad ran the credential's test right after filling and told Alice its state.
-    expect(await sent.getByTestId('sealed-receiver').first().getAttribute('data-test')).not.toBe('');
+    await pollUntil(async () => ((await receiver.getAttribute('data-test')) ? true : null), 20_000, 'Alice sees the test state');
     await shot(alice, '06-alice-filled-in');
   }, 180_000);
 
@@ -151,6 +152,18 @@ describe('secured transfer — the journey in the UI', () => {
     // Bob "has not installed Flowpad yet": receiving off → no key on the hub.
     setBobReceiving(false);
     await ok(postApi(bob.apiUrl, `${CREDS}/sealed/publish`, {}), 'bob withdraws');
+    // Withdrawing removes only THIS install's key, by design: another Flowpad of Bob's can still receive, and Alice
+    // rightly seals for it ("sealed for 1"). So "Bob has not installed" holds only when his hub user has no key left
+    // at all — a key another instance left on a shared hub breaks the scenario, not the product. Say so plainly.
+    const bobCreds = (await getBobCreds())!;
+    const bobHub = await hubLogin(bobCreds.email, bobCreds.password);
+    const left: any[] = (await fetch(`${HUB_URL}/api/v1/graph/user/${bobHub.user.id}/device_key`, {
+      headers: { Authorization: `Bearer ${bobHub.token}` },
+    }).then((r) => r.json())).data ?? [];
+    if (left.length) {
+      throw new Error(`Bob's hub user still has ${left.length} device key(s) from another install `
+        + `(${left.map((a) => a.device_id).join(', ')}): run on a hub where only ${INST_2} is Bob's Flowpad`);
+    }
 
     // Alice shares in the UI exactly as before — the outcome promises, it never warns
     await alice.page.goto(`${alice.feUrl}/dock/assets/credential-${credId}`, { waitUntil: 'domcontentloaded' });
