@@ -171,17 +171,22 @@ test('1. the header line shows the user\'s channels as round marks', async ({ pa
   }
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.attached_channels_row_count.rules: FAILING with more rows than were delivered?
+//       Test 2 expects exactly the delivered rows, so it assumes the local user has no other StreamInbox
+//       rows. A Tasks row, and a Tasks mark on the bar, appear only when the user is in some task (a
+//       fresh instance has none, GET /graph/task returned 0 and the bar had no Tasks mark). Any other
+//       conversation of the user's adds a row too, and the list shows one page only. Check GET
+//       /api/v1/graph/task, the user's other conversations, and whether a Tasks mark is on the bar.
+// flowpad:endcapsule tag
 test('2. a mark filters; × shows everything again', async ({ page }) => {
   const { bar, rows } = await userStreamInbox(page);
-  // The list is still filling (the task source's row lands a beat after ours): count it once it holds still.
-  await expect
-    .poll(async () => {
-      const first = await rows.count();
-      await page.waitForTimeout(2_000);
-      return first === (await rows.count());
-    })
-    .toBe(true);
-  const all = await rows.count();
+  // Exactly the delivered rows. More than that? Read the tag capsule on top of this test.
+  const all = nonces.length;
+  await expect(rows).toHaveCount(all);
   const mark = userMarksOf(bar);
   // Every mark is lit (shown) by default and a press dims one (filters its channel out; 657023b9c):
   // narrowing to the Slack source is dimming every other mark on the line.

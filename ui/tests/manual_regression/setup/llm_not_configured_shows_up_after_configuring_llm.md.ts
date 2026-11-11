@@ -58,6 +58,6 @@ test.describe('LLM configuration view', () => {
     await expect(
       page.locator('input:visible, button:visible, textarea:visible').first(),
       'Home page appears broken after returning from AI config',
-    ).toBeVisible({ timeout: adjusted(20_000) });
+    ).toBeVisible();
   });
 });

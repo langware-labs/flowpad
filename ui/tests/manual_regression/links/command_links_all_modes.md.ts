@@ -18,7 +18,6 @@ import { join } from 'node:path';
 import { apiBase, apiContext } from '../_shared/api';
 import { printedLinkPoint, sdkModule } from '../_shared/xterm';
 import { openVibe } from '../vibe/_helpers';
-import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 const PROFILE = { browser: 'chrome', profile: 'Profile 7' };
@@ -184,7 +183,7 @@ const xtermPoint = async (page: Page, form: Form) => {
         const same = now === last;
         last = now;
         return same;
-      }, { intervals: [1_000], timeout: adjusted(120_000) })
+      }, { intervals: [1_000] })
       .toBe(true);
   };
   const pattern = new RegExp(`!\\s+sh mark\\.sh ${form}`);

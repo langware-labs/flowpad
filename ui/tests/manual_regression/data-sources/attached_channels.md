@@ -15,7 +15,9 @@ agent's rows carry `owner`.
 
 Automated (`attached_channels.md.ts`): the Slack source talks to the slack driver's loopback
 Double (`tests/e2e/channel_doubles.py --channels slack`, which also plants the Slack connection),
-so no real workspace is needed; the agent and both sources are seeded over the API.
+so no real workspace is needed; the agent and both sources are seeded over the API. Test 2 expects
+the stream inbox to list exactly the two delivered messages, so run it where the local user holds
+nothing else there: no tasks (a task adds a Tasks row and mark) and no other conversations.
 
 What is being proved: the header line is one component over `DataSource.owner`
 and the spec's `sends` flag. The user's stream inbox and each agent's stream inbox show
