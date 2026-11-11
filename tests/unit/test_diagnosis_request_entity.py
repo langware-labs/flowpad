@@ -86,7 +86,7 @@ async def test_an_uploaded_key_is_reused_only_from_an_endpoint_this_user_created
     monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_try_call))
     monkeypatch.setattr(HubProxy, "call", staticmethod(hub_call))
     monkeypatch.setattr("flow_sdk.cli.auth.lm_api_keys.get_lm_api", lambda _p: "sk-or-test")
-    monkeypatch.setattr("flow_sdk.cli.app_config.get_user", lambda: {"id": "me"})
+    monkeypatch.setattr("flow_sdk.cli.app_config.get_principal", lambda: {"id": "me"})
 
     first = await diagnosis_request._hub_root_for_local_key("openrouter")
     listed.append({"id": "mine", "name": name, "provider": "openrouter", "created_by": "me"})

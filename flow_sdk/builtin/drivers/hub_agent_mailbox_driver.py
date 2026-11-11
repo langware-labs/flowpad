@@ -175,7 +175,7 @@ async def _hub_login_is_valid() -> bool:
         # The process-shared client: a fresh ``FlowpadClient`` per call rebuilds
         # the TLS context, which is the cost ``hub_http`` exists to avoid.
         async with _hub_client() as client:
-            await client.get_user()
+            await client.get_principal()
     except Exception:  # noqa: BLE001 — preserve the original mailbox failure
         return False
     return True

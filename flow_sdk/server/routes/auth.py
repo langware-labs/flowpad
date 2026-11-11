@@ -261,13 +261,11 @@ async def login_callback(
         # there is the local/first-login/shared-reclaim path. Without this a second
         # principal who reached the public URL could log the owner out and re-arm the
         # gate to their own secret — a full takeover.
-        from flow_sdk.cli.app_config import get_user
+        from flow_sdk.cli.app_config import is_switching_principal
         from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
 
         armed = get_cookie_gate()
-        current = get_user()
-        incoming_id = user_info["id"]
-        switching = current and current.get("id") != incoming_id
+        switching = is_switching_principal(user_info)
         rearming = cookie_gate and cookie_gate != armed
         if armed and (switching or rearming) and not _carries_gate_secret(request, armed):
             logger.warning("login_callback: refused switch/re-arm without the gate secret")

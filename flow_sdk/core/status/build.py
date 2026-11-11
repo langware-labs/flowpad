@@ -205,7 +205,7 @@ def hub_status() -> HubStatusSpec:
     user (``hub_ws_manager.verify_current_user``). A stored credential alone is not a
     sign-in -- it is ``OFFLINE`` until the hub confirms it, and ``REJECTED`` once it refuses.
     """
-    from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+    from flow_sdk.cli.app_config import get_principal  # noqa: PLC0415
     from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
     from flow_sdk.cloud_client.auth_state import current_login_status  # noqa: PLC0415
     from flow_sdk.cloud_client.auth_status import HubConnectionStatus, HubLoginStatus  # noqa: PLC0415
@@ -221,12 +221,11 @@ def hub_status() -> HubStatusSpec:
     if status == HubConnectionStatus.AUTH_REJECTED.value or current_login_status() is HubLoginStatus.LOGIN_FAILED:
         return HubStatusSpec(login=HubLogin.REJECTED, error=error)
     if hub_ws_manager.is_verified:
-        user = get_user() or {}
-        user_id = str(user.get("id") or "")
+        user = get_principal() or {}
         return HubStatusSpec(
             login=HubLogin.SIGNED_IN,
             email=str(user.get("email") or ""),
-            user_typeid=f"user-{user_id}" if user_id else "",
+            user_typeid=str(user.get("typeid") or ""),
         )
     if status in (HubConnectionStatus.CONNECTING.value, HubConnectionStatus.CONNECTED.value):
         return HubStatusSpec(login=HubLogin.SIGNING_IN)

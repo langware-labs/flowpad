@@ -80,17 +80,6 @@ def set_it_sessions(on: bool) -> bool:
     return it_sessions_on()
 
 
-def _is_agent_identity(user: Any) -> bool:
-    """A box an AGENT is logged in as (its own Identity) has no person at the keyboard."""
-    if not isinstance(user, dict):
-        return False
-    kind = str(user.get("kind") or user.get("type") or user.get("principal_type") or "").lower()
-    if kind in ("identity", "agent"):
-        return True
-    ident = str(user.get("id") or user.get("typeid") or "")
-    return ident.startswith(("identity-", "identity_", "identity:"))
-
-
 def person_signed_in() -> bool:
     """Whether a PERSON is logged in to the hub here — the ``/api/v1/cloud/status`` login block."""
     from flow_sdk.cloud_client.auth_state import login_block  # noqa: PLC0415
@@ -99,7 +88,8 @@ def person_signed_in() -> bool:
     login = login_block()
     if login.get("status") != HubLoginStatus.LOGGED_IN.value:
         return False
-    return not _is_agent_identity(login.get("user"))
+    principal = login.get("principal")
+    return isinstance(principal, dict) and principal.get("type") == "user"
 
 
 def status() -> dict:

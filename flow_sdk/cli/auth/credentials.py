@@ -58,14 +58,14 @@ def _scoped_key(field: str, user_id: str) -> str:
 
 
 def _active_user_id() -> str | None:
-    """Resolve the active hub user's id from the config.json pointer.
+    """Resolve the signed-in hub principal's id (a person or an agent's Identity) from config.json.
 
     This is the same record ``is_logged_in`` / ``hub_auth_available`` key off,
-    so "the current user's credentials" means this user's scoped sod entries.
-    Returns None when no user is logged in (then callers fall back to the
+    so "the current credentials" means this principal's scoped sod entries.
+    Returns None when nobody is signed in (then callers fall back to the
     legacy flat keys)."""
-    from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
-    user = get_user()
+    from flow_sdk.cli.app_config import get_principal  # noqa: PLC0415
+    user = get_principal()
     uid = user.get("id") if user else None
     return str(uid) if uid else None
 

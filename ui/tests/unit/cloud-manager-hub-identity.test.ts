@@ -37,6 +37,33 @@ afterEach(() => {
 });
 
 describe('CloudManager hub identity', () => {
+  it("an agent's box is signed in as its Identity, and no person is the current user", async () => {
+    const { sdk } = await createIdentityRealm('http://127.0.0.1:9/api/v1');
+    const agent = {
+      type: 'identity',
+      id: '38cad2c1-4eea-4664-b3c2-fb97a1ee1667',
+      typeid: 'identity-38cad2c1-4eea-4664-b3c2-fb97a1ee1667',
+      name: 'joe',
+      picture: '🏴‍☠️',
+      subject_typeid: 'agent-04f3ab7a-d33b-48c0-ae0e-6e61e181a343',
+    };
+
+    await sdk.cloudManager.seedBootstrap({
+      user: null,
+      desktop_info: {
+        cloud_url: 'https://hub.test',
+        login: { status: 'logged_in', user: null, principal: agent, reason: null },
+      },
+    } as never);
+
+    expect(sdk.cloudManager.isLoggedIn).toBe(true);
+    expect(sdk.dataContext.currentPrincipal?.typeId.toString()).toBe(agent.typeid);
+    expect(sdk.dataContext.currentPrincipal).toMatchObject({ name: 'joe', subject_typeid: agent.subject_typeid });
+    expect(sdk.dataContext.signedInAsIdentity).toBe(true);
+    expect(sdk.dataContext.cloudUser).toBeNull();
+    expect(sdk.dataContext.currentUser).toBeNull();
+  });
+
   it('adopts the bootstrap user as the cloud identity and uses the configured hub origin', async () => {
     const { sdk } = await createIdentityRealm(`${HUB_ORIGIN}/api/v1`);
     sdk.setSupportedPagesForHubMode(['hub']);

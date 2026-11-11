@@ -371,9 +371,10 @@ export const ConversationListRow = memo(function ConversationListRow({
   // still-pending invitation — mirrors RecentConversationsStrip. The first
   // message stays ``kind === 'invitation'`` forever, so it can't drive this
   // on its own: the sender (and everyone post-accept) must see a normal row.
-  const { cloudUser, currentUser } = useAuth();
+  const { cloudUser, currentUser, currentPrincipal } = useAuth();
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
-  const localUserId = currentUser?.id ?? null;
+  // "Me" is the signed-in principal: the agent's Identity on its own box.
+  const localUserId = currentPrincipal?.id ?? null;
   const [accepting, setAccepting] = useState(false);
 
   // Single source of truth for the row's category (invitation / help desk /
@@ -487,11 +488,11 @@ export const ConversationListRow = memo(function ConversationListRow({
     if (names.length > 0) return names;
     // A conversation only the viewer is in (a private Diagnosis, a note to self) is theirs: name them, as the
     // conversation itself does, rather than "Unknown".
-    const selfName = currentUser?.name || cloudUser?.name;
+    const selfName = currentPrincipal?.name || cloudUser?.name;
     const self = selfName || myEmail ? personName({ name: selfName, email: myEmail }) : '';
     return [self || t`No members`];
   }, [
-    currentUser?.name,
+    currentPrincipal?.name,
     cloudUser?.name,
     isInvitationRow,
     firstMessage,

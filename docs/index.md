@@ -1,15 +1,15 @@
 ---
 type: markdown_index
-id: markdown_index-0909616b-4692-5d1d-a02e-a155e2fe2bbb
-inputs_hash: 9c0a565f20048630c967ebf6d0a7d734be95f3a3063a6a4f5add645fcc6418de
+id: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
+inputs_hash: 76f4be80312722c452f24c7ae7e8ad1c0b0d1ad751d28af59cf3d3d713444aed
 template_version: 1
 prompt_version: 1
 parent_ref: ''
-vault_root: /Users/tzahi/_dev/langware/github/flowpad-open-source/docs
-generated_at: '2026-10-21T09:23:02.549175+00:00'
+vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
+generated_at: '2026-11-11T06:55:38.604060+00:00'
 latest_process_ref: ''
-file_count: 54
-subfolder_count: 16
+file_count: 56
+subfolder_count: 17
 ---
 
 # docs
@@ -18,61 +18,77 @@ subfolder_count: 16
 > Flowpad's architecture, terminology and design docs: the record and entity model, agents and agentic processes, terminals and PTY, collaboration and sharing, navigation and tabs, the desktop app and its version-compatibility contract, FlowCall, runnable SDK snippets, and proven debugging findings with their benchmarks.
 
 ## Files
-- [Record System Requirements](CLAUDE.md) — Record system requirements: disk as source of truth, FSRef references, single FSRecord class with TypeInfo slots, shadow folder layout, metadata.json handling, and read-only rules.
-- [AgenticProcess Architecture](agentic-process.md) — AgenticProcess architecture: the durable agent-run entity, transport and visibility axes, PTY, CLI and wizard runtimes, status model, reconnect and replay, main actions, frontend flow.
-- [Agentic process outputs](agentic_process_outputs.md) — Agentic process outputs: the transcript derivation layer, the Artifact record of what a run produced, deliverable addressing, and the bus lane delivering outputs to clients.
-- [Agent Management](agents-management.md) — Agent management index: the Agent, Deployment and AgenticProcess model, the agent authoring bundle (agent.json, system_prompt.md, avatar), naming rules, and intro and auto-launch settings.
-- [API Routing Specification](api-routing.md) — API routing specification: graph URL structure, parsing algorithm, action registry and handler injection, CRUD and special actions, and frontend ActionInfo, DataManager and hooks rules.
-- [Automations](automations.md) — Automations screens backed by Trigger rows: the dock's URLs and places, the event-to-action chain, stream inbox gate and wizard, easily broken rules, and built-in automations.
-- [Server Boot & Bootstrap Flows](boot.md) — Backend boot and bootstrap flows: process start, server startup tasks, transcript catch-up, system content index, the sub-100ms bootstrap endpoint, deferred runtime info and lazy resources.
-- [Capabilities](capabilities.md) — Capability entity model for local system features such as CLI harnesses: hierarchical kinds, dynamic MCP-server capabilities, backend contract, frontend usage and adding a capability.
-- [Contributing to Flowpad](contributing.md) — Contributor guide for Flowpad: prerequisites, Windows git symlink setup and backend development setup.
-- [cookie-gate](cookie-gate.md) — Cookie-gate: an optional pre-shared secret locking an instance, such as an E2B sandbox, against unauthenticated callers; armed via login callback, stored in the instance sod.
-- [Data Management](data-management.md) — Two-layer data architecture: filesystem FSRecords as source of truth, SQLite entities as queryable index, sync paths, type system, and links to subsystem docs.
-- [debugMCP Setup](debugMCP-setup.md) — Setup of the debugMcp CDP browser server against Chrome Canary versus the headless playwright MCP server, including config files, ports and launch command.
-- [Dependency setup and Load](dependency-lifecycle.md) — Dependency setup and Load lifecycle: setup_required checks, prerequisites including data sources owing setup, the Set up prompt flow, authoring a provider, API and CLI usage.
-- [A web app's lifecycle on this machine](webapp-lifecycle.md) — The one record (webapp.lifecycle), the one readiness rule, the one coordinator: warm check, setup when owed, up, the bounded recovery ladder (learned handling, one fix by code, the fixer once per failure fingerprint, the person); typed failures, learned handlings, dependencies as asset_setup nodes.
-- [Desktop install — test scenarios](desktop-install-test-scenarios.md) — Manual and scripted test scenarios for desktop install: Python pin from pyproject.toml, retryable install-failure panel, and clean-room uv tool install release gate, and the Windows uninstaller (ownership, data choices, deferred cleanup)
-- [Developer Setup](dev_setup.md) — PyCharm flow_sdk import resolution, the cookie-gate off switch, and running the hub UI with HMR against prod (localhost:4121, HUB_LOGIN OAuth, read-only proxy).
-- [Global Display Capabilities — Survey & Open Questions](display-capabilities.md) — Survey of every way Flowpad displays content: dock pointers, flow show targets, file and entity viewers, webapps, foreign HTML trust tiers, gaps, open questions
-- [doc](doc.md) — Empty document stub containing only front matter with blank title, asset type and tags, and no body content.
-- [The `electron/` directory — structure, flows, and next steps](electron-structure.md) — Structure of the electron directory: main-process files, modules, build and signing, startup, update and recovery flows, watchdog limits, WDAC policy, logs and IPC channels.
-- [Electron Desktop App](electron.md) — Electron desktop app guide: architecture, file structure, startup and shutdown lifecycle, frontend URL resolution, build and packaging, release workflow, macOS signing and notarization, and troubleshooting.
-- [Entities Groups — generic folder-like containment](entities-groups.md) — Group entity design for folder-like containment of entities: group_id membership, nesting, virtual roots identified by group namespace, and the backend Group class.
-- [`flow connect --docker <container>` — enroll a Docker container into the hub](flow-connect-docker.md) — Procedure for enrolling a running Docker container as a hub compute node with flow connect --docker, covering install, machine.env, approval and reconnecting.
-- [FlowEvents — the unified event bus (delivery worklog)](flow-events.md) — Phase-by-phase delivery worklog for the unified FlowEvent bus: envelope spec, emitters, trigger subscriptions, WebSocket dialect replacement, lifecycle signals and dated log entries
-- [Frontend Debug Cheatsheet](frontend-debug-cheatsheet.md) — Browser-console debug cheatsheet: registered debug globals and snippets for entity, PTY, agentic process, hook, WebSocket, context, navigation and auth bugs, plus state snapshots.
-- [FSRef — declarative file/folder references](fs-ref.md) — FSRef declarative file and folder references: the class family, indexer walk tags, read-only semantics for borrowed checkouts, and freshness fingerprint.
-- [fs_store: Record System Architecture](fs_store.md) — Pointer page for the fs_store file-backed record system, mapping each subject to its current doc and noting the SQLite entities table is a rebuildable index.
-- [Glossary — our nouns vs. the ecosystem's](glossary.md) — Glossary cross-walking Flowpad nouns with Claude Code and OpenClaw, including FlowCall, provider mirrors versus native assets, and which words are already taken.
-- [Icons](icons.md) — Icon system design: the backend names a glyph, the frontend resolves it; dot-tag names, packs, rendering, the bundle seam, lucide validity and adding an icon.
-- [Flowpad](intro.md) — Flowpad introduction presenting a collaboration tool for humans and AI workers to share agent work securely, with use cases like product specs and forward-deployment engineering.
-- [Listen Webhook Pipeline](listen_webhook.md) — Listen webhook pipeline: the listen endpoint, webhook types, agent hook identification, sniffer hook, FlowData conversion, and TypeScript SDK processing and rendering of hook events.
-- [Wiki namespaces and link graph — flowpad-oss](llm_wiki.md) — Wiki namespaces and link graph: Wiki and WikiEntry bindings, [[...]] link extraction into the edge store, outgoing and backlink reads, cleanup, HTTP API and frontend.
-- [Local Patch Runbook](local_patch.md) — Runbook for running a local checkout on the installed flowpad via a stamped +local wheel deployment, plus patching the Electron desktop shell, with pitfalls.
-- [MCP UI Architecture](mcp-ui.md) — MCP UI architecture for Vibe .mcp.html apps: address model, host families, render and submission flows, sandbox boundary, design rules, key files and debug checklist.
-- [Ontology — type, subkind, kind](ontology.md) — Definitions of type, subkind, and kind as join keys between entity and schema layers: kinds name shapes not rows, namespaces, resolution, coverage, unfinished work.
-- [Playwright MCP — Usage & Debug](playwright-usage.md) — Playwright MCP usage notes: Chromium-based .mcp.json config, pre-use steps, screenshot cleanup and common errors with fixes.
-- [Prompt Library — managed prompts, foldered, one click to queue](prompt-library.md) — Prompt Library design: a prompt record type stored as markdown with frontmatter, organized in entity-group folders, enqueued onto a process prompt queue from the terminal.
-- [Prompt Queue](prompt_queue.md) — Prompt Queue design: backend-owned FIFO of pending prompts per AgenticProcess, on-disk format, launch and drain flows, readiness decision, entry lifecycle, concurrency and debugging.
-- [Terminal scrolling and the mouse wheel — issues, fixes, worker behavior](pty-scroll.md) — Terminal mouse-wheel scrolling mechanics, a log of past dead-wheel causes with proofs and fixes, per-worker behavior (Claude Code), and diagnosing the next one.
-- [PTY Line Synchronization — Annotation Gutter (right) & Trace Gutter (left)](pty-sync.md) — PTY line synchronization design for the terminal's left trace gutter and right annotation gutter: xterm coordinates, PtySyncSession, positioning math, rendering, and restart/reconnect recovery.
-- [PTY / xterm Terminal System Specification](pty-terminal-spec.md) — PTY and xterm terminal system specification: output and input data flow, WebSocket endpoints and messages, session state, reconnect and replay, frontend components, and chat-versus-terminal rendering.
-- [Renderable code fences](renderable-fences.md) — Renderable code fence plugin for Milkdown: render-only NodeView registry drawing mermaid and interface fences, with tabs, host services, three renderers, source grounding and live refresh.
-- [Credentials and secrets](secret_share.md) — Credential asset model for declaring secrets as environment variables: project, user and system scopes, value storage, hub deployment, resolution into processes, deletion, permissions and statuses.
-- [Session Share Spec](session_share_spec.md) — Specification for sharing Claude Code sessions between machines: session anatomy, transcript JSONL and session id, project path encoding, and patching transcripts for the receiver.
-- [shellMode vs Direct / Agentic PTY](shell-claude-session-api.md) — Comparison of shell terminals and agentic-process PTYs: creation paths, entity model, shell_mode, titles and renaming, tab handling, headless versus interactive, restart recovery and known discrepancies.
-- [System Agents](system_agents.md) — Shipped system SubAgents: markdown prompt files loaded as FSRecords, serialized to the Claude CLI agents flag, embedded in an AgenticProcess, plus steps to add one.
-- [Tab Management](tab-management.md) — As-built Tab entity, SDK TabManager and strip design for content-panel tabs, plus historical design record, unified-tab future plans and approved interface spec.
-- [Tags — the unified event bus](tags.md) — Rationale for tags as the unified event bus: free dot-string tags, taxonomy, envelope, ctx, bus API, laws, legacy pipeline adapters, future recorder and migration order.
-- [hi\\](test_md.md) — Near-empty test markdown with only blank front matter and a placeholder heading reading "hi".
-- [Toplog — tag-based runtime logging](toplog.md) — Toplog tag-based runtime debug logging: backend and frontend usage, toplog.json as authority, architecture, tags that switch behavior, components, REST API and limitations.
-- [TraceGutter - FlowData Trace Events in the Terminal Left Gutter](trace-gutter.md) — TraceGutter design: rendering FlowData trace events against terminal rows, covering data sources, frontend hooks, row mapping, backend history flow, prompt index and file map.
-- [typeid](typeid.md) — Redirect stub stating that the TypeId doctrine has moved to primitives/typeid.md.
-- [Desktop <-> Backend Version Compatibility](version-compatibility.md) — Desktop and backend version-compatibility contract: two JSON floors, enforcement at install, upgrade and startup, the flow compat check, release gates and troubleshooting.
-- [VFS Path Specification](vfs.md) — VFS path specification: the vfs://type-id/sub_path URI format for addressing files under entities, with supported id formats and path rules.
-- [View Modes — Vibe / Standard / Advanced / Dev "skin" system](viewmodes.md) — View-mode skin system (Vibe, Standard, Advanced, Dev): the skin-layer rule, component toolkit, decision tree for gating a surface, testing recipe, checklist and decision log.
-- [WikiTip](wikitip.md) — WikiTip mechanism connecting inline UI elements to wiki pages: click round-trip, URL-carried highlight lifecycle, openWikiModal peek utility, link-interception extension point, reused building blocks and files.
+- [Record System Requirements](CLAUDE.md) — Record system requirements: disk as source of truth, FSRef file references and subclasses, FSRecord manifests, and entities as a rebuildable DB index.
+- [AgenticProcess Architecture](agentic-process.md) — AgenticProcess architecture across headless and PTY modes: durable identity, worker drivers, status, reconnect, replay, actions, and frontend integration.
+- [Agentic process outputs](agentic_process_outputs.md) — How agent runs surface outputs: display, artifacts, workdir versus declared-output modes, and how results reach the client.
+- [Agent Management](agents-management.md) — Agent management overview separating Agent definitions, Deployment placement, and AgenticProcess runs, with authoring bundles and focused interface references.
+- [API Routing Specification](api-routing.md) — API routing specification: graph URL structure, parsing algorithm, implicit action mapping, action registry, dedicated routes, RequestInfo and frontend ActionInfo/DataManager routing.
+- [Automations](automations.md) — Automations built on Trigger rows: automations dock URLs for list, editor, runs and event bus, When-Then building, testing and on/off recommended rules.
+- [Server Boot & Bootstrap Flows](boot.md) — ---
+id: ca975db1-c883-4243-af94-da519bb8e1e0
+---
+Backend boot path from process start to serving requests: startup flows, detached tasks, the sub-100ms bootstrap budget, deferred info, shared lazy assets and measurements.
+- [Capabilities](capabilities.md) — Capability system entities: hierarchical kinds such as harness.claude.cli, persisted check/install/test results, dynamic MCP-server capabilities, and frontend hooks.
+- [Contributing to Flowpad](contributing.md) — Getting a Flowpad dev environment running: prerequisites, backend and frontend startup, repository layout, and the contribution workflow.
+- [cookie-gate](cookie-gate.md) — Cookie gate: per-instance .cookie_gate token required for every backend request, UI, API and WebSocket, closing FLOWPAD-2233 cross-site drive attacks.
+- [Data Management](data-management.md) — Data management architecture overview: FSRecord filesystem records as source of truth, entity DB index, TypeInfo per-type policy, and links to subsystem docs.
+- [debugMCP Setup](debugMCP-setup.md) — Setting up debugMCP: launching Chrome Canary with CDP, the debugMcp server, the standard Playwright MCP server, and the usage rules.
+- [Dependency setup and Load](dependency-lifecycle.md) — Dependency Load and setup: prerequisites including data sources owing setup (DataSource.setup_owed), first-level steps listed with row count, when load results are forgotten, asset_setup, API, CLI.
+- [Desktop install — test scenarios](desktop-install-test-scenarios.md) — Desktop install test scenarios: pyproject Python pin, in-app Retry panel on failed install, clean-room uv tool install gate, and Windows uninstaller checks.
+- [Developer Setup](dev_setup.md) — Developer setup fix for PyCharm unresolved flow_sdk imports caused by setuptools editable _EditableFinder hooks, with interpreter and source-root configuration steps.
+- [Global Display Capabilities — Survey & Open Questions](display-capabilities.md) — Survey of Flowpad display capabilities: URL-first dock pointers and flow show agent targets, viewers per file/entity/webapp/artifact type, plus open design questions.
+- ['](doc.md) — Empty placeholder document with blank title and only frontmatter, no content.
+- [The `electron/` directory — structure, flows, and next steps](electron-structure.md) — Electron directory structure: main.js, UvManager installing flowpad from PyPI on port 9007, electron-updater, file roles, flows and next steps.
+- [Electron Desktop App](electron.md) — Electron desktop app architecture: main process installing flowpad from PyPI via uv, starting the port 9007 backend, preload IPC bridge, packaging and distribution.
+- [Entities Groups — generic folder-like containment](entities-groups.md) — Group, the generic folder-like container: membership is a group_id on Entity, nesting is the same field, and tree roots are virtual namespaces.
+- [`flow connect --docker <container>` — enroll a Docker container into the hub](flow-connect-docker.md) — Enrolling a running Docker container as a hub compute node with flow connect --docker: what the CLI installs, the machine.env written, and the gotchas.
+- [FlowEvents — the unified event bus (delivery worklog)](flow-events.md) — Delivery worklog for the unified FlowEvent bus: normative envelope, phase-by-phase status with dated logs, plus app.ready, app.tab.ready, wizard triggers and dataset change tags.
+- [Frontend Debug Cheatsheet](frontend-debug-cheatsheet.md) — Browser-console recipes for debugging the running frontend: the registered debug globals, bootstrap and WebSocket health, entity cache, and data or PTY bugs.
+- [fs-ref](fs-ref.md) — FSRef, the declarative file and folder reference used throughout records: its class family, indexer walk tags, and read-only inheritance.
+- [fs_store: Record System Architecture](fs_store.md) — Directory page for the fs_store package: no single FsStore class exists; a table routes each subject to its current home under data-management.
+- [Glossary — our nouns vs. the ecosystem's](glossary.md) — Glossary mapping Flowpad nouns to Claude Code and OpenClaw terms, including FlowCall, ComputeOp, ReturnedValue, kind/schema/value, and reserved names like Agent.
+- [Icons](icons.md) — Icon system: backend names glyphs as dot tags like brands.slack or lucide.rss, frontend resolves them via the icon registry, legal names and packs.
+- [intro](intro.md) — What Flowpad is: secure, AI-native collaborative agent work, the collaborative context conversation, and the use cases it addresses.
+- [Listen Webhook Pipeline](listen_webhook.md) — The webhook listen pipeline: how Claude Code hooks and hook_op envelopes reach POST /webhook/listen, get routed by type, become FlowData, and render.
+- [Wiki namespaces and link graph — flowpad-oss](llm_wiki.md) — Wiki namespaces and the link graph: wiki-link syntax, edge extraction on sync, page resolution, the edge store schema, cleanup paths, and API surface.
+- [Local Patch Runbook](local_patch.md) — Local patch runbook: run checkout code on the uv-tool install by stamping +local<N>, build_ui.py, uv build, uv tool install, restart—never overlay site-packages.
+- [MCP UI Architecture](mcp-ui.md) — ---
+id: 48f1b9e5-e1fd-4fee-ac01-3252d20cc05e
+---
+MCP UI architecture in Vibe: the agent writes a .mcp.html file, the backend sandbox proxy hosts it, and the app's ui/message returns as a prompt.
+- [Ontology — type, subkind, kind](ontology.md) — Ontology of type, subkind and kind: closed EntityType registry, per-type subkind enums, and open dot-path kinds naming schemas across types.
+- [Playwright MCP — Usage & Debug](playwright-usage.md) — Using the Playwright MCP server: its .mcp.json config, the checks required before every use, common errors, and the operating rules.
+- [Prompt Library — managed prompts, foldered, one click to queue](prompt-library.md) — The prompt record type and its foldered library in the terminal ribbon: markdown layout, entity-group folders, and one-click enqueue onto the prompt queue.
+- [Prompt Queue](prompt_queue.md) — Prompt queue: backend-owned per-AgenticProcess FIFO in prompt_queue.json, reflected queue field, four HTTP actions, launch riding the queue and draining.
+- [Terminal scrolling and the mouse wheel — issues, fixes, worker behavior](pty-scroll.md) — How a wheel tick scrolls a Flowpad terminal, a log of every wheel failure with its proof and fix, and per-worker terminal behavior like Claude Code fullscreen.
+- [PTY Line Synchronization — Annotation Gutter (right) & Trace Gutter (left)](pty-sync.md) — ---
+id: 5587ed56-23d1-44ca-a3f0-144e7d47a9f0
+---
+PTY line-synchronization model (PtySyncSession, VirtualTerminal, XtermAdapter eviction offset), annotation gutter row positioning, and scrollback recovery across frontend reload and backend restart.
+- [PTY / xterm Terminal System Specification](pty-terminal-spec.md) — ---
+id: 05fae1eb-4e5a-4d06-8639-afcf9e36acba
+---
+PTY terminal system across OS process, backend sessions, WebSocket transport and xterm.js: byte paths, framed stream persistence, attach-time replay, resize alignment, two renderers, startup budget.
+- [Renderable code fences](renderable-fences.md) — How a code fence opts into being drawn: the render-only NodeView over Milkdown code blocks, the renderer registry, and why markdown stays byte-identical.
+- [Credentials and secrets](secret_share.md) — Credentials and secrets: Credential assets declaring named env-var sets in project, user or system scope, injected into workers, terminals and compute-node commands.
+- [Self-protection: a FlowPad activity never kills the FlowPad it runs inside](self-protection.md) — Self-protection invariant from FLOWPAD-2112: no FlowPad activity may kill the live backend, enforced in code at every kill while allowing stale-process cleanup.
+- [Session Share Spec](session_share_spec.md) — Transferring a worker session between machines: project path encoding, experiment results, where paths appear in a transcript, and the transfer algorithm.
+- [shellMode vs Direct / Agentic PTY](shell-claude-session-api.md) — How a plain shell terminal differs from an agent running over a PTY: creation paths, entity model, shell_mode, titles and recovery.
+- [System Agents](system_agents.md) — ---
+id: 42a61552-2f8c-42a6-9e3d-c690ddc3b86a
+---
+System agents: shipped SubAgent prompt assets, their loading and embedding into an AgenticProcess, and steps for adding one, distinct from the launchable Agent entity.
+- [Tab Management](tab-management.md) — Tab management: as-built Tab entity keyed by DockPointer hash, SDK TabManager, single strip component, plus historical design parts.
+- [Tags — the unified event bus](tags.md) — Tags unified event bus: dot-path ontological tag strings, on_tag/emit_tag naming, and subscribers like journeys and triggers replacing legacy event/message/op APIs.
+- ['](test_md.md) — Near-empty scratch markdown fixture holding only a heading; no content of its own.
+- [Toplog — tag-based runtime logging](toplog.md) — Toplog tag-based runtime debug logging: toplog.log calls silent until tags are enabled, toggled at runtime from backend or frontend via toplog.json.
+- [TraceGutter - FlowData Trace Events in the Terminal Left Gutter](trace-gutter.md) — TraceGutter terminal left gutter rendering FlowData trace events from AgenticProcess.flowDataStream history and live stream, aligned to rows via PtySyncSession.
+- [typeid](typeid.md) — Redirect stub: the TypeId doctrine now lives in primitives/typeid.md.
+- [Desktop <-> Backend Version Compatibility](version-compatibility.md) — Desktop-backend version compatibility contract: min_backend_version in engine-compat.json and min_desktop_version in compat.json, both floors required for a pair.
+- [VFS Path Specification](vfs.md) — The vfs:// URI scheme for addressing files under any entity: the type-id path format, the four accepted id formats, and per-entity storage roots.
+- [View Modes](viewmodes.md) — ViewMode skins, shared terminal and chat rendering, transport-switch exceptions, readiness guards, toolkit slots, context, and common integration mistakes.
+- [A web app's lifecycle on this machine](webapp-lifecycle.md) — Web app lifecycle on a machine: webapp.lifecycle record states, readiness rule, and the coordinator in flow_sdk/core/webapp handling bring-up, checks and recovery.
+- [WikiTip](wikitip.md) — WikiTip, the bidirectional link between a home-feed card and a wiki page: a real FeedEntry, its hover preview, and the highlight round-trip back.
 
 ## Subfolders
 - [agent-management/](agent-management/index.md) — Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.
@@ -86,6 +102,7 @@ subfolder_count: 16
 - [mockups/](mockups/index.md) — Interface mockups. Empty for now.
 - [modes/](modes/index.md) — The workspace modes. Vibe is the creator-first one: a side chat beside a live display, with the rules that keep the display authoritative.
 - [navigation/](navigation/index.md) — How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, the home page a project opens on, and the catalogs of example sentences each mapped to its navigation target.
+- [plans/](plans/index.md) — Dated implementation plans for individual fixes, each recording the problem, the chosen approach, the steps and how it was verified; currently the local backend cookie-gate fix.
 - [primitives/](primitives/index.md) — The small identifier and reference types everything else is built from: FSRef, the path-only declarative file reference, and TypeId, the type-plus-id format entities are addressed by.
 - [reports/](reports/index.md) — Validation records for completed refactors: what was run, what passed, and the gates each change had to clear. Evidence that a migration landed, not instructions for doing one.
 - [sdk-site/](sdk-site/index.md) — The public Flow SDK guide: typed schemas and values, agents, FlowCall outcomes and composition, channels, credentials, deployments, and executable examples.

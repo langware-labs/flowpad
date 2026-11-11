@@ -60,7 +60,9 @@ def _validate_returns(user_id: str):
 
 def _current_user(user_id: str | None):
     value = {"id": user_id} if user_id else None
-    return patch("flow_sdk.cli.app_config.get_user", return_value=value)
+    from flow_sdk.cli.app_config import as_principal
+
+    return patch("flow_sdk.cli.app_config.get_principal", return_value=as_principal(value))
 
 
 class _FakeTokenResponse:

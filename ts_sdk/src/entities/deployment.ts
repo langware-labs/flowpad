@@ -26,8 +26,8 @@ export type DeploymentSyncState = 'current' | 'stale' | 'partial' | 'error';
 export type DeploymentObservationKind = 'cost' | 'size' | 'activity';
 export type ObservationCoverage = 'available' | 'unavailable' | 'unattributed' | 'stale';
 
-/** Who a box logs in as for a deployment: nobody, its main agent, or its owner (only when asked for). */
-export type DeploymentIdentity = 'none' | 'agent' | 'user';
+/** Who a box logs in as for a deployment: nobody, its main agent, an identity of this placement alone, or its owner. */
+export type DeploymentIdentity = 'none' | 'agent' | 'deployment' | 'user';
 
 /** What a deployment's source names: a tag, a release, or a commit (the default, the project's HEAD). */
 export type DeploymentSourceKind = 'tag' | 'release' | 'commit';

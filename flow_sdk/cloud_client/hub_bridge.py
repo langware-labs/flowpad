@@ -618,12 +618,13 @@ class HubWsBridge:
             # The auto-notify version is useless to us — we already know
             # about our own sends — and lacks the conversation parent, so it
             # would hit the policy-denied parents_path fallback. Skip it by
-            # matching ``sender_id`` against the *cloud* user id (the local
-            # ``User`` row uses a different per-machine id).
+            # matching ``sender_id`` against the signed-in *cloud* principal's id
+            # (a person, or the agent's Identity on its box; the local ``User``
+            # row uses a different per-machine id).
             try:
-                from flow_sdk.cli.app_config import get_user as _get_cloud_user
+                from flow_sdk.cli.app_config import get_principal as _get_cloud_principal
 
-                cloud_user = _get_cloud_user() or {}
+                cloud_user = _get_cloud_principal() or {}
                 cloud_user_id = cloud_user.get("id")
                 if cloud_user_id and payload.get("sender_id") == cloud_user_id:
                     return
@@ -990,9 +991,9 @@ class HubWsBridge:
             new_body_status = getattr(existing, "body_status", None)
             is_self_send = False
             try:
-                from flow_sdk.cli.app_config import get_user as _get_cloud_user
+                from flow_sdk.cli.app_config import get_principal as _get_cloud_principal
 
-                cloud_user_id = (_get_cloud_user() or {}).get("id")
+                cloud_user_id = (_get_cloud_principal() or {}).get("id")
                 sender_id = getattr(existing, "sender_id", None)
                 if cloud_user_id and sender_id and sender_id == cloud_user_id:
                     is_self_send = True

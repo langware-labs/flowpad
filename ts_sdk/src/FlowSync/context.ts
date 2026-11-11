@@ -14,6 +14,7 @@ import type { AgenticProcess } from '../process/agentic-process';
 import { APIEntity, dataManager, type AnyEntity } from '../APIEntity';
 import type { ComputeNode } from '../entities/compute_node';
 import type { Project } from '../entities/project';
+import type { Identity } from '../entities/identity';
 import type { User } from '../entities/user';
 import type { Shell } from '../entities/shell';
 import type { Workspace } from '../entities/workspace';
@@ -75,6 +76,8 @@ export enum ContextEntitiesEnum {
   // to render" gate) is bound to the *local* slot only.
   LocalUserTypeId = 'LocalUserTypeId',
   CloudUserTypeId = 'CloudUserTypeId',
+  // Who the hub signed this instance in as: the cloud user, or an Identity (an agent's box).
+  CloudPrincipalTypeId = 'CloudPrincipalTypeId',
   CurrentActiveEntityTypeId = 'CurrentActiveEntityTypeId',
   CurrentDomainTypeId = 'CurrentDomainTypeId',
   CurrentVisitorTypeId = 'CurrentVisitorTypeId',
@@ -134,6 +137,7 @@ class DataContext extends EventEmitter {
     [ContextEntitiesEnum.CurrentComputeNodeTypeId, null],
     [ContextEntitiesEnum.LocalUserTypeId, null],
     [ContextEntitiesEnum.CloudUserTypeId, null],
+    [ContextEntitiesEnum.CloudPrincipalTypeId, null],
     [ContextEntitiesEnum.CurrentActiveEntityTypeId, null],
     [ContextEntitiesEnum.CurrentDomainTypeId, null],
     [ContextEntitiesEnum.CurrentVisitorTypeId, null],
@@ -527,6 +531,9 @@ class DataContext extends EventEmitter {
       localUser: computed,
       cloudUser: computed,
       currentUser: computed,
+      currentPrincipal: computed,
+      currentPrincipalTypeId: computed,
+      signedInAsIdentity: computed,
       localUserTypeId: computed,
       cloudUserTypeId: computed,
       currentUserTypeId: computed,
@@ -785,11 +792,28 @@ class DataContext extends EventEmitter {
    * the human. Use `localUser` for the auth principal of local API calls.
    */
   get currentUser(): User | null {
+    if (this.signedInAsIdentity) return null;
     return this.cloudUser ?? this.localUser;
   }
 
   get currentUserTypeId(): TypeId | null {
+    if (this.signedInAsIdentity) return null;
     return this.cloudUserTypeId ?? this.localUserTypeId;
+  }
+
+  /** Who is signed in: the cloud principal (a person or an agent's Identity), else the local desktop user.
+   *  Read this to show or match "me" on any box; `currentUser` is a person only, null on an agent's box. */
+  get currentPrincipal(): User | Identity | null {
+    return (this.getContextEntity(ContextEntitiesEnum.CloudPrincipalTypeId) as User | Identity | null) ?? this.localUser;
+  }
+
+  get currentPrincipalTypeId(): TypeId | null {
+    return this.getContextEntityTypeId(ContextEntitiesEnum.CloudPrincipalTypeId) ?? this.localUserTypeId;
+  }
+
+  /** The hub signed this instance in as a non-human Identity (an agent's or a deployment's box). */
+  get signedInAsIdentity(): boolean {
+    return this.getContextEntityTypeId(ContextEntitiesEnum.CloudPrincipalTypeId)?.type === 'identity';
   }
 
   get workspace(): Workspace | null {

@@ -312,7 +312,7 @@ async def _pack_asset(asset_typeid: str) -> tuple[str, str, bytes]:
 
 async def _hub_root_for_local_key(provider: str) -> str:
     """A hub root endpoint holding THIS computer's ``provider`` key -- reused if one was made before."""
-    from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+    from flow_sdk.cli.app_config import get_principal  # noqa: PLC0415
     from flow_sdk.cli.auth.lm_api_keys import get_lm_api  # noqa: PLC0415
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
@@ -322,10 +322,10 @@ async def _hub_root_for_local_key(provider: str) -> str:
     if not key:
         raise ValueError(f"no {provider} key is stored on this computer")
     name = f"{provider} key (uploaded for diagnosis requests)"
-    # Reused only when THIS user created it: ``created_by`` is stamped by the hub from the token,
+    # Reused only when THIS principal (person or agent) created it: ``created_by`` is stamped by the hub from the token,
     # so it cannot be forged. Matching on the name alone would pick up an endpoint someone else
     # named the same and shared here -- and its base_url would carry the runner's traffic.
-    me = str((get_user() or {}).get("id") or "")
+    me = str((get_principal() or {}).get("id") or "")
     existing = await HubProxy.try_call("GET", EntityType.LLM_ENDPOINT.value) or []
     for row in existing if isinstance(existing, list) else []:
         mine = bool(me) and str(row.get("created_by") or "") == me

@@ -157,7 +157,7 @@ status is classified first and the envelope is used as detail:
 | 408/425/429, 5xx, non-JSON (including a 200) | `server_error` |
 | other 4xx (including a bare 401), or a FAIL envelope | `rejected` |
 
-- Login is invalidated only on `code=unauthenticated`, or on a failed `/current-user`.
+- Login is invalidated only on `code=unauthenticated`, or on a failed `/current-user` / `/current-principal`.
 - A non-JSON body is never echoed. The message reads "the hub answered 502 Bad Gateway".
 - **`hub_fail_response(prefix, e)`** builds the ApiFailResponse with `data = {error_code: kind, hub_status}`. The UI matches the
   code, never the prose (`hubFailureOf(err)`).

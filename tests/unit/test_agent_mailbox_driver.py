@@ -171,7 +171,7 @@ class TestTheHubMember:
             return {"id": "user-1"}
 
         monkeypatch.setattr(HubProxy, "call", staticmethod(fake_get))
-        monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.get_user", valid_user)
+        monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.get_principal", valid_user)
 
         with pytest.raises(AgentMailboxError) as caught:
             await HubAgentMailboxDriver().get_mailbox(AGENT_ID)
