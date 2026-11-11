@@ -86,7 +86,10 @@ test('message links: same matches, click, menu, lightbox and dock tab as the ter
 
   // 2. Selecting text across a link is a selection, not a click.
   const link = links.first();
-  const box = (await link.boundingBox())!;
+  // The bubble re-renders once the send is confirmed (the pending clock goes away): measure the link once it is laid out.
+  const measured: { box: Awaited<ReturnType<typeof link.boundingBox>> } = { box: null };
+  await expect.poll(async () => (measured.box = await link.boundingBox()) !== null).toBe(true);
+  const box = measured.box!;
   await page.mouse.move(box.x + 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 5 });

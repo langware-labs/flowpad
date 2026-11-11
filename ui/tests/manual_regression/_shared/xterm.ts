@@ -15,7 +15,9 @@ export async function printLink(page: Page, shellId: string, link: string, osc =
     const shell = await sdk.Shell.getById(shellId);
     await shell.sendInput(command);
   }, { sdkModule, shellId, command: `printf '%b\\n' ${quote(output)}\n` });
-  await expect(page.locator('.xterm-rows:visible').first()).toContainText(osc ? 'OSC destination' : link);
+  // The terminal it was printed in: other pooled terminals can be laid out (visible) too.
+  const printed = osc ? 'OSC destination' : link;
+  await expect(page.locator('.xterm-rows:visible').filter({ hasText: printed }).first()).toContainText(printed);
 }
 
 /** The screen point of `text` (or the first match of a pattern) on its newest row. */
