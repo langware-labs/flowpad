@@ -721,7 +721,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         _OPT,
         folds_pointer=True,
         label="LLM Endpoints",
-        aliases=("endpoints",),
+        # The list shows each endpoint's usage today: with no endpoint named, it answers "endpoint usage".
+        aliases=("endpoints", "endpoint usage", "endpoints usage"),
         pages=("hub",),
         provides=("entity",),
         open_forms=(

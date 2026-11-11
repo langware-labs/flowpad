@@ -515,3 +515,10 @@ def test_workflows_are_the_workflow_list_and_graph_workflows_keep_their_own_name
     assert navigator.rule_hit("open my workflows").value == "assets/list/dynamic_workflow"
     assert navigator.rule_hit("open graph workflows").value == "graph-workflows"
 
+
+def test_endpoint_usage_with_no_endpoint_named_is_the_endpoints_list():
+    # Sentence 121: the LLM Endpoints list shows each endpoint's usage today; with no endpoint in
+    # context it is the place that answers. Live, without the name: a usage-report app, 0.50-0.63.
+    assert navigator.rule_hit("show endpoint usage").value == "hub/llm-endpoints"
+    assert navigator.rule_hit("show endpoints usage").value == "hub/llm-endpoints"
+
