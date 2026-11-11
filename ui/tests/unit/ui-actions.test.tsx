@@ -52,15 +52,17 @@ describe('UI actions', () => {
   // Live (navigation sentences 178/179): "switch to terminal mode" on Home re-pointed Home at
   // ?viewMode=advanced, which DockPointer drops off a session -- the same URL, so nothing happened.
   it('a mode switch off a session page opens the last chat in that mode', async () => {
-    const chat = DockPointer.forSession('7a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d');
-    vi.spyOn(AgenticProcess, 'query').mockResolvedValue([{ terminalDockPointer: chat } as unknown as AgenticProcess]);
+    const id = '7a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d';
+    // A queried process's `terminalDockPointer` is the SDK's plain pointer (no `withViewMode`): live,
+    // re-pointing it threw. The session is shown on the surface by id, as its own switch does.
+    const chat = { id, terminalDockPointer: { viewType: 'shell', pointer: `agentic_process-${id}` } };
+    vi.spyOn(AgenticProcess, 'query').mockResolvedValue([chat as unknown as AgenticProcess]);
     const openDock = vi.fn();
-    const host = { navigation: { here: DockPointer.fromUrl('/dock/home'), openDock }, toggleTheme: vi.fn() };
+    const switchSessionSurface = vi.fn();
+    const host = { navigation: { here: DockPointer.fromUrl('/dock/home'), openDock, switchSessionSurface }, toggleTheme: vi.fn() };
     await UI_ACTIONS['view-mode-advanced'](host as unknown as UiActionHost);
-    const [dock, , opts] = openDock.mock.calls[0];
-    expect((dock as DockPointer).viewType).toBe(chat.viewType);
-    expect((dock as DockPointer).viewMode).toBe('advanced');
-    expect(opts).toEqual({ viewModeSwitch: true });
+    expect(switchSessionSurface).toHaveBeenCalledWith(id, 'advanced');
+    expect(openDock).not.toHaveBeenCalled();
   });
 
   it('on a session page it re-points that session', async () => {

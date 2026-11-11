@@ -103,7 +103,7 @@ const switchMode = async (h: UiActionHost, mode: 'vibe' | 'advanced') => {
     await AgenticProcess.query<AgenticProcess>(lastChatQuery(dataContext.project?.id ?? null)),
   );
   setViewMode(want, last?.terminalDockPointer ?? null);
-  if (last) h.navigation.openDock(last.terminalDockPointer.withViewMode(want), undefined, { viewModeSwitch: true });
+  if (last) h.navigation.switchSessionSurface(last.id, want);
 };
 
 /** Actions whose dialog or menu lives in a mounted component: `{id: the screen hosting it}`. */
