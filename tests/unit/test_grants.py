@@ -99,3 +99,38 @@ def test_the_cookie_line_is_host_only_partitioned_and_a_session_cookie():
     for attribute in ("Path=/", "Secure", "HttpOnly", "SameSite=None", "Partitioned"):
         assert attribute in line
     assert "Domain=" not in line and "Max-Age=" not in line and "Expires=" not in line
+
+
+# ── why a credential was refused: words for the Forbidden page, never the value ─────────────
+
+
+def test_ticket_status_names_each_reason():
+    system = "system"
+    fresh = sign_grant(_grant(audience=system), SECRET, now=NOW)
+    assert grants.ticket_status(fresh, audience=system, now=NOW) == "ok"
+    assert grants.ticket_status(None, audience=system, now=NOW) == "none"
+    assert grants.ticket_status("junk", audience=system, now=NOW) == "malformed"
+    assert grants.ticket_status(sign_grant(_grant(audience=system), "other", now=NOW), audience=system) == (
+        "bad-signature"
+    )
+    assert grants.ticket_status(fresh, audience=system, now=NOW + TICKET_MAX_AGE + 5) == "expired 5s ago"
+    assert grants.ticket_status(fresh, audience="app", now=NOW) == "wrong-door"
+
+
+def test_grant_status_names_each_reason():
+    value = grants.mint_grant(_grant(), now=NOW)
+    assert grants.grant_status(value, audience="app", now=NOW) == "ok"
+    assert grants.grant_status(None, audience="app", now=NOW) == "none"
+    assert grants.grant_status(value, audience="app", now=NOW + GRANT_MAX_AGE + 1) == "expired 1s ago"
+    assert grants.grant_status(value, audience="system", now=NOW) == "wrong-door"
+    grants.revoke(None, [ENDPOINT], now=NOW)
+    assert grants.grant_status(value, audience="app", now=NOW) == "revoked"
+
+
+def test_a_grant_from_before_a_restart_says_so():
+    """A restart changes the boot nonce, so the grant's signature no longer matches."""
+    before = grants.mint_grant(_grant(), now=NOW)
+    with patch.object(grants, "_BOOT_NONCE", uuid.uuid4().hex):
+        assert grants.grant_status(before, audience="app", now=NOW) == (
+            "bad-signature (from before a restart, or another box)"
+        )

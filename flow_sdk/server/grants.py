@@ -26,10 +26,19 @@ import time
 from typing import Iterable, Optional
 from urllib.parse import quote, unquote
 
+from starlette.requests import HTTPConnection
 from starlette.responses import RedirectResponse, Response
 
 from flow_sdk.instance_settings import cookie_gate
-from flow_sdk.server.service_proxy import GRANT_MAX_AGE, TICKET_MAX_AGE, Grant, sign_grant, verify_grant
+from flow_sdk.server import gate_trace
+from flow_sdk.server.service_proxy import (
+    GRANT_MAX_AGE,
+    TICKET_MAX_AGE,
+    Grant,
+    sign_grant,
+    verify_grant,
+    verify_reason,
+)
 
 #: The cookie a door sets. ``__Host-``: no Domain, so a cookie minted on one e2b port host is
 #: never sent to another tenant's; Secure and Path=/ are implied by the prefix.
@@ -42,6 +51,8 @@ GATE_PATH = "/auth/gate"
 RESERVED_PREFIX = "/__flowpad/"
 #: Fresh per process: a restart invalidates every grant.
 _BOOT_NONCE = secrets.token_hex(16)
+#: When this process started — shown on the Forbidden page, since a restart kills every grant.
+BOOT_TIME = int(time.time())
 
 
 def _secret() -> Optional[str]:
@@ -77,6 +88,40 @@ def read_grant(value: Optional[str], *, secret: Optional[str] = None, now: Optio
     return None if grant is None or is_revoked(grant, now=moment) else grant
 
 
+def ticket_status(
+    value: Optional[str], *, audience: str, secret: Optional[str] = None, now: Optional[int] = None
+) -> str:
+    """Why a ticket would or would not open *audience*'s door, in words. Names no secret."""
+    secret = secret or _secret()
+    moment = int(now or time.time())
+    reason = verify_reason(value, secret, now=moment, max_age=TICKET_MAX_AGE)
+    if reason != "ok":
+        return reason
+    grant = read_ticket(value, secret=secret, now=moment)
+    return "ok" if grant is not None and grant.audience == audience else "wrong-door"
+
+
+def grant_status(
+    value: Optional[str], *, audience: str, secret: Optional[str] = None, now: Optional[int] = None
+) -> str:
+    """Why a grant cookie would or would not open *audience*'s door, in words. Names no secret.
+
+    A bad signature on a well-formed grant almost always means it was minted before this process
+    started (or by another box), so it says so."""
+    secret = secret or _secret()
+    moment = int(now or time.time())
+    raw = unquote(value) if value else value
+    reason = verify_reason(raw, _grant_key(secret, _BOOT_NONCE) if secret else None, now=moment, max_age=GRANT_MAX_AGE)
+    if reason == "bad-signature":
+        return "bad-signature (from before a restart, or another box)"
+    if reason != "ok":
+        return reason
+    grant = verify_grant(raw, _grant_key(secret, _BOOT_NONCE), now=moment, max_age=GRANT_MAX_AGE)
+    if grant is None or grant.audience != audience:
+        return "wrong-door"
+    return "revoked" if is_revoked(grant, now=moment) else "ok"
+
+
 def set_cookie_header(value: str) -> str:
     """The ``Set-Cookie`` line for a grant.
 
@@ -99,12 +144,17 @@ def safe_next(candidate: Optional[str]) -> str:
     return candidate
 
 
-def exchange(ticket: Optional[str], *, audience: str, landing: str) -> Optional[Response]:
+def exchange(
+    ticket: Optional[str], *, audience: str, landing: str, conn: Optional[HTTPConnection] = None
+) -> Optional[Response]:
     """The door's trade: a ticket for THIS door becomes its grant cookie and a 302 to *landing*.
 
     None when the ticket is not for this door (forged, stale, another audience's) — the caller
     says how that is refused. On an unarmed box there is nothing to sign with: the redirect
     happens without a cookie, so a stale link still lands in the app.
+
+    With *conn*, the trade is logged and remembered (``gate_trace``), so a refusal right after it
+    can say this browser was just given a cookie.
     """
     grant = read_ticket(ticket)
     if grant is None or grant.audience != audience:
@@ -113,6 +163,8 @@ def exchange(ticket: Optional[str], *, audience: str, landing: str) -> Optional[
     value = mint_grant(grant)
     if value:
         response.headers.append("set-cookie", set_cookie_header(value))
+    if conn is not None:
+        gate_trace.record_admit(conn, audience=audience, caller=grant.caller, value=value)
     return response
 
 
@@ -146,11 +198,13 @@ def reset_for_tests() -> None:
 
 
 __all__ = [
+    "BOOT_TIME",
     "COOKIE_NAME",
     "GATE_PATH",
     "RESERVED_PREFIX",
     "TICKET_PARAM",
     "exchange",
+    "grant_status",
     "is_revoked",
     "mint_grant",
     "read_grant",
@@ -158,4 +212,5 @@ __all__ = [
     "revoke",
     "safe_next",
     "set_cookie_header",
+    "ticket_status",
 ]

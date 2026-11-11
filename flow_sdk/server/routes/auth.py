@@ -142,7 +142,7 @@ async def gate(request: Request, ticket: str = Query(None), next: str = Query(No
         return response
 
     landing = safe_next(next)
-    traded = grants.exchange(ticket, audience=SYSTEM_AUDIENCE, landing=landing)
+    traded = grants.exchange(ticket, audience=SYSTEM_AUDIENCE, landing=landing, conn=request)
     # No ticket for this door: the middleware already admitted the caller some other way, so land them.
     return traded or RedirectResponse(url=landing, status_code=302, headers={"Cache-Control": "no-store"})
 

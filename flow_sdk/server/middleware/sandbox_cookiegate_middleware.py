@@ -54,7 +54,7 @@ class SandboxCookieGateMiddleware:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         secret = cookie_gate.get_cookie_gate()
         if secret is None or not _presents(HTTPConnection(scope), secret):
-            await deny(scope, receive, send)
+            await deny(scope, receive, send, details=_diagnose(HTTPConnection(scope), secret))
             return
 
         await self.app(scope, receive, send)
@@ -75,3 +75,21 @@ def _presents(conn: HTTPConnection, secret: str) -> bool:
         return True
     ticket = grants.read_ticket(conn.query_params.get(grants.TICKET_PARAM), secret=secret)
     return ticket is not None and ticket.audience == SYSTEM_AUDIENCE
+
+
+def _diagnose(conn: HTTPConnection, secret: str | None) -> dict[str, str]:
+    """Why this caller was refused, per transport — words only, never a credential's value."""
+    if secret is None:
+        return {"box": "not armed by the hub yet"}
+    raw_cookie = conn.headers.get("cookie") or ""
+    count = sum(1 for part in raw_cookie.split(";") if part.strip().startswith(grants.COOKIE_NAME + "="))
+    cookie = grants.grant_status(conn.cookies.get(grants.COOKIE_NAME), audience=SYSTEM_AUDIENCE, secret=secret)
+    details = {
+        "cookie": f"{cookie} (x{count})" if count > 1 else cookie,
+        "ticket": grants.ticket_status(
+            conn.query_params.get(grants.TICKET_PARAM), audience=SYSTEM_AUDIENCE, secret=secret
+        ),
+    }
+    if conn.headers.get(HEADER_NAME):
+        details["machine header"] = "wrong"
+    return details

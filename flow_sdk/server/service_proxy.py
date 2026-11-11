@@ -182,6 +182,31 @@ def _verify(value: Optional[str], secret: Optional[str], *, now: int, max_age: i
     return subject
 
 
+def verify_reason(value: Optional[str], secret: Optional[str], *, now: int, max_age: int) -> str:
+    """Why ``_verify`` would refuse *value* — ``ok``, ``none``, ``malformed``, ``bad-signature``,
+    ``expired <n>s ago`` or ``from the future``. For the Forbidden page and the refusal log: names no secret."""
+    if not value:
+        return "none"
+    parts = value.split(".")
+    if (
+        not secret
+        or len(value) > _MAX_HEADER
+        or len(parts) != 4
+        or parts[0] != _CALLER_VERSION
+        or not parts[2].isdigit()
+    ):
+        return "malformed"
+    _, subject, ts, mac = parts
+    if not hmac.compare_digest(mac, _mac(secret, f"{_CALLER_VERSION}.{subject}.{ts}")):
+        return "bad-signature"
+    age = int(now) - int(ts)
+    if age > max_age:
+        return f"expired {age - max_age}s ago"
+    if age < -_CALLER_SKEW:
+        return "from the future"
+    return "ok"
+
+
 def sign_caller(caller: str, secret: str, *, now: int) -> str:
     """``v1.<caller>.<ts>.<hmac>``. The hub mints these; here only for tests and a symmetric contract."""
     if not _CALLER_RE.fullmatch(str(caller or "")):
@@ -278,4 +303,5 @@ __all__ = [
     "upstream_path",
     "verify_caller",
     "verify_grant",
+    "verify_reason",
 ]
