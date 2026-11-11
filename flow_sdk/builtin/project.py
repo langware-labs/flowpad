@@ -4341,12 +4341,61 @@ class Project(SetupSkippable, Entity):
             "folder_mechanism": folder_mechanism,
         }
 
+    async def _folder_delete_refusal(self) -> str | None:
+        """Why this project's folder must not be removed from disk, or None.
+
+        A folder delete may only ever reach this project's own files: never a
+        protected path (root, home, a workspace root), and never a folder another
+        project lives in, sits inside, or shares. The mount is stored canonical
+        (links resolved), so it is the very path the dialog showed, and ``rmtree``
+        does not follow links below it."""
+        mount = self.fs_storage_mount_path
+        if not mount:
+            return "this project has no folder on disk"
+        if self.protected_path:
+            return f"{mount} is a protected folder and is never deleted"
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        # Any row on or below the folder blocks it, hidden or not: its files would go
+        # too. An enclosing row blocks only when visible, the rule nesting uses:
+        # hidden rows (the workspace root, shipped assets) enclose every project.
+        others = [p for p in await self._mount_owners(mount) if str(p.id) != str(self.id)]
+        others += [p for p in await self._enclosing_owners(mount) if p._visible()]
+        others += [
+            p
+            for p in await type(self).get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["fs_storage_mount_path", f"{mount}/%"]))
+            )
+            # LIKE over-fetches (`_`/`%` in a path are wildcards, and it ignores case):
+            # this prefix check is what makes the match exact. Do not drop it.
+            if (p.fs_storage_mount_path or "").startswith(f"{mount}/")
+        ]
+        if others:
+            names = ", ".join(sorted({f"{p.name!r} ({p.fs_storage_mount_path})" for p in others}))
+            return f"{mount} is shared with other projects: {names}"
+        return None
+
     @action.post(action_name="delete-with-children")
     async def _http_delete_with_children(self) -> ApiResponse:
-        """Permanently delete this project and all of its children. Irreversible."""
+        """Permanently delete this project and all of its children. Irreversible.
+
+        The project folder on disk is the user's own work: it is removed only when
+        the body says ``delete_folder: true``, and kept otherwise."""
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
-        if not isinstance(body, dict) or not isinstance(body.get("delete_chats", True), bool):
-            return ApiFailResponse(message="delete_chats must be a boolean", status_code=400)
-        result = await self._delete_with_children(delete_chats=body.get("delete_chats", True))
+        if not isinstance(body, dict):
+            return ApiFailResponse(message="body must be an object", status_code=400)
+        for key, default in (("delete_chats", True), ("delete_folder", False)):
+            if not isinstance(body.get(key, default), bool):
+                return ApiFailResponse(message=f"{key} must be a boolean", status_code=400)
+        if body.get("delete_folder", False):
+            refusal = await self._folder_delete_refusal()
+            if refusal:
+                # Refuse the whole request: removing the row and silently keeping the
+                # folder would answer a different question than the user asked.
+                return ApiFailResponse(message=refusal, status_code=409)
+        result = await self._delete_with_children(
+            folder="rmtree" if body.get("delete_folder", False) else "keep",
+            delete_chats=body.get("delete_chats", True),
+        )
         return ApiSuccessResponse(data=result)

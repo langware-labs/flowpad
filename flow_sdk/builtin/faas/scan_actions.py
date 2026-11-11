@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -376,6 +377,7 @@ class ScanActionsMixin:
             CleanupRefused,
             HarnessIndex,
             guard_deletable,
+            on_unavailable_volume,
             remove_from_harness,
         )
 
@@ -404,16 +406,22 @@ class ScanActionsMixin:
                     continue
                 row = {"cwd": project.fs_storage_mount_path or "", "name": project.name}
                 if permanent:
-                    # A row with no folder is an orphan: nothing on disk to
-                    # guard, and removing the row IS the whole job.
-                    if row["cwd"]:
+                    # A row whose folder is gone is an orphan: nothing on disk to
+                    # guard, wherever the path was, and removing the row IS the
+                    # whole job. "keep" makes sure no folder is ever touched.
+                    orphan = not row["cwd"] or not os.path.lexists(row["cwd"])
+                    if orphan and row["cwd"] and on_unavailable_volume(row["cwd"]):
+                        # Not gone, just unreachable: removing the row would also drop
+                        # its chats while the folder may come back with its drive.
+                        raise CleanupRefused(f"{row['cwd']} is on a drive that is not connected")
+                    if not orphan:
                         guard_deletable(row["cwd"])
                     # Deleting the ROW is `_delete_with_children`'s job: it also
                     # purges child records and their bundles, and detaches the
                     # shared @local compute node before the cascade. Re-deriving
                     # that here is how the global compute node gets deleted.
                     deletion = await project._delete_with_children(
-                        folder="trash", delete_chats=True, harness_index=index
+                        folder="keep" if orphan else "trash", delete_chats=True, harness_index=index
                     )
                     outcome = deletion.get("chat_cleanup") or {"cwd": row["cwd"], "removed_paths": []}
                     outcome["trashed"] = deletion.get("folder_mechanism") is not None

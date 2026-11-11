@@ -98,6 +98,49 @@ def test_missing_directory_is_orphaned(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    ("existing", "missing", "unavailable"),
+    [
+        ("Volumes", "Volumes/USB/proj", True),  # macOS: /Volumes/<drive> vanishes on eject
+        ("run/media/me", "run/media/me/USB/proj", True),  # udisks: /run/media/<user>/<drive>
+        ("data", "data/proj", True),  # an fstab mount point, left as an empty folder
+        ("home", "home/proj", False),  # an ordinary deleted folder
+    ],
+)
+def test_a_missing_folder_on_an_unplugged_drive_is_not_orphaned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing: str, missing: str, unavailable: bool
+) -> None:
+    from flow_sdk.fs_store.operations import project_cleanup
+
+    (tmp_path / existing).mkdir(parents=True)
+    monkeypatch.setattr(project_cleanup, "MOUNT_CONTAINERS", {(tmp_path / "Volumes").as_posix()})
+    monkeypatch.setattr(project_cleanup, "PER_USER_MOUNT_CONTAINERS", {(tmp_path / "run/media").as_posix()})
+    fstab = tmp_path / "fstab"
+    fstab.write_text(f"# device mount type\nUUID=1 {tmp_path / 'data'} ext4 defaults 0 2\n")
+    monkeypatch.setattr(project_cleanup, "FSTAB", fstab)
+
+    path = tmp_path / missing
+    assert project_cleanup.on_unavailable_volume(str(path)) is unavailable
+    expected = CleanupVerdict.ACTIVE if unavailable else CleanupVerdict.ORPHANED
+    assert classify(_row(path)) is expected
+
+
+def test_fstab_mount_points_decode_escaped_spaces(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from flow_sdk.fs_store.operations import project_cleanup
+
+    fstab = tmp_path / "fstab"
+    fstab.write_text("LABEL=x /mnt/My\\040Drive ext4 defaults 0 2\n")
+    monkeypatch.setattr(project_cleanup, "FSTAB", fstab)
+
+    assert project_cleanup._fstab_mount_points() == {"/mnt/My Drive"}
+
+
+def test_a_deleted_top_level_folder_on_a_present_root_is_an_orphan() -> None:
+    from flow_sdk.fs_store.operations.project_cleanup import on_unavailable_volume
+
+    assert on_unavailable_volume("/flowpad-deleted-top-level-folder/proj") is False
+
+
+@pytest.mark.parametrize(
     "field,value",
     [
         ("session_count", 3),

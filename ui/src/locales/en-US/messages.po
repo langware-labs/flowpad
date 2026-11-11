@@ -3610,6 +3610,10 @@ msgstr "All hooks"
 msgid "All languages"
 msgstr "All languages"
 
+#: src/components/assets/confirm-project-delete.ts
+msgid "All local files in this folder, including uncommitted Git changes, will be permanently deleted. This cannot be undone."
+msgstr "All local files in this folder, including uncommitted Git changes, will be permanently deleted. This cannot be undone."
+
 #: src/components/conversation/ThreadHeader.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "All messages"
@@ -3849,6 +3853,10 @@ msgstr "Already up to date"
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Also"
 msgstr "Also"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "Also delete the project folder from my computer"
+msgstr "Also delete the project folder from my computer"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Also deliver to…"
@@ -10326,7 +10334,7 @@ msgstr "Delete chat"
 msgid "Delete chat?"
 msgstr "Delete chat?"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/assets/confirm-project-delete.ts
 msgid "Delete chats"
 msgstr "Delete chats"
 
@@ -16280,7 +16288,7 @@ msgstr "Keep the default greeting…"
 msgid "Keep the local copy out of git"
 msgstr "Keep the local copy out of git"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/assets/confirm-project-delete.ts
 msgid "Keeping chat history can make this project reappear when projects are scanned."
 msgstr "Keeping chat history can make this project reappear when projects are scanned."
 
@@ -25530,6 +25538,14 @@ msgstr "Remove option"
 msgid "Remove package"
 msgstr "Remove package"
 
+#: src/components/assets/confirm-project-delete.ts
+msgid "Remove Project"
+msgstr "Remove Project"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "Remove Project & Delete Files"
+msgstr "Remove Project & Delete Files"
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Remove prompt"
 msgstr "Remove prompt"
@@ -25633,6 +25649,10 @@ msgstr "Removed vibe agent"
 msgid "Removed: {0}"
 msgstr "Removed: {0}"
 
+#: src/components/assets/confirm-project-delete.ts
+msgid "Removes {path} and every file in it."
+msgstr "Removes {path} and every file in it."
+
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Removes {removes} from the project — the deletion is staged in git"
 msgstr "Removes {removes} from the project — the deletion is staged in git"
@@ -25644,6 +25664,10 @@ msgstr "Removes Flowpad's copy. The message stays where it was sent."
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
 msgstr "Removes it everywhere"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "Removes the project folder and every file in it."
+msgstr "Removes the project folder and every file in it."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Removes: {removes}"
@@ -32545,12 +32569,16 @@ msgid "This permanently deletes the message and all of its data for everyone in 
 msgstr "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
 
 #: src/components/assets/AssetsPage.tsx
-msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
-msgstr "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
+#~ msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
+#~ msgstr "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
 
 #: src/components/assets/AssetsPage.tsx
-msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
-msgstr "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+#~ msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+#~ msgstr "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "This permanently deletes the project and everything in it — all indexed records and their children. This cannot be undone."
+msgstr "This permanently deletes the project and everything in it — all indexed records and their children. This cannot be undone."
 
 #: src/components/assets/delete-asset-modal.tsx
 msgid "This permanently removes the file from disk. This cannot be undone."
@@ -32580,6 +32608,7 @@ msgstr "This process has stopped."
 msgid "This process points to a deleted project."
 msgstr "This process points to a deleted project."
 
+#: src/components/assets/confirm-project-delete.ts
 #: src/components/connections-manager.tsx
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "this project"

@@ -1641,13 +1641,25 @@ export class Project extends APIEntity<Project> {
   /**
    * Permanently delete this project and everything that belongs to it:
    * every indexed record whose ``project_id`` is this project (DB row + FTS +
-   * wiki edges + on-disk record shadow + records_data bundle), the project's
-   * own record, and the project source folder on disk. Irreversible.
-   * Native worker chat history is also deleted by default. Pass false to keep it.
+   * wiki edges + on-disk record shadow + records_data bundle) and the project's
+   * own record. Irreversible.
+   * Native worker chat history is deleted by default (`deleteChats: false` keeps it).
+   * The project folder on disk — the user's own files — is kept unless
+   * `deleteFolder: true` asks for it.
    */
-  async deleteWithChildren(deleteChats = true): Promise<{ project_id: string; deleted_children: number } | null> {
+  async deleteWithChildren(options: { deleteChats?: boolean; deleteFolder?: boolean } = {}): Promise<{
+    project_id: string;
+    deleted_children: number;
+  } | null> {
+    // The old positional form `deleteWithChildren(false)` would destructure to the
+    // defaults and delete the chats it asked to keep: refuse it outright.
+    if (typeof options !== 'object' || options === null) {
+      throw new TypeError('deleteWithChildren takes { deleteChats, deleteFolder }');
+    }
+    const { deleteChats = true, deleteFolder = false } = options;
     return await this.post<{ project_id: string; deleted_children: number }>('delete-with-children', {
       delete_chats: deleteChats,
+      delete_folder: deleteFolder,
     });
   }
 

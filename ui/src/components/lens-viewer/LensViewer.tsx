@@ -157,10 +157,10 @@ export function LensViewer() {
       return <LlmIndexersViewer />;
     case 'trigger/log':
       return <TriggerLogViewer triggerId={lensParts.ref} />;
-    // `ref` is optional: the warning opens the whole list, the picker's info
-    // icon names one project to start selected.
+    // `ref` is optional: a verdict opens that tab (the orphaned-projects
+    // warning), a project id starts that row selected (the picker's info icon).
     case 'projects/cleanup':
-      return <ProjectCleanupViewer focusProjectId={lensParts.ref || undefined} />;
+      return <ProjectCleanupViewer focus={lensParts.ref || undefined} />;
     default:
       return (
         <div className="flex h-full items-center justify-center p-4 text-muted-foreground">

@@ -9,6 +9,7 @@ cwds take. Drives the real SQLite persistence layer (no mocks of save/query).
 from pathlib import Path
 
 import asyncio
+import shutil
 import uuid
 
 import pytest
@@ -381,6 +382,63 @@ async def test_project_cleanup_apply_drops_the_picker_snapshot(project_db, tmp_p
     await project_list.list_projects_from_indexer()
 
     assert disk.scans == 2
+
+
+async def _permanent_cleanup(monkeypatch, project) -> dict:
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.faas import scan_actions
+    from flow_sdk.fs_store.operations import project_cleanup
+
+    async def body():
+        return {"project_ids": [str(project.id)]}
+
+    monkeypatch.setattr(
+        scan_actions, "get_current_request_info", lambda: SimpleNamespace(request=SimpleNamespace(json=body))
+    )
+    monkeypatch.setattr(project_cleanup.HarnessIndex, "build", classmethod(lambda cls: cls()))
+    response = await scan_actions.ScanActionsMixin._scan_project_cleanup_apply(None, permanent=True)
+    return response.data
+
+
+@pytest.mark.asyncio
+async def test_project_cleanup_removes_an_orphan_outside_every_workspace(project_db, tmp_path, monkeypatch):
+    """A project whose folder is gone is listed as "Missing folder", and deleting it
+    must remove the row even when the path was outside every workspace: there is
+    nothing on disk to guard, and the row alone keeps refusing opens."""
+    from flow_sdk.builtin.project import Project
+
+    gone = tmp_path / "elsewhere" / "flowpad"
+    gone.mkdir(parents=True)
+    (tmp_path / "elsewhere" / "sibling.md").write_text("not the project's")
+    project = await Project(name="flowpad", fs_storage_mount_path=str(gone)).save()
+    gone.rmdir()
+
+    data = await _permanent_cleanup(monkeypatch, project)
+
+    assert data["succeeded"] == 1, data
+    assert await Project.get_by_id(str(project.id)) is None
+    assert (tmp_path / "elsewhere" / "sibling.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_project_cleanup_keeps_a_project_on_a_disconnected_drive(project_db, tmp_path, monkeypatch):
+    """A folder that is missing because its drive is not connected is not an orphan:
+    the row (and its chats) must survive until the drive is back."""
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.fs_store.operations import project_cleanup
+
+    volumes = tmp_path / "Volumes"
+    (volumes / "USB" / "on-usb").mkdir(parents=True)
+    monkeypatch.setattr(project_cleanup, "MOUNT_CONTAINERS", {volumes.as_posix()})
+    project = await Project(name="on-usb", fs_storage_mount_path=str(volumes / "USB" / "on-usb")).save()
+    shutil.rmtree(volumes / "USB")  # the drive is unplugged
+
+    data = await _permanent_cleanup(monkeypatch, project)
+
+    assert data["succeeded"] == 0, data
+    assert "not connected" in data["results"][0]["error"]
+    assert await Project.get_by_id(str(project.id)) is not None
 
 
 def test_copilot_project_iterator_rejects_home_but_keeps_subdir(
