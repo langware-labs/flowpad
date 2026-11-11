@@ -2707,11 +2707,26 @@ class SQLiteDBDriver(DBDriver):
             )
             result = await session.execute(query)
             relationships = result.scalars().all()
+            # Every child in one read per type, not one session per child: a conversation's
+            # projection reads its messages this way on every message that lands, so a
+            # read per child made each landing O(messages) round trips.
+            by_key: dict = {}
+            ids_by_type: dict = {}
+            for rel_schema in relationships:
+                ids_by_type.setdefault(rel_schema.to_type, set()).add(rel_schema.to_id)
+            for to_type, ids in ids_by_type.items():
+                ids = list(ids)
+                for i in range(0, len(ids), 500):
+                    rows = await session.execute(
+                        select(EntitySchema).where(EntitySchema.type == to_type, EntitySchema.id.in_(ids[i : i + 500]))
+                    )
+                    for schema in rows.scalars().all():
+                        by_key[(to_type, schema.id)] = self._schema_to_entity(schema)
 
         children = []
         for rel_schema in relationships:
             # Get child entity
-            child_entity = await self.get_by_id(rel_schema.to_id, rel_schema.to_type)
+            child_entity = by_key.get((rel_schema.to_type, rel_schema.to_id))
             if not child_entity:
                 continue
 
