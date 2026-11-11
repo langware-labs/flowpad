@@ -5,6 +5,13 @@ import { score, type Row } from '../manual_regression/smart-navigation/navigatio
 const row = (target: string): Row => ({ group: 'x', n: 1, sentence: 's', target });
 const opened = (path: string) => new URL(path, 'http://localhost');
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.nav_sentence_scoring.rules: FAILING? read this tag's rules before
+//       editing the scorer or its routes
+// flowpad:endcapsule tag
 describe('navigation sentences scoring', () => {
   it('an asset opened in its project editor is the entity landed on', () => {
     const at = opened('/dock/project/c9eb/editor/skill/typeid/skill-2408c41c-b3a4-42fe-8868-243b2ff11aae');
