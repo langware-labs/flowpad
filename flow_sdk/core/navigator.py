@@ -222,10 +222,13 @@ def _entity_options(ref: dict[str, Any], why: str) -> dict[str, str]:
     kind, _, ident = typeid.partition("-")
     name = f"'{title}'" if title else ""
     noun = kind.replace("_", " ")
+    # What it is, in its own words: a name alone can read as the request ("wizard 'llm-setup-opencode'"
+    # for "set up my LLM" -- it installs OpenCode).
+    about = f": {ref['about']}" if ref.get("about") else ""
     out = {
         f"app:{ident}"
         if kind == "artifact"
-        else f"entity:{typeid}": f"{'Launch app' if kind == 'artifact' else 'Open the ' + noun} {name} ({why})"
+        else f"entity:{typeid}": f"{'Launch app' if kind == 'artifact' else 'Open the ' + noun} {name}{about} ({why})"
     }
     # A screen whose address IS the entity's own (a session's screen, a data source's page) is the
     # same place twice: offered once, as the entity -- two keys split one answer's probability
@@ -449,9 +452,33 @@ async def _candidates(utterance: str) -> list[dict[str, str]]:
     out = []
     for ent in found:
         kind = ent.type or ent.get_type()
-        title = getattr(ent, "_fts_title", None) or getattr(ent, "name", None) or getattr(ent, "title", None) or ""
-        out.append({"typeid": f"{kind}-{ent.id}", "type": kind, "title": str(title)})
+        # What a person calls it: its label when it has one (wizard ``llm-setup`` is "Finish setting up
+        # Flowpad"), else the title the search matched.
+        title = (
+            getattr(ent, "label", None)
+            or getattr(ent, "_fts_title", None)
+            or getattr(ent, "name", None)
+            or getattr(ent, "title", None)
+            or ""
+        )
+        found_one = {"typeid": f"{kind}-{ent.id}", "type": kind, "title": str(title)}
+        if about := _about(getattr(ent, "description", None)):
+            found_one["about"] = about
+        out.append(found_one)
     return out
+
+
+#: How much of a match's description rides on its option: its first sentence, cut at this.
+ABOUT_CHARS = 120
+
+
+def _about(description: Any) -> Optional[str]:
+    """A description's first sentence (``ABOUT_CHARS`` at most) -- what a match IS, beside its name."""
+    text = " ".join(str(description or "").split())
+    if not text:
+        return None
+    first = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0]
+    return first if len(first) <= ABOUT_CHARS else first[: ABOUT_CHARS - 1].rstrip() + "…"
 
 
 def options_for(here: Any, candidates: list[dict[str, str]]) -> dict[str, str]:

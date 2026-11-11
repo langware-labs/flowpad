@@ -248,6 +248,36 @@ def test_the_list_of_every_asset_is_a_place_on_the_map():
     assert parse_dock_url("/dock/assets/list/all") is not None
 
 
+def test_a_search_match_is_offered_as_what_it_is_not_only_its_name():
+    # Live: compute op 'automation-activate' alone was opened for "open the nightly report automation"
+    # (0.47); described ("Turns an automation on"), the model handed it on (0.29-0.32).
+    ref = {"typeid": "compute_op-34ac81bb-d12f-4be1-89a6-f67dfe8838da", "title": "automation-activate",
+           "about": navigator._about("Turns an automation on. It is called by the Automations screen.")}
+    assert ref["about"] == "Turns an automation on."
+    text = navigator._entity_options(ref, "search match")[f"entity:{ref['typeid']}"]
+    assert text == "Open the compute op 'automation-activate': Turns an automation on. (search match)"
+    assert navigator._about("x" * 300).endswith("…") and len(navigator._about("x" * 300)) == navigator.ABOUT_CHARS
+
+
+async def test_a_search_match_is_titled_by_its_label_and_carries_its_description(monkeypatch):
+    # Live: wizard 'llm-setup-opencode' (it installs OpenCode) won "connect an LLM" on its name (0.67);
+    # with what it does beside it, the Set up LLM screen did (0.77).
+    from types import SimpleNamespace
+
+    from flow_sdk.core.entity.entity_model import Entity
+
+    wizard = SimpleNamespace(type="wizard", id="40b630c9", name="llm-setup", label="Finish setting up Flowpad",
+                             description="Flowpad works best with a few tools. We check what is there.", get_type=lambda: "wizard")
+
+    async def search(**kwargs):
+        return [wizard]
+
+    monkeypatch.setattr(Entity, "search", staticmethod(search))
+    [found] = await navigator._candidates("set up my LLM")
+    assert found == {"typeid": "wizard-40b630c9", "type": "wizard", "title": "Finish setting up Flowpad",
+                     "about": "Flowpad works best with a few tools."}
+
+
 def test_this_projects_or_sessions_thing_is_the_screen_that_opens_on_it():
     proj = "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
     here = navigation.kind("navigation.here").model_validate(
