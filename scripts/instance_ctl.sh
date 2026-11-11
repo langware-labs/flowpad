@@ -253,6 +253,16 @@ gc_legacy_workspaces() {
   rmdir "$LEGACY_WORKSPACES/.home" "$LEGACY_WORKSPACES/.workspaces" "$LEGACY_WORKSPACES" 2>/dev/null || true
 }
 
+# sign_in_with_api_key <backend port> <key> — the headless hub sign-in: the route the hub itself
+# signs a box in with. The backend validates the key against its hub and stores the login. The
+# key goes to curl on stdin, never in argv. A 302 is the success answer; anything else fails.
+sign_in_with_api_key() {
+  local code
+  code="$(printf '%s' "$2" | curl -s -m 30 -o /dev/null -w '%{http_code}' -G \
+    --data-urlencode 'flowpad-api-key@-' "http://localhost:$1/auth/login_callback" || true)"
+  case "$code" in 2*|3*) return 0;; *) warn "API-key sign-in answered HTTP $code"; return 1;; esac
+}
+
 # ---------------------------------------------------------------------------
 # launch
 # ---------------------------------------------------------------------------
@@ -335,9 +345,10 @@ cmd_launch() {
   # and that caller's environment has no E2B_KEY — so the rewrite silently dropped
   # the key and every sandbox test after it timed out at 60s with no sandbox ever
   # booted. A restart must not cost an instance a capability it already had.
-  local prior_e2b=""
+  local prior_e2b="" prior_api_key=""
   if [ -f "$ef" ]; then
     prior_e2b=$(grep -m1 '^E2B_KEY=' "$ef" 2>/dev/null | cut -d= -f2- || true)
+    prior_api_key=$(grep -m1 '^FLOWPAD_CLOUD_API_KEY=' "$ef" 2>/dev/null | cut -d= -f2- || true)
   fi
 
   cat > "$ef" <<EOF
@@ -364,6 +375,14 @@ EOF
   local e2b_key="${E2B_KEY:-$prior_e2b}"
   if [ -n "$e2b_key" ]; then
     printf 'E2B_KEY=%s\n' "$e2b_key" >> "$ef"
+  fi
+  # A hub API key (FLOWPAD_CLOUD_API_KEY) is the headless sign-in: a cloud hub (staging,
+  # flowpad.ai) signs in only through Auth0 in a browser, so its password login answers
+  # "Use Auth0" and the env-mode login below would open a browser nobody sees. Carried
+  # through the env file like E2B_KEY, so a relaunch keeps it. Never printed.
+  local api_key="${FLOWPAD_CLOUD_API_KEY:-$prior_api_key}"
+  if [ -n "$api_key" ]; then
+    printf 'FLOWPAD_CLOUD_API_KEY=%s\n' "$api_key" >> "$ef"
   fi
 
   # ---- 3. launch backend (detached) ----
@@ -412,12 +431,17 @@ EOF
     fi
     sleep 1
   done
-  if [ "$up" = 1 ]; then
+  if [ "$up" = 1 ] && [ -n "$api_key" ]; then
+    log "backend is up — signing in with the hub API key"
+    sign_in_with_api_key "$be_port" "$api_key" || warn "API-key sign-in failed (check $be_log)"
+  elif [ "$up" = 1 ]; then
     log "backend is up — triggering cloud login"
     # No body: the backend logs in with FLOWPAD_CLOUD_USER_EMAIL/PASSWORD from the env file above
     # (env mode). A body is the browser-mode {browser, profile} choice -- credentials there are a 422.
     curl -s -m 10 -X POST "http://localhost:$be_port/api/v1/cloud/login" >/dev/null 2>&1 || \
       warn "cloud login call failed (check $be_log)"
+  fi
+  if [ "$up" = 1 ]; then
     local st
     st="$(curl -s -m 5 "http://localhost:$be_port/api/v1/cloud/status" || true)"
     log "cloud status: ${st:0:200}"
