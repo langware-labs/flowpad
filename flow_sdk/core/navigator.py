@@ -416,6 +416,8 @@ def context_rule(utterance: str, here: Any) -> Optional[NavigationTarget]:
     ``name`` is the opening's name or the screen's name / alias -- exact, no model. None when the
     context lacks the entity or what its address needs."""
     core = _LEAD.sub("", utterance.strip().rstrip("!?.").lower()).strip()
+    if here is not None and (on := _project_screen_named(core, getattr(here, "project", None))):
+        return on
     if not (m := _POSSESSIVE.match(core)) or here is None:
         return None
     slot, kind_name = _SLOT[m.group(1).lower()]
@@ -429,6 +431,19 @@ def context_rule(utterance: str, here: Any) -> Optional[NavigationTarget]:
         place_address(p, ptr) for p, ptr, _ in openings if wanted in {p.label.lower(), *(a.lower() for a in p.aliases)}
     }
     return NavigationTarget(kind="view", value=named.pop()) if len(named) == 1 else None
+
+
+def _project_screen_named(core: str, project: Any) -> Optional[NavigationTarget]:
+    """The exact name of a screen that opens on a project ("the help desk"), said with a project in
+    context: that screen, on it. Without one the name stays the model's (``_screen_named``)."""
+    if project is None:
+        return None
+    bare = " ".join(w for w in core.split() if w not in _FILLER)
+    ident = str(project.typeid).partition("-")[2]
+    for place in navigation_map().places:
+        if "project" in place.opens and bare in {place.label.lower(), *(a.lower() for a in place.aliases)}:
+            return NavigationTarget(kind="view", value=place_address(place, ident))
+    return None
 
 
 def _target_of(key: str) -> NavigationTarget:

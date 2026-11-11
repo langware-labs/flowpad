@@ -285,6 +285,15 @@ def test_the_or_my_inside_a_screens_name_still_names_it_but_a_new_one_does_not()
     assert navigator.rule_hit("open a terminal") is None, "'a terminal' is a new one, not the Worker screen"
 
 
+def test_a_screen_that_opens_on_a_project_named_with_one_in_context_opens_on_it():
+    # Live: "open the help desk" on Home went to the model, which picked the data driver "Help desk"
+    # (no address, so it asked) at 0.73-0.83; the help desk of the current project was at 0.07-0.15.
+    proj = "project-96893382-586c-5655-a216-e228121ab1a5"
+    here = navigation.kind("navigation.here").model_validate({"view": "home", "project": {"typeid": proj}})
+    assert navigator.context_rule("open the help desk", here).value == f"helpdesk/{proj[8:]}"
+    assert navigator.context_rule("open the help desk", navigation.kind("navigation.here").model_validate({})) is None
+
+
 def test_this_projects_or_sessions_thing_is_the_screen_that_opens_on_it():
     proj = "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
     here = navigation.kind("navigation.here").model_validate(
