@@ -4,10 +4,12 @@ import { SnippetView } from './SnippetView';
 import { ensureShikiMonaco, monacoTheme } from './shikiMonaco';
 import { copyToClipboard, downloadFile, EditorLanguage, /* FSEntry, */ fsStore, isImagePath, VFSPath } from '@sdk';
 import { useContext, useProject } from '@sdk/react/hooks';
-import { Button } from '@src/components/ui/button';
+import { Button, buttonVariants } from '@src/components/ui/button';
+import { cn } from '@src/lib/utils';
 import { useFS } from '@src/hooks/useFS';
 import Editor, { Monaco } from '@monaco-editor/react';
 import { Copy, Download, Eye, Play, /* PlayCircle, */ RefreshCw } from 'lucide-react';
+import { localHtmlRef, OpenInBrowserButton } from '@src/lib/open-in-browser';
 import { editor } from 'monaco-editor';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -96,6 +98,8 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   }, [parsedFilePath.typeId, parsedFilePath.entitySubPath, file?.path]);
 
   const fs = useFS(effectiveTypeId);
+  // Only a file on a machine's own disk opens in the browser; a project-scoped path gives none.
+  const htmlRef = effectiveTypeId ? localHtmlRef(effectiveFilePath, effectiveTypeId) : null;
 
   // Images are binary: render them inline via the backend download URL instead
   // of decoding the bytes as text into Monaco (which shows garbage).
@@ -558,6 +562,13 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
             >
               <Eye className="h-4 w-4" />
             </Button>
+          )}
+          {htmlRef && (
+            <OpenInBrowserButton
+              fileRef={htmlRef}
+              testId="editor-open-browser"
+              className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'hover:bg-muted')}
+            />
           )}
         </div>
         <div className="w-0 origin-right overflow-hidden transition-all group-hover:w-28">

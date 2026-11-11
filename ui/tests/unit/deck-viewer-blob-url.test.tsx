@@ -99,4 +99,15 @@ describe('DeckViewer open-in-new-tab object URL', () => {
     expect(liveBytes()).toBe(rebuilt.length);
     expect(opened[2]).not.toBe(opened[0]);
   });
+
+  it('opens a deck on this machine in the system browser instead of a blob tab', async () => {
+    const htmlFile = { path: '/decks/roadmap/deck.html', localComputeNodeId: '@local', read: () => Promise.resolve(DECK_HTML), open: vi.fn() };
+    const folder = { child: (name: string) => (name === 'deck.html' ? htmlFile : { read: () => Promise.reject(new Error('missing')) }) } as unknown as FSRef;
+    render(<DeckViewer fsRef={folder} deck={deck} />);
+
+    fireEvent.click(await screen.findByTestId('deck-open-browser'));
+    expect(htmlFile.open).toHaveBeenCalledOnce();
+    expect(screen.queryByTitle('Open in a new browser tab')).toBeNull();
+    expect(created).toBe(0);
+  });
 });

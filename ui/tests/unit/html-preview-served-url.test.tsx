@@ -17,7 +17,7 @@
  * and there is nothing left to intercept or inline. What is pinned here instead
  * is the small set of properties that whole class now depends on.
  */
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const FILE = '/home/user/Flowpad workspace/Course Project/clouds-site/index.html';
@@ -27,7 +27,10 @@ let revision = 0;
 let shownBeside: string | null = null;
 
 vi.mock('@src/components/agent-layout/agent-layout', () => ({
-  useAgentContext: () => ({ computeNode: { typeId: { toString: () => 'compute_node-@local' } }, flowId: shownBeside }),
+  useAgentContext: () => ({
+    computeNode: { typeId: { type: 'compute_node', id: '@local', toString: () => 'compute_node-@local' } },
+    flowId: shownBeside,
+  }),
 }));
 const opened: string[] = [];
 vi.mock('@src/lib/open-external', () => ({ openExternal: (url: string) => opened.push(url) }));
@@ -38,6 +41,7 @@ vi.mock('@src/hooks/useFS', () => ({
   }),
 }));
 
+import { FSRef } from '@sdk';
 import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
 
 function frame(): HTMLIFrameElement {
@@ -175,5 +179,13 @@ describe('HtmlPreview', () => {
     // WhatsApp and Gmail refuse a window the sandboxed frame opens itself, so the host opens
     // its own page's share link — and only a share link (`previewShareUrl`).
     expect(opened).toEqual(['https://wa.me/?text=hi']);
+  });
+
+  it('opens the file itself in the system browser', () => {
+    const open = vi.spyOn(FSRef.prototype, 'open').mockResolvedValue(null);
+    render(<HtmlPreview path={FILE} />);
+    fireEvent.click(screen.getByTestId('html-preview-open-browser'));
+    expect(open.mock.contexts.map((ref) => (ref as FSRef).path)).toEqual([FILE]);
+    open.mockRestore();
   });
 });

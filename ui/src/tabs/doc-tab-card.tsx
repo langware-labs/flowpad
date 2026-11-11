@@ -1,6 +1,7 @@
 import { useLingui } from '@lingui/react/macro';
 import { dataContext, editorForPath, FSRef, openTerminalFromComputeNode, type Tab } from '@sdk';
 import { LOCAL_COMPUTE_NODE as LOCAL_NODE } from '@src/navigation/asset-doc-types';
+import { browserOpenable } from '@src/lib/open-in-browser';
 import { FolderOpen, Globe, PanelTop, SquareTerminal } from 'lucide-react';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -74,6 +75,7 @@ const OpenInBar: React.FC<{ path: string }> = ({ path }) => {
   const { navigation } = useDockNavigation();
   const computeNodeId = dataContext.computeNode?.id;
   const fsRef = new FSRef(path, LOCAL_NODE);
+  const htmlRef = browserOpenable(fsRef);
   const dir = parentDir(path);
   const actions = [
     computeNodeId && {
@@ -88,13 +90,12 @@ const OpenInBar: React.FC<{ path: string }> = ({ path }) => {
       Icon: FolderOpen,
       run: () => void fsRef.open({ select: true }),
     },
-    fsRef.localComputeNodeId &&
-      /\.html?$/i.test(path) && {
-        id: 'browser',
-        label: t`Open in browser`,
-        Icon: Globe,
-        run: () => void fsRef.open(),
-      },
+    htmlRef && {
+      id: 'browser',
+      label: t`Open in browser`,
+      Icon: Globe,
+      run: () => void htmlRef.open(),
+    },
     {
       id: 'flowpad',
       label: t`Open in Flowpad browser`,
