@@ -20420,6 +20420,10 @@ msgstr "غير متاح"
 msgid "Not available in Local mode"
 msgstr "غير متاح في الوضع المحلي"
 
+#: src/components/assets/editor/agent-profile/deployment/use-deployment-threads.ts
+msgid "Not available yet. The machine is still starting."
+msgstr "غير متاح بعد. الجهاز لا يزال قيد التشغيل."
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/harness-login/funding-pill.ts

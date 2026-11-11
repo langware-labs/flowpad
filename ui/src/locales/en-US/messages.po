@@ -20420,6 +20420,10 @@ msgstr "Not available"
 msgid "Not available in Local mode"
 msgstr "Not available in Local mode"
 
+#: src/components/assets/editor/agent-profile/deployment/use-deployment-threads.ts
+msgid "Not available yet. The machine is still starting."
+msgstr "Not available yet. The machine is still starting."
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/harness-login/funding-pill.ts
