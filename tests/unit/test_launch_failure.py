@@ -10,8 +10,8 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process import agentic_process as ap
+from flow_sdk.builtin.agentic_process.cli_drivers import api_auth, headless_turn, llm_source
 from flow_sdk.builtin.agentic_process.cli_drivers import cli_worker_base_driver as base
-from flow_sdk.builtin.agentic_process.cli_drivers import headless_turn, llm_source
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import launch_screen as screen
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import trust
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import ClaudeCLIStreamWorker
@@ -39,7 +39,7 @@ src = lambda code: LLMSource(endpoint_typeid=f"llm_endpoint-{code}", reason="r",
 
 
 def test_contract_tables():
-    assert len(CODE_TABLE) == 12 and CODE_TABLE["budget_not_ready"] == (
+    assert len(CODE_TABLE) == 13 and CODE_TABLE["budget_not_ready"] == (
         "transient_error",
         "wait",
     )  # the contract's table
@@ -64,6 +64,17 @@ def test_contract_tables():
         wrapped = base.WorkerSpawnError("claude", "no source")
         wrapped.__cause__ = exc  # a spawn refused for funding is classified by its funding error
         assert str(LaunchError.classify(wrapped).code) == code
+
+
+def test_a_budget_without_the_model_size_is_not_an_install():
+    """The size refusals reuse WorkerSpawnError but say why: "Install" would not fix a budget's missing size."""
+    spec, budget = NS(native_tiers={}, slug_prefix=""), NS(endpoint_typeid="llm_endpoint-x", name="")
+    for tier in ("lg", None):  # a size asked for (mismatch) / the default size, undeclared
+        with pytest.raises(base.WorkerSpawnError) as refused:
+            api_auth._slug_for("claude", spec, {}, budget, tier, {})
+        wire = LaunchError.classify(refused.value).wire()
+        assert (wire["code"], wire["health"], wire["fix"]) == ("model_unavailable", "config_error", "ask_owner")
+    assert LaunchError.classify(base.WorkerSpawnError("claude", "not installed")).code == "not_installed"
 
 
 def test_screens():

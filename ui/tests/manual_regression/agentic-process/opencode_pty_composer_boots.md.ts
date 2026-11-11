@@ -16,6 +16,7 @@
 import { expect, test } from '@playwright/test';
 import { apiBase } from '../_shared/api';
 import { withViewMode } from '../_shared/view-mode';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -66,7 +67,7 @@ test('opencode opener spawns a PTY whose TUI paints its composer', async ({ page
   // and same 30s budget `_ap_helpers.startClaude` already uses for this exact
   // opener→dock transition — the suite's established value for it, not a wider
   // one chosen to ride past a stall.
-  await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 30_000 });
+  await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: adjusted(30_000) });
 
   // The composer marker — the same string the driver gates typed delivery on
   // (`pty_composer_ready_pattern`). Measured on opencode 1.18.18: ~2.1s in a raw
@@ -75,5 +76,5 @@ test('opencode opener spawns a PTY whose TUI paints its composer', async ({ page
   await expect(
     page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows').first(),
     'opencode TUI must reach its composer — a rejected argv exits before painting it',
-  ).toContainText(/Ask anything/, { timeout: 30_000 });
+  ).toContainText(/Ask anything/, { timeout: adjusted(30_000) });
 });

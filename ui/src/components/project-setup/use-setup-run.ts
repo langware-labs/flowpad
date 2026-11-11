@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type DataSource, Project, type ProjectSetupRun, type SetupTreeResult } from '@sdk';
 import { claimAskRun, openQuestionOf } from '@src/components/ask/ask-claims';
+import { pastFirstRun } from '@src/components/setup-incomplete/first-run-gate';
 
 /** How often the run's tree is re-read while it is going. A display refresh, not a wait. */
 export const SETUP_POLL_MS = 1000;
@@ -159,7 +160,8 @@ function useRun(
       // A new run starts from nothing: the last record's node states are not this run's.
       setTree(null);
       try {
-        const address = await calls.start(at);
+        // First-run setup comes first: held for it, this waits on the wizard, then starts.
+        const address = await pastFirstRun(() => calls.start(at));
         // Claimed at once, so the first question is drawn here rather than sending the tab away.
         claim(address);
         setRunning(true);

@@ -7,6 +7,11 @@ import { errorMessage, errorStatus } from '@src/lib/error-message';
 
 type Data = Record<string, unknown> | undefined;
 
+/** A machine still starting has no agent identity yet: the hub answers 410 "agent identity is unavailable". */
+export function isStartingMachine(status: number | undefined, message: string): boolean {
+  return status === 410 && /identity is unavailable/i.test(message);
+}
+
 /**
  * A value read from the backend and read again when told to — one read at a time, none lost: a
  * request that lands while one is in flight reads again after it (that read may have left before the
@@ -15,6 +20,8 @@ type Data = Record<string, unknown> | undefined;
 function useLiveRead<T>(read: (() => Promise<T>) | null, key: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The error is only that the machine is not up yet: shown quietly, not as a failure.
+  const [notYet, setNotYet] = useState(false);
   const latest = useRef(read);
   latest.current = read;
   const inFlight = useRef<Promise<void> | null>(null);
@@ -33,11 +40,18 @@ function useLiveRead<T>(read: (() => Promise<T>) | null, key: string | null) {
         try {
           setData(await reader());
           setError(null);
+          setNotYet(false);
         } catch (err) {
+          const message = errorMessage(err, String(err));
+          // A machine still starting has no agent identity yet (the hub answers 410): that is "not yet", not a failure.
+          const starting = isStartingMachine(errorStatus(err), message);
+          setNotYet(errorStatus(err) === 502 || starting);
           setError(
             errorStatus(err) === 502
               ? t`The hub could not reach this machine. It may be paused or still starting.`
-              : errorMessage(err, String(err)),
+              : starting
+                ? t`Not available yet. The machine is still starting.`
+                : message,
           );
         }
       } while (again.current);
@@ -52,7 +66,7 @@ function useLiveRead<T>(read: (() => Promise<T>) | null, key: string | null) {
     if (key) void reload();
   }, [key, reload]);
 
-  return { data, error, reload };
+  return { data, error, notYet, reload };
 }
 
 /**
@@ -63,7 +77,10 @@ function useLiveRead<T>(read: (() => Promise<T>) | null, key: string | null) {
  */
 export function useDeploymentThreads(deployment: Deployment | null | undefined) {
   const id = deployment?.id ?? null;
-  const { data, error, reload } = useLiveRead<DeploymentThread[]>(deployment ? () => deployment.threads() : null, id);
+  const { data, error, notYet, reload } = useLiveRead<DeploymentThread[]>(
+    deployment ? () => deployment.threads() : null,
+    id,
+  );
   const processes = new Set((data ?? []).map((t) => t.process_id).filter(Boolean));
 
   useOnTag(DEPLOYMENT_TIMELINE_TAG, (event) => {
@@ -74,7 +91,7 @@ export function useDeploymentThreads(deployment: Deployment | null | undefined) 
     const processId = String(event.target ?? '').split(':')[1] ?? '';
     if (processes.has(processId)) void reload();
   });
-  return { threads: data, error };
+  return { threads: data, error, errorIsNotYet: notYet };
 }
 
 /**

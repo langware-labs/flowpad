@@ -230,6 +230,13 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
     );
   }
 
+  /** The person closed this wizard's window, finished or not. Closing the first-run wizard lets project setup go ahead. */
+  async closed(): Promise<{ closed: boolean }> {
+    return await dataManager.callAction<void, { closed: boolean }>(
+      new ActionInfo('closed', Wizard.type, this.id, 'POST'),
+    );
+  }
+
   /**
    * Run this wizard from its own Start button, with the person watching — a question raised on the
    * way is put to them. A wizard whose document requires an LLM source has one settled first

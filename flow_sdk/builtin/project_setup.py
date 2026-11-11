@@ -768,7 +768,7 @@ def setup_run_address(project_id: str, root: str = "") -> str:
 
 async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tree: Any = None,
                       load_after: bool = True, providers: Any = None, dependency_approval: bool = True,
-                      ancestors: tuple[str, ...] = (), connect_here: bool = True) -> str:
+                      ancestors: tuple[str, ...] = (), connect_here: bool = True, load_only: bool = False) -> str:
     """Start the project's setup in the background and return its address at once.
 
     The setup is the project's TREE (``core/setup/derive.ProjectTree``): every dependency, connection,
@@ -778,6 +778,9 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
     (``ask_person`` → the open tab), not a terminal. A run already going for the same root is joined,
     never doubled. ``tree``: a resolver pair (``resolve_node`` / ``resolve_op``) built already — a load
     (``core/setup/load``) hands in the one-node tree it checked, so the project is not derived twice.
+
+    Raises ``FirstRunPending`` until first-run setup has ended all green (``core/wizard/first_run``) —
+    unless ``load_only``: a load starting what is already set up, which is not setup.
     """
     from flow_sdk.core.setup import execute_setup  # noqa: PLC0415
     from flow_sdk.core.setup.derive import ProjectTree  # noqa: PLC0415
@@ -787,6 +790,10 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
     key = (pid, root)
     running = _RUNS.get(key)
     if running is None or running.done():
+        if not load_only:
+            from flow_sdk.core.wizard.first_run import require_first_run  # noqa: PLC0415
+
+            await require_first_run()
         tree = tree or await ProjectTree(project, ai=ai, connect_here=connect_here).load()
         control = _CONTROLS[key] = SetupControl()
         mount = str(getattr(project, "fs_storage_mount_path", "") or "")

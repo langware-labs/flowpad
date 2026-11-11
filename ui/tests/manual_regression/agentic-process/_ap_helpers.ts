@@ -8,6 +8,7 @@
  */
 import { type Page, test, expect } from '@playwright/test';
 import { selectViewMode, withViewMode } from '../_shared/view-mode';
+import { adjusted } from '../../adjustableTimeout';
 export { apiBase } from '../_shared/api';
 
 export async function dismissSetupModal(page: Page) {
@@ -28,14 +29,14 @@ export async function forceAdvancedView(page: Page) {
 export async function gotoNewShell(page: Page) {
   await page.goto(withViewMode('/dock/shell/new_terminal', 'advanced'));
   const skip = page.getByRole('button', { name: 'Skip' });
-  if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
-  await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
+  if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
+  await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: adjusted(60_000) });
   await forceAdvancedView(page);
-  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
   await page
     .locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')
     .first()
-    .waitFor({ state: 'attached', timeout: 30_000 });
+    .waitFor({ state: 'attached', timeout: adjusted(30_000) });
   await page.waitForTimeout(2_000);
 }
 
@@ -77,7 +78,7 @@ export const AP_HAS_CLAUDE_ONLY_CLI_FLAGS = AP_OPENER === 'claude';
 export async function startClaude(page: Page) {
   await page.locator('[data-testid="opener-plus-button"]').click();
   await page.locator(`[data-testid="opener-menu-row-${AP_OPENER}"]`).click();
-  await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 30_000 });
+  await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: adjusted(30_000) });
 }
 
 /**
@@ -146,7 +147,7 @@ export async function waitForRunningSession(page: Page, apiBase: string, process
     // status). A started process with a live session is `running`.
     expect(data.status).toBe('running');
     expect(data.session_id).toBeTruthy();
-  }).toPass({ timeout: 45_000 });
+  }).toPass({ timeout: adjusted(45_000) });
   // The ProcessToolbar re-renders several times while the worker initializes
   // (status/restart_required updates via useSyncExternalStore). A click that
   // lands mid-re-render is swallowed (the popover/dropdown opens then the

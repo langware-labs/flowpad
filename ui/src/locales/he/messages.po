@@ -6895,6 +6895,7 @@ msgstr "משבוט…"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
@@ -13810,6 +13811,10 @@ msgstr "לוגו Flowpad.ai"
 #: src/components/inbound/InboundView.tsx
 msgid "Flowpad's number · linked sender"
 msgstr "מספר Flowpad · שולח מקושר"
+
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Flowpad's setup comes first"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
@@ -20784,6 +20789,10 @@ msgstr "לא זמין"
 msgid "Not available in Local mode"
 msgstr "לא זמין במצב מקומי"
 
+#: src/components/assets/editor/agent-profile/deployment/use-deployment-threads.ts
+msgid "Not available yet. The machine is still starting."
+msgstr "עדיין לא זמין. המחשב עדיין עולה."
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/harness-login/funding-pill.ts
@@ -22039,6 +22048,11 @@ msgstr "פתיחת FlowPad"
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open Flowpad Cloud"
 msgstr "פתחו את Flowpad Cloud"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Open Flowpad's setup"
+msgstr ""
 
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
@@ -28160,7 +28174,7 @@ msgstr "שולח…"
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
-msgstr "משלח…"
+msgstr "שולח…"
 
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 msgid "Sends every ready comment on this doc as one turn."
@@ -32198,6 +32212,10 @@ msgstr "האפליקציה אינה מותקנת כאן. הוסיפו שוב א�
 msgid "This app is served externally via Flowpad. Open it in a new tab."
 msgstr "האפליקציה מוגשת מבחוץ דרך Flowpad. פתחו אותה בכרטיסייה חדשה."
 
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "This app is set up after Flowpad's own setup window, so the tools it needs are in place."
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr "לנכס זה אין נתיב קובץ."
@@ -34726,6 +34744,12 @@ msgstr "מחכה להרשאה... (פג תוקף ב-{mm}:{ss})"
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Waiting for FlowPad to open…"
 msgstr "ממתינים לפתיחת FlowPad…"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Waiting for Flowpad's setup"
+msgstr ""
 
 #: src/pages/keychain-approval.tsx
 msgid "Waiting for keychain approval…"

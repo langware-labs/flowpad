@@ -101,6 +101,8 @@ export interface ProjectLoadResult {
   /** A `ready` app that opened because it answers, checked behind it: what its setup still owes (a
    *  credential that expired under it), `''` for nothing, `null`/absent while that check has not answered. */
   setup_owed?: string | null;
+  /** A `failed` load whose setup was held, and by what: `first_run_setup` until first-run setup ends all green. */
+  blocked?: 'first_run_setup' | null;
 }
 
 /** Where a declared dependency stands on THIS machine. */

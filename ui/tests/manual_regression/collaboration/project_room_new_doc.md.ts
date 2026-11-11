@@ -12,6 +12,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { apiBase, apiContext } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -33,15 +34,15 @@ test.describe('Project doc creation — entity API', () => {
   });
 
   test('test 1: Project view mounts the asset browser (not a legacy DOCS sidebar)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const errors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await page.goto('/dock/project/@flowpad_assistant');
-    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
     // The project route owns identity; ProjectHome projects it through the
     // pressed scope control rather than a content-header ProjectChip.
-    await expect(page.getByTestId('assets-page-header')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('assets-page-header')).toBeVisible({ timeout: adjusted(15_000) });
     await expect(page.getByRole('button', { name: /^Current project/ }).first()).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('body')).not.toContainText('No editor for type: project');
 
@@ -50,7 +51,7 @@ test.describe('Project doc creation — entity API', () => {
   });
 
   test('test 2: Creating a markdown doc via the entity API writes the entity (and is searchable)', async () => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const rq = await apiContext();
     // Its own temp project and a per-run name: a fixed name in a shared project
     // (the default project's mount is the user's real workspace) survives a DB
@@ -85,7 +86,7 @@ test.describe('Project doc creation — entity API', () => {
         expect(body.data?.results).toEqual(expect.arrayContaining([
           expect.objectContaining({ record_id: created.data.id, project_id: projectId }),
         ]));
-      }).toPass({ timeout: 15_000 });
+      }).toPass({ timeout: adjusted(15_000) });
     } finally {
       await rq.delete(`${API}/api/v1/graph/project/${projectId}`).catch(() => undefined);
       await fs.rm(root, { recursive: true, force: true });
@@ -94,7 +95,7 @@ test.describe('Project doc creation — entity API', () => {
   });
 
   test('test 3: The markdown editor surface opens for an existing doc', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const errors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
@@ -110,15 +111,15 @@ test.describe('Project doc creation — entity API', () => {
     await rq.dispose();
 
     await page.goto('/dock/assets/list/markdown');
-    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
 
     const firstRow = page.locator('tr:has(td)').first();
-    if (await firstRow.isVisible({ timeout: 10_000 }).catch(() => false)) {
+    if (await firstRow.isVisible({ timeout: adjusted(10_000) }).catch(() => false)) {
       await firstRow.click();
       // markdown has an editor → an asset_ref-backed row click navigates to the editor route.
       // Preserve this navigation oracle's existing callback and polling budget.
       // eslint-disable-next-line @typescript-eslint/require-await
-      await expect.poll(async () => page.url(), { timeout: 10_000 }).not.toContain('/dock/assets/list/markdown');
+      await expect.poll(async () => page.url(), { timeout: adjusted(10_000) }).not.toContain('/dock/assets/list/markdown');
       await expect(page.locator('body')).not.toContainText('No editor for type');
     }
 

@@ -4461,6 +4461,13 @@ class AgenticProcess(Entity):
             turns.sink = handler
             register_prompt_worker(self.id, worker)
             turns.register()
+        except WorkerSpawnError as e:
+            # Refused before any subprocess (an unfunded harness, a size with no mapping): the
+            # same latch and typed refusal as a refused spawn inside the turn -- a 400 the
+            # person can act on, not a 500 "Internal server error".
+            release_prompt_admission(self.id, admission)
+            await latch_spawn_failure(self, e)
+            return launch_refusal(str(e), self.launch_failure or {})
         except BaseException:
             release_prompt_admission(self.id, admission)
             raise

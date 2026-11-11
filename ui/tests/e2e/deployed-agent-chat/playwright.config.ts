@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Playwright config for the **chat on a deployed agent, from the desktop** scenario.
@@ -18,8 +19,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
-  timeout: 90_000,
-  expect: { timeout: 20_000 },
+  timeout: adjusted(90_000),
+  expect: { timeout: adjusted(20_000) },
   fullyParallel: false,
   retries: 0,
   workers: 1,

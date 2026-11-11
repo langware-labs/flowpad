@@ -5,9 +5,7 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { hubProjectAssetDock, isProjectGitSub } from '@src/lib/hub-page-url';
 import { HubProjectGitView } from './HubProjectGitView';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
-import { ProjectDeploymentsPage } from '@src/components/project-deployments/ProjectDeploymentsPage';
 import { AssetMode } from '@src/navigation/asset-doc-types';
-import { useProject } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans } from '@lingui/react/macro';
@@ -78,11 +76,6 @@ function HubProjectAssets({ projectId }: { projectId: string }) {
   );
 }
 
-/** Hub Project Home and its TypeId-addressed Git/VFS editor sub-routes. */
-function HubProjectDeployments({ projectId }: { projectId: string }) {
-  const { project } = useProject(new TypeId(Project.type, projectId));
-  return project ? <ProjectDeploymentsPage project={project} /> : null;
-}
 
 export function HubProjectPage() {
   const { currentDock } = useDockNavigation();
@@ -98,15 +91,21 @@ export function HubProjectPage() {
   if (isProjectGitSub(assetSubPointer)) {
     return <ProjectHome spawnProjectId={projectId} cloudContent={<HubProjectGitView projectId={projectId} />} />;
   }
-  if (assetSubPointer === (AssetMode.PROJECT_DEPLOYMENTS as string)) {
-    // The project's Deployments page (and one deployment's, `?deployment=<id>`), the same one the desk shows.
-    // It is a project page, not an asset: the asset editor answers "Invalid asset pointer" for it.
-    return <ProjectHome spawnProjectId={projectId} cloudContent={<HubProjectDeployments projectId={projectId} />} />;
-  }
-  if (assetSubPointer) {
+  // The project's own pages (Setup, Deployments) are pages of Project Home, as on the desk's AssetsPage —
+  // not asset editors: handed to the editor router they rendered "Invalid asset pointer".
+  const setupPage = assetSubPointer === (AssetMode.PROJECT_SETUP as string);
+  const deploymentsPage = assetSubPointer === (AssetMode.PROJECT_DEPLOYMENTS as string);
+  if (assetSubPointer && !setupPage && !deploymentsPage) {
     return <AssetEditorRouter pointer={assetSubPointer} hubReflect />;
   }
-  return <ProjectHome spawnProjectId={projectId} cloudContent={<HubProjectAssets projectId={projectId} />} />;
+  return (
+    <ProjectHome
+      spawnProjectId={projectId}
+      setupPage={setupPage}
+      deploymentsPage={deploymentsPage}
+      cloudContent={<HubProjectAssets projectId={projectId} />}
+    />
+  );
 }
 
 export default HubProjectPage;

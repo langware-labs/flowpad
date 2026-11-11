@@ -6895,6 +6895,7 @@ msgstr "جارِ الاستنساخ…"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
@@ -13810,6 +13811,10 @@ msgstr "شعار Flowpad.ai"
 #: src/components/inbound/InboundView.tsx
 msgid "Flowpad's number · linked sender"
 msgstr "رقم Flowpad · مُرسِل مرتبط"
+
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Flowpad's setup comes first"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
@@ -20784,6 +20789,10 @@ msgstr "غير متاح"
 msgid "Not available in Local mode"
 msgstr "غير متاح في الوضع المحلي"
 
+#: src/components/assets/editor/agent-profile/deployment/use-deployment-threads.ts
+msgid "Not available yet. The machine is still starting."
+msgstr "غير متاح بعد. الجهاز لا يزال قيد التشغيل."
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/harness-login/funding-pill.ts
@@ -22039,6 +22048,11 @@ msgstr "فتح FlowPad"
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open Flowpad Cloud"
 msgstr "فتح Flowpad Cloud"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Open Flowpad's setup"
+msgstr ""
 
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
@@ -32198,6 +32212,10 @@ msgstr "هذا التطبيق غير مثبَّت هنا. أعيدوا إضاف�
 msgid "This app is served externally via Flowpad. Open it in a new tab."
 msgstr "هذا التطبيق مُستضاف خارجيًا عبر Flowpad. افتحوه في علامة تبويب جديدة."
 
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "This app is set up after Flowpad's own setup window, so the tools it needs are in place."
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr "لا يوجد مسار ملف لهذا الأصل."
@@ -34726,6 +34744,12 @@ msgstr "في انتظار التفويض… (ينتهي خلال {mm}:{ss})"
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Waiting for FlowPad to open…"
 msgstr "في انتظار فتح FlowPad…"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Waiting for Flowpad's setup"
+msgstr ""
 
 #: src/pages/keychain-approval.tsx
 msgid "Waiting for keychain approval…"

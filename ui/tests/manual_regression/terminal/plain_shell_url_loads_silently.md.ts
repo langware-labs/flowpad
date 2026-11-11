@@ -7,9 +7,10 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test('plain shell URL with no linked process loads silently', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(adjusted(60_000));
   const toasts: string[] = [];
 
   await dismissSetupModal(page);
@@ -24,9 +25,9 @@ test('plain shell URL with no linked process loads silently', async ({ page }) =
   // Step 1: create a new terminal (plain shell, no Claude started)
   await page.goto('/dock/shell/new_terminal');
   const skip = page.getByRole('button', { name: 'Skip' });
-  if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
-  await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 60_000 });
-  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+  if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
+  await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: adjusted(60_000) });
+  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
   await page.waitForTimeout(2_000);
 
   // Capture the shell ID — this shell has no linked agentic process
@@ -38,15 +39,15 @@ test('plain shell URL with no linked process loads silently', async ({ page }) =
   await page.goto(`/dock/shell/${shellId}`);
 
   // Step 3: URL must stay on shell- (no redirect to agentic_process-)
-  await page.waitForURL(new RegExp(`/dock/shell/${shellId}`), { timeout: 30_000 });
+  await page.waitForURL(new RegExp(`/dock/shell/${shellId}`), { timeout: adjusted(30_000) });
   expect(page.url()).toContain(shellId);
   expect(page.url()).not.toMatch(/agentic_process-/);
 
   // Step 4: terminal panels must be visible and connected
-  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')
     .first()
-    .waitFor({ state: 'attached', timeout: 10_000 });
+    .waitFor({ state: 'attached', timeout: adjusted(10_000) });
 
   // Step 5: no "CLI session not found" toast (removed from plain shell path)
   const toastEl = page.locator('[data-testid="toast"], [role="alert"]').filter({ hasText: 'CLI session' });

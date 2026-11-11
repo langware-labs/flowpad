@@ -28,6 +28,7 @@ import type { Browser } from 'playwright';
 import { testEntityName } from '../_cleanup';
 import { HUB_URL, hubAvailable, hubJson, hubLogin } from './_hub';
 import { pollUntil } from './_matrix';
+import { adjusted } from '../adjustableTimeout';
 import {
   HUB_INST_1 as INST_1,
   HUB_INST_2 as INST_2,
@@ -81,7 +82,7 @@ beforeAll(async () => {
   bobToken = (await hubLogin(bob.email, bob.env.FLOWPAD_CLOUD_USER_PASSWORD)).token;
   browser = await launchBrowser();
   alicePage = await openInstancePage(browser, INST_1);
-}, 60_000);
+}, adjusted(60_000));
 
 afterAll(async () => {
   await browser?.close().catch(() => undefined);
@@ -116,7 +117,7 @@ describe('agent visibility panel Share button grants a hub role', () => {
     // The panel gates Share on this exact read.
     await pollUntil(
       async () => (await jsonApi(alice.apiUrl, `/graph/agent/${agentId}/version`))?.data?.published === true,
-      10_000,
+      adjusted(10_000),
       'local agent reads as published',
     );
   });
@@ -134,12 +135,12 @@ describe('agent visibility panel Share button grants a hub role', () => {
     // Sharing lives on the Settings tab and mounts on its first open.
     await page.getByTestId('agent-tab-settings').click();
     const share = page.getByTestId('agent-share-with-people');
-    await share.waitFor({ state: 'visible', timeout: 20_000 });
-    await expect.poll(() => share.isEnabled(), { timeout: 15_000 }).toBe(true);
+    await share.waitFor({ state: 'visible', timeout: adjusted(20_000) });
+    await expect.poll(() => share.isEnabled(), { timeout: adjusted(15_000) }).toBe(true);
     await share.click();
 
     const dialog = page.getByTestId('share-agent-dialog');
-    await dialog.waitFor({ state: 'visible', timeout: 10_000 });
+    await dialog.waitFor({ state: 'visible', timeout: adjusted(10_000) });
     // The testid is on the picker's <input>. The dialog's open animation and focus
     // trap swallow early keystrokes — click, settle, type, verify the value landed.
     const contact = dialog.getByTestId('share-agent-input');
@@ -151,7 +152,7 @@ describe('agent visibility panel Share button grants a hub role', () => {
 
     await dialog.getByTestId('share-agent-submit').click();
     // The dialog closes only when every address was granted; a failure stays open and names it.
-    await dialog.waitFor({ state: 'detached', timeout: 25_000 }).catch(async () => {
+    await dialog.waitFor({ state: 'detached', timeout: adjusted(25_000) }).catch(async () => {
       const alert = await dialog.getByRole('alert').textContent().catch(() => '');
       throw new Error(`share dialog did not close: ${alert || '(no error shown)'}`);
     });
@@ -161,7 +162,7 @@ describe('agent visibility panel Share button grants a hub role', () => {
     const seen = await pollUntil(async () => {
       const read = await bobHubRead();
       return read.status === 200 ? read : null;
-    }, 15_000, 'bob can read the agent on the hub');
+    }, adjusted(15_000), 'bob can read the agent on the hub');
     expect(seen.roles).toContain('reader');
   });
 });

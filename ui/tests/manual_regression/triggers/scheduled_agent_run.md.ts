@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { apiContext, apiOrigin } from '../_shared/api';
 import { dismissSetupModal } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const FIRE_AHEAD_MS = 20_000;
 
@@ -36,7 +37,7 @@ function localInputValue(d: Date): string {
 }
 
 test('a scheduled agent run: create, fire, open trigger, edit, disable, delete', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(adjusted(120_000));
   const errors: string[] = [];
   page.on('pageerror', (err) => errors.push(err.message));
   const api = await apiContext();
@@ -108,7 +109,7 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
   await expect.poll(async () => {
     const runs = (await (await api.get(`/api/v1/runs?trigger_id=${trigger!.id}`)).json()).data.runs;
     return runs.map((r: { badge: string }) => r.badge).join(',');
-  }, { timeout: 60_000 }).toBe('done');
+  }, { timeout: adjusted(60_000) }).toBe('done');
 
   // ── clicking the schedule in the menu opens the trigger, which links back ──
   await page.goBack();

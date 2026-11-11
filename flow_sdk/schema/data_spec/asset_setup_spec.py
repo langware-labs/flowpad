@@ -193,3 +193,5 @@ class LoadResult(DataSpec):
     #: A READY app that opened because it answers, checked behind it: what its setup still owes (a credential
     #: that expired under it), else empty. ``None`` while that check has not answered yet.
     setup_owed: Optional[str] = None
+    #: A FAILED load whose setup was held, and by what: ``first_run_setup`` until first-run setup ends all green.
+    blocked: Optional[Literal["first_run_setup"]] = None

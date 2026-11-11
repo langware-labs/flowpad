@@ -67,6 +67,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agent_hook import HookEventType
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchErrorCode
     from flow_sdk.builtin.agentic_process.naming.providers import NamingAdapter
     from flow_sdk.builtin.hooks.types import AgentHookResponse, HookCapabilities, HookOutcome
     from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
@@ -401,10 +402,13 @@ class WorkerSpawnError(RuntimeError):
     resolved on the spawn PATH. Turn runners route it into the standard
     failure path — ``status=FAILED`` + the ``start_failure`` latch — via
     :func:`latch_spawn_failure` instead of leaving the process spinning.
+    ``code`` names the verdict when the CLI is there but the spawn is refused
+    for another reason (``MODEL_UNAVAILABLE``: the budget lacks the model size).
     """
 
-    def __init__(self, worker_type: str, message: str) -> None:
+    def __init__(self, worker_type: str, message: str, code: LaunchErrorCode | None = None) -> None:
         self.worker_type = worker_type
+        self.code = code
         super().__init__(message)
 
 

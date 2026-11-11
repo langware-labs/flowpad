@@ -8,6 +8,7 @@
  */
 import { expect, request, test, type APIRequestContext, type Browser, type Page } from '@playwright/test';
 import { graphCall, messageBubble, sendButton, skipLlmSetup } from '../_shared/conversation';
+import { adjusted } from '../../adjustableTimeout';
 
 const A = {
   ui: `http://localhost:${process.env.THREADS_A_UI || '5022'}`,
@@ -39,14 +40,14 @@ async function openConversation(p: Page) {
   // From the base stream inbox: Flowpad's own chat is listed there beside every channel's.
   await p.goto('/dock/stream_inbox');
   const row = p.getByTestId('stream-inbox-conversation-row').filter({ hasText: nonce }).first();
-  await expect(row, 'the conversation is not listed in the stream inbox').toBeVisible({ timeout: 20_000 });
+  await expect(row, 'the conversation is not listed in the stream inbox').toBeVisible({ timeout: adjusted(20_000) });
   await row.click();
 }
 
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-  test.setTimeout(90_000);
+  test.setTimeout(adjusted(90_000));
   apiA = await request.newContext({ baseURL: A.api });
   apiB = await request.newContext({ baseURL: B.api });
   const projects = await call<Array<{ id: string; uname?: string }>>(apiA, 'get', '/graph/project');
@@ -71,7 +72,7 @@ test.beforeAll(async () => {
         const json = await res.json();
         return (json.data?.messages ?? []).map((m: { id: string }) => m.id);
       },
-      { timeout: 30_000, message: "B never received A's root" },
+      { timeout: adjusted(30_000), message: "B never received A's root" },
     )
     .toContain(rootId);
 });
@@ -82,7 +83,7 @@ test.afterAll(async () => {
 });
 
 test("B answers A's message with Reply; A sees the thread and the quote; A writes into it; B sees it grow", async ({ browser }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(adjusted(120_000));
   const shots = process.env.SHOT_DIR;
   const b = await page(browser, B.ui);
   const a = await page(browser, A.ui);
@@ -96,12 +97,12 @@ test("B answers A's message with Reply; A sees the thread and the quote; A write
   await b.getByRole('textbox').last().fill(`which home ${nonce}?`);
   await sendButton(b).click();
   // B's own view: the root and its reply pack into one thread.
-  await expect(b.getByTestId('thread-stack-open')).toContainText('1 earlier in this thread', { timeout: 20_000 });
+  await expect(b.getByTestId('thread-stack-open')).toContainText('1 earlier in this thread', { timeout: adjusted(20_000) });
   if (shots) await b.screenshot({ path: `${shots}/native-1-b-replied.png`, fullPage: true });
 
   // ── A: the reply arrives packed with the root; the thread opens by URL, the quote names the root ──
   await openConversation(a);
-  await expect(a.getByTestId('thread-stack-open')).toContainText('1 earlier in this thread', { timeout: 30_000 });
+  await expect(a.getByTestId('thread-stack-open')).toContainText('1 earlier in this thread', { timeout: adjusted(30_000) });
   await a.getByTestId('thread-stack-open').click();
   await expect(a).toHaveURL(/[?&]thread=/);
   await expect(a.getByTestId('thread-header-title')).toContainText(`root ${nonce}`);
@@ -113,11 +114,11 @@ test("B answers A's message with Reply; A sees the thread and the quote; A write
   await expect(a.getByTestId('composer-thread-banner')).toContainText(`root ${nonce}`);
   await a.getByRole('textbox').last().fill(`43 ${nonce}`);
   await sendButton(a).click();
-  await expect(a.getByTestId('thread-header-count')).toContainText('3 messages', { timeout: 20_000 });
+  await expect(a.getByTestId('thread-header-count')).toContainText('3 messages', { timeout: adjusted(20_000) });
   await expect(bubble(a, `43 ${nonce}`).getByTestId('message-quote')).toHaveCount(0);
 
   // ── B: the thread grew to three; A's message is in it, unquoted ──
-  await expect(b.getByTestId('thread-stack-open')).toContainText('2 earlier in this thread', { timeout: 30_000 });
+  await expect(b.getByTestId('thread-stack-open')).toContainText('2 earlier in this thread', { timeout: adjusted(30_000) });
   await b.getByTestId('thread-stack-open').click();
   await expect(b.getByTestId('thread-header-count')).toContainText('3 messages');
   await expect(bubble(b, `43 ${nonce}`)).toBeVisible();
