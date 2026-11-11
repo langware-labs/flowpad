@@ -588,6 +588,8 @@ interface OpenProjectComponentProps {
   onPicked?: (project: Project) => void | Promise<void>;
   /** Offers "Run (Skip project)" in the picker; the caller runs without a project. */
   onSkipProject?: () => void;
+  /** Open straight on the create / git step instead of the picker. */
+  initialSubDialog?: 'create' | 'git' | null;
 }
 
 export function OpenProjectComponent({
@@ -600,6 +602,7 @@ export function OpenProjectComponent({
   trigger,
   onPicked,
   onSkipProject,
+  initialSubDialog = null,
 }: OpenProjectComponentProps) {
   const { t } = useLingui();
   const { project: currentProject } = useProject();
@@ -636,13 +639,15 @@ export function OpenProjectComponent({
   });
 
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      setSubDialog(initialSubDialog);
+    } else {
       setSubDialog(null);
       setError(null);
       setIsSubmitting(false);
       setOpeningProjectId(null);
     }
-  }, [open]);
+  }, [open, initialSubDialog]);
 
   // Mount path only, never `name` — a Project's name is not a location.
   const currentProjectPath = useMemo(
