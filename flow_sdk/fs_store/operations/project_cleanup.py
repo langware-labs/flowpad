@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -210,7 +211,8 @@ def _fstab_mount_points() -> set[str]:
     for line in lines:
         fields = line.split()
         if len(fields) >= 2 and not fields[0].startswith("#") and fields[1].startswith("/") and fields[1] != "/":
-            points.add(fields[1])
+            # fstab octal-escapes whitespace in a path: "/mnt/My\\040Drive".
+            points.add(re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), fields[1]))
     return points
 
 

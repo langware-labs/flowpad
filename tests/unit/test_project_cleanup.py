@@ -124,6 +124,16 @@ def test_a_missing_folder_on_an_unplugged_drive_is_not_orphaned(
     assert classify(_row(path)) is expected
 
 
+def test_fstab_mount_points_decode_escaped_spaces(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from flow_sdk.fs_store.operations import project_cleanup
+
+    fstab = tmp_path / "fstab"
+    fstab.write_text("LABEL=x /mnt/My\\040Drive ext4 defaults 0 2\n")
+    monkeypatch.setattr(project_cleanup, "FSTAB", fstab)
+
+    assert project_cleanup._fstab_mount_points() == {"/mnt/My Drive"}
+
+
 def test_a_deleted_top_level_folder_on_a_present_root_is_an_orphan() -> None:
     from flow_sdk.fs_store.operations.project_cleanup import on_unavailable_volume
 

@@ -149,7 +149,6 @@ def _refuse(code, worker_type: str, message: str, facts=None) -> ApiFailResponse
     return launch_refusal(message, LaunchError.of(code_for_refusal(code), message, worker_type).wire("preflight", evidence=message, facts=facts))
 
 
-
 class ScanActionsMixin:
     async def _scan_scoped_roots(self):
         """Full-coverage (user + all projects) indexer roots for resource scans."""
