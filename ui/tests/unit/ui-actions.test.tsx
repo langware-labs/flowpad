@@ -6,7 +6,10 @@ import { resolve } from 'node:path';
 import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { AgenticProcess } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { requestUiAction, UI_ACTIONS, useUiActionRequest } from '@src/navigation/ui-actions';
+import type { UiActionHost } from '@src/navigation/ui-actions';
 
 const catalog = JSON.parse(readFileSync(resolve(__dirname, '../../../flow_sdk/core/ui_actions.json'), 'utf8')) as {
   actions: Record<string, string>;
@@ -37,6 +40,27 @@ describe('UI actions', () => {
     render(<Host ids={['upload-flowmsg']} onRun={second} />);
     expect(first).toHaveBeenCalledTimes(1);
     expect(second).not.toHaveBeenCalled();
+  });
+
+  // Live (navigation sentences 178/179): "switch to terminal mode" on Home re-pointed Home at
+  // ?viewMode=advanced, which DockPointer drops off a session -- the same URL, so nothing happened.
+  it('a mode switch off a session page opens the last chat in that mode', async () => {
+    const chat = DockPointer.forSession('7a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d');
+    vi.spyOn(AgenticProcess, 'query').mockResolvedValue([{ terminalDockPointer: chat } as unknown as AgenticProcess]);
+    const openDock = vi.fn();
+    const host = { navigation: { here: DockPointer.fromUrl('/dock/home'), openDock }, toggleTheme: vi.fn() };
+    await UI_ACTIONS['view-mode-advanced'](host as unknown as UiActionHost);
+    const [dock, , opts] = openDock.mock.calls[0];
+    expect((dock as DockPointer).viewType).toBe(chat.viewType);
+    expect((dock as DockPointer).viewMode).toBe('advanced');
+    expect(opts).toEqual({ viewModeSwitch: true });
+  });
+
+  it('on a session page it re-points that session', async () => {
+    const openDock = vi.fn();
+    const here = DockPointer.forSession('7a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d');
+    await UI_ACTIONS['view-mode-vibe']({ navigation: { here, openDock }, toggleTheme: vi.fn() } as unknown as UiActionHost);
+    expect((openDock.mock.calls[0][0] as DockPointer).viewMode).toBe('vibe');
   });
 
   it('a host only hears the actions it names', () => {

@@ -15,9 +15,9 @@
 
 import { useEffect, useRef } from 'react';
 
-import { dataContext } from '@sdk';
+import { AgenticProcess, dataContext, lastChatQuery, mostRecentProcess } from '@sdk';
 import { openSetupWizard } from '@src/components/setup-incomplete/open-setup-wizard';
-import { ViewMode } from '@src/contexts/view-mode-context';
+import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { openNewChatOrExplain } from '@src/navigation/open-new-chat';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
@@ -86,13 +86,25 @@ const hosted =
   };
 
 /** Switch the view mode the way the footer toggle does (URL-first). ``ViewMode`` is read when the
- *  action runs -- this module loads inside an import cycle with the view-mode context. */
-const switchMode = (h: UiActionHost, mode: 'vibe' | 'advanced') =>
-  h.navigation.openDock(
-    h.navigation.here.withViewMode(mode === 'vibe' ? ViewMode.Vibe : ViewMode.Advanced),
-    undefined,
-    { viewModeSwitch: true },
+ *  action runs -- this module loads inside an import cycle with the view-mode context.
+ *
+ *  A mode belongs to a session tab: anywhere else `DockPointer` drops it, so re-pointing Home or
+ *  Automations at `?viewMode=` changed nothing and the switch was a silent no-op. Off a session the
+ *  switch is THE mode switch (`setViewMode`: the mode sessions open in from now on) and opens the
+ *  chat last used in this project in that mode -- the one the Chats icon resumes. */
+const switchMode = async (h: UiActionHost, mode: 'vibe' | 'advanced') => {
+  const want = mode === 'vibe' ? ViewMode.Vibe : ViewMode.Advanced;
+  const here = h.navigation.here;
+  if (here.carriesViewMode) {
+    h.navigation.openDock(here.withViewMode(want), undefined, { viewModeSwitch: true });
+    return;
+  }
+  const last = mostRecentProcess(
+    await AgenticProcess.query<AgenticProcess>(lastChatQuery(dataContext.project?.id ?? null)),
   );
+  setViewMode(want, last?.terminalDockPointer ?? null);
+  if (last) h.navigation.openDock(last.terminalDockPointer.withViewMode(want), undefined, { viewModeSwitch: true });
+};
 
 /** Actions whose dialog or menu lives in a mounted component: `{id: the screen hosting it}`. */
 const HOSTS: Record<string, string | null> = {
