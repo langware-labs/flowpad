@@ -205,7 +205,6 @@ hub: the process is funded by whatever the box resolves, exactly as on a signed-
 """
 
 import asyncio
-import os
 import tempfile
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
@@ -219,9 +218,7 @@ async def main() -> None:
     process = await AgenticProcess(
         worker_type=WorkerType.CLAUDE_CODE,
         workdir=tempfile.mkdtemp(),
-        # A public endpoint publishes no size map to an anonymous box (FLOWPAD-2318 refuses an asked size the budget
-        # does not declare), so LOGINLESS_MODEL may name the model the endpoint serves; default stays the size.
-        cli_config={"model": os.environ.get("LOGINLESS_MODEL") or "sm", "permission_mode": "bypassPermissions"},
+        cli_config={"model": "sm", "permission_mode": "bypassPermissions"},
         pty_mode=False,  # print mode: one spawn, one turn, then done
         visible=False,
         load_flowpad_assistant=False,

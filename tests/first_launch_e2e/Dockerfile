@@ -98,14 +98,10 @@ ENV FLOWPAD_CLAUDE_HOME=/root/.claude
 # for a throwaway container; it guards nothing that outlives the run.
 ENV SOD_ENC_KEY=spQrMo85xjLmJcrhJXBh8j7el8f7ZDny3dUW2yKw7jU=
 
-# FLOW_INSTANCE=test is the test settings class, whose sandbox is `$TMPDIR/flowpad-test-<pid>` unless
-# FLOWPAD_TEST_SANDBOX names one: the server and every later `flow` call are different processes and would
-# each look for the cookie-gate token in their own pid dir ("backend never became healthy"). One fixed dir.
 ENV PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring \
     FLOWPAD_NO_BROWSER=1 \
     IS_SANDBOX=1 \
     FLOW_INSTANCE=test \
-    FLOWPAD_TEST_SANDBOX=/tmp/flowpad-test-sandbox \
     LOCAL_SERVER_PORT=9712 \
     PYTHONUNBUFFERED=1
 

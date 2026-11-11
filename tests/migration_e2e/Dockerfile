@@ -13,8 +13,6 @@
 #   - NEW 0.2.26 reads ``FLOW_INSTANCE=dev`` (the new canonical env var,
 #     which wins over FLOWPAD_DEV in the resolver).
 #   - Both versions honor ``LOCAL_SERVER_PORT=9711`` for the bind port.
-#   - ``FLOWPAD_COOKIE_GATE=off``: the NEW server gates every route (/health/status too) behind the
-#     cookie secret; the harness probes it with plain curl, as CI does with the gate off.
 # The container exposes 9711; host maps to 9711 (1:1, no remap).
 
 FROM python:3.11-slim
@@ -28,7 +26,6 @@ ENV FLOWPAD_NO_BROWSER=1 \
     FLOWPAD_DEV=true \
     FLOW_INSTANCE=dev \
     LOCAL_SERVER_PORT=9711 \
-    FLOWPAD_COOKIE_GATE=off \
     HOME=/root \
     PYTHONUNBUFFERED=1
 
