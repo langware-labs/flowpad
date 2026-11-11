@@ -28,6 +28,7 @@ import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useShareRoles } from '@src/hooks/use-share-roles';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { Project, TypeId } from '@sdk';
+import { ProjectGitButton } from './ProjectGitButton';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -238,14 +239,17 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({
               </>
             )}
           </div>
-          <MembersAvatarStack
-            typeId={projectTypeId}
-            allowInviteLink
-            showInviteButton
-            beforeInvite={beforeProjectInvite}
-            inviteRoles={shareRoles}
-            uiAction="invite-members"
-          />
+          <div className="flex items-center gap-2">
+            {cloudMode && <ProjectGitButton projectId={projectTypeId.id} />}
+            <MembersAvatarStack
+              typeId={projectTypeId}
+              allowInviteLink
+              showInviteButton
+              beforeInvite={beforeProjectInvite}
+              inviteRoles={shareRoles}
+              uiAction="invite-members"
+            />
+          </div>
         </div>
       )}
       {!cloudMode && gitChecks && (

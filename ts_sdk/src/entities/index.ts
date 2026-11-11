@@ -104,6 +104,7 @@ export * from './team';
 export * from './access';
 export * from './members';
 export * from './git-workdir';
+export * from './git-repo';
 export * from './stream-inbox-manager';
 export * from './journey';
 export * from './wizard';
