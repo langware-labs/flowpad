@@ -56,10 +56,12 @@ def _leader(probabilities: Mapping[str, float], at_least: float, ahead_by: float
     return ranked[0][0] if len(ranked) < 2 or ranked[0][1] - ranked[1][1] >= ahead_by else None
 
 
-def _acted_on(result: Any) -> Optional[str]:
+def _acted_on(result: Any, matches: frozenset[str] = frozenset()) -> Optional[str]:
     """The ``target`` pick to act on: confident (``MIN_CONFIDENCE``), clearly ahead (``CLEAR_LEAD``),
     or -- when the request is plainly only an open (``SCOPE`` "only") -- the best place, if it clearly
-    leads the other places (``PLAIN_LEAD``)."""
+    leads the other places (``PLAIN_LEAD``). ``matches``: the options that are only full-text search
+    matches -- never a "place" for ``PLAIN_LEAD``: "open the README" opened the doc 'Markdown
+    documents' at 0.57 that way, on a project with no README."""
     if (key := result.pick("target", min=MIN_CONFIDENCE)) is not None:
         return key
     probabilities = getattr(result.answers.get("target"), "probabilities", None) or {}
@@ -72,7 +74,8 @@ def _acted_on(result: Any) -> Optional[str]:
     # lower: 0.8 for a 0.91).
     only = (getattr(result.answers.get("scope"), "probabilities", None) or {}).get("only", 0.0)
     if only >= PLAIN_LEAD[0]:
-        return _leader({k: p for k, p in probabilities.items() if k != "agentic"}, *PLAIN_LEAD[1:])
+        place = _leader({k: p for k, p in probabilities.items() if k != "agentic"}, *PLAIN_LEAD[1:])
+        return None if place in matches else place
     return None
 
 
@@ -504,6 +507,15 @@ def _about(description: Any) -> Optional[str]:
     return first if len(first) <= ABOUT_CHARS else first[: ABOUT_CHARS - 1].rstrip() + "…"
 
 
+def _match_keys(here: Any, candidates: list[dict[str, str]]) -> frozenset[str]:
+    """The options only the search offered: a match's own keys, less what the context offers too."""
+    found = {f"file:{c['path']}" for c in candidates if not c.get("typeid") and c.get("path")}
+    for cand in candidates:
+        if cand.get("typeid"):
+            found |= set(_entity_options(cand, "search match"))
+    return frozenset(found - set(options_for(here, [])))
+
+
 def options_for(here: Any, candidates: list[dict[str, str]]) -> dict[str, str]:
     """The map's screens, what ``here`` has in context, the search matches, and ``agentic``."""
     options = dict(static_options()[0])
@@ -647,7 +659,7 @@ async def route(
         return _offered(NavigatorRoute(route="agentic", reason=exc.reason), candidates, spec, wire=exc.wire)
     confidence = float(getattr(result.answers.get("target"), "confidence", 0.0))
     more = result.pick("scope", min=MORE_AT) == "more"
-    key = None if more else _acted_on(result)
+    key = None if more else _acted_on(result, _match_keys(here, candidates))
     if key in (None, "agentic"):
         reason = "more" if more else "unsure" if key is None else "agentic"
         answer = NavigatorRoute(route="agentic", reason=reason, confidence=confidence, latency_ms=result.latency_ms)

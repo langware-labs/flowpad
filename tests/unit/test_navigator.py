@@ -222,6 +222,25 @@ def test_a_clear_lead_acts_below_the_confidence_bar():
     assert navigator._acted_on(_result({"view:a": 0.6, "view:b": 0.2, "agentic": 0.2})) == "view:a"
 
 
+def test_a_search_match_that_only_leads_on_a_plain_request_is_not_a_place_to_open():
+    # Live: "open the README" (no README in the project) opened the doc 'Markdown documents' at 0.57
+    # on PLAIN_LEAD. A full-text match is a guess at the thing, not a place on the map.
+    doc = "entity:markdown-145bc443-e7dc-4971-ae46-8844c5721b4a"
+    plain = _result({doc: 0.48, "agentic": 0.25, "view:markdown": 0.09}, {"only": 1.0, "more": 0.0})
+    assert navigator._acted_on(plain) == doc
+    assert navigator._acted_on(plain, frozenset({doc})) is None
+    # ...while a match picked confidently, or clearly ahead, still opens.
+    assert navigator._acted_on(_result({doc: 0.62, "agentic": 0.2}), frozenset({doc})) == doc
+
+
+def test_the_search_matches_are_told_apart_from_what_the_context_offers():
+    proj = "project-96893382-586c-5655-a216-e228121ab1a5"
+    here = navigation.kind("navigation.here").model_validate({"project": {"typeid": proj}})
+    keys = navigator._match_keys(here, [{"typeid": TASK, "type": "task", "title": "Zoom OAuth on dev"},
+                                        {"typeid": proj, "type": "project", "title": "p"}])
+    assert f"entity:{TASK}" in keys and f"entity:{proj}" not in keys
+
+
 def test_a_type_name_opens_its_list_and_a_screen_name_still_wins():
     assert navigator.rule_hit("show specs").value == "assets/list/spec"
     assert navigator.rule_hit("open the project manifest").value == "assets/list/project_manifest"
