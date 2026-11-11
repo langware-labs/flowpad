@@ -119,17 +119,23 @@ test('two browsers receive native title changes and same-text pinning with an id
     };
 
     // Controlled first-input event; it exercises production fallback policy
-    // without sending a prompt to a paid worker.
-    const reported = await api.get(`${AP}/${id}/report_event/first_prompt`, {
-      params: { data: JSON.stringify({ prompt: fallback }) },
-    });
-    expect(reported.ok(), await reported.text()).toBe(true);
+    // without sending a prompt to a paid worker. It is also a lifecycle edge: since 4e49fed4b
+    // there is no native-file watcher, and Copilot has no transcript events, so its native title
+    // is read on lifecycle edges only (open, resume, first prompt, adoption).
+    const lifecycleEdge = async () => {
+      const reported = await api.get(`${AP}/${id}/report_event/first_prompt`, {
+        params: { data: JSON.stringify({ prompt: fallback }) },
+      });
+      expect(reported.ok(), await reported.text()).toBe(true);
+    };
+    await lifecycleEdge();
     await expectBoth(fallback);
     await recordPhase('prompt_fallback');
 
-    // The real native-file watcher, adapter, transaction and WebSocket fan-out
-    // must promote B over C in both independently connected browser contexts.
+    // The adapter, transaction and WebSocket fan-out must promote B over C in both
+    // independently connected browser contexts on the next lifecycle edge.
     nativeMetadata(harnessTitle, 1);
+    await lifecycleEdge();
     await expectBoth(harnessTitle);
     await recordPhase('harness');
 
@@ -146,6 +152,7 @@ test('two browsers receive native title changes and same-text pinning with an id
     const cursor = before.naming_state.cursors['copilot.workspace'].revision;
 
     nativeMetadata(laterTitle, 2);
+    await lifecycleEdge();
     // Advancing the source cursor proves the late automatic title was consumed,
     // rather than passing because the watcher never saw the update.
     await expect.poll(async () => (await processData(api, id!)).naming_state.cursors['copilot.workspace'].revision)
