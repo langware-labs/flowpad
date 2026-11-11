@@ -234,7 +234,28 @@ function decideDesktopAction({ state, version, isNewer, deferredVersion, offered
   return 'adopt';
 }
 
+/**
+ * Is the engine's own interval due while the DESKTOP FEED fails? A healthy feed's scheduled pass runs both halves
+ * on the shared anchor; a failing one is paced by ITS backoff, which only retries the feed — without this the engine
+ * was never checked for as long as the feed failed (seen: 35 hours of ERR_NETWORK_CHANGED, a newer engine unseen).
+ * The engine's last check is the later of the shared anchor and its own stamp (recordEngineCheck). An engine that
+ * failed itself is paced by its own backoff instead (engineRetryDue).
+ */
+function engineIntervalDue({ state, intervalMs, now }) {
+  if (!((Number(state.failureCount) || 0) > 0)) return false;
+  if ((Number(state.engineFailureCount) || 0) > 0) return false;
+  const seen = [pastMs(state.lastSuccessAt, now), attemptMs(state.engineLastCheckAt, now)].filter((v) => v !== null);
+  return seen.length === 0 || now >= Math.max(...seen) + intervalMs;
+}
+
+/** The engine half ran (any pass that checks it): engineIntervalDue counts its next interval from now. */
+function recordEngineCheck(state, { at }) {
+  return { ...state, engineLastCheckAt: new Date(at).toISOString() };
+}
+
 module.exports = {
+  engineIntervalDue,
+  recordEngineCheck,
   DESKTOP_INTERVAL_MS,
   desktopCheckDue,
   recordDesktopCheck,

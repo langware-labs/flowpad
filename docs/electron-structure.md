@@ -105,7 +105,9 @@ Electron (main.js)
   The DESKTOP feed is also looked at on every launch and every 20 minutes, whatever the account (a new desktop
   leads; the engine follows its dependencies): a desktop-only check (`getDesktopUpdateVersion({desktopOnly})`)
   stamps `lastDesktopCheckAt` (and keeps its answer in `lastResult`) and never moves the shared anchor or the
-  backoff, so the engine keeps its cadence. At a launch inside the interval it runs in the background — the
+  backoff, so the engine keeps its cadence. While the feed itself FAILS, its backoff retries only the feed, so the
+  engine keeps its interval on its own clock (`engineIntervalDue`, from `engineLastCheckAt` — stamped by every pass
+  that checks the engine — or the shared anchor): an `engine-due` pass checks it alone. At a launch inside the interval it runs in the background — the
   start never waits for the feed — and a newer desktop it finds is offered once the app is up, never mid-start.
   That launch asks no engine question pre-start (it would come before the feed answers): once the app is up,
   `postBootUpdates` waits for the background look (bounded by the launch check's 20 s; the app is usable
@@ -141,6 +143,11 @@ Electron (main.js)
   it on mount (`update-ready-take-toast`, handed out once). A prepared engine is the newest release THIS desktop runs
   — PyPI's newest, or an older one when the newest needs a newer desktop — and is offered while it is newer than the
   installed one. A new desktop download replaces the downloaded installer, so that one stops being ready.
+  While an engine-only update waits (the user said Later), every pass — the 20-minute desktop look included,
+  and passes due only to the feed's backoff — also looks for a newer engine (`engineUpdateWaiting`) and prepares
+  it in place of the waiting one, quietly (`quiet`: no new toast; the indicator, the popover and the next
+  reminder name the new version). Nothing is recorded on the engine's cadence. The popover then has ONE engine
+  action: no "Upgrade to vX" while an update is ready (`upgradeOfferVersion({updateReady})`).
 - **Restart** (`update-activate`, one at a time; `busy` while a background check or prepare runs, `not-ready` once
   the set is gone — a Restart from the toast that does not apply opens the popover to say why) uses the existing paths: a desktop update is the old "Restart now" —
   consent to the saved engine version X (`pending-engine.json`), then `restartApplier`; the new desktop installs

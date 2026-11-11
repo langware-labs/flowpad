@@ -104,6 +104,21 @@ eq(s.backoffDelayMs(99), s.BACKOFF_MAX_MS, 'capped');
     'an unparseable engine attempt still reads as long ago');
 }
 
+// ── a failing desktop feed never starves the engine: it keeps its interval on its own clock ──
+{
+  const DAY = 24 * HOUR;
+  const feedFailing = s.recordFailure(s.recordSuccess({}, { result: { state: 'current', version: null }, at: T0 }), { at: T0 + HOUR });
+  eq(s.engineIntervalDue({ state: s.recordSuccess({}, { result: { state: 'current' }, at: T0 }), intervalMs: DAY, now: T0 + 2 * DAY }), false,
+    'a healthy feed: the scheduled pass runs the engine (no own clock)');
+  eq(s.engineIntervalDue({ state: feedFailing, intervalMs: DAY, now: T0 + DAY - 1 }), false, 'feed failing: not before an interval since the last answer');
+  eq(s.engineIntervalDue({ state: feedFailing, intervalMs: DAY, now: T0 + DAY }), true, 'feed failing: an interval later, the engine is due anyway');
+  const checked = s.recordEngineCheck(feedFailing, { at: T0 + DAY });
+  eq(s.engineIntervalDue({ state: checked, intervalMs: DAY, now: T0 + 2 * DAY - 1 }), false, 'once checked: the next one is an interval later');
+  eq(s.engineIntervalDue({ state: checked, intervalMs: DAY, now: T0 + 2 * DAY }), true, 'and then it is due again');
+  eq(s.engineIntervalDue({ state: s.recordEngineFailure(feedFailing, { at: T0 }), intervalMs: DAY, now: T0 + 2 * DAY }), false,
+    'an engine that failed itself is paced by its own backoff instead');
+}
+
 // ── the engine channel keeps its own streak — neither channel drags the other ──
 {
   let state = s.recordSuccess({}, { result: { state: 'current', version: null }, at: T0 });

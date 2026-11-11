@@ -488,6 +488,7 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
     desktop: Boolean(electronApi?.upgradeFlowpad),
     desktopTarget,
     pypiLatest: data?.pypi?.latest,
+    updateReady: Boolean(updateReady?.ready),
   });
 
   const handleUpgrade = useCallback(async () => {

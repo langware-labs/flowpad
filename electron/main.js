@@ -343,6 +343,9 @@ async function runScheduledUpdateCheck({ bypassSchedule = false, launchDesktop =
   // otherwise every 5-minute tick would inflate a streak the backoff never paced.
   let pass = 'scheduled';
   let feedBackoffOnly = false; // due only to retry the failing FEED: the engine keeps its own cadence
+  // While the feed fails, the engine keeps its interval on its own clock — the feed's backoff never starves it.
+  const engineOwnDue = !bypassSchedule && !launchDesktop
+    && updateSchedule.engineIntervalDue({ state, intervalMs: currentIntervalMs(), now: Date.now() });
   if (launchDesktop) {
     pass = 'desktop'; // already answered by the launch's background look: handled like the periodic one
   } else if (!bypassSchedule) {
@@ -358,6 +361,9 @@ async function runScheduledUpdateCheck({ bypassSchedule = false, launchDesktop =
     } else if (updateSchedule.engineRetryDue({ state, now: Date.now() })) {
       pass = 'engine-retry'; // paced by its backoff, so it never starves the 20-minute desktop look below
       log.info('[update] engine check retry due (engine backoff)');
+    } else if (engineOwnDue) {
+      pass = 'engine-due'; // the engine half alone; the desktop look comes on the next tick
+      log.info('[update] engine check due (its own interval: the desktop feed is failing)');
     } else if (updateSchedule.desktopCheckDue({ state, now: Date.now() })) {
       pass = 'desktop'; // the 20-minute look at the desktop feed, for every account (the engine half does not run)
       log.info('[update] desktop check due (every 20 minutes)');
@@ -368,7 +374,7 @@ async function runScheduledUpdateCheck({ bypassSchedule = false, launchDesktop =
   autoCheckInFlight = true;
   const desktopWasBlocked = followUpDesktop;
   const packageWasBlocked = followUpPackage;
-  if (pass !== 'engine-retry' && pass !== 'desktop') followUpDesktop = false; // an engine-retry never runs the desktop half: its debt is kept
+  if (pass !== 'engine-retry' && pass !== 'engine-due' && pass !== 'desktop') followUpDesktop = false; // an engine-only pass never runs the desktop half: its debt is kept
   followUpPackage = false;
   try {
     const last = state.lastResult || {};
@@ -376,7 +382,7 @@ async function runScheduledUpdateCheck({ bypassSchedule = false, launchDesktop =
     // version the running app already is (a scheduled pass always gets a fresh answer instead).
     const cached = (pass === 'follow-up' && desktopWasBlocked && last.state === 'available'
       && last.version && isNewer(app.getVersion(), last.version)) ? last.version : null;
-    const desktopLatest = pass === 'scheduled' ? await getDesktopUpdateVersion()
+    const desktopLatest = pass === 'engine-due' ? null : pass === 'scheduled' ? await getDesktopUpdateVersion()
       : pass === 'desktop' ? (launchDesktop || await getDesktopUpdateVersion({ desktopOnly: true })) : cached;
     if (desktopLatest) {
       // A newer release than the one being downloaded: cancel that download, so only the latest is offered.
@@ -423,9 +429,22 @@ async function runScheduledUpdateCheck({ bypassSchedule = false, launchDesktop =
       }
     }
     // The engine half runs on scheduled passes (but not ones due only to the FEED's backoff — the
-    // engine is not what failed), on its own retry, and on a follow-up that owes it.
-    if ((pass === 'scheduled' && !feedBackoffOnly) || pass === 'engine-retry' || packageWasBlocked) {
-      const pkg = await checkPackageUpdateInBackground({ desktopJustChecked: pass === 'scheduled' }); // that pass just looked at the feed
+    // engine is not what failed — unless the engine's own interval is due too), on its own interval
+    // while the feed fails, on its own retry, and on a follow-up that owes it.
+    // While an engine update waits to be applied (the user said Later), every pass also looks for a newer
+    // release — the 20-minute desktop pass included — and prepares it in place of the waiting one, quietly:
+    // no second toast and never two engine updates side by side; the indicator and the popover name the new one.
+    const engineOnOwnClock = pass === 'engine-due' || (pass === 'scheduled' && feedBackoffOnly && engineOwnDue);
+    const engineDue = (pass === 'scheduled' && !feedBackoffOnly) || engineOnOwnClock || pass === 'engine-retry' || packageWasBlocked;
+    const waiting = engineUpdateWaiting();
+    if (!engineDue && waiting && pass !== 'follow-up') {
+      // Nothing recorded: the engine's own cadence and backoff are not what this look is for.
+      await checkPackageUpdateInBackground({ label: 'waiting engine update', desktopJustChecked: true, quiet: true });
+    } else if (engineDue) {
+      const pkg = await checkPackageUpdateInBackground({ desktopJustChecked: pass === 'scheduled', quiet: waiting }); // that pass just looked at the feed
+      // The engine's own clock (engineIntervalDue): stamped whatever the answer, so a hold or a failure does not
+      // re-fire it every tick.
+      scheduleStore.write(updateSchedule.recordEngineCheck(scheduleStore.read(), { at: Date.now() }));
       if (pkg === 'blocked') followUpPackage = true;
       // 'offer-open': the offer's .finally re-arms the engine debt once, when it settles.
       // 'held': nothing owed — the hold lifts only via a restart, which re-checks the engine; an
@@ -441,7 +460,7 @@ async function runScheduledUpdateCheck({ bypassSchedule = false, launchDesktop =
   } catch (err) {
     log.warn(`[update] periodic check failed: ${err.message}`);
     // The debt this pass was carrying was not paid: give it back so a near tick retries it, capped.
-    rearmFollowUp({ desktop: desktopWasBlocked && pass !== 'engine-retry', pkg: packageWasBlocked });
+    rearmFollowUp({ desktop: desktopWasBlocked && pass !== 'engine-retry' && pass !== 'engine-due', pkg: packageWasBlocked });
   } finally {
     autoCheckInFlight = false;
   }
@@ -528,7 +547,7 @@ let desktopDownloadDone = Promise.resolve();
  * keep deferring to the cloud policy verdict. Skipped in dev (would reinstall under a live dev
  * backend) and while a previous check is still running.
  */
-async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 'periodic', desktopJustChecked = false } = {}) {
+async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 'periodic', desktopJustChecked = false, quiet = false } = {}) {
   if (isDev) return;
   if (!uvManager || !mainWindow || mainWindow.isDestroyed()) return;
   if (!uvManager.getInstalledFlowBin()) {
@@ -567,7 +586,9 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
       compareWithPypi,
       // Asked again after the background prepare: a desktop found meanwhile goes first.
       engineChangeAllowed: async () => (await engineChangeAllowedAfterRecheck(`${label} package check, after the prepare`)) === 'allow',
-      onReady: () => announceUpdateReady(), // prepared and checked: the "Update Ready" toast, not a dialog
+      // Prepared and checked: the "Update Ready" toast, not a dialog. `quiet` (a newer release replacing the one
+      // already waiting): no new toast — the indicator and the popover show the new version, the reminder names it.
+      onReady: () => (quiet ? pushUpdateReadyState() : announceUpdateReady()),
     });
     return (uvManager.pypiLookupFailures || 0) > lookupFailuresBefore ? 'failed' : 'ran';
   } catch (err) {
@@ -729,6 +750,11 @@ function updateReadyState() {
     return { ready: true, restart: false, desktop: null, engine: { from: installedEngine, to: prepared.version } };
   }
   return { ready: false, restart: false, desktop: null, engine: null };
+}
+/** An engine-only update is prepared and waits for the user ("Later"): no desktop update goes first. */
+function engineUpdateWaiting() {
+  const state = updateReadyState();
+  return state.ready && !state.restart && !!state.engine;
 }
 const readyKey = (s) => (s.ready ? `${(s.desktop && s.desktop.to) || ''}|${(s.engine && s.engine.to) || ''}` : null);
 

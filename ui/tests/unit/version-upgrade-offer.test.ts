@@ -13,6 +13,11 @@ describe('upgradeOfferVersion', () => {
     expect(upgradeOfferVersion({ desktop: true, desktopTarget: null, pypiLatest: '0.2.190' })).toBe('0.2.190');
     expect(upgradeOfferVersion({ desktop: true, desktopTarget: undefined, pypiLatest: '0.2.190' })).toBe('0.2.190');
   });
+  it('an update already ready: no second engine button — "Update ready" installs it', () => {
+    expect(
+      upgradeOfferVersion({ desktop: true, desktopTarget: '0.2.263', pypiLatest: '0.2.263', updateReady: true }),
+    ).toBeNull();
+  });
   it('browser: PyPI newest', () => {
     expect(upgradeOfferVersion({ desktop: false, desktopTarget: '0.2.181', pypiLatest: '0.2.190' })).toBe('0.2.190');
     expect(upgradeOfferVersion({ desktop: false, desktopTarget: undefined, pypiLatest: null })).toBeNull();
