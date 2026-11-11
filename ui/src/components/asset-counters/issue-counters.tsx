@@ -1,4 +1,4 @@
-import { Deployment, Issue, QueryRequest, TypeId, isIssueActive, type IDockPointer } from '@sdk';
+import { Deployment, Issue, Project, QueryRequest, TypeId, isIssueActive, type IDockPointer } from '@sdk';
 import { entityDock } from '@src/lib/hub-page-url';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
@@ -60,6 +60,8 @@ export function fixPointer(issue: Pick<Issue, 'fix'>): IDockPointer | null {
     const typeId = new TypeId(raw);
     // A deployment lives in the world view, not as an asset of its own.
     if (typeId.type === Deployment.type) return Deployment.dockPointerFor(typeId.id);
+    // A project is a page of its own (where its credentials are set), not a markdown asset ("Missing asset").
+    if (typeId.type === Project.type) return DockPointer.forProject(typeId.id);
     return DockPointer.forAssetEditorByTypeId(typeId.type, typeId);
   } catch {
     return null;

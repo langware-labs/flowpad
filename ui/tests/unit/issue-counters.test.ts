@@ -78,4 +78,12 @@ describe('issue counters', () => {
     expect(pointer.options).toEqual({ deployment: 'ac5708e1-d328-41a9-aecf-dd9f698716a1' });
     expect(JSON.stringify(fixPointerFor(live, null))).toContain(dep); // no project: the world view
   });
+
+  it("opens a project on the project's own page, not as a markdown asset", () => {
+    const project = 'project-0b7e6f1c-1d2e-4f3a-9b8c-7d6e5f4a3b2c';
+    const missing = { ...issue('c', 'warning'), fix: { label: 'Set credential', pointer: project } } as Issue;
+    const pointer = fixPointer(missing)!;
+    expect(pointer.viewType).toBe(ViewType.PROJECT);
+    expect(JSON.stringify(pointer)).not.toContain('markdown');
+  });
 });
