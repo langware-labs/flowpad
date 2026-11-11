@@ -180,10 +180,14 @@ test('3. a mark narrows to ONE source; × restores', async ({ page }) => {
   const slackMark = bar.locator('[data-testid="attached-channel"][aria-label*="Support slack"]');
   await expect(slackMark).toHaveCount(1);
   const mailMark = bar.locator('[data-testid="attached-channel"][aria-label*="Team mail"]');
-  await slackMark.click();
+  // Every mark is lit (shown) by default and a press DIMS that channel (657023b9c): narrowing to the
+  // Slack source is dimming the mail one.
   await expect(slackMark).toHaveAttribute('aria-pressed', 'true');
+  await expect(mailMark).toHaveAttribute('aria-pressed', 'true');
+  await mailMark.click();
   await expect(mailMark).toHaveAttribute('aria-pressed', 'false');
-  // The other mark dims (the bar greys every unpressed glyph while filtering).
+  await expect(slackMark).toHaveAttribute('aria-pressed', 'true');
+  // The dimmed mark greys (the bar greys every unpressed glyph while filtering); the lit one does not.
   await expect(mailMark.locator(':scope > :first-child')).toHaveCSS('filter', /grayscale/);
   await expect(slackMark.locator(':scope > :first-child')).toHaveCSS('filter', 'none');
   await expect(bar.getByTestId('attached-channels-clear')).toBeVisible();
@@ -193,8 +197,9 @@ test('3. a mark narrows to ONE source; × restores', async ({ page }) => {
   for (const sender of await rows.getByTestId('stream-inbox-row-sender').all()) await expect(sender).toHaveText('Bob');
   await expect(rows.filter({ hasText: /Subject \d+/ })).toHaveCount(0);
 
+  // × lights every mark again: everything is shown.
   await bar.getByTestId('attached-channels-clear').click();
   await expect(rows).toHaveCount(PAGE);
-  await expect(slackMark).toHaveAttribute('aria-pressed', 'false');
-  await expect(mailMark).toHaveAttribute('aria-pressed', 'false');
+  await expect(slackMark).toHaveAttribute('aria-pressed', 'true');
+  await expect(mailMark).toHaveAttribute('aria-pressed', 'true');
 });
