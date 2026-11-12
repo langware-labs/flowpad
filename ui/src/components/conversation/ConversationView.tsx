@@ -96,7 +96,7 @@ import {
   oldestCreatedDate,
 } from './conversation-messages-query';
 import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
-import { failedPromptOf, pendingPromptOf, sentResultOf } from './session-turns';
+import { failedPromptOf, pendingPromptOf, promptTextOf, sentResultOf } from './session-turns';
 import { isSessionExpired } from './session-card-state';
 import { LiveSessionActivity } from './LiveSessionActivity';
 import { useRetryFailedPrompt } from './useRetryFailedPrompt';
@@ -709,6 +709,7 @@ export function ConversationView({
             failed: failedPromptOf(fms),
             pending: pendingPromptOf(fms),
             result: sentResultOf(fms),
+            prompt: fms.map(promptTextOf).find((text) => text.trim()) ?? null,
           },
         ]),
       ),
@@ -1264,6 +1265,11 @@ export function ConversationView({
                         : undefined
                     }
                     resultText={promptRequest ? (turns?.result ?? null) : null}
+                    onRunAgain={
+                      role === 'guest' && promptRequest && turns?.prompt && conversationId
+                        ? () => retryFailedPrompt(conversationId, null, turns.prompt!)
+                        : undefined
+                    }
                     onRetry={
                       role === 'guest' && failedPrompt && conversationId
                         ? () => retryFailedPrompt(conversationId, item.sessionId, failedPrompt.text)

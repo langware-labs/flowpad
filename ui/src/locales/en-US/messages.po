@@ -36303,3 +36303,7 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Your answer"
+msgstr "Your answer"

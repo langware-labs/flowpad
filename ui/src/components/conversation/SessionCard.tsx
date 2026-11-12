@@ -36,8 +36,10 @@ export interface SessionCardProps {
   /** Prompt request, host + pending: run it — `auto` sends the answer back (Run & Update),
    *  `review` keeps it here (Run). */
   onRun?: (replyPolicy: SessionReplyPolicy) => Promise<void>;
-  /** Prompt request: the answer the host sent back, once it arrived. */
+  /** Prompt request: the answer — sent back to the guest, or sent by the host — once there is one. */
   resultText?: string | null;
+  /** Prompt request, guest + done: send the same prompt again as a new request. */
+  onRunAgain?: () => Promise<void>;
 }
 
 const TONE: Record<SessionCardState, string> = {
@@ -110,10 +112,11 @@ export function SessionCard({
   chatProcessId,
   onRun,
   resultText,
+  onRunAgain,
 }: SessionCardProps) {
   const { t } = useLingui();
   const [busy, setBusy] = useState<
-    'approve' | 'decline' | 'disconnect' | 'retry' | 'run-update' | 'run' | 'open' | null
+    'approve' | 'decline' | 'disconnect' | 'retry' | 'run-update' | 'run' | 'run-again' | 'open' | null
   >(null);
   // Past the length cap the session is over on this side too, whatever the row says.
   const expired = useSessionExpired(session);
@@ -253,6 +256,8 @@ export function SessionCard({
                 </>
               )}
               {answering && button('decline', onDecline, secondary, <Trans>Decline</Trans>)}
+              {done && onRunAgain && button('run-again', onRunAgain, secondary, <Trans>Run again</Trans>)}
+              {done && chatProcessId && <OpenSessionChatButton processId={chatProcessId} />}
               {(state === 'active' || done) && button('open', async () => onOpen(), secondary, <Trans>Open</Trans>)}
               {((role === 'guest' && (state === 'pending' || state === 'requesting')) || state === 'active') &&
                 button('disconnect', onDisconnect, secondary, <Trans>Cancel</Trans>)}
@@ -264,13 +269,13 @@ export function SessionCard({
             <Trans>✓ Update sent to {guest}</Trans>
           </span>
         )}
-        {role === 'guest' && resultText && (
+        {role !== 'observer' && resultText && (
           <div
             className="me-2 ms-6 max-w-2xl rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-sm"
             data-testid="session-card-update"
           >
             <span className="block text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-              <Trans>Update from {host}</Trans>
+              {role === 'guest' ? <Trans>Update from {host}</Trans> : <Trans>Your answer</Trans>}
             </span>
             <span className="whitespace-pre-wrap text-foreground/90">{resultText}</span>
           </div>

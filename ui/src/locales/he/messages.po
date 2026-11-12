@@ -36303,3 +36303,7 @@ msgstr "הגדילו"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטינו"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Your answer"
+msgstr "התשובה שלך"

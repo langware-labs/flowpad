@@ -5,15 +5,15 @@ import { notify } from '@src/notifications/notify';
 import { buildSessionStartExtras } from './session-start';
 
 /**
- * Retry a failed live-session prompt: send its text again as a new prompt in the
- * SAME session — the exact path a follow-up typed in the session view takes, so it
- * travels hub-optional like any other turn. Shared by the session view's failed
- * line and the conversation's session card.
+ * Send a prompt's text again. With a session id it is a new turn in the SAME session — the
+ * path a follow-up typed in the session view takes (a failed prompt's Retry). With none it
+ * is a new prompt request (a finished request's Run again), which the host approves like
+ * the first. Travels hub-optional like any other turn.
  */
-export function useRetryFailedPrompt(): (conversationId: string, sessionId: string, text: string) => Promise<void> {
+export function useRetryFailedPrompt(): (conversationId: string, sessionId: string | null, text: string) => Promise<void> {
   const ensureCloudLogin = useCloudLoginGate();
   return useCallback(
-    async (conversationId: string, sessionId: string, text: string) => {
+    async (conversationId: string, sessionId: string | null, text: string) => {
       const gate = await ensureCloudLogin();
       if (!gate.ok) {
         notify.error({ title: gate.error, forceToast: true });

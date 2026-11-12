@@ -37,6 +37,7 @@ function renderCard(props: Partial<Parameters<typeof SessionCard>[0]> = {}) {
       chatProcessId={props.chatProcessId}
       onRun={props.onRun}
       resultText={props.resultText}
+      onRunAgain={props.onRunAgain}
     />,
   );
   return { onOpen };
@@ -262,5 +263,20 @@ describe('SessionCard — a prompt request (prompt_limit = 1)', () => {
     cleanup();
     renderCard({ session: pr(RemoteWorkerSessionStatus.ENDED, { prompts_used: 1, reply_policy: 'review' }), role: 'host' });
     expect(screen.queryByTestId('session-card-update-sent')).toBeNull(); // Run: nothing went back
+  });
+
+  it('done: the host sees its own answer and opens the run; the guest can run it again', async () => {
+    const done = pr(RemoteWorkerSessionStatus.ENDED, { prompts_used: 1 });
+    renderCard({ session: done, role: 'host', resultText: 'Darwin', chatProcessId: 'p1' });
+    expect(screen.getByTestId('session-card-update').textContent).toContain('Your answer');
+    expect(screen.getByTestId('session-card-update').textContent).toContain('Darwin');
+    expect(screen.getByTestId('live-session-open-chat')).toBeTruthy();
+    expect(screen.queryByTestId('session-card-run-again')).toBeNull();
+    cleanup();
+    const onRunAgain = vi.fn(async () => {});
+    renderCard({ session: done, role: 'guest', resultText: 'Darwin', onRunAgain });
+    await act(async () => fireEvent.click(screen.getByTestId('session-card-run-again')));
+    expect(onRunAgain).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('live-session-open-chat')).toBeNull(); // the run lives on the host
   });
 });
