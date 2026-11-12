@@ -6,7 +6,14 @@ import { ColorPicker } from '@src/components/ui/color-picker';
 import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
 import { noteTitle } from '@src/hooks/use-entity-notes';
 import { formatTimeAgoShort } from '@src/utils/format-time-ago';
-import { DEFAULT_NOTE_COLOR, NOTE_COLOR_TOKENS, NOTE_PALETTE, noteColor, type NoteColorToken } from './note-palette';
+import {
+  DEFAULT_NOTE_COLOR,
+  NOTE_COLOR_TOKENS,
+  NOTE_PALETTE,
+  noteColor,
+  type NoteColorToken,
+  notePaperStyle,
+} from './note-palette';
 import { StickyNoteShape } from './StickyNoteShape';
 import { useNoteWorker } from './useNoteWorker';
 
@@ -36,8 +43,7 @@ function NotePaper({ color, children }: { color: string | undefined; children: R
     <div
       className="relative px-3.5 pb-6 pt-3"
       style={{
-        background: `linear-gradient(${c.face[0]}, ${c.face[1]})`,
-        color: c.ink,
+        ...notePaperStyle(c),
         clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 22px), calc(100% - 22px) 100%, 0 100%)',
       }}
     >
@@ -57,7 +63,7 @@ export function NoteComposer({
   const [text, setText] = useState('');
   const [color, setColor] = useState<NoteColorToken>(DEFAULT_NOTE_COLOR);
   const save = () => {
-    if (text.trim()) void onSave(text.trim(), color);
+    void onSave(text.trim(), color);
   };
   return (
     <div className="space-y-2 p-2.5" data-testid="note-composer">
@@ -93,9 +99,9 @@ export function NoteComposer({
         <button
           type="button"
           onClick={save}
-          disabled={!text.trim()}
+          title={text.trim() ? undefined : t`Colour the tab`}
           data-testid="note-composer-save"
-          className="rounded bg-primary px-2 py-1 text-[11px] text-primary-foreground disabled:opacity-50"
+          className="rounded bg-primary px-2 py-1 text-[11px] text-primary-foreground"
         >
           <Trans>Save</Trans>
         </button>
