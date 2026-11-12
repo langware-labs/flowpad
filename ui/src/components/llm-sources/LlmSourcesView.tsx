@@ -23,7 +23,7 @@ import {
   LLMSourceRefusal,
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AlertCircle, ArrowUpRight, Check, KeyRound, Loader2, Route, Waypoints } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowUpRight, Check, KeyRound, Loader2, Route, Waypoints } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
 import { openHarnessSignIn } from '@src/components/harness-login/harness-sign-in-store';
@@ -38,12 +38,18 @@ import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 
-import { EndpointSponsorLine, LlmEndpointsSection } from './LlmEndpointsSection';
-import { LlmKeysSection } from './LlmKeysSection';
-import { isLlmSourcesSection, openLlmSources, parseLlmSourcesPointer } from './llm-sources-pointer';
+import { LlmEndpointsView } from '@src/components/llm-endpoints/LlmEndpointsView';
+import { llmEndpointsPointer, type LlmEndpointTab } from '@src/components/llm-endpoints/llm-endpoints-pointer';
+
+import { EndpointSponsorLine } from './EndpointSponsorLine';
+import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
+
+import { LoginsTable } from './LoginsTable';
+import { LLM_SOURCES_TABS, openLlmSources, parseLlmSourcesTab, type LlmSourcesTab } from './llm-sources-pointer';
 import {
   harnessKinds,
   labelForWorker,
+  resolvedLabel,
   useLlmSources,
   useTestSource,
   useSelectSource,
@@ -301,14 +307,26 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   // Which source a harness actually landed on. The rows are offers and carry no such answer —
   // `auto` on an offer means "would win if nothing were chosen", which is true of several at once.
   const resolvedFor = useCallback((kind: string) => status?.resolved?.[kind] ?? undefined, [status]);
-  const target = parseLlmSourcesPointer(pointer);
-  // A box-wide section (`keys` / `endpoints`) instead of a harness. Derived from the URL, like
-  // the harness focus: the chips are navigations, never component state.
-  const section = isLlmSourcesSection(target) ? target : null;
+  // `<tab>[/<rest>]`: the tab, and below it an assistant (Logins) or an endpoint (the two endpoint tabs).
+  const { tab, rest } = parseLlmSourcesTab(pointer);
   // Matched against the kinds the box actually reported rather than rebuilt as
-  // `harness.<worker>.cli`: a stale or hand-typed worker then falls back to the first harness
-  // instead of yielding a kind that matches no chip and no source list.
-  const focused = section ? null : (kinds.find((kind) => workerOf(kind) === target) ?? kinds[0]);
+  // `harness.<worker>.cli`: a stale or hand-typed worker then shows the Logins table instead of a
+  // kind that matches no source list.
+  const focused = tab === 'logins' && rest ? (kinds.find((kind) => workerOf(kind) === rest) ?? null) : null;
+  // The open endpoint tab embeds the shared endpoints view; its drill-down stays in this URL.
+  const embed = useMemo(
+    () => ({
+      go: (id?: string, sub?: LlmEndpointTab) =>
+        openLlmSources(navigation, [tab, id ? llmEndpointsPointer(id, sub) : ''].filter(Boolean).join('/')),
+    }),
+    [navigation, tab],
+  );
+  const counts: Record<LlmSourcesTab, number> = { logins: 0, keys: keys.count, endpoints: hubCount };
+  const tabLabels: Record<LlmSourcesTab, string> = {
+    logins: t`Logins`,
+    keys: t`API keys`,
+    endpoints: t`LLM Endpoints`,
+  };
 
   const onSelect = useCallback(
     async (harness: string, source: LLMSource) => {
@@ -393,53 +411,36 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
         </p>
       </header>
 
-      {/* The resolver's answer, one chip per harness — the same answer a spawn uses. */}
-      <section className="flex flex-wrap gap-2" data-testid="llm-sources-resolution">
-        {kinds.map((kind) => {
-          const pick = status.resolved[kind];
-          const chipWorker = workerOf(kind);
-          return (
-            <button
-              key={kind}
-              type="button"
-              onClick={() => openLlmSources(navigation, chipWorker)}
-              className={`rounded-lg border px-3 py-2 text-left text-xs ${
-                focused === kind ? 'border-primary/60 bg-primary/5' : 'border-border/60'
-              }`}
-              data-testid={`llm-sources-chip-${chipWorker}`}
-            >
-              <div className="font-medium">{labelForWorker(chipWorker)}</div>
-              {/* The backend owns this sentence too: `sources` is the un-overlaid offer list, so a
-                  preference nothing can satisfy shows up here rather than on the rows. */}
-              <div className="text-muted-foreground">
-                {pick ? `→ ${pick.name}` : status.blocked[kind] || t`nothing eligible`}
-              </div>
-            </button>
-          );
-        })}
-        {/* The two box-wide sections, as chips of the same strip: what pays is one question. */}
-        {(['keys', 'endpoints'] as const).map((sec) => (
-          <button
-            key={sec}
-            type="button"
-            onClick={() => openLlmSources(navigation, sec)}
-            className={`rounded-lg border px-3 py-2 text-left text-xs ${
-              section === sec ? 'border-primary/60 bg-primary/5' : 'border-border/60'
-            }`}
-            data-testid={`llm-sources-chip-${sec}`}
-          >
-            <div className="font-medium">{sec === 'keys' ? t`API keys` : t`Hub endpoints`}</div>
-            <div className="text-muted-foreground">
-              {sec === 'keys' ? t`${keys.count} of ${keys.total} set` : t`${hubCount} available`}
-            </div>
-          </button>
-        ))}
-      </section>
+      {/* Three tabs, one table look: the assistants' logins, this machine's keys, the hub's endpoints. */}
+      <Tabs value={tab} onValueChange={(v) => openLlmSources(navigation, v)}>
+        <TabsList data-testid="llm-sources-tabs">
+          {LLM_SOURCES_TABS.map((k) => (
+            <TabsTrigger key={k} value={k} data-testid={`llm-sources-tab-${k}`}>
+              {counts[k] ? `${tabLabels[k]} (${counts[k]})` : tabLabels[k]}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
-      {section === 'keys' && <LlmKeysSection />}
-      {section === 'endpoints' && <LlmEndpointsSection funding={status} navigation={navigation} />}
+      {tab === 'logins' && !focused && (
+        <LoginsTable status={status} record={record} onOpen={(worker) => openLlmSources(navigation, `logins/${worker}`)} />
+      )}
+      {tab !== 'logins' && <LlmEndpointsView key={tab} pointer={rest} embed={embed} source={tab === 'keys' ? 'local' : 'hub'} />}
 
-      {!section && status.decision && <DecisionApiRow decision={status.decision} />}
+      {focused && (
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => openLlmSources(navigation, 'logins')} data-testid="llm-sources-back">
+            <ArrowLeft className="me-1 h-4 w-4" />
+            <Trans>All assistants</Trans>
+          </Button>
+          <h2 className="text-base font-semibold">{labelForWorker(workerOf(focused))}</h2>
+          <span className="text-sm text-muted-foreground">
+            {resolvedLabel(status, focused, t`nothing eligible`)}
+          </span>
+        </div>
+      )}
+
+      {focused && status.decision && <DecisionApiRow decision={status.decision} />}
 
       {/* A stated preference that is NOT in force — the box is signed out of Flowpad while
           Claude is set to use it. Sits above the list because it explains the whole page:

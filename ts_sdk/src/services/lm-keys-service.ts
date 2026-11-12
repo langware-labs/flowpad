@@ -34,6 +34,15 @@ export interface LmModel {
  * are configured — there is no read-by-provider endpoint. In-process callers
  * (workers) read values via the Python `get_lm_api(provider)` SDK function.
  */
+/** What `saveEndpoint` may set on a local endpoint row (`LLMEndpointConfig` on the backend). */
+export interface LocalEndpointConfig {
+  name?: string;
+  base_url?: string;
+  tiers?: Record<string, string>;
+  limits?: Record<string, number | null>;
+  filters?: Record<string, unknown>;
+}
+
 export class LmKeysService {
   private readonly base: string;
 
@@ -51,6 +60,15 @@ export class LmKeysService {
   /** Store a key. The backend auto-validates it and returns the result. */
   setLmApi(key: string, provider: LMApiProvider): Promise<{ ok: true } & LmApiKeyValidation> {
     return apiClient.post(this.base, { provider, key });
+  }
+
+  /** Create or edit this machine's endpoint for a provider: store `key` (validated on store) and/or
+   *  write the row's fields. The same fields the hub page writes on a hub root. */
+  saveEndpoint(
+    provider: LMApiProvider,
+    body: { key?: string; config?: LocalEndpointConfig },
+  ): Promise<{ ok: true; endpoint_id: string } & Partial<LmApiKeyValidation>> {
+    return apiClient.post(this.base, { provider, ...body });
   }
 
   /** Validate the stored key for a provider against the provider (a real network

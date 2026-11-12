@@ -178,7 +178,7 @@ class ViewType(StrEnum):
     TOKEN_PLAN = "token-plan"  # Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/<scope>]
     # DESK page: what funds this machine's harnesses. Every fact it renders is a box fact
     # (a device token, a stored key, the endpoint BINDING), so it has no hub half.
-    LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/<worker>|keys|endpoints] -- the harness or section in focus
+    LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/logins[/<worker>]|keys[/<id>]|endpoints[/<id>]] -- tab, then what is in focus (a bare <worker> = logins/<worker>)
     # DESK page: the first-run chooser -- "what should issue your LLM calls". Its own address
     # rather than a state on LLM_SOURCES because ``flow llm set auto`` opens it in a BROWSER,
     # and a CLI can hand a user nothing but a URL. LLM_SOURCES answers "what funds each harness
@@ -748,6 +748,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
             for h, name in (("claude", "Claude Code"), ("codex", "Codex"), ("copilot", "Copilot"), ("opencode", "OpenCode"))
         )
         + (
+            ("logins", "LLM sources > each assistant's own login and what it runs on now"),
             ("keys", "LLM sources > the API keys stored on this machine"),
             ("endpoints", "LLM sources > the hub endpoints this account can spend"),
         ),

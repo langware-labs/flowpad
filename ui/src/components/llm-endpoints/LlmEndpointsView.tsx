@@ -21,13 +21,36 @@ import { LlmEndpointDetail } from './LlmEndpointDetail';
 import { LlmEndpointDialog } from './LlmEndpointDialog';
 import { LlmEndpointsList } from './LlmEndpointsList';
 import { openLlmEndpoint, parseLlmEndpointsPointer, type LlmEndpointTab } from './llm-endpoints-pointer';
+import { deleteLocalEndpoint, invalidateLocalEndpoints, useLocalEndpoints } from './local-endpoints';
 import { useLlmEndpoints } from './use-llm-endpoints';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
 
-export function LlmEndpointsView({ pointer }: { pointer?: string }) {
+export interface LlmEndpointsViewProps {
+  pointer?: string;
+  /** Embedded in another page (an LLM sources tab): its own navigation and no page header.
+   *  Absent → the hub page. */
+  embed?: { go: (id?: string, tab?: LlmEndpointTab) => void };
+  /** Which endpoints this view lists: the hub's budgets, or this machine's key roots (the API keys
+   *  tab). Same table, detail and dialog for both — the tab says where an endpoint lives. */
+  source?: EndpointSource;
+}
+
+export type EndpointSource = 'hub' | 'local';
+
+export function LlmEndpointsView({ pointer, embed, source = 'hub' }: LlmEndpointsViewProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const { endpoints, isLoading, refetch } = useLlmEndpoints();
+  const local = source === 'local';
+  // Only the list this view shows is fetched: the API keys tab never asks the hub for its budgets.
+  const hub = useLlmEndpoints({ enabled: !local });
+  const localEndpoints = useLocalEndpoints();
+  const endpoints = local ? localEndpoints : hub.endpoints;
+  const isLoading = local ? false : hub.isLoading;
+  const refetchHub = hub.refetch;
+  const refetch = useCallback(async () => {
+    if (local) invalidateLocalEndpoints();
+    else await refetchHub();
+  }, [refetchHub, local]);
   const { id: selectedId, tab } = parseLlmEndpointsPointer(pointer);
   const selected = useMemo(() => endpoints.find((e) => e.id === selectedId) ?? null, [endpoints, selectedId]);
 
@@ -40,8 +63,12 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
 
   const go = useCallback(
     (id?: string, nextTab?: LlmEndpointTab) =>
-      id ? openLlmEndpoint(navigation, id, nextTab) : navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS),
-    [navigation],
+      embed
+        ? embed.go(id, nextTab)
+        : id
+          ? openLlmEndpoint(navigation, id, nextTab)
+          : navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS),
+    [navigation, embed],
   );
 
   const openAdd = useCallback(() => {
@@ -60,7 +87,8 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
   const confirmDelete = useCallback(
     async (e: LLMEndpoint) => {
       try {
-        await dataManager.delete(e.typeId);
+        if (local) await deleteLocalEndpoint(e);
+        else await dataManager.delete(e.typeId);
         void refetch();
         if (selectedId === e.id) go();
       } catch (error) {
@@ -70,11 +98,13 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
         });
       }
     },
-    [refetch, selectedId, go, t],
+    [refetch, selectedId, go, t, local],
   );
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto p-6">
+    <div className={embed ? 'flex flex-col' : 'flex h-full flex-col overflow-y-auto p-6'}>
+      {!embed && (
+      <>
       <header className="mb-1 flex items-center gap-2">
         <Waypoints className="size-5 text-muted-foreground" />
         <h1 className="text-lg font-semibold">
@@ -90,6 +120,8 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
           what passes with filters and limits. Usage is accumulated along the chain.
         </Trans>
       </p>
+      </>
+      )}
 
       {selectedId ? (
         <LlmEndpointDetail
@@ -101,6 +133,7 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
           onTab={(nextTab) => go(selectedId, nextTab)}
           onEdit={openEdit}
           onDelete={setDeleting}
+          local={local}
         />
       ) : (
         <LlmEndpointsList
@@ -110,6 +143,7 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
           onNew={openAdd}
           onEdit={openEdit}
           onDelete={setDeleting}
+          local={local}
         />
       )}
 
@@ -119,8 +153,9 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
         onOpenChange={setEditorOpen}
         editing={editing}
         editingKind={editingKind}
-        all={endpoints}
+        all={hub.endpoints}
         onSaved={() => void refetch()}
+        local={local}
       />
 
       <ConfirmDialog

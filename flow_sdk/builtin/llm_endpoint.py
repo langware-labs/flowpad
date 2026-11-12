@@ -5,9 +5,10 @@ drawing on another endpoint through the hub's ``partof`` edge to that endpoint. 
 of it — the credential, the limits, the chain, the ledger — and authorizes every ``invoke`` against
 the endpoint named in the URL.
 
-This class exists so the box can *hold* one as an entity rather than as a four-field binding record
-(``instance_settings.llm_endpoint.HubLLMEndpoint``, which stays: it is what the hub PUSHES). It is a
-**read-only projection**:
+One class for every endpoint the box can spend, told apart by ``kind``. An ``api_key`` endpoint is
+a ROOT held on this machine: a stored provider key plus the same ``base_url`` / ``tiers`` /
+``limits`` / ``filters`` a hub root carries (limits are shown, not enforced -- only the hub keeps a
+ledger). A ``hub`` endpoint is a **read-only projection**:
 
 * instances are built from the hub's own serialization (``fetch_hub_llm_endpoints``) and are not
   persisted locally — the hub is ground truth, and a local row could only ever drift from it;
@@ -157,6 +158,10 @@ class LLMEndpointConfig(DataSpec):
     #: own, so naming one tier leaves the others alone.
     tiers: dict[str, str] | None = None
     base_url: str | None = None
+    name: str | None = None
+    #: Stored on the row and shown; NOT enforced on this machine (only the hub keeps a ledger).
+    limits: LLMLimits | None = None
+    filters: LLMFilters | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -166,7 +171,8 @@ class LLMEndpointConfig(DataSpec):
 
 
 class LLMEndpoint(Entity):
-    # No local rows: instances are transient projections of hub state (see the module docstring).
+    # Served through the ``llm-endpoint`` / ``lm_keys`` box actions, not the generic entity routes:
+    # hub rows are projections, and only ``api_key`` rows are stored here.
     _api_visible: ClassVar[bool] = False
     #: Read by ``share_action``: there is no local row to fetch, so a share of this type is an
     #: invitation to something that already exists on the hub rather than a push of local state.
@@ -570,6 +576,11 @@ class LLMEndpoint(Entity):
         if config is not None:
             endpoint.tiers = {**endpoint.tiers, **(config.tiers or {})}
             endpoint.base_url = config.base_url or endpoint.base_url
+            endpoint.name = config.name or endpoint.name
+            if config.limits is not None:
+                endpoint.limits = config.limits
+            if config.filters is not None:
+                endpoint.filters = config.filters
             await endpoint.save()
         return endpoint
 

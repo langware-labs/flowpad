@@ -26,7 +26,8 @@ import type { DockPointer } from '@src/navigation/DockPointer';
 
 /** The ceilings this endpoint carries, shortest first, as "Cost (USD) / day $5" chips.
  *  A row with none draws on somebody else's budget and says so by staying empty. */
-function LimitChips({ limits }: { limits: LLMEndpointOffer['limits'] }) {
+/** The limits an endpoint sets, as labelled chips; also the API keys tab's Limits cell. */
+export function LimitChips({ limits }: { limits: LLMEndpointOffer['limits'] }) {
   const { t } = useLingui();
   const set = LIMIT_KEYS.filter((key) => limits?.[key] != null);
   return (

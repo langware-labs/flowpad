@@ -15,7 +15,14 @@
  * silently produced a keyless ROOT: the hub drops fields it does not recognise and still answers
  * 200. Editing is an ordinary save for both; the parent is fixed at allocation.
  */
-import { LLMEndpoint, dataManager, llmEndpointsService, type LLMEndpointKind } from '@sdk';
+import {
+  LLMEndpoint,
+  dataManager,
+  llmEndpointsService,
+  lmKeysService,
+  type LLMEndpointKind,
+  type LMApiProvider,
+} from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -38,6 +45,7 @@ import { notify } from '@src/notifications';
 import { CredentialField } from './CredentialField';
 import { FiltersEditor } from './FiltersEditor';
 import { LimitsEditor } from './LimitsEditor';
+import { invalidateLocalEndpoints, LOCAL_PROVIDERS } from './local-endpoints';
 import { endpointIdFromTypeId } from './llm-endpoints-pointer';
 import { SourcePicker } from './SourcePicker';
 import { TiersEditor } from './TiersEditor';
@@ -70,19 +78,32 @@ export interface LlmEndpointDialogProps {
   editingKind?: LLMEndpointKind | null;
   /** After a successful save (the live list refetches; the caller may too). */
   onSaved?: (endpoint: LLMEndpoint) => void;
+  /** This machine's endpoint (the API keys tab): a root whose key is stored here, not on the hub.
+   *  The tab decides — the dialog offers no choice of where. */
+  local?: boolean;
 }
 
-export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, all, onSaved }: LlmEndpointDialogProps) {
+export function LlmEndpointDialog({
+  open,
+  onOpenChange,
+  editing,
+  editingKind,
+  all,
+  onSaved,
+  local = false,
+}: LlmEndpointDialogProps) {
   const { t } = useLingui();
+  // Hub reads only for a hub endpoint: a local one has no hub id to ask about.
+  const hubId = open && editing && !local ? editing.id : undefined;
   // The edit form is shaped by root-vs-chain, and `editing.kind` says `root` for everything
   // (`kindFromChain`) — so editing a chain opened a ROOT form, offering provider, base URL and a
   // key it does not have. The detail page already resolved the kind and passes it; the list has no
   // chain to ask, so fetch one here. Cheap: react-query, and the detail's fetch is the same key.
-  const ownChain = useLlmEndpointChain(open && editing && !editingKind ? editing.id : undefined);
-  const resolvedKind = editingKind ?? (editing ? kindFromChain(ownChain.data, editing.id) : null);
+  const ownChain = useLlmEndpointChain(!editingKind ? hubId : undefined);
+  const resolvedKind = local ? 'root' : (editingKind ?? (editing ? kindFromChain(ownChain.data, editing.id) : null));
   // Sizes: what each one resolves to today (for "Inherit"), and the models the chain may name.
-  const tierChain = useLlmEndpointChain(open && editing ? editing.id : undefined);
-  const allowedModels = useLlmEndpointModels(open && editing ? editing.id : undefined);
+  const tierChain = useLlmEndpointChain(hubId);
+  const allowedModels = useLlmEndpointModels(hubId);
   const [draft, setDraft] = useState<EndpointDraft>(() => emptyDraft('root'));
   const [busy, setBusy] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -111,7 +132,31 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
     [draft.kind, draft.models],
   );
   const isEdit = !!editing;
-  const readOnly = !!editing && !canConfigure(editing);
+  const readOnly = !!editing && !local && !canConfigure(editing);
+
+  /** This machine's endpoint: the key goes to the local secret store, the fields onto its row. */
+  const saveLocal = async (): Promise<LLMEndpoint> => {
+    const json = buildEntityJson(draft, isEdit);
+    const tiers = Object.fromEntries(Object.entries(draft.tiers).filter(([, model]) => !!model)) as Record<
+      string,
+      string
+    >;
+    const res = await lmKeysService.saveEndpoint(draft.provider as LMApiProvider, {
+      key: draft.key.trim() || undefined,
+      config: {
+        name: draft.name.trim() || undefined,
+        base_url: draft.base_url.trim() || undefined,
+        tiers,
+        limits: json.limits as Record<string, number | null>,
+        filters: json.filters as Record<string, unknown>,
+      },
+    });
+    invalidateLocalEndpoints();
+    if (res.valid === false) {
+      notify.warning({ title: t`The provider refused this key`, message: res.message ?? '' });
+    }
+    return new LLMEndpoint({ id: res.endpoint_id, name: draft.name.trim(), provider: draft.provider } as never);
+  };
 
   const setKind = (kind: LLMEndpointKind) =>
     setDraft((d) => ({ ...emptyDraft(kind), name: d.name, enabled: d.enabled }));
@@ -122,7 +167,10 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
     try {
       const json = buildEntityJson(draft, isEdit);
       let saved: LLMEndpoint;
-      if (editing) {
+      if (local) {
+        saved = await saveLocal();
+        notify.success({ title: isEdit ? t`Updated ${draft.name.trim()}` : t`Added ${draft.name.trim()} on this machine` });
+      } else if (editing) {
         saved = await dataManager.save<LLMEndpoint>(editing.typeId, [], json as never);
         notify.success({ title: t`Updated ${draft.name.trim()}` });
       } else if (draft.kind === 'chain') {
@@ -165,9 +213,13 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl" data-testid="llm-endpoint-dialog">
         <DialogHeader>
-          <DialogTitle>{isEdit ? t`Edit endpoint` : t`New endpoint`}</DialogTitle>
+          <DialogTitle>
+            {local ? (isEdit ? t`Edit API key` : t`New API key`) : isEdit ? t`Edit endpoint` : t`New endpoint`}
+          </DialogTitle>
           <DialogDescription>
-            {draft.kind === 'root' ? (
+            {local ? (
+              <Trans>Stored on this machine. Limits, filters and model sizes work as on a hub endpoint.</Trans>
+            ) : draft.kind === 'root' ? (
               <Trans>Funded by a provider API key you supply.</Trans>
             ) : (
               <Trans>Funded by an existing source; it can only narrow what that source allows.</Trans>
@@ -176,7 +228,7 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
         </DialogHeader>
 
         <div className="space-y-4">
-          {!isEdit && (
+          {!isEdit && !local && (
             <div className="space-y-1">
               <Label>
                 <Trans>Funding source</Trans>
@@ -224,7 +276,7 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
                   <Trans>Provider</Trans>
                 </Label>
                 <div className="grid grid-cols-3 gap-2">
-                  {PROVIDERS.map((p) => (
+                  {PROVIDERS.filter((p) => !local || (LOCAL_PROVIDERS as readonly string[]).includes(p.id)).map((p) => (
                     <button
                       key={p.id}
                       type="button"
@@ -255,14 +307,14 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
                   type="url"
                   autoComplete="url"
                   value={draft.base_url}
-                  disabled={isEdit}
+                  disabled={isEdit && !local}
                   placeholder={spec?.defaultBaseUrl}
                   onChange={(e) => setDraft((d) => ({ ...d, base_url: e.target.value }))}
                   data-testid="llm-base-url"
                 />
               </div>
               <CredentialField
-                endpointId={editing?.id}
+                endpointId={local ? undefined : editing?.id}
                 provider={draft.provider}
                 credentialHint={storedHint}
                 placeholder={spec?.keyPlaceholder}
@@ -295,7 +347,7 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
             />
           </div>
 
-          {draft.kind === 'root' && (
+          {draft.kind === 'root' && !local && (
             <div className="space-y-1">
               <Label htmlFor="llm-models">
                 <Trans>Model catalog</Trans>

@@ -11,7 +11,7 @@
  * (react-query dedupes and caches them; the same query feeds the detail's
  * Today tab), so the list is a glance at spend without a second endpoint.
  */
-import type { LLMEndpoint, LLMEndpointKind, LLMUsageReport } from '@sdk';
+import type { LLMEndpoint, LLMEndpointKind, LLMEndpointOffer, LLMUsageReport } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQueries } from '@tanstack/react-query';
 import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -20,6 +20,7 @@ import { useMemo } from 'react';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
+import { LimitChips } from '@src/components/assets/LlmEndpointsAssetList';
 import { formatValue } from '@src/components/cost-dashboard/constants';
 
 import { canConfigure, canRemove, endpointTypeId } from './endpoint-catalog';
@@ -35,7 +36,11 @@ export interface LlmEndpointsListProps {
   onNew: () => void;
   onEdit: (endpoint: LLMEndpoint) => void;
   onDelete: (endpoint: LLMEndpoint) => void;
+  /** This machine's endpoints (the API keys tab): every row is a root with a key stored here —
+   *  edited and deleted locally, tested with the stored key, no hub usage, no chain columns. */
+  local?: boolean;
 }
+
 
 export function KindBadge({ kind }: { kind: 'root' | 'chain' }) {
   return (
@@ -116,9 +121,18 @@ export function useTodayUsage(ids: readonly string[]) {
   return byId;
 }
 
-export function LlmEndpointsList({ endpoints, isLoading, onOpen, onNew, onEdit, onDelete }: LlmEndpointsListProps) {
+export function LlmEndpointsList({
+  endpoints,
+  isLoading,
+  onOpen,
+  onNew,
+  onEdit,
+  onDelete,
+  local = false,
+}: LlmEndpointsListProps) {
   const { t } = useLingui();
-  const usage = useTodayUsage(endpoints.map((e) => e.id));
+  // Usage is the hub's ledger; a local endpoint has none to ask for.
+  const usage = useTodayUsage(local ? [] : endpoints.map((e) => e.id));
   const byId = useMemo(() => new Map(endpoints.map((e) => [endpointTypeId(e.id), e])), [endpoints]);
   // Consumers per endpoint id, one pass over the list rather than a scan per row.
   const consumersById = useMemo(() => {
@@ -140,7 +154,7 @@ export function LlmEndpointsList({ endpoints, isLoading, onOpen, onNew, onEdit, 
       <div className="flex items-center justify-end">
         <Button size="sm" onClick={onNew} data-testid="llm-new-endpoint">
           <Plus className="me-1 h-4 w-4" />
-          <Trans>New endpoint</Trans>
+          {local ? <Trans>New API key</Trans> : <Trans>New endpoint</Trans>}
         </Button>
       </div>
       <div className="rounded-md border">
@@ -150,24 +164,42 @@ export function LlmEndpointsList({ endpoints, isLoading, onOpen, onNew, onEdit, 
               <TableHead>
                 <Trans>Name</Trans>
               </TableHead>
-              <TableHead>
-                <Trans>Kind</Trans>
-              </TableHead>
-              <TableHead>
-                <Trans>Provider</Trans>
-              </TableHead>
-              <TableHead>
-                <Trans>Sources</Trans>
-              </TableHead>
-              <TableHead>
-                <Trans>Used by</Trans>
-              </TableHead>
+              {local ? (
+                <>
+                  <TableHead>
+                    <Trans>Provider</Trans>
+                  </TableHead>
+                  <TableHead>
+                    <Trans>Base URL</Trans>
+                  </TableHead>
+                </>
+              ) : (
+                <>
+                  <TableHead>
+                    <Trans>Kind</Trans>
+                  </TableHead>
+                  <TableHead>
+                    <Trans>Provider</Trans>
+                  </TableHead>
+                  <TableHead>
+                    <Trans>Sources</Trans>
+                  </TableHead>
+                  <TableHead>
+                    <Trans>Used by</Trans>
+                  </TableHead>
+                </>
+              )}
               <TableHead>
                 <Trans>Enabled</Trans>
               </TableHead>
               <TableHead>
                 <Trans>Credential</Trans>
               </TableHead>
+              {local && (
+                <TableHead>
+                  <Trans>Limits</Trans>
+                </TableHead>
+              )}
               <TableHead className="text-end">
                 <Trans>Today</Trans>
               </TableHead>
@@ -177,15 +209,15 @@ export function LlmEndpointsList({ endpoints, isLoading, onOpen, onNew, onEdit, 
           <TableBody>
             {endpoints.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
-                  {isLoading ? t`Loading…` : t`No endpoints yet.`}
+                <TableCell colSpan={local ? 8 : 9} className="py-8 text-center text-sm text-muted-foreground">
+                  {isLoading ? t`Loading…` : local ? t`No API keys on this machine yet.` : t`No endpoints yet.`}
                 </TableCell>
               </TableRow>
             )}
             {endpoints.map((e) => {
               const totals = usage.get(e.id)?.totals;
-              const configurable = canConfigure(e);
-              const removable = canRemove(e);
+              const configurable = local || canConfigure(e);
+              const removable = local || canRemove(e);
               const sources = e.sources.map((id) => byId.get(id) ?? null);
               const consumers = consumersById.get(e.id) ?? [];
               return (
@@ -196,6 +228,16 @@ export function LlmEndpointsList({ endpoints, isLoading, onOpen, onNew, onEdit, 
                   onClick={() => onOpen(e)}
                 >
                   <TableCell className="font-medium">{e.name || e.id}</TableCell>
+                  {local && (
+                    <>
+                      <TableCell>
+                        <ProviderBadge provider={e.provider} />
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{e.base_url}</TableCell>
+                    </>
+                  )}
+                  {!local && (
+                    <>
                   <TableCell>
                     <KindBadge kind={e.kind} />
                   </TableCell>
@@ -229,6 +271,8 @@ export function LlmEndpointsList({ endpoints, isLoading, onOpen, onNew, onEdit, 
                       ))}
                     </span>
                   </TableCell>
+                    </>
+                  )}
                   <TableCell>
                     <span
                       className={`inline-block h-2 w-2 rounded-full ${e.enabled ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`}
@@ -239,12 +283,17 @@ export function LlmEndpointsList({ endpoints, isLoading, onOpen, onNew, onEdit, 
                   <TableCell>
                     <CredentialChip endpoint={e} />
                   </TableCell>
+                  {local && (
+                    <TableCell>
+                      <LimitChips limits={e.limits as unknown as LLMEndpointOffer['limits']} />
+                    </TableCell>
+                  )}
                   <TableCell className="text-end font-mono text-xs" data-testid="today-usage">
-                    {totals ? `${formatValue(totals.total_tokens, 'tokens')} · ${formatUsd(totals.cost_usd)}` : '…'}
+                    {local ? '—' : totals ? `${formatValue(totals.total_tokens, 'tokens')} · ${formatUsd(totals.cost_usd)}` : '…'}
                   </TableCell>
                   <TableCell className="text-end">
                     <span className="inline-flex items-center gap-1" onClick={(ev) => ev.stopPropagation()}>
-                      <TestEndpointButton endpointId={e.id} />
+                      <TestEndpointButton endpointId={e.id} localProvider={local ? e.provider : undefined} />
                       {configurable && (
                         <Button
                           variant="ghost"

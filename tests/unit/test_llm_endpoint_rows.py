@@ -388,6 +388,32 @@ async def test_by_provider_config_changes_one_tier_and_persists(env):
 
 
 @pytest.mark.asyncio
+async def test_a_local_root_keeps_the_limits_and_filters_a_hub_root_has(env):
+    """A key on this machine is a root like a hub one: the shared editor's limits/filters persist on it."""
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointConfig, LLMFilters, LLMLimits
+
+    await LLMEndpoint.by_provider("anthropic", key="sk-ant-test")
+    try:
+        await LLMEndpoint.by_provider(
+            "anthropic",
+            config=LLMEndpointConfig(
+                name="Anthropic (this machine)",
+                limits=LLMLimits(cost_usd_total=20.0),
+                filters=LLMFilters(models_allow=["claude-haiku-5-5"]),
+            ),
+        )
+        loaded = await LLMEndpoint.find_by_secret("lm_api.anthropic")
+        assert loaded.name == "Anthropic (this machine)"
+        assert loaded.limits.cost_usd_total == 20.0
+        assert loaded.filters.models_allow == ["claude-haiku-5-5"]
+        assert loaded.to_wire()["limits"]["cost_usd_total"] == 20.0
+    finally:
+        row = await LLMEndpoint.find_by_secret("lm_api.anthropic")
+        if row is not None:
+            await row.destroy()
+
+
+@pytest.mark.asyncio
 async def test_by_provider_refuses_flowpad(env):
     for key in ("anything", None):
         with pytest.raises(ValueError):

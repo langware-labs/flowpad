@@ -10,7 +10,7 @@
 import { LLMEndpoint, QueryRequest, llmEndpointsService, type LLMUsageQuery } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import { endpointIdFromTypeId } from './llm-endpoints-pointer';
 
@@ -22,8 +22,8 @@ const ENDPOINTS_QUERY = new QueryRequest({
   name: 'llm-endpoints:list',
 });
 
-export function useLlmEndpoints() {
-  const { data, isLoading, refetch, error } = useEntitiesQuery<LLMEndpoint>(ENDPOINTS_QUERY);
+export function useLlmEndpoints({ enabled = true }: { enabled?: boolean } = {}) {
+  const { data, isLoading, refetch, error } = useEntitiesQuery<LLMEndpoint>(ENDPOINTS_QUERY, { enabled });
   // Endpoints usable through the `authenticated_role` stamp (the global root) carry no role edge
   // to this user, so the entity query does not list them; the hub's catalog does. Rows the user
   // holds a role on win (they carry the permission expansion).
@@ -31,6 +31,7 @@ export function useLlmEndpoints() {
     queryKey: ['llm-endpoint', 'shared'],
     queryFn: () => llmEndpointsService.listShared(),
     staleTime: 60_000,
+    enabled,
   });
   const endpoints = useMemo(() => {
     const byId = new Map<string, LLMEndpoint>();
@@ -38,9 +39,10 @@ export function useLlmEndpoints() {
     for (const row of data ?? []) if (row.id) byId.set(row.id, row);
     return [...byId.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [data, shared.data]);
-  const refetchAll = async () => {
-    await Promise.all([refetch(), shared.refetch()]);
-  };
+  const refetchShared = shared.refetch;
+  const refetchAll = useCallback(async () => {
+    await Promise.all([refetch(), refetchShared()]);
+  }, [refetch, refetchShared]);
   return { endpoints, isLoading: isLoading || shared.isLoading, refetch: refetchAll, error: error ?? shared.error };
 }
 
