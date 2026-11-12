@@ -1,13 +1,14 @@
-"""The QA entities (builtin/qa.py): registered as types, saved and queried like any entity."""
+"""The QA entities (builtin/qa.py) and the generic Rca (builtin/rca.py): registered as types, saved and queried like any entity."""
 import pytest
 
-from flow_sdk.builtin.qa import QACycle, QAIteration, QAPhase, QARca, QATest, QATestFile, QATestResult
+from flow_sdk.builtin.qa import QACycle, QAIteration, QAPhase, QATest, QATestFile, QATestResult
+from flow_sdk.builtin.rca import Rca
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 QA_TYPES = {
     "qa_phase": QAPhase, "qa_test_file": QATestFile, "qa_test": QATest, "qa_cycle": QACycle,
-    "qa_iteration": QAIteration, "qa_test_result": QATestResult, "qa_rca": QARca,
+    "qa_iteration": QAIteration, "qa_test_result": QATestResult, "rca": Rca,
 }
 
 

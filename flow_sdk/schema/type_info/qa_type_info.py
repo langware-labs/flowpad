@@ -12,4 +12,3 @@ QA_TEST = TypeInfo(type_name=EntityType.QA_TEST, icon="FlaskConical", api_visibl
 QA_CYCLE = TypeInfo(type_name=EntityType.QA_CYCLE, icon="RefreshCw", api_visible=True)
 QA_ITERATION = TypeInfo(type_name=EntityType.QA_ITERATION, icon="Repeat", api_visible=True)
 QA_TEST_RESULT = TypeInfo(type_name=EntityType.QA_TEST_RESULT, icon="CircleCheck", api_visible=False)
-QA_RCA = TypeInfo(type_name=EntityType.QA_RCA, icon="Search", api_visible=True)

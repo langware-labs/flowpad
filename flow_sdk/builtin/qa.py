@@ -2,7 +2,7 @@
 
 Q maps a target repository's tests into a plan (``QAPhase`` → ``QATestFile`` → ``QATest``), runs that plan in
 cycles (``QACycle``), each a series of passes (``QAIteration``), records every attempt at a test
-(``QATestResult``) and the root-cause analysis of a result that did not pass (``QARca``).
+(``QATestResult``). The root-cause analysis of a result that did not pass is the generic ``Rca`` (builtin/rca.py).
 
 Q writes and reads these rows from its own process through the generic graph API (``/api/v1/graph/<type>``).
 Each row's id is Q's natural key, made a fixed uuid by ``allocate_id``, so a retried write lands on the same
@@ -144,20 +144,3 @@ class QATestResult(Entity):
     #: Its attachments (screenshots, traces, logs): ``File`` typeids.
     attachments: list[str] = APIField(default_factory=list)
 
-
-class QARca(Entity):
-    """The root-cause analysis of a test result that did not pass (a skip too: why it was skipped). One per result."""
-
-    type: str = APIField(default=EntityType.QA_RCA.value)
-    #: ``rca-<hash of its test result>``.
-    rca_id: str = APIField(default="")
-    #: The ``QATestResult`` it analyses, by id.
-    test_result: str = APIField(default="")
-    #: How hard the fix is: ``low`` | ``moderate`` | ``high``.
-    complexity: str = APIField(default="")
-    #: How bad the failure is if it stays: ``low`` | ``moderate`` | ``high``.
-    severity: str = APIField(default="")
-    #: The analysis, in markdown.
-    description_md: str = APIField(default="")
-    #: How to fix it, in a few words (at most 250 characters).
-    suggested_fix_md: Optional[str] = APIField(default=None)
