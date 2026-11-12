@@ -82,6 +82,34 @@ const PATH_LIKE = /[/\\]|:\/\//;
 const WHOLE_FILE = /\.[A-Za-z]\w{0,5}$/;
 /** A word that starts a fresh reference of its own. */
 const FRESH_START = /^(?:\/|~\/|\.{1,2}\/|[A-Za-z]:[\\/]|https?:)/i;
+/** A word ending in an id (`…/<uuid>`), which a path may go on after with `/rest`. */
+const ENDS_ID = /[0-9a-f]{8}-[0-9a-f-]{27}$/i;
+/** A word that reads as a whole reference: a file extension, a position or a closer; an id may still go on with `/rest`. */
+function wholeReference(word: string): boolean {
+  return WHOLE_FILE.test(word) || (ENDS_WHOLE.test(word) && !ENDS_ID.test(word));
+}
+/** A plain-text `! command` opening its row. */
+const COMMAND_ROW = /^\s*!\s*[a-z_./~$]/;
+/** A word that opens a command's next argument (`"op://…"`, `--flag`), never the rest of a cut word. */
+const ARG_START = /^(?:["'`]|--[A-Za-z])/;
+/** Hard breaks a plain command may run on through above `row`. */
+const MAX_COMMAND_HOPS = 8;
+
+/**
+ * Whether row `row` is part of a plain-text `! command` alone on its line: the row opens with `!`,
+ * or runs on from a row above that does. A TUI word-wraps such a command at a space.
+ */
+function plainCommand(buffer: IBuffer, row: number, cols: number, depth: number): boolean {
+  for (let r = row; r >= 0 && depth + row - r <= MAX_COMMAND_HOPS; r--) {
+    const line = buffer.getLine(r);
+    if (!line) return false;
+    const span = textSpan(line, cols);
+    if (COMMAND_ROW.test(line.translateToString(false, span.start, span.end))) return true;
+    if (r === 0 || !(buffer.getLine(r)!.isWrapped || continuesBelow(buffer, r - 1, cols, depth + row - r + 1))) return false;
+  }
+  return false;
+}
+
 /** What a path or URL is cut after mid-way: a separator or a query's punctuation. */
 const JOINER = String.raw`/\\._=&?#-`;
 
@@ -144,6 +172,7 @@ function resumesProse(tail: string, head: string): boolean {
     ENDS_WHOLE.test(tail) ||
     (last === '.' && /^\p{Lu}/u.test(word)) ||
     RESUMING.has(word) ||
+    (word.length >= 3 && /\.[A-Za-z][A-Za-z0-9]{1,4}$/.test(tail)) ||
     (RESUMING_SHORT.has(word) && /\.[A-Za-z0-9]{2,5}$/.test(tail))
   );
 }
@@ -188,7 +217,7 @@ function columnTail(line: IBufferLine, span: TextSpan, cols: number): { end: num
  * the next row's first word must not have fitted in the room left, must not be prose, and the
  * two must not each read as a whole reference (a list of files, one per row).
  */
-function continuesBelow(buffer: IBuffer, row: number, cols: number): Continuation {
+function continuesBelow(buffer: IBuffer, row: number, cols: number, depth = 0): Continuation {
   const line = buffer.getLine(row);
   const next = buffer.getLine(row + 1);
   if (!line || !next) return undefined;
@@ -197,11 +226,20 @@ function continuesBelow(buffer: IBuffer, row: number, cols: number): Continuatio
   const head = edgeWord(next, below, 1);
   if (!head.cells) return undefined;
   const above = textSpan(line, cols);
-  if (commandContinues(buffer, row, cols, above, below, head.cells)) return { kind: 'hard', end: above.end, space: true };
+  if (commandContinues(buffer, row, cols, above, below, head.cells)) {
+    // A word longer than the room left was cut at the edge, not wrapped at a space.
+    const cut = above.margin === 0 && !ARG_START.test(head.text) && edgeWord(line, above, -1).cells + head.cells > above.end - below.start;
+    return cut ? { kind: 'hard', end: above.end } : { kind: 'hard', end: above.end, space: true };
+  }
+  // A plain `! command` alone on its line that a TUI word-wrapped: the next word did not fit.
+  const plain = head.cells > Math.min(line.length, cols) - above.end - 1 && plainCommand(buffer, row, cols, depth);
+  if (plain && (above.margin > 0 || ARG_START.test(head.text))) return { kind: 'hard', end: above.end, space: true };
   if (above.margin <= MAX_MARGIN) {
     const tail = edgeWord(line, above, -1);
+    // Short of the edge, two whole references are two rows of a list, not one cut.
+    const twoWhole = above.margin > 0 && wholeReference(tail.text) && FRESH_START.test(head.text);
     // A rule row (`+----+`) under a narrow table names nothing, so it carries no cut word on.
-    const joins = /[\p{L}\p{N}]/u.test(tail.text) && /[\p{L}\p{N}]/u.test(head.text) && !resumesProse(tail.text, head.text);
+    const joins = !twoWhole && /[\p{L}\p{N}]/u.test(tail.text) && /[\p{L}\p{N}]/u.test(head.text) && !resumesProse(tail.text, head.text);
     if (joins && tail.cells + head.cells > above.end - below.start) return { kind: 'hard', end: above.end };
   }
   const tail = columnTail(line, above, cols);
@@ -215,7 +253,7 @@ function continuesBelow(buffer: IBuffer, row: number, cols: number): Continuatio
   if (!(cutMidway || /[\p{L}\p{N}]$/u.test(tail.text)) || resumesProse(tail.text, head.text)) return undefined;
   if (PLAIN_WORD.test(head.text) && !cutMidway) return undefined;
   // A folder's id (`…/<uuid>`) followed by `/rest` is one path going on.
-  const tailWhole = WHOLE_FILE.test(tail.text) || (ENDS_WHOLE.test(tail.text) && !/^[/\\]/.test(head.text));
+  const tailWhole = wholeReference(tail.text) || (ENDS_ID.test(tail.text) && !/^[/\\]/.test(head.text));
   if (tailWhole && (FRESH_START.test(head.text) || linkMatches(head.text)[0]?.text === head.text)) return undefined;
   // An ASCII table is not a broken path: its rule row (`+----+`) names nothing, and a data
   // row has more cells after a divider, where the rest of a path leaves its row's cells blank.
@@ -283,6 +321,7 @@ function buildLine(terminal: Terminal, start: number, end: number, below: Below)
     if (above?.kind === 'hard' && above.space) {
       line.text += ' ';
       line.fg.push(line.fg.at(-1) ?? -1);
+      line.bg.push(line.bg.at(-1) ?? -1);
       line.starts.push(line.starts.at(-1)!);
       line.ends.push(line.ends.at(-1)!);
     }
