@@ -156,13 +156,16 @@ test('2. the stream inbox merges both sources, attributed', async ({ page }) => 
   await expect(rows).toHaveCount(PAGE);
   await expect(rows.filter({ hasText: 'slack message' }).first()).toBeVisible();
   await expect(rows.filter({ hasText: /Subject \d+/ }).first()).toBeVisible();
-  // Every row wears ITS source's chip.
+  // Every row of the two channels wears ITS source's chip. Only theirs: the shared instance also lists
+  // conversations earlier specs made (a plain chat has no channel, so no chip), newest first among these.
   // (Chips draw once each row's channel resolves: wait for all of them rather than sampling once.)
-  await expect(rows.locator('[data-chip-type="source"]')).toHaveCount(PAGE);
+  const ours = rows.filter({ hasText: /slack message \d{3}|Subject \d+/ });
+  const oursOnPage = await ours.count();
+  await expect(ours.locator('[data-chip-type="source"]')).toHaveCount(oursOnPage);
   // The older page holds the rest: both sources, merged, are all 120.
   await page.getByTestId('stream-inbox-page-older').click();
-  await expect(rows).toHaveCount(2 * PER_SOURCE - PAGE);
-  await expect(rows.locator('[data-chip-type="source"]')).toHaveCount(2 * PER_SOURCE - PAGE);
+  await expect(ours).toHaveCount(2 * PER_SOURCE - oursOnPage);
+  await expect(ours.locator('[data-chip-type="source"]')).toHaveCount(2 * PER_SOURCE - oursOnPage);
 });
 
 test('3. a mark narrows to ONE source; × restores', async ({ page }) => {

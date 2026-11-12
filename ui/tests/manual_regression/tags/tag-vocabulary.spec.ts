@@ -189,8 +189,12 @@ test('hard-cut tag vocabulary works across API, graph, taxonomy UI, and identity
   const assetTypesResponsePromise = page.waitForResponse(
     (response) => response.request().method() === 'GET' && response.url().includes('/api/v1/assets/types'),
   );
-  await page.goto('/dock/assets/list/tag?viewMode=dev');
+  await page.goto('/dock/assets/list/tag');
   expect((await assetTypesResponsePromise).status()).toBe(200);
+  // Tag is a dev-only type, and Dev is the person's switch now (05a812c87 retired the view-mode URL):
+  // `?viewMode=dev` no longer lifts the catalog, so the Tag root showed only when an earlier spec had left
+  // Dev on. Flip it the app's own way, as the avatar double-click does.
+  await page.evaluate(() => (window as unknown as { setDev: (on: boolean) => void }).setDev(true));
   const tagRootChevron = page.getByTestId('browseable-chevron-asset-type:tag');
   await expect(tagRootChevron).toBeVisible();
   if ((await tagRootChevron.getAttribute('title')) === 'Expand') {

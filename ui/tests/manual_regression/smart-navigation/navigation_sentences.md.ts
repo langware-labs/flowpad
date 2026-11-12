@@ -14,6 +14,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { apiContext, REPO_ROOT } from '../_shared/api';
 import { type LogRow, type Row, score, type Verdict } from './navigation_scoring';
@@ -32,6 +33,13 @@ function sentences(): Row[] {
     sentence: m[2].replace(/\s*\(typo\)$/, '').trim(),
     target: m[3].trim(),
   }));
+}
+
+const PREF = 'preferences.advanced.smart_navigation_log';
+const PREFS_FILE = path.join(os.homedir(), '.flow', 'instances', process.env.FLOW_INSTANCE ?? '', 'preferences.json');
+
+function prefOn(): boolean {
+  return existsSync(PREFS_FILE) && JSON.parse(readFileSync(PREFS_FILE, 'utf-8'))[PREF] === true;
 }
 
 /** The SmartNavigationLog dataset's id — '' until the first logged decision creates it. */
@@ -60,6 +68,13 @@ test.describe.serial('navigation sentences', () => {
     // NAV_RESUME=1 keeps the rows already run (rerun the rest with -g); otherwise start clean.
     if (!process.env.NAV_RESUME) writeFileSync(JSONL, '');
     page = await browser.newPage();
+    // Every sentence is scored by its SmartNavigationLog row, and logging is off by default
+    // (preferences.advanced.smart_navigation_log): switch it on the way a person does, once.
+    if (!prefOn()) {
+      await page.goto('/dock/preferences/advanced');
+      await page.locator(`[id="pref-${PREF}"]`).click();
+      await expect.poll(prefOn, { message: 'the switch is saved to preferences.json' }).toBe(true);
+    }
   });
 
   for (const r of ROWS) {
