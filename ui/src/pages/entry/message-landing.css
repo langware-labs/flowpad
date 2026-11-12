@@ -14,7 +14,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100vh;
+  height: 100dvh;
   min-height: 300px;
 }
 
@@ -43,7 +43,7 @@
   background: #f5f4ff;
   color: #1a1a2e;
   line-height: 1.6;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .nl-header {

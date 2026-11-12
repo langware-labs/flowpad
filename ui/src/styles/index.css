@@ -247,10 +247,25 @@
     overflow-x: hidden;
   }
 
+  :root {
+    /* The notch and the home bar (`viewport-fit=cover`); zero everywhere else. */
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+  }
+
   body {
     @apply bg-background text-foreground;
     background-size: 200% 200%;
     animation: float-background 15s ease infinite;
+    /* No rubber-band / pull-to-refresh behind the app's own scrollers. */
+    overscroll-behavior: none;
+  }
+
+  /* A phone pays for an endless full-page repaint in battery. */
+  @media (pointer: coarse) {
+    body {
+      animation: none;
+    }
   }
 
   #root {

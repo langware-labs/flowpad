@@ -336,7 +336,7 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
                     xmlns="http://www.w3.org/2000/svg"
                     role="img"
                     className={`block${hot ? ' focusing' : ''}`}
-                    style={{ width: '100%', height: 'calc(100vh - 290px)', minHeight: 360 }}
+                    style={{ width: '100%', height: 'calc(100dvh - 290px)', minHeight: 360 }}
                     viewBox={pz.viewBox}
                     data-zoomed={pz.zoomed ? 'true' : 'false'}
                     aria-label={t`${value.title || t`C4 chart`}: ${value.elements.length} elements, ${value.relations.length} relations`}

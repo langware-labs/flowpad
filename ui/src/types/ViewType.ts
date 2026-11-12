@@ -79,6 +79,12 @@ export interface ViewerMeta {
    */
   focusChrome?: 'bare' | 'browser';
   /**
+   * Who draws the phone header (below `md`): `'shell'` (default) is the shell's
+   * `PhoneTopBar` — back · title · menu; `'own'` is the view itself, which then
+   * carries a `PhoneMenuButton` in its own header.
+   */
+  phoneHeader?: 'shell' | 'own';
+  /**
    * When true, every sub-pointer of this viewType folds into ONE tab — the
    * pointer is dropped from tab identity (`DockPointer.tabHash`/`toJSON`). Use for
    * views whose pointer is in-view sub-navigation (category/field) rather than a
@@ -556,6 +562,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     // selected bubble inside the conversation, the same kind of sub-state
     // `thread`/`agentId` already ride as options.
     foldsSubPointer: true,
+    phoneHeader: 'own',
   },
   [ViewType.SPEC]: {
     title: msg`Spec`,

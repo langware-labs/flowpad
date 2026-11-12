@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ArrowLeft, ArrowRight, FolderOpen, Home, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FolderOpen, Home, RefreshCw, type LucideIcon } from 'lucide-react';
+import type { RailEntry } from '@src/components/collapsed-sidebar/collapsed-sidebar';
 import { useContext } from '@src/hooks/useContext';
 import { smartAskOrOpen } from '@src/navigation/smart-ask';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -21,6 +22,27 @@ import { TopBarAskForHelp } from './TopBarAskForHelp';
 import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
 import { NewWorkspaceDialogHost } from '@src/components/workspace/workspace-switcher';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
+
+/**
+ * The bar's place-buttons as data — the same shape as a rail entry, so the phone menu lists them with
+ * the rail's. Home is Flowpad's own home page, never a project's; Files sat on the rail once.
+ */
+export function useNavBarPlaces(): (RailEntry & { icon: LucideIcon })[] {
+  const { t } = useLingui();
+  const { currentDock, navigation } = useDockNavigation();
+  const at = (viewType: ViewType) => currentDock?.viewType === viewType;
+  return [
+    { key: 'home', id: 'home', title: t`Home`, icon: Home, active: at(ViewType.HOME), open: () => navigation.goHome() },
+    {
+      key: 'files',
+      id: 'files',
+      title: t`Files`,
+      icon: FolderOpen,
+      active: at(ViewType.EXPLORER),
+      open: () => navigation.openTab(ViewType.EXPLORER),
+    },
+  ];
+}
 
 /**
  * The app's navigation bar — full window width, above the rail and the content
@@ -48,6 +70,7 @@ export function TopNavBar() {
   const { contains } = useActiveWorkspace();
   const project = contextProject && contains(contextProject.fs_storage_mount_path) ? contextProject : null;
   const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
+  const places = useNavBarPlaces();
   // Resolved ONCE per navigation and shared: the address and the actions both
   // need the dock's target, and resolving it twice would double the work on
   // every click.
@@ -82,18 +105,13 @@ export function TopNavBar() {
       {/* A full window reload, the same as the browser's own — no modifier
           gesture and no soft variant. Anything less does not reload. */}
       <NavIconButton icon={RefreshCw} label={t`Reload`} onClick={reload} testId="top-nav-reload" />
-      {/* Home is Flowpad's own home page, never a project's home page. */}
-      <NavIconButton icon={Home} label={t`Home`} onClick={() => navigation.goHome()} testId="top-nav-home" />
-      {/* Right after Home, where it is found, rather than at the far edge of the bar. */}
-      <TopBarAskForHelp projectId={project?.id ?? null} />
-      {/* Files sat on the rail; same destination, same one-liner, just beside
-          the other place-buttons instead of below them. */}
-      <NavIconButton
-        icon={FolderOpen}
-        label={t`Files`}
-        onClick={() => navigation.openTab(ViewType.EXPLORER)}
-        testId="top-nav-files"
-      />
+      {places.map((place, index) => (
+        <Fragment key={place.key}>
+          <NavIconButton icon={place.icon} label={place.title} onClick={place.open} testId={`top-nav-${place.id}`} />
+          {/* Right after Home, where it is found, rather than at the far edge of the bar. */}
+          {index === 0 && <TopBarAskForHelp projectId={project?.id ?? null} />}
+        </Fragment>
+      ))}
       <AppButton project={project} />
       <RuntimeChip kind={runtimeKind} project={project} />
       <ProjectSetupButton project={project} />

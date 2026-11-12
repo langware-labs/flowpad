@@ -27,6 +27,7 @@ import { ConversationMarkChips } from './ChannelMessageExtras';
 import { applyProjectToConversation, applyProjectToTask, persistRemoteToLocalMapping } from './apply-project-choice';
 import { useConversation } from './useConversation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
+import { PhoneMenuButton } from '@src/components/phone-shell/PhoneTopBar';
 
 function conversationHasPrivateProject(conversation: Conversation | null | undefined): boolean {
   if (!conversation) return false;
@@ -283,6 +284,7 @@ export function ConversationRoute() {
           cloudUser && convTypeId && <MembersAvatarStack typeId={convTypeId} showInviteButton />
         )}
       </div>
+      <PhoneMenuButton />
     </div>
   );
 

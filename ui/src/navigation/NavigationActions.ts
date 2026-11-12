@@ -1353,6 +1353,15 @@ export class NavigationActions {
     void this.navigate(-1);
   }
 
+  /**
+   * Leave this screen: one step back when this tab has history, else Home — a screen
+   * loaded straight from a link has nothing behind it, and must never be a dead end.
+   */
+  backOrHome(): void {
+    if (getHistoryPosition().canGoBack) this.goBack();
+    else this.goHome();
+  }
+
   goForward(): void {
     const { canGoForward, idx } = getHistoryPosition();
     toplog.log('navigation', 'NavigationActions.goForward', {

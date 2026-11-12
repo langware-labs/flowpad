@@ -170,7 +170,7 @@ export function AnchoredMenu({
         maxWidth: width,
         // Clamp to what's left below the anchor, or a menu opened from a low
         // control would run off the bottom of the viewport.
-        maxHeight: `min(${MAX_HEIGHT}, calc(100vh - ${anchorTop}px - ${VIEWPORT_GUTTER}px))`,
+        maxHeight: `min(${MAX_HEIGHT}, calc(100dvh - ${anchorTop}px - ${VIEWPORT_GUTTER}px))`,
       }}
       className={cn(
         // z-[60] out-ranks the rail (z-50) outright: this hangs off the top bar,

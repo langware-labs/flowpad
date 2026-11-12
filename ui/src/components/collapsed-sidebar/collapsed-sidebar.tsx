@@ -65,9 +65,22 @@ type NavItem = {
   badge?: number;
 };
 
-export function CollapsedSidebar() {
+/** One rail destination, desk or hub, ready to draw: the rail draws it as an icon, the phone menu as a row. */
+export type RailEntry = {
+  key: string;
+  id: string;
+  title: string;
+  icon: RailIcon;
+  active: boolean;
+  open: () => void;
+  badge?: number;
+  /** Desk slots are tagged; the hub rail is not. */
+  tag?: string;
+};
+
+/** The rail's destinations in render order — the ONE list behind the icon rail and the phone menu. */
+function useRailItems(): RailEntry[] {
   const { navigation, currentDock } = useDockNavigation();
-  const devMode = useIsDev();
   const { unread: unreadCount } = useStreamInboxManager();
   const isVibe = useIsVibe();
   const openLastVibeChat = useLastVibeChat();
@@ -130,43 +143,66 @@ export function CollapsedSidebar() {
   const hubActive = (item: HubItem): boolean =>
     currentView === item.viewType && (!item.pointer || currentPointer === item.pointer);
 
-  /** One desk rail entry, wrapped in its menu item. The entry at index 0 sits
+  return hubMode
+    ? hubItems.map((item) => ({
+        key: `${item.id}:${item.pointer ?? ''}`,
+        id: item.id,
+        title: item.title,
+        icon: item.icon,
+        active: hubActive(item),
+        // Under page=hub: desk factories would revert the page.
+        open: () => navigation.openPage(PageId.HUB, item.viewType, item.pointer),
+      }))
+    : RAIL_ITEMS.map((id) => ({
+        key: id,
+        id,
+        title: navMeta[id].title,
+        icon: navMeta[id].icon,
+        active: currentView === navMeta[id].viewType,
+        open: navMeta[id].open,
+        badge: navMeta[id].badge,
+        tag: railTag(id),
+      }));
+}
+
+const RailEntriesContext = React.createContext<RailEntry[] | null>(null);
+
+/** Computes the rail's entries ONCE for the shell: the icon rail and the phone menu read the same list,
+ *  so there is one stream-inbox subscription and one unread count. */
+export function RailEntriesProvider({ children }: { children: React.ReactNode }) {
+  return <RailEntriesContext.Provider value={useRailItems()}>{children}</RailEntriesContext.Provider>;
+}
+
+export function useRailEntries(): RailEntry[] {
+  const entries = React.useContext(RailEntriesContext);
+  if (!entries) throw new Error('useRailEntries must be used within a RailEntriesProvider.');
+  return entries;
+}
+
+export function CollapsedSidebar() {
+  const devMode = useIsDev();
+  const { t } = useLingui();
+  const { currentDock } = useDockNavigation();
+  const hubMode = currentDock?.page === PageId.HUB;
+  const items = useRailEntries();
+
+  /** One rail entry, wrapped in its menu item. The entry at index 0 sits
    *  on the tab strip's line, so it carries the strip's own height — rail and
    *  tabs start AND end together under the nav bar. */
-  const renderRailItem = (id: RailItemId, index: number) => {
-    const meta = navMeta[id];
-    const Icon = meta.icon;
-    return (
-      <SidebarMenuItem key={id}>
-        <SidebarMenuButton
-          tooltip={meta.title}
-          data-rail-item={id}
-          {...tagAttrs(railTag(id), 'button')}
-          isActive={currentView === meta.viewType}
-          onClick={meta.open}
-          className={`relative w-full justify-center px-2 ${index === 0 ? TAB_LINE_HEIGHT_CLASS : ''}`}
-        >
-          <Icon className="h-5 w-5" />
-          <NavBadge count={meta.badge ?? 0} />
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    );
-  };
-
-  /** One hub rail entry. The hub rail is a fixed list with its own active rule. */
-  const renderHubItem = (item: HubItem, index = 1) => {
+  const renderItem = (item: RailEntry, index: number) => {
     const Icon = item.icon;
     return (
-      <SidebarMenuItem key={`${item.id}:${item.pointer ?? ''}`}>
+      <SidebarMenuItem key={item.key}>
         <SidebarMenuButton
           tooltip={item.title}
-          isActive={hubActive(item)}
-          // Under page=hub: desk factories would revert the page.
-          onClick={() => navigation.openPage(PageId.HUB, item.viewType, item.pointer)}
           data-rail-item={item.id}
+          {...(item.tag ? tagAttrs(item.tag, 'button') : {})}
+          isActive={item.active}
+          onClick={item.open}
           className={`relative w-full justify-center px-2 ${index === 0 ? TAB_LINE_HEIGHT_CLASS : ''}`}
         >
           <Icon className="h-5 w-5" />
+          <NavBadge count={item.badge ?? 0} />
         </SidebarMenuButton>
       </SidebarMenuItem>
     );
@@ -181,7 +217,7 @@ export function CollapsedSidebar() {
       <Sidebar collapsible="none" className={`relative z-50 flex ${RAIL_WIDTH_CLASS} flex-col border-e`}>
         <SidebarContent className="flex-1">
           <SidebarGroup className="px-0 pb-2 pt-0">
-            <SidebarMenu>{hubMode ? hubItems.map(renderHubItem) : RAIL_ITEMS.map(renderRailItem)}</SidebarMenu>
+            <SidebarMenu>{items.map(renderItem)}</SidebarMenu>
           </SidebarGroup>
         </SidebarContent>
 

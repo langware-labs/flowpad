@@ -25,6 +25,7 @@ const navigationActionsSource = readFileSync(
   resolve(__dirname, '../../src/navigation/NavigationActions.ts'),
   'utf-8',
 );
+const stripTabsSource = readFileSync(resolve(__dirname, '../../src/tabs/tab-row-item.tsx'), 'utf-8');
 const unifiedStripSource = readFileSync(
   resolve(__dirname, '../../src/pages/flow-page/content-panel/unified-tab-strip.tsx'),
   'utf-8',
@@ -88,6 +89,8 @@ describe('UnifiedTabStrip close navigation', () => {
     // close-X-during-pending-nav self-heal). Both originate at the URL.
     expect(unifiedStripSource).toContain('if (isCurrentTab(key))');
     expect(unifiedStripSource).toContain('key === activeKey || key === pendingActiveKey');
-    expect(unifiedStripSource).toContain("currentDock?.tabHash ?? ''");
+    // …read where the strip's tabs are derived (`useStripTabs`), shared with the phone menu.
+    expect(unifiedStripSource).toContain('useStripTabs(scope)');
+    expect(stripTabsSource).toContain("currentDock?.tabHash ?? ''");
   });
 });
