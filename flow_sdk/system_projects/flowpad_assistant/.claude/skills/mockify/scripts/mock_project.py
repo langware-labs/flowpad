@@ -4,7 +4,7 @@
     $FLOWPAD_PYTHON mock_project.py save   <repo root> <mock slug>
 
 ``ensure`` makes (or finds) ``$TMPDIR/mockify/<repo folder name>/``: a Flowpad project of its own with the
-repo's namespace, mockify's kinds, the ``mocks`` and ``mock-feedback`` datasets, and -- under
+namespace of its own (``mocks_<repo ns>``), mockify's kinds, the ``mocks`` and ``mock-feedback`` datasets, and -- under
 ``agentic-assets/webapp/mock-<slug>/`` -- every mock. It registers the project, applies the kinds and
 indexes the datasets, and prints ``{root, project_id, ns}``. Nothing is written to the repo.
 
@@ -46,14 +46,14 @@ def mock_root(repo: Path) -> Path:
     return Path(tempfile.gettempdir()).resolve() / "mockify" / repo.name
 
 
-def repo_ns(repo: Path) -> str:
-    """The repo's namespace (the mock project carries the same one: the repo itself never holds mockify's
-    kinds, so they never meet), or one made from the folder name."""
+def mock_ns(repo: Path) -> str:
+    """The mock project's OWN namespace, ``mocks_<repo ns>``. Never the repo's: two roots claiming one namespace
+    keep only one after a restart -- the repo -- and the mock project's kinds then go unregistered (400 on rows)."""
     try:
         ns = json.loads((repo / MANIFEST).read_text(encoding="utf-8")).get("ns")
     except (OSError, ValueError):
         ns = None
-    return ns or "mockify_" + re.sub(r"[^a-z0-9_]", "_", repo.name.lower())
+    return "mocks_" + (ns or re.sub(r"[^a-z0-9_]", "_", repo.name.lower()))
 
 
 def flow(*args: str) -> dict:
@@ -79,9 +79,14 @@ def project_for(root: Path) -> str:
 def ensure(repo: Path) -> None:
     root = mock_root(repo)
     manifest = root / MANIFEST
-    if not manifest.is_file():
+    try:
+        doc = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        doc = {"schema": 1, "requires": {}, "entries": []}
+    if doc.get("ns") != mock_ns(repo):   # a mock project made with the repo's namespace moves to its own
+        doc["ns"] = mock_ns(repo)
         manifest.parent.mkdir(parents=True, exist_ok=True)
-        manifest.write_text(json.dumps({"schema": 1, "requires": {}, "ns": repo_ns(repo), "entries": []}, indent=2) + "\n")
+        manifest.write_text(json.dumps(doc, indent=2) + "\n")
     (root / "agentic-assets" / "webapp").mkdir(parents=True, exist_ok=True)
     project_id = project_for(root)
     installed = install(root, force=True)   # the kinds follow the skill: a field added since is picked up

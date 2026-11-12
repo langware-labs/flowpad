@@ -40,7 +40,7 @@ The page reads and writes those rows through the Flowpad SDK. Every data step fo
 ```
 
 It makes (or finds) `$TMPDIR/mockify/<repo folder name>/`, registers it as a project, installs the kinds
-(`schema/`, in the repo's namespace) and the `mocks` / `mock-feedback` datasets, applies and indexes them.
+(`schema/`, in the mock project's own namespace `mocks_<repo ns>` — never the repo's, or a restart drops them) and the `mocks` / `mock-feedback` datasets, applies and indexes them.
 Repeat it any time: it finds the same project. `<mock project>` below is its `root`. First time on this
 Flowpad: prove the kinds in a data-management probe (good value fits, a broken one is refused).
 

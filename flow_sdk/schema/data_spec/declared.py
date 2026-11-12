@@ -126,7 +126,9 @@ def _read(folder: Path) -> _Read:
     except OSError as exc:
         raise DeclareError(f"{MAIN} is unreadable: {exc}") from exc
     known = _READ.get(folder)
-    if known is not None and known.source == source:
+    # The namespace may come from an enclosing folder or the project, so an unchanged text is not enough.
+    if known is not None and known.source == source and known.ns == asset_namespace(
+            folder, known.doc.ns or _enclosing_ns(folder), shipped=is_running_install_path(folder)):
         return known
     try:
         header, bodies = read_entity_json(SchemaRegistry.get(FAMILY), folder)
