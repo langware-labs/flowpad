@@ -17,7 +17,7 @@ import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
 import { isHubRelayed } from '@src/lib/hub-relayed';
 import { Button } from '@src/components/ui/button';
-import { ExternalLink, Pencil } from 'lucide-react';
+import { ExternalLink, Pencil, RotateCw } from 'lucide-react';
 import { AppInfoPopover } from '@src/components/webapp-display/AppInfoPopover';
 import { CopyButton } from '@src/components/ui/copy-button';
 
@@ -253,6 +253,16 @@ export function AppDisplayViewer({
           onClick={() => openExternal(appDisplay.src)}
         >
           <ExternalLink className="size-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7 shrink-0"
+          data-testid="webapp-refresh"
+          title={t`Refresh`}
+          onClick={() => frameRef.current?.refresh()}
+        >
+          <RotateCw className="size-4" />
         </Button>
         <AppInfoPopover display={appDisplay} lifecycle={lifecycle} />
         {definition ? (
