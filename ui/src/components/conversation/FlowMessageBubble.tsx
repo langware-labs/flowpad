@@ -570,9 +570,12 @@ export function FlowMessageBubble({
   // in `text` (the hub reuses Invitation.message as a conv-id pointer). That
   // string is plumbing, not a message — never render it as bubble content.
   const isConvIdPointer = !!fm.conversation_id && fm.text === `conversation-${fm.conversation_id}`;
+  // An issue's own message is its card (IssueReplyLine) instead of its text; the "Resolved: …" follow-up the
+  // hub posts after it is a line of text alone.
+  const issueCard = fm.issue_reply && !fm.issue_reply.follow_up ? fm.issue_reply : null;
   const message: ConversationMessage = {
     role,
-    content: isConvIdPointer ? '' : (fm.text ?? ''),
+    content: isConvIdPointer || issueCard ? '' : (fm.text ?? ''),
     sender_id: fm.sender_id ?? '',
     timestamp,
   };
@@ -835,7 +838,7 @@ export function FlowMessageBubble({
       {fm.it_reply && (
         <ItReplyLine reply={fm.it_reply} agentId={fm.sender_id ?? ''} conversationId={fm.conversation_id ?? ''} />
       )}
-      {fm.issue_reply && <IssueReplyLine reply={fm.issue_reply} />}
+      {issueCard && <IssueReplyLine reply={issueCard} />}
       {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
       {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}

@@ -769,7 +769,8 @@ class FlowMessage(Entity):
     # like ``it_reply``.
     it_request: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
     # An Issue in a project's Monitoring conversation (``ConversationKind.MONITORING``): the hub's
-    # ``metadata.issue`` = ``{issue_typeid, kind, severity, status, count, title, detail, fix, subject_typeid}``.
+    # ``metadata.issue`` = ``{issue_typeid, kind, severity, status, count, title, detail, fix, subject_typeid,
+    # cause, machine, opened_at, resolved_at}`` (``follow_up`` marks the "Resolved: …" line posted after it).
     # The hub updates the same message as the issue moves (count, status). PRIVATE, re-derived like ``it_reply``.
     issue_reply: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
 

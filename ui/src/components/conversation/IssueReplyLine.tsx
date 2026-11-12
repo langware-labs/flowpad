@@ -1,13 +1,15 @@
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
-import { AlertTriangle, CircleAlert, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { AlertTriangle, ChevronRight, CircleAlert, Loader2 } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Issue, type IssueManualStatus, type IssueReplyMeta, type IssueStatus } from '@sdk';
 import { isIssueActive } from '@sdk/entities/issue';
 import { fixPointer, resolveFixPointer } from '@src/components/asset-counters/issue-counters';
 import { Button } from '@src/components/ui/button';
+import { entityDock } from '@src/lib/hub-page-url';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { humanizeSeconds } from '@src/utils/duration';
 
 const STATUS_TONE: Record<IssueStatus, string> = {
   open: 'border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300',
@@ -38,10 +40,51 @@ function issueIdOf(typeid: string): string {
   return typeid.startsWith(prefix) ? typeid.slice(prefix.length) : '';
 }
 
+/** How long an issue was open ("50s", "3m 20s"), or '' when a time is missing; both are epoch seconds. */
+export function issueDuration(from: number | null | undefined, to: number | null | undefined): string {
+  return from && to && to >= from ? humanizeSeconds(to - from) : '';
+}
+
+/** How the issue stands now, in words: "Resolved by itself after 50s", "Open for 3m", "Closed". */
+export function issueStandingText(reply: Pick<IssueReplyMeta, 'status' | 'opened_at' | 'resolved_at'>): string {
+  const took = issueDuration(reply.opened_at, reply.resolved_at);
+  if (reply.status === 'resolved') return took ? t`Resolved by itself after ${took}` : t`Resolved by itself`;
+  if (reply.status === 'closed') return took ? t`Closed after ${took}` : t`Closed`;
+  const open = issueDuration(reply.opened_at, Date.now() / 1000);
+  return open ? t`${statusLabel(reply.status)} for ${open}` : statusLabel(reply.status);
+}
+
+function CardRow({
+  name,
+  label,
+  onOpen,
+  children,
+}: {
+  name: string;
+  label: string;
+  onOpen: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex w-full items-center gap-3 border-b border-border/40 px-3 py-1.5 text-start text-sm transition-colors last:border-b-0 hover:bg-accent/40"
+      onClick={onOpen}
+      data-testid={`issue-card-row-${name}`}
+    >
+      <span className="w-20 shrink-0 text-xs text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 truncate text-foreground">{children}</span>
+      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground rtl:-scale-x-100" aria-hidden="true" />
+    </button>
+  );
+}
+
 /**
- * Under an issue's message in a Monitoring conversation: severity, title, status, how many times it happened,
- * the fix, and the manual moves (work on it, close it, reopen it). The hub updates the message itself, so the
- * status here follows `reply.status`; a click shows the new status at once.
+ * An issue's message in a Monitoring conversation: a card of what happened (each row opens the issue's own
+ * page, the machine row what the fix names), then severity, title, status, how many times it happened, the fix,
+ * and the manual moves (work on it, close it, reopen it). The hub updates the message itself, so the status
+ * here follows `reply.status`; a click shows the new status at once. (The bubble does not mount this for the
+ * "Resolved: …" follow-up the hub posts afterwards: that is a line of text alone.)
  */
 export function IssueReplyLine({ reply }: { reply: IssueReplyMeta }) {
   const { navigation } = useDockNavigation();
@@ -68,7 +111,15 @@ export function IssueReplyLine({ reply }: { reply: IssueReplyMeta }) {
   };
 
   const SeverityIcon = reply.severity === 'warning' ? AlertTriangle : CircleAlert;
-  return (
+  const openIssue = () => {
+    if (issueId) navigation.openDockOnThisPage(entityDock(Issue.type, issueId));
+  };
+  const openMachine = () =>
+    void resolveFixPointer(reply).then((target) => {
+      const to = target ?? pointer;
+      if (to) navigation.openDockOnThisPage(to);
+    });
+  const line = (
     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" data-testid="issue-reply-line">
       <SeverityIcon
         className={cn('h-3.5 w-3.5 shrink-0', reply.severity === 'warning' ? 'text-amber-500' : 'text-red-500')}
@@ -145,5 +196,31 @@ export function IssueReplyLine({ reply }: { reply: IssueReplyMeta }) {
         </span>
       )}
     </div>
+  );
+  return (
+    <>
+      <div
+        className="mt-1 max-w-xl overflow-hidden rounded-lg border border-border/60 bg-card"
+        data-testid="issue-card"
+      >
+        <CardRow name="what" label={t`What`} onOpen={openIssue}>
+          {reply.detail || reply.title}
+        </CardRow>
+        {reply.machine && (
+          <CardRow name="machine" label={t`Machine`} onOpen={openMachine}>
+            {reply.machine}
+          </CardRow>
+        )}
+        {reply.cause && (
+          <CardRow name="cause" label={t`Cause`} onOpen={openIssue}>
+            <span className="font-mono text-xs">{reply.cause}</span>
+          </CardRow>
+        )}
+        <CardRow name="status" label={t`Status`} onOpen={openIssue}>
+          {issueStandingText({ ...reply, status })}
+        </CardRow>
+      </div>
+      {line}
+    </>
   );
 }

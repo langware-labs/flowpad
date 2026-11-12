@@ -90,6 +90,31 @@ describe('IssueReplyLine', () => {
     expect(screen.getByTestId('issue-reply-status').textContent).toBe('Resolved');
     expect(screen.queryByTestId('issue-reply-close')).toBeNull();
   });
+
+  it('the card says what happened, whose machine, the cause and how it stands; a row opens the issue page', () => {
+    render(
+      <IssueReplyLine
+        reply={reply({
+          kind: 'deployment_unreachable',
+          severity: 'warning',
+          status: 'resolved',
+          detail: "Flowpad couldn't ask the provider about the machine.",
+          machine: 'visitor 8f99',
+          cause: 'connection reset',
+          opened_at: 1_800_000_000,
+          resolved_at: 1_800_000_050,
+        } as Partial<IssueReplyMeta>)}
+      />,
+    );
+    expect(screen.getByTestId('issue-card-row-what').textContent).toContain("couldn't ask the provider");
+    expect(screen.getByTestId('issue-card-row-machine').textContent).toContain('visitor 8f99');
+    expect(screen.getByTestId('issue-card-row-cause').textContent).toContain('connection reset');
+    expect(screen.getByTestId('issue-card-row-status').textContent).toContain('Resolved by itself after 50s');
+
+    fireEvent.click(screen.getByTestId('issue-card-row-cause'));
+    expect(h.openDockOnThisPage).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(h.openDockOnThisPage.mock.calls[0][0])).toContain(`issue/${ISSUE_ID}`);
+  });
 });
 
 describe('issueReplyOf', () => {

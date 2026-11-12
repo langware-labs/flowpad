@@ -26,6 +26,13 @@ export interface IssueFix {
   pointer: string;
 }
 
+/** One line of an issue's history; `at` is epoch seconds. */
+export interface IssueEvent {
+  at: number;
+  what: 'opened' | 'seen_again' | 'reopened' | 'resolved' | 'status' | string;
+  detail: string;
+}
+
 /**
  * Something that needs fixing, kept by the hub (read-only here). One open row per (subject, kind);
  * resolved rows stay as history. Twin of `flow_sdk/builtin/issue.py`.
@@ -36,12 +43,19 @@ export interface IIssue extends Omit<IEntity, 'status'> {
   severity: IssueSeverity;
   title: string;
   detail: string;
+  /** The technical failure behind `detail`, as the hub saw it. */
+  cause: string;
+  /** Whose machine it is about, when the subject is one person's placement ("visitor 8f99"); else ''. */
+  machine: string;
+  /** What happened to it, oldest first. */
+  events: IssueEvent[];
   fix: IssueFix | null;
   /** Typeids this issue stops (e.g. the deployments an exhausted budget halts). */
   affected: string[];
   status: IssueStatus;
   /** Epoch seconds. */
   opened_at: number;
+  reopened_at: number | null;
   resolved_at: number | null;
   last_notified_at: number | null;
   count: number;
@@ -56,10 +70,14 @@ export class Issue extends APIEntity<Issue> implements IIssue {
   severity: IssueSeverity;
   title: string;
   detail: string;
+  cause: string;
+  machine: string;
+  events: IssueEvent[];
   fix: IssueFix | null;
   affected: string[];
   status: IssueStatus;
   opened_at: number;
+  reopened_at: number | null;
   resolved_at: number | null;
   last_notified_at: number | null;
   count: number;
@@ -72,10 +90,14 @@ export class Issue extends APIEntity<Issue> implements IIssue {
     this.severity = issue.severity === 'warning' ? 'warning' : 'error';
     this.title = issue.title ?? '';
     this.detail = issue.detail ?? '';
+    this.cause = issue.cause ?? '';
+    this.machine = issue.machine ?? '';
+    this.events = Array.isArray(issue.events) ? issue.events : [];
     this.fix = issue.fix?.pointer ? { label: issue.fix.label ?? '', pointer: issue.fix.pointer } : null;
     this.affected = Array.isArray(issue.affected) ? issue.affected : [];
     this.status = issueStatusOf(issue.status);
     this.opened_at = issue.opened_at ?? 0;
+    this.reopened_at = issue.reopened_at ?? null;
     this.resolved_at = issue.resolved_at ?? null;
     this.last_notified_at = issue.last_notified_at ?? null;
     this.count = issue.count ?? 1;

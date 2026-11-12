@@ -21,6 +21,15 @@ export interface IssueReplyMeta {
   detail: string;
   fix: IssueFix | null;
   subject_typeid: string;
+  /** The technical failure behind `detail`, as the hub saw it. */
+  cause: string;
+  /** Whose machine it is about ("visitor 8f99"), or ''. */
+  machine: string;
+  /** When it last opened and when it ended (epoch seconds). */
+  opened_at: number | null;
+  resolved_at: number | null;
+  /** The short "Resolved: …" / "Closed: …" line the hub posts after the issue's own message. */
+  follow_up: boolean;
 }
 
 export enum DeliveryMode {
@@ -369,6 +378,11 @@ export function issueReplyOf(metadata: Record<string, unknown> | null | undefine
     fix:
       fix && typeof fix.pointer === 'string' && fix.pointer ? { label: fix.label ?? '', pointer: fix.pointer } : null,
     subject_typeid: typeof issue.subject_typeid === 'string' ? issue.subject_typeid : '',
+    cause: typeof issue.cause === 'string' ? issue.cause : '',
+    machine: typeof issue.machine === 'string' ? issue.machine : '',
+    opened_at: typeof issue.opened_at === 'number' ? issue.opened_at : null,
+    resolved_at: typeof issue.resolved_at === 'number' ? issue.resolved_at : null,
+    follow_up: issue.follow_up === true,
   };
 }
 
