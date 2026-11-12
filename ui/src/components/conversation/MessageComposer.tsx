@@ -44,7 +44,7 @@ import { readDraft, writeDraft } from '@src/components/entity-execution-panel/co
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { isCoarsePointer } from '@src/hooks/use-mobile';
+import { isMobile, submitOnEnter } from '@src/hooks/use-mobile';
 
 interface MessageComposerProps {
   /** Conversation to append to. Falls back to the draft's `conversation_id`. */
@@ -511,7 +511,7 @@ export function MessageComposer({
   // iOS lays the keyboard over the page: once it has opened, bring the box back above it.
   const liftAboveKeyboard = () => {
     const vv = window.visualViewport;
-    if (!vv || !isCoarsePointer()) return;
+    if (!vv || !isMobile()) return;
     dropLift();
     const lift = () => textareaRef.current?.scrollIntoView({ block: 'end' });
     vv.addEventListener('resize', lift, { once: true });
@@ -524,8 +524,7 @@ export function MessageComposer({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // On a touch keyboard Enter is the newline key; sending is the button.
-    if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !isCoarsePointer()) {
+    if (submitOnEnter(e) && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       handleSend();
     }

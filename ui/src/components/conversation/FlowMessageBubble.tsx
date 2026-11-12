@@ -100,6 +100,7 @@ import { FormAnswersCard } from './FormAnswersCard';
 import type { AnswersEntry, MessageForm } from './message-form';
 import type { ProcessCall, ReturnedValue } from '@sdk';
 import { messageDirection } from './message-direction';
+import { useIsMobile } from '@src/hooks/use-mobile';
 
 /** How long a sender may delete their own message on a hub conversation — the backend's
  *  `OWN_MESSAGE_DELETE_WINDOW`; the hub enforces it. */
@@ -338,6 +339,8 @@ export function FlowMessageBubble({
   // bubble still works in isolation). Passing null to useEntity disables the
   // fetch — the same pattern the creator lookup below uses.
   const { data: fetchedFm } = useEntity<FlowMessage>(fmProp ? null : new TypeId(FlowMessage.type, messageId));
+  // A phone reads and replies; forwarding is desktop work.
+  const mobile = useIsMobile();
   const fm = fmProp ?? fetchedFm;
   // Our click shows at once; the server's answer (or the projection's next update) is the truth.
   const [reactions, setReactions] = useState(fm?.reactions ?? []);
@@ -854,7 +857,7 @@ export function FlowMessageBubble({
     </>
   );
 
-  const canForward = !fm.is_draft && fm.kind !== FlowMessageKind.INVITATION && !!fm.conversation_id;
+  const canForward = !mobile && !fm.is_draft && fm.kind !== FlowMessageKind.INVITATION && !!fm.conversation_id;
 
   return (
     <>

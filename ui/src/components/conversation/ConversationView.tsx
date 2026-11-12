@@ -105,6 +105,7 @@ import { notify } from '@src/notifications';
 import type { WorkerType } from './conversation-session-constants';
 import { buildConversationStatusPrompt, buildMessageStartPrompt } from './prompt-building';
 import { useConversationSession } from './useConversationSession';
+import { useIsMobile } from '@src/hooks/use-mobile';
 
 interface ConversationViewProps {
   conversationId: string;
@@ -383,6 +384,8 @@ export function ConversationView({
     ensureMapped,
     buildPrompt: buildStatusPrompt,
   });
+  // Launching a worker is desktop work: on a phone no message (bubble or its menu) offers it.
+  const mobile = useIsMobile();
   const launchWorkerOnMessage = useCallback(
     (messageId: string, worker: WorkerType) =>
       launchWorker(
@@ -788,7 +791,7 @@ export function ConversationView({
           messageTask={taskOfMessage(id) ?? threadTask}
           onTaskIt={handleTaskIt}
           taskPeople={taskPeople}
-          onLaunchWorker={launchWorkerOnMessage}
+          onLaunchWorker={mobile ? undefined : launchWorkerOnMessage}
           promptCall={promptCallFor(id)}
           itSend={itSends.sendByMessage.get(id) ?? null}
           messageForm={messageFormFor(id)}

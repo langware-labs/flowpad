@@ -7,7 +7,7 @@ import { Navigate, useParams } from 'react-router';
 import flowpadLogo from '@src/assets/logo.png';
 import { Avatar, AvatarFallback, AvatarImage } from '@src/components/ui/avatar';
 import { Button } from '@src/components/ui/button';
-import { isCoarsePointer } from '@src/hooks/use-mobile';
+import { isMobile } from '@src/hooks/use-mobile';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useCopied } from '@src/components/ui/copy-button';
 import { inboundParams } from '@src/navigation/inbound-link';
@@ -96,7 +96,7 @@ const MessageLanding: React.FC = () => {
   // On the hub this page renders signed out (`anonymous-entry.ts`), so it owns its sign-in, from the
   // click: a popup keeps this tab, then the page reloads as the signed-in user.
   // A phone blocks the popup, so it signs in by a full-page round trip back to this link.
-  const phone = isCoarsePointer();
+  const phone = isMobile();
   const logIn = () =>
     isHubOnly() && !phone ? void cloudManager.login({ refresh: 'reload' }) : loginKey && bounceToLoginOnce(loginKey);
 

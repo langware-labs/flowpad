@@ -22,7 +22,7 @@ vi.mock('@src/components/conversation/AttachMenu', () => ({
 
 import { sendReply } from '@sdk/entities/notifications';
 import { MessageComposer } from '@src/components/conversation/MessageComposer';
-import { mockPointer } from '../utils/test-utils';
+import { mockMobile } from '../utils/test-utils';
 
 const CONV = 'c0c0c0c0-0000-4000-8000-000000000009';
 
@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 it('on a touch keyboard Enter is a newline; the send button sends', async () => {
-  mockPointer(true);
+  mockMobile(true);
   render(<MessageComposer conversationId={CONV} />);
   const box = screen.getByPlaceholderText('Reply to sender…');
   fireEvent.change(box, { target: { value: 'line one' } });
@@ -44,7 +44,7 @@ it('on a touch keyboard Enter is a newline; the send button sends', async () => 
 });
 
 it('with a mouse and keyboard Enter still sends', async () => {
-  mockPointer(false);
+  mockMobile(false);
   render(<MessageComposer conversationId={CONV} />);
   const box = screen.getByPlaceholderText('Reply to sender…');
   fireEvent.change(box, { target: { value: 'hi' } });

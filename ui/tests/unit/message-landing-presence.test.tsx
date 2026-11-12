@@ -11,7 +11,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { ConnectionManager, PageId } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { mockPointer } from '../utils/test-utils';
+import { mockMobile } from '../utils/test-utils';
 
 const MSG = '123e4567-e89b-4456-8abc-def123456789';
 const state = vi.hoisted(() => ({
@@ -131,7 +131,7 @@ it('signed out: Log in in the bar and the card, no message text', () => {
 });
 
 it('on a phone, a conversation message opens straight in the conversation, on that message', async () => {
-  const mm = mockPointer(true);
+  const mm = mockMobile(true);
   state.entity = { ...state.entity, data: { ...MESSAGE, conversation_id: CONV } };
   openWithProbe();
   expect(await screen.findByTestId('location')).toHaveTextContent(
@@ -141,7 +141,7 @@ it('on a phone, a conversation message opens straight in the conversation, on th
 });
 
 it('on the hub page, the phone opens the conversation on the hub page', async () => {
-  const mm = mockPointer(true);
+  const mm = mockMobile(true);
   state.hubOnly = true;
   state.entity = { ...state.entity, data: { ...MESSAGE, conversation_id: CONV } };
   openWithProbe();

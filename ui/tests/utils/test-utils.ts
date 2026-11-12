@@ -1,3 +1,4 @@
+import { MOBILE_QUERY } from '@src/hooks/use-mobile';
 import {
   AgentConfig,
   AgenticProcess,
@@ -44,9 +45,9 @@ const mediaQueryList = (matches: (query: string) => boolean) => (query: string) 
     dispatchEvent: () => true,
   }) as MediaQueryList;
 
-/** Make `(pointer: coarse)` match (a phone) or not; undone by `vi.restoreAllMocks()`. */
-export const mockPointer = (coarse: boolean) =>
-  vi.spyOn(window, 'matchMedia').mockImplementation(mediaQueryList((q) => coarse && q === '(pointer: coarse)'));
+/** Make the app's mobile flag (`MOBILE_QUERY`) true or false; undone by `vi.restoreAllMocks()`. */
+export const mockMobile = (mobile: boolean) =>
+  vi.spyOn(window, 'matchMedia').mockImplementation(mediaQueryList((q) => mobile && q === MOBILE_QUERY));
 
 /**
  * Unit test setup function that handles data manager reset for isolated unit tests
