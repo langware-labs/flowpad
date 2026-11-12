@@ -236,6 +236,15 @@ Why the exception and nothing else: a read-only asset has no row of its own to l
 
 If a backend route can't be called through `apiClient` because it doesn't return the standard `ApiResponse` envelope, fix the route to return the envelope — don't fall back to `fetch`. Workers/skills resolve their own backend via the pinned `FLOW_INSTANCE` (`~/.flow/instances/<name>/server.json`), never via a URL baked into a prompt or file.
 
+## One view on the hub and the desktop (non-negotiable)
+
+**Every view is shared between the hub and the desktop unless the user approved otherwise for that view.**
+A view (a help desk, an agent, a project page) is one component that both runtimes render; a feature that
+needs a page gets it once, not a hub page and a desktop page. What differs between the two is gated inside
+the shared view (`isHubOnly()`, the API subset), never forked into a second view. A view that exists on one
+side only is a gap to fill, not a design. An approved exception is noted in the view's own source with its
+date and reason.
+
 ## Type icons (non-negotiable)
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.

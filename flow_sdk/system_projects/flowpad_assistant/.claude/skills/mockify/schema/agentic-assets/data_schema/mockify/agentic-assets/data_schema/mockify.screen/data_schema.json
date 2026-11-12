@@ -1,0 +1,65 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "The step id: the screen's data-step attribute and its #id deep link."
+    },
+    "app": {
+      "shape": "string",
+      "description": "The product the screen lives in (Flowpad, Google Cloud, GitHub)."
+    },
+    "title": {
+      "shape": "string",
+      "description": "What the user does on this screen, in a few words."
+    },
+    "persona": {
+      "shape": "?string",
+      "description": "Whose screen this is: a `personas` id of the mock. Absent = the mock's `persona`."
+    },
+    "device": {
+      "shape": "?enum:desktop|iphone|android",
+      "description": "The screen this step is shown on: desktop (default), iphone (390x844) or android (412x915). A phone step is laid out at its device width, inside a device frame. This step's screen; absent = the mock's device."
+    },
+    "tag": {
+      "shape": "?enum:existing|new",
+      "description": "existing (default): the product today, its changes drawn as a diff. new: a screen only the suggestion has, drawn with no marks. The tag never decides whether Next reaches the screen -- the tree does."
+    },
+    "scenario": {
+      "shape": "?string",
+      "description": "Phase 1: what the user sees and does on this screen, in a sentence or two — the brief the screen is built from."
+    },
+    "source": {
+      "shape": "?string",
+      "description": "'capture' (a live-app state the builder reaches and captures) or 'built: <why>' (drawn from the component source because the live app cannot reach it)."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "The detail the reviewer should react to."
+    },
+    "actions": {
+      "shape": "?[mockify.action]",
+      "description": "Every clickable thing on the screen the reviewer will try, in order. The ones with `to` are the tree's edges."
+    },
+    "state": {
+      "shape": "?[string]",
+      "description": "What must be true here, as `var=value` -- an assertion checked against the state the way here produces."
+    },
+    "changes": {
+      "shape": "?[mockify.change]",
+      "description": "The proposed changes on this screen. The screen is always today; each change is a pin that reveals the suggested version. Empty on a screen that only exists in the suggestion or does not change."
+    },
+    "decisions": {
+      "shape": "?[mockify.decision]",
+      "description": "Open questions this screen asks."
+    },
+    "expect": {
+      "shape": "?[string]",
+      "description": "Test mode: what must be true on this screen. Each one becomes a 'validate' line in the test .md. Write it from the captured screen (label, data-testid, state); it may also be a check no screen can show (no 401, no console error, still there after refresh)."
+    },
+    "url": {
+      "shape": "?string",
+      "description": "Test mode: the app route the test navigates to on this screen (the path after {APP_URL}); required on the first step."
+    }
+  }
+}

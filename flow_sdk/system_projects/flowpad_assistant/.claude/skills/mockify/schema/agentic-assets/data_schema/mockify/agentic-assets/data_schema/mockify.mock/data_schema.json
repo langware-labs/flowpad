@@ -23,7 +23,7 @@
     },
     "folder": {
       "shape": "?string",
-      "description": "The mock's web app folder in the mock project (absolute; never the repo) \u2014 the review panel's Open folder shows it."
+      "description": "The mock's web app folder in the mock project (absolute; never the repo) — the review panel's Open folder shows it."
     },
     "repo": {
       "shape": "?string",
@@ -31,17 +31,15 @@
     },
     "session": {
       "shape": "?string",
-      "description": "The agentic process that builds the mock \u2014 where submitted feedback is sent."
+      "description": "The agentic process that builds the mock — where submitted feedback is sent."
     },
     "status": {
       "shape": "enum:draft|in_review|submitted|revised",
       "description": "draft: being built; in_review: shown, collecting feedback; submitted: feedback sent; revised: the mock changed after feedback."
     },
     "journey": {
-      "shape": [
-        "mockify.step"
-      ],
-      "description": "The screens, in journey order; a branch follows the step it branches from."
+      "shape": "?[mockify.step]",
+      "description": "LEGACY: the screens as a flat list. New mocks write `tree`; `scripts/tree.py from-journey` converts."
     },
     "test_md": {
       "shape": "?string",
@@ -50,6 +48,22 @@
     "setup": {
       "shape": "?string",
       "description": "Test mode: the state the test starts from (seed data, signed-in hub, a second instance), in a sentence."
+    },
+    "device": {
+      "shape": "?enum:desktop|iphone|android",
+      "description": "The screen this step is shown on: desktop (default), iphone (390x844) or android (412x915). A phone step is laid out at its device width, inside a device frame. The journey's default screen; a step's own device wins."
+    },
+    "persona": {
+      "shape": "?string",
+      "description": "The journey's default persona (a `personas` id); a step's own persona wins."
+    },
+    "personas": {
+      "shape": "?[mockify.persona]",
+      "description": "Who appears in the journey. Needed as soon as two people's screens are in one mock; every step then names its persona."
+    },
+    "tree": {
+      "shape": "?mockify.tree",
+      "description": "The mock tree: screens, actions and vars. What the page is built from and what Next / Back walk."
     }
   }
 }

@@ -1,0 +1,33 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "c1, c2… unique on its step; the screen marks the today element data-change=\"c1\" and holds the suggested version in <template data-change-after=\"c1\">."
+    },
+    "title": {
+      "shape": "string",
+      "description": "The change in a few words, as the reviewer reads it."
+    },
+    "type": {
+      "shape": "?string",
+      "description": "What kind of change: wording, added, removed, control, section, data, behaviour, entry point, new screen, screen replaced, flow, states, alternatives."
+    },
+    "mode": {
+      "shape": "?string",
+      "description": "'place' (default): revealed in place on this screen. 'screen': opens the step named by `to`."
+    },
+    "to": {
+      "shape": "?string",
+      "description": "For mode 'screen': the step id of the suggested screen."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "Why, and the source (spec section, who decided)."
+    },
+    "options": {
+      "shape": "?[string]",
+      "description": "Alternatives the reviewer picks from (an open question as A / B)."
+    }
+  }
+}

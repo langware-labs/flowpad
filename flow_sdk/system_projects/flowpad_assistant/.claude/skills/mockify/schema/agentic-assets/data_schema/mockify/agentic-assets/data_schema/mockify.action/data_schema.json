@@ -1,0 +1,33 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique on its screen. `next` is reserved for the bar's own Next (a continuation with no control on the screen)."
+    },
+    "label": {
+      "shape": "string",
+      "description": "The control as the reviewer sees it: the button text, the tab name, the icon's tooltip."
+    },
+    "does": {
+      "shape": "string",
+      "description": "What clicking it does in the product being mocked."
+    },
+    "to": {
+      "shape": "?string",
+      "description": "The screen it leads to (the control gets data-next). Absent: not part of this mock."
+    },
+    "kind": {
+      "shape": "?enum:main|branch|alt|jump",
+      "description": "With `to`: main = the screen's one continuation; branch = a side path (needs `when`); alt = a suggested alternative a change card opens; jump = to a screen that already has a parent (Try again, back to the main path)."
+    },
+    "when": {
+      "shape": "?string",
+      "description": "For a branch: when it happens, e.g. 'if denied'."
+    },
+    "set": {
+      "shape": "?[string]",
+      "description": "What it changes, as `var=value` (desk=on). The screen it leads to is in that state."
+    }
+  }
+}

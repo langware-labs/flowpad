@@ -16,8 +16,8 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))   # -I leaves the script's folder off the path
-from build_mock import load_row  # noqa: E402
 from mock_project import fail, out  # noqa: E402
+from tree import as_journey, load_row  # noqa: E402
 
 
 def paths(journey: list[dict]) -> list[tuple[str, list[dict]]]:
@@ -72,7 +72,7 @@ def main() -> None:
     if exists and not replace:
         fail(f"{mock['test_md']} exists; pass --replace to overwrite it")
 
-    journey = mock.get("journey") or []
+    journey = as_journey(mock)   # the mock tree's screens, in DFS order
     tests = paths(journey)
     lines: list[str] = []
     for n, (title, steps) in enumerate(tests, 1):
