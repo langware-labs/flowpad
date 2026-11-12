@@ -2,7 +2,7 @@
 
 A cloud hub (staging, flowpad.ai) signs in only through Auth0 in a browser: its password login
 answers "Use Auth0", and ``POST /cloud/login`` opens a browser nobody sees, so a launched
-instance sat in ``logging_in`` forever. With ``FLOWPAD_CLOUD_API_KEY`` the launcher calls the
+instance sat in ``logging_in`` forever. With ``QA_STAGING_FLOWPAD_CLOUD_API_KEY`` the launcher calls the
 backend's ``/auth/login_callback`` instead — the route the hub signs a box in with.
 """
 
@@ -83,3 +83,12 @@ def test_a_refused_key_fails_the_sign_in(backend):
 
     assert run.returncode == 1
     assert "HTTP 401" in run.stderr
+
+
+def test_launcher_takes_the_key_as_qa_staging_name_never_flowpad_cloud_api_key():
+    """Under FLOWPAD_CLOUD_API_KEY the caller's own ``flow`` CLI signs in with the staging key, gets a
+    401 from the production hub and clears the box's saved login: the caller hands it over as
+    QA_STAGING_FLOWPAD_CLOUD_API_KEY, and only the launched instance's env file says FLOWPAD_CLOUD_API_KEY."""
+    text = SHIM.read_text()
+    assert "${QA_STAGING_FLOWPAD_CLOUD_API_KEY:-$prior_api_key}" in text
+    assert "${FLOWPAD_CLOUD_API_KEY" not in text

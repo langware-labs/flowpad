@@ -376,11 +376,15 @@ EOF
   if [ -n "$e2b_key" ]; then
     printf 'E2B_KEY=%s\n' "$e2b_key" >> "$ef"
   fi
-  # A hub API key (FLOWPAD_CLOUD_API_KEY) is the headless sign-in: a cloud hub (staging,
-  # flowpad.ai) signs in only through Auth0 in a browser, so its password login answers
-  # "Use Auth0" and the env-mode login below would open a browser nobody sees. Carried
-  # through the env file like E2B_KEY, so a relaunch keeps it. Never printed.
-  local api_key="${FLOWPAD_CLOUD_API_KEY:-$prior_api_key}"
+  # A hub API key is the headless sign-in: a cloud hub (staging, flowpad.ai) signs in only
+  # through Auth0 in a browser, so its password login answers "Use Auth0" and the env-mode
+  # login below would open a browser nobody sees. The caller hands it over as
+  # QA_STAGING_FLOWPAD_CLOUD_API_KEY, never as FLOWPAD_CLOUD_API_KEY: under that name the
+  # caller's own `flow` CLI signs in with it, and a staging key sent to the production hub
+  # answers 401, which clears the box's saved login. Only the launched instance's env file
+  # names it FLOWPAD_CLOUD_API_KEY, which is what its backend reads. Carried through the env
+  # file like E2B_KEY, so a relaunch keeps it. Never printed.
+  local api_key="${QA_STAGING_FLOWPAD_CLOUD_API_KEY:-$prior_api_key}"
   if [ -n "$api_key" ]; then
     printf 'FLOWPAD_CLOUD_API_KEY=%s\n' "$api_key" >> "$ef"
   fi
