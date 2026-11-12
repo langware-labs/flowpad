@@ -47,7 +47,9 @@ function scaffoldSkillRepo(): { repo: string; skillDir: string } {
 }
 
 function seedSkillLoadedTranscript(): string {
-  const dir = join(homedir(), '.claude', 'projects', '-fullflow-browser');
+  // The Claude home the backend reads its transcripts from: the instance's own when it has one.
+  const claudeHome = process.env.FLOWPAD_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+  const dir = join(claudeHome, 'projects', '-fullflow-browser');
   mkdirSync(dir, { recursive: true });
   const lines = [
     { type: 'user', uuid: 'u1', sessionId: SID, timestamp: '2026-06-25T10:00:00Z',

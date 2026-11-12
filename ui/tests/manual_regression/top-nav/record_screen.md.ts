@@ -83,8 +83,12 @@ test('record, share, save to project', async ({ page }) => {
   await expect(shareDialog).toBeVisible();
   // A project file's first share offers to link the project to the cloud; a plain share skips it.
   const skipLink = shareDialog.getByTestId('share-skip-link');
-  if (await skipLink.isVisible().catch(() => false)) await skipLink.click();
-  await expect(shareDialog.getByTestId('share-asset-chips')).toContainText(fileName);
+  const chips = shareDialog.getByTestId('share-asset-chips');
+  // The dialog picks its first step after an async check: the cloud-link step (Skip) or the chips. Wait for
+  // whichever comes; an instant isVisible() raced it and never skipped a link step shown a moment later.
+  await expect(skipLink.or(chips)).toBeVisible();
+  if (await skipLink.isVisible()) await skipLink.click();
+  await expect(chips).toContainText(fileName);
   await shareDialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(shareDialog).toHaveCount(0);
   await expect(dialog).toHaveCount(0);

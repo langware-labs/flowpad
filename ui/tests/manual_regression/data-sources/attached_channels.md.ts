@@ -147,8 +147,9 @@ async function userStreamInbox(page: Page) {
 
 test('1. the header line shows the user\'s channels as round marks', async ({ page }) => {
   const { bar, rows } = await userStreamInbox(page);
-  const line = page.getByTestId('stream-inbox-select-all-row');
-  await expect(line.getByTestId('attached-channels')).toHaveAttribute('data-owner', /^user-/);
+  // The user's channel marks sit at the end of the inbox's top verbs row (StreamInboxView: hasTopRow), not
+  // in the select-all row any more: the bar is found by its own testid.
+  await expect(bar).toHaveAttribute('data-owner', /^user-/);
 
   const marks = userMarksOf(bar);
   await expect(marks).toHaveCount(1);

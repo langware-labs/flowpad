@@ -15,6 +15,9 @@
  *     must never reroute a turn — see agentic_process._http_prompt.)
  *   - DELETE → 200.
  */
+import { mkdtempSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
 
@@ -29,9 +32,11 @@ test('test 1: visible=true createProcess stays on the PTY path; /prompt routes t
   const cnId = typeof cn === 'string' ? cn : cn?.id;
   expect(cnId, 'default compute node id').toBeTruthy();
 
-  // createProcess with visible:true and an explicit workdir.
+  // createProcess with visible:true and an explicit workdir — a fresh one: a bare /tmp is refused as a project
+  // (NestedProjectError) once an earlier spec left a project under it.
+  const workdir = realpathSync(mkdtempSync(join(tmpdir(), 'visible-pty-')));
   const createRes = await api.post(`${API}/api/v1/graph/compute_node/${cnId}/createProcess`, {
-    data: { context: { workdir: '/tmp' }, visible: true },
+    data: { context: { workdir }, visible: true },
   });
   // A visible=true process reserves a PTY on creation. When the host is out of
   // PTY devices (kern.tty.ptmx_max=511 saturated by ~150 external claude/codex
@@ -61,7 +66,7 @@ test('test 1: visible=true createProcess stays on the PTY path; /prompt routes t
     // which a visible=true createProcess sets to true.
     expect(got.pty_mode).toBe(true);
     expect(got.target_typeid_str ?? null).toBeNull(); // none sent in context
-    expect(got.workdir).toBe('/tmp');
+    expect(got.workdir).toBe(workdir);
     expect(got.instruction_content ?? '').toBe('');
     // PTY not yet attached (attach happens on shell mount) and no transcript has
     // been written yet, so per the realigned status model worker_status is null
