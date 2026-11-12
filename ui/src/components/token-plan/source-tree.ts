@@ -81,6 +81,36 @@ export function costLeft(endpoint: Pick<LLMEndpoint, 'ownRemaining'>) {
   return cost.reduce((a, b) => (b.remaining < a.remaining ? b : a));
 }
 
+/** One window's share of a set of cost caps: what is left of what, summed only across rows judged
+ *  over the SAME window. */
+export interface WindowBudget {
+  window: string;
+  left: number;
+  limit: number;
+}
+
+const WINDOW_ORDER = ['total', 'month', 'week', 'day', 'minute'];
+
+/**
+ * The cost caps of `endpoints` (each row's `costLeft`), summed per window. A lifetime $300 and a
+ * monthly $100 are not "$400": they reset on different clocks, so adding them states a budget that
+ * exists nowhere. Lifetime first, then the longer windows before the shorter ones.
+ */
+export function costByWindow(endpoints: readonly Pick<LLMEndpoint, 'ownRemaining'>[]): WindowBudget[] {
+  const byWindow = new Map<string, WindowBudget>();
+  for (const e of endpoints) {
+    const cap = costLeft(e);
+    if (!cap) continue;
+    const window = cap.window || 'total';
+    const acc = byWindow.get(window) ?? { window, left: 0, limit: 0 };
+    acc.left += Math.max(0, cap.remaining);
+    acc.limit += cap.limit;
+    byWindow.set(window, acc);
+  }
+  const rank = (w: string) => (WINDOW_ORDER.includes(w) ? WINDOW_ORDER.indexOf(w) : WINDOW_ORDER.length);
+  return [...byWindow.values()].sort((a, b) => rank(a.window) - rank(b.window));
+}
+
 /** The budgets drawn directly from `parent`. */
 export function childrenOf(parent: LLMEndpoint, endpoints: readonly LLMEndpoint[]): LLMEndpoint[] {
   return endpoints.filter((e) => e.id !== parent.id && e.parentIds.includes(parent.id));

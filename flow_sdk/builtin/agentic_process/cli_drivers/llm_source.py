@@ -151,7 +151,9 @@ class LLMSourceError(Exception):
 # ── inventory ────────────────────────────────────────────────────────────────────
 
 
-def _device_source(worker_type: str, install: "InstallState", login: "LoginState") -> Candidate:
+def _device_source(
+    worker_type: str, install: "InstallState", login: "LoginState", stored: "LLMEndpoint | None" = None
+) -> Candidate:
     """The vendor device login for *worker_type*, judged on the STATUS record's facts.
 
     Funding never re-derives a status fact: whether the CLI is installed and whether it is
@@ -165,7 +167,8 @@ def _device_source(worker_type: str, install: "InstallState", login: "LoginState
     from flow_sdk.core.status import InstallState, LoginState  # noqa: PLC0415
 
     name = f"{worker_type} device login"
-    endpoint = LLMEndpoint.device_projection(worker_type, name=name)
+    # The stored row (its model sizes and custom names) when the user configured one; same typeid.
+    endpoint = stored if stored is not None else LLMEndpoint.device_projection(worker_type, name=name)
     typeid = str(endpoint.typeid)
 
     def verdict(
@@ -357,6 +360,11 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     spec = driver_api_auth_spec(worker_type)
     if spec is None:
         return [], None
+    # Legacy ``Capability.model_map`` sizes/custom names move onto endpoint rows first (once per
+    # process, idempotent), so the device row and key rows read below already carry them.
+    from flow_sdk.builtin.agentic_process.cli_drivers.device_endpoints import migrate_capability_model_maps
+
+    await migrate_capability_model_maps()
 
     cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
     bound = get_hub_llm_endpoint()
@@ -370,7 +378,14 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
 
     # A harness with no account of its own has no device rung to rank (``has_device_login``).
     candidates = (
-        [_device_source(worker_type, install, login_state(install, spec.has_device_login, cap))]
+        [
+            _device_source(
+                worker_type,
+                install,
+                login_state(install, spec.has_device_login, cap),
+                await LLMEndpoint.find_device(worker_type),
+            )
+        ]
         if spec.has_device_login
         else []
     )

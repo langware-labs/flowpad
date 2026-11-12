@@ -414,17 +414,6 @@ def default_size() -> str:
     return size if is_model_tier(size) else DEFAULT_LLM_SIZE
 
 
-async def _size_overrides(worker_type: str, provider: LMApiProvider | str) -> dict[str, str]:
-    """The user's per-harness overrides for this provider (``Capability.model_map``), layered over the endpoint."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
-        worker_capability_kind,
-    )
-    from flow_sdk.builtin.capability import Capability  # noqa: PLC0415
-
-    cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
-    return dict((getattr(cap, "model_map", None) or {}).get(str(provider)) or {})
-
-
 async def _fresh_hub_tiers(endpoint_typeid) -> dict[str, str]:
     """The sizes the hub serves for one endpoint NOW, read past the listing's memo; ``{}`` when unreadable."""
     from flow_sdk.instance_settings.llm_endpoint import _list_cache, fetch_hub_llm_endpoints  # noqa: PLC0415
@@ -441,13 +430,13 @@ async def _fresh_hub_tiers(endpoint_typeid) -> dict[str, str]:
     return {}
 
 
-def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: str | None, overrides: dict) -> str:
+def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: str | None) -> str:
     """The model a funded spawn runs: the slug the ENDPOINT declares for the size, never a code default.
 
     A size (``sm``/``md``/``lg``, the harness's own word for one such as claude's ``haiku``, or nothing
     at all -> the preferred default size) reads ``sizes[size]`` -- the endpoint's own map, which for a hub
-    endpoint is the size inherited down its chain. A name the user mapped in ``Capability.model_map``
-    (a size or a custom name such as ``coding``) runs that mapping first. A size the endpoint does not declare is refused in words -- a
+    endpoint is the size inherited down its chain. A custom name the endpoint declares beside its sizes
+    (such as ``coding``) runs the model it names. A size the endpoint does not declare is refused in words -- a
     guessed model is how a worker ended up silently answered by another vendor. Anything else is a
     model the caller named, and runs as named.
     """
@@ -457,12 +446,12 @@ def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: 
     def spelled(slug: str) -> str:
         return slug if slug.startswith(spec.slug_prefix) else f"{spec.slug_prefix}{slug}"
 
-    if tier and not is_model_tier(tier) and overrides.get(tier):
-        return spelled(overrides[tier])  # a custom name the user mapped
+    if tier and not is_model_tier(tier) and tier not in spec.native_tiers and sizes.get(tier):
+        return spelled(sizes[tier])  # a custom name the endpoint declares
     size = spec.native_tiers.get(tier, tier) if tier else default_size()
     if not is_model_tier(size):
         return tier  # a named model
-    slug = overrides.get(size) or sizes.get(size)
+    slug = sizes.get(size)
     if not slug:
         where = source.endpoint_typeid or source.name or "this endpoint"
         if tier:
@@ -531,8 +520,8 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     that: the user names a row from the picker's own list and wants the binding for it, so the
     recipe must be reachable without inventing a fake process to carry it.
 
-    DEVICE sources inject no credentials. Their ``Capability.model_map['device']``
-    overrides return a model-only binding; otherwise native aliases/defaults apply.
+    DEVICE sources inject no credentials. The sizes and custom names set on the device login's
+    own endpoint row return a model-only binding; otherwise native aliases/defaults apply.
 
     *tier* is the ``sm``/``md``/``lg`` key (or a literal slug); ``None`` means the default size from
     preferences (``preferences.llm.default_size``).
@@ -546,13 +535,15 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
 
     endpoint, source = candidate
     if endpoint.kind == LLMEndpointKind.DEVICE:
-        overrides = await _size_overrides(worker_type, LLMEndpointKind.DEVICE.value)
-        selected = overrides.get(tier or default_size())
+        from flow_sdk.builtin.agentic_process.cli_drivers.device_endpoints import device_tiers  # noqa: PLC0415
+
+        sizes = await device_tiers(worker_type)
+        selected = sizes.get(tier or default_size())
         if tier and is_model_tier(tier) and not selected and tier not in spec.native_tiers.values():
             raise WorkerSpawnError(
                 worker_type,
-                f"Model size {tier!r} has no device mapping for {worker_type}; configure "
-                "Capability.model_map['device'] or name a concrete model",
+                f"Model size {tier!r} has no device mapping for {worker_type}; set the model sizes "
+                f"on the {worker_type} device login endpoint, or name a concrete model",
             )
         return WorkerApiAuth(model_slug=selected) if selected else None
 
@@ -605,7 +596,16 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
         # The sizes above are a copy (the listing's memo, or what the hub pushed when this box was bound);
         # a pool's sizes set since then reach a spawn only through a fresh read of the hub's listing.
         sizes = {**sizes, **await _fresh_hub_tiers(source.endpoint_typeid)}
-    slug = _slug_for(worker_type, spec, sizes, source, tier, await _size_overrides(worker_type, provider))
+    if not is_hub:
+        # The legacy per-harness overrides land on this key row; migrate before reading its sizes.
+        from flow_sdk.builtin.agentic_process.cli_drivers.device_endpoints import (  # noqa: PLC0415
+            migrate_capability_model_maps,
+        )
+
+        await migrate_capability_model_maps()
+        if endpoint.secret_name and (fresh := await type(endpoint).find_by_secret(endpoint.secret_name)):
+            sizes = dict(fresh.tiers or {})
+    slug = _slug_for(worker_type, spec, sizes, source, tier)
     env = {**binding.base_env, binding.token_env_var: key}
     if spec.max_output_env_var:
         env[spec.max_output_env_var] = str(FUNDED_MAX_OUTPUT_TOKENS)

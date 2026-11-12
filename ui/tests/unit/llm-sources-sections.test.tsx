@@ -137,7 +137,7 @@ describe('LLM sources — three tabs over one table', () => {
     expect(local.textContent).toContain('****ab12');
     expect(local.querySelector('[data-testid="llm-row-limit-cost_usd_total"]')?.textContent).toContain('20');
     expect(screen.queryByTestId(`llm-row-${HUB_ID}`)).toBeNull();
-    expect(screen.getByTestId('llm-new-endpoint').textContent).toContain('New API key');
+    expect(screen.getByTestId('llm-new-endpoint').textContent).toContain('New endpoint');
     expect(screen.getByTestId(`llm-edit-${LOCAL_ID}`)).toBeTruthy();
     fireEvent.click(local);
     expect(h.openPage).toHaveBeenCalledWith(PageId.DESK, ViewType.LLM_SOURCES, `keys/${LOCAL_ID}`);

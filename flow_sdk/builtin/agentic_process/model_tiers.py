@@ -1,8 +1,8 @@
 """Worker-agnostic model **tiers** (sm / md / lg) → per-worker selection.
 
 A caller picks a size instead of a vendor model name. Claude's CLI owns native
-size aliases; other device logins use ``Capability.model_map['device']`` at
-spawn binding. An unmapped size is rejected, never silently replaced by the
+size aliases; other device logins use the sizes set on their device-login endpoint
+row at spawn binding. An unmapped size is rejected, never silently replaced by the
 vendor default. Omitting the model still lets the vendor choose.
 
 Resolution is authoritative on the backend (driver ``cli_options``), so a tier
@@ -61,7 +61,7 @@ def resolve_model_tier(tier_map: Mapping[str, str | None], model: str | None) ->
     resolved = tier_map.get(model, model)
     if is_model_tier(model) and (not resolved or resolved == model):
         raise ValueError(
-            f"Model size {model!r} has no mapping for this worker; configure "
-            "Capability.model_map['device'] or name a concrete model"
+            f"Model size {model!r} has no mapping for this worker; set "
+            "the model sizes on the device login endpoint or name a concrete model"
         )
     return resolved

@@ -10,6 +10,7 @@
 import { LLM_MODEL_SIZES, type LLMChainTier, type LLMEndpointTiers, type LLMModelSize } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 
+import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 
 export interface TiersEditorProps {
@@ -20,11 +21,15 @@ export interface TiersEditorProps {
   /** What each size resolves to down the chain today, for the "Inherit" label. */
   effective?: Partial<Record<LLMModelSize, LLMChainTier>>;
   disabled?: boolean;
+  /** Type a model instead of picking one — for an endpoint with no catalog to pick from (a device
+   *  login). Empty = no model set here; `emptyLabel` says what runs then. */
+  freeText?: boolean;
+  emptyLabel?: string;
 }
 
 const INHERIT = '';
 
-export function TiersEditor({ value, onChange, models, effective, disabled }: TiersEditorProps) {
+export function TiersEditor({ value, onChange, models, effective, disabled, freeText, emptyLabel }: TiersEditorProps) {
   const { t } = useLingui();
   const label: Record<LLMModelSize, string> = { sm: t`Small`, md: t`Medium`, lg: t`Large` };
 
@@ -41,32 +46,44 @@ export function TiersEditor({ value, onChange, models, effective, disabled }: Ti
             <Label htmlFor={`tier-${size}`} className="text-xs">
               {label[size]} <span className="text-muted-foreground">({size})</span>
             </Label>
-            <div className="space-y-0.5">
-              <select
+            {freeText ? (
+              <Input
                 id={`tier-${size}`}
                 data-testid={`tier-${size}`}
-                className="h-8 w-full rounded-md border bg-background px-2 text-sm"
-                value={own ?? INHERIT}
+                className="h-8"
+                value={own ?? ''}
+                placeholder={emptyLabel}
                 disabled={disabled}
                 onChange={(e) => onChange({ ...value, [size]: e.target.value || null })}
-              >
-                <option value={INHERIT}>{t`Inherit`}</option>
-                {options.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
-              {!own && (
-                <p className="text-[11px] text-muted-foreground" data-testid={`tier-${size}-inherited`}>
-                  {inherited?.model ? (
-                    <Trans>Inherits {inherited.model}</Trans>
-                  ) : (
-                    (inherited?.reason ?? <Trans>No model declared up the chain</Trans>)
-                  )}
-                </p>
-              )}
-            </div>
+              />
+            ) : (
+              <div className="space-y-0.5">
+                <select
+                  id={`tier-${size}`}
+                  data-testid={`tier-${size}`}
+                  className="h-8 w-full rounded-md border bg-background px-2 text-sm"
+                  value={own ?? INHERIT}
+                  disabled={disabled}
+                  onChange={(e) => onChange({ ...value, [size]: e.target.value || null })}
+                >
+                  <option value={INHERIT}>{t`Inherit`}</option>
+                  {options.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+                {!own && (
+                  <p className="text-[11px] text-muted-foreground" data-testid={`tier-${size}-inherited`}>
+                    {inherited?.model ? (
+                      <Trans>Inherits {inherited.model}</Trans>
+                    ) : (
+                      (inherited?.reason ?? <Trans>No model declared up the chain</Trans>)
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         );
       })}

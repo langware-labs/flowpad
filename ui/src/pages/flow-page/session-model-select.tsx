@@ -20,9 +20,31 @@ export function useAvailableSizes(worker: string | null | undefined): readonly s
     if (!status || !worker) return null;
     const kind = Object.keys(status.resolved ?? {}).find((k) => workerOf(k) === worker);
     const pick = kind ? status.resolved[kind] : null;
-    const tiers = pick ? (endpointOf(status, pick)?.tiers ?? {}) : {};
+    const endpoint = pick ? endpointOf(status, pick) : null;
+    // A device login's sizes refine the vendor CLI's own (claude names all three natively): the
+    // backend settles an unset one, so the picker holds nothing back for it.
+    if (endpoint?.kind === 'device') return null;
+    const tiers = endpoint?.tiers ?? {};
     const offered = SIZES.filter((size) => !!tiers[size]);
     return offered.length ? offered : null;
+  }, [status, worker]);
+}
+
+/**
+ * The custom named models (`coding`, …) the endpoint funding `worker` declares beside its sizes —
+ * any `tiers` key that is not a size (nor the embedding slot). A device login is an endpoint row
+ * of its own, so its custom names come from the same place.
+ */
+export function useCustomModelNames(worker: string | null | undefined): string[] {
+  const { status } = useLlmSources();
+  return useMemo(() => {
+    if (!status || !worker) return [];
+    const kind = Object.keys(status.resolved ?? {}).find((k) => workerOf(k) === worker);
+    const pick = kind ? status.resolved[kind] : null;
+    const tiers: Record<string, string | null | undefined> = pick ? (endpointOf(status, pick)?.tiers ?? {}) : {};
+    return Object.keys(tiers).filter(
+      (name) => !!tiers[name] && !(SIZES as readonly string[]).includes(name) && name !== 'embedding',
+    );
   }, [status, worker]);
 }
 
@@ -46,7 +68,9 @@ export function SessionModelSelect({
   workerType?: string | null;
 }) {
   const agent = useLaunchingAgent(activeProcess);
-  const availableSizes = useAvailableSizes(workerType ?? activeProcess?.worker_type ?? 'claude');
+  const worker = workerType ?? activeProcess?.worker_type ?? 'claude';
+  const availableSizes = useAvailableSizes(worker);
+  const customNames = useCustomModelNames(worker);
   const pinned = agent?.model ? normalizeVibeModelTier(agent.model) : null;
   return (
     <VibeModelSelect
@@ -55,6 +79,7 @@ export function SessionModelSelect({
       disabled={disabled}
       availableSizes={availableSizes}
       pinnedSize={pinned}
+      customNames={customNames}
     />
   );
 }

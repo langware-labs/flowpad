@@ -7,6 +7,9 @@ Endpoints:
                                (key: stored + auto-validated; config: the row's name/base_url/tiers/limits/filters)
   POST   /lm_keys/test       → body {provider}      → {valid, message}
   GET    /lm_keys/models/{provider} → [{id, name}]  (model catalog for the mapping picker)
+  GET    /lm_keys/device     → [endpoint wire]      (one device-login endpoint row per harness)
+  POST   /lm_keys/device     → body {harness, config: {tiers, name?}} → {ok: True, endpoint_id}
+                               (tiers REPLACE the row's sizes + custom names; empty values clear)
   DELETE /lm_keys/{provider} → {ok: True}
 
 Reading a key value is intentionally not exposed: the UI must never see plaintext
@@ -15,6 +18,7 @@ keys. In-process callers (workers) read via ``get_lm_api`` in the SDK.
 
 import logging
 
+from flow_sdk.builtin.agentic_process.cli_drivers.device_endpoints import configure_device, device_endpoint_rows
 from flow_sdk.builtin.llm_endpoint import LM_SECRET_PREFIX, LLMEndpoint, LLMEndpointConfig
 from flow_sdk.cli.auth.lm_api_keys import (
     delete_lm_api,
@@ -51,6 +55,9 @@ async def lm_keys_action() -> ApiResponse:
         if method == "GET":
             if sub_path == "":
                 return ApiSuccessResponse(data=list_lm_api())
+            if sub_path == "device":
+                rows = await device_endpoint_rows()
+                return ApiSuccessResponse(data=[row.to_wire() for row in rows])
             # GET /lm_keys/models/<provider> → the provider's model catalog.
             if sub_path.startswith("models/"):
                 provider = _parse_provider(sub_path.removeprefix("models/"))
@@ -61,6 +68,14 @@ async def lm_keys_action() -> ApiResponse:
 
         if method == "POST":
             payload = await request_info.get_post_data() or {}
+            if sub_path == "device":
+                # A device login's endpoint row: its model sizes and custom names, no key.
+                harness = str(payload.get("harness") or "").strip()
+                if not harness:
+                    return ApiFailResponse(message="harness is required")
+                config = payload.get("config") or {}
+                row = await configure_device(harness, dict(config.get("tiers") or {}), name=config.get("name"))
+                return ApiSuccessResponse(data={"ok": True, "endpoint_id": str(row.id)})
             raw = (payload.get("provider") or "").strip()
             if not raw:
                 return ApiFailResponse(message="provider is required")

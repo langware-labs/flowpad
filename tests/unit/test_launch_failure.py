@@ -71,7 +71,7 @@ def test_a_budget_without_the_model_size_is_not_an_install():
     spec, budget = NS(native_tiers={}, slug_prefix=""), NS(endpoint_typeid="llm_endpoint-x", name="")
     for tier in ("lg", None):  # a size asked for (mismatch) / the default size, undeclared
         with pytest.raises(base.WorkerSpawnError) as refused:
-            api_auth._slug_for("claude", spec, {}, budget, tier, {})
+            api_auth._slug_for("claude", spec, {}, budget, tier)
         wire = LaunchError.classify(refused.value).wire()
         assert (wire["code"], wire["health"], wire["fix"]) == ("model_unavailable", "config_error", "ask_owner")
     assert LaunchError.classify(base.WorkerSpawnError("claude", "not installed")).code == "not_installed"

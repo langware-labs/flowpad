@@ -87,6 +87,6 @@ def test_an_agent_written_for_claude_asks_deepagents_for_the_same_size():
     spec = driver_api_auth_spec("deepagents")
     source = SimpleNamespace(endpoint_typeid="llm_endpoint-x", name="budget")
 
-    assert _slug_for("deepagents", spec, {"sm": "google/gemini-3.1-pro-preview"}, source, "haiku", {}).endswith(
+    assert _slug_for("deepagents", spec, {"sm": "google/gemini-3.1-pro-preview"}, source, "haiku").endswith(
         "google/gemini-3.1-pro-preview"
     )

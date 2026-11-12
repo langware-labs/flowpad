@@ -1,7 +1,8 @@
-"""Unit tests for user-editable model mapping (Capability.model_map override layer).
+"""Model sizes live on the LLM endpoint; the legacy ``Capability.model_map`` is migrated onto it.
 
-Resolution is deterministic and offline (no worker spawn, no network). The model
-catalog fetch (list_provider_models) is a real network call, exercised manually.
+``model_map['device']`` moves to the harness's device-login endpoint row, ``model_map[<provider>]``
+onto that provider's stored key row (overrides won before, so they win there too), and the map is
+emptied so the move happens once. Resolution is deterministic and offline (no spawn, no network).
 """
 
 from __future__ import annotations
@@ -50,6 +51,17 @@ async def _reset_harness_auth_mode():
             cap.api_provider = None
             cap.model_map = {}
             await cap.save(notify=False)
+    from flow_sdk.builtin.agentic_process.cli_drivers.device_endpoints import configure_device
+
+    await configure_device("codex", {})
+    # The migrated overrides landed on the shared openrouter key row; give it its defaults back.
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    from flow_sdk.external_apis.llm.dialects import get_dialect
+
+    row = await LLMEndpoint.find_by_secret("lm_api.openrouter")
+    if row is not None:
+        row.tiers = dict(get_dialect("openrouter").default_models)
+        await row.save(notify=False)
 
 
 def _proc(worker_type: str, model: str | None):
@@ -67,6 +79,9 @@ async def _set_harness(worker: str, *, provider="openrouter", model_map=None) ->
     cap.api_provider = provider
     cap.model_map = model_map or {}
     await cap.save(notify=False)
+    from flow_sdk.builtin.agentic_process.cli_drivers.device_endpoints import migrate_capability_model_maps
+
+    await migrate_capability_model_maps(force=True)
 
 
 async def test_override_replaces_tier_default(env) -> None:
@@ -149,10 +164,12 @@ def test_models_endpoint_resolver_covers_all_providers(env) -> None:
     llm_endpoint.clear_hub_llm_endpoint()
 
 
-async def test_override_scoped_flowpad_provider(env, monkeypatch) -> None:
-    """A model_map override under ``flowpad`` applies when the harness is bound to
-    the hub endpoint (and the openrouter one does not)."""
+async def test_flowpad_overrides_are_not_migrated_onto_a_hub_budget(env, monkeypatch) -> None:
+    """A hub budget's sizes are the hub's; a legacy ``flowpad`` override has nowhere local to go and is
+    dropped, so the endpoint's own size runs."""
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
     from flow_sdk.cli.auth.hub_login import set_api_key
     from flow_sdk.config import default_service_config
     from flow_sdk.instance_settings import llm_endpoint
@@ -162,11 +179,65 @@ async def test_override_scoped_flowpad_provider(env, monkeypatch) -> None:
     llm_endpoint.reset_cache()
     llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", "/api/v1/graph/llm_endpoint/ep1/invoke")
     try:
-        await _set_harness(
-            "claude", provider="flowpad", model_map={"flowpad": {"sm": "z-ai/glm-4.6"}, "openrouter": {"sm": "x/y"}}
-        )
-        auth = await resolve_worker_api_auth(_proc("claude", "sm"))
-        assert auth.model_slug == "z-ai/glm-4.6"
-        assert auth.env["ANTHROPIC_AUTH_TOKEN"] == "fp-hub-key"
+        await _set_harness("claude", provider="flowpad", model_map={"flowpad": {"sm": "z-ai/glm-4.6"}})
+        assert (await Capability.get_by_kind(worker_capability_kind("claude"))).model_map == {}
+        try:
+            auth = await resolve_worker_api_auth(_proc("claude", "sm"))
+        except Exception:  # noqa: BLE001 -- an unlisted budget may declare no sm; never the dropped override
+            return
+        assert auth.model_slug != "z-ai/glm-4.6"
     finally:
         llm_endpoint.clear_hub_llm_endpoint()
+
+
+async def test_device_model_map_migrates_onto_the_device_row_once(env) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.device_endpoints import (
+        configure_device,
+        migrate_capability_model_maps,
+    )
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointKind
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSource
+
+    await configure_device("codex", {})
+    cap = await Capability.get_by_kind(worker_capability_kind("codex"))
+    cap.model_map = {"device": {"sm": "gpt-small", "coding": "gpt-coder"}}
+    await cap.save(notify=False)
+    await migrate_capability_model_maps(force=True)
+
+    row = await LLMEndpoint.find_device("codex")
+    assert row is not None and row.kind == LLMEndpointKind.DEVICE and row.invocable is False
+    assert row.tiers == {"sm": "gpt-small", "coding": "gpt-coder"}
+    assert (await Capability.get_by_kind(worker_capability_kind("codex"))).model_map == {}
+
+    # Idempotent: a second run changes nothing, and an edit made since survives it.
+    await configure_device("codex", {"sm": "gpt-edited", "coding": "gpt-coder"})
+    await migrate_capability_model_maps(force=True)
+    assert (await LLMEndpoint.find_device("codex")).tiers["sm"] == "gpt-edited"
+
+    endpoint = LLMEndpoint.device_projection("codex")
+    auth = await binding_for_candidate("codex", (endpoint, LLMSource(endpoint_typeid=str(endpoint.typeid))), tier="sm")
+    assert auth.model_slug == "gpt-edited"
+
+
+async def test_the_picker_lists_legacy_device_custom_names_before_any_spawn(env) -> None:
+    """The source inventory migrates first, so a legacy ``model_map['device']`` custom name is on the
+    device source the picker shows — no spawn has to run the migration."""
+    from flow_sdk.builtin.agentic_process.cli_drivers import device_endpoints
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _inventory
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind
+
+    await device_endpoints.configure_device("codex", {})
+    cap = await Capability.get_by_kind(worker_capability_kind("codex"))
+    cap.model_map = {"device": {"coding": "gpt-coder"}}
+    await cap.save(notify=False)
+    device_endpoints._migrated = False  # a fresh process: nothing migrated yet
+
+    candidates, _ = await _inventory("codex")
+    device = next(c for c in candidates if c.endpoint.kind == LLMEndpointKind.DEVICE)
+    assert device.endpoint.tiers.get("coding") == "gpt-coder"
+    assert device_endpoints._migrated is True

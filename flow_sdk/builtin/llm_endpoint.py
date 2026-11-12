@@ -25,6 +25,7 @@ UI through the ``llm-endpoint`` box action, beside the binding it already report
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, Field, PrivateAttr, model_validator
@@ -57,8 +58,9 @@ class LLMEndpointKind(StrEnum):
     #: A provider key the user stored on this machine (``secret_name`` in the sod store). The
     #: only kind with a local row.
     API_KEY = "api_key"
-    #: A vendor CLI's own OAuth session. Per harness, state on ``Capability``, never persisted
-    #: here and never callable in-process — those are credentials for a terminal, not an API.
+    #: A vendor CLI's own OAuth session, per harness. The session itself lives in the vendor CLI;
+    #: the row stored here carries only what the user configures on it (its model sizes and
+    #: custom named models). Never callable in-process — a credential for a terminal, not an API.
     DEVICE = "device"
 
 
@@ -211,9 +213,9 @@ class LLMEndpoint(Entity):
     #: ``{sm, md, lg, embedding}`` model slugs for this credential. Per-credential, not
     #: per-harness: the same map serves a spawned worker and an in-process call.
     tiers: dict[str, str] = APIField(default_factory=dict, sharing=Sharing.PRIVATE)
-    #: DEVICE only: which harness's login this projects. Runtime-only — device rows are derived
-    #: from ``Capability`` on every read and never stored.
-    harness: str = APIField(default="", persist=Persist.FALSE)
+    #: DEVICE only: which harness's login this row configures (``claude``, ``codex``, ...). Stored:
+    #: it is the device row's natural key (``find_device``).
+    harness: str = APIField(default="")
     #: Whether the backend itself can call this endpoint. False for DEVICE.
     invocable: bool = APIField(default=True, persist=Persist.FALSE)
     #: Whether this box's user may CHANGE this budget, from the hub's own permission expansion.
@@ -270,6 +272,10 @@ class LLMEndpoint(Entity):
         Gated on ``API_KEY`` **and** an empty field, so hydrating a stored row or a hub
         projection can never have a default painted over a value that was read from disk.
         """
+        if self.kind == LLMEndpointKind.DEVICE:
+            # ``invocable`` is not persisted, so a device row read back from disk is re-told here.
+            self.invocable = False
+            return self
         if self.kind != LLMEndpointKind.API_KEY or not self.provider:
             return self
         from flow_sdk.external_apis.llm.dialects import get_dialect  # noqa: PLC0415
@@ -612,7 +618,7 @@ class LLMEndpoint(Entity):
 
     @classmethod
     def device_projection(cls, worker_type: str, *, name: str = "") -> "LLMEndpoint":
-        """A device login as an endpoint. Derived on every read, never stored.
+        """A device login as an endpoint, before (or without) its stored row (``ensure_device``).
 
         The credential is the vendor CLI's own OAuth session, which the backend can never
         spend — hence ``invocable=False``.
@@ -626,6 +632,34 @@ class LLMEndpoint(Entity):
         )
 
     @classmethod
+    async def find_device(cls, harness: str) -> "LLMEndpoint | None":
+        """The stored row for *harness*'s device login, or ``None`` when nothing was configured."""
+        if not harness:
+            return None
+        rows = await cls.get_all({"kind": LLMEndpointKind.DEVICE.value, "harness": harness})
+        return rows[0] if rows else None
+
+    @classmethod
+    async def ensure_device(cls, harness: str) -> "LLMEndpoint":
+        """The device row for *harness*, created on first need.
+
+        Minted with the projection's id so the row and the source the picker lists
+        (``device_projection``) are one typeid: a pin made before the row existed still names it.
+        """
+        existing = await cls.find_device(harness)
+        if existing is not None:
+            return existing
+        endpoint = cls.device_projection(harness)
+        await endpoint.save()
+        return endpoint
+
+    @classmethod
+    async def device_endpoints(cls) -> dict[str, "LLMEndpoint"]:
+        """Every stored device row, keyed by harness."""
+        rows = await cls.get_all({"kind": LLMEndpointKind.DEVICE.value})
+        return {row.harness: row for row in rows if row.harness}
+
+    @classmethod
     async def key_endpoints(cls) -> dict[str, "LLMEndpoint"]:
         """Every local key endpoint, keyed by secret name.
 
@@ -636,14 +670,28 @@ class LLMEndpoint(Entity):
         rows = await cls.get_all({"kind": LLMEndpointKind.API_KEY.value})
         return {row.secret_name: row for row in rows if row.secret_name}
 
-    async def save(self, owner=None, notify: bool = True) -> "LLMEndpoint":
-        """Only local key endpoints have rows.
+    @classmethod
+    async def stored_key_roots(cls, providers: Iterable[str]) -> list["LLMEndpoint"]:
+        """This machine's key roots: one per provider in *providers* (those with a stored key).
 
-        A hub endpoint is the hub's row and a device login is the vendor CLI's session; storing
-        either here would create a second copy that can only drift from the thing it mirrors.
+        The row when one exists, else the provider's ``key_projection`` -- so a key is a root
+        whatever harness can spend it. Deliberately NOT derived from the harness offers: those
+        exist only for providers some harness supports, and a stored key no harness speaks to
+        vanished from the API keys table while still being counted.
         """
-        if self.kind != LLMEndpointKind.API_KEY:
-            raise ValueError(
-                f"an {self.kind} endpoint is not stored on this box — only api_key endpoints have local rows"
-            )
+        rows = await cls.key_endpoints()
+        return [
+            rows.get(f"{LM_SECRET_PREFIX}{provider}") or cls.key_projection(provider)
+            for provider in sorted(providers)
+            if provider != "flowpad"  # the hub login, never a key root
+        ]
+
+    async def save(self, owner=None, notify: bool = True) -> "LLMEndpoint":
+        """Only local endpoints have rows: stored keys, and device logins' model configuration.
+
+        A hub endpoint is the hub's row; storing it here would create a second copy that can only
+        drift from the thing it mirrors.
+        """
+        if self.kind == LLMEndpointKind.HUB:
+            raise ValueError("a hub endpoint is not stored on this box — only api_key and device endpoints have rows")
         return await super().save(owner=owner, notify=notify)

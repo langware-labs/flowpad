@@ -11,7 +11,6 @@
  */
 import type { LLMChain, LLMChainHop } from '@sdk';
 
-import { endpointTypeId } from './llm-endpoints-pointer';
 
 export type HopHealth = 'ok' | 'disabled' | 'no_credential' | 'breaker_open' | 'missing';
 
@@ -115,12 +114,12 @@ export function buildChainTree(chain: LLMChain | null | undefined): ChainTreeNod
 }
 
 /**
- * The endpoints that name `id` as a source, in list order — the downward half
- * of the graph. `sources` hold typeids, `id` is the bare uuid.
+ * The endpoints that draw on `id`, in list order — the downward half of the graph.
+ * `parentIds` is the entity's own reading of its sources (the hub's `partof` edges,
+ * bare ids); the stored `sources` field is empty on a hub listing, so it is never read here.
  */
-export function consumersOf<T extends { id: string; sources: string[] }>(id: string, all: readonly T[]): T[] {
-  const tid = endpointTypeId(id);
-  return all.filter((e) => e.sources.includes(tid));
+export function consumersOf<T extends { id: string; parentIds: string[] }>(id: string, all: readonly T[]): T[] {
+  return all.filter((e) => e.parentIds.includes(id));
 }
 
 export interface ConsumerRow<T> {
@@ -132,7 +131,7 @@ export interface ConsumerRow<T> {
  * Consumers of `id`, then their consumers, depth-first (an endpoint reached two
  * ways is listed once, at its first depth). Bounded so a stale cycle cannot loop.
  */
-export function consumerRows<T extends { id: string; sources: string[] }>(
+export function consumerRows<T extends { id: string; parentIds: string[] }>(
   id: string,
   all: readonly T[],
   maxDepth = 6,

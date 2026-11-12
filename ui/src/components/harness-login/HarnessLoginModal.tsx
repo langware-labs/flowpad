@@ -9,45 +9,38 @@
  *
  * The list is all this modal is. Signing in to an assistant is `HarnessSignInDialog`; the key
  * form and the hub endpoints are sections of LLM sources; "Details ›" on any row lands there,
- * focused on that row. Mapping (which MODEL a funded harness calls) stays a sub-view, because
- * it is a different question from what pays.
+ * focused on that row. Which MODEL each size runs is set on the endpoint itself (a device login
+ * is an endpoint row of its own, under API keys), not here.
  */
 import { i18n } from '@lingui/core';
 import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import {
-  Capability,
   capabilityManager,
   cloudManager,
   CapabilityKinds,
   HARNESS_CAPABILITY_KINDS,
   HubLogin,
   isQuietLoginError,
-  LMApiProvider,
   llmSourcesService,
-  lmKeysService,
   statusService,
-  TypeId,
-  WorkerModelTier,
   type LLMFundingStatus,
   type StatusRecord,
 } from '@sdk';
 import { usePrimaryContentReady } from '@sdk/react/primary-content';
-import { useCloudStatus, useEntity } from '@sdk/react/hooks';
+import { useCloudStatus } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Check, ChevronLeft, ChevronRight, Cloud, KeyRound, Trash2 } from 'lucide-react';
+import { Check, Cloud, KeyRound } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { Button } from '@src/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
-import { Input } from '@src/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
+import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { providerLabel } from '@src/components/llm-sources/provider-label';
 import { openLlmSources } from '@src/components/llm-sources/llm-sources-pointer';
 import { useHubRemaining } from '@src/components/llm-sources/use-hub-remaining';
 import type { CostLeftByEndpoint } from '@src/components/llm-endpoints/usage-math';
-import { useLlmSources, workerOf } from '@src/components/llm-sources/use-llm-sources';
+import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
 import { harnessStatus, refreshHarnessStatus, useStatusRecord } from '@src/components/status/use-status-record';
 import { useAssistantWikiSpace } from '@src/components/wiki-tip/assistant-wiki';
 import { WikiLabel } from '@src/components/wiki-tip/WikiLabel';
@@ -120,249 +113,6 @@ function useHarnessLoginGate() {
     };
   }, [primaryReady]);
 }
-
-const MAPPING_TIERS = [WorkerModelTier.SM, WorkerModelTier.MD, WorkerModelTier.LG] as const;
-const isTier = (name: string) => (MAPPING_TIERS as readonly string[]).includes(name);
-const TIER_LABEL: Record<string, string> = {
-  [WorkerModelTier.SM]: 'Fast (sm)',
-  [WorkerModelTier.MD]: 'Balanced (md)',
-  [WorkerModelTier.LG]: 'Accurate (lg)',
-};
-
-/** One model-slug input (autocomplete via a shared datalist + free-text).
- *  Hoisted out of MappingView so it reconciles instead of remounting on every
- *  re-render; keyed by its persisted value at the call site so it refreshes only
- *  when that value actually changes. */
-function MappingModelInput({
-  name,
-  value,
-  listId,
-  onCommit,
-}: {
-  name: string;
-  value: string;
-  listId: string;
-  onCommit: (slug: string) => void;
-}) {
-  const { t } = useLingui();
-  return (
-    <Input
-      defaultValue={value}
-      list={listId}
-      placeholder={isTier(name) ? t`Default` : t`model slug`}
-      className="h-9"
-      data-testid={`mapping-model-${name}`}
-      onBlur={(e) => e.target.value.trim() !== value && onCommit(e.target.value)}
-      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-    />
-  );
-}
-
-/** The Mapping window: edit the tier→model mapping per (harness, provider),
- *  layered over the code defaults, and add custom named options. */
-function MappingView({ onBack }: { onBack: () => void }) {
-  const { t } = useLingui();
-  const [kind, setKind] = useState<string>(HARNESS_CAPABILITY_KINDS[0]);
-  const { status: record } = useStatusRecord();
-  const h = harnessStatus(record, kind);
-  const providers = useMemo(
-    () => [...(h?.key_providers.length ? h.key_providers : [LMApiProvider.OpenRouter]), LMApiProvider.FlowPad as string],
-    [h],
-  );
-  const [provider, setProvider] = useState<string>(providers[0]);
-  // Keep provider valid when the harness changes.
-  useEffect(() => {
-    if (!providers.includes(provider)) setProvider(providers[0]);
-  }, [providers, provider]);
-
-  // Live capability for the selected harness (for its model_map).
-  const snapshot = capabilityManager.getSnapshot(kind);
-  const capId = snapshot.capability?.id ?? null;
-  const typeId = useMemo(() => (capId ? new TypeId(Capability.type, capId) : null), [capId]);
-  const { data: capability } = useEntity<Capability>(typeId, { enabled: !!typeId, watch: true });
-  const modelMap = useMemo(() => capability?.model_map ?? {}, [capability?.model_map]);
-  const providerMap: Record<string, string> = modelMap[provider] ?? {};
-  const customNames = Object.keys(providerMap).filter((n) => !isTier(n));
-
-  // Model catalog for the picker (autocomplete + free-text).
-  const [catalog, setCatalog] = useState<{ id: string; name: string }[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    lmKeysService
-      .listModels(provider as LMApiProvider)
-      .then((m) => !cancelled && setCatalog(m))
-      .catch(() => !cancelled && setCatalog([]));
-    return () => {
-      cancelled = true;
-    };
-  }, [provider]);
-
-  const [newName, setNewName] = useState('');
-  const [newModel, setNewModel] = useState('');
-
-  const writeProviderMap = useCallback(
-    async (next: Record<string, string>) => {
-      const full = { ...modelMap };
-      if (Object.keys(next).length) full[provider] = next;
-      else delete full[provider];
-      await capabilityManager.setModelMap(kind, full);
-    },
-    [kind, provider, modelMap],
-  );
-
-  const setEntry = (name: string, slug: string) => {
-    const next = { ...providerMap };
-    if (slug.trim()) next[name] = slug.trim();
-    else delete next[name];
-    void writeProviderMap(next);
-  };
-
-  const listId = `mapping-catalog-${provider}`;
-
-  return (
-    <div
-      style={{ animation: 'hlIn 260ms cubic-bezier(0.16,1,0.3,1) both' }}
-      className="flex max-h-[80vh] flex-col overflow-y-auto"
-    >
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-4 inline-flex w-fit items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ChevronLeft className="h-4 w-4" />
-        <Trans>Back</Trans>
-      </button>
-
-      <DialogTitle className="text-lg font-semibold">
-        <Trans>Model mapping</Trans>
-      </DialogTitle>
-      <DialogDescription className="mt-1 text-sm text-muted-foreground">
-        <Trans>Choose which model each tier uses, or add your own — per assistant and provider.</Trans>
-      </DialogDescription>
-
-      <div className="mt-4 flex gap-2">
-        <Select value={kind} onValueChange={setKind}>
-          <SelectTrigger className="h-9 flex-1" data-testid="mapping-harness-select">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {HARNESS_CAPABILITY_KINDS.map((k) => (
-              <SelectItem key={k} value={k}>
-                {harnessStatus(record, k)?.label || workerOf(k)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={provider} onValueChange={setProvider}>
-          <SelectTrigger className="h-9 w-[130px]" data-testid="mapping-provider-select">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {providers.map((p) => (
-              <SelectItem key={p} value={p}>
-                {providerLabel(p)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <datalist id={listId}>
-        {catalog.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.name}
-          </option>
-        ))}
-      </datalist>
-
-      <div className="mt-4 flex flex-col gap-2">
-        {MAPPING_TIERS.map((tier) => (
-          <div key={tier} data-testid={`mapping-row-${tier}`} className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-sm text-muted-foreground">{TIER_LABEL[tier]}</span>
-            <MappingModelInput
-              key={providerMap[tier] ?? ''}
-              name={tier}
-              value={providerMap[tier] ?? ''}
-              listId={listId}
-              onCommit={(s) => setEntry(tier, s)}
-            />
-            {providerMap[tier] && (
-              <button
-                type="button"
-                aria-label={t`Reset to default`}
-                data-testid={`mapping-reset-${tier}`}
-                className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => setEntry(tier, '')}
-              >
-                <Trans>Reset</Trans>
-              </button>
-            )}
-          </div>
-        ))}
-
-        {customNames.map((name) => (
-          <div key={name} data-testid={`mapping-row-${name}`} className="flex items-center gap-2">
-            <span className="w-28 shrink-0 truncate text-sm font-medium">{name}</span>
-            <MappingModelInput
-              key={providerMap[name] ?? ''}
-              name={name}
-              value={providerMap[name] ?? ''}
-              listId={listId}
-              onCommit={(s) => setEntry(name, s)}
-            />
-            <button
-              type="button"
-              aria-label={t`Remove option`}
-              data-testid={`mapping-delete-${name}`}
-              className="shrink-0 text-muted-foreground hover:text-destructive"
-              onClick={() => setEntry(name, '')}
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* Add a custom named option. */}
-      <div className="mt-4 flex items-end gap-2 border-t border-border/60 pt-3">
-        <div className="flex flex-1 flex-col gap-1">
-          <span className="text-xs text-muted-foreground">
-            <Trans>New option</Trans>
-          </span>
-          <div className="flex gap-2">
-            <Input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder={t`name (e.g. coding)`}
-              className="h-9 w-32"
-              data-testid="mapping-new-name"
-            />
-            <Input
-              value={newModel}
-              onChange={(e) => setNewModel(e.target.value)}
-              list={listId}
-              placeholder={t`model slug`}
-              className="h-9"
-              data-testid="mapping-new-model"
-            />
-          </div>
-        </div>
-        <Button
-          disabled={!newName.trim() || !newModel.trim() || isTier(newName.trim())}
-          data-testid="mapping-add"
-          onClick={() => {
-            setEntry(newName.trim(), newModel.trim());
-            setNewName('');
-            setNewModel('');
-          }}
-        >
-          <Trans>Add</Trans>
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 
 /** The button label per action; `details` keeps the row's default "Details ›". */
 const ACTION_LABEL: Record<PillAction, MessageDescriptor | null> = {
@@ -601,12 +351,11 @@ function EndpointsRow({ funding, left }: Pick<Facts, 'funding' | 'left'>) {
  *
  * That boundary does two jobs. The root is mounted at app start, so reading funding and the hub
  * chains there would cost every session a hub round-trip for a dialog most never open; here the
- * reads start when it opens. And a fresh mount IS the reset: the Mapping sub-view and the
- * "just connected" banner start clean on every real open, while a redundant `open()` (the LLM
+ * reads start when it opens. And a fresh mount IS the reset: the
+ * "just connected" banner starts clean on every real open, while a redundant `open()` (the LLM
  * setup route calls it from a mount effect) re-renders this component and discards nothing.
  */
 function HarnessLoginModalBody({ fresh, dismiss }: { fresh: boolean; dismiss: () => void }) {
-  const [showMapping, setShowMapping] = useState(false);
   // A row just finished connecting — confirmed IN PLACE rather than by closing, so the person
   // can see it landed before deciding whether they are done here or have more to connect.
   const [justConnected, setJustConnected] = useState<string | null>(null);
@@ -642,7 +391,6 @@ function HarnessLoginModalBody({ fresh, dismiss }: { fresh: boolean; dismiss: ()
   }, []);
   const onConnected = useCallback(() => setJustConnected(i18n._(msg`Signed in to FlowPad.`)), []);
 
-  if (showMapping) return <MappingView onBack={() => setShowMapping(false)} />;
   return (
     <div className="flex flex-col">
       <DialogTitle className="text-lg font-semibold">
@@ -698,19 +446,6 @@ function HarnessLoginModalBody({ fresh, dismiss }: { fresh: boolean; dismiss: ()
         <EndpointsRow funding={funding} left={left} />
       </div>
 
-      {/* Mapping stays a link, not a row: it configures which MODEL a funded harness
-          calls, which is a different question from what pays for it. */}
-      <div className="mt-3 flex justify-end">
-        <button
-          type="button"
-          data-testid="open-mapping"
-          onClick={() => setShowMapping(true)}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <Trans>Mapping</Trans>
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
     </div>
   );
 }

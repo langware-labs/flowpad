@@ -62,6 +62,12 @@ export interface ProviderSpec {
   /** What every key from this provider starts with. `sk-` is OpenAI's and is also a PREFIX of the
    *  other two, so it cannot identify a key on its own — see `keyShapeProblem`. */
   keyPrefix: string;
+  /** Whether a key for this provider can be stored on this machine (an `LMApiProvider`); the rest
+   *  are hub-only roots. The endpoint dialog's provider list is filtered by it. */
+  supportsLocal: boolean;
+  /** "Models allowed" a new endpoint on this provider starts with (one glob per line): the families
+   *  it serves, matching the hub's defaults for a new budget on it. */
+  defaultModelsAllow: string;
 }
 
 export const PROVIDERS: readonly ProviderSpec[] = [
@@ -72,6 +78,8 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     defaultBaseUrl: 'https://openrouter.ai/api',
     keyPlaceholder: 'sk-or-…',
     keyPrefix: 'sk-or-',
+    supportsLocal: true,
+    defaultModelsAllow: MODELS_ALLOW_DEFAULT,
   },
   {
     id: 'anthropic',
@@ -80,6 +88,8 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     defaultBaseUrl: 'https://api.anthropic.com',
     keyPlaceholder: 'sk-ant-…',
     keyPrefix: 'sk-ant-',
+    supportsLocal: true,
+    defaultModelsAllow: MODELS_ALLOW_DEFAULT,
   },
   {
     id: 'openai',
@@ -88,6 +98,8 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     defaultBaseUrl: 'https://api.openai.com',
     keyPlaceholder: 'sk-…',
     keyPrefix: 'sk-',
+    supportsLocal: true,
+    defaultModelsAllow: MODELS_ALLOW_DEFAULT,
   },
   {
     // The key is a whole service-account JSON file, not a branded string: Vertex refuses a plain API
@@ -98,6 +110,9 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     defaultBaseUrl: VERTEX_BASE_URL,
     keyPlaceholder: '{ "type": "service_account", … }',
     keyPrefix: '{',
+    supportsLocal: false,
+    // The hub opens the Gemini family on a new Vertex budget (core/llm/vertex.py CLIENT_DEFAULTS).
+    defaultModelsAllow: 'google/gemini-*',
   },
 ];
 
@@ -119,12 +134,29 @@ export function vertexProjectOf(key: string): string | null {
   }
 }
 
+/**
+ * Whether `key` is shaped like a Google Cloud API key: `AQ.` + ~50 characters (keys bound to a
+ * service account) or the classic `AIza` + 35. The hub sends such a key as `x-goog-api-key`, which
+ * Vertex honours for Gemini and Model Garden but NOT for Claude's `rawPredict` — only the
+ * service-account JSON reaches every model.
+ */
+export function isVertexApiKey(key: string): boolean {
+  const k = key.trim();
+  return /^(AQ\.|AIza)\S+$/.test(k) && k.length >= MIN_KEY_LENGTH;
+}
+
+/** A Vertex root's `base_url` for a project, in the global location. */
+export function vertexBaseUrl(project: string): string {
+  return `${VERTEX_BASE_URL}/projects/${project.trim()}/locations/global`;
+}
+
 /** The `base_url` a new root is created with: as given, except a Vertex root still on the bare
- *  default, which gets the key's own project in the global location. */
-export function rootBaseUrl(provider: string, baseUrl: string, key: string): string {
+ *  default, which gets the key's own project (or, for an API key, which carries none, the
+ *  `project` typed beside it) in the global location. */
+export function rootBaseUrl(provider: string, baseUrl: string, key: string, project?: string): string {
   if (provider !== 'vertex' || baseUrl.includes('/projects/')) return baseUrl;
-  const project = vertexProjectOf(key.trim());
-  return project ? `${VERTEX_BASE_URL}/projects/${project}/locations/global` : baseUrl;
+  const id = vertexProjectOf(key.trim()) ?? (project?.trim() || null);
+  return id ? vertexBaseUrl(id) : baseUrl;
 }
 
 /** The shortest a real provider key runs. Well under every provider's actual length — this catches
@@ -153,10 +185,11 @@ export function keyShapeProblem(provider: string | null | undefined, key: string
   if (!spec || !trimmed) return null;
 
   // A whole JSON file: spaces and line breaks are part of it, and no prefix brands it.
+  // Or an API key bound to a service account (Gemini + Model Garden only; see `isVertexApiKey`).
   if (spec.id === 'vertex') {
-    return vertexProjectOf(trimmed)
+    return vertexProjectOf(trimmed) || isVertexApiKey(trimmed)
       ? null
-      : msg`Paste the whole service-account JSON file from Google Cloud (IAM → Service accounts → Keys → JSON).`;
+      : msg`Paste a Google Cloud API key, or the whole service-account JSON file (IAM → Service accounts → Keys → JSON).`;
   }
   // Checked BEFORE the expected-prefix rule: OpenAI's `sk-` also prefixes the other two, so an
   // OpenRouter key pasted into an OpenAI root passes that rule and must be caught by this one. And
@@ -223,7 +256,7 @@ export function emptyDraft(kind: LLMEndpointKind = 'root'): EndpointDraft {
     // A REAL value, not a placeholder: what the field shows is what the save sends. An endpoint
     // created without touching this is narrowed to the families we actually use, rather than
     // inheriting a 400-model aggregator catalogue by saying nothing.
-    filters: { ...filtersToForm(null), models_allow: MODELS_ALLOW_DEFAULT },
+    filters: { ...filtersToForm(null), models_allow: provider.defaultModelsAllow },
     limits: limitsToForm(null),
     tiers: { ...EMPTY_LLM_TIERS },
     models: '',
@@ -237,7 +270,14 @@ export function withProvider(draft: EndpointDraft, provider: LLMEndpointProvider
   const prev = providerSpec(draft.provider);
   const next = providerSpec(provider);
   const keepUrl = draft.base_url.trim() !== '' && draft.base_url !== prev?.defaultBaseUrl;
-  return { ...draft, provider, base_url: keepUrl ? draft.base_url : (next?.defaultBaseUrl ?? '') };
+  // The same rule for "Models allowed": the previous provider's default follows the switch, an edit stays.
+  const keepAllow = draft.filters.models_allow !== prev?.defaultModelsAllow;
+  return {
+    ...draft,
+    provider,
+    base_url: keepUrl ? draft.base_url : (next?.defaultBaseUrl ?? ''),
+    filters: keepAllow ? draft.filters : { ...draft.filters, models_allow: next?.defaultModelsAllow ?? '' },
+  };
 }
 
 /**

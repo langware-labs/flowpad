@@ -49,6 +49,17 @@ describe('emptyDraft / withProvider', () => {
     const custom = withProvider({ ...emptyDraft(), base_url: 'https://proxy.example/v1' }, 'openai');
     expect(custom.base_url).toBe('https://proxy.example/v1');
   });
+
+  it('a Vertex root starts by allowing Gemini, so its Gemini sizes pass the hub', () => {
+    const d = withProvider(emptyDraft(), 'vertex');
+    expect(d.filters.models_allow).toBe('google/gemini-*');
+    expect(withProvider(d, 'openrouter').filters.models_allow).toBe(emptyDraft().filters.models_allow);
+  });
+
+  it('a hand-edited Models allowed survives a provider switch', () => {
+    const edited = { ...emptyDraft(), filters: { ...emptyDraft().filters, models_allow: 'z-ai/glm-*' } };
+    expect(withProvider(edited, 'vertex').filters.models_allow).toBe('z-ai/glm-*');
+  });
 });
 
 describe('validateDraft — root', () => {

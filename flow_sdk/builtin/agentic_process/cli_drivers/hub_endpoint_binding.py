@@ -145,7 +145,7 @@ async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope())
     Funding facts only: whether FlowPad is signed in, which keys are stored, and who the hub
     user is are STATUS facts (``core.status``) and are read there, not repeated here.
     """
-    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
     from flow_sdk.core.status.build import stored_keys  # noqa: PLC0415
 
     keys = stored_keys()  # only providers with a key stored here: the views also offer keyless placeholders
@@ -164,11 +164,11 @@ async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope())
         decision=await _decision_api(refresh=refresh),
         notes=notes,
         endpoints=endpoints,
-        # One list for the endpoint tables: the hub's budgets AND this machine's key roots. The key
-        # roots are the ones the per-harness views already read (``endpoints``) -- no second query.
-        # Readers that want only one side filter by ``kind`` (``hubOffers`` does).
+        # One list for the endpoint tables: the hub's budgets AND this machine's key roots -- every
+        # stored key, not only those a harness offers (a key no harness speaks to is still a root,
+        # and the API keys tab counts it). Readers that want one side filter by ``kind``.
         available=[endpoint.to_wire() for endpoint in available]
-        + [row for row in endpoints.values() if row.get("kind") == LLMEndpointKind.API_KEY.value and row.get("provider") in keys],
+        + [row.to_wire() for row in await LLMEndpoint.stored_key_roots(keys)],
         # Harnesses whose resolved source IS the bound endpoint -- the resolver's own reading.
         active_for=[
             kind for kind, pick in resolved.items() if pick and bound_typeid and pick.endpoint_typeid == bound_typeid

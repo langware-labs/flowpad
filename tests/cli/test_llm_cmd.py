@@ -350,7 +350,10 @@ def test_user_use_never_touches_the_machines_harness_configs(recorder, tmp_path,
         result = runner.invoke(app, ["llm", "user", "use", "1"])
 
     assert result.exit_code == 0, result.output
-    assert list(tmp_path.rglob("*")) == []
+    # Flowpad's own home (``.flow``) may get the CLI-use stamp, depending on which test built the instance
+    # settings first; every other path under the patched home is a harness's config and must stay untouched.
+    flow_home = tmp_path / ".flow"
+    assert [p for p in tmp_path.rglob("*") if p != flow_home and flow_home not in p.parents] == []
     assert not [call for call in recorder.calls if call[1].endswith("/binding")]
 
 
@@ -554,7 +557,10 @@ def test_clearing_leaves_a_missing_or_foreign_file_alone(tmp_path, monkeypatch):
     spec = {"fmt": "json", "path": ".claude/settings.json", "merge": {"env": {"A": "1"}}}
 
     llm_cmd._remove_user_config("claude", spec)
-    assert list(tmp_path.rglob("*")) == []
+    # Flowpad's own home (``.flow``) may get the CLI-use stamp, depending on which test built the instance
+    # settings first; every other path under the patched home is a harness's config and must stay untouched.
+    flow_home = tmp_path / ".flow"
+    assert [p for p in tmp_path.rglob("*") if p != flow_home and flow_home not in p.parents] == []
 
     settings = tmp_path / ".claude/settings.json"
     settings.parent.mkdir(parents=True)

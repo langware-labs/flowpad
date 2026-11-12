@@ -43,6 +43,17 @@ export interface LocalEndpointConfig {
   filters?: Record<string, unknown>;
 }
 
+/** A device login's endpoint row as `GET lm_keys/device` returns it (`LLMEndpoint.to_wire`). */
+export interface DeviceEndpointWire {
+  id: string;
+  name: string;
+  kind: 'device';
+  harness: string;
+  /** Sizes (`sm`/`md`/`lg`) and custom names (any other key) → model. */
+  tiers: Record<string, string>;
+  invocable: false;
+}
+
 export class LmKeysService {
   private readonly base: string;
 
@@ -80,6 +91,21 @@ export class LmKeysService {
   /** The provider's model catalog, for the mapping picker. */
   listModels(provider: LMApiProvider): Promise<LmModel[]> {
     return apiClient.get(`${this.base}/models/${encodeURIComponent(provider)}`);
+  }
+
+  /** One endpoint row per device-login harness (claude / codex / copilot subscriptions): no key,
+   *  only the model sizes and custom named models the user set on it (`kind: device`). */
+  listDeviceEndpoints(): Promise<DeviceEndpointWire[]> {
+    if (isHubOnly()) return Promise.resolve([]);
+    return apiClient.get(`${this.base}/device`);
+  }
+
+  /** Replace a device login's sizes and custom names (an empty value clears that entry). */
+  saveDeviceEndpoint(
+    harness: string,
+    config: { tiers: Record<string, string | null>; name?: string },
+  ): Promise<{ ok: true; endpoint_id: string }> {
+    return apiClient.post(`${this.base}/device`, { harness, config });
   }
 
   deleteLmApi(provider: LMApiProvider): Promise<{ ok: true }> {
