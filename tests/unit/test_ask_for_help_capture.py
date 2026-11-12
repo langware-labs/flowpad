@@ -142,3 +142,31 @@ async def test_the_request_is_delivered_at_once_and_the_diagnosis_follows():
         release.set()
         await asyncio.gather(*afh._DIAGNOSING)
     assert len(delivered) == 2 and sorted(delivered[1]) == ["diagnosis", "help_request"], delivered
+
+
+async def test_a_title_asked_again_is_placed_once_under_the_next_free_number(tmp_path):
+    """Asking under a title the project's tasks hold starts at the next free number: each taken title cost
+    a placement that failed on the occupied folder (~0.35 s), so the fifth same-titled ask paid five."""
+    from flow_sdk.builtin.project import Project
+
+    (tmp_path / "proj").mkdir()
+    project = await Project(name=f"asks-{uuid.uuid4().hex[:6]}", fs_storage_mount_path=str(tmp_path / "proj")).save()
+    placed: list[str] = []
+    real = Task._prepare_for_storage
+
+    async def counted(self, *args, **kwargs):
+        placed.append(self.title)
+        return await real(self, *args, **kwargs)
+
+    def body():
+        return {"conversation_id": str(uuid.uuid4()), "recipient": {"kind": "person", "email": "dana@x.test"},
+                "title": "same title", "text": "help", "project_id": str(project.id)}  # fmt: skip
+
+    titles = []
+    for _ in range(3):
+        placed.clear()
+        with patch.object(Task, "_prepare_for_storage", counted):
+            response = await _ask(body())
+        titles.append((await Task.get_one({"id": response.data["task_id"]})).title)
+    assert titles == ["same title", "same title (2)", "same title (3)"]
+    assert set(placed) == {"same title (3)"}, f"the third ask tried {placed}"

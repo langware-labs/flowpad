@@ -49,7 +49,7 @@ from flow_sdk.builtin.flow_message import (
 from flow_sdk.builtin.task import Task
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.db.drivers.query import QueryFilter
+from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.request_context.methods import get_current_request_info, request_fields
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.help_request_spec import (
@@ -769,9 +769,28 @@ async def _write_task(ask: AskForHelpRequest, conv_id: str, someone) -> Task:
     mount = getattr(project, "fs_storage_mount_path", None) if project else None
     base = _task_base_title(ask) or "Help request"
     recipient = ask.people[0]
-    for n in range(1, 21):
+    titles = [base if n == 1 else f"{base} ({n})" for n in range(1, 21)]
+    # Start at the first title no task of the project holds: every taken one costs a placement that
+    # fails on the occupied folder (~0.35 s each), so the fifth same-titled ask paid five of them.
+    # The loop below still steps past a folder a task row does not account for.
+    if project is not None:
+        held = await Task.get_all(
+            QueryFilter(
+                type=Task.get_type(),
+                match=ExpressionNode(
+                    op=QueryOp.AND,
+                    operands=[
+                        ExpressionNode(op=QueryOp.EQ, operands=["project_id", str(project.id)]),
+                        ExpressionNode(op=QueryOp.IN, operands=["title", titles]),
+                    ],
+                ),
+            )
+        )
+        taken = {t.title for t in held}
+        titles = [t for t in titles if t not in taken]
+    for title in titles:
         task = Task(
-            title=base if n == 1 else f"{base} ({n})",
+            title=title,
             description=ask.text,
             kind=TaskKind.VIBE,
             assignee=recipient.email or recipient.user_id,
