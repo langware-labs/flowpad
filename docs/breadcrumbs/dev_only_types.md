@@ -1,8 +1,11 @@
 ---
+id: 8ec5d5db-cc3e-4ecd-b106-cf35c270d255
 title: A spec turns on the switches it relies on
-tags: [breadcrumb.test.dev_only_types.rules]
-description: Dev is the person's switch (not ?viewMode=dev) and the SmartNavigationLog is off by default;
-  a manual-regression spec that needs either turns it on itself instead of inheriting it from earlier specs.
+tags:
+- breadcrumb.test.dev_only_types.rules
+description: Dev is the person's switch (not ?viewMode=dev) and the SmartNavigationLog
+  is off by default; a manual-regression spec that needs either turns it on itself
+  instead of inheriting it from earlier specs.
 ---
 # A spec turns on the switches it relies on
 
