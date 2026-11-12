@@ -375,3 +375,16 @@ describe('details', () => {
     expect(chip('t0').className).not.toMatch(/(^|\s)transition-\[/);
   });
 });
+
+describe('a crowded strip still names its chips', () => {
+  // At icon density a chip renders no title text: readers (screen readers, the e2e specs) need the name on
+  // the chip itself, or every name reads as '' (manual_regression terminal/shell_tab_title_and_switch).
+  it('every icon-only chip carries its title as data-tab-title and aria-label', () => {
+    render(<Harness n={60} />);
+    act(() => resizeStrip(400));
+    const all = chips();
+    expect(all.some((c) => c.querySelector('span.font-medium'))).toBe(false); // icon density, no title text
+    expect(all.map((c) => c.getAttribute('data-tab-title'))).toEqual(make(60).map((t) => t.title));
+    expect(all.map((c) => c.getAttribute('aria-label'))).toEqual(make(60).map((t) => t.title));
+  });
+});

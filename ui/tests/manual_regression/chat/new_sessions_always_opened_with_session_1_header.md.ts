@@ -19,8 +19,12 @@ async function tabNames(page: import('@playwright/test').Page): Promise<string[]
   // empty indicator and gets filtered out, yielding an empty list).
   return page.locator('[data-testid^="tab-shell|"]').evaluateAll((els) =>
     els
-      .map((e) =>
-        [...e.querySelectorAll('span')].map((s) => (s.textContent || '').trim()).find(Boolean) || '',
+      .map(
+        (e) =>
+          // The chip's name at every density (a crowded strip renders icon-only chips, no title text).
+          e.getAttribute('data-tab-title') ||
+          [...e.querySelectorAll('span')].map((s) => (s.textContent || '').trim()).find(Boolean) ||
+          '',
       )
       .filter(Boolean),
   );

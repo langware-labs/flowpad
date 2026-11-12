@@ -17,7 +17,8 @@ import { dismissSetupModal, gotoShell, openTabViaMenu, waitForOutput } from './h
 /** Get the text of all tab labels, in order */
 async function getTabNames(page: Page): Promise<string[]> {
   return page.locator('[data-testid^="tab-"]').evaluateAll((els) =>
-    els.map((el) => (el.querySelector('span.font-medium')?.textContent ?? '').trim()),
+    // `data-tab-title`: the chip's name at every density (a crowded strip renders icon-only chips).
+    els.map((el) => (el.getAttribute('data-tab-title') ?? '').trim()),
   );
 }
 
@@ -26,7 +27,7 @@ async function getActiveTabName(page: Page): Promise<string> {
   return page.locator('[data-testid^="tab-"]').evaluateAll((els) => {
     for (const el of els) {
       if (el.getAttribute('data-active') === 'true') {
-        return (el.querySelector('span.font-medium')?.textContent ?? '').trim();
+        return (el.getAttribute('data-tab-title') ?? '').trim();
       }
     }
     return '';
@@ -51,8 +52,7 @@ async function clickTabByName(page: Page, tabName: string) {
       return actual === expected || actual.endsWith(' ' + expected) || actual.endsWith(expected);
     }
     for (const el of els) {
-      const span = el.querySelector('span.font-medium');
-      const text = (span?.textContent ?? '').trim();
+      const text = (el.getAttribute('data-tab-title') ?? '').trim();
       if (text && matches(text)) {
         return el.getAttribute('data-testid');
       }

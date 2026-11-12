@@ -13,6 +13,14 @@ test.describe('Terminal Tab Rename', () => {
     // Step 1: navigate to shell (creates a new shell and navigates to it)
     await gotoShell(page);
     await page.waitForTimeout(1_000);
+    // Double-click renames on the chip's title, which a crowded strip (tabs earlier specs left) does not
+    // render: chips go icon-only. Start from an uncrowded strip, then open the shell again.
+    const closeAll = page.getByTestId('close-all-tabs-button');
+    if (await closeAll.isVisible()) {
+      await closeAll.click();
+      await gotoShell(page);
+      await page.waitForTimeout(1_000);
+    }
 
     // Step 2: capture existing tab testids before adding a new one
     const existingTabIds = new Set(
@@ -37,7 +45,7 @@ test.describe('Terminal Tab Rename', () => {
 
     expect(newTabTestId).toBeTruthy();
     const newTab = page.locator(`[data-testid="${newTabTestId}"]`);
-    await expect(newTab).toContainText(/Tab \d+/);
+    await expect(newTab).toHaveAttribute('data-tab-title', /Tab \d+/);
 
     // Step 5: click the tab to make it active, then double-click the name span to start editing.
     // The tab contains two spans: first is the status dot (h-2 w-2), second is the name text.

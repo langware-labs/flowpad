@@ -566,6 +566,10 @@ export const TabStrip: React.FC<TabStripProps> = ({
         data-terminal-target={key}
         {...(item.dataAttributes ?? {})}
         data-active={isActive ? 'true' : undefined}
+        // The chip's name at every density: an icon-only chip renders no title text, so it is named here
+        // (screen readers, and whoever reads the strip) instead of only in its hover tooltip.
+        data-tab-title={displayTitle}
+        aria-label={iconOnly ? displayTitle : undefined}
       >
         <span
           className="relative inline-flex shrink-0 items-center justify-center"

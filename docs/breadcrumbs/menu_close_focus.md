@@ -1,8 +1,11 @@
 ---
+id: 89e041f2-7b9f-4654-b776-7e8ee4425aa5
 title: A closing row menu gives focus back only when focus is still nowhere
-tags: [breadcrumb.test.menu_close_focus.rules]
-description: F2 on a file renamed its folder. The folder's context menu (Paste) closed after its exit
-  animation, when focus was already on the file row, and its onCloseAutoFocus pulled focus back to the folder.
+tags:
+- breadcrumb.test.menu_close_focus.rules
+description: F2 on a file renamed its folder. The folder's context menu (Paste) closed
+  after its exit animation, when focus was already on the file row, and its onCloseAutoFocus
+  pulled focus back to the folder.
 ---
 # A closing row menu gives focus back only when focus is still nowhere
 

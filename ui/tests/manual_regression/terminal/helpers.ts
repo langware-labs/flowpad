@@ -306,8 +306,13 @@ export async function startClaudeSession(page: Page) {
  * in one place, never via `querySelector('span')`/`span').first()`.
  */
 export async function readTabLabel(tab: Locator): Promise<string> {
+  // `data-tab-title` names the chip at every density: on a crowded strip the chip is icon-only and
+  // renders no title text at all.
   return tab.evaluate(
-    (el) => [...el.querySelectorAll('span')].map((s) => (s.textContent || '').trim()).find(Boolean) || '',
+    (el) =>
+      el.getAttribute('data-tab-title') ||
+      [...el.querySelectorAll('span')].map((s) => (s.textContent || '').trim()).find(Boolean) ||
+      '',
   );
 }
 
