@@ -1054,6 +1054,8 @@ class Entity(DBEntity):
         import asyncio  # noqa: PLC0415
 
         candidates = cls.asset_owner_classes() if candidates is None else candidates
+        op, operand = (QueryOp.EQ, value) if isinstance(value, str) else (QueryOp.IN, list(value))
+        candidates = await cls._types_holding(candidates, ExpressionNode(op=op, operands=[field, operand]))
 
         # `return_exceptions` keeps the per-candidate resilience — one broken type
         # must not sink the fan-out — while still telling a failed probe apart
@@ -1086,6 +1088,25 @@ class Entity(DBEntity):
         return None
 
     @classmethod
+    async def _types_holding(cls, candidates: "list[type[Entity]]", match: ExpressionNode) -> "list[type[Entity]]":
+        """The ``candidates`` that hold a row matching ``match``, in their order — asked in ONE query.
+
+        A cross-type lookup asks every asset-owning type (~46), one query each, and almost all of them
+        find nothing; that fan-out was most of a synced file's cost. One statement over all their rows
+        names the few worth asking. When it cannot (a driver or a match it cannot push down, a failed
+        read) every candidate is asked, as before."""
+        if len(candidates) < 2:
+            return candidates
+        try:
+            held = await cls._db.types_holding([c.get_type() for c in candidates], match)
+        except Exception as e:  # noqa: BLE001 - the fan-out below is the fallback, and it reports failures
+            logging.getLogger(__name__).debug("types_holding failed (%s); asking every type", e)
+            return candidates
+        if held is None:
+            return candidates
+        return [c for c in candidates if c.get_type() in held]
+
+    @classmethod
     async def _get_by_containing_folder(cls, path_str: str, candidates: list[type]) -> "Entity | None":
         """Deepest folder-backed entity whose ``asset_ref`` is an ancestor dir
         of ``path_str``. Pure DB lookup (indexed ``asset_ref IN`` per type) —
@@ -1109,6 +1130,9 @@ class Entity(DBEntity):
             return info is not None and isinstance(info.shape, Folder)
 
         folder_types = [ecls for ecls in candidates if _folder_shaped(ecls)]
+        folder_types = await cls._types_holding(
+            folder_types, ExpressionNode(op=QueryOp.IN, operands=["asset_ref", ancestors])
+        )
 
         async def _hits(ecls: type) -> "list[Entity]":
             try:

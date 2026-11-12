@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from flow_sdk._compat import UTC
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild, EntityLocation, RecordType
 from flow_sdk.db.drivers.path_model import NodesPath
-from flow_sdk.db.drivers.query import QueryFilter
+from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 from flow_sdk.flowpad_types.enums import BuiltInConstant, RelationshipDirection
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.type_id import TypeId
@@ -423,6 +423,11 @@ class DBDriver(Generic[RecordType]):
         ``project`` source also matches rows whose ``project_id`` is the project).
         """
         raise NotImplementedError("get_all is not implemented")
+
+    async def types_holding(self, entity_types: list[str], match: ExpressionNode) -> set[str] | None:
+        """Which of ``entity_types`` have at least one row matching ``match``, in one query — or
+        ``None`` when this driver cannot tell (the caller then asks each type itself)."""
+        return None
 
     async def get_all_rows(self, entity_type: str) -> list[dict]:
         """Every row of ``entity_type`` as its stored fields (plus ``id`` and ``updated_date``),

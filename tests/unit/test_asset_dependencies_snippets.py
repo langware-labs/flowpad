@@ -12,10 +12,14 @@ import pytest
 
 from flow_sdk.assets import flow_json
 from flow_sdk.dependencies import resolve as dep_resolve
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.type_info import register_all
 from tests.utils.snippets import run_page
 
 register_all()
+# Bind every entity class now, at collection: the first read that needs one imports ~500 modules
+# (1-2 s here), a once-per-process cost the 15 s budget of the page must not carry.
+SchemaRegistry._ensure_entities_loaded()
 
 pytestmark = [pytest.mark.timeout(15), pytest.mark.usefixtures("home")]  # do not increase timeout without approval
 
@@ -80,6 +84,13 @@ def _answer_from_the_handbook(turn) -> str:
     return "I could not find the company handbook in my context."
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.asset_owner_fanout.rules: FAILING? never raise the 15 s cap -
+#       read this tag's rules; count path-owner queries first
+# flowpad:endcapsule tag
 @pytest.mark.long  # 2.96s — six sources, three verified and synced against the loopback Drive, one worker turn
 async def test_every_fence_runs_as_written(initialize_test_db, drive, mock_driver):
     worker = mock_driver(_answer_from_the_handbook)

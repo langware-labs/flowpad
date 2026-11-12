@@ -3245,6 +3245,19 @@ class SQLiteDBDriver(DBDriver):
             return dt.replace(tzinfo=UTC)
         return dt
 
+    async def types_holding(self, entity_types: list[str], match: ExpressionNode) -> set[str] | None:
+        """Which of ``entity_types`` hold a row matching ``match`` — one statement over the rows of all of
+        them, instead of one ``get_all`` per type. ``None`` when ``match`` is not fully SQL (the caller
+        then asks each type itself)."""
+        if not entity_types:
+            return set()
+        cond, fully_sql = self._expr_to_sql(match, [0])
+        if cond is None or not fully_sql:
+            return None
+        query = select(EntitySchema.type).where(EntitySchema.type.in_(entity_types), cond).distinct()
+        async with self._session_ctx(write=False) as session:
+            return set((await session.execute(query)).scalars().all())
+
     async def get_all_rows(self, entity_type: str) -> list[dict]:
         """Every row of a type as its stored JSON plus ``id`` / ``updated_date``; no entity is built.
 
