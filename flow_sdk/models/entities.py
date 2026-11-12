@@ -319,3 +319,8 @@ try:
     from flow_sdk.builtin.issue import Issue  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Issue: {e}")
+
+try:
+    from flow_sdk.builtin.qa import QACycle, QAIteration, QAPhase, QARca, QATest, QATestFile, QATestResult  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import the QA entities: {e}")

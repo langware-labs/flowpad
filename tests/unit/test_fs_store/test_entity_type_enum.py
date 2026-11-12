@@ -225,6 +225,13 @@ EXPECTED = {
     "AGENT_MAILBOX": "agent_mailbox",
     "WEBHOOK": "webhook",
     "ISSUE": "issue",
+    "QA_PHASE": "qa_phase",
+    "QA_TEST_FILE": "qa_test_file",
+    "QA_TEST": "qa_test",
+    "QA_CYCLE": "qa_cycle",
+    "QA_ITERATION": "qa_iteration",
+    "QA_TEST_RESULT": "qa_test_result",
+    "QA_RCA": "qa_rca",
 }
 
 
