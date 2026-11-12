@@ -228,7 +228,7 @@ EXPECTED = {
     "RCA": "rca",
     "QA_PHASE": "qa_phase",
     "QA_TEST_FILE": "qa_test_file",
-    "QA_TEST": "qa_test",
+    "QA_TEST_CASE": "qa_test_case",
     "QA_CYCLE": "qa_cycle",
     "QA_ITERATION": "qa_iteration",
     "QA_TEST_RESULT": "qa_test_result",

@@ -1,7 +1,7 @@
 """The QA entities: what Q (the QA app) stores about testing a repository.
 
-Q maps a target repository's tests into a plan (``QAPhase`` → ``QATestFile`` → ``QATest``), runs that plan in
-cycles (``QACycle``), each a series of passes (``QAIteration``), records every attempt at a test
+Q maps a target repository's tests into a plan (``QAPhase`` → ``QATestFile`` → ``QATestCase``), runs that plan in
+cycles (``QACycle``), each a series of passes (``QAIteration``), records every attempt at a test case
 (``QATestResult``). The root-cause analysis of a result that did not pass is the generic ``Rca`` (builtin/rca.py).
 
 Q writes and reads these rows from its own process through the generic graph API (``/api/v1/graph/<type>``).
@@ -40,7 +40,7 @@ class QATestFile(Entity):
     path: str = APIField(default="")
     #: What runs it (pytest, vitest, playwright, …).
     runner: Optional[str] = APIField(default=None)
-    #: How many tests the mapper counted in it, when it knows.
+    #: How many test cases the mapper counted in it, when it knows.
     test_count: Optional[int] = APIField(default=None)
     #: True once the file is gone from the repository: it stays, with its results, and is no longer planned.
     removed: bool = APIField(default=False)
@@ -49,15 +49,15 @@ class QATestFile(Entity):
     created_at: Optional[str] = APIField(default=None, description="When it was defined, ISO-8601 UTC")
 
 
-class QATest(Entity):
-    """A test of the plan, in one test file. ``name`` is the test as its runner names it."""
+class QATestCase(Entity):
+    """A test case of the plan, in one test file. ``name`` is the test case as its runner names it."""
 
-    type: str = APIField(default=EntityType.QA_TEST.value)
+    type: str = APIField(default=EntityType.QA_TEST_CASE.value)
     #: The ``QAPhase`` it belongs to (its test file's), by id.
     phase: str = APIField(default="")
     #: The ``QATestFile`` it is in, by id.
     test_file: str = APIField(default="")
-    #: True once the test is gone from the repository: it stays, with its results, and is no longer planned.
+    #: True once the test case is gone from the repository: it stays, with its results, and is no longer planned.
     removed: bool = APIField(default=False)
     #: ``"mapper"`` | ``"tester"``: who registered it.
     assigned_by: str = APIField(default="mapper")
@@ -104,7 +104,7 @@ class QAIteration(Entity):
     ended_at: Optional[str] = APIField(default=None, description="ISO-8601 UTC")
     #: The notes of whoever closed it, on what it did.
     notes: Optional[str] = APIField(default=None)
-    #: What it is planned to run, by id: ``{"phases": [...], "test_files": [...], "tests": [...]}``.
+    #: What it is planned to run, by id: ``{"phases": [...], "test_files": [...], "test_cases": [...]}``.
     planned: dict[str, list[str]] = APIField(default_factory=dict)
     #: ``"fix"``: its tester fixes the failing tests it runs. None: it only runs them.
     purpose: Optional[str] = APIField(default=None)
@@ -113,7 +113,7 @@ class QAIteration(Entity):
 
 
 class QATestResult(Entity):
-    """One attempt at one test in an iteration: the one record test-file and phase results are inferred from."""
+    """One attempt at one test case in an iteration: the one record test-file and phase results are inferred from."""
 
     type: str = APIField(default=EntityType.QA_TEST_RESULT.value)
     #: The ``QACycle``, ``QAIteration``, ``QAPhase`` and ``QATestFile`` it belongs to, by id.
@@ -121,11 +121,11 @@ class QATestResult(Entity):
     iteration: str = APIField(default="")
     phase: str = APIField(default="")
     test_file: str = APIField(default="")
-    #: The ``QATest`` it is an attempt at, by id; None for a test the plan does not hold.
-    test: Optional[str] = APIField(default=None)
-    #: The test as the run reported it (pytest node name, vitest title, e2e block title).
+    #: The ``QATestCase`` it is an attempt at, by id; None for a test case the plan does not hold.
+    test_case: Optional[str] = APIField(default=None)
+    #: The test case as the run reported it (pytest node name, vitest title, e2e block title).
     test_name: str = APIField(default="")
-    #: The test's number in its file, as the QA skill numbers test blocks.
+    #: The test case's number in its file, as the QA skill numbers test blocks.
     test_number: Optional[int] = APIField(default=None)
     #: 1 for the first try, 2 and up for re-runs.
     attempt: int = APIField(default=1)
