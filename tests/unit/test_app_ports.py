@@ -246,6 +246,9 @@ def test_listener_rows_windows_garbles_still_count(monkeypatch):
     state0 = row(psutil.CONN_NONE, 41, 5173)
     monkeypatch.setattr(psutil, "net_connections", lambda kind="tcp": [state0])
     assert app_ports._listening_by_pid() == {41: [5173]}
+    for garbled in (psutil.CONN_CLOSE, psutil.CONN_FIN_WAIT1):  # read on Windows 26300.9818
+        monkeypatch.setattr(psutil, "net_connections", lambda kind="tcp", s=garbled: [row(s, 41, 5173)])
+        assert app_ports._listening_by_pid() == {41: [5173]}
     assert dev_server._listed(5173) is True
     assert app_ports._listening(SimpleNamespace(net_connections=lambda kind="tcp": [state0])) == [5173]
 

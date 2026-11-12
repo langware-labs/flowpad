@@ -444,10 +444,11 @@ def test_a_record_on_a_port_other_than_the_settings_default_is_still_borrowed():
     assert _strict_record_generation(foreign, info, Table()) is None
 
 
-@pytest.mark.parametrize("status,pid", [("LISTEN", 0), ("NONE", 81), ("NONE", 0)])
+# The states one listening socket read on Windows 26300.9818 (our VM, 2026-11-12), plus no owner pid.
+@pytest.mark.parametrize("status,pid", [("LISTEN", 0), ("NONE", 81), ("CLOSE", 81), ("FIN_WAIT1", 81), ("NONE", 0)])
 def test_a_backend_whose_listener_row_windows_garbles_is_still_borrowed(monkeypatch, status, pid):
-    """Windows 11 build 26300 after KB5127936 returns listener rows with owner pid 0, or with
-    state 0 (psutil NONE), on one machine across calls. The scan dropped both, so a healthy
+    """Windows 11 build 26300.9818 (KB5127936) returns listener rows with a garbage state (the same
+    socket reads LISTEN, NONE, CLOSE or FIN_WAIT1 call to call) or with owner pid 0. The scan dropped both, so a healthy
     backend held no port and every attach failed "not conclusively down" (a Windows 11 desktop,
     2026-11-10). A state-0 row still listens; an ownerless row makes the scan ask each process."""
     import socket
