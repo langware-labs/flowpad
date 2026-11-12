@@ -97,8 +97,10 @@ const MessageLanding: React.FC = () => {
   // click: a popup keeps this tab, then the page reloads as the signed-in user.
   // A phone blocks the popup, so it signs in by a full-page round trip back to this link.
   const phone = isMobile();
+  // Asked once: the hub signs in in place, and serves only `hub` pages.
+  const onHub = isHubOnly();
   const logIn = () =>
-    isHubOnly() && !phone ? void cloudManager.login({ refresh: 'reload' }) : loginKey && bounceToLoginOnce(loginKey);
+    onHub && !phone ? void cloudManager.login({ refresh: 'reload' }) : loginKey && bounceToLoginOnce(loginKey);
 
   const shell = (body: React.ReactNode, from?: string, signedOut = false) => (
     <div className="flex min-h-screen flex-col bg-background text-foreground" data-testid="message-landing">
@@ -170,7 +172,7 @@ const MessageLanding: React.FC = () => {
   if (phone && isConversation && flowMessage.conversation_id) {
     const dock = DockPointer.forConversation(flowMessage.conversation_id, { messageId });
     // The hub serves only `hub` pages: a desk dock there is redirected home, so the conversation opens on the hub page.
-    return <Navigate replace to={(isHubOnly() ? dock.withPage(PageId.HUB) : dock).toUrl()} />;
+    return <Navigate replace to={(onHub ? dock.withPage(PageId.HUB) : dock).toUrl()} />;
   }
   const taskTitle = meta.task_title ?? meta.spec_title ?? t`Shared Task`;
   const firstName = senderName.split(' ')[0];

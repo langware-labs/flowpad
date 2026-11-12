@@ -3,7 +3,7 @@
  * where neither history nor Home leads anywhere; at desktop width the bar is not there at all.
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const nav = vi.hoisted(() => ({ canGoBack: false }));
 const backOrHome = vi.hoisted(() => vi.fn());
@@ -19,9 +19,10 @@ vi.mock('@src/components/top-nav-bar/use-entity-breadcrumbs', () => ({
 
 import { PhoneTopBar } from '@src/components/phone-shell/PhoneTopBar';
 import { SidebarProvider } from '@src/components/ui/sidebar';
+import { mockMobile } from '../utils/test-utils';
 
-function show(width: number) {
-  window.innerWidth = width;
+function show(mobile: boolean) {
+  mockMobile(mobile);
   return render(
     <SidebarProvider>
       <PhoneTopBar />
@@ -29,11 +30,9 @@ function show(width: number) {
   );
 }
 
-beforeEach(() => {
-  window.matchMedia = vi.fn(() => ({ addEventListener: vi.fn(), removeEventListener: vi.fn() })) as never;
-});
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   nav.canGoBack = false;
 });
@@ -41,7 +40,7 @@ afterEach(() => {
 describe('PhoneTopBar', () => {
   it('leaves through backOrHome, titled by the current crumb', () => {
     dock.current = { viewType: 'preferences' };
-    show(390);
+    show(true);
     expect(screen.getByTestId('phone-title').textContent).toBe('Design notes');
     fireEvent.click(screen.getByTestId('phone-back'));
     expect(backOrHome).toHaveBeenCalledOnce();
@@ -49,7 +48,7 @@ describe('PhoneTopBar', () => {
 
   it('offers no Back on a freshly loaded Home, and Back once there is history', () => {
     dock.current = { viewType: 'home' };
-    const { rerender } = show(390);
+    const { rerender } = show(true);
     expect(screen.queryByTestId('phone-back')).toBeNull();
     expect(screen.getByTestId('phone-menu-button')).toBeTruthy();
     nav.canGoBack = true;
@@ -59,7 +58,7 @@ describe('PhoneTopBar', () => {
 
   it('is absent at desktop width', () => {
     dock.current = { viewType: 'preferences' };
-    show(1440);
+    show(false);
     expect(screen.queryByTestId('phone-top-bar')).toBeNull();
   });
 });
