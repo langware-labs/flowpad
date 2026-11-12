@@ -2,6 +2,13 @@ import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, addTerminalTab } from './helpers';
 import { adjusted } from '../../adjustableTimeout';
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.tab_chip_name.rules: FAILING on a tab name? read it from data-tab-title,
+//       never the chip text - read this tag's rules
+// flowpad:endcapsule tag
 test.describe('Terminal Tab Rename', () => {
   test.beforeEach(async ({ page }) => {
     await dismissSetupModal(page);

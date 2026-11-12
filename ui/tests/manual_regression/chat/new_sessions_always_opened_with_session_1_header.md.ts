@@ -30,6 +30,13 @@ async function tabNames(page: import('@playwright/test').Page): Promise<string[]
   );
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.tab_chip_name.rules: FAILING on a tab name? read it from data-tab-title,
+//       never the chip text - read this tag's rules
+// flowpad:endcapsule tag
 test.describe('incremented tab names', () => {
   test('test 1: second terminal tab name increments (distinct from the first)', async ({ page }) => {
     test.setTimeout(adjusted(60_000));

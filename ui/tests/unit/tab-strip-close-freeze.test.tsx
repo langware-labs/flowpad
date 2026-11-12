@@ -376,6 +376,13 @@ describe('details', () => {
   });
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.tab_chip_name.rules: FAILING on a tab name? read it from data-tab-title,
+//       never the chip text - read this tag's rules
+// flowpad:endcapsule tag
 describe('a crowded strip still names its chips', () => {
   // At icon density a chip renders no title text: readers (screen readers, the e2e specs) need the name on
   // the chip itself, or every name reads as '' (manual_regression terminal/shell_tab_title_and_switch).

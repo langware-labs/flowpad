@@ -76,6 +76,13 @@ async function waitForTabName(page: Page, name: string, timeout = 15_000) {
 }
 
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.tab_chip_name.rules: FAILING on a tab name? read it from data-tab-title,
+//       never the chip text - read this tag's rules
+// flowpad:endcapsule tag
 test.describe('Shell Tab Title and Switching', () => {
   test.beforeEach(async ({ page }) => {
     await dismissSetupModal(page);
