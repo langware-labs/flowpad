@@ -1,6 +1,6 @@
 import type { IBuffer, IBufferCell, IBufferLine, IBufferRange, ILink, ILinkProvider, Terminal } from '@xterm/xterm';
 import { COMMAND_LINK } from '@src/lib/link-kind';
-import { BOX_GLYPHS, commandLinkMatches, ENDS_WHOLE, fileLinkMatches, HAS_RTL, linkMatches, type LinkMatch } from '@src/lib/link-matches';
+import { BOX_GLYPHS, UUID, commandLinkMatches, ENDS_WHOLE, fileLinkMatches, HAS_RTL, linkMatches, type LinkMatch } from '@src/lib/link-matches';
 import { isPrimaryClick, type LinkHandlers } from '@src/components/links/link-events';
 
 type ActivateLink = LinkHandlers['activate'];
@@ -83,29 +83,28 @@ const WHOLE_FILE = /\.[A-Za-z]\w{0,5}$/;
 /** A word that starts a fresh reference of its own. */
 const FRESH_START = /^(?:\/|~\/|\.{1,2}\/|[A-Za-z]:[\\/]|https?:)/i;
 /** A word ending in an id (`…/<uuid>`), which a path may go on after with `/rest`. */
-const ENDS_ID = /[0-9a-f]{8}-[0-9a-f-]{27}$/i;
+const ENDS_ID = new RegExp(`${UUID}$`, 'i');
 /** A word that reads as a whole reference: a file extension, a position or a closer; an id may still go on with `/rest`. */
 function wholeReference(word: string): boolean {
   return WHOLE_FILE.test(word) || (ENDS_WHOLE.test(word) && !ENDS_ID.test(word));
 }
-/** A plain-text `! command` opening its row. */
-const COMMAND_ROW = /^\s*!\s*[a-z_./~$]/;
 /** A word that opens a command's next argument (`"op://…"`, `--flag`), never the rest of a cut word. */
 const ARG_START = /^(?:["'`]|--[A-Za-z])/;
-/** Hard breaks a plain command may run on through above `row`. */
+/** Rows above a plain command's row that it may have been wrapped from. */
 const MAX_COMMAND_HOPS = 8;
 
 /**
- * Whether row `row` is part of a plain-text `! command` alone on its line: the row opens with `!`,
- * or runs on from a row above that does. A TUI word-wraps such a command at a space.
+ * Whether row `row` belongs to a plain-text `! command` alone on its line: the paragraph it sits
+ * in (rows with no blank row between them, starting at the same column) opens with `!`.
  */
-function plainCommand(buffer: IBuffer, row: number, cols: number, depth: number): boolean {
-  for (let r = row; r >= 0 && depth + row - r <= MAX_COMMAND_HOPS; r--) {
+function plainCommand(buffer: IBuffer, row: number, cols: number): boolean {
+  const column = textSpan(buffer.getLine(row)!, cols).start;
+  for (let r = row; r >= 0 && row - r <= MAX_COMMAND_HOPS; r--) {
     const line = buffer.getLine(r);
     if (!line) return false;
     const span = textSpan(line, cols);
-    if (COMMAND_ROW.test(line.translateToString(false, span.start, span.end))) return true;
-    if (r === 0 || !(buffer.getLine(r)!.isWrapped || continuesBelow(buffer, r - 1, cols, depth + row - r + 1))) return false;
+    if (span.start === span.end || (span.start !== column && !line.isWrapped)) return false;
+    if (COMMAND_LINK.test(line.translateToString(false, span.start, span.end))) return true;
   }
   return false;
 }
@@ -172,7 +171,7 @@ function resumesProse(tail: string, head: string): boolean {
     ENDS_WHOLE.test(tail) ||
     (last === '.' && /^\p{Lu}/u.test(word)) ||
     RESUMING.has(word) ||
-    (word.length >= 3 && /\.[A-Za-z][A-Za-z0-9]{1,4}$/.test(tail)) ||
+    (word.length >= 3 && WHOLE_FILE.test(tail)) ||
     (RESUMING_SHORT.has(word) && /\.[A-Za-z0-9]{2,5}$/.test(tail))
   );
 }
@@ -217,7 +216,7 @@ function columnTail(line: IBufferLine, span: TextSpan, cols: number): { end: num
  * the next row's first word must not have fitted in the room left, must not be prose, and the
  * two must not each read as a whole reference (a list of files, one per row).
  */
-function continuesBelow(buffer: IBuffer, row: number, cols: number, depth = 0): Continuation {
+function continuesBelow(buffer: IBuffer, row: number, cols: number): Continuation {
   const line = buffer.getLine(row);
   const next = buffer.getLine(row + 1);
   if (!line || !next) return undefined;
@@ -229,11 +228,11 @@ function continuesBelow(buffer: IBuffer, row: number, cols: number, depth = 0): 
   if (commandContinues(buffer, row, cols, above, below, head.cells)) {
     // A word longer than the room left was cut at the edge, not wrapped at a space.
     const cut = above.margin === 0 && !ARG_START.test(head.text) && edgeWord(line, above, -1).cells + head.cells > above.end - below.start;
-    return cut ? { kind: 'hard', end: above.end } : { kind: 'hard', end: above.end, space: true };
+    return { kind: 'hard', end: above.end, ...(!cut && { space: true as const }) };
   }
   // A plain `! command` alone on its line that a TUI word-wrapped: the next word did not fit.
-  const plain = head.cells > Math.min(line.length, cols) - above.end - 1 && plainCommand(buffer, row, cols, depth);
-  if (plain && (above.margin > 0 || ARG_START.test(head.text))) return { kind: 'hard', end: above.end, space: true };
+  const wrapped = (above.margin > 0 || ARG_START.test(head.text)) && head.cells > Math.min(line.length, cols) - above.end - 1;
+  if (wrapped && plainCommand(buffer, row, cols)) return { kind: 'hard', end: above.end, space: true };
   if (above.margin <= MAX_MARGIN) {
     const tail = edgeWord(line, above, -1);
     // Short of the edge, two whole references are two rows of a list, not one cut.

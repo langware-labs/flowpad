@@ -14,7 +14,7 @@ export interface LinkMatch {
 const URL_REGEX = /(https?|HTTPS?):[/]{2}[^\s"'!*{}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`(<>]/;
 const URL_TRAIL = /[:,.!?]+$/;
 const POSITION = String.raw`(?::\d+(?::\d+)?|#L\d+)`;
-const UUID = String.raw`[0-9a-f]{8}-[0-9a-f-]{27}`;
+export const UUID = String.raw`[0-9a-f]{8}-[0-9a-f-]{27}`;
 const ENTITY_REF = new RegExp(String.raw`^[a-z_]+-(?:@[\w.-]+|${UUID})$`, 'i');
 /** Text that ends the way a whole reference or its clause does: a position, an id, closing punctuation. */
 export const ENDS_WHOLE = new RegExp(String.raw`(?:${POSITION}|${UUID}|[,;!?)\]}])$`, 'i');
