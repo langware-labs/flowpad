@@ -1215,7 +1215,7 @@ async def test_a_pushed_event_is_ingested_through_the_runtime_like_a_polled_one(
             await source.delete()
 
 
-# ── the slack-connect wizard: the claim, the manifest, the app ───────────────
+# ── own-app setup steps: the claim, the manifest, the app ───────────────
 
 
 def test_the_hub_claim_is_pending_until_the_app_is_known_then_proven_with_it():
@@ -1303,7 +1303,7 @@ async def test_a_probe_judges_the_typed_token_and_keeps_nothing(fake_slack):
     assert not bad.ok and "invalid_auth" in bad.detail
 
 
-async def test_a_check_ignores_a_typed_token_so_the_wizard_still_runs_the_step(fake_slack):
+async def test_a_check_ignores_a_typed_token_so_the_step_still_runs(fake_slack):
     """The wizard's completion check runs with the run's env — the typed token included. A check judges only
     what is KEPT: with nothing kept it is not satisfied, so the step runs and keeps the token."""
     source = SlackSource(SourceBinding(account_key="", config={"base_url": fake_slack.base}, credentials=ResolvedSecrets()))
@@ -1321,46 +1321,6 @@ async def test_the_card_names_a_new_source_the_way_the_app_is_named(monkeypatch)
     assert profile == {"available": True, "default_name": "Eran's inbox"}
     assert profile["default_name"] == slack_source.app_name(), "one name, defined once"
 
-
-def test_the_connect_wizard_is_declared_and_every_step_it_names_exists():
-    import pathlib
-
-    folder = pathlib.Path(slack_source.__file__).parent / "agentic-assets"
-    spec = json.loads((pathlib.Path(slack_source.__file__).parent / "data_driver.json").read_text())
-    assert spec["setup_wizards"] == [{"stage": "connect", "label": "Connect", "wizard": "slack-connect", "provides": ["credential"]}], (
-        "the wizard writes the credential: the setup tree must not ask for it before the wizard"
-    )
-    assert spec["webhook"]["url_var"] == "webhook_url" and spec["auth"]["vars"]["webhook_url"] == "SLACK_WEBHOOK_URL"
-    assert "SLACK_USER_TOKEN" in spec["auth"]["vars"] and "SLACK_SIGNING_SECRET" not in spec["auth"]["vars"], "the token alone, in this phase"
-    wizard = json.loads((folder / "wizard" / "slack-connect" / "wizard.json").read_text())
-    ops = {}
-    for step in wizard["steps"]:
-        op_file = folder / "compute_op" / step["ref"] / "compute_op.json"
-        assert op_file.exists(), step["ref"]
-        ops[step["id"]] = json.loads(op_file.read_text())
-    assert [s["id"] for s in wizard["steps"]] == ["public-url", "manifest", "ask-create-app", "ask-user-token", "app", "prove", "verify"]
-    asks = [i for i, op in ops.items() if op["subkind"] == "ask"]
-    assert asks == ["ask-create-app", "ask-user-token"], "two things the person does; the first message is proven by the poll"
-    # Two sub-steps the person walks: set up on Slack (a Continue, nothing typed), then the token, verified in place.
-    assert ops["ask-create-app"]["output_spec_kind"] == "confirm" and ops["ask-create-app"]["exe_data"]["submit_label"] == "Continue"
-    assert ops["ask-create-app"]["exe_data"]["stage"] == {"label": "Set up on Slack", "index": 1, "total": 2}
-    assert "{{manifest.link}}" in ops["ask-create-app"]["exe_data"]["detail"], "the link the person taps, shown at its place in the run"
-    keys = ops["ask-user-token"]
-    assert keys["output_spec_kind"] == "string" and keys["exe_data"]["secret"], "one value, masked"
-    assert keys["exe_data"]["stage"] == {"label": "Your token", "index": 2, "total": 2}
-    assert keys["exe_data"]["verify"] == {"label": "Verify", "source_step": "app"}, "the token is checked in place, by the app step as a probe"
-    assert "{{manifest.name}}" in keys["exe_data"]["detail"], "names the app the person just made: asked after it exists"
-    assert next(s for s in wizard["steps"] if s["id"] == "ask-user-token")["bind"] == "user_token", "what the app step reads"
-    assert ops["public-url"]["exe_data"]["source_step"] == "public-webhook" and ops["prove"]["exe_data"]["source_step"] == "public-webhook"
-    for bound in ("public-url", "manifest"):
-        assert ops[bound]["output_spec_kind"] == "source.setup_shown", "what the step shows is its value: bound for the next question"
-        assert "--value" in ops[bound]["exe_data"]["commands"]["darwin"]
-        assert "--check --value" in ops[bound]["completion_check"]["commands"]["darwin"], (
-            "a step whose check already holds is skipped: what the check prints is what the next question shows"
-        )
-    credential = json.loads((folder / "credential" / "slack_channel" / "credential.json").read_text())
-    assert credential["vars"]["SLACK_USER_TOKEN"]["way"] == "app" and "SLACK_SIGNING_SECRET" not in credential["vars"]
-    assert credential["vars"]["SLACK_WEBHOOK_URL"]["secret"] is False and "app" in credential["ways"]
 
 
 # ── which agentic process answers: polled and pushed agree ──────────────────
