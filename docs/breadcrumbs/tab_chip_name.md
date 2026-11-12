@@ -1,8 +1,11 @@
 ---
+id: 8be72ceb-11b0-4ace-8f04-1abb4c793e2a
 title: A tab chip is named at every density
-tags: [breadcrumb.test.tab_chip_name.rules]
-description: On a crowded strip TabStrip renders icon-only chips with no title text; readers of tab names
-  (specs, screen readers) read the chip's data-tab-title / aria-label, never its text span.
+tags:
+- breadcrumb.test.tab_chip_name.rules
+description: On a crowded strip TabStrip renders icon-only chips with no title text;
+  readers of tab names (specs, screen readers) read the chip's data-tab-title / aria-label,
+  never its text span.
 ---
 # A tab chip is named at every density
 

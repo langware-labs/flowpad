@@ -106,6 +106,8 @@ test.afterAll(async ({ request }) => {
 //   tags:
 //     breadcrumb.test.project_page_tag.rules: FAILING? read this tag's rules before
 //       moving or renaming the ProjectPage tag
+//     breadcrumb.test.dev_only_types.rules: FAILING at the Tag root? Dev is a switch,
+//       not a URL param - read this tag's rules
 // flowpad:endcapsule tag
 test('hard-cut tag vocabulary works across API, graph, taxonomy UI, and identity', async ({ page, request }) => {
   const stamp = Date.now().toString(36);

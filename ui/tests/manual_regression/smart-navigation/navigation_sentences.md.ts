@@ -61,6 +61,13 @@ const api = () => apiContext();
 const ROWS = sentences();
 let page: Page;
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.dev_only_types.rules: FAILING with NO LOG ROW? the SmartNavigationLog
+//       preference is off by default - read this tag's rules
+// flowpad:endcapsule tag
 test.describe.serial('navigation sentences', () => {
   test.beforeAll(async ({ browser }) => {
     expect(ROWS.length, 'the doc lists 200 sentences').toBe(200);
