@@ -263,6 +263,22 @@ sign_in_with_api_key() {
   case "$code" in 2*|3*) return 0;; *) warn "API-key sign-in answered HTTP $code"; return 1;; esac
 }
 
+# A relaunch is the same instance: the hub and the user a flag does not name are the ones its env
+# file already holds — before FLOWPAD_HUB_URL, which only names the hub of a FIRST launch (a shell's
+# ambient value must not move an instance). Without this a bare `launch <name>` — how the api
+# tier's restart tests bring a backend back — re-pointed the instance at the default hub and the
+# default user, and every hub call after it failed ("Can't reach the hub").
+# Sets the caller's `hub`, `email` and `password` (bash dynamic scope) where they are empty.
+keep_identity_of() {
+  local ef; ef="$(env_file "$1")"
+  [ -f "$ef" ] || return 0
+  [ -n "$hub" ] || hub="$(grep -m1 '^FLOWPAD_HUB_URL=' "$ef" | cut -d= -f2- || true)"
+  if [ -z "$email" ]; then
+    email="$(grep -m1 '^FLOWPAD_CLOUD_USER_EMAIL=' "$ef" | cut -d= -f2- || true)"
+    [ -n "$password" ] || password="$(grep -m1 '^FLOWPAD_CLOUD_USER_PASSWORD=' "$ef" | cut -d= -f2- || true)"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # launch
 # ---------------------------------------------------------------------------
@@ -270,7 +286,7 @@ cmd_launch() {
   local name="${1:-}"; shift || true
   [ -n "$name" ] || die "launch needs an instance name, e.g. 'launch dev-1'"
 
-  local email="" password="" hub="$HUB_URL_DEFAULT"
+  local email="" password="" hub=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --email)    email="$2"; shift 2;;
@@ -279,6 +295,8 @@ cmd_launch() {
       *) die "unknown flag: $1";;
     esac
   done
+  keep_identity_of "$name"
+  hub="${hub:-$HUB_URL_DEFAULT}"
   email="${email:-$name@local.test}"
   password="${password:-$name-pw-1234}"
 
