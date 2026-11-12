@@ -2,12 +2,12 @@
 
 Q maps a target repository's tests into a plan (``QAPhase`` → ``QATestFile`` → ``QATestCase``), runs that plan in
 cycles (``QACycle``), each a series of passes (``QAIteration``), records every attempt at a test case
-(``QATestResult``). The root-cause analysis of a result that did not pass is the generic ``Rca`` (builtin/rca.py).
+(``QATestExecution``). The root-cause analysis of an execution that did not pass is the generic ``Rca`` (builtin/rca.py).
 
 Q writes and reads these rows from its own process through the generic graph API (``/api/v1/graph/<type>``).
 Each row's id is Q's natural key, made a fixed uuid by ``allocate_id``, so a retried write lands on the same
-row. A reference to another QA row holds that row's id. Phase, test file and phase-run results are not
-stored: Q infers them from the test results.
+row. A reference to another QA row holds that row's id. Test-file and phase verdicts are not
+stored: Q infers them from the test executions.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class QATestFile(Entity):
     runner: Optional[str] = APIField(default=None)
     #: How many test cases the mapper counted in it, when it knows.
     test_count: Optional[int] = APIField(default=None)
-    #: True once the file is gone from the repository: it stays, with its results, and is no longer planned.
+    #: True once the file is gone from the repository: it stays, with its executions, and is no longer planned.
     removed: bool = APIField(default=False)
     #: ``"mapper"`` | ``"tester"``: who put it in its phase.
     assigned_by: str = APIField(default="mapper")
@@ -57,7 +57,7 @@ class QATestCase(Entity):
     phase: str = APIField(default="")
     #: The ``QATestFile`` it is in, by id.
     test_file: str = APIField(default="")
-    #: True once the test case is gone from the repository: it stays, with its results, and is no longer planned.
+    #: True once the test case is gone from the repository: it stays, with its executions, and is no longer planned.
     removed: bool = APIField(default=False)
     #: ``"mapper"`` | ``"tester"``: who registered it.
     assigned_by: str = APIField(default="mapper")
@@ -112,10 +112,10 @@ class QAIteration(Entity):
     request: Optional[str] = APIField(default=None)
 
 
-class QATestResult(Entity):
-    """One attempt at one test case in an iteration: the one record test-file and phase results are inferred from."""
+class QATestExecution(Entity):
+    """One attempt at one test case in an iteration: the one record test-file and phase verdicts are inferred from."""
 
-    type: str = APIField(default=EntityType.QA_TEST_RESULT.value)
+    type: str = APIField(default=EntityType.QA_TEST_EXECUTION.value)
     #: The ``QACycle``, ``QAIteration``, ``QAPhase`` and ``QATestFile`` it belongs to, by id.
     cycle: str = APIField(default="")
     iteration: str = APIField(default="")

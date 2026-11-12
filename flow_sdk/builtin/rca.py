@@ -1,7 +1,7 @@
 """``Rca`` — the root-cause analysis of something that failed: why it failed, how bad it is, how to fix it.
 
-Generic: ``subject`` names what it analyses by typeid (a QA test result, a run, any entity). Q (the QA app) writes
-one per test result that did not pass, a skip included (why it was skipped).
+Generic: ``subject`` names what it analyses by typeid (a QA test execution, a run, any entity). Q (the QA app) writes
+one per test execution that did not pass, a skip included (why it was skipped).
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from flow_sdk.schema.types import EntityType
 
 class Rca(Entity):
     type: str = APIField(default=EntityType.RCA.value)
-    #: What it analyses, by typeid (e.g. a ``qa_test_result``).
+    #: What it analyses, by typeid (e.g. a ``qa_test_execution``).
     subject: str = APIField(default="")
     #: How hard the fix is: ``low`` | ``moderate`` | ``high``.
     complexity: str = APIField(default="")

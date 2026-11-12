@@ -231,7 +231,7 @@ EXPECTED = {
     "QA_TEST_CASE": "qa_test_case",
     "QA_CYCLE": "qa_cycle",
     "QA_ITERATION": "qa_iteration",
-    "QA_TEST_RESULT": "qa_test_result",
+    "QA_TEST_EXECUTION": "qa_test_execution",
 }
 
 
