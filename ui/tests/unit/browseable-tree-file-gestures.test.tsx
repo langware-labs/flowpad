@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { BrowseableTree, createMockBrowseable, mockPointerFor } from '@src/components/browseable-tree';
+import { focusMovedOn } from '@src/components/browseable-tree/BrowseableTree';
 import type { Browseable, BrowseableRoot } from '@src/components/browseable-tree';
 
 function rootWith(children: Browseable[]): BrowseableRoot {
@@ -130,5 +131,23 @@ describe('BrowseableTree file gestures', () => {
     const dataTransfer = { setData: vi.fn(), getData: vi.fn(), types: [], dropEffect: '', effectAllowed: '' };
     fireEvent.dragStart(row('f.md'), { dataTransfer });
     expect(dataTransfer.setData).toHaveBeenCalledWith('DownloadURL', 'application/octet-stream:f.md:http://x/dl/f.md');
+  });
+});
+
+// A closing row menu hands focus back to its row only when focus is still nowhere: its close lands after
+// the exit animation, and by then the user may be on another row (a proxy for the e2e race in
+// manual_regression/assets/docs_tree_crud.md.ts, where F2 then renamed the folder the menu was on).
+describe('focusMovedOn: a closing menu does not take focus back', () => {
+  it('keeps focus that moved on to another row, gives it back when it is on the page or in the menu', () => {
+    document.body.innerHTML =
+      '<div role="menu" id="menu"><div role="menuitem" tabindex="-1" id="item"></div></div>' +
+      '<div role="treeitem" tabindex="-1" id="file"></div>';
+    const menu = document.getElementById('menu');
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(focusMovedOn(menu)).toBe(false);
+    document.getElementById('item')!.focus();
+    expect(focusMovedOn(menu)).toBe(false);
+    document.getElementById('file')!.focus();
+    expect(focusMovedOn(menu)).toBe(true);
   });
 });

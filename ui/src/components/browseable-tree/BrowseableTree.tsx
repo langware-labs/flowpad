@@ -39,6 +39,14 @@ const KeyRowContext = React.createContext<{ current: { id: string; at: number } 
  *  a blurred page must not hand Delete to a row the user has moved away from. */
 const KEY_ROW_REFOCUS_MS = 2000;
 
+/** Has focus moved on to something of its own (another row, a text field) by the time a menu closes —
+ *  i.e. not left on the page, nor inside the closing menu itself? */
+export function focusMovedOn(menu: EventTarget | null): boolean {
+  const active = document.activeElement;
+  if (!active || active === document.body) return false;
+  return !(menu instanceof Node && menu.contains(active)) && !active.closest('[role="menu"]');
+}
+
 /** Does this row show the item the URL has open? */
 function rowMatchesActive(
   node: Browseable,
@@ -833,10 +841,12 @@ function BrowseableRow({
       <ContextMenuContent
         className="min-w-[13rem]"
         data-testid={`browseable-context-menu-${node.id}`}
-        // A closing menu hands focus back to the row it opened on — but never
-        // out of a text field the user is typing in by then (a rename box).
+        // A closing menu hands focus back to the row it opened on — but only when
+        // focus is still nowhere. The close can land after an action's await (a
+        // paste): by then focus may be on another row or in a rename box, and
+        // pulling it back made F2 rename the folder the menu was on.
         onCloseAutoFocus={(e) => {
-          if (document.activeElement instanceof HTMLInputElement) e.preventDefault();
+          if (focusMovedOn(e.currentTarget)) e.preventDefault();
         }}
       >
         {menuItems.map((a, i) => {

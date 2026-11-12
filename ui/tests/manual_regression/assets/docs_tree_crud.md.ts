@@ -29,6 +29,13 @@ async function menu(page: Page, suffix: string, item: string) {
   await page.locator(`[data-testid^="browseable-menu-${item}:"]`).click();
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.menu_close_focus.rules: FAILING at F2? a closing row menu must
+//       not pull focus back - read this tag's rules
+// flowpad:endcapsule tag
 test('the Files tree is a file manager', async ({ page, request }) => {
   await page.addInitScript(() => {
     try {
