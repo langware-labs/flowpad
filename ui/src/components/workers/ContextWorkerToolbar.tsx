@@ -296,7 +296,9 @@ export function QuickWorkerButton({
               <Forward className="size-2 rtl:-scale-x-100" strokeWidth={3.5} />
             </span>
           </span>
-          <span className="ms-1">{t`Forward to worker`}</span>
+          {/* A phone row has room for one word; the title and aria-label keep the full name. */}
+          <span className="ms-1 whitespace-nowrap max-md:hidden">{t`Forward to worker`}</span>
+          <span className="ms-1 whitespace-nowrap md:hidden">{t`Worker`}</span>
         </>
       ) : (
         <Icon className={cn('size-3', iconClassName)} />

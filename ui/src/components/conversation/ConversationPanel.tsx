@@ -401,19 +401,24 @@ export function ConversationPanel({
           </TabbedSideDrawer>
         ) : (
           // Collapsed strip — clicking the drawer icon folds it back open.
-          <CollapsedSideRail data-testid="conversation-side-drawer-collapsed">
-            <SideRailButton icon={PanelRightOpen} label={t`Expand drawer`} onClick={() => setSideOpen(true)} />
-          </CollapsedSideRail>
+          // A phone is one pane: the drawer and its ribbon are desktop chrome.
+          <div className="contents max-md:hidden">
+            <CollapsedSideRail data-testid="conversation-side-drawer-collapsed">
+              <SideRailButton icon={PanelRightOpen} label={t`Expand drawer`} onClick={() => setSideOpen(true)} />
+            </CollapsedSideRail>
+          </div>
         )}
       </div>
 
-      <ConversationBottomRibbon
-        activeSideTab={sideOpen ? activeSideTab : null}
-        onToggleSideTab={toggleSideTab}
-        showRuns={showRuns}
-        runsBadge={runEntries.length}
-        tasksBadge={openTaskCount}
-      />
+      <div className="contents max-md:hidden">
+        <ConversationBottomRibbon
+          activeSideTab={sideOpen ? activeSideTab : null}
+          onToggleSideTab={toggleSideTab}
+          showRuns={showRuns}
+          runsBadge={runEntries.length}
+          tasksBadge={openTaskCount}
+        />
+      </div>
 
       <OpenProjectComponent {...mappingDialogProps} />
     </div>

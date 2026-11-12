@@ -17,7 +17,7 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import type { AgenticContext, PermissionMode } from '@sdk';
 import { Blob } from 'fetch-blob';
-import { afterEach } from 'vitest';
+import { afterEach, vi } from 'vitest';
 
 /**
  * Stubs for cloud auth helpers. Minihub uses zero-auth so these are no-ops,
@@ -32,6 +32,22 @@ export function getTestLoginInfo(_signupInfo?: unknown) {
 
 let localUser: User | null = null;
 
+const mediaQueryList = (matches: (query: string) => boolean) => (query: string) =>
+  ({
+    matches: matches(query),
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => true,
+  }) as MediaQueryList;
+
+/** Make `(pointer: coarse)` match (a phone) or not; undone by `vi.restoreAllMocks()`. */
+export const mockPointer = (coarse: boolean) =>
+  vi.spyOn(window, 'matchMedia').mockImplementation(mediaQueryList((q) => coarse && q === '(pointer: coarse)'));
+
 /**
  * Unit test setup function that handles data manager reset for isolated unit tests
  * This ensures clean state between tests by clearing entity cache and subscriptions
@@ -43,19 +59,7 @@ export async function unitTestSetup() {
 
   // Mock matchMedia for components that check pointer type (jsdom doesn't provide this)
   if (!window.matchMedia) {
-    Object.defineProperty(window, 'matchMedia', {
-      writable: true,
-      value: (query: string) => ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addListener: () => {},
-        removeListener: () => {},
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        dispatchEvent: () => true,
-      }),
-    });
+    Object.defineProperty(window, 'matchMedia', { writable: true, value: mediaQueryList(() => false) });
   }
 
   // Reset data manager to clear entity cache and subscriptions

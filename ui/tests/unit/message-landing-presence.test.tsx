@@ -7,15 +7,18 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router';
-import { ConnectionManager } from '@sdk';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { ConnectionManager, PageId } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { mockPointer } from '../utils/test-utils';
 
 const MSG = '123e4567-e89b-4456-8abc-def123456789';
 const state = vi.hoisted(() => ({
   entity: {} as Record<string, unknown>,
   online: [] as (boolean | 'fail')[],
   calls: [] as { name: string; body: unknown }[],
+  hubOnly: false,
 }));
 
 vi.mock('@sdk/react/hooks', () => ({
@@ -26,6 +29,7 @@ vi.mock('@sdk', async (orig) => {
   const real = await orig<typeof import('@sdk')>();
   return {
     ...real,
+    isHubOnly: () => state.hubOnly,
     dataManager: {
       callAction: vi.fn(async (action: { name?: string; _name?: string; bodyParameters?: unknown }) => {
         const name = action.name ?? action._name ?? '';
@@ -65,6 +69,7 @@ beforeEach(() => {
   state.entity = { data: MESSAGE, isLoading: false, notFound: false, error: null };
   state.online = [true];
   state.calls = [];
+  state.hubOnly = false;
   sessionStorage.clear();
 });
 afterEach(cleanup);
@@ -124,3 +129,39 @@ it('signed out: Log in in the bar and the card, no message text', () => {
   expect(screen.queryByTestId('landing-preview')).not.toBeInTheDocument();
   expect(state.calls).toHaveLength(0);
 });
+
+it('on a phone, a conversation message opens straight in the conversation, on that message', async () => {
+  const mm = mockPointer(true);
+  state.entity = { ...state.entity, data: { ...MESSAGE, conversation_id: CONV } };
+  openWithProbe();
+  expect(await screen.findByTestId('location')).toHaveTextContent(
+    `/conversation/${CONV}/message/${MSG}`,
+  );
+  mm.mockRestore();
+});
+
+it('on the hub page, the phone opens the conversation on the hub page', async () => {
+  const mm = mockPointer(true);
+  state.hubOnly = true;
+  state.entity = { ...state.entity, data: { ...MESSAGE, conversation_id: CONV } };
+  openWithProbe();
+  expect(await screen.findByTestId('location')).toHaveTextContent(
+    DockPointer.forConversation(CONV, { messageId: MSG }).withPage(PageId.HUB).toUrl(),
+  );
+  mm.mockRestore();
+});
+
+const CONV = 'c0c0c0c0-0000-4000-8000-000000000001';
+const openWithProbe = () =>
+  render(
+    <MemoryRouter initialEntries={[`/flow_message/${MSG}`]}>
+      <Routes>
+        <Route path="flow_message/:messageId" element={<MessageLanding />} />
+        <Route path="*" element={<LocationProbe />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+function LocationProbe() {
+  return <span data-testid="location">{useLocation().pathname}</span>;
+}

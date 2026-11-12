@@ -1331,30 +1331,33 @@ export function ConversationView({
       />
       {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
       {(messagesLoaded || !!messagesError) && (
-        <MessageComposer
-          conversationId={conversationId}
-          onSent={() => void refetch()}
-          // A source-backed conversation replies into its channel, not the hub.
-          channel={channel}
-          onChannelSent={(text) => {
-            setNotSent(null);
-            setSendingText(text);
-          }}
-          placeholder={composerPlaceholder}
-          onSend={sendItAgain}
-          agentId={agentId ?? undefined}
-          sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
-          onStartLiveSession={() => void startLiveSession()}
-          channelAcceptsFiles={!!channelSpec?.accepts_attachments}
-          replyTo={
-            replyTo
-              ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes }
-              : null
-          }
-          onClearReply={() => setReplyTo(null)}
-          threadTarget={threadTarget}
-          onTaskIt={handleTaskIt}
-        />
+        // On a phone the composer stays pinned to the bottom of the screen while the feed scrolls.
+        <div className="max-md:sticky max-md:bottom-0 max-md:z-10 max-md:bg-background max-md:pb-2">
+          <MessageComposer
+            conversationId={conversationId}
+            onSent={() => void refetch()}
+            // A source-backed conversation replies into its channel, not the hub.
+            channel={channel}
+            onChannelSent={(text) => {
+              setNotSent(null);
+              setSendingText(text);
+            }}
+            placeholder={composerPlaceholder}
+            onSend={sendItAgain}
+            agentId={agentId ?? undefined}
+            sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
+            onStartLiveSession={() => void startLiveSession()}
+            channelAcceptsFiles={!!channelSpec?.accepts_attachments}
+            replyTo={
+              replyTo
+                ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes }
+                : null
+            }
+            onClearReply={() => setReplyTo(null)}
+            threadTarget={threadTarget}
+            onTaskIt={handleTaskIt}
+          />
+        </div>
       )}
     </div>
   );

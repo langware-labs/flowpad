@@ -386,7 +386,7 @@ export function MessageBubble({
     <div
       className={`group relative flex gap-2 rounded p-1 transition-colors ${continuation ? '-mt-3 pt-0' : ''} ${
         onSelect ? 'cursor-pointer' : ''
-      } ${isSelected ? 'bg-muted/30 ring-1 ring-ring/40' : ''}`}
+      } ${isSelected ? 'bg-muted/30 ring-1 ring-ring/40 max-md:animate-[target-tint_2.4s_ease-out]' : ''}`}
       onClick={handleBubbleClick}
       data-testid={flowMessageId ? `message-bubble-${flowMessageId}` : undefined}
     >
