@@ -1,12 +1,12 @@
 /**
- * `waitForReady()` is documented as "the same gate the UI toggle uses, so it can't 409" — but for a HEADLESS
- * process it returns at once (`!this.pty_mode || ...`) while the server's `switch-mode` still 409s
- * ("a turn is in flight", `is_turn_busy`) until the turn ends. So `waitForReady()` → `switchMode()` fails right
- * after boot, while the seeded launch turn is still running.
+ * `waitForReady()` is documented as "the same gate the UI toggle uses, so it can't 409". For a HEADLESS process
+ * it used to return at once (`!this.pty_mode || ...`) while the server's `switch-mode` still 409'd
+ * ("a turn is in flight", `is_turn_busy`) until the turn ended, so `waitForReady()` → `switchMode()` failed
+ * right after boot, while the seeded launch turn was still running.
  *
  * Real call path, no mocks: a real headless claude process, `waitForReady()`, then `switchMode(Interactive)`.
- * Fails today with "Request failed with status code 409"; passes once `waitForReady()` waits for a
- * headless turn to end (e.g. keys on `isBusy`) so the switch right after it is accepted.
+ * Guards the fix (517e107a2): a headless `waitForReady()` waits until no turn holds the slot, so the switch
+ * right after it is accepted. Without it the switch fails with "Request failed with status code 409".
  *
  * Gated behind RUN_PTY_STRESS (spawns a real worker). Backend = FLOW_INSTANCE.
  */
