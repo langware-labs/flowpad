@@ -44,6 +44,7 @@ it('Install starts a session that carries the update', async () => {
   render(<WarningsPopover />);
 
   await user.click(await screen.findByTestId('warnings-popover-trigger'));
+  expect(screen.queryByTestId('warnings-popover-warning-review')).toBeNull();
   await user.click(await screen.findByTestId('warnings-popover-warning-action'));
 
   await waitFor(() => expect(launch).toHaveBeenCalledTimes(1));

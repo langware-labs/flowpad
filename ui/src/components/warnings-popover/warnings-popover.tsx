@@ -214,6 +214,9 @@ async function installHarnessUpdate(warning: UserWarning, failedTitle: string): 
 const PRIMARY_BTN = 'rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90';
 const MUTED_BTN = 'rounded bg-muted px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80';
 
+/** A worker update: its one action is Install, and it has no page of its own to open. */
+const isHarnessUpdate = (warning: UserWarning) => warning.id.startsWith(WARNING_IDS.HARNESS_UPDATE);
+
 /** Informational: nothing is broken, so a diagnosis has nothing to find — listed, not counted. */
 const isInformational = (warning: UserWarning) => warning.diagnosable === false;
 
@@ -224,12 +227,15 @@ function DiagnoseButtons({
   conversationId,
   onDiagnose,
   onReview,
+  ownAction,
   onDismiss,
   testId,
 }: {
   conversationId: string | undefined;
   onDiagnose: () => void;
   onReview?: () => void;
+  /** The entry has its own button for what to do (Install), so neither Review nor Diagnose & fix is drawn. */
+  ownAction?: boolean;
   onDismiss: () => void;
   testId: string;
 }) {
@@ -237,7 +243,7 @@ function DiagnoseButtons({
   const { navigation } = useDockNavigation();
   return (
     <>
-      {onReview ? (
+      {ownAction ? null : onReview ? (
         <button type="button" onClick={onReview} className={PRIMARY_BTN} data-testid="warnings-popover-warning-review">
           <Trans>Review</Trans>
         </button>
@@ -325,6 +331,7 @@ function WarningItem({ warning, onClick, onAction, onDiagnose, onDismiss }: Warn
             conversationId={conversationId}
             onDiagnose={() => onDiagnose(detail, 'warning', warning.id)}
             onReview={isInformational(warning) ? onClick : undefined}
+            ownAction={isHarnessUpdate(warning)}
             onDismiss={onDismiss}
             testId="warnings-popover-warning-diagnose-fix"
           />
@@ -440,7 +447,7 @@ export function WarningsPopover() {
       [...derivedWarnings, ...(setupWarning ? [setupWarning] : [])]
         .filter((w) => dismissedKeys.get(w.id) !== dismissKey(w))
         .map((w) =>
-          w.id.startsWith(WARNING_IDS.HARNESS_UPDATE)
+          isHarnessUpdate(w)
             ? {
                 ...w,
                 action: {
@@ -472,6 +479,7 @@ export function WarningsPopover() {
 
   const handleWarningClick = useCallback(
     (warning: UserWarning) => {
+      if (isHarnessUpdate(warning)) return;
       if (warning.id === WARNING_IDS.SNIFFER_ACTIVE) {
         // Same command the startup toast's Disable button runs — one path,
         // one set of success/failure toasts.
