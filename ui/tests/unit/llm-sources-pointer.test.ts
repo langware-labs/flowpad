@@ -50,3 +50,14 @@ describe('llm-sources sections', () => {
     expect(parseLlmSourcesPointer(llmSourcesPointer('keys'))).toBe('keys');
   });
 });
+
+describe('parseLlmSourcesTab — the page is three tabs', () => {
+  it('reads the tab and what is below it; a bare worker is that assistant on Logins', async () => {
+    const { parseLlmSourcesTab } = await import('@src/components/llm-sources/llm-sources-pointer');
+    expect(parseLlmSourcesTab('')).toEqual({ tab: 'logins', rest: '' });
+    expect(parseLlmSourcesTab('claude')).toEqual({ tab: 'logins', rest: 'claude' });
+    expect(parseLlmSourcesTab('logins/codex')).toEqual({ tab: 'logins', rest: 'codex' });
+    expect(parseLlmSourcesTab('keys/abc/overview')).toEqual({ tab: 'keys', rest: 'abc/overview' });
+    expect(parseLlmSourcesTab('endpoints')).toEqual({ tab: 'endpoints', rest: '' });
+  });
+});

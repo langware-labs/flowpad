@@ -30,7 +30,8 @@ import { TabTipBodyContext, TabTooltipName } from '@src/components/tabs/TabToolt
 import { TabFavoriteStar } from '@src/components/tabs/TabFavoriteStar';
 import type { FavoriteRef } from '@src/hooks/use-favorites';
 import type { Annotation } from '@sdk';
-import { notesByTarget, useAllNotes, type NoteTarget } from '@src/hooks/use-entity-notes';
+import { notesByTarget, useNotesAndMarks, type NoteTarget } from '@src/hooks/use-entity-notes';
+import { noteColor, notePaperStyle } from '@src/components/notes/note-palette';
 import { TabNoteButton, TabNotesBadge, TabNotesPopover, type TabNotesView } from '@src/components/notes/TabNotes';
 import { useLocaleInfo } from '@src/contexts/locale-context';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -236,8 +237,10 @@ export const TabStrip: React.FC<TabStripProps> = ({
 
   // Sticky notes: ONE query for every chip, grouped by the entity each sits on,
   // and ONE popover (compose / list / note) anchored to the chip that opened it.
-  const allNotes = useAllNotes(items.some((i) => i.notes));
+  const { notes: allNotes, marks } = useNotesAndMarks(items.some((i) => i.notes));
   const notesFor = useMemo(() => notesByTarget(allNotes), [allNotes]);
+  // A colour-only save marks the tab: its chip takes the note's paper, text in the note's ink.
+  const marksFor = useMemo(() => notesByTarget(marks), [marks]);
   const [notesView, setNotesView] = useState<TabNotesView | null>(null);
   const notesItem = notesView ? items.find((i) => i.key === notesView.key) : undefined;
 
@@ -479,11 +482,18 @@ export const TabStrip: React.FC<TabStripProps> = ({
     </button>
   );
 
-  const renderButtonOverlay = (key: string, isActive: boolean, isDisabled: boolean, closable: boolean) => (
+  const renderButtonOverlay = (
+    key: string,
+    isActive: boolean,
+    isDisabled: boolean,
+    closable: boolean,
+    tinted = false,
+  ) => (
     <div
       className={`absolute end-0.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded transition-opacity ${
-        isActive ? 'bg-background opacity-100' : 'bg-muted opacity-0 group-hover:opacity-100'
-      }`}
+        // A coloured tab has no theme surface under the button: it sits on the tab's own paper.
+        isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+      } ${tinted ? '' : isActive ? 'bg-background' : 'bg-muted'}`}
     >
       {closable && (
         <button
@@ -517,6 +527,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
     const showStar = !!item.favorite && !isEditing && isActive;
     const noteTarget = !isEditing ? item.notes : null;
     const chipNotes = (noteTarget && notesFor.get(noteTarget.typeId.toString())) || NO_NOTES;
+    const mark = item.notes ? marksFor.get(item.notes.typeId.toString())?.[0] : undefined;
+    const tint = mark && !isDisabled && !hasError ? noteColor(mark.data?.color) : null;
 
     // Chrome model: equal flex share for every chip — all tabs stay visible and
     // shrink in lockstep; the strip never scrolls. Inline style (not Tailwind
@@ -531,7 +543,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
         ref={(node) => {
           tabRefs.current[key] = node;
         }}
-        style={sizing}
+        style={tint ? { ...sizing, ...notePaperStyle(tint) } : sizing}
+        data-tab-color={tint?.token}
         // `border-t-2` on EVERY state, colored only when active: the accent has
         // to follow the `rounded-t-lg` curve, and a border does that natively.
         // It used to be an absolutely-positioned 2px bar, which `overflow-hidden`
@@ -631,7 +644,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           </span>
         )}
 
-        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable)}
+        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable, !!tint)}
         {item.guestNote && (
           <span
             aria-hidden
@@ -795,6 +808,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           view={notesView}
           target={notesItem.notes}
           notes={notesFor.get(notesItem.notes.typeId.toString()) ?? NO_NOTES}
+          mark={marksFor.get(notesItem.notes.typeId.toString())?.[0]}
           anchor={tabRefs.current[notesView.key] ?? null}
           onView={setNotesView}
           onClose={() => setNotesView(null)}

@@ -1,7 +1,8 @@
 import { useLingui } from '@lingui/react/macro';
 import { dataContext, editorForPath, FSRef, openTerminalFromComputeNode, type Tab } from '@sdk';
 import { LOCAL_COMPUTE_NODE as LOCAL_NODE } from '@src/navigation/asset-doc-types';
-import { FolderOpen, PanelTop, SquareTerminal } from 'lucide-react';
+import { browserOpenable } from '@src/lib/open-in-browser';
+import { FolderOpen, Globe, PanelTop, SquareTerminal } from 'lucide-react';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
@@ -68,12 +69,13 @@ export const DocTabCard: React.FC<{
 /** The folder that holds `path` (the path itself when it has no file part). */
 const parentDir = (path: string) => path.replace(/[\\/][^\\/]*$/, '') || path;
 
-/** Open the document's folder in a terminal, Finder/Explorer, or Flowpad's own file browser. */
+/** Open the document's folder in a terminal, Finder/Explorer, or Flowpad's own file browser; an HTML file also in the system browser. */
 const OpenInBar: React.FC<{ path: string }> = ({ path }) => {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const computeNodeId = dataContext.computeNode?.id;
   const fsRef = new FSRef(path, LOCAL_NODE);
+  const htmlRef = browserOpenable(fsRef);
   const dir = parentDir(path);
   const actions = [
     computeNodeId && {
@@ -87,6 +89,12 @@ const OpenInBar: React.FC<{ path: string }> = ({ path }) => {
       label: t`Open in Finder/Explorer`,
       Icon: FolderOpen,
       run: () => void fsRef.open({ select: true }),
+    },
+    htmlRef && {
+      id: 'browser',
+      label: t`Open in browser`,
+      Icon: Globe,
+      run: () => void htmlRef.open(),
     },
     {
       id: 'flowpad',

@@ -157,5 +157,5 @@ def test_the_placement_vocabulary_is_pinned_on_this_side_too():
     from flow_sdk.builtin.deployment import NODE_PROVIDERS, DeploymentIdentity
 
     assert "kind" not in Deployment.model_fields and "slot" not in Deployment.model_fields
-    assert set(get_args(DeploymentIdentity)) == {"none", "agent", "user"}
+    assert set(get_args(DeploymentIdentity)) == {"none", "agent", "user", "deployment"}
     assert NODE_PROVIDERS == frozenset({"local", "local_machine", "e2b", "docker", "gcp_vm", "user_machine"})

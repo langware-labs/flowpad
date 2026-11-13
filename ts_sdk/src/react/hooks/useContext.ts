@@ -52,6 +52,7 @@ export function useContext() {
     localUser: typeof dataContext.localUser;
     cloudUser: typeof dataContext.cloudUser;
     currentUser: typeof dataContext.currentUser;
+    currentPrincipal: typeof dataContext.currentPrincipal;
     visitorTypeId: typeof dataContext.visitorTypeId;
     someone: typeof dataContext.someone;
     manifests: typeof dataContext.manifests;
@@ -91,6 +92,7 @@ export function useContext() {
     localUser: dataContext.localUser,
     cloudUser: dataContext.cloudUser,
     currentUser: dataContext.currentUser,
+    currentPrincipal: dataContext.currentPrincipal,
     visitorTypeId: dataContext.visitorTypeId,
     someone: dataContext.someone,
     manifests: dataContext.manifests,
@@ -140,6 +142,7 @@ export function useContext() {
       localUser: dataContext.localUser,
       cloudUser: dataContext.cloudUser,
       currentUser: dataContext.currentUser,
+      currentPrincipal: dataContext.currentPrincipal,
       visitorTypeId: dataContext.visitorTypeId,
       someone: dataContext.someone,
       manifests: dataContext.manifests,
@@ -184,6 +187,7 @@ export function useContext() {
       prev.localUser !== current.localUser ||
       prev.cloudUser !== current.cloudUser ||
       prev.currentUser !== current.currentUser ||
+      prev.currentPrincipal !== current.currentPrincipal ||
       prev.workspace !== current.workspace ||
       prev.activeEntity !== current.activeEntity ||
       typeIdChanged(prev.activeEntityTypeId, current.activeEntityTypeId) ||

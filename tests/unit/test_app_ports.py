@@ -226,3 +226,38 @@ def test_two_processes_with_one_command_are_told_apart_by_the_ports_they_declare
 def test_an_old_page_command_is_not_a_different_service_in_the_same_folder():
     old_page = here(50211, command="node old-page.js --port 50211")
     assert of_app([old_page], Path(APP), "bash run-emulators.sh", ["bash run-page.sh {port}"]) == []
+
+
+def test_listener_rows_windows_garbles_still_count(monkeypatch):
+    """Windows 11 build 26300 after KB5127936 reports some listeners with state 0 (psutil NONE)
+    and some with no owner pid. Both still listen: a state-0 row counts, and a pid-less row makes
+    the one-table read give way to asking each process (which knows its own sockets)."""
+    import socket
+    from types import SimpleNamespace
+
+    import psutil
+
+    from flow_sdk.core import app_ports, dev_server
+
+    def row(status, pid, port, kind=socket.SOCK_STREAM, raddr=()):
+        return SimpleNamespace(status=status, pid=pid, type=kind, raddr=raddr,
+                               laddr=SimpleNamespace(port=port, ip="127.0.0.1"))
+
+    state0 = row(psutil.CONN_NONE, 41, 5173)
+    monkeypatch.setattr(psutil, "net_connections", lambda kind="tcp": [state0])
+    assert app_ports._listening_by_pid() == {41: [5173]}
+    for garbled in (psutil.CONN_CLOSE, psutil.CONN_FIN_WAIT1):  # read on Windows 26300.9818
+        monkeypatch.setattr(psutil, "net_connections", lambda kind="tcp", s=garbled: [row(s, 41, 5173)])
+        assert app_ports._listening_by_pid() == {41: [5173]}
+    assert dev_server._listed(5173) is True
+    assert app_ports._listening(SimpleNamespace(net_connections=lambda kind="tcp": [state0])) == [5173]
+
+    no_owner = row(psutil.CONN_LISTEN, 0, 5173)
+    monkeypatch.setattr(psutil, "net_connections", lambda kind="tcp": [no_owner])
+    assert app_ports._listening_by_pid() is None
+    assert dev_server._listed(5173) is True
+
+    connected = row(psutil.CONN_NONE, 41, 5173, raddr=("127.0.0.1", 40000))
+    udp = row(psutil.CONN_NONE, 41, 5174, kind=socket.SOCK_DGRAM)
+    monkeypatch.setattr(psutil, "net_connections", lambda kind="tcp": [connected, udp])
+    assert app_ports._listening_by_pid() == {} and dev_server._listed(5173) is False

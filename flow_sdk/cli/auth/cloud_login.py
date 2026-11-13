@@ -449,17 +449,15 @@ async def purge_outgoing_user_if_switching(incoming_user: dict | None, *, caller
     able to trigger a logout of whoever is signed in. ``caller`` is only for
     the log line, to tell the two channels apart in the logs.
     """
-    from flow_sdk.cli.app_config import get_user
+    from flow_sdk.cli.app_config import get_principal, is_switching_principal
 
-    current_user = get_user()
-    incoming_id = incoming_user.get("id") if isinstance(incoming_user, dict) else None
-    if current_user and incoming_id and current_user.get("id") != incoming_id:
+    if is_switching_principal(incoming_user):
         from flow_sdk.cloud_client.auth_status import LogoutReason
 
         logger.info(
-            "%s: switching logged-in user (%s -> %s), clearing previous session",
+            "%s: switching logged-in principal (%s -> %s), clearing previous session",
             caller,
-            current_user.get("id"),
-            incoming_id,
+            (get_principal() or {}).get("typeid"),
+            (incoming_user or {}).get("id"),
         )
         await clear_user_data(reason=LogoutReason.SWITCHED_OUT)

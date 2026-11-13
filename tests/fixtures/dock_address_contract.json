@@ -806,9 +806,9 @@
       "tab_hash": "automations|"
     },
     {
-      "name": "preferences folds every category into one tab",
+      "name": "preferences folds every tab into one tab",
       "view_type": "preferences",
-      "pointer": "appearance",
+      "pointer": "developer/trace-logging",
       "tab_hash": "preferences|"
     },
     {
@@ -1166,10 +1166,10 @@
       "url": "/dock/ai-config/llm-apis"
     },
     {
-      "name": "preferences category",
+      "name": "preferences group and tab",
       "view_type": "preferences",
-      "pointer": "appearance",
-      "url": "/dock/preferences/appearance"
+      "pointer": "developer/trace-logging",
+      "url": "/dock/preferences/developer/trace-logging"
     },
     {
       "name": "explorer path",

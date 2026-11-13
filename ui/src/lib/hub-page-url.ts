@@ -16,6 +16,24 @@ export function hubProjectUrl(
   return `${trimHubHost(hubAppUrl)}${dockPath}`;
 }
 
+/** The project's sub-route under the hub page: `/dock/hub/project/<id>/<sub>`. */
+const PROJECT_GIT_SUB = 'git';
+
+/** Hub Project Home. */
+export function hubProjectHomeDock(projectId: string): DockPointer {
+  return DockPointer.forProject(projectId).withPage(PageId.HUB);
+}
+
+/** Hub project Git view: `/dock/hub/project/<id>/git`. */
+export function hubProjectGitDock(projectId: string): DockPointer {
+  return new DockPointer(ViewType.PROJECT, `${projectId}/${PROJECT_GIT_SUB}`).withPage(PageId.HUB);
+}
+
+/** True for the Git view's sub-pointer (what `DockPointer.splitProjectPointer` leaves after the id). */
+export function isProjectGitSub(sub: string | null | undefined): boolean {
+  return sub === PROJECT_GIT_SUB;
+}
+
 /** The hub page's own landing, as an app path. */
 export const HUB_HOME_PATH = '/dock/hub/home';
 

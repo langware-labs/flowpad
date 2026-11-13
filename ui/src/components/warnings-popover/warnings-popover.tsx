@@ -34,6 +34,7 @@ import {
   Wifi,
   WifiOff,
   X,
+  ArrowUpCircle,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { create } from 'zustand';
@@ -51,6 +52,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Settings,
   Key,
   FolderX,
+  ArrowUpCircle,
 };
 
 // Map color names to Tailwind classes
@@ -193,16 +195,22 @@ function DiagnosisStatusLine({ conversationId }: { conversationId: string }) {
 const PRIMARY_BTN = 'rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90';
 const MUTED_BTN = 'rounded bg-muted px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80';
 
+/** Informational: nothing is broken, so a diagnosis has nothing to find — listed, not counted. */
+const isInformational = (warning: UserWarning) => warning.diagnosable === false;
+
 /** An entry's Diagnose & fix: enabled until a diagnosis was started from it; then disabled, with the way to its
- *  conversation beside it. Dismiss stays on every entry, always — it is the only way an entry leaves. */
+ *  conversation beside it. An informational entry gets Review (its own destination) in its place. Dismiss stays
+ *  on every entry, always — it is the only way an entry leaves. */
 function DiagnoseButtons({
   conversationId,
   onDiagnose,
+  onReview,
   onDismiss,
   testId,
 }: {
   conversationId: string | undefined;
   onDiagnose: () => void;
+  onReview?: () => void;
   onDismiss: () => void;
   testId: string;
 }) {
@@ -210,16 +218,22 @@ function DiagnoseButtons({
   const { navigation } = useDockNavigation();
   return (
     <>
-      <button
-        type="button"
-        onClick={onDiagnose}
-        disabled={!!conversationId}
-        title={conversationId ? t`Already diagnosed — see the conversation` : undefined}
-        className={`${PRIMARY_BTN} disabled:cursor-not-allowed disabled:opacity-50`}
-        data-testid={testId}
-      >
-        <Trans>Diagnose &amp; fix</Trans>
-      </button>
+      {onReview ? (
+        <button type="button" onClick={onReview} className={PRIMARY_BTN} data-testid="warnings-popover-warning-review">
+          <Trans>Review</Trans>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onDiagnose}
+          disabled={!!conversationId}
+          title={conversationId ? t`Already diagnosed — see the conversation` : undefined}
+          className={`${PRIMARY_BTN} disabled:cursor-not-allowed disabled:opacity-50`}
+          data-testid={testId}
+        >
+          <Trans>Diagnose &amp; fix</Trans>
+        </button>
+      )}
       {conversationId && (
         <button
           type="button"
@@ -291,6 +305,7 @@ function WarningItem({ warning, onClick, onAction, onDiagnose, onDismiss }: Warn
           <DiagnoseButtons
             conversationId={conversationId}
             onDiagnose={() => onDiagnose(detail, 'warning', warning.id)}
+            onReview={isInformational(warning) ? onClick : undefined}
             onDismiss={onDismiss}
             testId="warnings-popover-warning-diagnose-fix"
           />
@@ -454,6 +469,7 @@ export function WarningsPopover() {
   );
 
   const total = warnings.length + alerts.length;
+  const problemCount = warnings.filter((w) => !isInformational(w)).length + alerts.length;
 
   // Nothing to say — neither a live condition nor a logged alert.
   if (total === 0) {
@@ -478,15 +494,17 @@ export function WarningsPopover() {
           data-testid="warnings-popover-trigger"
         >
           <AlertTriangle className="h-4 w-4" />
-          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
-            {total}
-          </span>
+          {problemCount > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
+              {problemCount}
+            </span>
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent side="top" align="start" className="flex max-h-[70vh] w-96 flex-col p-2">
         <div className="flex items-center justify-between gap-2 px-1 pb-2">
           <p className="text-xs font-medium text-muted-foreground">
-            {total} {total === 1 ? 'Warning' : 'Warnings'}
+            {problemCount} {problemCount === 1 ? 'Warning' : 'Warnings'}
           </p>
           <button
             type="button"

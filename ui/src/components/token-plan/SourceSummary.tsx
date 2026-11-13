@@ -22,7 +22,7 @@ import {
   toChartPoints,
 } from '@src/components/llm-endpoints/usage-math';
 
-import { costLeft } from './source-tree';
+import { costByWindow, costLeft } from './source-tree';
 
 export interface SummaryItem {
   endpoint: LLMEndpoint;
@@ -68,11 +68,21 @@ export function SourceSummary({
     range,
   );
 
-  const caps = subject.map(costLeft).filter((c): c is NonNullable<typeof c> => !!c);
-  const budget = caps.length
-    ? { left: caps.reduce((s, c) => s + Math.max(0, c.remaining), 0), limit: caps.reduce((s, c) => s + c.limit, 0) }
-    : null;
-  const uncapped = subject.length - caps.length;
+  // Summed per window: a lifetime cap and a monthly cap reset on different clocks, so one "left of"
+  // over both describes a budget that exists nowhere.
+  const windows = costByWindow(subject);
+  const capped = subject.filter((e) => !!costLeft(e)).length;
+  const usedShare = (w: { left: number; limit: number }) => (w.limit - w.left) / (w.limit || 1);
+  // One window: its totals. Several: the bar follows the tightest of them.
+  const budget = windows.length ? windows.reduce((a, b) => (usedShare(b) > usedShare(a) ? b : a)) : null;
+  const windowName: Record<string, string> = {
+    total: t`lifetime`,
+    month: t`this month`,
+    week: t`this week`,
+    day: t`today`,
+    minute: t`this minute`,
+  };
+  const uncapped = subject.length - capped;
 
   const tiles = [
     { id: 'cost', label: t`Cost`, value: formatUsd(totals.cost_usd) },
@@ -87,7 +97,16 @@ export function SourceSummary({
           {title}
         </div>
         <div className="mt-1 text-2xl font-semibold" data-testid="budget-headline">
-          {budget ? (
+          {windows.length > 1 ? (
+            windows.map((w, i) => (
+              <span key={w.window} data-testid={`budget-window-${w.window}`}>
+                {i > 0 && <span className="text-muted-foreground"> · </span>}
+                <Trans>
+                  {formatUsd(w.left)} left of {formatUsd(w.limit)} {windowName[w.window] ?? w.window}
+                </Trans>
+              </span>
+            ))
+          ) : budget ? (
             <Trans>
               {formatUsd(budget.left)} left of {formatUsd(budget.limit)}
             </Trans>

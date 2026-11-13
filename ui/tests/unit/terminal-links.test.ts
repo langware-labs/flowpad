@@ -414,3 +414,31 @@ describe('terminal links in pre-reversed RTL rows', () => {
     expect(await linksOnRow(row)).toEqual(expect.arrayContaining([path]));
   });
 });
+
+describe('a command or path a TUI wrapped, clicked anywhere', () => {
+  const c = (text: string) => `\x1b[94m${text}\x1b[0m`;
+  const dir = '/private/tmp/claude-501/-Users-a-dev/ed381ceb-1a16-45f7-9ad1-deb9b5a2ed71/scratchpad';
+  // Each case: the rows as drawn, the cells clicked as [x, y], and what every one of them opens.
+  it.each([
+    ['a colored command cut mid-word at the edge keeps no space at the cut', 60,
+      [c(`! bash ${dir}`.slice(0, 60)), c(`${`! bash ${dir}`.slice(60)}/run.sh "op://v/i/f"`)],
+      [[1, 1], [60, 1], [3, 2]], `! bash ${dir}/run.sh "op://v/i/f"`],
+    ['a plain command alone on its line keeps the space it was word-wrapped at', 40,
+      ['! bash /tmp/a/vertex_root.sh', '"op://vault/item/field"'],
+      [[1, 1], [5, 2]], '! bash /tmp/a/vertex_root.sh "op://vault/item/field"'],
+    ['a colored command whose last row fills the edge keeps its last character', 46,
+      [`  ${c('! gcloud')}`, `  ${c('/a/62e5c824-da4a-4e1e-ab12-391a02a6db86/x.sh')}`],
+      [[3, 1], [46, 2]], '! gcloud /a/62e5c824-da4a-4e1e-ab12-391a02a6db86/x.sh'],
+    ['a path ending in a position is whole before a row starting with /', 30,
+      ['  /tmp/private/src/x.json:12', '  /a_b.c/src/tmp.md'],
+      [[3, 1]], '/tmp/private/src/x.json:12'],
+  ] as const)('%s', async (_name, cols, rows, cells, want) => {
+    const terminal = new HeadlessTerminal({ cols, rows: rows.length + 1, allowProposedApi: true });
+    try {
+      await new Promise<void>((resolve) => terminal.write(rows.map((r, i) => `\x1b[${i + 1};1H${r}`).join(''), resolve));
+      for (const [x, y] of cells) expect(linkAtCell(terminal as unknown as Terminal, x, y)).toBe(want);
+    } finally {
+      terminal.dispose();
+    }
+  });
+});

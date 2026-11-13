@@ -60,6 +60,7 @@ import { MessageComposer } from './MessageComposer';
 import { ConversationActions, ConversationEndedLine } from './ConversationActions';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
+import { useMarkIssuesSeen } from './useMarkIssuesSeen';
 import { useMarkLatestRead } from './useMarkLatestRead';
 import { useMembers } from '@src/hooks/use-members';
 import {
@@ -95,7 +96,7 @@ import {
   oldestCreatedDate,
 } from './conversation-messages-query';
 import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
-import { failedPromptOf, pendingPromptOf, sentResultOf } from './session-turns';
+import { failedPromptOf, pendingPromptOf, promptTextOf, sentResultOf } from './session-turns';
 import { isSessionExpired } from './session-card-state';
 import { LiveSessionActivity } from './LiveSessionActivity';
 import { useRetryFailedPrompt } from './useRetryFailedPrompt';
@@ -104,6 +105,7 @@ import { notify } from '@src/notifications';
 import type { WorkerType } from './conversation-session-constants';
 import { buildConversationStatusPrompt, buildMessageStartPrompt } from './prompt-building';
 import { useConversationSession } from './useConversationSession';
+import { useIsMobile } from '@src/hooks/use-mobile';
 
 interface ConversationViewProps {
   conversationId: string;
@@ -382,6 +384,8 @@ export function ConversationView({
     ensureMapped,
     buildPrompt: buildStatusPrompt,
   });
+  // Launching a worker is desktop work: on a phone no message (bubble or its menu) offers it.
+  const mobile = useIsMobile();
   const launchWorkerOnMessage = useCallback(
     (messageId: string, worker: WorkerType) =>
       launchWorker(
@@ -705,6 +709,7 @@ export function ConversationView({
             failed: failedPromptOf(fms),
             pending: pendingPromptOf(fms),
             result: sentResultOf(fms),
+            prompt: fms.map(promptTextOf).find((text) => text.trim()) ?? null,
           },
         ]),
       ),
@@ -787,7 +792,7 @@ export function ConversationView({
           messageTask={taskOfMessage(id) ?? threadTask}
           onTaskIt={handleTaskIt}
           taskPeople={taskPeople}
-          onLaunchWorker={launchWorkerOnMessage}
+          onLaunchWorker={mobile ? undefined : launchWorkerOnMessage}
           promptCall={promptCallFor(id)}
           itSend={itSends.sendByMessage.get(id) ?? null}
           messageForm={messageFormFor(id)}
@@ -962,6 +967,8 @@ export function ConversationView({
   // link only navigate (single writer: navigation → view → action).
   const latestId = latestPointer(pointers)?.id;
   useMarkLatestRead(latestId ? messagesById.get(latestId) : undefined, cloudUserId, localUser?.id, agentId);
+  // A Monitoring conversation also tells the hub its issues were seen.
+  useMarkIssuesSeen(conversation?.kind, messagesById, selfIds);
 
   // Delete a message everywhere. The loader/live-query owns the list, so we
   // only fire the SDK action and let the resulting data-op re-render the view
@@ -1258,6 +1265,11 @@ export function ConversationView({
                         : undefined
                     }
                     resultText={promptRequest ? (turns?.result ?? null) : null}
+                    onRunAgain={
+                      role === 'guest' && promptRequest && turns?.prompt && conversationId
+                        ? () => retryFailedPrompt(conversationId, null, turns.prompt!)
+                        : undefined
+                    }
                     onRetry={
                       role === 'guest' && failedPrompt && conversationId
                         ? () => retryFailedPrompt(conversationId, item.sessionId, failedPrompt.text)
@@ -1328,30 +1340,33 @@ export function ConversationView({
       />
       {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
       {(messagesLoaded || !!messagesError) && (
-        <MessageComposer
-          conversationId={conversationId}
-          onSent={() => void refetch()}
-          // A source-backed conversation replies into its channel, not the hub.
-          channel={channel}
-          onChannelSent={(text) => {
-            setNotSent(null);
-            setSendingText(text);
-          }}
-          placeholder={composerPlaceholder}
-          onSend={sendItAgain}
-          agentId={agentId ?? undefined}
-          sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
-          onStartLiveSession={() => void startLiveSession()}
-          channelAcceptsFiles={!!channelSpec?.accepts_attachments}
-          replyTo={
-            replyTo
-              ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes }
-              : null
-          }
-          onClearReply={() => setReplyTo(null)}
-          threadTarget={threadTarget}
-          onTaskIt={handleTaskIt}
-        />
+        // On a phone the composer stays pinned to the bottom of the screen while the feed scrolls.
+        <div className="max-md:sticky max-md:bottom-0 max-md:z-10 max-md:bg-background max-md:pb-2">
+          <MessageComposer
+            conversationId={conversationId}
+            onSent={() => void refetch()}
+            // A source-backed conversation replies into its channel, not the hub.
+            channel={channel}
+            onChannelSent={(text) => {
+              setNotSent(null);
+              setSendingText(text);
+            }}
+            placeholder={composerPlaceholder}
+            onSend={sendItAgain}
+            agentId={agentId ?? undefined}
+            sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
+            onStartLiveSession={() => void startLiveSession()}
+            channelAcceptsFiles={!!channelSpec?.accepts_attachments}
+            replyTo={
+              replyTo
+                ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes }
+                : null
+            }
+            onClearReply={() => setReplyTo(null)}
+            threadTarget={threadTarget}
+            onTaskIt={handleTaskIt}
+          />
+        </div>
       )}
     </div>
   );

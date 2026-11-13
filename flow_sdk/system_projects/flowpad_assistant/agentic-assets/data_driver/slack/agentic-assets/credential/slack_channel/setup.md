@@ -1,9 +1,12 @@
 Connect Slack — one of three ways.
 
-**Your own app (the default: everything you are in, live).** Data Sources → Add → Slack → **Connect Slack**
-runs the `slack-connect` wizard: Flowpad cloud hands out a public URL, a link creates your Slack app from a
-manifest that already names it (user scopes, event subscriptions, Request URL), you select your workspace → Next → Create and Install →
-Allow, paste the **User OAuth Token** (`xoxp-…`, OAuth & Permissions). Replies are posted as you. By hand, or as an agent: create
+**Sign in with Slack (the default: everything you are in, as you).** Data Sources → Add → Slack → Setup →
+**Sign in**, then Allow in Slack. Reads every DM, group DM and channel you are in and replies under your name.
+As an agent: `flow connections connect slack`, then `flow credentials set slack_channel signin`. The source has
+NO channel configured. New messages arrive on the next poll.
+
+**Your own app (everything you are in, as you, live).** Replies are posted as you and new messages arrive as
+they happen, through your app's Request URL. Create
 the app at https://api.slack.com/apps "From an app manifest" with user scopes `channels:history`, `groups:history`,
 `im:history`, `mpim:history`, `channels:read`, `groups:read`, `im:read`, `mpim:read`, `users:read`, `chat:write`,
 `files:read`, `files:write`, `reactions:read`, `reactions:write` and user events `message.channels`,
@@ -17,8 +20,5 @@ the app at https://api.slack.com/apps "From an app manifest" with user scopes `c
 `channels:join`, install it to the workspace, and copy the Bot User OAuth Token (`xoxb-…`). Pipe
 `SLACK_BOT_TOKEN=<token>` into `flow credentials set slack_channel --stdin`. Configure the source's `channel`
 and invite the bot to it (`/invite @<bot>`).
-
-**Sign in with Slack** (one channel, replies come from you): connect Slack in Flowpad
-(`flow connections connect slack`), then record the way with `flow credentials set slack_channel signin`.
 
 Confirm with `flow credentials check slack_channel`. Never print or repeat a token or secret.

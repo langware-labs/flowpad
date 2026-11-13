@@ -348,6 +348,30 @@ def _origin_session() -> dict:
     return {"origin_process": pid} if pid else {}
 
 
+_ON_REPLY_HELP = (
+    "Wait for the reply: when someone answers this message, this session is started if stopped and gets "
+    "this prompt plus the reply. Once; cancelled after --wait (default 3d) with a message in Automations."
+)
+_WAIT_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def _on_reply_fields(on_reply: Optional[str], wait: Optional[str]) -> dict:
+    """``--on-reply`` / ``--wait`` as the send body's fields; only a session can wait."""
+    if not (on_reply or "").strip():
+        if wait:
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--wait needs --on-reply")
+        return {}
+    if not _current_process_id():
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--on-reply works inside a session: it wakes that session")
+    fields: dict = {"on_reply": on_reply}
+    if wait:
+        try:
+            fields["wait_seconds"] = float(wait[:-1]) * _WAIT_UNITS[wait[-1].lower()]
+        except (ValueError, KeyError, IndexError):
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Cannot read --wait {wait!r}. Use 30m, 2h or 3d.")
+    return fields
+
+
 def _add_message_url(port: int, conversation_id: str) -> str:
     return _graph_url(port, f"conversation/{conversation_id}/add_message")
 
@@ -367,6 +391,7 @@ def _emit_send_result(conversation_id: str, data: dict) -> None:
             "pending": delivery_status == "pending_send",
             "attachment": data.get("attachment") or [],
             **({"invited": data["invited"]} if data.get("invited") else {}),
+            **({"waiting": data["waiting"]} if data.get("waiting") else {}),
         }
     )
 
@@ -436,6 +461,8 @@ def send_message(
         ),
     ] = None,
     form: Annotated[Optional[str], typer.Option("--form", help=_FORM_HELP)] = None,
+    on_reply: Annotated[Optional[str], typer.Option("--on-reply", help=_ON_REPLY_HELP)] = None,
+    wait: Annotated[Optional[str], typer.Option("--wait", help="How long to wait for the reply: 30m, 2h, 3d (default 3d).")] = None,
 ) -> None:
     cid = _conversation_id(conversation_id)
     if not (message or "").strip():
@@ -453,6 +480,7 @@ def send_message(
         body["remote_worker_session_id"] = session.strip()
     if form:
         body["attachment"] = [_form_attachment(form)]
+    body.update(_on_reply_fields(on_reply, wait))
     data = _post_json(
         _add_message_url(port, cid),
         body,
@@ -544,10 +572,13 @@ def new_conversation(
     message: Annotated[str, typer.Argument(help="First message text.")],
     title: Annotated[Optional[str], typer.Option("--title", help="Conversation title.")] = None,
     form: Annotated[Optional[str], typer.Option("--form", help=_FORM_HELP)] = None,
+    on_reply: Annotated[Optional[str], typer.Option("--on-reply", help=_ON_REPLY_HELP)] = None,
+    wait: Annotated[Optional[str], typer.Option("--wait", help="How long to wait for the reply: 30m, 2h, 3d (default 3d).")] = None,
 ) -> None:
     if not (message or "").strip():
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
     form_att = _form_attachment(form) if form else None
+    reply_fields = _on_reply_fields(on_reply, wait)
     wanted = split_people(who)
     if not wanted:
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "name at least one person to talk to")
@@ -585,6 +616,7 @@ def new_conversation(
     first: dict = {"text": message, **_origin_session()}
     if form_att:
         first["attachment"] = [form_att]
+    first.update(reply_fields)
     data = _post_json(_add_message_url(port, cid), first)
     data["invited"] = invitees
     _emit_send_result(cid, data)

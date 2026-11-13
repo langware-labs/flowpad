@@ -7,6 +7,7 @@ instance singleton + SOD_ENC_KEY so the credential store resolves headlessly.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -493,7 +494,8 @@ async def test_the_hub_initiated_paths_answer_from_the_memo(env, monkeypatch) ->
     assert [e.name for e in await settings.fetch_hub_llm_endpoints()] == ["memo"], (
         "a failed refresh keeps the last good list rather than emptying the picker"
     )
-    assert opened == [1], "a refreshing read really does reach for the hub"
+    await asyncio.gather(*settings._inflight.values())  # the refresh runs behind the answer
+    assert opened == [1, 1], "a refreshing read really does reach for the hub (scoped + catalog)"
 
 
 async def test_the_listing_unions_the_catalog_so_the_global_root_is_offered(env, monkeypatch) -> None:
@@ -957,3 +959,34 @@ def test_binding_written_by_another_process_is_seen_without_a_restart(env):
     st = path.stat()
     os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 2_000_000))
     assert llm_endpoint.get_hub_llm_endpoint() is None
+
+
+async def test_an_expired_memo_answers_without_waiting_on_the_hub(env, monkeypatch) -> None:
+    """The hub's scoped listing takes seconds; an open after the 30s memo expired used to wait on it.
+    The expired list answers now, one refresh runs behind it, and the next read gets the new list."""
+    import flow_sdk.instance_settings.llm_endpoint as settings
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    from flow_sdk.instance_settings import get_instance_settings
+
+    _login()
+    settings._list_cache[get_instance_settings().instance_name] = (
+        0.0,
+        [LLMEndpoint(id="11111111-2222-4333-8444-555555555555", name="memo")],
+    )
+    release = asyncio.Event()
+    reads: list[str] = []
+
+    async def _slow_hub(method, entity, *args, action=None, **kwargs):
+        reads.append(action or "list")
+        await release.wait()
+        return [] if action == "catalog" else {"data": [{"id": "22222222-3333-4444-8555-666666666666", "name": "fresh"}]}
+
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_slow_hub))
+
+    first, second = await asyncio.gather(settings.fetch_hub_llm_endpoints(), settings.fetch_hub_llm_endpoints())
+    assert [e.name for e in first] == [e.name for e in second] == ["memo"]
+    await asyncio.sleep(0)
+    assert sorted(reads) == ["catalog", "list"], "one refresh, both reads at once"
+    release.set()
+    await asyncio.gather(*settings._inflight.values())
+    assert [e.name for e in await settings.fetch_hub_llm_endpoints()] == ["fresh"]

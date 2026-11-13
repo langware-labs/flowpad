@@ -80,6 +80,17 @@ export async function addNote(target: NoteTarget, content: string, color: NoteCo
   await newNote(target, content, color).save([]);
 }
 
+/** A colour-only save (no text): the tab's colour mark, not a note. One per entity. */
+export function isTabMark(note: Annotation): boolean {
+  return !!(note.data as { tab_color?: boolean } | undefined)?.tab_color;
+}
+
+/** Colour the entity's tab: re-colours its existing mark, else writes one. */
+export async function setTabMark(target: NoteTarget, color: NoteColorToken, existing?: Annotation): Promise<void> {
+  if (existing) return saveNote(existing, { color });
+  await newNote(target, '', color, { data: { tab_color: true } }).save([]);
+}
+
 export async function saveNote(
   note: Annotation,
   patch: { content?: string; color?: NoteColorToken; data?: Record<string, unknown> },
@@ -97,6 +108,11 @@ export async function deleteNote(note: Annotation): Promise<void> {
 /** Every note, on any entity, newest first. The subkind is matched on the server, so other annotations
  *  (terminal comments, lock flags) never come down. */
 export function useAllNotes(enabled = true): Annotation[] {
+  return useNotesAndMarks(enabled).notes;
+}
+
+/** The same one query, split: the notes, and the tabs' colour marks (never listed as notes). */
+export function useNotesAndMarks(enabled = true): { notes: Annotation[]; marks: Annotation[] } {
   const request = useMemo(
     () =>
       new QueryRequest({
@@ -108,7 +124,10 @@ export function useAllNotes(enabled = true): Annotation[] {
     [],
   );
   const { data = [] } = useEntitiesQuery<Annotation>(request, { enabled: enabled && !isHubOnly() });
-  return useMemo(() => notesOf(data), [data]);
+  return useMemo(() => {
+    const all = notesOf(data);
+    return { notes: all.filter((n) => !isTabMark(n)), marks: all.filter(isTabMark) };
+  }, [data]);
 }
 
 /**

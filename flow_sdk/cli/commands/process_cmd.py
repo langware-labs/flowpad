@@ -64,22 +64,19 @@ from flow_sdk.cli.commands._common import (
     fail as _fail,
 )
 from flow_sdk.cli.commands._common import (
-    delete_graph_json as _delete_graph_json,
-)
-from flow_sdk.cli.commands._common import (
     get_graph_json as _get_graph_json,
 )
 from flow_sdk.cli.commands._common import (
     graph_url as _graph_url,
 )
 from flow_sdk.cli.commands._common import (
-    post_graph_json as _post_graph_json,
-)
-from flow_sdk.cli.commands._common import (
     local_post as _local_post,
 )
 from flow_sdk.cli.commands._common import (
     ok as _ok,
+)
+from flow_sdk.cli.commands._common import (
+    post_graph_json as _post_graph_json,
 )
 from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
@@ -231,37 +228,66 @@ def _action_failed(status_code: int, body: dict) -> None:
           str(body.get("message") or body.get("error") or f"HTTP {status_code}"))
 
 
+def _seconds(value: str, flag: str) -> float:
+    try:
+        return float(value[:-1]) * _IN_UNITS[value[-1].lower()]
+    except (ValueError, KeyError, IndexError):
+        _fail(EXIT_INVALID_ARG, "BAD_TIME", f"Cannot read {flag} {value!r}. Use 30s, 10m, 2h or 3d.")
+        raise
+
+
 @process_app.command(
     "schedule",
     help=(
-        "Set a one-time callback into this session: at the given time it is started if stopped and, "
-        "once idle, receives PROMPT. Write PROMPT so it stands on its own — it is read later, cold."
+        "Set a callback into this session: once (--at / --in), or repeating (--every 10m, ending after --times N "
+        "runs or at --for 8h / --until <ISO>; default --for 1d). Each time, the session is started if stopped and, "
+        "once idle, receives PROMPT. A repeating one is ONE automation that counts its runs and ends by itself — "
+        "never schedule it again from inside a callback. Write PROMPT so it stands on its own."
     ),
 )
 def schedule_prompt(
     prompt: Annotated[str, typer.Argument(help="What the session should do or check at that time.")],
     at: Annotated[Optional[str], typer.Option("--at", help="When, ISO: 2026-01-31T09:00 (local time unless it has an offset).")] = None,
     in_: Annotated[Optional[str], typer.Option("--in", help="How long from now: 30m, 2h, 3d.")] = None,
+    every: Annotated[Optional[str], typer.Option("--every", help="Repeat every 30s, 10m, 2h, 1d.")] = None,
+    times: Annotated[Optional[int], typer.Option("--times", help="With --every: end after this many runs.")] = None,
+    for_: Annotated[Optional[str], typer.Option("--for", help="With --every: end after this long (8h). Default 1d.")] = None,
+    until: Annotated[Optional[str], typer.Option("--until", help="With --every: end at this ISO time.")] = None,
     process: Annotated[Optional[str], typer.Option("--process", "-p", help="Defaults to the current session.")] = None,
 ) -> None:
+    from datetime import datetime, timedelta  # noqa: PLC0415
+
     process_id = _resolve_process_id(process)
-    when = _run_time(at, in_)
-    data = _post_graph_json(
-        _graph_url(_discover_port(), "trigger"),
-        {
-            "name": " ".join(prompt.split())[:60],
-            "trigger_type": "schedule",
-            "sched_trigger_type": "date",
-            "expr": when,
-            "actions": [{"action_type": "prompt_process", "target_type_id": f"agentic_process-{process_id}",
-                         "prompt": prompt}],
-        },
-        on_error=_action_failed,
-    )
-    _ok({"trigger_id": data.get("id"), "at": when, "process_id": process_id})
+    action = {"action_type": "prompt_process", "target_type_id": f"agentic_process-{process_id}", "prompt": prompt}
+    body: dict = {"name": " ".join(prompt.split())[:60], "trigger_type": "schedule", "actions": [action]}
+    if every:
+        if at or in_:
+            _fail(EXIT_INVALID_ARG, "BAD_TIME", "Give --every, or --at / --in — not both.")
+        _seconds(every, "--every")
+        ends = until or (None if times and not for_ else
+                         (datetime.now().astimezone() + timedelta(seconds=_seconds(for_ or "1d", "--for"))).isoformat(timespec="seconds"))
+        body.update(sched_trigger_type="interval", expr=every.strip().lower())
+        if times:
+            body["max_runs"] = times
+        if ends:
+            body["expires_at"] = datetime.fromisoformat(ends).astimezone().isoformat()
+    else:
+        if times or for_ or until:
+            _fail(EXIT_INVALID_ARG, "BAD_TIME", "--times / --for / --until go with --every.")
+        body.update(sched_trigger_type="date", expr=_run_time(at, in_))
+    port = _discover_port()
+    same = [s for s in _get_graph_json(_graph_url(port, f"agentic_process/{process_id}/scheduled-prompts"),
+                                       on_error=_action_failed) or []
+            if every and s.get("prompt") == prompt and s.get("every")]
+    if same:  # already repeating: the same automation, not a second one
+        _ok({"trigger_id": same[0]["id"], "already_scheduled": True, **{k: same[0].get(k) for k in ("every", "runs", "max_runs", "until", "status")}})
+        return
+    data = _post_graph_json(_graph_url(port, "trigger"), body, on_error=_action_failed)
+    _ok({"trigger_id": data.get("id"), "process_id": process_id,
+         **({"every": every, "max_runs": times, "until": body.get("expires_at")} if every else {"at": body["expr"]})})
 
 
-@process_app.command("schedules", help="The callbacks this session has waiting.")
+@process_app.command("schedules", help="The callbacks this session has waiting or repeating: status, runs, next, end.")
 def list_scheduled(
     process: Annotated[Optional[str], typer.Option("--process", "-p", help="Defaults to the current session.")] = None,
 ) -> None:
@@ -270,10 +296,10 @@ def list_scheduled(
     _ok({"process_id": process_id, "scheduled": _get_graph_json(url, on_error=_action_failed)})
 
 
-@process_app.command("unschedule", help="Remove a callback by its trigger id.")
+@process_app.command("unschedule", help="End a callback now (its runs stay in Automations).")
 def unschedule_prompt(trigger_id: Annotated[str, typer.Argument(help="The trigger id `schedule` printed.")]) -> None:
-    _delete_graph_json(_graph_url(_discover_port(), f"trigger/{trigger_id}"), on_error=_action_failed)
-    _ok({"trigger_id": trigger_id, "removed": True})
+    data = _post_graph_json(_graph_url(_discover_port(), f"trigger/{trigger_id}/cancel"), {}, on_error=_action_failed)
+    _ok({"trigger_id": trigger_id, "status": (data or {}).get("status", "cancelled")})
 
 
 class _Printer:

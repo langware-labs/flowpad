@@ -43,9 +43,9 @@ e.g. an allocation granted through an organization) are eligible funding sources
   does the same (`:455`). Wired in by funding-on-status (`34de0ed25`), replacing the old
   "a request would carry a key" check.
 - **Where verification is asked.** `HubWebSocketManager.verify_current_user()`
-  (`flow_sdk/cloud_client/ws_client.py:723`) opens its own short socket, sends a
-  `direct_resource_type="user"` request and sets `_verified=True` when the hub's user id
-  matches `get_user()`. Callers: boot (`flow_sdk/server/app.py:736`), login
+  (`flow_sdk/cloud_client/ws_client.py:723`) opens its own short socket, sends the
+  `current-principal` action and sets `_verified=True` when the hub's principal id matches
+  `get_principal()` — a person, or the agent's `Identity` on its own box. Callers: boot (`flow_sdk/server/app.py:736`), login
   (`flow_sdk/cli/auth/cloud_login.py:300`, after `restart(wait_connected=True)`), and the
   manual `POST /api/v1/cloud/ws/verify`.
 - **What forgets it.** `is_verified` is `is_connected and _verified` (`ws_client.py:430`),

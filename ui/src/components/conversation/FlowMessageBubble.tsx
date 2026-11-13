@@ -65,6 +65,7 @@ import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { AutomationMessageActions } from './AutomationMessageActions';
 import { DiagnosisMessageActions } from './DiagnosisMessageActions';
 import { HelpRequestLine } from './HelpRequestLine';
+import { IssueReplyLine } from './IssueReplyLine';
 import { ItReplyLine } from './ItReplyLine';
 import { ItSendTable } from './ItSendTable';
 import type { ItSend } from './it-sends';
@@ -99,6 +100,7 @@ import { FormAnswersCard } from './FormAnswersCard';
 import type { AnswersEntry, MessageForm } from './message-form';
 import type { ProcessCall, ReturnedValue } from '@sdk';
 import { messageDirection } from './message-direction';
+import { useIsMobile } from '@src/hooks/use-mobile';
 
 /** How long a sender may delete their own message on a hub conversation — the backend's
  *  `OWN_MESSAGE_DELETE_WINDOW`; the hub enforces it. */
@@ -337,6 +339,8 @@ export function FlowMessageBubble({
   // bubble still works in isolation). Passing null to useEntity disables the
   // fetch — the same pattern the creator lookup below uses.
   const { data: fetchedFm } = useEntity<FlowMessage>(fmProp ? null : new TypeId(FlowMessage.type, messageId));
+  // A phone reads and replies; forwarding is desktop work.
+  const mobile = useIsMobile();
   const fm = fmProp ?? fetchedFm;
   // Our click shows at once; the server's answer (or the projection's next update) is the truth.
   const [reactions, setReactions] = useState(fm?.reactions ?? []);
@@ -566,9 +570,12 @@ export function FlowMessageBubble({
   // in `text` (the hub reuses Invitation.message as a conv-id pointer). That
   // string is plumbing, not a message — never render it as bubble content.
   const isConvIdPointer = !!fm.conversation_id && fm.text === `conversation-${fm.conversation_id}`;
+  // An issue's own message is its card (IssueReplyLine) instead of its text; the "Resolved: …" follow-up the
+  // hub posts after it is a line of text alone.
+  const issueCard = fm.issue_reply && !fm.issue_reply.follow_up ? fm.issue_reply : null;
   const message: ConversationMessage = {
     role,
-    content: isConvIdPointer ? '' : (fm.text ?? ''),
+    content: isConvIdPointer || issueCard ? '' : (fm.text ?? ''),
     sender_id: fm.sender_id ?? '',
     timestamp,
   };
@@ -831,6 +838,7 @@ export function FlowMessageBubble({
       {fm.it_reply && (
         <ItReplyLine reply={fm.it_reply} agentId={fm.sender_id ?? ''} conversationId={fm.conversation_id ?? ''} />
       )}
+      {issueCard && <IssueReplyLine reply={issueCard} />}
       {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
       {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
@@ -852,7 +860,7 @@ export function FlowMessageBubble({
     </>
   );
 
-  const canForward = !fm.is_draft && fm.kind !== FlowMessageKind.INVITATION && !!fm.conversation_id;
+  const canForward = !mobile && !fm.is_draft && fm.kind !== FlowMessageKind.INVITATION && !!fm.conversation_id;
 
   return (
     <>

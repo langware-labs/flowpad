@@ -141,3 +141,13 @@ it('skips desktop-only metadata routes on the actual hub runtime contract', asyn
   ]);
   expect(get).not.toHaveBeenCalled();
 });
+
+it('fetches an entity list once: the watch starts from the rows load just read', async () => {
+  const { dataManager } = await import('@sdk/APIEntity');
+  const fetches = vi.spyOn(dataManager as unknown as { _query: () => Promise<unknown[]> }, '_query').mockResolvedValue([]);
+  const client = new QueryClient();
+  clients.push(client);
+  const assets = new LazyAssetRegistry(client, assetDefinitions);
+  expect(await assets.load(LazyAsset.Projects)).toEqual([]);
+  expect(fetches).toHaveBeenCalledTimes(1);
+});

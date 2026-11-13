@@ -112,7 +112,11 @@ describe('buildChainTree', () => {
 });
 
 describe('consumersOf / consumerRows', () => {
-  const ep = (id: string, sources: string[] = []) => ({ id, sources });
+  // `parentIds` strips the typeid prefix, as `LLMEndpoint.parentIds` does.
+  const ep = (id: string, sources: string[] = []) => ({
+    id,
+    parentIds: sources.map((s) => s.replace('llm_endpoint-', '')),
+  });
   const A = '00000000-0000-4000-8000-00000000000a';
   const B = '00000000-0000-4000-8000-00000000000b';
   const C = '00000000-0000-4000-8000-00000000000c';

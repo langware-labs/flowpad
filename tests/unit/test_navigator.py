@@ -73,6 +73,8 @@ async def test_without_a_decision_api_every_ask_is_todays_even_an_exact_screen_n
         ("open ~/notes/plan.md", "file", "~/notes/plan.md", "show"),
         ("open connecitons", "view", "credentials", "show"),  # a typo of one name (logged live)
         ("show me prefrences", "view", "preferences", "show"),
+        ("toplog settings", "view", "preferences/developer/trace-logging", "show"),
+        ("open trace logging", "view", "preferences/developer/trace-logging", "show"),
     ],
 )
 async def test_a_rule_answers_before_the_model(hub, utterance, kind, value, verb):

@@ -126,6 +126,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: toplog tag for `flow show`: who showed what, when, why, and on which page.
+SHOW_TAG = "flow_show"
+
 # Detached background tasks that must outlive the request that spawned them
 # (e.g. ``self-restart``, which kills the very worker — and therefore the CLI
 # child process — that issued the request). ``asyncio`` only holds a weak
@@ -141,8 +144,23 @@ _SELF_RESTART_GRACE_S = 0.5
 #: frontend matches it to wait for the work instead of reporting a failure.
 BACKGROUND_TASKS_RUNNING = "background tasks are running"
 
-#: How far back to look for a pending question's answer (it lands right after).
-_PENDING_INPUT_TAIL_BYTES = 256 * 1024
+#: Chunk size for scanning a transcript forward for a pending question's answer.
+_PENDING_INPUT_CHUNK_BYTES = 256 * 1024
+
+def _transcript_has_after(path, needle: bytes, offset: int) -> bool:
+    """``needle`` occurs in the file at or after byte ``offset`` (read forward in chunks)."""
+    try:
+        with path.open("rb") as fh:
+            fh.seek(max(0, offset))
+            carry = b""
+            while chunk := fh.read(_PENDING_INPUT_CHUNK_BYTES):
+                if needle in carry + chunk:
+                    return True
+                carry = chunk[-len(needle) :]
+    except OSError:
+        pass
+    return False
+
 
 # Text a FlowData derives from its value, dropped from ``get-history``: the client rebuilds a
 # frame from flow_value/attributes/index/created_time/process_entry and never reads these, yet
@@ -1090,6 +1108,14 @@ class AgenticProcess(Entity):
             "with no hub login. Scoped to THIS process: a run told to spend someone else's public "
             "budget (``flow diagnose <request id>``) must not rebind the box's own default the way "
             "``flow llm user use`` does. Ignored without ``llm_endpoint_typeid``."
+        ),
+    )
+    llm_endpoint_tiers: dict[str, str] = APIField(
+        default_factory=dict,
+        description=(
+            "The sizes (``sm``/``md``/``lg`` -> model) of ``llm_endpoint_typeid``, when the caller knows "
+            "them and this box cannot list them -- a signed-out run of a public budget gets them from the "
+            "request's brief. Process-scoped like ``llm_endpoint_public``. Ignored without ``llm_endpoint_typeid``."
         ),
     )
     process_hook_events: list[str] = APIField(
@@ -2876,11 +2902,18 @@ class AgenticProcess(Entity):
         """GET /graph/agentic_process/<id>/scheduled-prompts — the callbacks this session has waiting."""
         from flow_sdk.builtin.trigger import pending_callbacks  # noqa: PLC0415
 
-        return ApiSuccessResponse(data=[
-            {"id": t.id, "name": t.name, "at": t.expr,
-             "prompt": next((a.prompt for a in t.actions if a.prompt), "")}
-            for t in await pending_callbacks(self)
-        ])
+        from flow_sdk.automations import lifecycle  # noqa: PLC0415
+
+        def _row(t) -> dict:
+            repeats = t.sched_trigger_type in ("interval", "cron")
+            return {"id": t.id, "name": t.name, "prompt": next((a.prompt for a in t.actions if a.prompt), ""),
+                    "status": lifecycle.status(t), "runs": int(t.counter or 0), "max_runs": lifecycle.run_limit(t),
+                    "next": t.next_run.isoformat() if t.next_run else None,
+                    "until": t.expires_at.isoformat() if t.expires_at else None,
+                    **({"every": t.expr} if repeats else {"at": t.expr} if t.sched_trigger_type == "date" else {}),
+                    **({"awaits_reply": t.awaits_reply} if t.awaits_reply else {})}
+
+        return ApiSuccessResponse(data=[_row(t) for t in await pending_callbacks(self)])
 
     @action.post(action_name="drain-queue")
     async def _drain_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -3467,6 +3500,7 @@ class AgenticProcess(Entity):
         body = await _read_json_body()
         if isinstance(body, ApiFailResponse):
             return body
+        self._log_show_request(body)
 
         try:
             link = str(body.get("link") or "").strip()
@@ -3499,11 +3533,34 @@ class AgenticProcess(Entity):
         except DisplayTargetNotFound as e:
             from flow_sdk.schema.data_spec.returned_value_spec import NavigateResult  # noqa: PLC0415
 
+            toplog.log(SHOW_TAG, "show not_found process=%s error=%s", self.id, e)
             return ApiSuccessResponse(
                 data=NavigateResult.not_found(str(e), verdict="not_found").model_dump(mode="json")
             )
 
         return await self._show_answer(payload)
+
+    def _log_show_request(self, body: dict) -> None:
+        """One ``flow_show`` line per show: who asked, what, why, and the page it lands on."""
+        if not toplog.is_on(SHOW_TAG):
+            return
+        ctx = self.context_data if isinstance(self.context_data, dict) else {}
+        target = {k: body[k] for k in ("typeid", "path", "port", "artifact_id", "view", "url", "link") if body.get(k)}
+        last = ctx.get("last_shown")
+        display = ctx.get(DISPLAY_CONTEXT_KEY)
+        toplog.log(
+            SHOW_TAG,
+            "show request process=%s name=%r worker=%s project=%s via=%s target=%s why=%r page=%s last_shown=%s",
+            self.id,
+            getattr(self, "name", None),
+            getattr(self, "worker_type", None),
+            getattr(self, "project_id", None),
+            "link-click" if body.get("link") else "cli",
+            target,
+            body.get("why"),
+            display.get("address") if isinstance(display, dict) else None,
+            (last.get("kind") or last.get("type")) if isinstance(last, dict) else None,
+        )
 
     async def _show_answer(self, payload: dict) -> ApiSuccessResponse:
         """Show *payload* in this process's display and answer a ``NavigateResult``
@@ -3512,6 +3569,13 @@ class AgenticProcess(Entity):
         from flow_sdk.core.navigate import show_target  # noqa: PLC0415
 
         result = await show_target(payload, process=self)
+        toplog.log(
+            SHOW_TAG,
+            "show done process=%s kind=%s verdict=%s",
+            self.id,
+            payload.get("kind") or payload.get("type"),
+            getattr(result, "verdict", None),
+        )
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
     # ── Agent-facing terminal ───────────────────────────────────────────────
@@ -6014,6 +6078,11 @@ class AgenticProcess(Entity):
         if tool_name not in USER_INPUT_TOOLS or not tool_use_id:
             return
         pending = {"tool_use_id": tool_use_id, "tool_name": tool_name, "input": raw.get("tool_input") or {}}
+        path = self.transcript_path
+        try:
+            pending["offset"] = path.stat().st_size if path is not None else 0  # the answer lands after this
+        except OSError:
+            pending["offset"] = 0
         self.context_data = {**(self.context_data or {}), PENDING_USER_INPUT_KEY: pending}
         await self.save()
 
@@ -6031,16 +6100,9 @@ class AgenticProcess(Entity):
             return None
         path = self.transcript_path
         if path is not None:
-            try:
-                with path.open("rb") as fh:
-                    fh.seek(0, 2)
-                    fh.seek(max(0, fh.tell() - _PENDING_INPUT_TAIL_BYTES))
-                    tail = fh.read().decode("utf-8", errors="replace")
-            except OSError:
-                tail = ""
-            if f'"tool_use_id":"{pending["tool_use_id"]}"' in tail:
+            if _transcript_has_after(path, f'"tool_use_id":"{pending["tool_use_id"]}"'.encode(), pending.get("offset", 0)):
                 return None
-        return pending
+        return {k: v for k, v in pending.items() if k != "offset"}
 
     async def on_hook(self, data: AgentHookData):
         """Emit and dispatch one canonical, process-targeted hook event.
@@ -6754,12 +6816,16 @@ class AgenticProcess(Entity):
         )
 
     @action.get(action_name="get-history")
-    async def get_history_action(self) -> "ApiSuccessResponse | JSONResponse":
+    async def get_history_action(self, limit: int | str = 0) -> "ApiSuccessResponse | JSONResponse":
         """Return this process's transcript as a list of FlowData dicts.
 
         Driver-supplied. Stateless — works for processes that have exited
         (no live worker required). Empty result is a success with
         ``history=[]``, not a 404.
+
+        ``limit`` > 0 returns only the newest ``limit`` rows; ``total`` says how many there are.
+        A long chat's transcript runs to megabytes (9.2 MB on prod) and the pane rendered
+        nothing until all of it arrived.
         """
         if self.hub_route:
             return await self._relay_json("get-history", method="GET", refresh=False)
@@ -6789,8 +6855,19 @@ class AgenticProcess(Entity):
                     history_start=history_start_time(history),
                 ),
             )
+            total = len(history)
+            # A query parameter: it arrives as a string ("200"), not the annotated int.
+            newest = int(limit or 0)
+            if newest > 0:
+                history = history[-newest:]
             rows = [fd.model_dump(mode="python", exclude=_DERIVED_TEXT) for fd in history]
-            data = {"session_id": self.session_id, "use_worker_history": True, "count": len(rows), "history": rows}
+            data = {
+                "session_id": self.session_id,
+                "use_worker_history": True,
+                "count": len(rows),
+                "total": total,
+                "history": rows,
+            }
             # The same envelope and renderer the graph route would apply (``_rendered_once``),
             # built here so the encode of these freshly-made dicts runs off the loop too.
             return JSONResponse(content=ApiSuccessResponse(data=data).model_dump())

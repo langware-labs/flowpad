@@ -15,6 +15,8 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
+from flow_sdk.core.sockets import is_listener
+
 
 def log_dir() -> Path:
     """Where a started server's output goes (``<slug>-<port>.log``): this instance's logs."""
@@ -84,7 +86,7 @@ def _listed(port: int) -> Optional[bool]:
         # table is unreadable this once, and the connect below answers instead.
         return None
     return any(
-        one.status == psutil.CONN_LISTEN and one.laddr and one.laddr.port == port and one.laddr.ip in _LOCAL_BINDS
+        is_listener(one) and one.laddr.port == port and one.laddr.ip in _LOCAL_BINDS
         for one in table
     )
 

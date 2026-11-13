@@ -1,0 +1,8 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id":   {"shape": "string", "description": "Short handle a step names in its `persona` (owner, customer, agent)."},
+    "name": {"shape": "string", "description": "What the reviewer calls them: a first name (Noa) or the agent's name."},
+    "role": {"shape": "string", "description": "Who they are in this journey, in a few words: 'runs the support center', 'opens a ticket'."}
+  }
+}

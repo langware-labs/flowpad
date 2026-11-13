@@ -20,7 +20,7 @@ export function LogsSection({ onNavigate }: { onNavigate?: () => void } = {}) {
   const DatasetIcon = iconForType(Dataset.type);
 
   // The log opens in the app that edits it, like any dataset (record-type-nav's dataset action).
-  // None yet means the log was never on: send the user to the switch (Preferences → Advanced).
+  // None yet means the log was never on: send the user to the switch (Preferences → Developer → Smart navigation).
   const openSmartNavigationLog = async () => {
     onNavigate?.();
     const [log] = await Dataset.query(
@@ -32,7 +32,7 @@ export function LogsSection({ onNavigate }: { onNavigate?: () => void } = {}) {
       }),
     );
     if (!log) {
-      navigation.openPreferences('advanced');
+      navigation.openPreferences('developer/smart-navigation');
       return;
     }
     const subject = `dataset-${log.id}`;

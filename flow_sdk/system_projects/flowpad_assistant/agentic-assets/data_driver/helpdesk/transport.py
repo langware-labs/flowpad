@@ -27,11 +27,11 @@ class AppHub:
             raise hub_refusal(exc, signed_in=bool(self.me())) from exc
 
     def me(self) -> str:
-        """The logged-in hub user, or "" when signed out — the instance config's user pointer."""
+        """Who is signed in to the hub (a person, or the agent's Identity on its box), or "" when signed out."""
         try:
-            from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+            from flow_sdk.cli.app_config import get_principal  # noqa: PLC0415
 
-            return str((get_user() or {}).get("id") or "")
+            return str((get_principal() or {}).get("id") or "")
         except Exception:  # noqa: BLE001
             return ""
 

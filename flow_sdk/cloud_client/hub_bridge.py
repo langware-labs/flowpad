@@ -618,12 +618,13 @@ class HubWsBridge:
             # The auto-notify version is useless to us — we already know
             # about our own sends — and lacks the conversation parent, so it
             # would hit the policy-denied parents_path fallback. Skip it by
-            # matching ``sender_id`` against the *cloud* user id (the local
-            # ``User`` row uses a different per-machine id).
+            # matching ``sender_id`` against the signed-in *cloud* principal's id
+            # (a person, or the agent's Identity on its box; the local ``User``
+            # row uses a different per-machine id).
             try:
-                from flow_sdk.cli.app_config import get_user as _get_cloud_user
+                from flow_sdk.cli.app_config import get_principal as _get_cloud_principal
 
-                cloud_user = _get_cloud_user() or {}
+                cloud_user = _get_cloud_principal() or {}
                 cloud_user_id = cloud_user.get("id")
                 if cloud_user_id and payload.get("sender_id") == cloud_user_id:
                     return
@@ -918,14 +919,24 @@ class HubWsBridge:
             # sync the delivery/body fields the hub actually owns.
             persisted = None
             last_field = ""
-            for field in (
+            fields: tuple[str, ...] = (
                 "delivery_status",
                 "delivered_at",
                 "received_at",
                 "handling_at",
                 "body_status",
                 "attachment_filename",
-            ):
+            )
+            # A Monitoring message is ONE message per Issue that the hub keeps current: a repeat or a status
+            # change rewrites its ``metadata.issue`` (and its text). Only those messages take ``text`` from an
+            # UPDATE -- every other message's text is the sender's and stays as it arrived.
+            from flow_sdk.builtin.flow_message import issue_of  # noqa: PLC0415
+
+            issue = issue_of(data)
+            if issue is not None:
+                data = {**data, "issue_reply": issue}
+                fields = (*fields, "issue_reply", *(("text",) if isinstance(data.get("text"), str) else ()))
+            for field in fields:
                 # The hub leaves a cleared field out of a full message: no ``handling_at`` on a message that is
                 # otherwise whole means "not working any more".
                 if field == "handling_at" and field not in data and ("sender_id" in data or "delivery_status" in data):
@@ -990,9 +1001,9 @@ class HubWsBridge:
             new_body_status = getattr(existing, "body_status", None)
             is_self_send = False
             try:
-                from flow_sdk.cli.app_config import get_user as _get_cloud_user
+                from flow_sdk.cli.app_config import get_principal as _get_cloud_principal
 
-                cloud_user_id = (_get_cloud_user() or {}).get("id")
+                cloud_user_id = (_get_cloud_principal() or {}).get("id")
                 sender_id = getattr(existing, "sender_id", None)
                 if cloud_user_id and sender_id and sender_id == cloud_user_id:
                     is_self_send = True

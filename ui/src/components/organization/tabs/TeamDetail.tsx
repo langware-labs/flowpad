@@ -83,6 +83,9 @@ export function TeamDetail({
   // `undefined` until the team's pool has loaded: before that nobody can be called default or custom.
   const defaultCap = pool ? (pool.member_default_limits?.cost_usd_total ?? null) : undefined;
   const members = detail.data?.members ?? [];
+  // Counted off the SAME rows the table below lists: the hub's `member_count` leaves the owner out, so
+  // the header said "0 members" over a table showing one.
+  const memberCount = detail.data ? members.length : team.member_count;
   const poolId = team.endpoint_id;
 
   const setDefault = async (usd: number | null) => {
@@ -153,7 +156,7 @@ export function TeamDetail({
             testIdPrefix={`team-${team.id}`}
           />
           <p className="text-sm text-muted-foreground">
-            {team.member_count != null && <Plural value={team.member_count} one="# member" other="# members" />}
+            {memberCount != null && <Plural value={memberCount} one="# member" other="# members" />}
             {!!team.my_roles?.length && (
               <>
                 {' · '}

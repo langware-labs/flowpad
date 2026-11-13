@@ -1,5 +1,6 @@
 import type { Config } from 'tailwindcss';
 import animate from 'tailwindcss-animate';
+import plugin from 'tailwindcss/plugin';
 
 export default {
   darkMode: ['class'],
@@ -14,6 +15,11 @@ export default {
       },
     },
     extend: {
+      // `h-screen` & co. follow the VISIBLE viewport: on a phone `100vh` runs under the browser's own bars.
+      // On a desktop the two are the same number.
+      height: { screen: '100dvh' },
+      minHeight: { screen: '100dvh' },
+      maxHeight: { screen: '100dvh' },
       // Text-only shades: the fill colors are too dark to read as text on dark surfaces.
       textColor: {
         primary: { DEFAULT: 'hsl(var(--primary-text))' },
@@ -215,5 +221,9 @@ export default {
       },
     },
   },
-  plugins: [animate],
+  plugins: [
+    animate,
+    // Touch behaviour is keyed on the pointer, layout on the width (`max-md:`): a narrow desktop window still has hover.
+    plugin(({ addVariant }) => addVariant('pointer-coarse', '@media (pointer: coarse)')),
+  ],
 } satisfies Config;

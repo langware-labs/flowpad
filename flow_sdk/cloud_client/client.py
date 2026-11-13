@@ -239,14 +239,28 @@ class FlowpadClient:
         response = await self.request("GET", path, params=params, timeout=timeout)
         return response.content if raw else self._unwrap(response)
 
-    async def get_user(self) -> Dict[str, Any]:
-        """Get the current user information.
+    async def get_principal(self) -> Dict[str, Any]:
+        """Who this key signs in as: a person (``type`` ``user``) or an Identity (``type`` ``identity``).
 
         Raises:
-            ValueError: If the response is missing the 'id' field.
+            ValueError: If the response names no principal (no ``id`` or ``type``).
+        """
+        principal = await self.get("/current-principal")
+        if not isinstance(principal, dict) or "id" not in principal or "type" not in principal:
+            import json
+
+            raise ValueError(f"Invalid principal: missing 'id' or 'type'. Got:\n{json.dumps(principal, indent=2)}")
+        return principal
+
+    async def get_user(self) -> Dict[str, Any]:
+        """The signed-in PERSON. An Identity is no person: that raises, so callers that accept any signed-in
+        principal use :meth:`get_principal`.
+
+        Raises:
+            ValueError: If the key signs in as no person.
         """
         user_data = await self.get("/current-user")
-        if "id" not in user_data:
+        if not isinstance(user_data, dict) or "id" not in user_data:
             import json
 
             raise ValueError(f"Invalid user data: missing 'id' field. Got:\n{json.dumps(user_data, indent=2)}")

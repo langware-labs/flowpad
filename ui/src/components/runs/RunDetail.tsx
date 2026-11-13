@@ -10,6 +10,7 @@ import { Plural, Trans } from '@lingui/react/macro';
 import { useCallback, useEffect, useState } from 'react';
 import apiClient from '@sdk/client';
 import { formatBytes } from '@src/utils/format-bytes';
+import { localHtmlRef, OpenInBrowserButton } from '@src/lib/open-in-browser';
 import { timeSince } from '@src/utils/duration';
 import { openAgenticProcess } from '@src/navigation/agentic-process-open';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -101,6 +102,8 @@ export function RunDetail({ runId }: { runId: string }) {
   useEffect(() => {
     if (openFile) void show(openFile.key, openFile.name);
   }, [openFile, show]);
+  // An HTML output on this machine's disk also opens in the system browser.
+  const browserRef = content?.renderable ? localHtmlRef(content.path) : null;
 
   if (!run)
     return (
@@ -183,6 +186,9 @@ export function RunDetail({ runId }: { runId: string }) {
             <span className="muted path" title={content.path}>
               {content.path}
             </span>
+            {browserRef && (
+              <OpenInBrowserButton fileRef={browserRef} testId="run-open-browser" className="lnk" iconClassName="h-3.5 w-3.5" />
+            )}
           </div>
           {content.renderable && !asSource ? (
             // Sandboxed: an artifact is agent-generated content, so it renders

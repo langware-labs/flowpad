@@ -1258,20 +1258,23 @@ export class Project extends APIEntity<Project> {
   }
 
   /** Is this project ready here (`GET project/<id>/setup-requirements`)? Static: callers hold an id. */
-  /** Fetch the remotes of the clones Flowpad made, so each dependency's `behind` is current, then
-   *  tell every dependency listener. Git does the work off the backend's event loop; callers fire it
-   *  and go on (`void`). Never throws. */
+  /** Fetch the remotes of the clones Flowpad made, so each dependency's `behind` is current, and
+   *  tell the dependency listeners when that found something (a checkout behind its remote, or a
+   *  pull that failed). Fetching only ever moves `behind` up, so a clean answer changes nothing a
+   *  listener shows — announcing it anyway made every project open read its dependencies twice.
+   *  Git does the work off the backend's event loop; callers fire it and go on (`void`). Never throws. */
   static async checkDependencyUpdates(projectId: string): Promise<DependencyState[]> {
+    let dependencies: DependencyState[];
     try {
       const actionInfo = new ActionInfo('check-dependency-updates', Project.type, projectId, 'POST');
       const response = await dataManager.callAction<void, { dependencies: DependencyState[] }>(actionInfo);
-      return response?.dependencies ?? [];
+      dependencies = response?.dependencies ?? [];
     } catch (err) {
       console.warn('[project] dependency update check failed', err);
       return [];
-    } finally {
-      notifyDependenciesChanged(projectId);
     }
+    if (dependencies.some((dep) => (dep.behind ?? 0) > 0 || dep.pull_error)) notifyDependenciesChanged(projectId);
+    return dependencies;
   }
 
   static async setupRequirements(

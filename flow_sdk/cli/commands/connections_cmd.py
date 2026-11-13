@@ -159,7 +159,7 @@ def test_connection(
     except ConnectionConnectError as error:
         _error_exit(error, json_output=json_output)
         return
-    granted = next((set(r.scopes) for r in rows if r.provider.lower() == provider.strip().lower()), set())
+    granted = next((set(r.held_scopes) for r in rows if r.provider.lower() == provider.strip().lower()), set())
     missing = [s for s in dict.fromkeys(scope) if s not in granted] if scope else []
     ok = bool(result.ok) and not missing
     payload = {"ok": ok, "provider": provider, "identity": result.identity, "missing_scopes": missing,

@@ -34,6 +34,7 @@ import {
   Copy,
   ExternalLink,
   History,
+  FileText,
   KeyRound,
   Loader2,
   RefreshCw,
@@ -42,6 +43,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { openLlmSources } from '@src/components/llm-sources/llm-sources-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 
 interface PypiRelease {
   version: string;
@@ -80,6 +82,13 @@ interface VersionCheckResponse {
    *  sits beside `hub` rather than inside `pypi`. Null for a source checkout. */
   installed_at: string | null;
   hub: HubInfo | null;
+  /** SDK versions whose notes ship with this install (`releases/<v>/RELEASE_NOTES.md`), newest first. */
+  release_notes?: ReleaseNotesFile[];
+}
+
+export interface ReleaseNotesFile {
+  version: string;
+  path: string;
 }
 
 interface ElectronAPI {
@@ -317,6 +326,7 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
   // The server may have restarted onto another version since this page loaded: show what it runs
   // (`pypi.current` is the running server's own version).
   const runningVersion = data?.pypi?.current || pageVersion;
+  const installedNotes = data?.release_notes?.find((n) => n.version === runningVersion);
   const pageIsStale = runningVersion !== pageVersion;
   const [restarting, setRestarting] = useState(false);
 
@@ -777,10 +787,6 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
               muted={!pypi?.update_available}
             />
             {data?.installed_at && <TimestampRow label={t`Installed on`} timestamp={data.installed_at} />}
-            {/* No release notes here: PyPI carries no notes body (``PypiRelease``
-                is version/date/yanked only), and GitHub Releases are desktop
-                tags, so an SDK version never resolves there. The rows that used
-                to try rendered nothing, every time. */}
             {pypi?.update_available && upgradeVersion && (
               <div className="pt-1">
                 {/* The desktop app upgrades through its own updater; a browser tab asks the backend
@@ -800,16 +806,35 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
                 {upgradeError && <p className="pt-1 text-[10px] text-destructive">{upgradeError}</p>}
               </div>
             )}
-            <button
-              type="button"
-              onClick={() => void handleOpenExternal(`https://pypi.org/project/flowpad/${pypi?.latest ?? ''}`)}
-              className="flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <ExternalLink className="h-3 w-3" />
-              <span>
-                <Trans>View on PyPI</Trans>
-              </span>
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void handleOpenExternal(`https://pypi.org/project/flowpad/${pypi?.latest ?? ''}`)}
+                className="flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <ExternalLink className="h-3 w-3" />
+                <span>
+                  <Trans>View on PyPI</Trans>
+                </span>
+              </button>
+              {/* Only when this install ships notes for the version it runs (none → no chip). */}
+              {installedNotes && (
+                <button
+                  type="button"
+                  data-testid="sdk-release-notes-chip"
+                  onClick={() => {
+                    handleOpenChange(false);
+                    navigation.openMachinePath(installedNotes.path, LOCAL_COMPUTE_NODE);
+                  }}
+                  className="inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <FileText className="h-3 w-3" />
+                  <span>
+                    <Trans>Release notes</Trans>
+                  </span>
+                </button>
+              )}
+            </div>
 
             {picking && (
               <div className="space-y-1.5 pt-1">

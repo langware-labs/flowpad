@@ -30,7 +30,6 @@ import { openHarnessLoginModal, useHarnessLoginStore } from '@src/components/har
 import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
-import { getHistoryPosition } from '@src/navigation/history-position-store';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 export function LlmSetupView() {
@@ -56,8 +55,7 @@ export function LlmSetupView() {
   // there is somewhere to go back to only in the dock (`windowMode` never renders this).
   const leave = useCallback(() => {
     setOpen(false);
-    if (getHistoryPosition().canGoBack) navigation.goBack();
-    else navigation.goHome();
+    navigation.backOrHome();
   }, [navigation, setOpen]);
 
   const skip = useCallback(async () => {

@@ -61,6 +61,11 @@ async def arm_trigger(entity: Any, *, replace: bool = False) -> None:
         if not await runs_here(entity):   # every kind: another machine's place holds the file, never arms it
             await disarm_trigger(str(entity.id))
             return
+        from flow_sdk.automations.lifecycle import on_arm  # noqa: PLC0415
+
+        if not await on_arm(entity):  # ended: stays disarmed
+            await disarm_trigger(str(entity.id))
+            return
         if entity.trigger_type == TriggerType.SCHEDULE:
             await entity._register_schedule_job()
         elif entity.trigger_type == TriggerType.FSOP:
@@ -74,6 +79,10 @@ async def arm_trigger(entity: Any, *, replace: bool = False) -> None:
             from flow_sdk.builtin.tag_triggers import register_tag_trigger  # noqa: PLC0415
 
             register_tag_trigger(entity)
+            if getattr(entity, "awaits_reply", None):
+                from flow_sdk.builtin.reply_callbacks import reconcile  # noqa: PLC0415
+
+                await reconcile(entity)
     except Exception:
         # Never fail the save (or the index) over a subscription. The row is
         # committed either way, and the next re-index re-arms.

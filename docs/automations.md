@@ -171,6 +171,22 @@ session id is one machine's, so no `trigger.json` can say it.
   tab comes back (unselected), the prompt goes on its prompt queue — injected at the next idle edge —
   and a stopped terminal session is started, taking the queue head as its launch prompt. No wait loop.
   The session reads one line: `This is trigger <id> callback: <prompt> (… check it is still relevant …)`.
+- **Or on a repeat, with an end.** `flow process schedule "<prompt>" --every 10m --times N | --for 8h | --until <ISO>`
+  makes ONE `interval` rule. It counts its runs and ends by itself; the callback line says "run 3 of 4, every
+  10m — it repeats by itself; do not schedule it again". A repeat without an end is refused.
+- **Runs, end and status — every kind** (`automations/lifecycle.py`). `max_runs` (`fire_once` = 1, a `date`
+  one-shot = 1) and `expires_at` bound a rule's life; `lifecycle.end(rule, reason)` is the one way it ends
+  (`ended_at`, `ended_reason` max_runs | expired | cancelled): disarmed, unlinked from the session's chip,
+  `trigger.ended` emitted, a reply wait's "cancelled" message posted. `enabled` stays the person's switch.
+  `status` (active · off · done · expired · cancelled), `max_runs`, `runs_left`, `until` ride on every
+  `AutomationSummary`; `POST trigger/<id>/cancel` (`flow process unschedule`) ends one now.
+- **Or when a message is answered.** `flow conversation send|new … --on-reply "<prompt>" [--wait 2h]` makes the
+  same callback woken by the reply instead of a clock (`builtin/reply_callbacks.py`): a TAG rule on
+  `entity.child_created` for the conversation (every write path emits it), `awaits_reply` = the message,
+  `fire_once`, `expires_at` (default 3 days). The first later message written by a person — not a session, not
+  an agent; quoted or not — fires it, and the session reads the callback line plus the reply. Arming checks the
+  conversation once, so a reply that landed while nothing listened still fires. Unanswered at `expires_at`: a
+  "Prompt handling cancelled" message in the rule's Automations conversation, and it never fires.
 - **Gone with the session.** Deleting a session deletes its waiting callbacks (`drop_callbacks`); a
   fired one stays, as every spent one-shot does.
 

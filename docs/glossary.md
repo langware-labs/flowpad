@@ -465,6 +465,16 @@ of which may be absent. Say which one you mean.
 | `resolve_asset` / `index_one` / `ensure_entity` | `flow_sdk/fs_store/resolve.py` | One path → `Resolved(type, id, root, body, editor)`; the interactive counterpart of the walk, behind `GET /api/v1/assets/resolve?path=`. A path no type claims is `NotAnAsset`. |
 | "capsule" | `flow_sdk/capsules/` | The generic named-block carrier: `tag` blocks in source files, and the `identity` folder capsule the `Sidecar` carrier stores. Not an identity form for markdown — a file still carrying the HTML-comment `identity` block reads as `Foreign` (`flow_sdk/migrations/migration_2026_09_identity_live_forms.py`). |
 
+## Principal · Identity (2026-11-11)
+
+Not the identity carriers above: those say where an ASSET's id lives. These say WHO is signed in.
+
+| Ours | One place | Notes |
+|---|---|---|
+| **principal** | `get_principal()` (`flow_sdk/cli/app_config.py`), `dataContext.currentPrincipal`, hub `GET /current-principal` | Who an instance is signed in to the hub as: a `User` (a person) or an `Identity`. Reported as itself (`user-<id>` / `identity-<id>`), never disguised. |
+| `Identity` | hub `flowpad/hub/builtin/identity.py`, `ts_sdk/src/entities/identity.ts` | A non-human principal. `subject_typeid` is what it acts for: an `agent-<id>` (the agent's own, shared by its boxes) or a `deployment-<id>` (one placement's alone). Minted by the hub only. |
+| `get_user()` / `currentUser` / `/current-user` | same places | The signed-in PERSON only — empty on a box signed in as an `Identity`. Ask the principal for "is this me". |
+
 ## Activity (2026-09-03)
 
 **`Activity` is ours, not a provider mirror.** It is the one mechanism any long-running

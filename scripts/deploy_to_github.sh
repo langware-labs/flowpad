@@ -45,6 +45,7 @@ SKIP_TESTS=false
 NO_PYPI=false
 SKIP_FLOW_RS_SIGN=false
 FORCE_FLOW_RS_SIGN=false
+NO_RELEASE_NOTES=false
 BUMP_LEVEL="patch"          # patch (default) | minor | major
 EXPLICIT_VERSION=""         # set by --version X.Y.Z; overrides BUMP_LEVEL
 while [[ $# -gt 0 ]]; do
@@ -63,6 +64,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --force-flow-rs-sign)
             FORCE_FLOW_RS_SIGN=true
+            shift
+            ;;
+        --no-release-notes)
+            NO_RELEASE_NOTES=true
             shift
             ;;
         --patch)
@@ -94,6 +99,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-pypi             Skip publishing to PyPI"
             echo "  --skip-flow-rs-sign   Skip building/signing the standalone flow-rs binaries"
             echo "  --force-flow-rs-sign  Re-sign flow-rs even when the Rust crate source is unchanged"
+            echo "  --no-release-notes    Do not write releases/<version>/RELEASE_NOTES.md"
             echo "  --patch               Bump the patch component (default): X.Y.Z -> X.Y.(Z+1)"
             echo "  --minor               Bump the minor component: X.Y.Z -> X.(Y+1).0"
             echo "  --major               Bump the major component: X.Y.Z -> (X+1).0.0"
@@ -170,6 +176,13 @@ if ! python3 scripts/check_version_compat.py --backend-version "$NEW_VERSION"; t
 fi
 echo -e "${GREEN}Version-compatibility declarations valid${NC}"
 echo ""
+
+# Release notes: started now so the skill writes them while tests and signing run; skipped when the
+# notes are already fresh for the user-visible commits. Collected before the bump commit (they ship in the wheel).
+if [[ "$NO_RELEASE_NOTES" == false ]]; then
+    "$SCRIPT_DIR/release_notes.sh" start "$NEW_VERSION"
+    echo ""
+fi
 
 # Get current branch
 CURRENT_BRANCH=$(git branch --show-current)
@@ -364,6 +377,11 @@ fi
 
 # Update version file and roll the migration slot in the SAME commit — the
 # release is what consumes the slot, so the release is what must open the next one.
+# The release notes started above must be written before the bump commit (they ship in the wheel).
+if [[ "$NO_RELEASE_NOTES" == false ]]; then
+    "$SCRIPT_DIR/release_notes.sh" finish "$NEW_VERSION"
+fi
+
 echo -e "${YELLOW}Updating version to ${NEW_VERSION}...${NC}"
 "$SCRIPT_DIR/bump_version.sh" "$NEW_VERSION"
 

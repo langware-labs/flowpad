@@ -170,7 +170,7 @@ class AudienceDoor:
         if path == grants.GATE_PATH:
             landing = grants.safe_next(request.query_params.get("next"))
             traded = grants.exchange(
-                request.query_params.get(grants.TICKET_PARAM), audience=self.audience, landing=landing
+                request.query_params.get(grants.TICKET_PARAM), audience=self.audience, landing=landing, conn=request
             )
             return traded if traded is not None else fail(403, "this link is not valid for this door")
         host = request.headers.get("host") or request.url.netloc

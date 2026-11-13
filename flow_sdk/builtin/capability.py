@@ -145,10 +145,10 @@ class Capability(Entity):
     # Chosen LMApiProvider value when auth_mode == "api"; None → the driver's
     # ApiAuthSpec.default_provider.
     api_provider: str | None = APIField(default=None)
-    # User overrides for the tier→model mapping, layered over the driver's
-    # endpoint tiers: {provider: {name: model_slug}}, with 'device' for native login, where
-    # name is a tier (sm/md/lg) or a custom option name. Persisted + user-editable;
-    # like auth_mode it is NOT in the ensure_seeded reconcile list.
+    # LEGACY, read only by ``cli_drivers.device_endpoints.migrate_capability_model_maps``: the
+    # old per-(harness, provider) size table ({provider: {name: model_slug}}, 'device' for native
+    # login). Model sizes now live on the LLM endpoint (a device login has its own row); the
+    # migration moves what is here onto those rows and empties it. Nothing else reads it.
     model_map: dict[str, Any] = APIField(default_factory=dict)
 
     @classmethod

@@ -22,6 +22,7 @@ from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import AttachmentType, FlowMessage
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSessionStatus as S
+from flow_sdk.builtin.user import User
 from tests.api._session_helpers import inbound_prompt_fm, make_conversation, make_session
 from tests.api.test_run_session_turn import fake_worker  # noqa: F401 — the shared worker seam
 
@@ -58,7 +59,8 @@ async def test_plain_prompts_are_each_their_own_prompt_request(bootstrapped_clie
 
 async def test_prompts_join_an_open_live_session(bootstrapped_client, user):
     conv_id = await make_conversation(bootstrapped_client)
-    live = await make_session(conv_id, S.IDLE.value)  # the live-session button: no limit
+    me = (await User.current_sender_participant(None)).get("user_id")
+    live = await make_session(conv_id, S.IDLE.value, guest_user_id=me)  # the live-session button: no limit
     sent = await _send_prompt(bootstrapped_client, conv_id, "next turn")
 
     assert sent.remote_worker_session_id == live.id

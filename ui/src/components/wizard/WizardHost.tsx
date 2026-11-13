@@ -143,7 +143,7 @@ export function WizardHost() {
           backdrop would tear it down mid-run and lose the transcript. Dismiss is
           therefore explicit only: the X, Cancel, or Done. */}
       <DialogContent
-        className="flex h-[min(780px,calc(100vh-4rem))] max-w-4xl flex-col p-0"
+        className="flex h-[min(780px,calc(100dvh-4rem))] max-w-4xl flex-col p-0"
         onEscapeKeyDown={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >

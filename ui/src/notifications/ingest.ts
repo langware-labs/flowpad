@@ -78,13 +78,8 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
   const detail = msg.detail;
 
   if (statusCode === 0) {
-    notify.error({
-      id: 'cloud-unreachable',
-      title: t`Cloud is not available`,
-      message: t`We couldn't reach the cloud service. Check your connection or try again in a moment.`,
-      detail,
-    });
-    hold('cloud-unreachable', request);
+    // Unreachable cloud is shown by the connection status, not as a warning.
+    return;
   } else if (statusCode === 401) {
     // A 401 while we were never authenticated (or after an explicit logout) is
     // the *normal* logged-out state — not an error. The stream inbox/conversation
@@ -159,14 +154,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
 function handleCloudConnectionStatus(): void {
   if (!cloudManager.connectionControlsAvailable) return;
   const status = cloudManager.connectionSlot.status;
-  if (status === 'error') {
-    notify.error({
-      id: 'cloud-unreachable',
-      title: t`Cloud is not available`,
-      message: t`We couldn't reach the cloud service. Check your connection or try again in a moment.`,
-    });
-    hold('cloud-unreachable', CONNECTION_HOLDER);
-  } else if (status === 'auth_rejected') {
+  if (status === 'auth_rejected') {
     notify.error({
       id: 'cloud-auth-expired',
       title: t`Cloud sign-in expired`,

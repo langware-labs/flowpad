@@ -50,12 +50,16 @@ def tail_status(
     *,
     tail_bytes: int = TAIL_BYTES,
     active_seconds: int = ACTIVE_SECONDS,
+    capability_kind: str = "",
 ) -> WorkerStatus:
     """Walk a JSONL transcript's tail backwards and classify the newest signal.
 
     Returns ``INITIALIZING`` when the file is missing, unreadable, or holds
     nothing parseable — all three mean "no evidence yet", which is different
     from "evidence that nothing is happening".
+
+    ``capability_kind`` names the harness CLI that wrote the file, so a terminal
+    "requires a newer version" error can mark that CLI as too old.
     """
     file_path = Path(path)
     try:
@@ -91,6 +95,11 @@ def tail_status(
         if status is None:
             continue
         if terminal:
+            if status is WorkerStatus.ERROR and capability_kind:
+                # A vendor refusing this CLI as too old marks it for update.
+                from flow_sdk.core.capabilities.latest_version import note_session_error  # noqa: PLC0415
+
+                note_session_error(capability_kind, raw_line)
             return status
         # Newest status wins, but only counts as live while the file is fresh.
         return status if is_active else WorkerStatus.INACTIVE

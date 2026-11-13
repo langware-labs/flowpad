@@ -41,6 +41,7 @@ import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { LinkScope } from '@src/components/links/LinkHandlersContext';
 import type { LinkSurface } from '@src/components/links/link-actions';
 import { ChatActivityLine } from './ChatActivityLine';
+import { EarlierHistoryButton } from './EarlierHistoryButton';
 import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
 import { useObservedTurn } from './hooks/useObservedTurn';
 import { useTurnActivity } from './hooks/useTurnActivity';
@@ -987,6 +988,7 @@ export function EntityExecutionPanel({
       <LinkScope process={activeProcess} surface={linkSurface}>
         <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
           {showEmptyState && <div className="p-3 text-sm text-muted-foreground">{emptyStateText}</div>}
+          {activeProcess && <EarlierHistoryButton process={activeProcess} />}
           {activeProcess && <AgentIntroMessage agent={launchingAgent} />}
           {dense ? (
             <>

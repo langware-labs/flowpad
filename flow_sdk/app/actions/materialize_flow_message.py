@@ -24,6 +24,7 @@ from flow_sdk.builtin.flow_message import (
     FlowMessage,
     FlowMessageKind,
     derive_help_request_kind,
+    derive_issue_reply,
     derive_it_reply,
     derive_session_fields,
     session_snapshot_from_header,
@@ -260,6 +261,7 @@ async def materialize_flow_message(
             derive_session_fields(fm)
             derive_help_request_kind(fm)
             derive_it_reply(fm, payload)
+            derive_issue_reply(fm, payload)
             # Pure reflection: preserve the hub's created_by/updated_by/dates
             # verbatim, never the local sync user.
             with remote_reflection():
@@ -289,6 +291,7 @@ async def materialize_flow_message(
         derive_session_fields(fm)
         derive_help_request_kind(fm)
         derive_it_reply(fm, payload)
+        derive_issue_reply(fm, payload)
         # Save with notify=False — the CREATE is emitted explicitly below. Remote
         # rows reflect (preserve hub attribution); local rows stamp normally.
         with remote_reflection() if remote else nullcontext():

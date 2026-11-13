@@ -13,8 +13,8 @@ export interface UseGitPushResult {
 
 /**
  * Shared one-click "non-tech" push: commit-all → pull --rebase → push. The
- * outcome is toasted by ``notifyGitOutcome`` — the same toast, and the same
- * Resolve on a conflict, as every other sync.
+ * outcome is toasted by ``notifyGitOutcome`` — the same toast as every other
+ * sync (a conflict shows only as the footer chip).
  *
  * Used by the footer push button, the Git panel header, the asset Publish pill
  * and the share gate. ``onAfter`` is invoked after every attempt (success or

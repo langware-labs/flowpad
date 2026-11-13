@@ -276,8 +276,9 @@ function MessageBody({ content, isBot, links }: { content: string; isBot: boolea
   );
 }
 
-/** Reply / Forward: icon-only on the row, shown on hover like Slack and Teams. */
-const HOVER_ICON_BUTTON_CLASS = `self-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ${MESSAGE_ROW_ICON_BUTTON_CLASS}`;
+/** Reply / Forward: labeled buttons under the message body. */
+const LABELED_ACTION_CLASS =
+  'inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-accent';
 
 export function MessageBubble({
   message,
@@ -385,7 +386,7 @@ export function MessageBubble({
     <div
       className={`group relative flex gap-2 rounded p-1 transition-colors ${continuation ? '-mt-3 pt-0' : ''} ${
         onSelect ? 'cursor-pointer' : ''
-      } ${isSelected ? 'bg-muted/30 ring-1 ring-ring/40' : ''}`}
+      } ${isSelected ? 'bg-muted/30 ring-1 ring-ring/40 max-md:animate-[target-tint_2.4s_ease-out]' : ''}`}
       onClick={handleBubbleClick}
       data-testid={flowMessageId ? `message-bubble-${flowMessageId}` : undefined}
     >
@@ -406,6 +407,11 @@ export function MessageBubble({
               : 'flex items-baseline gap-2'
           }
         >
+          {!editing && favoriteRef && (
+            <span className="self-center" data-testid={`message-favorite-star-${flowMessageId}`}>
+              <FavoriteStar {...favoriteRef} size={16} hoverSurface="none" className="p-0.5" />
+            </span>
+          )}
           {!isBot && editing ? (
             <input
               className="border-b border-input bg-transparent text-sm font-semibold text-foreground focus:outline-none"
@@ -434,42 +440,6 @@ export function MessageBubble({
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} message={flowMessage ?? undefined} />}
-          {!editing && favoriteRef && (
-            <span className="self-center" data-testid={`message-favorite-star-${flowMessageId}`}>
-              <FavoriteStar {...favoriteRef} size={12} hoverSurface="none" revealOnHover className="p-0.5" />
-            </span>
-          )}
-          {!editing && flowMessageId && onLaunchWorker && (
-            <QuickWorkerButton
-              onLaunch={onLaunchWorker}
-              testId={`message-quick-worker-${flowMessageId}`}
-              className="self-center"
-            />
-          )}
-          {!editing && onReply && (
-            <button
-              type="button"
-              onClick={onReply}
-              title={replyInThread ? t`Reply in thread` : t`Reply`}
-              aria-label={replyInThread ? t`Reply in thread` : t`Reply`}
-              className={HOVER_ICON_BUTTON_CLASS}
-              data-testid="message-reply"
-            >
-              <Reply className="size-3" />
-            </button>
-          )}
-          {!editing && onForwardMessage && (
-            <button
-              type="button"
-              onClick={onForwardMessage}
-              title={t`Forward`}
-              aria-label={t`Forward`}
-              className={HOVER_ICON_BUTTON_CLASS}
-              data-testid="message-forward"
-            >
-              <Forward className="size-3 rtl:-scale-x-100" />
-            </button>
-          )}
           {!editing && onAutomate && (
             <button
               type="button"
@@ -532,6 +502,35 @@ export function MessageBubble({
           />
         )}
         {footer}
+        {!editing && (onReply || onForwardMessage || (flowMessageId && onLaunchWorker)) && (
+          <div className="mt-1.5 flex items-center gap-1.5" data-testid="message-reply-forward">
+            {onReply && (
+              <button type="button" onClick={onReply} className={LABELED_ACTION_CLASS} data-testid="message-reply">
+                <Reply className="size-3.5" />
+                {replyInThread ? t`Reply in thread` : t`Reply`}
+              </button>
+            )}
+            {onForwardMessage && (
+              <button
+                type="button"
+                onClick={onForwardMessage}
+                className={LABELED_ACTION_CLASS}
+                data-testid="message-forward"
+              >
+                <Forward className="size-3.5 rtl:-scale-x-100" />
+                {t`Forward`}
+              </button>
+            )}
+            {flowMessageId && onLaunchWorker && (
+              <QuickWorkerButton
+                onLaunch={onLaunchWorker}
+                labeled
+                className={LABELED_ACTION_CLASS}
+                testId={`message-quick-worker-${flowMessageId}`}
+              />
+            )}
+          </div>
+        )}
         {automation && !editing && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="message-automation-chips">
             <button

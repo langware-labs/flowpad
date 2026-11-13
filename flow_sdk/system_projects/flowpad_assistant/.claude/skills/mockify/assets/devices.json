@@ -1,0 +1,4 @@
+{
+  "iphone":  {"width": 390, "height": 844, "scale": 3, "safe_top": 47, "safe_bottom": 34, "radius": 47, "camera": "island", "playwright": "iPhone 15"},
+  "android": {"width": 412, "height": 915, "scale": 2.625, "safe_top": 24, "safe_bottom": 16, "radius": 28, "camera": "dot", "playwright": "Pixel 7"}
+}

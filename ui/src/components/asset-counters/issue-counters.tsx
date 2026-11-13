@@ -1,4 +1,4 @@
-import { Deployment, Issue, QueryRequest, TypeId, type IDockPointer } from '@sdk';
+import { Deployment, Issue, Project, QueryRequest, TypeId, isIssueActive, type IDockPointer } from '@sdk';
 import { entityDock } from '@src/lib/hub-page-url';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
@@ -26,7 +26,7 @@ export interface IssueCounts {
 }
 
 export function openIssues<T extends IssueLike>(issues: T[]): T[] {
-  return issues.filter((i) => i.status === 'open');
+  return issues.filter((i) => isIssueActive(i.status));
 }
 
 export function countIssues(issues: IssueLike[]): IssueCounts {
@@ -60,10 +60,43 @@ export function fixPointer(issue: Pick<Issue, 'fix'>): IDockPointer | null {
     const typeId = new TypeId(raw);
     // A deployment lives in the world view, not as an asset of its own.
     if (typeId.type === Deployment.type) return Deployment.dockPointerFor(typeId.id);
+    // A project is a page of its own (where its credentials are set), not a markdown asset ("Missing asset").
+    if (typeId.type === Project.type) return DockPointer.forProject(typeId.id);
     return DockPointer.forAssetEditorByTypeId(typeId.type, typeId);
   } catch {
     return null;
   }
+}
+
+/**
+ * Where a fix button goes once the deployment it names is known: that deployment's page in its project's
+ * Deployments tab. The world view is a desk-only page -- on the hub page it bounces to Home -- so it is used
+ * only for a deployment that belongs to no project.
+ */
+export function fixPointerFor(
+  issue: Pick<Issue, 'fix'>,
+  deployment: Pick<Deployment, 'projectPagePointer'> | null,
+): IDockPointer | null {
+  return deployment?.projectPagePointer ?? fixPointer(issue);
+}
+
+/** `fixPointerFor` with the deployment loaded through the SDK when the fix names one. */
+export async function resolveFixPointer(issue: Pick<Issue, 'fix'>): Promise<IDockPointer | null> {
+  const raw = issue.fix?.pointer;
+  let deployment: Deployment | null = null;
+  if (raw && !raw.startsWith('/')) {
+    try {
+      const typeId = new TypeId(raw);
+      if (typeId.type === Deployment.type) {
+        deployment =
+          Deployment.getByIdFromCache<Deployment>(typeId.id) ??
+          (await Deployment.getById<Deployment>(typeId.id).catch(() => null));
+      }
+    } catch {
+      deployment = null;
+    }
+  }
+  return fixPointerFor(issue, deployment);
 }
 
 export const SEVERITY_DOT: Record<Issue['severity'], string> = { error: 'bg-red-500', warning: 'bg-amber-400' };
@@ -83,7 +116,7 @@ export function IssueFixButton({ issue, className }: { issue: Issue; className?:
       className={cn('h-7', className)}
       onClick={(e) => {
         e.stopPropagation();
-        navigation.openDockOnThisPage(pointer);
+        void resolveFixPointer(issue).then((target) => navigation.openDockOnThisPage(target ?? pointer));
       }}
       data-testid={`issue-fix-${issue.id}`}
     >

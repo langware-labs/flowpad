@@ -197,7 +197,7 @@ const LIVE_SESSION_TYPE = 'remote_worker_session';
 const CONVERSATION_TYPE = 'conversation';
 
 export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumbs {
-  const { project, activeEntity, activeEntityTypeId, localUser, currentUser } = useContext();
+  const { project, activeEntity, activeEntityTypeId, localUser, currentPrincipal } = useContext();
   const { projectPath } = useProjectLocation();
   // The context hands over the cached Project and does not re-publish when a
   // rename mutates it in place — subscribe to the row (as the project chip does)
@@ -566,7 +566,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         // `userCrumbLabel`. Reading `localUser` here named the local desktop row, so a
         // desktop signed in to a hub read "Hey Eran" on the hub home and
         // "serans1 › Stream Inbox" one click away.
-        label: userCrumbLabel(currentUser, localUser) || labelForType(User.type),
+        label: userCrumbLabel(currentPrincipal, localUser) || labelForType(User.type),
         Icon: iconForType(User.type),
         pointer: null,
         kind: 'ancestor',
@@ -796,7 +796,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     sourceConvTypeId,
     sourceConv,
     localUser,
-    currentUser,
+    currentPrincipal,
     driverName,
     driver,
     nestedChild,

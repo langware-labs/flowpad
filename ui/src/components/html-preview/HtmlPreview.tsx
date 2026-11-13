@@ -7,6 +7,7 @@ import { ContentEpochContext } from '@src/contexts/content-epoch-context';
 import PersistentIframe, { reloadOnNewEpoch, type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { useFS } from '@src/hooks/useFS';
 import { openShareLink, previewShareUrl } from './share-links';
+import { localHtmlRef, OpenInBrowserButton } from '@src/lib/open-in-browser';
 
 /**
  * Render a local HTML file — a chart, a report, a small static site — in an
@@ -85,6 +86,7 @@ export function HtmlPreview({ path }: { path: string }) {
   const processQuery = flowId ? `?process=${encodeURIComponent(flowId)}` : '';
   const src = computeNode?.typeId && fs ? `${fs.getServeUrl(path)}${processQuery}` : null;
   const frameRef = useRef<PersistentIframeHandle>(null);
+  const htmlRef = localHtmlRef(path, computeNode?.typeId);
   const contentEpoch = useContext(ContentEpochContext);
   useEffect(() => {
     if (src) reloadOnNewEpoch(src, contentEpoch, () => frameRef.current?.refresh());
@@ -129,7 +131,14 @@ export function HtmlPreview({ path }: { path: string }) {
   return (
     <GitShareFrame entity={sharedAs}>
       {/* White under the frame: a page without a background of its own reads as a page, not the app. */}
-      <div className="h-full w-full bg-white">
+      <div className="relative h-full w-full bg-white">
+        {htmlRef && (
+          <OpenInBrowserButton
+            fileRef={htmlRef}
+            testId="html-preview-open-browser"
+            className="absolute right-3 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background/80 text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+          />
+        )}
         <PersistentIframe
           ref={frameRef}
           src={src}

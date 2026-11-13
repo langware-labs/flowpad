@@ -784,6 +784,9 @@ class AgenticContext(BaseModel):
     model: str | None = None
     max_thinking_tokens: int = 1024
     permission_mode: str = "bypassPermissions"
+    #: The agent's ``disallowed_tools`` (Claude-shaped: ``Write``, ``Bash(rm -rf:*)``), for a harness that
+    #: enforces them itself rather than through a CLI flag built elsewhere.
+    disallowed_tools: list[str] = Field(default_factory=list)
     #: ``opencode.json`` ``provider`` fragment for a turn spending a hub LLMEndpoint. It rides the
     #: CONTEXT because opencode is configured by file and two different prompt paths generate that
     #: file; putting it anywhere else lets them disagree about what is in it.

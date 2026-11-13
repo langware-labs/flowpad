@@ -367,7 +367,19 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     if pending is None:
         pending = asyncio.ensure_future(_read_hub_listing(name, stale))
         _inflight[key] = pending
-        pending.add_done_callback(lambda done: _inflight.pop(key, None) if _inflight.get(key) is done else None)
+
+        def _settled(done: asyncio.Future) -> None:
+            if _inflight.get(key) is done:
+                _inflight.pop(key, None)
+            if not done.cancelled():
+                done.exception()  # retrieved: a refresh nobody awaits must not log "never retrieved"
+
+        pending.add_done_callback(_settled)
+    # An expired memo is still the right answer to show NOW: the hub's scoped listing takes
+    # seconds (p50 2.6s on prod), and waiting on it made every open after 30s idle pay it.
+    # The refresh above lands in the memo for the next read; only a cold box waits.
+    if cached is not None:
+        return stale
     return await asyncio.shield(pending)
 
 
@@ -411,13 +423,18 @@ async def _read_hub_listing(name: str, stale: list["LLMEndpoint"]) -> list["LLME
     # me", turning the shared pool into everybody's personal wallet.
     # Cache freshness starts when the read begins, rather than after network latency.
     requested_at = time.monotonic()
-    rows = _rows(await HubProxy.try_call("GET", "llm_endpoint", params={"expand": "permissions"}, strict=True))
+    # The two reads are independent, so they go out together.
+    scoped, catalog = await asyncio.gather(
+        HubProxy.try_call("GET", "llm_endpoint", params={"expand": "permissions"}, strict=True),
+        HubProxy.try_call("GET", "llm_endpoint", action="catalog", strict=True),
+    )
+    rows = _rows(scoped)
     if rows is None:
         return stale
     held = {str(row.get("id") or "") for row in rows if isinstance(row, dict)}
     # A failed catalog read costs only the fallback: answering with the scoped rows beats
     # answering with nothing.
-    rows = list(rows) + list(_rows(await HubProxy.try_call("GET", "llm_endpoint", action="catalog", strict=True)) or [])
+    rows = list(rows) + list(_rows(catalog) or [])
     fields = set(LLMEndpoint.model_fields)
     endpoints: list[LLMEndpoint] = []
     seen: set[str] = set()

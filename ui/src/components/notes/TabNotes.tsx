@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { Annotation } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { Popover, PopoverAnchor, PopoverContent } from '@src/components/ui/popover';
-import { addNote, deleteNote, saveNote, type NoteTarget } from '@src/hooks/use-entity-notes';
+import { addNote, deleteNote, saveNote, setTabMark, type NoteTarget } from '@src/hooks/use-entity-notes';
 import { noteColor } from './note-palette';
 import { NoteCard, NoteComposer, NotesList } from './NoteViews';
 import { StickyNoteShape } from './StickyNoteShape';
@@ -74,6 +74,7 @@ export function TabNotesPopover({
   view,
   target,
   notes,
+  mark,
   anchor,
   onView,
   onClose,
@@ -82,6 +83,8 @@ export function TabNotesPopover({
   target: NoteTarget;
   /** This entity's notes, newest first — from the strip's one notes query. */
   notes: readonly Annotation[];
+  /** The tab's colour mark, if it has one. */
+  mark?: Annotation;
   anchor: HTMLElement | null;
   onView: (view: TabNotesView) => void;
   onClose: () => void;
@@ -98,6 +101,12 @@ export function TabNotesPopover({
           <NoteComposer
             onCancel={onClose}
             onSave={async (content, color) => {
+              if (!content) {
+                // No text: the colour marks the tab — one click to colour it.
+                await setTabMark(target, color, mark);
+                onClose();
+                return;
+              }
               await addNote(target, content, color);
               onView({ key: view.key, mode: 'list' });
             }}

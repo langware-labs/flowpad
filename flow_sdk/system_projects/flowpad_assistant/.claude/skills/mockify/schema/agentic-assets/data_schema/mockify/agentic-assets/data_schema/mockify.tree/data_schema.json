@@ -1,0 +1,19 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "root": {
+      "shape": "string",
+      "description": "The first screen: where the mock opens and where Reset returns."
+    },
+    "vars": {
+      "shape": "?[mockify.var]",
+      "description": "The state the journey changes."
+    },
+    "screens": {
+      "shape": [
+        "mockify.screen"
+      ],
+      "description": "Every screen. Order does not matter: the walk is DFS from the root over the actions (branches and alts first, the main continuation last)."
+    }
+  }
+}

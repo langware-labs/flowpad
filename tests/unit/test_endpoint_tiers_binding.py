@@ -1,8 +1,8 @@
 """An LLM endpoint declares the model each size runs; a funded spawn runs exactly that.
 
 ``binding_for_candidate`` -> ``api_auth._slug_for``: a size (``sm``/``md``/``lg``, a harness's own word
-for one, or nothing -> ``preferences.llm.default_size``) reads ``Capability.model_map`` then
-``endpoint.tiers``; a size the endpoint does not declare is refused in words; anything else is a
+for one, or nothing -> ``preferences.llm.default_size``) reads ``endpoint.tiers`` (which may also
+declare custom names beside the sizes); a size the endpoint does not declare is refused in words; anything else is a
 named model and runs as named. Isolation copies tests/unit/test_api_auth_binding.py.
 """
 
@@ -32,20 +32,6 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     reset_instance_settings()
     yield
     reset_instance_settings()
-
-
-@pytest.fixture(autouse=True)
-async def _reset_model_maps():
-    """``Capability.model_map`` persists into the shared session DB; leave none behind."""
-    yield
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.capability import Capability
-
-    for worker in ("claude", "opencode"):
-        cap = await Capability.get_by_kind(worker_capability_kind(worker))
-        if cap is not None and getattr(cap, "model_map", None):
-            cap.model_map = {}
-            await cap.save(notify=False)
 
 
 def _candidate(models: dict):
@@ -133,18 +119,10 @@ async def test_opencode_spells_the_slug_with_its_provider_prefix(env) -> None:
     assert auth.model_slug == "openrouter/vendor/medium-2"
 
 
-async def test_a_capability_model_map_override_wins_over_the_endpoint(env) -> None:
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.capability import Capability
-    from flow_sdk.lm_api import LMApiProvider
-
-    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
-    # A hub endpoint is spent through the FLOWPAD binding, so that is the provider the map is keyed by.
-    cap.model_map = {LMApiProvider.FLOWPAD.value: {"md": "override/medium"}}
-    await cap.save(notify=False)
-
-    assert (await _bind("claude", "md")).model_slug == "override/medium"
-    assert (await _bind("claude", "sm")).model_slug == TIERS["sm"], "only the overridden size changes"
+async def test_a_custom_name_the_endpoint_declares_runs_its_model(env) -> None:
+    models = {**TIERS, "coding": "vendor/coder-7"}
+    assert (await _bind("claude", "coding", models=models)).model_slug == "vendor/coder-7"
+    assert (await _bind("claude", "sm", models=models)).model_slug == TIERS["sm"], "sizes are unaffected"
 
 
 def test_row_tiers_prefer_the_chain_expansion() -> None:

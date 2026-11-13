@@ -17,6 +17,7 @@ import { browserProfileManager, type ProfileChoice } from './browser-profiles';
 import { sdkConfig } from '../config/index';
 import { API_PREFIX } from '../config/SDKConfig';
 import { isHubOnly } from '../utils/hub-runtime';
+import { Identity } from '../entities/identity';
 import { User } from '../entities/user';
 import { IUser } from '../entities/user-types';
 import { createCloudLoginFailedWarning } from '../models/UserWarning';
@@ -74,14 +75,16 @@ async function _dataContext() {
   }
   return _dataContextCache;
 }
-async function _currentUserKey() {
+/** The context slot named `name` (`CloudUserTypeId`, `CloudPrincipalTypeId`), loading the enum lazily. */
+async function _contextKey(name: 'CloudUserTypeId' | 'CloudPrincipalTypeId') {
   if (!_contextEntitiesEnumCache) await _dataContext();
-  return _contextEntitiesEnumCache.CloudUserTypeId;
+  return _contextEntitiesEnumCache[name];
 }
 
 export interface CloudLoginResult {
   status: 'logged_in';
-  user: User;
+  /** Who signed in: a User, or an agent's Identity. */
+  user: User | Identity;
 }
 
 // Back-compat alias — older imports still reach for this.
@@ -170,7 +173,8 @@ export function isQuietLoginError(error: unknown): boolean {
 
 class CloudManager extends EventEmitter {
   private _login: LoginSlot<HubLoginStatus> = makeLoginSlot<HubLoginStatus>('logged_out');
-  private _currentUser: User | null = null;
+  /** The signed-in principal: a User, or an agent's Identity on its box. */
+  private _currentUser: User | Identity | null = null;
   /**
    * STICKY — unlike `_login`, which the very next broadcast (the incoming
    * person's LOGGED_IN) overwrites within milliseconds. A tab left open
@@ -340,11 +344,18 @@ class CloudManager extends EventEmitter {
    * it alone.
    */
   private async _applyLoginBlock(
-    login: { status: HubLoginStatus; user: Record<string, unknown> | null; reason: string | null },
+    login: {
+      status: HubLoginStatus;
+      user: Record<string, unknown> | null;
+      principal?: Record<string, unknown> | null;
+      reason: string | null;
+    },
     emit = true,
   ): Promise<void> {
-    if (login.status === 'logged_in' && login.user) {
-      await this._setLoggedIn(login.user);
+    // `principal` is who is signed in; `user` is that person only (null on an agent's box).
+    const principal = login.principal ?? login.user;
+    if (login.status === 'logged_in' && principal) {
+      await this._setLoggedIn(principal);
     } else if (login.status === 'logged_out') {
       await this._setLoggedOut();
     } else {
@@ -816,19 +827,16 @@ class CloudManager extends EventEmitter {
   /** Adopt a user the hub has just authenticated, without a page reload — what
    *  `refreshSession` calls once the fresh bootstrap names the user. Public
    *  wrapper so nothing outside this class reaches into `_setLoggedIn`. */
-  adoptSignedInUser(userDict: Record<string, unknown>): Promise<User> {
+  adoptSignedInUser(userDict: Record<string, unknown>): Promise<User | Identity> {
     return this._setLoggedIn(userDict);
   }
 
-  private async _setLoggedIn(userDict: Record<string, unknown>): Promise<User> {
+  private async _setLoggedIn(userDict: Record<string, unknown>): Promise<User | Identity> {
     const dm = await _dataManager();
-    // `type` LAST, deliberately. The hub answers /current-user with the principal
-    // it actually authenticated, which for a deployed agent is `"type": "identity"`
-    // — a type `EntityFactory` has no constructor for, so a spread landing after
-    // `type` makes this throw and the sandbox silently falls back to its own local
-    // user. The cloud principal is always modelled here as a User; only its FIELDS
-    // (name, avatar, id) vary by principal kind.
-    const cloudUser = dm.updateEntityFromJson<User>({ ...userDict, type: User.type });
+    // The principal as what it is: a User, or an Identity (an agent's box). `type` is set last so a
+    // record without one reads as the person it always was.
+    const type = userDict.type === Identity.type ? Identity.type : User.type;
+    const cloudUser = dm.updateEntityFromJson<User | Identity>({ ...userDict, type });
     if (this.isLoggedIn && this._currentUser && this._currentUser.typeId?.toString() === cloudUser.typeId?.toString()) {
       return this._currentUser;
     }
@@ -836,7 +844,9 @@ class CloudManager extends EventEmitter {
     this._currentUser = cloudUser;
     const ctx = await _dataContext();
     ctx.setCloudLoggedIn?.(true);
-    await ctx.setContextEntityTypeId(await _currentUserKey(), cloudUser.typeId);
+    await ctx.setContextEntityTypeId(await _contextKey('CloudPrincipalTypeId'), cloudUser.typeId);
+    // The cloud USER slot holds a person only: an agent's box has none.
+    await ctx.setContextEntityTypeId(await _contextKey('CloudUserTypeId'), type === User.type ? cloudUser.typeId : null);
     this._applyLoginStatus('logged_in', userDict, null);
     this.emit('login_complete', { user: cloudUser });
     return cloudUser;
@@ -845,7 +855,8 @@ class CloudManager extends EventEmitter {
   private async _setLoggedOut(reason: string | null = null) {
     this._currentUser = null;
     const ctx = await _dataContext();
-    await ctx.setContextEntityTypeId(await _currentUserKey(), null);
+    await ctx.setContextEntityTypeId(await _contextKey('CloudUserTypeId'), null);
+    await ctx.setContextEntityTypeId(await _contextKey('CloudPrincipalTypeId'), null);
     ctx.setCloudLoggedIn?.(false);
     this._applyLoginStatus('logged_out', null, reason);
     this._takenOver = reason === LogoutReason.SwitchedOut;

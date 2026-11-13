@@ -27,7 +27,7 @@ import re
 from functools import lru_cache
 from typing import Any, Literal, Mapping, NamedTuple, Optional
 
-from flow_sdk.core.dock_address import ViewType, parse_dock_url
+from flow_sdk.core.dock_address import VIEW_META, ViewType, parse_dock_url
 from flow_sdk.core.navigation import filter_keys, forms_for, kind, navigation_map, open_form, place_address, place_for
 from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget, NavigatorRoute
 
@@ -147,6 +147,9 @@ def _static_options() -> tuple[dict[str, str], dict[str, str]]:
                 names.setdefault(name.lower(), key)
         for sub in place.subplaces:
             options[f"view:{place_address(place, sub.pointer)}"] = f"Screen '{sub.label}'"
+        for pointer, called in VIEW_META[ViewType(place.view)].subplace_names:
+            for name in called:
+                names.setdefault(name, f"view:{place_address(place, pointer)}")
     # A type's name opens its list ("specs", "project manifest") -- where no screen has the name.
     from flow_sdk.core.navigation import asset_list_names  # noqa: PLC0415
 

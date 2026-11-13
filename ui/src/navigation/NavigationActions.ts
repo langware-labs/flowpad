@@ -1312,10 +1312,10 @@ export class NavigationActions {
 
   /**
    * Open the user Preferences screen
-   * @param category - Optional category whose tab should be active
+   * @param tab - Optional `<group>/<tab>` to open (`developer/trace-logging`)
    */
-  openPreferences(category?: string): void {
-    const pointer = DockPointer.forPreferences(category);
+  openPreferences(tab?: string): void {
+    const pointer = DockPointer.forPreferences(tab);
     this.openDock(pointer);
   }
 
@@ -1351,6 +1351,15 @@ export class NavigationActions {
     });
     if (!canGoBack) return;
     void this.navigate(-1);
+  }
+
+  /**
+   * Leave this screen: one step back when this tab has history, else Home — a screen
+   * loaded straight from a link has nothing behind it, and must never be a dead end.
+   */
+  backOrHome(): void {
+    if (getHistoryPosition().canGoBack) this.goBack();
+    else this.goHome();
   }
 
   goForward(): void {

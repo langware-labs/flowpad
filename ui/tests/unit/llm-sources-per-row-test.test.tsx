@@ -96,7 +96,8 @@ function renderPage() {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
-  return render(<LlmSourcesView />, { wrapper });
+  // An assistant's sources live under the Logins tab: `logins/<worker>`.
+  return render(<LlmSourcesView pointer="logins/claude" />, { wrapper });
 }
 
 describe('a Test button on every row', () => {

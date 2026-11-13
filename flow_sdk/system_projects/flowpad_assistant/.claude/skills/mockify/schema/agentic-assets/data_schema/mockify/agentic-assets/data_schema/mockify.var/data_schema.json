@@ -1,0 +1,19 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "name": {
+      "shape": "string",
+      "description": "The var's name, as actions and screens write it: desk, ticket."
+    },
+    "values": {
+      "shape": [
+        "string"
+      ],
+      "description": "Every value it can take, e.g. off, on."
+    },
+    "initial": {
+      "shape": "string",
+      "description": "Its value on the root screen."
+    }
+  }
+}

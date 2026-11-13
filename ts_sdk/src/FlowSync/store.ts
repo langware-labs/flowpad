@@ -1807,21 +1807,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // desktop/local server, which owns the forwarding bridge. In Hub-only mode
     // this client already targets Hub directly, so reflecting again is neither
     // meaningful nor part of the Hub API contract.
-    if (actionInfo.hubReflect && !isHubOnly()) {
-      requestConfig = {
-        ...(requestConfig ?? {}),
-        headers: { ...(requestConfig?.headers ?? {}), 'Hub-Reflect': 'true' },
-      };
-    }
-
+    const headers: Record<string, string> = {};
+    if (actionInfo.hubReflect && !isHubOnly()) headers['Hub-Reflect'] = 'true';
     // Name this tab as the initiator, so the server answers back to it alone
     // (flow_sdk/core/oauth/flows.py). Scoped to the calls that ask for it: a
     // custom header on every request would cost a CORS preflight each time.
-    if (actionInfo.carriesInitiator) {
-      requestConfig = {
-        ...(requestConfig ?? {}),
-        headers: { ...(requestConfig?.headers ?? {}), 'X-Flow-Connection-Id': ConnectionManager.getInstance().id },
-      };
+    if (actionInfo.carriesInitiator) headers['X-Flow-Connection-Id'] = ConnectionManager.getInstance().id;
+    // Only the desktop reports hub failures; the hub itself has nothing to keep quiet.
+    if (actionInfo.quiet && !isHubOnly()) headers['Flowpad-Quiet'] = 'true';
+    if (Object.keys(headers).length) {
+      requestConfig = { ...(requestConfig ?? {}), headers: { ...(requestConfig?.headers ?? {}), ...headers } };
     }
 
     if (actionInfo.keepEnvelope) requestConfig = { ...(requestConfig ?? {}), keepEnvelope: true };
@@ -1963,6 +1958,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
       hub_reflect: actionInfo.hubReflect && !isHubOnly(),
       carries_initiator: actionInfo.carriesInitiator,
+      quiet: actionInfo.quiet,
     };
 
     return connectionManager.sendRestApiMessage<unknown>(message, options);
@@ -2018,7 +2014,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return watchedQuery?.results as U[] | undefined;
   }
 
-  public async watchQuery<U extends T>(request: QueryRequest): Promise<() => void> {
+  /** `seed`: rows the caller already fetched for this exact request; with no watch yet, the
+   *  watch starts from them instead of fetching the same rows a second time. */
+  public async watchQuery<U extends T>(request: QueryRequest, seed?: U[]): Promise<() => void> {
     if (!request.callback) {
       throw new Error('QueryRequest must have a callback for watchQuery');
     }
@@ -2045,8 +2043,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     let queryResult: U[];
 
     if (!watchedQuery) {
-      // No cache exists - fetch from API
-      queryResult = await this._query<U>(request);
+      // No cache exists - start from the caller's rows, or fetch from API
+      queryResult = seed ?? (await this._query<U>(request));
     } else if (watchedQuery.pendingPromise) {
       // In-flight request - await it
       queryResult = (await watchedQuery.pendingPromise) as U[];

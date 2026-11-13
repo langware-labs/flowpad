@@ -10,7 +10,7 @@ import pytest
 from starlette.requests import HTTPConnection
 
 from flow_sdk.server import grants
-from flow_sdk.server.middleware.sandbox_cookiegate_middleware import _presents
+from flow_sdk.server.middleware.sandbox_cookiegate_middleware import _refusal
 from tests.utils.gate import ENDPOINT, SECRET, armed, grant_cookie, ticket
 
 COOKIE_NAME = grants.COOKIE_NAME
@@ -23,6 +23,11 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 def _armed():
     with armed():
         yield
+
+
+def _presents(conn, secret) -> bool:
+    """The gate admits when it has no reason to refuse."""
+    return _refusal(conn, secret) is None
 
 
 def _conn(*, cookie=None, header=None, query=""):

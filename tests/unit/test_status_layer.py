@@ -133,7 +133,9 @@ def _hub(monkeypatch, *, creds: bool, ws: _Ws, login="logged_in", user=None):
     monkeypatch.setattr("flow_sdk.cli.auth.hub_login.hub_auth_available", lambda: creds)
     monkeypatch.setattr("flow_sdk.cloud_client.auth_state.current_login_status", lambda: HubLoginStatus(login))
     monkeypatch.setattr("flow_sdk.cloud_client.ws_client.hub_ws_manager", ws)
-    monkeypatch.setattr("flow_sdk.cli.app_config.get_user", lambda: user)
+    from flow_sdk.cli.app_config import as_principal
+
+    monkeypatch.setattr("flow_sdk.cli.app_config.get_principal", lambda: as_principal(user))
 
 
 async def test_no_credential_is_signed_out(monkeypatch):

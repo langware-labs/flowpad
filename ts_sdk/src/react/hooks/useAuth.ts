@@ -1,4 +1,5 @@
 import { AuthError } from '../../FlowSync/auth';
+import { Identity } from '../../entities/identity';
 import { User } from '../../entities/user';
 import { TypeId } from '../../models/TypeId';
 import { useContext } from './useContext';
@@ -6,8 +7,10 @@ import { useContext } from './useContext';
 export interface UseAuthResult {
   /** Local desktop user — historical alias of `localUser`. Auth principal for local API calls. */
   user: User | null;
-  /** Display-bound identity: cloud user when logged in, otherwise local. */
+  /** The signed-in PERSON: cloud user when logged in, otherwise local. Null on an agent's box. */
   currentUser: User | null;
+  /** Who is signed in: a person, or an agent's Identity on its box. Use it for "me" and the profile chip. */
+  currentPrincipal: User | Identity | null;
   /** Cloud user, or null when not cloud-logged-in. */
   cloudUser: User | null;
   /** Local desktop user (always present after bootstrap). */
@@ -24,6 +27,7 @@ export function useAuth(): UseAuthResult {
   return {
     user: context.user,
     currentUser: context.currentUser,
+    currentPrincipal: context.currentPrincipal,
     cloudUser: context.cloudUser,
     localUser: context.localUser,
     visitor: context.visitorTypeId,

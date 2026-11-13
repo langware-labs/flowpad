@@ -41,6 +41,14 @@ stale screenshot after the layout and webfont settle is the usual reason a click
   linked stylesheets (`fetch` each `link[rel=stylesheet]`), capture it, save it as `app.html` in the mock,
   and in the states script move the iframe into the display's content slot with `src="app.html"`.
 
+### No backend? Run the real UI on a fixture
+
+When the UI is plain HTML/JS that reads one API (a back office, a console) and standing up its backend, auth and
+seed data is heavy: serve the app's OWN files from a harness page — its real head (CSS, fonts), its real chrome,
+its real scripts — and replace only the data call with a fixture in the API's exact response shape (read the route
+that builds it). The screens are the product's real code and CSS, on example data you control. Write the fixture
+from the route's code, not from memory: one wrong key (an enum value the UI branches on) silently changes a screen.
+
 ## 3. Capture
 
 Start the receiver; it binds 127.0.0.1 on a port the OS picks and prints it:
@@ -76,6 +84,27 @@ One capture per step, named by its step id. A step you skip has no screen, and t
 neither is in the body (a theme class, a `data-*` attribute, inline CSS variables, a webfont `<link>` —
 pass that link to `build_mock.py --head`). Missing any of these is the difference between "close" and "the same".
 
+### A phone step (`device: iphone | android`)
+
+Capture it in a real mobile context, not a narrowed desktop window: the page's own media queries, `dvh`,
+touch styles and mobile UA branches only answer a real one. Headless Playwright, your own browser:
+
+```python
+d = json.load(open("<skill>/assets/devices.json"))[dev]          # the presets are data
+ctx = await browser.new_context(viewport={"width": d["width"], "height": d["height"]}, device_scale_factor=d["scale"],
+                                is_mobile=True, has_touch=True, user_agent=p.devices[d["playwright"]]["user_agent"])
+page = await ctx.new_page(); await page.goto(url); await page.wait_for_timeout(5000)
+html = await page.evaluate("() => '<!--styles-->\\n' + [...document.querySelectorAll('style')].map((s) => s.outerHTML).join('\\n')"
+                           " + '\\n<!--body-->\\n' + document.body.innerHTML")
+```
+
+Write it to `capture/<step id>.html` and put `"device": "iphone"` in `info.json` next to the viewport. A
+page built from web components (Lit, Shoelace) keeps its form in shadow roots, which `innerHTML` does not
+carry: inline each `shadowRoot.innerHTML` and its `adoptedStyleSheets` (`:host` → a class) into the capture,
+and redraw a nested custom control (`<sl-input>`) as a plain element. A third-party client (Gmail, iOS Mail)
+does not run here: its chrome is a `built` step. `build_mock.py` frames the step itself (bezel, status bar,
+home indicator, `env(safe-area-inset-*)`) — never wrap a capture in a frame of your own.
+
 ## 4. Assets
 
 Copy **the stylesheet the page links** (from `info.json` → `stylesheets`; the main bundle, not lazy chunks) to `<mock-dir>/app.css`, and the asset folders the
@@ -87,6 +116,9 @@ missing (step 5), the build is older than the source; say so instead of guessing
 The builder strips the app's own `<script>` tags from captures so its theme switcher cannot flip the mock.
 
 ## 5. Screens the live app cannot reach (`source: built`), and assembling
+
+- Build new markup with `document.createElement` for table parts: a `<td>`/`<tr>` written into a `<div>`'s
+  innerHTML is dropped by the parser and leaves loose text outside the row.
 
 - **Start from the nearest capture**, copy it to `capture/<step id>.html`, and edit that file per the step's
   scenario — the whole screen stays (top bar, rail, status bar), only the discussed part changes.
@@ -138,6 +170,7 @@ python3 -m http.server "$PORT" --bind 127.0.0.1 --directory <mock-dir> &   # kee
 | a click shows "Not part of this mock" | the control has no `data-next` — add it if the plan says it moves on |
 | a click "does nothing" | stale screenshot — re-screenshot after each reload, or click a `find` ref |
 | a dialog step is blank | overlay taken from a clone, or the wrong `[role=dialog]` |
+| empty band under the screen (dead space) in the display | the zoomed app's 100vh shell (`#root`, `.h-screen`) — build_mock's fit stretches it; rebuild, never hand-set heights |
 | a red banner on a screen | a `--states` tweak's `need(...)` missed — fix the selector or edit the capture |
 | a section lost its header row | you replaced the parent; remove only the rows |
 | icons blank | not copied into `<mock-dir>` under their app path (the validator lists them) |

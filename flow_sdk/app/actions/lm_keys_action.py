@@ -3,9 +3,13 @@
 
 Endpoints:
   GET    /lm_keys            → [{provider, configured, created_at}]
-  POST   /lm_keys            → body {provider, key} → {ok: True, valid, message} (auto-validated)
+  POST   /lm_keys            → body {provider, key?, config?} → {ok: True, endpoint_id, valid?, message?}
+                               (key: stored + auto-validated; config: the row's name/base_url/tiers/limits/filters)
   POST   /lm_keys/test       → body {provider}      → {valid, message}
   GET    /lm_keys/models/{provider} → [{id, name}]  (model catalog for the mapping picker)
+  GET    /lm_keys/device     → [endpoint wire]      (one device-login endpoint row per harness)
+  POST   /lm_keys/device     → body {harness, config: {tiers, name?}} → {ok: True, endpoint_id}
+                               (tiers REPLACE the row's sizes + custom names; empty values clear)
   DELETE /lm_keys/{provider} → {ok: True}
 
 Reading a key value is intentionally not exposed: the UI must never see plaintext
@@ -14,7 +18,8 @@ keys. In-process callers (workers) read via ``get_lm_api`` in the SDK.
 
 import logging
 
-from flow_sdk.builtin.llm_endpoint import LM_SECRET_PREFIX, LLMEndpoint
+from flow_sdk.builtin.agentic_process.cli_drivers.device_endpoints import configure_device, device_endpoint_rows
+from flow_sdk.builtin.llm_endpoint import LM_SECRET_PREFIX, LLMEndpoint, LLMEndpointConfig
 from flow_sdk.cli.auth.lm_api_keys import (
     delete_lm_api,
     list_lm_api,
@@ -50,6 +55,9 @@ async def lm_keys_action() -> ApiResponse:
         if method == "GET":
             if sub_path == "":
                 return ApiSuccessResponse(data=list_lm_api())
+            if sub_path == "device":
+                rows = await device_endpoint_rows()
+                return ApiSuccessResponse(data=[row.to_wire() for row in rows])
             # GET /lm_keys/models/<provider> → the provider's model catalog.
             if sub_path.startswith("models/"):
                 provider = _parse_provider(sub_path.removeprefix("models/"))
@@ -60,6 +68,14 @@ async def lm_keys_action() -> ApiResponse:
 
         if method == "POST":
             payload = await request_info.get_post_data() or {}
+            if sub_path == "device":
+                # A device login's endpoint row: its model sizes and custom names, no key.
+                harness = str(payload.get("harness") or "").strip()
+                if not harness:
+                    return ApiFailResponse(message="harness is required")
+                config = payload.get("config") or {}
+                row = await configure_device(harness, dict(config.get("tiers") or {}), name=config.get("name"))
+                return ApiSuccessResponse(data={"ok": True, "endpoint_id": str(row.id)})
             raw = (payload.get("provider") or "").strip()
             if not raw:
                 return ApiFailResponse(message="provider is required")
@@ -71,17 +87,23 @@ async def lm_keys_action() -> ApiResponse:
                 return ApiSuccessResponse(data=await validate_lm_api(provider))
             if sub_path == "":
                 key = payload.get("key")
-                if not key:
+                raw_config = payload.get("config")
+                if not key and raw_config is None:
                     return ApiFailResponse(message="key is required")
+                config = LLMEndpointConfig.model_validate(raw_config) if raw_config is not None else None
                 # A stored key with no row funds nothing (consumers query rows), so the key and
                 # its row are stored together. Find-or-mint: re-entering a key does not duplicate.
-                await LLMEndpoint.by_provider(provider, key)
+                # ``config`` alone edits the row of a key already stored (name, base_url, tiers,
+                # limits, filters) -- the same fields the shared endpoint editor writes on a hub root.
+                endpoint = await LLMEndpoint.by_provider(provider, key, config)
+                if not key:
+                    return ApiSuccessResponse(data={"ok": True, "endpoint_id": str(endpoint.id)})
                 # Auto-validate on set so the UI can confirm the key immediately;
                 # reuse the in-hand key rather than re-reading the store.
                 result = await validate_lm_api(provider, key=key)
                 if result.get("status") in (401, 403):  # the provider refused it (not "unreachable")
                     mark_key_rejected(provider.value, result["message"], f"****{key[-4:]}")
-                return ApiSuccessResponse(data={"ok": True, **result})
+                return ApiSuccessResponse(data={"ok": True, "endpoint_id": str(endpoint.id), **result})
             return ApiFailResponse(message=f"Unknown POST subpath: {sub_path}")
 
         if method == "DELETE":

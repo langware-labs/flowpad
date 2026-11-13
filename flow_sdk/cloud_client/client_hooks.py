@@ -271,7 +271,7 @@ async def _is_auth_failure_envelope(response: httpx.Response) -> bool:
     # …). Match on the path alone so a hub message-copy change can't silently
     # stop clearing invalid/stale creds. (Genuine 4xx/5xx server errors take the
     # status>=400 branch in ``_on_response`` and never reach here.)
-    if path.endswith("/current-user"):
+    if path.endswith(("/current-user", "/current-principal")):
         return True
 
     return any(

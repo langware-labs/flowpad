@@ -145,6 +145,11 @@ async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope())
     Funding facts only: whether FlowPad is signed in, which keys are stored, and who the hub
     user is are STATUS facts (``core.status``) and are read there, not repeated here.
     """
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
+    from flow_sdk.core.status.build import stored_keys  # noqa: PLC0415
+
+    keys = stored_keys()  # only providers with a key stored here: the views also offer keyless placeholders
+
     bound: HubLLMEndpoint | None = get_hub_llm_endpoint()
     # Listings report readable budgets. A hub-pushed Runner binding remains usable even
     # when absent from those lists; the hub authorizes each invocation independently.
@@ -159,7 +164,11 @@ async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope())
         decision=await _decision_api(refresh=refresh),
         notes=notes,
         endpoints=endpoints,
-        available=[endpoint.to_wire() for endpoint in available],
+        # One list for the endpoint tables: the hub's budgets AND this machine's key roots -- every
+        # stored key, not only those a harness offers (a key no harness speaks to is still a root,
+        # and the API keys tab counts it). Readers that want one side filter by ``kind``.
+        available=[endpoint.to_wire() for endpoint in available]
+        + [row.to_wire() for row in await LLMEndpoint.stored_key_roots(keys)],
         # Harnesses whose resolved source IS the bound endpoint -- the resolver's own reading.
         active_for=[
             kind for kind, pick in resolved.items() if pick and bound_typeid and pick.endpoint_typeid == bound_typeid
@@ -265,6 +274,9 @@ async def _pin_project_endpoint(payload: dict) -> dict:
     than written and discovered at the next spawn.
     """
     from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
+    from flow_sdk.core.status.build import stored_keys  # noqa: PLC0415
+
+    keys = stored_keys()  # only providers with a key stored here: the views also offer keyless placeholders
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.db.drivers.db_base_record import TypeId  # noqa: PLC0415
     from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceKind  # noqa: PLC0415
@@ -779,6 +791,9 @@ async def check_llm_source(payload: dict) -> dict:
     is per-harness and has no other identity.
     """
     from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
+    from flow_sdk.core.status.build import stored_keys  # noqa: PLC0415
+
+    keys = stored_keys()  # only providers with a key stored here: the views also offer keyless placeholders
 
     kind = str(payload.get("kind") or "").strip()
     if kind == LLMEndpointKind.DEVICE:

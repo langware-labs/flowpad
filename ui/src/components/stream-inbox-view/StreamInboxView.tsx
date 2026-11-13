@@ -93,6 +93,7 @@ import {
   isViewer,
 } from '@src/components/conversation/conversation-category';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
+import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { CategoryChips, COMPACT } from '@src/components/conversation/CategoryChips';
 import { ConversationMarkChips } from '@src/components/conversation/ChannelMessageExtras';
 import { InvitesChannelChip, MembershipInvitations } from './MembershipInvitations';
@@ -131,6 +132,18 @@ type RowDeleteAction =
 const TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 const DAY_FMT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 const DATE_FMT = new Intl.DateTimeFormat(undefined);
+/** "Shared task: I was asked by Patty…" — what was shared, in a few words of its name. */
+function sharedSubject(
+  t: ReturnType<typeof useLingui>['t'],
+  invite?: { target_type?: string; target_name?: string | null } | null,
+): string {
+  const words = (invite?.target_name || '').trim().split(/\s+/).filter(Boolean);
+  const name = words.slice(0, 6).join(' ') + (words.length > 6 ? '…' : '');
+  if (!invite?.target_type) return t`Shared with you`;
+  const kind = labelForType(invite.target_type).toLowerCase();
+  return name ? t`Shared ${kind}: ${name}` : t`Shared ${kind}`;
+}
+
 function formatGmailTime(iso?: string | Date | null): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -358,9 +371,10 @@ export const ConversationListRow = memo(function ConversationListRow({
   // still-pending invitation — mirrors RecentConversationsStrip. The first
   // message stays ``kind === 'invitation'`` forever, so it can't drive this
   // on its own: the sender (and everyone post-accept) must see a normal row.
-  const { cloudUser, currentUser } = useAuth();
+  const { cloudUser, currentUser, currentPrincipal } = useAuth();
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
-  const localUserId = currentUser?.id ?? null;
+  // "Me" is the signed-in principal: the agent's Identity on its own box.
+  const localUserId = currentPrincipal?.id ?? null;
   const [accepting, setAccepting] = useState(false);
 
   // Single source of truth for the row's category (invitation / help desk /
@@ -474,11 +488,11 @@ export const ConversationListRow = memo(function ConversationListRow({
     if (names.length > 0) return names;
     // A conversation only the viewer is in (a private Diagnosis, a note to self) is theirs: name them, as the
     // conversation itself does, rather than "Unknown".
-    const selfName = currentUser?.name || cloudUser?.name;
+    const selfName = currentPrincipal?.name || cloudUser?.name;
     const self = selfName || myEmail ? personName({ name: selfName, email: myEmail }) : '';
     return [self || t`No members`];
   }, [
-    currentUser?.name,
+    currentPrincipal?.name,
     cloudUser?.name,
     isInvitationRow,
     firstMessage,
@@ -501,7 +515,7 @@ export const ConversationListRow = memo(function ConversationListRow({
   // message preview) still renders after it.
   const subject = isInvitationRow
     ? t`You've been invited to a conversation`
-    : conv.title?.trim() || (conv.carries_invite ? t`Shared with you` : t`(no subject)`);
+    : conv.title?.trim() || (conv.carries_invite ? sharedSubject(t, latestMessage?.invite) : t`(no subject)`);
   // ``FlowMessage.text`` is typed string but older rows in the local DB can
   // hold non-string payloads (object-shaped values from earlier schema
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
@@ -653,7 +667,8 @@ export const ConversationListRow = memo(function ConversationListRow({
         )}
         <SourceChip attribution={attribution} className="me-1" />
         <ConversationMarkChips marks={conv.marks} />
-        {latestMessage?.invite && (
+        {/* Accepted is the normal ending — only an unanswered or refused share earns a chip. */}
+        {latestMessage?.invite && latestMessage.invite.state !== 'accepted' && (
           <InviteStateChip state={latestMessage.invite.state} resolvedAt={latestMessage.invite.resolved_at} className="me-1" />
         )}
         {/* dir="auto" isolates each part: an RTL subject + RTL snippet would otherwise
@@ -1441,16 +1456,16 @@ export function StreamInboxView({
   // The list's main verbs get a row of their own; the channel buttons sit at its far end. Where that
   // row is not drawn (an agent's StreamInbox, an embedded list, a selection in progress) they fall back to the filter row.
   const hasTopRow = !agentId && !embedded && selectedCount === 0;
+  const invitesChip = !agentId && !embedded && (
+    <InvitesChannelChip
+      active={inInvitesView}
+      pending={membershipPendingCount}
+      onClick={() => setView(inInvitesView ? 'all' : 'invites')}
+    />
+  );
   const channelButtons = (
     <>
-      {!agentId && !embedded && (
-        <InvitesChannelChip
-          active={inInvitesView}
-          pending={membershipPendingCount}
-          onClick={() => setView(inInvitesView ? 'all' : 'invites')}
-        />
-      )}
-      {channelsOwner && !embedded && (
+      {channelsOwner && !embedded ? (
         <AttachedChannelsBar
           owner={channelsOwner}
           rows={ownerChannels}
@@ -1460,7 +1475,10 @@ export function StreamInboxView({
           selected={channelFilter}
           onSelectedChange={setChannelFilter}
           className="shrink-0"
+          leading={invitesChip}
         />
+      ) : (
+        invitesChip
       )}
     </>
   );

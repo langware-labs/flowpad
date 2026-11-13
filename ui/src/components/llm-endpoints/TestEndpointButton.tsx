@@ -35,6 +35,8 @@ import { errorMessage } from '@src/lib/error-message';
 
 export interface TestEndpointButtonProps {
   endpointId: string;
+  /** This machine's endpoint: its provider, whose stored key the test spends locally. */
+  localProvider?: string;
   /** Told the verdict as it lands (null while a run is in flight), so a surface can say what
    *  the call actually spent underneath the tick — see `FundingProvenance`. The button keeps
    *  owning its own state; this only mirrors it outward. */
@@ -50,7 +52,12 @@ export interface TestEndpointButtonProps {
   inlineVerdict?: boolean;
 }
 
-export function TestEndpointButton({ endpointId, onVerdict, inlineVerdict = true }: TestEndpointButtonProps) {
+export function TestEndpointButton({
+  endpointId,
+  localProvider,
+  onVerdict,
+  inlineVerdict = true,
+}: TestEndpointButtonProps) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
   const [verdict, setVerdict] = useState<LLMEndpointTestResult | null>(null);
@@ -65,7 +72,12 @@ export function TestEndpointButton({ endpointId, onVerdict, inlineVerdict = true
     announce(null);
     try {
       announce(
-        isHubOnly() ? await llmEndpointsService.testEndpoint(endpointId) : await llmSourcesService.test(endpointId),
+        localProvider
+          ? // This machine's key: spend one call with it here — the hub does not know the endpoint.
+            await llmSourcesService.testSource({ kind: 'api_key', provider: localProvider })
+          : isHubOnly()
+            ? await llmEndpointsService.testEndpoint(endpointId)
+            : await llmSourcesService.test(endpointId),
       );
     } catch (e) {
       // Only a transport/permission failure lands here — the hub answers a

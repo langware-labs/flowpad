@@ -136,6 +136,7 @@ async def handle_rest_message(connection_id: str, websocket: WebSocket, message_
             api_message.query_string or "",
             api_message.body,
             bool(api_message.hub_reflect),
+            quiet=bool(api_message.quiet),
         )
     except Exception as ex:  # noqa: BLE001 — a routing failure must not drop the message
         logger.error(f"[WS_REST] hub routing failed for {api_message.api_path}: {ex}")

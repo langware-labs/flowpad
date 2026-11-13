@@ -11,6 +11,7 @@ import {
   FileText,
   FileVideo,
   FolderOpen,
+  Globe,
   Link as LinkIcon,
   Loader2,
   Maximize2,
@@ -21,6 +22,7 @@ import { cn } from '@src/lib/utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
 import { AssetEditor, editorForPath } from '@src/navigation/asset-doc-types';
 import { isImagePath } from '@sdk';
+import { localHtmlRef, OpenInBrowserButton } from '@src/lib/open-in-browser';
 import { useValueKind, valueKindMeta } from '@src/components/value-viewer/useValueKind';
 import { MediaLightbox, isVideoPath, videoSource } from '@src/components/ui/media-lightbox';
 
@@ -150,6 +152,7 @@ export function AttachmentChip({
 }: AttachmentChipProps) {
   const { t } = useLingui();
   const valueKind = useValueKind(state === AttachmentChipState.Downloaded ? localPath : null);
+  const htmlRef = state === AttachmentChipState.Downloaded ? localHtmlRef(localPath) : null;
   const [imgFailed, setImgFailed] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
   const [lightbox, setLightbox] = useState(false);
@@ -215,6 +218,14 @@ export function AttachmentChip({
   const overlay = (
     <div className="absolute right-1 top-1 z-10">
       <div className="flex items-center gap-0.5 rounded-md border border-border bg-background/95 p-0.5 shadow-sm backdrop-blur-sm">
+        {htmlRef && (
+          <OpenInBrowserButton
+            fileRef={htmlRef}
+            testId="attachment-open-browser"
+            iconClassName="h-3.5 w-3.5"
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          />
+        )}
         <a
           href={url}
           download={filename}
@@ -255,6 +266,12 @@ export function AttachmentChip({
               <DropdownMenuItem className="text-xs" onSelect={onOpenInEditor}>
                 <FileText className="text-muted-foreground" />
                 {openLabel(editorForPath(filename))}
+              </DropdownMenuItem>
+            )}
+            {htmlRef && (
+              <DropdownMenuItem className="text-xs" onSelect={() => void htmlRef.open()}>
+                <Globe className="text-muted-foreground" />
+                <Trans>Open in browser</Trans>
               </DropdownMenuItem>
             )}
             <DropdownMenuItem className="text-xs" asChild>

@@ -182,6 +182,13 @@ export interface AutomationSummary {
   passed_over: number;
   next_run?: string | null;
   fires: number;
+  /** Where it stands in its own life: active · off · done · expired · cancelled. */
+  status?: 'active' | 'off' | 'done' | 'expired' | 'cancelled';
+  max_runs?: number | null;
+  runs_left?: number | null;
+  until?: string | null;
+  ended_at?: string | null;
+  ended_reason?: 'max_runs' | 'expired' | 'cancelled' | null;
   tested: boolean;
   read_only: boolean;
   /** A person may turn it on or off here (read-only rules too, when Flowpad ships them off). Older backends omit it. */

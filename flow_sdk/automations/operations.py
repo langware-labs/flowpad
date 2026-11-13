@@ -166,6 +166,10 @@ async def accept(input: PreparedAutomation, *, context) -> ReturnedValue:
                 project_id=trigger.project_id,
                 cause=context.event,
             )
+    if context.mode is AutomationMode.REAL:
+        from flow_sdk.automations.lifecycle import after_run
+
+        await after_run(trigger)
     accepted = input.model_copy(update={"event_id": event_id})
     if kind is TriggerType.TAG:
         from flow_sdk.builtin.tag_triggers import record_tag_start
@@ -229,6 +233,7 @@ async def then(input: PreparedAutomation, *, context) -> ReturnedValue:
 async def action(input: int, *, context) -> ReturnedValue:
     from flow_sdk.builtin.hook_models import get_action_handler
     from flow_sdk.builtin.trigger import _failure_of
+    from flow_sdk.schema.data_spec.trigger_action import ActionType
 
     trigger = context.trigger
     selected = trigger.action if context.hook else trigger.actions[input]
@@ -237,7 +242,9 @@ async def action(input: int, *, context) -> ReturnedValue:
         if handler is None:
             answer = ReturnedValue.not_yet(f"No handler for action {selected.action_type}", ran=False)
         else:
-            result = await handler.execute(trigger, action=selected, changes=None if context.hook else context.changes)
+            extra = {"event": context.event} if selected.action_type == ActionType.PROMPT_PROCESS else {}
+            result = await handler.execute(trigger, action=selected, changes=None if context.hook else context.changes,
+                                           **extra)
             if context.hook:
                 await trigger.update()
             answer = result if isinstance(result, ReturnedValue) else ReturnedValue.satisfied()

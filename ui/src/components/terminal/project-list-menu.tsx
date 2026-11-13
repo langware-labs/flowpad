@@ -42,7 +42,7 @@ import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import { hubProjectUrl } from '@src/lib/hub-page-url';
 import { openExternal } from '@src/lib/open-external';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
-import { Cloud, FolderOpen, Globe, Loader2, RotateCcw, X } from 'lucide-react';
+import { Cloud, FolderOpen, Github, Globe, Loader2, Plus, RotateCcw, X } from 'lucide-react';
 import React, { useMemo, useRef, useState } from 'react';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 import { WorkspacePickerRow } from '@src/components/workspace/workspace-switcher';
@@ -112,7 +112,7 @@ function ProjectPathActions({
 /** The project list's leading location affordance. A cloud-linked project opens
  * in Hub; a local-only project opens its folder. It is a sibling of the row's
  * select button so clicking it never changes the active project. */
-function ProjectLocationButton({
+export function ProjectLocationButton({
   projectId,
   projectPath,
   cloudLinked,
@@ -130,8 +130,8 @@ function ProjectLocationButton({
       <button
         type="button"
         onClick={() => openExternal(cloudUrl)}
-        title={t`Open project in cloud`}
-        aria-label={t`Open project in cloud`}
+        title={t`Cloud project ${cloudUrl}`}
+        aria-label={t`Cloud project ${cloudUrl}`}
         data-testid={`project-cloud-${projectId}`}
         className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
@@ -145,8 +145,8 @@ function ProjectLocationButton({
       <button
         type="button"
         onClick={() => void fsRef.open()}
-        title={t`Open in Finder/Explorer`}
-        aria-label={t`Open in Finder/Explorer`}
+        title={t`Local project ${projectPath}`}
+        aria-label={t`Local project ${projectPath}`}
         data-testid={`project-reveal-${projectId}`}
         className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
@@ -458,8 +458,10 @@ export interface ProjectListMenu {
   /** Whether the "Open project" dialog (the footer's Switch Project picker) is showing. */
   projectDialogOpen: boolean;
   setProjectDialogOpen: (open: boolean) => void;
-  /** Close the list and pop the "Open project" dialog. */
-  handleOpenProject: () => void;
+  /** Which step the dialog opens on: the picker, or straight into create / clone. */
+  projectDialogStart: 'create' | 'git' | null;
+  /** Close the list and pop the "Open project" dialog, optionally on its create / git step. */
+  handleOpenProject: (start?: 'create' | 'git') => void;
 }
 
 /** The project list's state and actions, trigger-agnostic. */
@@ -489,6 +491,7 @@ export function useProjectListMenu({
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [projectDialogStart, setProjectDialogStart] = useState<'create' | 'git' | null>(null);
   const { currentDock, navigation } = useDockNavigation();
   const { buckets: allBuckets, globalTabCount, closeGlobal } = useTabProjectBuckets();
 
@@ -639,8 +642,9 @@ export function useProjectListMenu({
   // OpenProjectComponent dialog the footer's Switch Project button uses. The
   // dialog is rendered by the chip via {@link ProjectListOpenDialog}, outside
   // the popover, since Radix unmounts the popover content on close.
-  const handleOpenProject = () => {
+  const handleOpenProject = (start?: 'create' | 'git') => {
     setOpen(false);
+    setProjectDialogStart(start ?? null);
     setProjectDialogOpen(true);
   };
 
@@ -666,6 +670,7 @@ export function useProjectListMenu({
     handleCloseGlobal,
     projectDialogOpen,
     setProjectDialogOpen,
+    projectDialogStart,
     handleOpenProject,
   };
 }
@@ -681,23 +686,49 @@ export function ProjectListOpenDialog({ menu }: { menu: ProjectListMenu }) {
     <OpenProjectComponent
       open={menu.projectDialogOpen}
       onOpenChange={menu.setProjectDialogOpen}
+      initialSubDialog={menu.projectDialogStart}
       onProjectChanged={() => void refetchProjects()}
     />
   );
 }
 
-/** The full-width "Open project" button that closes the project list. */
+/** The "Open project" button plus icon shortcuts to its create / git steps, on one line. */
 function OpenProjectRow({ menu }: { menu: ProjectListMenu }) {
+  const { t } = useLingui();
+  const iconBtn =
+    'flex shrink-0 items-center justify-center rounded border border-border px-2 py-1.5 text-muted-foreground hover:bg-muted hover:text-foreground';
   return (
-    <button
-      type="button"
-      onClick={menu.handleOpenProject}
-      className="flex w-full items-center justify-center gap-2 rounded border border-border px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-      data-testid="projects-counter-open-project"
-    >
-      <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-      <Trans>Open project</Trans>
-    </button>
+    <div className="flex w-full items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => menu.handleOpenProject()}
+        className="flex flex-1 items-center justify-center gap-2 rounded border border-border px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+        data-testid="projects-counter-open-project"
+      >
+        <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+        <Trans>Open project</Trans>
+      </button>
+      <button
+        type="button"
+        onClick={() => menu.handleOpenProject('create')}
+        className={iconBtn}
+        aria-label={t`New project`}
+        title={t`New project`}
+        data-testid="projects-counter-new-project"
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => menu.handleOpenProject('git')}
+        className={iconBtn}
+        aria-label={t`Open from git`}
+        title={t`Open from git`}
+        data-testid="projects-counter-open-from-git"
+      >
+        <Github className="h-3.5 w-3.5" />
+      </button>
+    </div>
   );
 }
 

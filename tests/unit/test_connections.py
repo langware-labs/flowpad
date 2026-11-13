@@ -52,7 +52,7 @@ async def test_connect_returns_new_verified_row_and_manual_url(monkeypatch, caps
     fake_connections(monkeypatch, [original_spec])
     monkeypatch.setattr(connections, "open_authorization_in_system_browser", lambda _authorization: False)
 
-    async def connect(_provider, presenter, *, reauthorize=False):
+    async def connect(_provider, presenter, *, reauthorize=False, scopes=()):
         await presenter.present(BrowserAuthorization(oauth_request_id="opaque-state", provider="slack", url="https://auth.example/connect"))
         return ConnectionResult(spec=verified_spec, test=ConnectionTestResult(ok=True, identity="me"))
 
@@ -193,7 +193,7 @@ async def test_the_documented_use_runs_as_written_when_not_yet_connected(monkeyp
     fake_connections(monkeypatch, [_spec("slack")])
     monkeypatch.setattr(connections, "open_authorization_in_system_browser", lambda _authorization: False)
 
-    async def connect(_provider, presenter, *, reauthorize=False):
+    async def connect(_provider, presenter, *, reauthorize=False, scopes=()):
         await presenter.present(BrowserAuthorization(oauth_request_id="s", provider="slack", url="https://auth.example/connect"))
         return ConnectionResult(spec=_spec("slack", connected=True), test=ConnectionTestResult(ok=True, identity="me"))
 

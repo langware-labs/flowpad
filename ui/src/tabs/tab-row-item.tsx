@@ -19,20 +19,22 @@ import {
   Tab,
   tabKey,
   TabLifecycleState,
+  tabManager,
   TypeId,
+  uniqueTabsByDockKey,
   type TabLifecycleEntry,
 } from '@sdk';
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
 import type { FavoriteRef } from '@src/hooks/use-favorites';
-import { tabDock } from '@src/tabs/project-entry';
+import { resumeDock, tabDock } from '@src/tabs/project-entry';
 import { type TabStripItem } from '@src/components/tabs/TabStrip';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useTabLifecycles } from '@src/tabs/use-tab-manager';
+import { useAllTabs, useAncestorActiveTab, useCurrentTabs, useTabLifecycles } from '@src/tabs/use-tab-manager';
 import { ContentTabTooltip, humanizeType, ProcessTabCard, PROVIDER_META } from '@src/tabs/provider-meta';
 import { DocTabCard } from '@src/tabs/doc-tab-card';
 import type { NoteTarget } from '@src/hooks/use-entity-notes';
@@ -43,7 +45,7 @@ import { ViewType, VIEWER_REGISTRY, viewerTitle } from '@src/types/ViewType';
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { displayEntryIcon } from '@src/pages/flow-page/display-history-button';
 import { FileText, FolderGit2, Sparkles } from 'lucide-react';
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 
 const TERMINAL_TARGET_TYPES = new Set<string>([Shell.type, AgenticProcess.type]);
 
@@ -360,4 +362,54 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
       }),
     [tabs, lifecycles, currentDock, focusType, focusId, focusEditable, focusEntity, activeAssetTitle],
   );
+}
+
+/**
+ * The global strip's tabs, ready to draw and to pick from — the ONE derivation behind the desktop strip
+ * and the phone menu's "Open tabs". `scope='project'` is the active project's exact scope, `'all'` every
+ * project's and Global's, both in the backend's global order.
+ */
+export function useStripTabs(scope: 'project' | 'all' = 'project') {
+  const { navigation, currentDock } = useDockNavigation();
+  const allTabs = useAllTabs();
+  const currentTabs = useCurrentTabs();
+  const globalTabs = useMemo(() => uniqueTabsByDockKey(allTabs), [allTabs]);
+  // Optimistic close: drop `Closing` tabs from the WHOLE working set (not just
+  // the rendered items) — `items`, `tabByKey`, and the mod+PgUp/PgDn cycling
+  // all derive from `tabs`, so a closing tab can't be re-selected mid-teardown.
+  useTabLifecycles();
+  const tabs = tabManager.lifecycle.excludeClosing(scope === 'all' ? globalTabs : currentTabs);
+  const items = useTabStripItems(tabs);
+
+  // The URL's own key. Only mod+W still uses it directly — everything else wants
+  // `activeKey` below, the key of the chip actually ON SCREEN.
+  const urlActiveKey = currentDock?.tabHash ?? '';
+  // The URL can name a WORKSPACE CHILD, which this strip filters out
+  // (`topLevelTabsForProject`). Then the chip on screen is the child's ancestor —
+  // the vibe display — and without this the strip renders with nothing lit while
+  // a child surface fills the panel. Still exactly one active chip: the resolver
+  // returns null whenever the URL key already names a chip here.
+  const ancestor = useAncestorActiveTab(tabs, urlActiveKey);
+  const activeKey = ancestor ? tabKey(ancestor.parent) : urlActiveKey;
+
+  const tabByKey = useMemo(() => {
+    const m = new Map<string, Tab>();
+    for (const t of tabs) {
+      m.set(tabKey(t), t);
+    }
+    return m;
+  }, [tabs]);
+
+  const select = useCallback(
+    (key: string) => {
+      const dock = resumeDock(tabByKey.get(key), allTabs);
+      if (!dock) return;
+      // A chip in the GLOBAL strip is a top-level tab: clicking it from inside a
+      // Vibe tab must not adopt it into that Vibe tab's workspace.
+      navigation.openDock(dock, undefined, { topLevel: true });
+    },
+    [tabByKey, navigation, allTabs],
+  );
+
+  return { tabs, allTabs, tabByKey, items, urlActiveKey, activeKey, ancestor, select };
 }

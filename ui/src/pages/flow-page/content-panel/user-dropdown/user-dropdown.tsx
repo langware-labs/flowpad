@@ -212,7 +212,10 @@ function statusDotClass(login: HubLoginStatus, connection: HubConnectionStatus):
 export function UserDropdown() {
   const { t } = useLingui();
   const { agentId } = useParams();
-  const { user, currentUser } = useAuth();
+  const { user, currentUser, currentPrincipal } = useAuth();
+  // The chip shows WHO is signed in: a person, or the agent's Identity on its own box (no email there).
+  const me = currentPrincipal;
+  const myEmail = currentUser?.email;
   const { isConnected } = useConnectionStatus();
   const devMode = useIsDev();
   const { cloudLoginAvailable } = useContext();
@@ -234,8 +237,8 @@ export function UserDropdown() {
   // local desktop user — we still show those initials rather than blanking the
   // avatar to a question mark. The glyph only appears when there is genuinely no
   // user at all. The cloud *picture* stays gated on `cloudLoginAvailable` below.
-  const avatarInitials = currentUser
-    ? (currentUser.name || currentUser.email?.split('@')[0] || '?')
+  const avatarInitials = me
+    ? (me.name || myEmail?.split('@')[0] || '?')
         .split(/[\s._-]+/)
         .map((n: string) => n[0])
         .join('')
@@ -244,11 +247,11 @@ export function UserDropdown() {
     : null;
   // `picture` carries two unrelated things now. A human's is a URL from the
   // identity provider; a deployed agent's is the icon TOKEN its Agent row was
-  // authored with (an emoji or a lucide name — `/current-user` projects
+  // authored with (an emoji or a lucide name — `/current-principal` projects
   // `identity.avatar` straight into this field). Feed a token to <img src> and
   // it 404s, so discriminate: URL → image, known token → glyph, anything else →
   // initials, same order of preference as the rest of the app.
-  const picture = cloudLoginAvailable ? (currentUser?.picture ?? '') : '';
+  const picture = cloudLoginAvailable ? (me?.picture ?? '') : '';
   const pictureIsUrl = /^(https?:|data:|\/)/.test(picture);
   // A token is a glyph we can actually draw. Resolution answers that directly
   // and better than the regex it replaces: an emoji is not a legal tag, so it
@@ -262,7 +265,7 @@ export function UserDropdown() {
   // so it needs no cast and no per-type plumbing: the hub sends it for an agent
   // principal, and a human's is whatever they set. Absent → the line is skipped
   // and the email moves up. The email is its own line below, never this one.
-  const profileTitle = currentUser?.title || null;
+  const profileTitle = me?.title || null;
   const agentTypeId = useMemo(() => (agentId ? new TypeId(SubAgent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<SubAgent>(agentTypeId, {
     query: user ? agentQuery : new ExpansionRequest({}),
@@ -470,8 +473,8 @@ export function UserDropdown() {
                         >
                           {cloudLoginAvailable && pictureIsUrl && (
                             <AvatarImage
-                              src={currentUser!.picture}
-                              alt={currentUser?.name ?? currentUser?.email ?? ''}
+                              src={me!.picture}
+                              alt={me?.name ?? myEmail ?? ''}
                             />
                           )}
                           <AvatarFallback>
@@ -487,13 +490,13 @@ export function UserDropdown() {
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
                   <TooltipContent side="top">
-                    {cloudLoginTooltip(login.status, connection.status, cloudUrl, currentUser?.email)}
+                    {cloudLoginTooltip(login.status, connection.status, cloudUrl, myEmail ?? me?.name)}
                   </TooltipContent>
                   <DropdownMenuContent align="end" className="w-64 p-0">
                     <UserMenuHeader
-                      name={currentUser?.name}
+                      name={me?.name}
                       title={profileTitle}
-                      email={currentUser?.email}
+                      email={myEmail}
                       pictureUrl={pictureIsUrl ? picture : null}
                       pictureIcon={pictureIcon}
                       initials={avatarInitials}

@@ -44,6 +44,7 @@ import { readDraft, writeDraft } from '@src/components/entity-execution-panel/co
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { isMobile, submitOnEnter } from '@src/hooks/use-mobile';
 
 interface MessageComposerProps {
   /** Conversation to append to. Falls back to the draft's `conversation_id`. */
@@ -113,7 +114,7 @@ const MAX_COMPOSER_HEIGHT_PX = 240;
 
 /** The flat icon buttons of the attach row (file, asset, emoji, live session). */
 const ICON_BUTTON_CLASS =
-  'flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40';
+  'flex h-11 w-11 shrink-0 items-center justify-center rounded text-muted-foreground md:h-7 md:w-7 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40';
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -507,8 +508,23 @@ export function MessageComposer({
     }
   };
 
+  // iOS lays the keyboard over the page: once it has opened, bring the box back above it.
+  const liftAboveKeyboard = () => {
+    const vv = window.visualViewport;
+    if (!vv || !isMobile()) return;
+    dropLift();
+    const lift = () => textareaRef.current?.scrollIntoView({ block: 'end' });
+    vv.addEventListener('resize', lift, { once: true });
+    dropLiftRef.current = () => vv.removeEventListener('resize', lift);
+  };
+  const dropLiftRef = useRef<(() => void) | null>(null);
+  const dropLift = () => {
+    dropLiftRef.current?.();
+    dropLiftRef.current = null;
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+    if (submitOnEnter(e) && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       handleSend();
     }
@@ -623,7 +639,7 @@ export function MessageComposer({
             disabled={isDisabled}
             title={t`Insert emoji`}
             data-testid="insert-emoji-button"
-            className={ICON_BUTTON_CLASS}
+            className={cn(ICON_BUTTON_CLASS, 'max-md:hidden')}
           >
             <Smile className="h-3.5 w-3.5" />
           </button>
@@ -717,7 +733,7 @@ export function MessageComposer({
       onClick={handleSend}
       disabled={!canSend}
       title={t`Send`}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40 md:h-7 md:w-7"
     >
       <Send className="h-3.5 w-3.5 rtl:-scale-x-100" />
     </button>
@@ -772,7 +788,7 @@ export function MessageComposer({
               placeholder={dragging ? t`Drop files here` : t`Edit your draft…`}
               rows={2}
               disabled={isDisabled}
-              className="min-h-[2.5rem] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[2.5rem] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-base text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
             />
             <div className="flex items-center gap-1.5">
               {attachButtons}
@@ -842,7 +858,7 @@ export function MessageComposer({
         onDrop={onDrop}
         data-variant={variant}
         className={cn(
-          'flex items-end gap-2 rounded-md border px-2 py-1.5 transition-colors',
+          'mb-[var(--sab)] flex items-end gap-2 rounded-md border px-2 py-1.5 transition-colors',
           terminal
             ? 'border-emerald-500/40 bg-background font-mono text-foreground focus-within:border-emerald-500/70 dark:bg-zinc-950 dark:focus-within:border-emerald-400/70'
             : 'border-border bg-background focus-within:border-primary/50',
@@ -851,8 +867,11 @@ export function MessageComposer({
       >
         <div className="flex shrink-0 items-center gap-1.5 self-end pb-0.5">
           {attachButtons}
-          {sessionToggle}
-          {promptCallToggle}
+          {/* A phone keeps the box wide: attach and send; the desktop's run toggles stay off it. */}
+          <span className="contents max-md:hidden">
+            {sessionToggle}
+            {promptCallToggle}
+          </span>
         </div>
         {terminal && (
           <span className="select-none self-center text-sm text-emerald-600 dark:text-emerald-400" aria-hidden>
@@ -864,6 +883,8 @@ export function MessageComposer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={liftAboveKeyboard}
+          onBlur={dropLift}
           onPaste={(e) => void handlePaste(e)}
           placeholder={
             dragging
@@ -876,13 +897,13 @@ export function MessageComposer({
           disabled={isDisabled}
           data-testid={terminal ? 'live-session-input' : undefined}
           className={cn(
-            'min-h-[1.5rem] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50',
+            'min-h-[1.5rem] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-base outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
             terminal
               ? 'font-mono text-foreground placeholder:text-muted-foreground'
               : 'text-foreground placeholder:text-muted-foreground',
           )}
         />
-        {taskItToggle}
+        <span className="contents max-md:hidden">{taskItToggle}</span>
         {sendButton}
       </div>
 

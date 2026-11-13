@@ -206,11 +206,12 @@ class User(Entity):
     async def current_sender_participant(cls, override_name: str | None = None) -> dict:
         override = override_name.strip() if override_name and override_name.strip() else ""
         try:
-            from flow_sdk.cli.app_config import get_user
+            from flow_sdk.cli.app_config import get_principal
             from flow_sdk.cli.auth.hub_login import is_logged_in
 
             if is_logged_in():
-                cloud_user = get_user()
+                # The signed-in principal: a person, or the agent's Identity on its box.
+                cloud_user = get_principal()
                 if isinstance(cloud_user, dict) and cloud_user.get("id"):
                     email = normalize_email(str(cloud_user.get("email") or "")) or ""
                     return {
@@ -240,11 +241,12 @@ class User(Entity):
         if local_user and local_user.id:
             ids.add(local_user.id)
         try:
-            from flow_sdk.cli.app_config import get_user
+            from flow_sdk.cli.app_config import get_principal
             from flow_sdk.cli.auth.hub_login import is_logged_in
 
             if is_logged_in():
-                cloud_user = get_user()
+                # The signed-in principal: a person, or the agent's Identity on its box.
+                cloud_user = get_principal()
                 if isinstance(cloud_user, dict) and cloud_user.get("id"):
                     ids.add(str(cloud_user["id"]))
         except Exception:

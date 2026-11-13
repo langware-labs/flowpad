@@ -165,6 +165,13 @@ describe('OrganizationPage', () => {
     expect(screen.queryByTestId('org-create-team')).toBeNull();
   });
 
+  it('shows the member card when the hub already said the budgets are not for this caller', () => {
+    h.orgBudgets.mockReturnValue({ data: undefined, isLoading: false, error: null, refused: true });
+    render(<OrganizationPage />);
+
+    expect(screen.getByTestId('org-unit').getAttribute('data-readonly')).toBe('true');
+  });
+
   it('explains itself when there is nothing to show', () => {
     orgsMock.mockReturnValue({ data: [], isLoading: false });
     render(<OrganizationPage />);

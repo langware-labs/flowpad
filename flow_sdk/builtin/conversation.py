@@ -75,6 +75,8 @@ class ConversationKind(StrEnum):
     HELPDESK = "helpdesk"
     #: An agent owner's IT message to its deployments: one reply per machine, written by the hub.
     IT = "it"
+    #: A project's Monitoring channel: the hub posts one message per Issue and keeps it current.
+    MONITORING = "monitoring"
 
 
 class ConversationStatus(StrEnum):

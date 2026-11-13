@@ -18,7 +18,8 @@ from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 from flow_sdk.server.routes import it_session as route
 
 SECRET = "gate-secret-for-the-hub"
-PERSON = {"status": "logged_in", "user": {"id": "user-1", "email": "student@example.com"}, "reason": None}
+_STUDENT = {"id": "1", "type": "user", "typeid": "user-1", "email": "student@example.com"}
+PERSON = {"status": "logged_in", "principal": _STUDENT, "user": _STUDENT, "reason": None}
 NOBODY = {"status": "logged_out", "user": None, "reason": None}
 SHAPE = {
     "type": "object",
@@ -97,9 +98,8 @@ def test_signed_in_person_refuses(box):
 
 
 def test_agent_identity_login_is_not_a_person(box):
-    box.login["block"] = {**PERSON, "user": {"id": "identity-abc", "name": "Game Builder"}}
-    assert it_session.person_signed_in() is False
-    box.login["block"] = {**PERSON, "user": {"id": "x", "kind": "identity"}}
+    agent = {"id": "abc", "type": "identity", "typeid": "identity-abc", "name": "Game Builder"}
+    box.login["block"] = {**PERSON, "principal": agent, "user": None}
     assert it_session.person_signed_in() is False
 
 

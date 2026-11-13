@@ -301,12 +301,15 @@ def test_a_device_projection_keeps_the_same_id_across_reads(env):
 
 
 @pytest.mark.asyncio
-async def test_only_a_local_key_endpoint_is_stored(env):
+async def test_only_local_endpoints_are_stored(env):
+    """A hub budget is the hub's row; a device login's row (its model sizes) is stored here."""
     hub = LLMEndpoint(id="11111111-2222-4333-8444-555555555555", name="team budget")
-    with pytest.raises(ValueError, match="only api_key endpoints"):
+    with pytest.raises(ValueError, match="only api_key and device endpoints"):
         await hub.save()
-    with pytest.raises(ValueError, match="only api_key endpoints"):
-        await LLMEndpoint.device_projection("claude").save()
+    device = await LLMEndpoint.ensure_device("claude")
+    assert device.id == LLMEndpoint.device_projection("claude").id
+    stored = await LLMEndpoint.find_device("claude")
+    assert stored is not None and stored.harness == "claude" and stored.invocable is False
 
 
 @pytest.mark.asyncio
@@ -388,6 +391,32 @@ async def test_by_provider_config_changes_one_tier_and_persists(env):
 
 
 @pytest.mark.asyncio
+async def test_a_local_root_keeps_the_limits_and_filters_a_hub_root_has(env):
+    """A key on this machine is a root like a hub one: the shared editor's limits/filters persist on it."""
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointConfig, LLMFilters, LLMLimits
+
+    await LLMEndpoint.by_provider("anthropic", key="sk-ant-test")
+    try:
+        await LLMEndpoint.by_provider(
+            "anthropic",
+            config=LLMEndpointConfig(
+                name="Anthropic (this machine)",
+                limits=LLMLimits(cost_usd_total=20.0),
+                filters=LLMFilters(models_allow=["claude-haiku-5-5"]),
+            ),
+        )
+        loaded = await LLMEndpoint.find_by_secret("lm_api.anthropic")
+        assert loaded.name == "Anthropic (this machine)"
+        assert loaded.limits.cost_usd_total == 20.0
+        assert loaded.filters.models_allow == ["claude-haiku-5-5"]
+        assert loaded.to_wire()["limits"]["cost_usd_total"] == 20.0
+    finally:
+        row = await LLMEndpoint.find_by_secret("lm_api.anthropic")
+        if row is not None:
+            await row.destroy()
+
+
+@pytest.mark.asyncio
 async def test_by_provider_refuses_flowpad(env):
     for key in ("anything", None):
         with pytest.raises(ValueError):
@@ -405,3 +434,38 @@ def test_a_row_saved_with_the_old_models_field_loads_its_sizes_as_tiers() -> Non
     hub_row = LLMEndpoint(id="33333333-2222-4333-8444-555555555555", models=["vendor/a", "vendor/b"])
     assert hub_row.tiers == {}
     assert LLMEndpointConfig(models={"md": "vendor/medium"}).tiers == {"md": "vendor/medium"}
+
+
+# ── this machine's key roots: every stored key, not only what a harness offers ──
+
+
+@pytest.mark.asyncio
+async def test_every_stored_key_is_a_root_whether_or_not_a_harness_offers_it(env):
+    """D8: the API keys tab counted an anthropic key and listed nothing — the list came from the
+    harness offers, and only OpenRouter has a harness. One source for both now."""
+    roots = await LLMEndpoint.stored_key_roots(["anthropic", "openrouter", "flowpad"])
+    assert [r.provider for r in roots] == ["anthropic", "openrouter"]  # the hub login is never a key root
+    assert all(r.kind == LLMEndpointKind.API_KEY for r in roots)
+    assert roots[0].secret_name == "lm_api.anthropic"
+
+
+@pytest.mark.asyncio
+async def test_a_stored_key_root_is_its_row_when_one_exists(env):
+    row = await LLMEndpoint.by_provider("anthropic", key="sk-ant-test")
+    [root] = await LLMEndpoint.stored_key_roots(["anthropic"])
+    assert root.id == row.id
+
+
+@pytest.mark.asyncio
+async def test_the_funding_record_lists_a_key_no_harness_supports(env, monkeypatch):
+    from flow_sdk.builtin.agentic_process.cli_drivers import hub_endpoint_binding as binding
+
+    await LLMEndpoint.by_provider("anthropic", key="sk-ant-test")
+    monkeypatch.setattr(binding, "fetch_hub_llm_endpoints", _no_hub_endpoints)
+    record = await binding.funding_status()
+    keys = [e for e in record.available if e.get("kind") == LLMEndpointKind.API_KEY.value]
+    assert [e["provider"] for e in keys] == ["anthropic"]
+
+
+async def _no_hub_endpoints(**_):
+    return []

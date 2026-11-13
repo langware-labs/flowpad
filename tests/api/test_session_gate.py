@@ -178,4 +178,28 @@ async def test_capped_session_is_not_the_open_one(bootstrapped_client, user):
     """A prompt sent after the cap opens a NEW session instead of joining the old one."""
     conv_id = await make_conversation(bootstrapped_client)
     await make_session(conv_id, S.IDLE.value, approved_at=_LONG_AGO)
-    assert await RemoteWorkerSession.open_for_conversation(conv_id) is None
+    assert await RemoteWorkerSession.open_for_conversation(conv_id, "guest-remote") is None
+
+
+async def test_another_members_prompt_never_runs_under_someones_approval(bootstrapped_client, user, monkeypatch):
+    """Bob's session is approved. Carol, another member, sends a prompt — stamped with Bob's
+    session id, or with none. Neither joins Bob's session: each opens Carol's own PENDING session
+    and runs nothing, while Bob's own follow-up still runs."""
+    ran = _patch_run(monkeypatch)
+    conv_id = await make_conversation(bootstrapped_client)
+    bobs = await make_session(conv_id, S.IDLE.value, guest_user_id="guest-remote")
+
+    stamped = inbound_prompt_fm(conv_id, bobs.id, fm_id="c3c3c3c3-0000-4000-8000-000000000001", sender_id="carol")
+    unstamped = inbound_prompt_fm(conv_id, None, fm_id="c3c3c3c3-0000-4000-8000-000000000002", sender_id="carol")
+    for fm in (stamped, unstamped):
+        await fm.save(notify=False)
+        await ep.process_inbound_prompt(fm.id, conv_id)
+    assert ran == []
+    carols = await RemoteWorkerSession.get_all({"conversation_id": conv_id, "guest_user_id": "carol"})
+    assert carols and {s.status for s in carols} == {S.PENDING.value}
+    assert all(s.id != bobs.id for s in carols)
+
+    own = inbound_prompt_fm(conv_id, bobs.id, fm_id="c3c3c3c3-0000-4000-8000-000000000003")
+    await own.save(notify=False)
+    await ep.process_inbound_prompt(own.id, conv_id)
+    assert ran == [(bobs.id, own.id)]

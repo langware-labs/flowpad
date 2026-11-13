@@ -4,6 +4,7 @@ import {
   createCloudConnectionLostWarning,
   createCloudDisconnectedWarning,
   createHarnessLoginWarning,
+  createHarnessUpdateWarning,
   createHubRequestFailedWarning,
   createEmptyProjectsWarning,
   createNoComputeNodeWarning,
@@ -158,6 +159,10 @@ export function useWarnings() {
       warnings.push(createHarnessLoginWarning(unfundedReason));
     }
 
+    for (const h of statusRecord?.harnesses ?? []) {
+      if (h.update === 'available' || h.update === 'required') warnings.push(createHarnessUpdateWarning(h));
+    }
+
     // Sniffer hooks are live in the harness settings file — surface it for as
     // long as that holds, with a one-click way out. Keyed on what is installed
     // (not on the local entity) so a sniffer another instance wrote still shows.
@@ -188,6 +193,7 @@ export function useWarnings() {
     lastHubError,
     noHarnessFound,
     unfundedReason,
+    statusRecord,
   ]);
 
   // Update context warnings when computed warnings change

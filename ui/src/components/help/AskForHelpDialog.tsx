@@ -228,8 +228,9 @@ export function AskForHelpDialog({
     <>
       <Dialog open={open && !showDesk} onOpenChange={(next) => (!busy || next) && onOpenChange(next)}>
         <DialogContent
-          className="max-w-lg"
+          className={cn('max-w-lg', picker.dragging && 'border-primary ring-1 ring-primary')}
           data-testid="ask-for-help-dialog"
+          {...picker.dragProps}
           onEscapeKeyDown={holdWhileBusy}
           onInteractOutside={holdWhileBusy}
         >

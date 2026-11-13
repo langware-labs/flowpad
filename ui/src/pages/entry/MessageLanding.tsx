@@ -1,12 +1,14 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ActionInfo, BodyStatus, cloudManager, FlowMessage, isHubOnly, TypeId } from '@sdk';
+import { ActionInfo, BodyStatus, cloudManager, FlowMessage, isHubOnly, PageId, TypeId } from '@sdk';
 import { useAuth, useEntity } from '@sdk/react/hooks';
 import { Loader2 } from 'lucide-react';
 import React, { useMemo } from 'react';
-import { useParams } from 'react-router';
+import { Navigate, useParams } from 'react-router';
 import flowpadLogo from '@src/assets/logo.png';
 import { Avatar, AvatarFallback, AvatarImage } from '@src/components/ui/avatar';
 import { Button } from '@src/components/ui/button';
+import { isMobile } from '@src/hooks/use-mobile';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useCopied } from '@src/components/ui/copy-button';
 import { inboundParams } from '@src/navigation/inbound-link';
 import { bounceToLoginOnce } from './login-bounce';
@@ -93,8 +95,12 @@ const MessageLanding: React.FC = () => {
     status === 403 || (unauthorized && !hasApiKey && !!loginKey && !!sessionStorage.getItem(loginKey));
   // On the hub this page renders signed out (`anonymous-entry.ts`), so it owns its sign-in, from the
   // click: a popup keeps this tab, then the page reloads as the signed-in user.
+  // A phone blocks the popup, so it signs in by a full-page round trip back to this link.
+  const phone = isMobile();
+  // Asked once: the hub signs in in place, and serves only `hub` pages.
+  const onHub = isHubOnly();
   const logIn = () =>
-    isHubOnly() ? void cloudManager.login({ refresh: 'reload' }) : loginKey && bounceToLoginOnce(loginKey);
+    onHub && !phone ? void cloudManager.login({ refresh: 'reload' }) : loginKey && bounceToLoginOnce(loginKey);
 
   const shell = (body: React.ReactNode, from?: string, signedOut = false) => (
     <div className="flex min-h-screen flex-col bg-background text-foreground" data-testid="message-landing">
@@ -162,6 +168,12 @@ const MessageLanding: React.FC = () => {
     ? `${LOCAL_API_PREFIX}/graph/${FlowMessage.type}/${messageId}/fs/download/${encodeURIComponent(attachmentFilename)}`
     : '';
   const isConversation = !(meta.task_id ?? '').trim();
+  // On a phone there is no desktop app to open it in: a member reads and replies in the conversation itself.
+  if (phone && isConversation && flowMessage.conversation_id) {
+    const dock = DockPointer.forConversation(flowMessage.conversation_id, { messageId });
+    // The hub serves only `hub` pages: a desk dock there is redirected home, so the conversation opens on the hub page.
+    return <Navigate replace to={(onHub ? dock.withPage(PageId.HUB) : dock).toUrl()} />;
+  }
   const taskTitle = meta.task_title ?? meta.spec_title ?? t`Shared Task`;
   const firstName = senderName.split(' ')[0];
 

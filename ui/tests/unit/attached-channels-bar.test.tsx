@@ -101,7 +101,7 @@ describe('AttachedChannelsBar', () => {
     expect(screen.queryByTestId('channel-warnings-chip')).toBeNull();
   });
 
-  it('several sources of one kind share a mark with a count; clicking it dims (filters out) that kind', () => {
+  it('several sources of one kind share a mark with a count; clicking it shows only that kind', () => {
     const rows = [fake('a'), fake('b'), fake('c', 'disabled'), fake('g', 'active', 'gmail')];
     const save = vi.spyOn(rows[0], 'save');
     const onSelectedChange = mount(rows);
@@ -111,10 +111,12 @@ describe('AttachedChannelsBar', () => {
       ['slack', '3', 'on'],
     ]);
     expect(screen.getByTestId('attached-channel-count').textContent).toBe('3');
-    // All marks are lit by default; a press dims that one and keeps the rest shown.
+    // All marks are lit by default; a click shows only that one — a ⌘-click too, with nothing to add to.
     expect(marks.map((e) => e.getAttribute('aria-pressed'))).toEqual(['true', 'true']);
     fireEvent.click(marks[1]);
-    expect(onSelectedChange).toHaveBeenCalledWith(new Set(['flowpad', 'gmail|gmail', 'diagnosis', 'automations']));
+    expect(onSelectedChange).toHaveBeenLastCalledWith(new Set(['slack|slack']));
+    fireEvent.click(marks[0], { metaKey: true });
+    expect(onSelectedChange).toHaveBeenLastCalledWith(new Set(['gmail|gmail']));
     expect(save).not.toHaveBeenCalled();
   });
 
@@ -130,13 +132,24 @@ describe('AttachedChannelsBar', () => {
     expect(state([fake('a', 'disabled'), fake('b', 'disabled')])).toBe('off');
   });
 
-  it('while filtering, the + turns into × in its place — nothing else on the line moves — and × shows everything again', () => {
+  it('while filtering: a click on the only one shows all, ⌘/Ctrl-click adds or removes, the last removed shows all', () => {
     const onSelectedChange = mount([fake('a', 'active', 'gmail'), fake('b')], new Set(['gmail|gmail']));
-    expect(screen.queryByTestId('attached-channels-add')).toBeNull();
-    // The rest of the line stays, so the marks a person points at do not shift.
-    expect(screen.getByTestId('attached-channels-details')).toBeTruthy();
-    const marks = channelMarks();
-    expect(marks.map((e) => e.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
+    const [gmail, slack] = channelMarks();
+    expect([gmail, slack].map((e) => e.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
+    fireEvent.click(slack, { ctrlKey: true });
+    expect(onSelectedChange).toHaveBeenLastCalledWith(new Set(['gmail|gmail', 'slack|slack']));
+    fireEvent.click(slack);
+    expect(onSelectedChange).toHaveBeenLastCalledWith(new Set(['slack|slack']));
+    fireEvent.click(gmail, { metaKey: true });
+    expect(onSelectedChange).toHaveBeenLastCalledWith(new Set());
+    fireEvent.click(gmail);
+    expect(onSelectedChange).toHaveBeenLastCalledWith(new Set());
+  });
+
+  it('while filtering, a chip says what is shown and its × shows everything again; the + stays', () => {
+    const onSelectedChange = mount([fake('a', 'active', 'gmail'), fake('b')], new Set(['gmail|gmail']));
+    expect(screen.getByTestId('attached-channels-add')).toBeTruthy();
+    expect(screen.getByTestId('attached-channels-showing').textContent).toContain('Showing:');
     fireEvent.click(screen.getByTestId('attached-channels-clear'));
     expect(onSelectedChange).toHaveBeenCalledWith(new Set());
   });

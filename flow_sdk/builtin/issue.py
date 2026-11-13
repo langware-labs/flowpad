@@ -28,13 +28,20 @@ class Issue(Entity):
     severity: str = APIField(default="error")
     title: str = APIField(default="")
     detail: str = APIField(default="")
+    #: The technical failure behind ``detail``, as the hub saw it (the newest sighting's).
+    cause: str = APIField(default="")
+    #: Whose machine it is about, when the subject is one person's placement (``"visitor 8f99"``).
+    machine: str = APIField(default="")
+    #: What happened to it, oldest first: ``{"at", "what", "detail"}`` (opened, seen_again, resolved, ...).
+    events: list[dict] = APIField(default_factory=list)
     #: ``{"label": …, "pointer": …}`` — what to open to fix it.
     fix: Optional[dict] = APIField(default=None)
     #: What the subject's problem stops (e.g. the deployments a budget funds), as typeids.
     affected: list[str] = APIField(default_factory=list)
-    #: ``"open"`` | ``"resolved"``.
+    #: ``"open"`` | ``"seen"`` | ``"in_progress"`` | ``"resolved"`` | ``"closed"``.
     status: str = APIField(default="open")
     opened_at: float = APIField(default=0.0)
+    reopened_at: Optional[float] = APIField(default=None)
     resolved_at: Optional[float] = APIField(default=None)
     last_notified_at: Optional[float] = APIField(default=None)
     count: int = APIField(default=1)

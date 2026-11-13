@@ -305,7 +305,15 @@ async def run_turn(args: argparse.Namespace, prompt: str, emitter: Emitter) -> i
     # inherit_env: the spawn env (incl. the FLOWPAD_CLI_RUN_ID stamp the cancel sweep looks for)
     # reaches what the agent executes; commands run in their own session, so the stamp is the
     # only thing tying them back to this turn.
-    backend = LocalShellBackend(root_dir=str(workdir), virtual_mode=False, inherit_env=True)
+    from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.bans import banned_backend  # noqa: PLC0415
+
+    backend = banned_backend(
+        LocalShellBackend,
+        json.loads(args.disallowed_tools) if args.disallowed_tools else [],
+        root_dir=str(workdir),
+        virtual_mode=False,
+        inherit_env=True,
+    )
     checkpoint_db = Path(args.checkpoint_db)
     resumed = checkpoint_db.is_file()
     checkpoint_db.parent.mkdir(parents=True, exist_ok=True)
@@ -526,6 +534,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skills-dir", action="append", default=[])
     parser.add_argument("--memory-file", action="append", default=[])
     parser.add_argument("--permission-mode", default="bypassPermissions")
+    parser.add_argument("--disallowed-tools", help="Claude-shaped deny rules, a JSON list: Write, Bash(rm -rf:*)")
     parser.add_argument("--model-factory", default=DEFAULT_MODEL_FACTORY)
     return parser
 

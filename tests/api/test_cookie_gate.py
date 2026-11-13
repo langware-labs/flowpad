@@ -232,6 +232,54 @@ async def test_forbidden_is_a_self_contained_page(client):
 
 
 @pytest.mark.parametrize(
+    ("request_kwargs", "cookie_line", "ticket_line"),
+    [
+        ({}, "none", "none"),
+        ({"cookies": {COOKIE: "v1.x.1.y"}}, "bad-signature (from before a restart, or another box)", "none"),
+        ({"params": {"ticket": "junk"}}, "none", "malformed"),
+    ],
+    ids=["nothing", "foreign-cookie", "junk-ticket"],
+)
+@pytest.mark.asyncio
+async def test_forbidden_page_says_why(client, request_kwargs, cookie_line, ticket_line):
+    """One screenshot names the cause: which credential was missing or wrong, and how the browser asked."""
+    headers = {
+        "sec-fetch-dest": "document",
+        "sec-fetch-site": "cross-site",
+        "sec-fetch-mode": "navigate",
+        "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 27_2_0 like Mac OS X) AppleWebKit/605.1.15 "
+        "(KHTML, like Gecko) CriOS/157.0.8103.37 Mobile/15E148 Safari/604.1",
+    }
+    with _armed():
+        response = await client.get("/dock/vibe/x", headers=headers, **request_kwargs)
+
+    assert response.status_code == 403
+    page = response.text
+    assert f"<dt>cookie</dt><dd>{cookie_line}</dd>" in page
+    assert f"<dt>ticket</dt><dd>{ticket_line}</dd>" in page
+    assert "<dd>document / cross-site / navigate</dd>" in page
+    assert "<dd>Chrome iOS 157 / iOS 27.2</dd>" in page
+    assert "<dd>/dock/vibe/x</dd>" in page
+    assert f"cookie={cookie_line}" in response.headers["x-flowpad-gate"]
+    assert response.headers["cache-control"] == "no-store"
+    assert SECRET not in page and "<script" not in page
+
+
+@pytest.mark.asyncio
+async def test_forbidden_page_never_echoes_a_credential_or_markup(client):
+    sent = "v1.visitor|app|abc.1.deadbeef"
+    with _armed():
+        response = await client.get(
+            "/<script>alert(1)</script>", params={"ticket": "v1.secretish.1.cafe"}, cookies={COOKIE: sent}
+        )
+
+    assert response.status_code == 403
+    assert "<script>alert(1)" not in response.text
+    assert "&lt;script&gt;" in response.text
+    assert "deadbeef" not in response.text and "cafe" not in response.text
+
+
+@pytest.mark.parametrize(
     "request_kwargs",
     [
         {"cookies": {COOKIE: "wrong"}},
@@ -429,3 +477,72 @@ async def test_a_restart_invalidates_every_grant(client):
             response = await client.get("/health/status", cookies={COOKIE: value})
 
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# What happened just before a refusal (gate_trace)
+# ---------------------------------------------------------------------------
+
+_PHONE = {
+    "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 27_2_0 like Mac OS X) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) CriOS/157.0.8103.37 Mobile/15E148 Safari/604.1",
+    "x-forwarded-for": "2.54.152.88",
+    "referer": "https://app.flowpad.ai/open-pc/agent-1",
+}
+
+
+@pytest.mark.asyncio
+async def test_a_cookie_dropped_right_after_the_admit_is_named_as_such(client, caplog):
+    """The student's case: admitted, cookie set, and the very next request arrives without it.
+    The admit is logged with the grant's short id; the refusal points back at it."""
+    from flow_sdk.server import gate_trace
+
+    gate_trace.reset_for_tests()
+    caplog.set_level("INFO")
+    with _armed(), _stored():
+        admitted = await client.get(f"/auth/gate?ticket={_ticket()}&next=/dock/vibe/x", headers=_PHONE)
+        refused = await client.get("/dock/vibe/x", headers={**_PHONE, "cookie": "_ga=1"})
+
+    gid = gate_trace.short_id(_cookie_value(admitted))
+    admit_line = next(r.getMessage() for r in caplog.records if "cookie-gate: admitted" in r.getMessage())
+    assert f"grant={gid}" in admit_line and "visitor=user-alice" in admit_line
+    # The hub logs the same id for the ticket it handed out (visitor-open: … ticket=), so the two lines join.
+    assert f"ticket={gate_trace.short_id(_ticket())}" in admit_line
+    assert "referer=app.flowpad.ai" in admit_line and "browser=Chrome_iOS_157" in admit_line
+
+    refusal = next(r.getMessage() for r in caplog.records if "cookie-gate: refused" in r.getMessage())
+    assert f"grant_{gid}" in refusal and "last_admit=0." in refusal
+    assert "cookies_sent=_ga" in refusal and "referer=app.flowpad.ai" in refusal
+    assert "<dt>cookies sent</dt><dd>_ga</dd>" in refused.text
+    for text in (admit_line, refusal, refused.text):
+        assert SECRET not in text and _cookie_value(admitted) not in text and "2.54.152.88" not in text
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_with_no_admit_says_so(client, caplog):
+    from flow_sdk.server import gate_trace
+
+    gate_trace.reset_for_tests()
+    with _armed():
+        response = await client.get("/dock/vibe/x", headers=_PHONE)
+
+    assert "<dt>last admit</dt><dd>none (this process, this client)</dd>" in response.text
+    assert "<dt>cookies sent</dt><dd>none</dd>" in response.text
+
+
+@pytest.mark.asyncio
+async def test_one_refused_page_logs_once_and_points_its_files_at_it(client, caplog):
+    from flow_sdk.server import gate_trace
+
+    gate_trace.reset_for_tests()
+    caplog.set_level("INFO")
+    with _armed():
+        first = await client.get("/dock/vibe/x", headers=_PHONE)
+        await client.get("/assets/index.js", headers=_PHONE)
+        await client.get("/favicon.ico", headers=_PHONE)
+
+    lines = [r.getMessage() for r in caplog.records if "cookie-gate: refused" in r.getMessage()]
+    head = first.headers["x-flowpad-gate"].split("request=")[1].split(";")[0]
+    assert len(lines) == 3
+    assert "last_admit=" in lines[0]
+    assert lines[1].endswith(f"(same as request={head})") and lines[2].endswith(f"(same as request={head})")

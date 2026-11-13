@@ -6,8 +6,8 @@ person is a member of, through their OWN Slack app — an internal app of their 
 (``hub_claim``), the hub checks the app's signature and hands each event to this row
 (``events_from_webhook``); polling only fills in history on connect and catches up after the box was
 offline. The person's own posts are read like anyone's — the runtime knows them as the account's user
-(``sent_by_us``). The ``slack-connect`` wizard (``agentic-assets/wizard``) sets it up: the URL first, then
-a link that creates the app from a manifest naming that URL, two pasted secrets, a proof.
+(``sent_by_us``). Set up by Sign in with Slack (the person's grant, read and
+answered as them), or by hand as their own app: ``flow source step`` public-webhook, manifest, app.
 
 **One channel as a bot** (``channel`` configured): a channel the bot has been let into, read one page
 per pass. **The rate cap shapes that mode.** Since 2025-05-29 Slack allows an app distributed outside
@@ -860,7 +860,7 @@ class SlackSource(MessageSource):
             return [DataSourceEvent(id=f"{channel}:{ts}#{kind}:{user}:{name}:{event.get('event_ts') or ''}", kind=EventKind.UPSERT, origin=report.origin, item=report)]
         return []
 
-    # ── the slack-connect wizard's own steps ────────────────────────────────
+    # ── own-app setup steps (``flow source step``) ─────────────────────────────
     @setup_step("manifest")
     async def _manifest_step(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
         """The link that creates the person's Slack app from a manifest — the user scopes, the events, and

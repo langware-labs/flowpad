@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { ReleaseNotesSelect } from '@src/components/version-popover/release-notes-select';
 import { useCallback, useMemo, useState } from 'react';
 import { MarkdownEditor, type WikiLinkTarget } from './MarkdownEditor';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
@@ -147,6 +148,7 @@ export function PlainMarkdownAssetEditor({
         fsRef={editorRef}
         editEntity={entity}
         headerLeading={entity ? <PublishedToggle entity={entity} /> : null}
+        viewActions={<ReleaseNotesSelect path={editorRef.path} />}
         chatTarget={chatTarget}
         extraSideTabs={commentsTab ? [commentsTab, translationsTab, runsTab] : [translationsTab, runsTab]}
         onRequestChange={onRequestChange}

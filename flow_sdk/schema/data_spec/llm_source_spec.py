@@ -52,7 +52,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -202,6 +202,9 @@ class LLMScope(DataSpec):
     #: ``AgenticProcess.llm_endpoint_public`` — the rung-1 endpoint is public, so a box with no
     #: hub login may still spend it. Process-scoped; a project pin never carries it.
     process_llm_endpoint_public: bool = False
+    #: ``AgenticProcess.llm_endpoint_tiers`` — the rung-1 endpoint's sizes, when the pin carries them
+    #: (a box with no hub login has no listing to read them from).
+    process_llm_endpoint_tiers: dict[str, str] = Field(default_factory=dict)
     #: The project whose ``llm_endpoint_typeid`` is rung 2. The id, not the typeid: it is
     #: looked up, and ``_constraint`` is the only thing that reads the field off the row.
     project_id: str = ""
@@ -218,6 +221,7 @@ class LLMScope(DataSpec):
         return cls(
             process_llm_endpoint_typeid=str(getattr(process, "llm_endpoint_typeid", "") or ""),
             process_llm_endpoint_public=bool(getattr(process, "llm_endpoint_public", False)),
+            process_llm_endpoint_tiers=dict(getattr(process, "llm_endpoint_tiers", None) or {}),
             project_id=str(getattr(process, "project_id", "") or ""),
             owner_typeid=str(getattr(process, "typeid", "") or ""),
         )

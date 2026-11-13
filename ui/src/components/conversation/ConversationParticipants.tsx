@@ -36,13 +36,13 @@ interface ConversationParticipantsProps {
  */
 export function ConversationParticipants({ participants, kind }: ConversationParticipantsProps) {
   const { t } = useLingui();
-  const { cloudUser, currentUser } = useAuth();
+  const { currentPrincipal } = useAuth();
 
   if (!participants || participants.length === 0) return null;
 
   // Inline summary shows OTHERS only — not me. (I still appear in the full
   // popover roster below.) "Me" = cloud identity when logged in, else local.
-  const me = cloudUser ?? currentUser;
+  const me = currentPrincipal;
   const others = participants.filter((p) => !participantIsUser(p, me));
   if (others.length === 0) return null;
 

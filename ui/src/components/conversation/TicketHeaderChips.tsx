@@ -11,7 +11,7 @@ import { conversationFacets, isDeskTicket } from './conversation-category';
  * Renders nothing for any other conversation.
  */
 export function TicketHeaderChips({ conv }: { conv: Conversation | null }) {
-  const { cloudUser, currentUser } = useAuth();
+  const { cloudUser, currentUser, currentPrincipal } = useAuth();
   const { attributionForConversation } = useChannelAttribution();
   const deskSource = isDeskTicket(conv);
   if (!conv || (!isHelpdeskKind(conv.kind) && !deskSource)) return null;
@@ -21,7 +21,7 @@ export function TicketHeaderChips({ conv }: { conv: Conversation | null }) {
     viewer: {
       email: (cloudUser?.email || currentUser?.email || '').trim().toLowerCase(),
       cloudUserId: cloudUser?.id ?? null,
-      localUserId: currentUser?.id ?? null,
+      localUserId: currentPrincipal?.id ?? null,
     },
     staffView: deskSource || undefined,
   });

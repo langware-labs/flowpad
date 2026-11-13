@@ -71,8 +71,9 @@ _SECRETS_LOCKS = new_registry()
 #: Background hub reconciles in flight, per parent typeid (:meth:`Deployment.reconcile_soon`).
 _RECONCILES: dict[str, Any] = {}
 
-#: Who a box logs in as for a deployment: nobody, the placed agent's own identity, or its owner.
-DeploymentIdentity = Literal["none", "agent", "user"]
+#: Who a box logs in as for a deployment: nobody, the placed agent's own identity, an identity of this
+#: placement alone (``deployment``), or its owner.
+DeploymentIdentity = Literal["none", "agent", "deployment", "user"]
 
 #: Providers that place a resource on a ComputeNode, so ``origin.external_id``
 #: names that node. An inventoried ``gcp`` resource is not node-backed — its
@@ -155,8 +156,11 @@ class Deployment(Entity):
     type: str = APIField(default=EntityType.DEPLOYMENT.value)
     name: str = APIField(description="Display name")
     #: Who the machine logs in as for this placement: ``agent`` (the placed agent's own identity),
-    #: ``user`` (its owner), ``none`` (not logged in). Resolved server-side, never from a request.
-    identity: DeploymentIdentity = APIField(default="none", description="Who the box logs in as: none, agent or user")
+    #: ``deployment`` (an identity of this placement alone), ``user`` (its owner), ``none`` (not logged in).
+    #: Resolved server-side, never from a request.
+    identity: DeploymentIdentity = APIField(
+        default="none", description="Who the box logs in as: none, agent, deployment or user"
+    )
     #: The one agent (``agent-<uuid>``) that answers every call on this box; ``None`` = no agent (web only).
     #: Defaults from the project's ``main_agent`` recommendation (flow.json); stored here, never in git.
     main_agent_id: str | None = APIField(default=None, description="The agent that answers every call here")

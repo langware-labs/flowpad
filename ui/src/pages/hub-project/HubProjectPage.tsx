@@ -1,15 +1,9 @@
-import {
-  APIEntity,
-  dataContext,
-  dataManager,
-  Project,
-  QueryRequest,
-  TypeId,
-} from '@sdk';
+import { APIEntity, dataContext, dataManager, Project, QueryRequest, TypeId } from '@sdk';
 import { useQueries } from '@tanstack/react-query';
 import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
-import { hubProjectAssetDock } from '@src/lib/hub-page-url';
+import { hubProjectAssetDock, isProjectGitSub } from '@src/lib/hub-page-url';
+import { HubProjectGitView } from './HubProjectGitView';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { AssetMode } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -82,7 +76,7 @@ function HubProjectAssets({ projectId }: { projectId: string }) {
   );
 }
 
-/** Hub Project Home and its TypeId-addressed Git/VFS editor sub-routes. */
+
 export function HubProjectPage() {
   const { currentDock } = useDockNavigation();
   const { projectId, assetSubPointer } = DockPointer.splitProjectPointer(currentDock?.pointer);
@@ -93,6 +87,9 @@ export function HubProjectPage() {
         <Trans>Project not found.</Trans>
       </div>
     );
+  }
+  if (isProjectGitSub(assetSubPointer)) {
+    return <ProjectHome spawnProjectId={projectId} cloudContent={<HubProjectGitView projectId={projectId} />} />;
   }
   // The project's own pages (Setup, Deployments) are pages of Project Home, as on the desk's AssetsPage —
   // not asset editors: handed to the editor router they rendered "Invalid asset pointer".

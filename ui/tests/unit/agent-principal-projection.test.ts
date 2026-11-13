@@ -1,36 +1,9 @@
 /**
- * The two things that stand between "the box is logged in as the agent" and
- * "the box SHOWS the agent".
- *
- * A deployed agent authenticates with its own key, so the hub's `/current-user`
- * answers with an Identity projection — user-shaped, but carrying
- * `"type": "identity"` and an icon TOKEN in `picture` instead of a URL. Both of
- * those used to be swallowed silently: the type made `EntityFactory` throw (and
- * the sandbox fell back to its own local user), and the token 404'd as an
- * `<img src>` (and fell back to initials). Nothing failed loudly, so pin both.
+ * A deployed agent's avatar is the icon TOKEN its Agent row was authored with (an emoji or a
+ * lucide name), not a URL: fed to `<img src>` it 404s and falls back to initials. Pin the
+ * discrimination. (That the box adopts the agent as an Identity is `cloud-manager-hub-identity`.)
  */
 import { describe, expect, it } from 'vitest';
-
-/** What the hub answers for an agent principal — see `hub/routers/auth.py`. */
-const IDENTITY_PAYLOAD = {
-  id: '38cad2c1-4eea-4664-b3c2-fb97a1ee1667',
-  type: 'identity',
-  name: 'joe',
-  picture: '🏴‍☠️',
-  kind: 'agent',
-  is_identity: true,
-};
-
-describe('cloud principal projection', () => {
-  it('models the cloud principal as a User even when the hub says identity', () => {
-    // `_setLoggedIn` spreads the dict and THEN stamps the type. Reversed, the
-    // hub's "identity" wins and there is no such entity constructor.
-    const projected = { ...IDENTITY_PAYLOAD, type: 'user' };
-    expect(projected.type).toBe('user');
-    expect(projected.id).toBe(IDENTITY_PAYLOAD.id);
-    expect(projected.name).toBe('joe');
-  });
-});
 
 /** Mirrors the discrimination in `user-dropdown.tsx`. */
 function classifyPicture(picture: string): 'url' | 'token' | 'initials' {

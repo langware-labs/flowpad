@@ -120,6 +120,12 @@ describe('AskForHelpDialog — one screen', () => {
     expect(screen.getByTestId('vibe-assign-submit')).toHaveTextContent('Diagnose and Send');
   });
 
+  it('an image dropped on the dialog is attached', async () => {
+    render(<AskForHelpDialog open onOpenChange={() => {}} projectId={null} origin="vibe" />);
+    fireEvent.drop(screen.getByTestId('vibe-assign-notes'), { dataTransfer: { files: [png('dropped.png', 16)] } });
+    expect(await screen.findByText('dropped.png')).toBeInTheDocument();
+  });
+
   it('an image pasted into the box is attached', async () => {
     render(<AskForHelpDialog open onOpenChange={() => {}} projectId={null} origin="vibe" />);
     const shot = png('pasted.png', 16);

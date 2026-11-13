@@ -16,6 +16,7 @@ import {
   dataManager,
   type APIEntity,
   type MemberBudget,
+  type MyScope,
   type OrgBudgets,
   type TeamBudgets,
 } from '@sdk';
@@ -30,11 +31,31 @@ export const BUDGETS_KEY = ['budgets'] as const;
 export const orgBudgetsKey = (orgId: string) => [...BUDGETS_KEY, 'org', orgId] as const;
 export const teamBudgetsKey = (teamId: string) => [...BUDGETS_KEY, 'team', teamId] as const;
 
+/** My orgs and teams, read once per app start: a role changed elsewhere shows on the next start. */
+const MY_SCOPES_KEY = ['my-scopes'] as const;
+
+/**
+ * May I read this scope's budgets, per the hub? `refused` only on an explicit "no" — a scope
+ * missing from the list (just created, or the list failed) is asked about, quietly.
+ */
+function useBudgetsGate(type: MyScope['type'], id: string | null | undefined) {
+  const scopes = useQuery<MyScope[]>({
+    queryKey: MY_SCOPES_KEY,
+    queryFn: () => budgetsService.myScopes(),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+  const refused = scopes.data?.find((s) => s.type === type && s.id === id)?.can_read_budgets === false;
+  return { refused, ready: !scopes.isLoading && !refused };
+}
+
 export function useOrgBudgets(orgId: string | null | undefined) {
-  return useQuery<OrgBudgets>({
+  const gate = useBudgetsGate('organization', orgId);
+  const query = useQuery<OrgBudgets>({
     queryKey: orgBudgetsKey(orgId ?? ''),
     queryFn: () => budgetsService.orgBudgets(orgId as string),
-    enabled: !!orgId,
+    enabled: !!orgId && gate.ready,
     staleTime: 15_000,
     refetchOnWindowFocus: true,
     // A non-admin gets a flat refusal from the hub; retrying it just repeats the 401. A 409 is the
@@ -43,6 +64,7 @@ export function useOrgBudgets(orgId: string | null | undefined) {
     retry: (count, error) => statusOf(error) === 409 && count < 4,
     retryDelay: 1000,
   });
+  return { ...query, refused: gate.refused, isLoading: query.isLoading || (!gate.ready && !gate.refused) };
 }
 
 /** The HTTP status a failed budgets read carried, when it carried one. */
@@ -52,10 +74,11 @@ function statusOf(error: unknown): number | null {
 }
 
 export function useTeamBudgets(teamId: string | null | undefined) {
+  const gate = useBudgetsGate('team', teamId);
   return useQuery<TeamBudgets>({
     queryKey: teamBudgetsKey(teamId ?? ''),
     queryFn: () => budgetsService.teamBudgets(teamId as string),
-    enabled: !!teamId,
+    enabled: !!teamId && gate.ready,
     staleTime: 15_000,
     refetchOnWindowFocus: true,
     retry: false,

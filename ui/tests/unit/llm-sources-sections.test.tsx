@@ -1,9 +1,8 @@
 /**
- * LLM sources: the two box-wide sections, `keys` and `endpoints`.
+ * LLM sources: three tabs — Logins, API keys, LLM Endpoints — over one table look.
  *
- * Reached from the Assistants & keys modal's Details buttons by URL pointer, like a harness
- * is. The keys section is the key form that used to live in the modal; the endpoints section
- * lists what the account can spend and what is left on it.
+ * The two endpoint tabs embed the hub page's endpoints view: API keys lists this machine's key roots,
+ * LLM Endpoints the hub's budgets; a local endpoint opens in the same detail, without the hub-only parts.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -23,7 +22,9 @@ vi.mock('@sdk/react/hooks/useLazyAsset', () => ({
     data:
       asset === 'status'
         ? {
-            harnesses: [],
+            harnesses: [
+              { kind: 'harness.claude.cli', worker_type: 'claude', label: 'Claude', login: 'signed_in', account: { identity: 'me@x.test', plan: '' } },
+            ],
             keys: [
               { provider: 'openrouter', stored: true, created_at: '', hint: '****ab12' },
               { provider: 'anthropic', stored: false, created_at: '', hint: '' },
@@ -39,13 +40,24 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openPage: h.openPage }, currentDock: null }),
 }));
 vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => false }));
+vi.mock('@src/components/llm-endpoints/use-llm-endpoints', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@src/components/llm-endpoints/use-llm-endpoints')>();
+  const { LLMEndpoint } = await import('@sdk');
+  const hubRows = [new LLMEndpoint({ id: '00000000-0000-4000-8000-00000000000b', name: 'alice default' } as never)];
+  return {
+    ...actual,
+    useLlmEndpoints: () => ({ endpoints: hubRows, isLoading: false, refetch: vi.fn(), error: null }),
+    usageQueryOptions: (id: string) => ({ queryKey: ['usage', id], queryFn: () => new Promise(() => {}) }),
+  };
+});
 vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk')>();
   return {
     ...actual,
     capabilityManager: { getSnapshot: () => ({ capability: null }), subscribe: h.subscribe },
     llmSourcesService: { chain: h.getChain, testSource: vi.fn(), select: vi.fn() },
-    lmKeysService: { setLmApi: vi.fn(), testLmApi: vi.fn(), deleteLmApi: vi.fn() },
+    lmKeysService: { setLmApi: vi.fn(), testLmApi: vi.fn(), deleteLmApi: vi.fn(), saveEndpoint: vi.fn() },
+    dataContext: { caps: { localFiles: true } },
     statusService: { refresh: h.refresh },
   };
 });
@@ -56,6 +68,7 @@ import { LlmSourcesView } from '@src/components/llm-sources/LlmSourcesView';
 const CLAUDE = 'harness.claude.cli';
 const HUB_ID = '00000000-0000-4000-8000-00000000000b';
 const HUB = `llm_endpoint-${HUB_ID}`;
+const LOCAL_ID = '00000000-0000-4000-8000-00000000000d';
 
 function funding() {
   return {
@@ -66,7 +79,10 @@ function funding() {
     endpoints: { [HUB]: { id: HUB_ID, kind: 'hub', provider: 'openrouter', name: 'alice default' } },
     available: [
       { id: HUB_ID, kind: 'hub', provider: 'openrouter', name: 'alice default' },
-      { id: '00000000-0000-4000-8000-00000000000c', kind: 'hub', provider: 'openrouter', name: 'global' },
+      {
+        id: LOCAL_ID, kind: 'api_key', provider: 'openrouter', name: 'openrouter key', base_url: 'https://openrouter.ai/api',
+        tiers: { sm: 'z-ai/glm-4.7-flash' }, limits: { cost_usd_total: 20 }, filters: {},
+      },
     ],
     active_for: [],
   };
@@ -80,56 +96,71 @@ function renderPage(pointer?: string) {
   return render(<LlmSourcesView pointer={pointer} />, { wrapper });
 }
 
-describe('LLM sources — the keys and endpoints sections', () => {
+describe('LLM sources — three tabs over one table', () => {
   beforeEach(() => {
     cleanup();
     vi.clearAllMocks();
     h.status.mockReturnValue(funding());
-    h.getChain.mockResolvedValue({
-      entry: { id: HUB_ID, name: 'x' },
-      dim: '',
-      hops: [
-        {
-          id: HUB_ID, name: 'x', provider: 'openrouter', is_root: true, has_credential: true, enabled: true,
-          breaker: { state: 'closed', open_until: null }, limits: {}, effective_filters: {},
-          remaining: { cost_usd_total: { limit: 3, used: 0.42, remaining: 2.58, window: 'total', resets_at: null } },
-        },
-      ],
-    });
   });
 
-  it('offers both sections as chips, and a chip is a navigation', async () => {
+  it('lands on Logins: each assistant with its login and what it runs on now', async () => {
     renderPage();
-    fireEvent.click(await screen.findByTestId('llm-sources-chip-keys'));
+    const row = await screen.findByTestId('llm-login-row-claude');
+    expect(row.textContent).toContain('Claude');
+    expect(row.textContent).toContain('me@x.test');
+    expect(screen.getByTestId('login-badge-signed_in')).toBeTruthy();
+    expect(screen.getByTestId('llm-login-using-claude').textContent).toContain('alice default');
+    fireEvent.click(row);
+    expect(h.openPage).toHaveBeenCalledWith(PageId.DESK, ViewType.LLM_SOURCES, 'logins/claude');
+  });
+
+  it('shows the three tabs, each a navigation', async () => {
+    renderPage();
+    for (const tab of ['logins', 'keys', 'endpoints']) expect(await screen.findByTestId(`llm-sources-tab-${tab}`)).toBeTruthy();
+    fireEvent.mouseDown(screen.getByTestId('llm-sources-tab-keys'));
     expect(h.openPage).toHaveBeenCalledWith(PageId.DESK, ViewType.LLM_SOURCES, 'keys');
-    fireEvent.click(screen.getByTestId('llm-sources-chip-endpoints'));
-    expect(h.openPage).toHaveBeenCalledWith(PageId.DESK, ViewType.LLM_SOURCES, 'endpoints');
-    // Neither section is shown until its pointer says so; the harness list is.
-    expect(screen.queryByTestId('llm-sources-keys')).toBeNull();
-    expect(screen.queryByTestId('llm-sources-endpoints')).toBeNull();
-    expect(screen.getByTestId('llm-sources-list')).toBeTruthy();
   });
 
-  it('/keys shows the form and one slot per provider, with the masked hint of a stored key', async () => {
+  it("an assistant's sources open under Logins — and the old bare-worker link still lands there", async () => {
+    for (const pointer of ['logins/claude', 'claude']) {
+      cleanup();
+      renderPage(pointer);
+      expect(await screen.findByTestId('llm-sources-list')).toBeTruthy();
+      expect(screen.queryByTestId('llm-logins')).toBeNull();
+    }
+  });
+
+  it('API keys lists only this machine, with its own columns', async () => {
     renderPage('keys');
-    await screen.findByTestId('llm-sources-keys');
-    expect(screen.getByTestId('keys-input')).toBeTruthy();
-    expect(screen.getByTestId('keys-row-openrouter').textContent).toContain('****ab12');
-    expect(screen.getByTestId('keys-row-anthropic').textContent).toContain('not set');
-    expect(screen.getByTestId('keys-test-openrouter')).toBeTruthy();
-    expect(screen.queryByTestId('keys-test-anthropic')).toBeNull();
-    // The harness list steps aside for a section.
-    expect(screen.queryByTestId('llm-sources-list')).toBeNull();
+    await screen.findByTestId('llm-endpoints-list');
+    const local = screen.getByTestId(`llm-row-${LOCAL_ID}`);
+    expect(local.textContent).toContain('****ab12');
+    expect(local.querySelector('[data-testid="llm-row-limit-cost_usd_total"]')?.textContent).toContain('20');
+    expect(screen.queryByTestId(`llm-row-${HUB_ID}`)).toBeNull();
+    expect(screen.getByTestId('llm-new-endpoint').textContent).toContain('New endpoint');
+    expect(screen.getByTestId(`llm-edit-${LOCAL_ID}`)).toBeTruthy();
+    fireEvent.click(local);
+    expect(h.openPage).toHaveBeenCalledWith(PageId.DESK, ViewType.LLM_SOURCES, `keys/${LOCAL_ID}`);
   });
 
-  it('/endpoints lists every hub endpoint, marks the one in use, and shows what is left on it', async () => {
+  it('LLM Endpoints lists only the hub', async () => {
     renderPage('endpoints');
-    await screen.findByTestId('llm-sources-endpoints');
-    const row = screen.getByTestId(`endpoint-row-${HUB_ID}`);
-    expect(row.textContent).toContain('alice default');
-    expect(row.textContent).toContain('in use');
-    await waitFor(() => expect(screen.getByTestId(`endpoint-left-${HUB_ID}`).textContent).toContain('$3'));
-    expect(h.getChain).toHaveBeenCalledWith(HUB_ID);
-    expect(screen.getByTestId('endpoint-row-00000000-0000-4000-8000-00000000000c').textContent).toContain('global');
+    await screen.findByTestId('llm-endpoints-list');
+    expect(screen.getByTestId(`llm-row-${HUB_ID}`)).toBeTruthy();
+    expect(screen.queryByTestId(`llm-row-${LOCAL_ID}`)).toBeNull();
+    expect(screen.getByTestId('llm-new-endpoint').textContent).toContain('New endpoint');
+  });
+
+  it('a local endpoint opens in the shared detail without the hub-only parts', async () => {
+    renderPage(`keys/${LOCAL_ID}`);
+    await screen.findByTestId('llm-endpoint-detail');
+    expect(screen.getByTestId('llm-local-credential').textContent).toContain('****ab12');
+    expect(screen.queryByTestId('chain-tree')).toBeNull();
+    expect(screen.queryByTestId('llm-tab-usage')).toBeNull();
+    expect(screen.queryByTestId('members-avatar-stack')).toBeNull();
+    expect(screen.getByTestId('model-size-sm').textContent).toContain('z-ai/glm-4.7-flash');
+    expect(screen.getByTestId('llm-local-limits').textContent).toContain('20');
+    expect(h.getChain).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId('llm-detail-edit')).toBeTruthy());
   });
 });

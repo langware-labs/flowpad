@@ -214,6 +214,7 @@ class DeepAgentsDriver:
             env_vars=env_vars,
             model=cli_cfg.get("model"),
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
+            disallowed_tools=list(cli_cfg.get("disallowed_tools") or []),
             add_dirs=list(process.resolved_add_dirs or []),
             session_id=None if resumable else process.session_id,
             resume_session_id=process.session_id if resumable else None,

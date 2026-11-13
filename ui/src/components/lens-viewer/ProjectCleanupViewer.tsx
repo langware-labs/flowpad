@@ -394,17 +394,17 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
       // Clearing harness history runs over the rows that HAVE one, not the whole
       // selection — sending the rest would collect a refusal per row and report
       // failures for projects the dialog never claimed it would touch.
-      const ids =
-        kind === 'harness'
-          ? selectedWithHarness.map((item) => item.project_id)
-          : selectedRows.map((item) => item.project_id);
-      if (ids.length === 0) return;
+      const rows = (kind === 'harness' ? selectedWithHarness : selectedRows).map((item) => ({
+        project_id: item.project_id,
+        cwd: item.cwd,
+      }));
+      if (rows.length === 0) return;
       setBusy(true);
       try {
         const result =
           kind === 'delete'
-            ? await deleteProjectsPermanently(computeNode.id, ids)
-            : await removeProjectsFromHarness(computeNode.id, ids);
+            ? await deleteProjectsPermanently(computeNode.id, rows)
+            : await removeProjectsFromHarness(computeNode.id, rows);
         setOutcome(result);
         setSelected(new Set());
         await load();

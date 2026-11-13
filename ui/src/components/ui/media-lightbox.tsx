@@ -140,11 +140,11 @@ export function MediaLightbox({ url, name, onClose }: MediaLightboxProps) {
         </div>
         <div className="flex min-h-0 flex-1 items-center justify-center bg-muted/40">
           {isVideo ? (
-            <video controls autoPlay playsInline className="max-h-[calc(100vh-7rem)] max-w-full bg-black">
+            <video controls autoPlay playsInline className="max-h-[calc(100dvh-7rem)] max-w-full bg-black">
               {videoSource(url, name)}
             </video>
           ) : (
-            <img src={url} alt={name} className="max-h-[calc(100vh-7rem)] max-w-full object-contain" />
+            <img src={url} alt={name} className="max-h-[calc(100dvh-7rem)] max-w-full object-contain" />
           )}
         </div>
       </div>

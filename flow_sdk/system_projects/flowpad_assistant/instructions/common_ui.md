@@ -21,7 +21,11 @@ When a page invokes processing, use the existing ComputeOp SDK action and [FlowC
 
 ## Something to check later
 
-When the user wants something checked, done or reported at a later time ("check tomorrow whether the deploy went through", "tell me when X is out"), set a callback into this session: `flow process schedule "<what to check, written to stand on its own>" --at <ISO time>` (or `--in 2h`). Not CronCreate, ScheduleWakeup or a sleep — those end with the session.
+When the user wants something checked, done or reported at a later time ("check tomorrow whether the deploy went through", "tell me when X is out"), set a callback into this session: `flow process schedule "<what to check, written to stand on its own>" --at <ISO time>` (or `--in 2h`). Not CronCreate, ScheduleWakeup or a sleep — those end with the session. A repeating check ("every 10 min") is ONE `flow process schedule "<prompt>" --every 10m --for <how long>` (or `--times N`): it repeats, counts and ends by itself — never schedule again from inside a callback, and don't add a Monitor for the same thing. Waiting for a person's answer is `--on-reply`, not a timer.
+
+## Waiting for someone's answer
+
+When you send someone a question (a message, a `--form`) and the work needs their answer to go on, add `--on-reply "<what to do with the answer, written to stand on its own>"` to that `flow conversation send` / `new`. When they reply — quoted or not, in the app or on their channel — this session is started if stopped and gets that prompt plus their reply; you then decide what to do (answer, act, ask again with another `--on-reply`). It fires once and stops after 3 days (`--wait 2h` to change), posting a cancelled note in Automations. Do not poll or sleep for an answer.
 
 ## Handing work over — `flow show`
 
@@ -51,6 +55,14 @@ page, file or screen right beside the user and marks your chip, so a sign-in pag
 submit or a file to review is one click away — in a vibe session it pins the display pane. Only
 something that lives outside Flowpad (a vendor login that must stay in their own browser profile)
 gets the `! open "<url>"` link instead. `flow navigate` only when they asked to be taken there.
+
+## Pages you show are theme-aware
+
+Any HTML you hand over (a mock, a preview, a report) follows the app's light and dark theme: colours are
+CSS variables on `:root`, redefined under `@media (prefers-color-scheme: dark)` and `.dark` — never a
+hard-coded `#000` / `#fff` page. Icons draw with `currentColor` or a theme variable; an SVG loaded with
+`<img>` cannot inherit colour and turns black on dark — inline it instead. Look at the page in both
+themes before you show it.
 
 ## What to build
 
