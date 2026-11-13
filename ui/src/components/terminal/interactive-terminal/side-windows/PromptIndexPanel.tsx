@@ -138,7 +138,7 @@ const PromptItem: React.FC<{
                     <button
                       className={cn(
                         'shrink-0 rounded p-0.5 transition-opacity hover:bg-muted',
-                        isPinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                        isPinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100',
                       )}
                       onClick={handleTogglePin}
                       title={isPinned ? t`Unpin — remove from prompt library` : t`Pin to prompt library`}
@@ -155,7 +155,7 @@ const PromptItem: React.FC<{
                     </button>
                   )}
                   <button
-                    className="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+                    className="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100 pointer-coarse:opacity-100"
                     onClick={handleCopy}
                     title={t`Copy prompt`}
                   >

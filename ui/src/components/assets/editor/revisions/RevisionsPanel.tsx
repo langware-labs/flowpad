@@ -143,7 +143,7 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
           <span className="truncate text-xs text-foreground" title={rev.message}>
             {rev.message}
           </span>
-          <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100">
             <button
               type="button"
               onClick={() => setCompare(rev)}

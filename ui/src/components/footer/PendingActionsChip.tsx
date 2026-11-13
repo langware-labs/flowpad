@@ -425,7 +425,7 @@ const WorkerRow = memo(function WorkerRow({
       <button
         type="button"
         onClick={() => rename.startEditing()}
-        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100"
+        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
         aria-label={t`Rename`}
         title={t`Rename`}
         data-testid="worker-rename-button"

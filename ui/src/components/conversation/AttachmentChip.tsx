@@ -352,7 +352,7 @@ export function AttachmentChip({
             e.stopPropagation();
             setLightbox(true);
           }}
-          className="absolute left-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background/95 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+          className="absolute left-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background/95 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 pointer-coarse:opacity-100"
         >
           <Maximize2 className="h-3.5 w-3.5" />
         </button>

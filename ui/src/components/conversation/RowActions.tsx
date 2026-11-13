@@ -8,7 +8,8 @@ import type { ActionSpec } from './conversation-category';
 export function RowActions({ specs }: { specs: ActionSpec[] }) {
   return (
     <div
-      className="absolute right-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+      // On touch there is no hover to reveal them over the time: they are always shown, in the row's flow.
+      className="absolute right-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:static pointer-coarse:shrink-0 pointer-coarse:opacity-100"
       onClick={(e) => e.stopPropagation()}
     >
       {specs.map((s) =>

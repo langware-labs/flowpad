@@ -272,6 +272,7 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
+    height: 100dvh;
     max-width: 100%;
     margin: 0 auto;
     padding: 0;
@@ -553,5 +554,41 @@
   }
   .asset-grid-row .asset-scope-label {
     display: none;
+  }
+}
+
+/* The message a link opened, on a phone: a tint that fades into the selected look. */
+@keyframes target-tint {
+  from {
+    background-color: hsl(var(--primary) / 0.18);
+  }
+}
+
+/* A finger-sized hit area (44px) around a small control, on touch only — the control itself keeps its size.
+   In `components`, so a positioning utility on the control (`absolute`, `sticky`) still wins. */
+@layer components {
+  @media (pointer: coarse) {
+    .touch-target {
+      position: relative;
+    }
+    .touch-target::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 2.75rem);
+      height: max(100%, 2.75rem);
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
+/* Mobile Safari zooms the page when a field under 16px takes focus. On a phone every text field is 16px,
+   whatever size its call site asked for. (xterm's hidden input is not a field.) */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  textarea:not(.xterm-helper-textarea),
+  select {
+    font-size: 16px !important;
   }
 }

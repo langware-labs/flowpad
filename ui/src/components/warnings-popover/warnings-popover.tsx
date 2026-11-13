@@ -94,7 +94,7 @@ const ALERT_COLOR: Record<NotificationLevel, keyof typeof colorMap> = {
 
 const ITEM_CLASS = 'group flex w-full items-start gap-2 rounded-md border p-3 transition-colors hover:bg-accent';
 const ICON_BTN_CLASS =
-  'flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100';
+  'flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 pointer-coarse:opacity-100';
 
 /** Copy-to-clipboard affordance, shared by derived warnings and logged alerts. */
 function CopyButton({ text }: { text: string }) {

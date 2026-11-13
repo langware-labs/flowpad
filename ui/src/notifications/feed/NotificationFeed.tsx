@@ -55,14 +55,14 @@ function NotificationItem({ data, onDismiss }: { data: NotificationData; onDismi
       )}
       <DiagnoseIconButton
         subject={data}
-        className="flex-shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary group-hover:opacity-100"
+        className="flex-shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary group-hover:opacity-100 pointer-coarse:opacity-100"
       />
       <button
         onClick={(e) => {
           e.stopPropagation();
           onDismiss(data.id);
         }}
-        className="flex-shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+        className="flex-shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 pointer-coarse:opacity-100"
         aria-label={t`Dismiss notification`}
       >
         ✕
