@@ -37,12 +37,14 @@ vi.mock('@src/components/floating-chat', () => ({ FlowpadAssistantButton: () => 
 vi.mock('@src/pages/flow-page/content-panel/user-dropdown/user-dropdown', () => ({ UserDropdown: () => null }));
 vi.mock('@src/components/collapsed-sidebar/OrgTeamsButton', () => ({ OrgTeamsButton: () => null }));
 
-import { CollapsedSidebar } from '@src/components/collapsed-sidebar/collapsed-sidebar';
+import { CollapsedSidebar, RailEntriesProvider } from '@src/components/collapsed-sidebar/collapsed-sidebar';
 
 function renderRail() {
   const { container } = render(
     <SidebarProvider>
-      <CollapsedSidebar />
+      <RailEntriesProvider>
+        <CollapsedSidebar />
+      </RailEntriesProvider>
     </SidebarProvider>,
   );
   return {

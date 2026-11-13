@@ -9244,6 +9244,10 @@ msgstr "לא ניתן להתחיל את ההתחברות ל-{0}."
 msgid "Could not start the diagnosis"
 msgstr ""
 
+#: src/components/warnings-popover/warnings-popover.tsx
+msgid "Could not start the install"
+msgstr ""
+
 #: src/components/conversation/ConversationView.tsx
 msgid "Could not start the live session"
 msgstr "לא ניתן היה להתחיל את סשן זמן האמת"
@@ -15808,6 +15812,7 @@ msgstr "בתוך"
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/warnings-popover/warnings-popover.tsx
 msgid "Install"
 msgstr "התקנה"
 
