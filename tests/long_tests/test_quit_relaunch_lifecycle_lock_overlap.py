@@ -31,6 +31,8 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.adjustable_timeout import adjusted
+
 from flow_sdk.instances import registry
 
 # The desktop force-exited 1s after issuing the stop, so a relaunch landed at
@@ -84,8 +86,14 @@ def desktop_instance(allocate_ports, tmp_path, monkeypatch) -> dict:
 
 def _server_pid(env: dict) -> int:
     """The backend's own record of its PID, read through the registry."""
+    # `flow start` returns once the launcher is up; on a slow host the backend writes its own pid a little later.
+    deadline = time.monotonic() + adjusted(10.0)
     with patch.dict(os.environ, {"FLOW_HOME": env["FLOW_HOME"]}):
-        return int(registry.read_server_info(env["FLOW_INSTANCE"])["server_pid"])
+        while True:
+            info = registry.read_server_info(env["FLOW_INSTANCE"])
+            if "server_pid" in info or time.monotonic() > deadline:
+                return int(info["server_pid"])
+            time.sleep(0.5)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="SIGSTOP/SIGCONT are POSIX-only")

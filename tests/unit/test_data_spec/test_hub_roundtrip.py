@@ -16,6 +16,9 @@ from flow_sdk.fs_store.serializer import UnsupportedFieldError
 from flow_sdk.fs_store.serializer.hub import HubSerializer
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from tests.unit.test_data_spec._roundtrip import populate
+# The per-class sampler rules (``NOT_ON_DISK[Agent]``, ``OVERRIDES[Dataset]``) are registered by that module;
+# without it, this file alone builds every DB-only field and fails on the first the sampler cannot invent.
+import tests.unit.test_data_spec.test_asset_roundtrip  # noqa: E402,F401
 
 pytestmark = pytest.mark.timeout(5)  # do not increase without approval
 

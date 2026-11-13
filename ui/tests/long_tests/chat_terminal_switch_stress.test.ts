@@ -94,6 +94,8 @@ stressDescribe('chat⇄terminal counter — one session, 10 switches, every turn
       };
 
       await vi.waitFor(() => expect(ap.session_id).toBeTruthy(), { timeout: BOOT_MS, interval: 500 });
+      // The launch prompt is a turn too: settle it first (a mid-turn switchMode is 409'd).
+      await ap.waitForReady({ timeout: BOOT_MS });
       const session: string = ap.session_id;
       const run = ap.id.replace(/-/g, '').slice(0, 6).toUpperCase();
 
