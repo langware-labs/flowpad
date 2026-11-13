@@ -297,6 +297,18 @@ class EntityType(StrEnum):
     # "context" half of an automation (agentic process = prompt + context).
     GRAPH_CONTEXT = "graph_context"
 
+    # The root-cause analysis of something that failed (builtin/rca.py): generic, Q writes one per failing test execution.
+    RCA = "rca"
+
+    # ── QA (the Q app, builtin/qa.py) ──────────────────────────────────────────
+    # The plan of a repository's tests, the cycles run on it and every attempt at a test case.
+    QA_PHASE = "qa_phase"
+    QA_TEST_FILE = "qa_test_file"
+    QA_TEST_CASE = "qa_test_case"
+    QA_CYCLE = "qa_cycle"
+    QA_ITERATION = "qa_iteration"
+    QA_TEST_EXECUTION = "qa_test_execution"
+
     # ── Skillit ──────────────────────────────────────────────────────────────
     SKILLIT_SESSION = "skillit_session"
     SKILLIT_CONFIG = "skillit_config"
