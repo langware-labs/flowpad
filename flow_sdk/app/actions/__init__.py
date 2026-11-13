@@ -8,6 +8,7 @@ from . import (  # noqa: F401
     ask_for_help_action,
     budgets_action,
     context_resolve_action,
+    context_relations_action,
     context_share_action,
     diagnose_action,
     diagnosis_request_action,

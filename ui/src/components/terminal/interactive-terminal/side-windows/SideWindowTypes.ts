@@ -5,13 +5,13 @@ import {
   Activity,
   FolderTree,
   GitBranch,
-  Layers,
   ListOrdered,
   MessageSquare,
   Paperclip,
   Sparkles,
   SquareTerminal,
 } from 'lucide-react';
+import { lucideByName } from '@src/lib/lucide-by-name';
 
 export const SideTabId = {
   Shell: 'shell',
@@ -85,7 +85,8 @@ export const SIDE_TABS: Record<SideTabId, SideTabDescriptor> = {
   context: {
     id: 'context',
     label: msg`Context`,
-    icon: Layers,
+    // The Context type's own glyph, by tag: this table is built before the type registry loads.
+    icon: lucideByName('flowpad.context'),
     description: msg`Context entities attached to this process — plans, skills, project, …`,
     advancedOnly: true,
     placement: 'session-menu',

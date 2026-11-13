@@ -63,3 +63,23 @@ class HostedByRelationship(Relationship):
 
 class InvitedByRelationship(Relationship):
     type: str = BuiltInRelationshipTypes.InvitedBy.value
+
+
+class ContextRelationship(Relationship):
+    """One context entry of ``from`` (it holds ``to`` in its context), mirrored as a row.
+
+    The entity's own lists and fields stay the source of truth; these rows are what
+    makes the reverse question ("who holds me in context") an indexed read and gives
+    an entry a time (``created_date``). Written only by the driver's save
+    (``sqlite/context_mirror.py``) and local-only — never pushed to another peer.
+    Extra fields ride the ``data`` blob, so each keeps a non-None default.
+    """
+
+    type: str = BuiltInRelationshipTypes.Context.value
+    #: Where the entry lives on the holder: ``shared`` / ``private`` (the two context
+    #: lists) or the role a declared context field gives it (``target``).
+    kind: str = ""
+    #: The entry's role from the list's side data (``session``, ``plan``), ``""`` when none.
+    role: str = ""
+    #: True for a row written by the one-time back-fill: its time is an estimate.
+    backfilled: bool = False

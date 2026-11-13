@@ -7851,11 +7851,19 @@ msgstr "Content"
 
 #: src/components/conversation/ConversationPanel.tsx
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/types/ViewType.ts
 msgid "Context"
 msgstr "Context"
+
+#. placeholder {0}: graph.id.slice(0, 8)
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Context {0}"
+msgstr "Context {0}"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Context breakdown"
@@ -7880,6 +7888,10 @@ msgstr "Context list actions"
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Context not shared"
 msgstr "Context not shared"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Context of {title}"
+msgstr "Context of {title}"
 
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 msgid "Context to share — review before sending."
@@ -8609,6 +8621,7 @@ msgstr "Could not fix {key}"
 msgid "Could not forward diagnosis"
 msgstr "Could not forward diagnosis"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Could not freeze context"
 msgstr "Could not freeze context"
@@ -8701,6 +8714,10 @@ msgstr "Could not load the app's definition: {0}"
 #: src/components/automations/BusView.tsx
 msgid "Could not load the bus"
 msgstr "Could not load the bus"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Could not load the context."
+msgstr "Could not load the context."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Could not load this automation"
@@ -13157,6 +13174,7 @@ msgstr "Failed to Save"
 msgid "Failed to save secret"
 msgstr "Failed to save secret"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Failed to save the context snapshot."
 msgstr "Failed to save the context snapshot."
@@ -15625,6 +15643,14 @@ msgstr "Include this file in the next commit (git add)"
 msgid "Included through this source's packages. Changes apply to new sessions."
 msgstr "Included through this source's packages. Changes apply to new sessions."
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Incoming"
+msgstr "Incoming"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Incoming and outgoing"
+msgstr "Incoming and outgoing"
+
 #: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Index (seq)"
 msgstr "Index (seq)"
@@ -17728,6 +17754,7 @@ msgstr "Loading..."
 #: src/components/conversation/ContactDialog.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/data-sources/ChoiceField.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
@@ -21473,6 +21500,10 @@ msgstr "Nothing indexed yet. <0>Refresh Index</0> to populate."
 msgid "Nothing is asked: every step runs, and the result is always sent to you."
 msgstr "Nothing is asked: every step runs, and the result is always sent to you."
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Nothing is linked to this yet."
+msgstr "Nothing is linked to this yet."
+
 #: src/components/footer/ActivityDetailsModal.tsx
 msgid "Nothing is running at this address anymore."
 msgstr "Nothing is running at this address anymore."
@@ -22201,6 +22232,11 @@ msgstr "Open analysis"
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Open as a tab"
 msgstr "Open as a tab"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Open as graph"
+msgstr "Open as graph"
 
 #: src/components/account/logs-section.tsx
 msgid "Open assistant project"
@@ -23211,6 +23247,10 @@ msgstr "Other projects"
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Other sessions"
 msgstr "Other sessions"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Outgoing"
+msgstr "Outgoing"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "output"

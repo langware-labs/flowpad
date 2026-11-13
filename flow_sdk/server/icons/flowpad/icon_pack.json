@@ -21,6 +21,14 @@
       ]
     },
     {
+      "kind": "context",
+      "asset": "context.svg",
+      "aliases": [
+        "Context"
+      ],
+      "source": "Flowpad — a hub with three neighbours and a smaller fourth, on the lucide 24px grid"
+    },
+    {
       "kind": "person-raised-hand",
       "asset": "person-raised-hand.svg",
       "aliases": [

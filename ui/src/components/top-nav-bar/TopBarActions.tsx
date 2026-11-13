@@ -53,6 +53,7 @@ export function TopBarActions({
         // must not draw a second one. Riding the `trailing` slot keeps it inside
         // the toolbar's own row rather than in a wrapper repeating its classes.
         hideFavorite
+        showContext
         trailing={favorite && <BookmarksStarButton favorite={favorite} />}
       />
     );

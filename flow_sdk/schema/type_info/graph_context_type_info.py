@@ -9,7 +9,7 @@ from flow_sdk.schema.types import EntityType
 
 GRAPH_CONTEXT = TypeInfo(
     type_name=EntityType.GRAPH_CONTEXT,
-    icon="BrainCircuit",
+    icon="flowpad.context",
     api_visible=True,
     creatable=True,
 )

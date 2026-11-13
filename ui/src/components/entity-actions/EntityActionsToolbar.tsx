@@ -10,6 +10,7 @@ import { agenticProcessShareSource, genericEntityShareSource, projectShareSource
 import { useEntityShare } from '@src/hooks/use-entity-share';
 import { cn } from '@src/lib/utils';
 import { CloudAssetPublishButton } from './CloudAssetPublishButton';
+import { ContextMenuButton } from './ContextMenuButton';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 
 type Variant = 'prominent' | 'compact';
@@ -35,6 +36,8 @@ export interface EntityActionsToolbarProps {
    * that there is exactly one star rather than two side by side.
    */
   hideFavorite?: boolean;
+  /** Show the Context button (the entity's context, both directions). The navigation bar asks for it. */
+  showContext?: boolean;
   onShared?: () => void;
   className?: string;
 }
@@ -56,6 +59,7 @@ export function EntityActionsToolbar({
   leading,
   trailing,
   hideFavorite = false,
+  showContext = false,
   onShared,
   className,
 }: EntityActionsToolbarProps) {
@@ -100,6 +104,8 @@ export function EntityActionsToolbar({
     <div className={cn('flex items-center gap-0.5', className)}>
       {leading}
       <CloudAssetPublishButton typeId={typeId} variant={variant} />
+      {/* Desktop only (exception, 2026-11-13): whether the hub keeps context relationships is not yet settled. */}
+      {showContext && !isHubOnly() && <ContextMenuButton typeId={typeId} title={favoriteTitle} />}
       <ShareButton
         variant={variant}
         onClick={openShare}

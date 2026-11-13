@@ -28,7 +28,7 @@ AGENT = TypeInfo(
     type_name=EntityType.AGENT,
     template={"system_prompt": "You are {name}.\n\nYour job: <what you do>.\nNever: <what you must not do>.\n"},
     display_name="Agents",
-    # Not Bot — that is SUBAGENT's; Brain/BrainCircuit are claude_memory/graph_context.
+    # Not Bot — that is SUBAGENT's; Brain is claude_memory's; graph_context has its own pack glyph.
     icon="BrainCog",
     browseable_by=ViewMode.STANDARD,
     creatable=True,

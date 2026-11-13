@@ -49,3 +49,18 @@ export function formatTimeAgoShort(value: string | number | Date | null | undefi
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
 }
+
+/**
+ * The moment itself, to sit beside a "X ago": the clock time for today
+ * (`13:24`), the date with it for any other day (`Nov 11, 09:12`). Null for an
+ * absent or unparseable value, like `formatTimeAgo`.
+ */
+export function formatMoment(iso: string | Date | null | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const locale = i18n.locale || undefined;
+  const clock = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (date.toDateString() === new Date().toDateString()) return clock;
+  return `${date.toLocaleDateString(locale, { month: 'short', day: 'numeric' })}, ${clock}`;
+}
