@@ -4,7 +4,7 @@
 
 ## Prerequisites
 - docker, node (`build_ui.py`), `uv`, `lsof`; port 9711 free.
-- `flow_sdk/_version.py` must equal exactly `0.2.26` (run.sh asserts it and fails otherwise).
+- The NEW version is the repo's own (`flow_sdk/_version.py`); run.sh passes it to the container as `NEW_VERSION`. The OLD one is `PINNED_OLD_VERSION` (default 0.2.25, from PyPI).
 
 ## Commands (repo root)
 ```bash
@@ -18,7 +18,6 @@ No per-test mode; it is one linear pipeline.
 `PORT` (default 9711), `DOCKER_E2E=1` (pytest wrapper opt-in).
 
 ## Pitfalls
-- The version precheck is hard-coded: on any other version it fails immediately, by design. Do not edit it to get green; report it.
 - It does `rm -rf dist` and rebuilds UI assets; do not run while something else depends on `dist/`.
 - On failure it dumps the last 200 container log lines and removes the container.
 - Not wired into CI.

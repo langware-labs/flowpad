@@ -107,7 +107,7 @@ describe('task editor Owner pill — assigning hands the task over for real', ()
         ).catch(() => [])) ?? []) as any[];
         return rows.find((t) => t.id === taskId) ?? null;
       },
-      adjusted(25_000),
+      25_000,
       'the task delivered to bob by the Owner pill',
     );
     expect(landed.assignee).toBe(bob.email);

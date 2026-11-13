@@ -6,8 +6,38 @@
 const seconds = Number(process.env.ADJUSTABLE_TIMEOUT ?? 0);
 export const ADJUSTABLE_TIMEOUT_MS = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
 
-/** `ms` plus this runner's ADJUSTABLE_TIMEOUT. 0 (no limit) stays 0. */
-export const adjusted = (ms: number): number => (ms ? ms + ADJUSTABLE_TIMEOUT_MS : ms);
+/**
+ * With ADJUSTABLE_TIMEOUT on, a running Playwright test's cap grows by the slack each `adjusted()` wait inside it
+ * adds: the config or `test.setTimeout` adds it to the cap once, while a test can hold several waits. Only in a
+ * Playwright worker (TEST_WORKER_INDEX); vitest fixes a test's timer when the test is defined, so it cannot grow.
+ */
+type RunningTest = { timeout: number; setTimeout(ms: number): void };
+let runningTest: (() => RunningTest) | undefined;
+if (ADJUSTABLE_TIMEOUT_MS && process.env.TEST_WORKER_INDEX !== undefined) {
+  void import('@playwright/test')
+    .then(({ test }) => {
+      runningTest = () => test.info();
+    })
+    .catch(() => {});
+}
+
+function growRunningTest(): void {
+  if (!runningTest) return;
+  let info: RunningTest;
+  try {
+    info = runningTest();
+  } catch {
+    return; // not inside a test: the config, a module constant
+  }
+  if (info.timeout > 0) info.setTimeout(info.timeout + ADJUSTABLE_TIMEOUT_MS);
+}
+
+/** `ms` plus this runner's ADJUSTABLE_TIMEOUT. 0 (no limit) stays 0. Inside a running test, its cap grows too. */
+export const adjusted = (ms: number): number => {
+  if (!ms) return ms;
+  if (ADJUSTABLE_TIMEOUT_MS) growRunningTest();
+  return ms + ADJUSTABLE_TIMEOUT_MS;
+};
 
 /**
  * ADJUSTABLE_PERF_FACTOR: what a RUNNER multiplies every speed BUDGET by (default 1 = the committed values).

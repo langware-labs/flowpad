@@ -91,8 +91,9 @@ test("B answers A's message with Reply; A sees the thread and the quote; A write
   // ── B: Reply on A's root (receiver of the root, sender of the reply) ──
   await openConversation(b);
   await expect(bubble(b, `root ${nonce}`)).toBeVisible();
-  await bubble(b, `root ${nonce}`).getByTestId('message-actions-menu').click();
-  await b.getByTestId('message-reply').click();
+  // Reply is the bubble's own hover action (not in its ⋮ menu).
+  await bubble(b, `root ${nonce}`).hover();
+  await bubble(b, `root ${nonce}`).getByTestId('message-reply').click();
   await expect(b.getByTestId('composer-reply-banner')).toContainText(`root ${nonce}`);
   await b.getByRole('textbox').last().fill(`which home ${nonce}?`);
   await sendButton(b).click();

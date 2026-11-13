@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 /**
  * The voice matrix in a real browser. Chromium's fake media devices stand in for a person at the
@@ -10,8 +11,8 @@ const micWav = process.env.VOICE_MIC_WAV || '';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.md.ts',
-  timeout: 120_000,
-  expect: { timeout: 20_000 },
+  timeout: adjusted(120_000),
+  expect: { timeout: adjusted(20_000) },
   fullyParallel: false,
   retries: 0,
   workers: 1,
