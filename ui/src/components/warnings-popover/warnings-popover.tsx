@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
+import { AgenticProcess, UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
 import { useHelpRequestDiagnosis } from '@src/components/conversation/use-help-request-diagnosis';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -11,6 +11,7 @@ import { useSetupIncompleteWarning } from '@src/components/setup-incomplete/use-
 import {
   diagnoseAndFix,
   notificationText,
+  notify,
   runAction,
   runCommand,
   useAlertStore,
@@ -190,6 +191,24 @@ function DiagnosisStatusLine({ conversationId }: { conversationId: string }) {
       <span className="min-w-0">{text}</span>
     </p>
   );
+}
+
+/** Install on a worker-update warning: a session that carries the warning (which worker, from and to which
+ *  version, the command) and does the upgrade. It runs outside any project and opens as its own tab. */
+async function installHarnessUpdate(warning: UserWarning, failedTitle: string): Promise<void> {
+  try {
+    await AgenticProcess.launch({
+      scratch: true,
+      title: warning.message,
+      launchPrompt: `${warning.message}. ${warning.description ?? ''}\nUpgrade it on this machine now, then run its --version and tell me the version that is installed.`,
+    });
+  } catch (e: unknown) {
+    notify.error({
+      title: failedTitle,
+      message: e instanceof Error ? e.message : String(e),
+      forceToast: true,
+    });
+  }
 }
 
 const PRIMARY_BTN = 'rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90';
@@ -411,16 +430,27 @@ function AlertItem({
 }
 
 export function WarningsPopover() {
+  const { t } = useLingui();
   const { warnings: derivedWarnings } = useWarnings();
   const setupWarning = useSetupIncompleteWarning();
   const dismissedKeys = useDismissedWarnings((s) => s.keys);
   const dismissWarnings = useDismissedWarnings((s) => s.dismiss);
   const warnings = useMemo(
     () =>
-      [...derivedWarnings, ...(setupWarning ? [setupWarning] : [])].filter(
-        (w) => dismissedKeys.get(w.id) !== dismissKey(w),
-      ),
-    [derivedWarnings, setupWarning, dismissedKeys],
+      [...derivedWarnings, ...(setupWarning ? [setupWarning] : [])]
+        .filter((w) => dismissedKeys.get(w.id) !== dismissKey(w))
+        .map((w) =>
+          w.id.startsWith(WARNING_IDS.HARNESS_UPDATE)
+            ? {
+                ...w,
+                action: {
+                  label: t`Install`,
+                  onClick: () => void installHarnessUpdate(w, t`Could not start the install`),
+                },
+              }
+            : w,
+        ),
+    [derivedWarnings, setupWarning, dismissedKeys, t],
   );
   const alerts = useAlertStore((s) => s.alerts);
   const dismissAlert = useAlertStore((s) => s.dismiss);
