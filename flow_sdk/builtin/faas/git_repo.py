@@ -1341,7 +1341,7 @@ class GitRepo:
         return present, missing
 
     # ------------------------------------------------------------------
-    # Greedy "non-tech" push: stage → commit → pull --rebase → push
+    # Greedy "non-tech" push: stage → commit → fetch + rebase → push
     # ------------------------------------------------------------------
 
     async def push(self, paths: list[str] | None = None, message: str | None = None) -> GitPushResult:
@@ -1448,9 +1448,16 @@ class GitRepo:
         autostash may have something to put back."""
         # --autostash: a scoped push leaves the rest of the tree dirty.
         if has_upstream:
-            pulled = await self._git("pull", "--rebase", "--autostash", "origin", branch)
-            if not pulled.ok and "couldn't find remote ref" not in _said(pulled):
-                return await self._sync_failure(pulled, "Could not sync with the remote")
+            # Fetch into the tracking ref and rebase onto IT — never ``git pull``,
+            # which reads the shared FETCH_HEAD file: any other fetch in this
+            # .git at that moment makes it fail ("Cannot rebase onto multiple
+            # branches").
+            tracking = f"refs/remotes/origin/{branch}"
+            synced = await self._git("fetch", "origin", f"+refs/heads/{branch}:{tracking}")
+            if synced.ok:
+                synced = await self._git("rebase", "--autostash", tracking)
+            if not synced.ok and "couldn't find remote ref" not in _said(synced):
+                return await self._sync_failure(synced, "Could not sync with the remote")
             # Only a scoped push leaves anything for the autostash to put back.
             clash = await self._autostash_clash("the remote's changes") if scoped else None
             if clash:
@@ -1504,7 +1511,7 @@ class GitRepo:
         return await self.get_status()
 
     async def pull(self, branch: str | None = None) -> GitPullResult:
-        """Bring the upstream's commits in: ``pull --rebase --autostash``.
+        """Bring the upstream's commits in: fetch, then ``rebase --autostash``.
 
         Uncommitted work is stashed around the rebase and put back, so a pull
         never asks the user to commit first. A conflict is left in place for
@@ -1533,7 +1540,11 @@ class GitRepo:
                 ok=False, kind="no_remote", branch=current, message="No upstream is configured for this branch"
             )
         before = (await self._git("rev-parse", "HEAD")).stdout.strip()
-        pulled = await self._git("pull", "--rebase", "--autostash")
+        # Fetch, then rebase onto the upstream ref — not ``git pull``, which
+        # reads the shared FETCH_HEAD (see ``_sync_and_push``).
+        pulled = await self._git("fetch")
+        if pulled.ok:
+            pulled = await self._git("rebase", "--autostash", "@{upstream}")
         if not pulled.ok:
             kind, msg, conflicted = await self._sync_failure(pulled, "Pull failed")
             return GitPullResult(ok=False, kind=kind, branch=current, message=msg, conflicted=conflicted)

@@ -154,7 +154,48 @@ def check_logs(settings) -> list[DiagnosisFinding]:
     ]
 
 
+def check_network_errors(settings) -> list[DiagnosisFinding]:
+    """The hub calls the running backend saw fail, with how often and when -- a fact for the reader,
+    not a problem by itself (the rules in ``cloud_client/network_error_rules`` decide what alarms)."""
+    import json
+    import time
+    import urllib.request
+
+    progress("reading failed hub calls")
+    url = f"http://127.0.0.1:{settings.port}/api/v1/network-errors"
+    try:
+        with urllib.request.urlopen(url, timeout=2.0) as answer:  # noqa: S310 — this instance's own backend
+            entries = json.load(answer)["data"]["entries"]
+    except Exception:  # noqa: BLE001 — no backend to ask is check_backend's finding, not this one's
+        return []
+    if not entries:
+        return []
+    calls: dict[str, tuple[int, float]] = {}  # the call -> (times, last failed at)
+    for e in entries:
+        call = f"{e['method']} {e['path']} {e['status']}"
+        calls[call] = (calls.get(call, (0, 0.0))[0] + 1, e["at"])
+    lines = [
+        f"{call} x{count}, last {time.strftime('%Y-%m-%d %H:%M', time.localtime(at))}"
+        for call, (count, at) in sorted(calls.items(), key=lambda c: -c[1][0])[:10]
+    ]
+    return [
+        DiagnosisFinding(
+            id="hub.failed_calls",
+            severity="info",
+            title=f"{len(entries)} hub call(s) failed since Flowpad started",
+            detail="\n".join(lines),
+            evidence=url,
+        )
+    ]
+
+
+def _problems(findings: list[DiagnosisFinding]) -> list[DiagnosisFinding]:
+    """An "info" finding is a fact the report carries; it does not make Flowpad unhealthy."""
+    return [f for f in findings if f.severity != "info"]
+
+
 def _status(findings: list[DiagnosisFinding]) -> DiagnosisStatus:
+    findings = _problems(findings)
     if any(f.severity == "error" for f in findings):
         return DiagnosisStatus.NEEDS_ACTION
     if findings:
@@ -166,17 +207,18 @@ async def diagnose(ctx: FlowContextSpec) -> DiagnosisSpec:
     from flow_sdk.instance_settings import get_instance_settings
 
     settings = get_instance_settings()
-    local = (check_backend, check_lock, check_disk, check_ui_bundle, check_logs)
+    local = (check_backend, check_lock, check_disk, check_ui_bundle, check_logs, check_network_errors)
     # The hub's answer and the backend's are both waits on the network: take them together.
     hub, *rest = await asyncio.gather(check_hub(), *(asyncio.to_thread(check, settings) for check in local))
     findings = [f for found in (*rest, hub) for f in found]
-    worst = next((f for f in findings if f.severity == "error"), findings[0] if findings else None)
+    problems = _problems(findings)
+    worst = next((f for f in problems if f.severity == "error"), problems[0] if problems else None)
     return DiagnosisSpec(
         status=_status(findings),
         title=worst.title if worst else "Flowpad looks healthy",
         summary=(
-            "; ".join(f.title for f in findings)
-            if findings
+            "; ".join(f.title for f in problems)
+            if problems
             else "The backend answers, the hub is reachable and the recent logs hold no errors."
         ),
         symptoms=ctx.user_report,

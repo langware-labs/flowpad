@@ -76,6 +76,7 @@ class TransactionHandler:
 
 from dataclasses import dataclass
 
+from .context_mirror import CONTEXT_LISTS, CONTEXT_TYPE, sync_context_rows
 from .connection import (
     Base,
     EntitySchema,
@@ -599,6 +600,10 @@ class SQLiteDBDriver(DBDriver):
 
         # Migrate vfs_record -> record_data_ref
         await _migrate_vfs_record_to_data_ref(conn)
+
+        # Both directions of a typed relationship read (an entity's context, incoming and outgoing).
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_relationships_to_type ON relationships(to_id, type)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_relationships_from_type ON relationships(from_id, type)"))
 
         # Partial expression index powering per-(project, type) asset counts.
         # Indexes only the project/system-scoped rows (mirrors the project
@@ -1287,6 +1292,15 @@ class SQLiteDBDriver(DBDriver):
                 text(f"DELETE FROM entities_fts WHERE entity_id IN (SELECT id FROM entities WHERE {where_clause})"),
                 bindings,
             )
+            # Their own context rows go with them. Rows pointing AT them stay: a re-index
+            # brings the same ids back, and a row whose target is gone is simply not shown.
+            await session.execute(
+                text(
+                    "DELETE FROM relationships WHERE type = :context_type "
+                    f"AND from_id IN (SELECT id FROM entities WHERE {where_clause})"
+                ),
+                {**bindings, "context_type": CONTEXT_TYPE},
+            )
             result = await session.execute(text(f"DELETE FROM entities WHERE {where_clause}"), bindings)
             return result.rowcount or 0
 
@@ -1490,7 +1504,7 @@ class SQLiteDBDriver(DBDriver):
                     entity.created_by = existing.created_by
                 if not entity.created_date:
                     entity.created_date = existing.created_date
-                return await self._update_entity(entity, session)
+                return await self._update_entity(entity, session, stored=existing.data)
 
             # Create new entity - _create_entity checks unique constraints
             return await self._create_entity(entity, owner, session)
@@ -1634,6 +1648,9 @@ class SQLiteDBDriver(DBDriver):
         """
         if not field_name or not field_name.replace("_", "").isalnum():
             raise ValueError(f"Invalid entity data field: {field_name!r}")
+        if field_name in CONTEXT_LISTS:
+            # A patch skips the save, and the save is what keeps the context rows in step.
+            raise ValueError(f"{field_name!r} is context: change it through the entity and save")
 
         entity_type = entity_type.lower()
         json_path = f"$.{field_name}"
@@ -1827,6 +1844,8 @@ class SQLiteDBDriver(DBDriver):
                 ) from e
             raise
 
+        await sync_context_rows(session, entity, None, schema.data)
+
         # Create owner relationship
         if owner:
             await self._create_owner_relationship(entity, owner, known_new=True)
@@ -1836,7 +1855,7 @@ class SQLiteDBDriver(DBDriver):
 
         return entity
 
-    async def _update_entity(self, entity: DBBaseRecord, session: AsyncSession) -> DBBaseRecord:
+    async def _update_entity(self, entity: DBBaseRecord, session: AsyncSession, stored: str | None = None) -> DBBaseRecord:
         """Update an existing entity. Outer _session_ctx drives commit."""
         # A row only reaches here after ``save()`` has SELECTed it and confirmed
         # it exists, so a null ``created_by`` is NOT a create-on-existing
@@ -1875,6 +1894,7 @@ class SQLiteDBDriver(DBDriver):
                     data=json.dumps(data_dict, cls=SafeJSONEncoder) if data_dict else None,
                 )
             )
+            await sync_context_rows(session, entity, stored, data_dict)
             return entity
         except Exception as e:
             logger.error(f"sqllite Error updating entity {entity.id}: {e}")

@@ -1242,7 +1242,7 @@ function ExecutionHistoryHeader({
                         e.stopPropagation();
                         onDeleteSession(p.id, title);
                       }}
-                      className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-data-[active=true]:opacity-60"
+                      className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-data-[active=true]:opacity-60 pointer-coarse:opacity-100"
                       title={t`Delete chat`}
                       data-testid={`entity-execution-history-delete-${p.id}`}
                     >

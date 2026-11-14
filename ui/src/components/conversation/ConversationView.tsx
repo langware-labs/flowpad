@@ -56,6 +56,7 @@ import { FlowMessageBubble } from './FlowMessageBubble';
 import { messageSummary } from './ChannelMessageExtras';
 import { SessionEventLine } from './SessionEventLine';
 import { SessionCard } from './SessionCard';
+import { PromptRequestAnswerContext } from './attachment-actions';
 import { MessageComposer } from './MessageComposer';
 import { ConversationActions, ConversationEndedLine } from './ConversationActions';
 import { useImplementPlan } from './useImplementPlan';
@@ -96,8 +97,15 @@ import {
   oldestCreatedDate,
 } from './conversation-messages-query';
 import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
-import { failedPromptOf, pendingPromptOf, promptTextOf, sentResultOf } from './session-turns';
-import { isSessionExpired } from './session-card-state';
+import {
+  failedPromptOf,
+  heldResultOf,
+  pendingPromptOf,
+  promptTextOf,
+  sentResultOf,
+  sentRunSummaryOf,
+} from './session-turns';
+import { isSessionExpired, sessionCardState } from './session-card-state';
 import { LiveSessionActivity } from './LiveSessionActivity';
 import { useRetryFailedPrompt } from './useRetryFailedPrompt';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
@@ -709,6 +717,8 @@ export function ConversationView({
             failed: failedPromptOf(fms),
             pending: pendingPromptOf(fms),
             result: sentResultOf(fms),
+            held: heldResultOf(fms),
+            runSummary: sentRunSummaryOf(fms),
             prompt: fms.map(promptTextOf).find((text) => text.trim()) ?? null,
           },
         ]),
@@ -1245,7 +1255,20 @@ export function ConversationView({
                 // is not drawn as a bubble; the turns live in the session view. A prompt
                 // request keeps the sender's message: its text and prompt ARE the request.
                 <div key={item.key} data-testid="session-anchor" className="flex flex-col gap-1">
-                  {promptRequest && renderConversationItem(item.anchor)}
+                  {promptRequest && (
+                    <PromptRequestAnswerContext.Provider
+                      value={
+                        role === 'host' && session && sessionCardState(session.status) === 'pending'
+                          ? {
+                              onRun: () => approveSession(session, { replyPolicy: SessionReplyPolicy.REVIEW }),
+                              onDecline: () => session.decline(),
+                            }
+                          : null
+                      }
+                    >
+                      {renderConversationItem(item.anchor)}
+                    </PromptRequestAnswerContext.Provider>
+                  )}
                   <SessionCard
                     sessionId={item.sessionId}
                     session={session}
@@ -1264,11 +1287,16 @@ export function ConversationView({
                         ? (replyPolicy: SessionReplyPolicy) => approveSession(session, { replyPolicy })
                         : undefined
                     }
-                    resultText={promptRequest ? (turns?.result ?? null) : null}
+                    resultText={promptRequest ? (turns?.held ?? turns?.result ?? null) : null}
+                    resultHeld={promptRequest && !!turns?.held}
+                    promptText={turns?.prompt ?? null}
+                    runSummary={role === 'guest' && promptRequest ? (turns?.runSummary ?? null) : null}
                     onRunAgain={
-                      role === 'guest' && promptRequest && turns?.prompt && conversationId
-                        ? () => retryFailedPrompt(conversationId, null, turns.prompt!)
-                        : undefined
+                      role === 'host' && promptRequest && session
+                        ? () => session.runAgain()
+                        : role === 'guest' && promptRequest && turns?.prompt && conversationId
+                          ? () => retryFailedPrompt(conversationId, null, turns.prompt!)
+                          : undefined
                     }
                     onRetry={
                       role === 'guest' && failedPrompt && conversationId

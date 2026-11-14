@@ -174,15 +174,24 @@ export function createHubRequestFailedWarning(detail: {
   path: string;
   statusCode: number;
   message: string;
+  /** What the user can do about it. */
+  action?: string;
+  /** ms since epoch of the failure, so an old warning does not read as current. */
+  ts?: number;
   onDismiss?: () => void;
 }): UserWarning {
-  const { method, path, statusCode, message, onDismiss } = detail;
+  const { method, path, statusCode, message, action, ts, onDismiss } = detail;
+  const when = ts
+    ? `Last failed ${new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
+    : '';
   return {
     id: WARNING_IDS.HUB_REQUEST_FAILED,
     icon: 'CloudOff',
     color: 'orange',
     message: 'Cloud Request Failed',
-    description: `${method} ${path} ${statusCode}: ${message}`.trim(),
+    description: [`${method} ${path} ${statusCode}: ${message}`.trim(), when, action && `${action}.`]
+      .filter(Boolean)
+      .join(' '),
     targetView: ViewType.CREDENTIALS,
     targetPointer: CredentialsSubview.CONNECTIONS,
     onClick: onDismiss,
@@ -272,12 +281,12 @@ export function createHarnessUpdateWarning(h: {
   update_command?: string;
 }): UserWarning {
   const required = h.update === 'required';
-  const to = h.latest_version ? ` → ${h.latest_version}` : '';
+  const versions = `${h.version}${h.latest_version ? ` → ${h.latest_version}` : ''}`;
   return {
     id: `${WARNING_IDS.HARNESS_UPDATE}-${h.worker_type}`,
     icon: 'ArrowUpCircle',
     color: required ? 'red' : 'yellow',
-    message: required ? `${h.label} is too old for this model` : `${h.label} ${h.version}${to} available`,
+    message: required ? `${h.label} ${versions} — too old for this model` : `${h.label} ${versions} available`,
     description: h.update_command ? `Update it: ${h.update_command}` : `Update ${h.label} to the newest version.`,
     targetView: ViewType.CAPABILITIES,
     diagnosable: false,

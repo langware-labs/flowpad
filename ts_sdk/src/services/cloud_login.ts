@@ -129,6 +129,8 @@ export interface HubClientErrorInfo {
   path: string;
   statusCode: number;
   message: string;
+  /** What the user can do about it, from the backend's rule for this failure. */
+  action?: string;
   /** ms since epoch when the error was observed on the UI side. */
   ts: number;
 }
@@ -988,7 +990,8 @@ class CloudManager extends EventEmitter {
     // the connection slot (that's for WS connectivity state). Putting them
     // there clobbered the real WS error message and made unrelated 404s
     // surface in Settings as "connection error".
-    this._lastHubError = { method, path, statusCode, message, ts: Date.now() };
+    const action = (msg.detail as { action?: string } | undefined)?.action;
+    this._lastHubError = { method, path, statusCode, message, action, ts: Date.now() };
     this.emit('hub_client_error', msg);
     this.emit('last_hub_error_changed', this._lastHubError);
   }

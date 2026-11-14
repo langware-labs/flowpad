@@ -3,9 +3,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ItOperationChip } from './ItOperationChip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { Conversation, Task, TypeId } from '@sdk';
+import { Conversation, GraphContext, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { History, Layers, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { History, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { cn } from '@src/lib/utils';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
@@ -290,7 +290,7 @@ export function ConversationPanel({
   // Context first, then Tasks, then Runs. Runs is hidden entirely when there's no
   // anchor to query (covered by `showRuns`).
   const tabs = [
-    { id: 'context' as const, label: t`Context`, icon: Layers },
+    { id: 'context' as const, label: t`Context`, icon: iconForType(GraphContext.type) },
     {
       id: 'tasks' as const,
       label: openTaskCount > 0 ? t`Tasks ${openTaskCount}` : t`Tasks`,

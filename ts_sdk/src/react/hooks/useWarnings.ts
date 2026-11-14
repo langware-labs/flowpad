@@ -139,6 +139,8 @@ export function useWarnings() {
           path: lastHubError.path,
           statusCode: lastHubError.statusCode,
           message: lastHubError.message,
+          action: lastHubError.action,
+          ts: lastHubError.ts,
           onDismiss: () => cloudManager.clearLastHubError(),
         }),
       );

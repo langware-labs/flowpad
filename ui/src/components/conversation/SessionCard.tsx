@@ -1,6 +1,6 @@
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useState, type ReactNode } from 'react';
-import { RemoteWorkerSession, RemoteWorkerSessionStatus, SessionReplyPolicy } from '@sdk';
+import { RemoteWorkerSession, RemoteWorkerSessionStatus, SessionReplyPolicy, type PromptRunSummary } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { formatClock } from '@src/components/lens-viewer/shared/format-utils';
 import { useClock } from '@src/hooks/useActivity';
@@ -8,6 +8,7 @@ import { cn } from '@src/lib/utils';
 import { GuestPermissionChip, HostApprovalChip } from '@src/components/collaboration/GuestPermissionChip';
 import { SessionRoleBadge } from '@src/components/collaboration/SessionRoleBadge';
 import { OpenSessionChatButton } from './LiveSessionActivity';
+import { PromptRunSummaryDialog } from './PromptRunSummaryDialog';
 import { sessionCardState, sessionExpiresAt, type SessionCardState } from './session-card-state';
 import { sessionTitle } from './session-turns';
 
@@ -38,8 +39,14 @@ export interface SessionCardProps {
   onRun?: (replyPolicy: SessionReplyPolicy) => Promise<void>;
   /** Prompt request: the answer — sent back to the guest, or sent by the host — once there is one. */
   resultText?: string | null;
-  /** Prompt request, guest + done: send the same prompt again as a new request. */
+  /** Prompt request, done: run the same prompt again — the guest sends a new request, the host runs it at once. */
   onRunAgain?: () => Promise<void>;
+  /** Host only: that answer is still a draft here — it ran with Run, nothing went back yet. */
+  resultHeld?: boolean;
+  /** Prompt request: the prompt that was sent. */
+  promptText?: string | null;
+  /** Prompt request, guest + done: what the host's run did, as sent back with the answer — opens from View run. */
+  runSummary?: PromptRunSummary | null;
 }
 
 const TONE: Record<SessionCardState, string> = {
@@ -112,8 +119,12 @@ export function SessionCard({
   chatProcessId,
   onRun,
   resultText,
+  resultHeld,
   onRunAgain,
+  promptText,
+  runSummary,
 }: SessionCardProps) {
+  const [runOpen, setRunOpen] = useState(false);
   const { t } = useLingui();
   const [busy, setBusy] = useState<
     'approve' | 'decline' | 'disconnect' | 'retry' | 'run-update' | 'run' | 'run-again' | 'open' | null
@@ -257,6 +268,19 @@ export function SessionCard({
               )}
               {answering && button('decline', onDecline, secondary, <Trans>Decline</Trans>)}
               {done && onRunAgain && button('run-again', onRunAgain, secondary, <Trans>Run again</Trans>)}
+              {done && runSummary && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setRunOpen(true);
+                  }}
+                  data-testid="session-card-view-run"
+                  className={cn(ACTION, secondary)}
+                >
+                  <Trans>View run</Trans>
+                </button>
+              )}
               {done && chatProcessId && <OpenSessionChatButton processId={chatProcessId} />}
               {(state === 'active' || done) && button('open', async () => onOpen(), secondary, <Trans>Open</Trans>)}
               {((role === 'guest' && (state === 'pending' || state === 'requesting')) || state === 'active') &&
@@ -275,10 +299,26 @@ export function SessionCard({
             data-testid="session-card-update"
           >
             <span className="block text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-              {role === 'guest' ? <Trans>Update from {host}</Trans> : <Trans>Your answer</Trans>}
+              {role === 'guest' ? (
+                <Trans>Update from {host}</Trans>
+              ) : resultHeld ? (
+                <Trans>Your answer · not sent to {guest} yet</Trans>
+              ) : (
+                <Trans>Your answer</Trans>
+              )}
             </span>
             <span className="whitespace-pre-wrap text-foreground/90">{resultText}</span>
           </div>
+        )}
+        {runSummary && (
+          <PromptRunSummaryDialog
+            open={runOpen}
+            onOpenChange={setRunOpen}
+            host={host}
+            prompt={promptText ?? null}
+            summary={runSummary}
+            answer={resultText ?? null}
+          />
         )}
       </div>
     );

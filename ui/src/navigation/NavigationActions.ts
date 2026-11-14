@@ -48,8 +48,7 @@ import { allScope, projectScope } from '@src/lib/scope-filter';
 import { contentAssetTargetForDock, isContentAssetDock, offersDocChat } from './content-asset-dock';
 import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
 import { isHostDock } from './tab-hosts';
-import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
-import { vfsLocatorForComputeNode } from './vfs-locator';
+import { folderDockPointer } from './folder-pointer';
 import { dockForDisplayTarget } from './display-target-pointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
@@ -943,19 +942,7 @@ export class NavigationActions {
    * `select` names an entry of the folder to show selected.
    */
   openFolder(machinePath: string, select?: string): void {
-    const parsed = VFSPath.parse(machinePath);
-    if (parsed.isAbsolute) {
-      this.openDock(DockPointer.forAssetFs(parsed, Layout.DOCK, select));
-      return;
-    }
-
-    const liveTypeId = dataContext.computeNodeTypeId ?? LOCAL_COMPUTE_NODE;
-    const locatorTypeId = vfsLocatorForComputeNode(dataContext.computeNode) ?? liveTypeId;
-    const vfsPath =
-      machinePath.startsWith('/') || /^[A-Za-z]:[/\\]/.test(machinePath)
-        ? VFSPath.fromMachinePath(machinePath, locatorTypeId)
-        : VFSPath.fromTypeId(locatorTypeId, machinePath);
-    this.openDock(DockPointer.forAssetFs(vfsPath, Layout.DOCK, select));
+    this.openDock(folderDockPointer(machinePath, select));
   }
 
   /** Navigate to the default shell view (no specific session) */

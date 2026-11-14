@@ -10,6 +10,7 @@ import { Terminal } from 'lucide-react';
 /** The SmartNavigationLog dataset's title (`flow_sdk/core/navigation_log.py` TITLE). */
 const SMART_NAVIGATION_LOG = 'SmartNavigationLog';
 import { SystemLog } from './system-log';
+import { NetworkErrors } from './network-errors';
 import { SystemDiagnoses } from './system-diagnoses';
 
 export function LogsSection({ onNavigate }: { onNavigate?: () => void } = {}) {
@@ -82,6 +83,8 @@ export function LogsSection({ onNavigate }: { onNavigate?: () => void } = {}) {
       <SystemDiagnoses />
 
       <SystemLog />
+
+      <NetworkErrors />
     </div>
   );
 }

@@ -332,8 +332,9 @@ export function MessageBubble({
   // Attachment-action pairs: every CTA (View/Implement Plan, …) comes from
   // the registry — the bubble only assembles the context. The prompt PREVIEW
   // renders for ANY message carrying a prompt attachment (sender sees what
-  // the receiver sees); a prompt carries no CTA of its own — consent lives on
-  // the session card under the opening message. `hasPlanSession === !!onOpenPlanSession` (set on
+  // the receiver sees); a prompt carries no registry CTA — consent lives on
+  // the session card under the opening message (and, while a request waits for the
+  // viewer, in the preview itself: `PromptRequestAnswerContext`). `hasPlanSession === !!onOpenPlanSession` (set on
   // every spec-bearing bubble once one session is live in the thread).
   const { actions, promptAttachments, promptEntityTypeId } = useAttachmentActions({
     fm: flowMessage,

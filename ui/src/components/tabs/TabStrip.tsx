@@ -492,7 +492,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
     <div
       className={`absolute end-0.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded transition-opacity ${
         // A coloured tab has no theme surface under the button: it sits on the tab's own paper.
-        isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+        isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100'
       } ${tinted ? '' : isActive ? 'bg-background' : 'bg-muted'}`}
     >
       {closable && (

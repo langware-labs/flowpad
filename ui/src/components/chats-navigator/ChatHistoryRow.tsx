@@ -240,7 +240,7 @@ export function ChatHistoryRow({
                 onClick={(e) => e.stopPropagation()}
                 title={t`Review prompts`}
                 aria-label={t`Review prompts`}
-                className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
                 data-testid="chat-history-row-prompts"
               >
                 <List className="h-3 w-3" />

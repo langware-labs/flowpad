@@ -254,7 +254,7 @@ function CloseRowButton({
       title={label}
       aria-label={label}
       data-testid={testId}
-      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 disabled:opacity-50 group-hover:opacity-100"
+      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 disabled:opacity-50 group-hover:opacity-100 pointer-coarse:opacity-100"
     >
       {closing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
     </button>

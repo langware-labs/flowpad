@@ -1862,10 +1862,35 @@ class DataSource(SetupSkippable, Entity):
     @core_action.post(action_name="set_enabled")
     async def set_enabled_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/set_enabled — ``{"enabled": bool}``. Disabled stops polling."""
-        enabled = bool((await self._body()).get("enabled", True))
-        self.status = SourceStatus.ACTIVE.value if enabled else SourceStatus.DISABLED.value
-        await self.save_runtime()
-        return ApiSuccessResponse(data={"status": self.status})
+        await self.set_enabled(bool((await self._body()).get("enabled", True)))
+        return ApiSuccessResponse(
+            data={
+                "status": self.status,
+                "setup_detail": self.setup_detail,
+                "setup_needs": [n.model_dump() for n in self.setup_needs],
+            }
+        )
+
+    async def set_enabled(self, enabled: bool) -> None:
+        """Pause, or resume. Resuming is never a fresh start: a source that passed its setup check
+        before it was paused does not owe it again. It returns to where it stood (what the row still
+        says: words about a setup mean it was in setup), and a driver with a check of its own is asked
+        once (``verify``), so what it says now decides. A provider that does not answer leaves it there."""
+        if not enabled:
+            self.status = SourceStatus.DISABLED.value
+            await self.save_runtime()
+            return
+        if self.status == SourceStatus.ACTIVE.value:
+            return
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        driver = await DataDriver.find(self.provider or "")  # an authored driver loads on first use
+        owes_check = driver is not None and driver.has_setup
+        in_setup = owes_check and bool(self.setup_detail or self.setup_needs)
+        self.status = SourceStatus.SETUP.value if in_setup else SourceStatus.ACTIVE.value
+        verdict = await self.verify() if owes_check else None
+        if verdict is None or verdict.get("transient"):
+            await self.save_runtime()  # a verdict saved the row itself; no answer leaves it where it stood
 
     @core_action.get(action_name="setup_stages")
     async def setup_stages_action(self) -> ApiResponse:

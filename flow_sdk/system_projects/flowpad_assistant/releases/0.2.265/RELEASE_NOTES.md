@@ -29,7 +29,7 @@ source_hash: 33bfcfe96384bbd7
 
 - **LLM sources** — three tabs over one table and one endpoint dialog; model sizes are set on each endpoint, a key on this machine shows as an endpoint, and Vertex endpoints work.
 - **Messages** — the favorite star sits before the name; **Reply**, **Forward** and **Forward to worker** are labeled under the body.
-- **Inbox** — clicking a channel shows only that channel, ⌘/Ctrl-click adds or removes it; a share row names what was shared, and only open or refused shares get a chip.
+- **Stream Inbox** — clicking a channel shows only that channel, ⌘/Ctrl-click adds or removes it; a share row names what was shared, and only open or refused shares get a chip.
 - **Chat list** — hovering a row's status mark opens a card with the status, the CLI's own error words and the last prompt.
 - **Chats** — a chat opens on the newest page of its history, and an answered question no longer reads as waiting once the session works past it.
 - **Chat about this file** — the agent is told which file you are asking about.

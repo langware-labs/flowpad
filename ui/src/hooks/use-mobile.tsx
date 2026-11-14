@@ -1,14 +1,16 @@
 import { useSyncExternalStore } from 'react';
+import { MOBILE_QUERY } from './mobile-query';
 
 /**
  * THE mobile flag — one definition for the whole frontend. Mobile = the phone layout: narrower than
- * Tailwind's `md` (768px), the same line every `max-md:` class draws, so JS and CSS never disagree.
+ * Tailwind's `md` (768px), or a phone on its side (a short touch screen) — the same line every `max-md:`
+ * class draws (tailwind.config.ts), so JS and CSS never disagree.
  * One query (`MOBILE_QUERY`) answers every reader; don't add another query, breakpoint or touch check.
  *
  *  - in a component: `useIsMobile()` (re-renders when it flips)
  *  - anywhere else (handlers, loaders, plain functions): `isMobile()`
  */
-export const MOBILE_QUERY = '(max-width: 767px)';
+export { MOBILE_QUERY };
 
 // One MediaQueryList and one real listener for every reader, however many components subscribe.
 // Rebuilt only if `window.matchMedia` itself is swapped (a test's stub).

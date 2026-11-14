@@ -1,5 +1,6 @@
 ---
 id: 2a3cd19f-cd79-41b2-9d07-43a890e77b2a
+version: 2
 ---
 # Automations
 
@@ -9,13 +10,13 @@ The screen was the Events dock until 2026-10-05.
 
 ## Three places, one dock
 
-| URL | Place | For |
-|---|---|---|
-| `/dock/automations` | My automations | Everyone. One sentence per automation, its last result and next run, grouped by whose it is; Flowpad's own folded into one line. |
-| `/dock/automations?trigger=<id>` (`&tab=runs`) | One automation | Build it as **When · Then**, with **Test** beside it (Check, recent real events, Run once now) and its Runs one tab away. |
-| `/dock/automations?creating=<kind>[&recipe=<id>]` | A new one | Same page, empty or from a starter. |
-| `/dock/automations/runs` (`?status=failed&trigger=&run=`) | Runs | Every fire: why it ran, what it did, what broke; "Run again with this event". |
-| `/dock/automations/bus` (`?tag=&target=`) | Event bus | Experts. Every event type, how often it happened, who listens, what they do; live stream; pattern sandbox; send a test event. |
+| URL                                                       | Place          | For                                                                                                                              |
+| --------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `/dock/automations`                                       | My automations | Everyone. One sentence per automation, its last result and next run, grouped by whose it is; Flowpad's own folded into one line. |
+| `/dock/automations?trigger=<id>` (`&tab=runs`)            | One automation | Build it as **When · Then**, with **Test** beside it (Check, recent real events, Run once now) and its Runs one tab away.        |
+| `/dock/automations?creating=<kind>[&recipe=<id>]`         | A new one      | Same page, empty or from a starter.                                                                                              |
+| `/dock/automations/runs` (`?status=failed&trigger=&run=`) | Runs           | Every fire: why it ran, what it did, what broke; "Run again with this event".                                                    |
+| `/dock/automations/bus` (`?tag=&target=`)                 | Event bus      | Experts. Every event type, how often it happened, who listens, what they do; live stream; pattern sandbox; send a test event.    |
 
 Simple first: a SAVED automation opens as three lines — When · Where · Then, each the backend's own
 sentence (`useAutomationWords`), each unfolding to its form (`Block` with a `summary`); a new one opens
@@ -35,16 +36,16 @@ UI → `ui/src/hooks/automations/useAutomations.ts` → TS SDK `Trigger.*` metho
 `Trigger` → `flow_sdk/automations/*`. No component or hook in the screen builds
 a request itself (`ui/tests/unit/triggers-view-url.test.ts` fails if one does).
 
-| Action | Library | Answers |
-|---|---|---|
-| `overview` | `automations/overview.py` | `automation.summary[]` — sentence parts, group, last run, failures in the last five, next run, `tested` |
-| `next_runs` | `automations/schedule.py` | the next N times + the schedule's preset reading |
-| `{id}/check`, `check_spec` | `automations/check.py` | `automation.check` — findings in words, no side effects |
-| `{id}/test` | `automations/run_once.py` | `automation.run_once` — *Run once now* |
-| `{id}/samples`, `recent_events` | `automations/samples.py` | recent real events to test with |
-| `runs`, `run` | `automations/runs.py` | `automation.run` — history rows read as runs |
-| `bus_map`, `match_pattern` | `automations/bus_map.py`, `tags/bus.explain_subscription_match` | the bus map; the sandbox |
-| `create`, `{id}/update`, `{id}/delete` | `automations/spec_file.py` for file-defined rows | — |
+| Action                                 | Library                                                         | Answers                                                                                                 |
+| -------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `overview`                             | `automations/overview.py`                                       | `automation.summary[]` — sentence parts, group, last run, failures in the last five, next run, `tested` |
+| `next_runs`                            | `automations/schedule.py`                                       | the next N times + the schedule's preset reading                                                        |
+| `{id}/check`, `check_spec`             | `automations/check.py`                                          | `automation.check` — findings in words, no side effects                                                 |
+| `{id}/test`                            | `automations/run_once.py`                                       | `automation.run_once` — *Run once now*                                                                  |
+| `{id}/samples`, `recent_events`        | `automations/samples.py`                                        | recent real events to test with                                                                         |
+| `runs`, `run`                          | `automations/runs.py`                                           | `automation.run` — history rows read as runs                                                            |
+| `bus_map`, `match_pattern`             | `automations/bus_map.py`, `tags/bus.explain_subscription_match` | the bus map; the sandbox                                                                                |
+| `create`, `{id}/update`, `{id}/delete` | `automations/spec_file.py` for file-defined rows                | —                                                                                                       |
 
 ## Execution is a wizard
 
@@ -97,8 +98,7 @@ An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbo
   be PROJECT-RELATIVE (`agentic-assets/trigger/<name>/run.sh`): it resolves under the rule's
   project folder, so a rule checked into a project runs the same on every clone; an absolute path
   still works but belongs to one checkout. A rule on `dataset.rows.changed` names its rows by KIND,
-  or it fires for every dataset write on the machine: `"tag": {"on": "dataset.rows.changed", "scope":
-  ["kind:--acme--.crm.task"]}` — the event's scope carries the row kind, which is the same on every
+  or it fires for every dataset write on the machine: `"tag": {"on": "dataset.rows.changed", "scope": ["kind:--acme--.crm.task"]}` — the event's scope carries the row kind, which is the same on every
   clone. (`"target": "dataset:<id>"` — the row's `tag_target` — also works, but a dataset's id is one
   machine's, so it cannot be checked in.)
 - **A script that fails is a failed run.** In `then` a failing step is the run's `error`; in the legacy
@@ -108,7 +108,7 @@ An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbo
   form to write (a shell one-liner run from the project folder, as a wizard step); `actions` stay for
   files written before it and for a file rule that needs the changed paths. A job longer than a step's
   budget starts its work and returns — no budget is configurable, on purpose.
-- **`runs_on` belongs to the rule, whatever its kind**: `"runs_on": "<deployment id>"` at the top of
+- **`runs_on`** **belongs to the rule, whatever its kind**: `"runs_on": "<deployment id>"` at the top of
   `trigger.json` (a schedule file may still carry it inside `schedule`). Only the machine that place
   runs on arms the rule — an event rule or a file rule checked into a shared project then fires once,
   not once per clone. Empty: every machine that indexes it.
@@ -143,22 +143,20 @@ rule-folder form returns the existing configuration-refusal response (422).
 writes them, the row alone, so no re-index, `git pull` or edit to `trigger.json` can move a person's choice.
 `trigger.json` says only `recommended` (default `true`; a legacy `enabled` key is read as it).
 
-| The rule | Starts |
-|---|---|
-| made here (the rules API, a schedule added here, a seed) | on |
-| indexed from a file — it came with a project | off, undecided: it does not run |
-| Flowpad's own (`is_builtin`) | as its seed or file says — except one its file ships off (`recommended: false`, e.g. the Daily usage summary): off, and its switch is the person's (`Trigger.switchable`) |
-| on a machine the hub runs only for a deployed agent (`RuntimeKind.AGENT`) | on when recommended — the deploy was its owner's choice |
+| The rule                                                                  | Starts                                                                                                                                                                    |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| made here (the rules API, a schedule added here, a seed)                  | on                                                                                                                                                                        |
+| indexed from a file — it came with a project                              | off, undecided: it does not run                                                                                                                                           |
+| Flowpad's own (`is_builtin`)                                              | as its seed or file says — except one its file ships off (`recommended: false`, e.g. the Daily usage summary): off, and its switch is the person's (`Trigger.switchable`) |
+| on a machine the hub runs only for a deployed agent (`RuntimeKind.AGENT`) | on when recommended — the deploy was its owner's choice                                                                                                                   |
 
-A recommended undecided rule is a row of the project's setup (`automation` requirement, `project_setup.
-_automations_here`): the setup window lists it under "Recommended automations" with **Enable / Disable**
+A recommended undecided rule is a row of the project's setup (`automation` requirement, `project_setup. _automations_here`): the setup window lists it under "Recommended automations" with **Enable / Disable**
 (`POST project/<id>/setup-automation {typeid, on}`), and the "Setup required" button counts it. The
 Automations screen's switch writes the same machine-local value.
 
 ## A callback into a session
 
-A session can set a one-time rule that calls back into ITSELF: `flow process schedule "<prompt>" --at
-<ISO time> | --in 2h` (`schedules` lists the waiting ones, `unschedule <id>` removes one). It is an
+A session can set a one-time rule that calls back into ITSELF: `flow process schedule "<prompt>" --at <ISO time> | --in 2h` (`schedules` lists the waiting ones, `unschedule <id>` removes one). It is an
 ordinary `date` schedule made through `POST /graph/trigger` with one `prompt_process` action
 (`ActionType.PROMPT_PROCESS`: `target_type_id` is the session, `prompt` what it is asked). Row-only — a
 session id is one machine's, so no `trigger.json` can say it.
@@ -176,7 +174,7 @@ session id is one machine's, so no `trigger.json` can say it.
   10m — it repeats by itself; do not schedule it again". A repeat without an end is refused.
 - **Runs, end and status — every kind** (`automations/lifecycle.py`). `max_runs` (`fire_once` = 1, a `date`
   one-shot = 1) and `expires_at` bound a rule's life; `lifecycle.end(rule, reason)` is the one way it ends
-  (`ended_at`, `ended_reason` max_runs | expired | cancelled): disarmed, unlinked from the session's chip,
+  (`ended_at`, `ended_reason` max\_runs | expired | cancelled): disarmed, unlinked from the session's chip,
   `trigger.ended` emitted, a reply wait's "cancelled" message posted. `enabled` stays the person's switch.
   `status` (active · off · done · expired · cancelled), `max_runs`, `runs_left`, `until` ride on every
   `AutomationSummary`; `POST trigger/<id>/cancel` (`flow process unschedule`) ends one now.
@@ -201,20 +199,26 @@ session id is one machine's, so no `trigger.json` can say it.
 - **Run once now** runs even when the automation is off and spends nothing a real
   fire spends: no counter bump (a once-only rule stays unspent), no storm budget,
   no confirm query. Its rows carry `is_test`.
+
 - **"Not tested yet"** compares `spec_hash` (`automations/fingerprint.py`, the
   hash of what the rule DOES) against test rows and successful real runs.
   `updated_date` cannot answer it: every fire and every boot re-index moves it.
+
 - **The history stays JSONL** (`fs_store/operations/trigger_log.py`, keyed by rule
   name). Readers always filter by `trigger_id` (names repeat). Keys added for
   runs: `error`, `duration_ms`, `cause_data` (capped at 300 characters — never a
   payload), `spec_hash`. An event fire writes a start row before the work and a
   `tag_fire_done` row after it, joined on `event_id`.
-- **A file-defined automation saves to its `trigger.json`** and is re-indexed;
+
+- **A file-defined automation saves to its** **`trigger.json`** and is re-indexed;
   a row-only write would be reverted by the next index.
+
 - **Flowpad's own** (`Trigger.is_builtin`) refuse edits and deletes.
+
 - **Another install's copy** of a shipped trigger is never armed
   (`trigger_arming.trigger_runs_here`); a boot sweep removes rows whose asset is
   gone (`builtin_triggers.reap_stale_trigger_rows`).
+
 - **Crontab weekdays**: `_parse_trigger` spells the day-of-week field out by name
   — APScheduler 3.x counts Monday as 0, so `1-5` used to fire Tuesday to Saturday.
 
@@ -233,3 +237,4 @@ that. Design notes that used to sit in those descriptions:
   deliberately NOT `fire_once`: search announces `rag.runtime.missing` at most once
   until a person acts (adds a folder, "index now"), so a "Not now" is not asked
   every tick, and a person who declined and later asks for search is asked again.
+

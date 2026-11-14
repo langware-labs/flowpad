@@ -38,6 +38,9 @@ function renderCard(props: Partial<Parameters<typeof SessionCard>[0]> = {}) {
       onRun={props.onRun}
       resultText={props.resultText}
       onRunAgain={props.onRunAgain}
+      resultHeld={props.resultHeld}
+      promptText={props.promptText}
+      runSummary={props.runSummary}
     />,
   );
   return { onOpen };
@@ -278,5 +281,34 @@ describe('SessionCard — a prompt request (prompt_limit = 1)', () => {
     await act(async () => fireEvent.click(screen.getByTestId('session-card-run-again')));
     expect(onRunAgain).toHaveBeenCalledOnce();
     expect(screen.queryByTestId('live-session-open-chat')).toBeNull(); // the run lives on the host
+  });
+
+  it('done: the host can run it again too; the guest opens the run the host sent back', async () => {
+    const done = pr(RemoteWorkerSessionStatus.ENDED, { prompts_used: 1 });
+    const onRunAgain = vi.fn(async () => {});
+    renderCard({ session: done, role: 'host', resultText: 'Darwin', onRunAgain });
+    await act(async () => fireEvent.click(screen.getByTestId('session-card-run-again')));
+    expect(onRunAgain).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('session-card-view-run')).toBeNull(); // the host has the run itself
+    cleanup();
+    renderCard({ session: done, role: 'host', resultText: 'Darwin', resultHeld: true }); // it ran with Run
+    expect(screen.getByTestId('session-card-update').textContent).toContain('Your answer · not sent to Dana yet');
+    cleanup();
+    const { onOpen } = renderCard({
+      session: done,
+      role: 'guest',
+      resultText: 'Darwin',
+      promptText: 'which OS?',
+      runSummary: { steps: [{ tool: 'Bash' }, { tool: 'Edit', path: 'src/a.py' }], files_touched: ['src/a.py'] },
+    });
+    expect(screen.queryByTestId('prompt-run-summary')).toBeNull();
+    await act(async () => fireEvent.click(screen.getByTestId('session-card-view-run')));
+    expect(onOpen).not.toHaveBeenCalled();
+    const run = screen.getByTestId('prompt-run-summary').textContent ?? '';
+    expect(run).toContain("Run on Sam's machine");
+    expect(run).toContain('which OS?');
+    expect(run).toContain('Darwin');
+    expect(screen.getByTestId('prompt-run-steps').textContent).toBe('1Bash2Editsrc/a.py');
+    expect(screen.getByTestId('prompt-run-files').textContent).toBe('src/a.py');
   });
 });

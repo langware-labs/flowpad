@@ -270,6 +270,7 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
     # ``process_call`` / ``returned_value`` are a call on a message and its answer
     # (``process_call_spec``): the value IS the header ``prompt_preview``, never a row.
     # ``message_form`` / ``form_answers`` likewise: a form on a message and its answers (``message_form_spec``).
+    # ``prompt_run_summary`` likewise: what a prompt request's run did, on its reply (``prompt_run_summary_spec``).
     {
         "conversation",
         "flow_message",
@@ -281,6 +282,7 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
         "returned_value",
         "message_form",
         "form_answers",
+        "prompt_run_summary",
     }
 )
 
@@ -332,6 +334,14 @@ def carried_value(attachments, kind: str) -> "tuple[str, dict] | None":
             return None
         return (data[len(prefix) :], value) if isinstance(value, dict) else None
     return None
+
+
+def value_attachment(kind: str, value_id: str, payload: dict) -> dict:
+    """The ``<kind>-<id>`` TYPE_ID attachment that carries ``payload`` as a value — what
+    ``carried_value`` reads back. The dict ``handle_add_message`` adopts (``body["attachment"]``)."""
+    import json as _json  # noqa: PLC0415
+
+    return {"attachment_type": "type_id", "data": f"{kind}-{value_id}", "prompt_preview": _json.dumps(payload)}
 
 
 def carrier_marker(attachments) -> "dict | None":
@@ -425,7 +435,8 @@ def derive_help_request_kind(fm: "FlowMessage") -> None:
 def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
     """Carry an IT message's ``metadata.it`` (hub-written) onto the message. Idempotent; absent leaves it as is.
 
-    A MACHINE's reply names its node and lands on ``it_reply``. The owner's request carries ``metadata.it`` too;
+    A MACHINE's reply names its node and lands on ``it_reply``; it arrives READ -- one send answers once per
+    machine, in a table, so it holds nothing unread. The owner's request carries ``metadata.it`` too;
     when it names its send (``send_id``) its ids land on ``it_request`` -- never the request body, which only the
     hub keeps for a rerun."""
     metadata = payload.get("metadata")
@@ -434,6 +445,7 @@ def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
         return
     if it.get("node_typeid"):
         fm.it_reply = dict(it)
+        fm.is_read = True
     elif it.get("send_id"):
         fm.it_request = {k: it.get(k) for k in ("agent_id", "op_id", "send_id")}
 

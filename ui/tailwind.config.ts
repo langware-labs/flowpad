@@ -1,6 +1,9 @@
 import type { Config } from 'tailwindcss';
 import animate from 'tailwindcss-animate';
 import plugin from 'tailwindcss/plugin';
+import { DESKTOP_QUERY, MOBILE_QUERY } from './src/hooks/mobile-query';
+
+const below = (px: number) => `@media not all and (min-width: ${px}px)`;
 
 export default {
   darkMode: ['class'],
@@ -15,6 +18,8 @@ export default {
       },
     },
     extend: {
+      // `md` and up exclude a phone on its side; `max-md` — the phone layout — includes it (hooks/mobile-query.ts).
+      screens: { md: { raw: DESKTOP_QUERY } },
       // `h-screen` & co. follow the VISIBLE viewport: on a phone `100vh` runs under the browser's own bars.
       // On a desktop the two are the same number.
       height: { screen: '100dvh' },
@@ -157,12 +162,10 @@ export default {
         },
         'pending-glow': {
           '0%, 100%': {
-            boxShadow:
-              '0 0 0 1px hsl(var(--primary) / 0.40), 0 0 4px 0 hsl(var(--primary) / 0.30)',
+            boxShadow: '0 0 0 1px hsl(var(--primary) / 0.40), 0 0 4px 0 hsl(var(--primary) / 0.30)',
           },
           '50%': {
-            boxShadow:
-              '0 0 0 1px hsl(var(--primary) / 0.65), 0 0 8px 0 hsl(var(--primary) / 0.50)',
+            boxShadow: '0 0 0 1px hsl(var(--primary) / 0.65), 0 0 8px 0 hsl(var(--primary) / 0.50)',
           },
         },
         'setup-glow': {
@@ -192,16 +195,13 @@ export default {
         },
         'pending-glow-once': {
           '0%': {
-            boxShadow:
-              '0 0 0 1px hsl(var(--primary) / 0.40), 0 0 4px 0 hsl(var(--primary) / 0.30)',
+            boxShadow: '0 0 0 1px hsl(var(--primary) / 0.40), 0 0 4px 0 hsl(var(--primary) / 0.30)',
           },
           '25%, 75%': {
-            boxShadow:
-              '0 0 0 2px hsl(var(--primary) / 0.85), 0 0 12px 2px hsl(var(--primary) / 0.65)',
+            boxShadow: '0 0 0 2px hsl(var(--primary) / 0.85), 0 0 12px 2px hsl(var(--primary) / 0.65)',
           },
           '100%': {
-            boxShadow:
-              '0 0 0 1px hsl(var(--primary) / 0.40), 0 0 4px 0 hsl(var(--primary) / 0.30)',
+            boxShadow: '0 0 0 1px hsl(var(--primary) / 0.40), 0 0 4px 0 hsl(var(--primary) / 0.30)',
           },
         },
       },
@@ -225,5 +225,20 @@ export default {
     animate,
     // Touch behaviour is keyed on the pointer, layout on the width (`max-md:`): a narrow desktop window still has hover.
     plugin(({ addVariant }) => addVariant('pointer-coarse', '@media (pointer: coarse)')),
+    // Tailwind only derives `max-*` from plain pixel screens; with `md` spelled out above they are declared here.
+    plugin(({ addVariant, addBase }) => {
+      for (const [name, px] of Object.entries({ sm: 640, lg: 1024, xl: 1280, '2xl': 1536 })) {
+        addVariant(`max-${name}`, below(px));
+      }
+      addVariant('max-md', `@media ${MOBILE_QUERY}`);
+      // Mobile Safari zooms the page when a field under 16px takes focus. On a phone every text field is
+      // 16px, whatever size its call site asked for. (xterm's hidden input is not a field.)
+      addBase({
+        [`@media ${MOBILE_QUERY}`]: {
+          "input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea:not(.xterm-helper-textarea), select":
+            { fontSize: '16px !important' },
+        },
+      });
+    }),
   ],
 } satisfies Config;

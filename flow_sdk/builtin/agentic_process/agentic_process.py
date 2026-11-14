@@ -843,6 +843,8 @@ _last_shell_command: dict[str, tuple[str, float]] = {}
 class AgenticProcess(Entity):
     _api_visible = True
     type: str = APIField(default="agentic_process")
+    #: What the session is about is context too: the target can list its sessions.
+    context_fields: ClassVar[dict[str, str]] = {"target_typeid_str": "target"}
 
     instruction_content: str | None = APIField(default=None)
     #: The AgentDeployment this run came from, when it was launched through one.
