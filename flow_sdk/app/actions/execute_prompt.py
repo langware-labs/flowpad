@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
+    from flow_sdk.schema.data_spec.prompt_run_summary_spec import PromptRunSummary
 
 logger = logging.getLogger(__name__)
 
@@ -372,9 +373,11 @@ async def _emit_prompt_completion(
     session_id: str,
     host_process_id: str,
     source_session_id: Optional[str],
-) -> dict:
-    """Mint a PromptCompletion entity for this turn and return the TYPE_ID attachment
-    dict (``prompt_completion-<id>`` + inline ``result_preview``) to ride the reply."""
+    summary: Optional["PromptRunSummary"] = None,
+) -> list[dict]:
+    """Mint a PromptCompletion entity for this turn and return the attachments that ride
+    the reply: the TYPE_ID marker (``prompt_completion-<id>`` + inline ``result_preview``)
+    and, with a ``summary``, what the run did (``prompt_run_summary-<id>``)."""
     from flow_sdk.builtin.flow_message import AttachmentType
     from flow_sdk.builtin.prompt_completion import PromptCompletion
     from flow_sdk.schema.types import EntityType
@@ -388,11 +391,16 @@ async def _emit_prompt_completion(
         source_session_id=source_session_id,
     )
     await pr.save()
-    return {
+    marker = {
         "attachment_type": AttachmentType.TYPE_ID.value,
         "data": str(TypeId(type=EntityType.PROMPT_COMPLETION.value, id=pr.id)),
         "prompt_preview": reply,
     }
+    if summary is None:
+        return [marker]
+    from flow_sdk.schema.data_spec.prompt_run_summary_spec import summary_attachment  # noqa: PLC0415
+
+    return [marker, summary_attachment(pr.id, summary)]
 
 
 #: Entries that are the agent DOING something rather than saying something.
@@ -922,14 +930,17 @@ async def run_session_turn(
             await session.save()
 
             from flow_sdk.app.actions.notification_action import handle_add_message
+            from flow_sdk.schema.data_spec.prompt_run_summary_spec import summarize_last_turn  # noqa: PLC0415
 
             review = session.effective_reply_policy is ReplyPolicy.REVIEW
-            result_att = await _emit_prompt_completion(
+            reply_atts = await _emit_prompt_completion(
                 reply,
                 prompt_id=_first_prompt_id(fm),
                 session_id=session.id,
                 host_process_id=ap.id,
                 source_session_id=getattr(ap, "session_id", None),
+                # What the run did, for the sender's "View run": tools and files only.
+                summary=summarize_last_turn(transcript.entries if transcript is not None else [], root=workdir),
             )
             # The reply is a session message: the session id groups it and
             # handle_add_message appends the snapshot carrier, so every reply
@@ -939,7 +950,7 @@ async def run_session_turn(
                     "conversation_id": conversation.id,
                     "message": _wrap_as_claude_quote(reply),
                     "is_draft": "true" if review else "",
-                    "attachment": [result_att],
+                    "attachment": reply_atts,
                     "remote_worker_session_id": session.id,
                 },
                 someone_typeid,

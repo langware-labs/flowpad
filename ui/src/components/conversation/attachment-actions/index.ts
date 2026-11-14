@@ -1,5 +1,5 @@
 export { AttachmentActionsRow } from './AttachmentActionsRow';
-export { PromptAttachmentPreview } from './PromptAttachmentPreview';
+export { PromptAttachmentPreview, PromptRequestAnswerContext } from './PromptAttachmentPreview';
 export { useAttachmentActions } from './useAttachmentActions';
 export { ATTACHMENT_ACTION_DESCRIPTORS } from './registry';
 export {

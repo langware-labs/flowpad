@@ -517,6 +517,15 @@ class RemoteWorkerSession(Entity):
         await self._emit_event("approved", someone_typeid=someone_typeid)
         return True
 
+    async def _approve_and_run(self, *, someone_typeid: str | None = None) -> None:
+        """The host's yes: approve, then run the prompts that wait — detached, so the click returns."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.app.actions.execute_prompt import redrive_session_prompts  # noqa: PLC0415
+
+        await self.approve(via=ApprovedVia.MANUAL, someone_typeid=someone_typeid)
+        asyncio.create_task(redrive_session_prompts(self))
+
     async def run_project_id(self, requested: str | None = None) -> str | None:
         """Where this session's turns run on the host: the project the host
         picks at approval (``requested`` — checked: it must exist and have a
@@ -569,11 +578,7 @@ class RemoteWorkerSession(Entity):
             self.project_id = project_id
         if self.status not in ACTIVE_STATUSES and not can_transition(self.status, RemoteWorkerSessionStatus.IDLE):
             return ApiFailResponse(message=f"illegal live-session transition: {self.status} → idle")
-        await self.approve(via=ApprovedVia.MANUAL)
-        import asyncio  # noqa: PLC0415
-
-        from flow_sdk.app.actions.execute_prompt import redrive_session_prompts  # noqa: PLC0415
-        asyncio.create_task(redrive_session_prompts(self))
+        await self._approve_and_run()
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.post(action_name="settings")
@@ -613,6 +618,79 @@ class RemoteWorkerSession(Entity):
         await self.save()
         await self._emit_event("declined")
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    async def _opening_prompt_text(self) -> str:
+        """The typed prompt of the message that opened this session ("" when it had none)."""
+        from flow_sdk.app.actions.notification_action import _is_prompt_attachment  # noqa: PLC0415
+        from flow_sdk.builtin.flow_message import PROMPT_FILE_VFS_PREFIX, AttachmentType, FlowMessage  # noqa: PLC0415
+
+        fm = await FlowMessage.get_one({"id": self.starting_message_id}) if self.starting_message_id else None
+        texts = []
+        for a in (getattr(fm, "attachment", None) or []) if fm else []:
+            if not _is_prompt_attachment(a):
+                continue
+            inline = a.attachment_type == AttachmentType.PROMPT and not str(a.data or "").startswith(PROMPT_FILE_VFS_PREFIX)
+            text = a.prompt_preview or (str(a.data or "") if inline else "")
+            if text.strip():
+                texts.append(text.strip())
+        return "\n\n".join(texts)
+
+    @action.post(action_name="run_again")
+    async def _http_run_again(self) -> ApiResponse:
+        """Host runs a finished prompt request's prompt once more, at once.
+
+        The host already approved this exact prompt, so nothing is asked again: a NEW
+        prompt request is opened for the same guest, place to run and reply policy, the same
+        prompt is posted into it as the host's own message, and it is approved and run
+        here in the same breath. The finished request is left as it is.
+        """
+        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+        from flow_sdk.app.actions.execute_prompt import _local_actor  # noqa: PLC0415
+        from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+        me = (await User.current_sender_participant()).get("user_id")
+        if not self.is_host(me):
+            return ApiFailResponse(message="only the host can run a prompt request again", status_code=403)
+        if not (self.is_prompt_request and self.status == RemoteWorkerSessionStatus.ENDED and self.prompts_used > 0):
+            return ApiFailResponse(message="only a prompt request that already ran can run again", status_code=409)
+        prompt_text = await self._opening_prompt_text()
+        if not prompt_text:
+            return ApiFailResponse(message="this request's prompt is no longer available", status_code=409)
+
+        _local_id, someone_typeid = await _local_actor()
+        again = RemoteWorkerSession(
+            id=mint_uuid(),
+            conversation_id=self.conversation_id,
+            collaboration_room_id=self.collaboration_room_id,
+            host_user_id=self.host_user_id,
+            host_name=self.host_name,
+            guest_user_id=self.guest_user_id,
+            guest_name=self.guest_name,
+            project_id=self.project_id,
+            workdir=self.workdir,
+            reply_policy=self.reply_policy,
+            prompt_limit=self.prompt_limit,
+            status=RemoteWorkerSessionStatus.PENDING,
+        )
+        again.mark_activity()
+        await again.save(someone_typeid)
+        # The prompt goes out while the request still waits, so nothing runs before the row
+        # names the message that opened it; the approval below is what starts the run.
+        sent = await handle_add_message(
+            {
+                "conversation_id": self.conversation_id,
+                "prompt_text": prompt_text,
+                "remote_worker_session_id": again.id,
+            },
+            someone_typeid,
+        )
+        if not isinstance(sent, ApiSuccessResponse):
+            await again.end("ended", announce=False)
+            return sent
+        again.starting_message_id = (sent.data or {}).get("id")
+        await again._approve_and_run(someone_typeid=someone_typeid)
+        return ApiSuccessResponse(data=again.model_dump(mode="json"))
 
     @action.post(action_name="disconnect")
     async def _http_disconnect(self) -> ApiResponse:

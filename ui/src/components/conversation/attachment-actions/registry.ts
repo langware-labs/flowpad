@@ -6,8 +6,10 @@ import type { AttachmentActionDescriptor } from './types';
  * The attachment-action registry: every CTA a conversation message can carry,
  * declared per attachment family; array order = render order.
  *
- * A prompt attachment carries NO per-message CTA: every prompt is a live
- * session, and consent lives on the session card under the opening message.
+ * A prompt attachment has no descriptor here: every prompt is a live session, and
+ * consent lives on the session card under the opening message. The one exception is
+ * not a registry CTA either — a request the viewer still has to answer also offers
+ * Run / Decline inside the prompt preview and its window (`PromptRequestAnswerContext`).
  *
  * Adding a new attachment-action pair = appending a descriptor here — no
  * MessageBubble surgery.

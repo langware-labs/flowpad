@@ -1,5 +1,5 @@
-import { AttachmentType, type FlowMessage } from '@sdk';
-import { attachmentDataString } from '@sdk/entities/flow-message';
+import { AttachmentType, PROMPT_RUN_SUMMARY_TYPE, type FlowMessage, type PromptRunSummary } from '@sdk';
+import { attachmentDataString, carriedValue } from '@sdk/entities/flow-message';
 import { truncate } from '@src/components/hooks/event-summaries';
 import { REPLY_MARKER_TYPE } from './attachment-plumbing';
 import {
@@ -94,13 +94,32 @@ export function pendingPromptOf(messages: FlowMessage[]): string | null {
   return (prompt && !answered && promptTextOf(prompt).trim()) || null;
 }
 
-/** The answer the host SENT back — the newest non-draft reply's text (a held draft is not an update). */
-export function sentResultOf(messages: FlowMessage[]): string | null {
+/** The session's newest reply — with `sent`, the newest one that went out (a held draft is skipped). */
+function newestReplyOf(messages: FlowMessage[], sent: boolean): FlowMessage | null {
   for (let i = messages.length - 1; i >= 0; i--) {
-    const text = messages[i].is_draft ? null : resultTextOf(messages[i]);
-    if (text !== null) return text;
+    const fm = messages[i];
+    if (resultTextOf(fm) !== null && !(sent && fm.is_draft)) return fm;
   }
   return null;
+}
+
+/** The answer the host SENT back — the newest non-draft reply's text (a held draft is not an update). */
+export function sentResultOf(messages: FlowMessage[]): string | null {
+  const reply = newestReplyOf(messages, true);
+  return reply ? resultTextOf(reply) : null;
+}
+
+/** The answer the host holds back — its newest reply while that is still a draft ("Run", review
+ *  before sending). Null once it was sent, and on the guest, which never gets a draft. */
+export function heldResultOf(messages: FlowMessage[]): string | null {
+  const reply = newestReplyOf(messages, false);
+  return reply?.is_draft ? resultTextOf(reply) : null;
+}
+
+/** What the host's run did, as sent back with its answer. Null for an answer from a host that sends none. */
+export function sentRunSummaryOf(messages: FlowMessage[]): PromptRunSummary | null {
+  const reply = newestReplyOf(messages, true);
+  return carriedValue<PromptRunSummary>(reply?.attachment, PROMPT_RUN_SUMMARY_TYPE)?.value ?? null;
 }
 
 /** A prompt as one line: its first line, truncated. */

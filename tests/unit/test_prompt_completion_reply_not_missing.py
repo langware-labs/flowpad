@@ -37,7 +37,7 @@ REPLY = "The answer is 42."
 
 async def test_a_received_reply_is_not_reported_missing(tmp_path):
     # Host side: the production code mints the entity and the reply attachment.
-    att = await _emit_prompt_completion(
+    [att] = await _emit_prompt_completion(
         REPLY,
         prompt_id=None,
         session_id="aaaaaaaa-0000-4000-8000-000000000001",

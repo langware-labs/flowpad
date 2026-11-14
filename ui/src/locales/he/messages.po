@@ -36494,3 +36494,27 @@ msgstr "הגדילו"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטינו"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "View run"
+msgstr "הצגת הריצה"
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "Run on {host}'s machine"
+msgstr "הריצה במחשב של {host}"
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "It answered without using any tool."
+msgstr "התשובה ניתנה בלי להשתמש בכלים."
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "and {more} more"
+msgstr "ועוד {more}"
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "Files changed"
+msgstr "קבצים ששונו"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Your answer · not sent to {guest} yet"
+msgstr "התשובה שלך · עדיין לא נשלחה אל {guest}"
