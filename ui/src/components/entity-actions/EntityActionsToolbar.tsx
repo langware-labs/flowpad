@@ -70,11 +70,9 @@ export function EntityActionsToolbar({
   // unpublished Project gets the publish popup BEFORE the share dialog.
   const isProject = typeId.type === Project.type;
   const { data: project } = useEntity<Project>(isProject ? typeId : null);
-  // Asked once: the hub has nothing to publish first, and no Context button.
-  const onHub = isHubOnly();
   const openShare = () => {
     // On the hub every project IS its hub row — there is nothing to publish first.
-    if (isProject && project && project.remote !== true && !onHub) {
+    if (isProject && project && project.remote !== true && !isHubOnly()) {
       setPublishOpen(true);
       return;
     }
@@ -106,8 +104,7 @@ export function EntityActionsToolbar({
     <div className={cn('flex items-center gap-0.5', className)}>
       {leading}
       <CloudAssetPublishButton typeId={typeId} variant={variant} />
-      {/* Desktop only (exception, 2026-11-13): whether the hub keeps context relationships is not yet settled. */}
-      {showContext && !onHub && <ContextMenuButton typeId={typeId} title={favoriteTitle} />}
+      {showContext && <ContextMenuButton typeId={typeId} title={favoriteTitle} />}
       <ShareButton
         variant={variant}
         onClick={openShare}

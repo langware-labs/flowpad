@@ -7,28 +7,38 @@ input, no tool output, no file content, no path outside the folder the run ran i
 The transcript itself stays on the host.
 """
 
+from functools import cache
 from pathlib import PurePath
 from typing import Any, ClassVar, Optional
 
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.transcript_analyzer.entry import EntryKind
 
 PROMPT_RUN_SUMMARY_TYPE = "prompt_run_summary"
 #: A header value, not a body: a long run is cut here and ``more`` says how much was left out.
 MAX_STEPS = 100
 
-_FILE_KINDS = frozenset({EntryKind.FILE_WRITE, EntryKind.FILE_EDIT, EntryKind.FILE_READ})
-_CHANGING_KINDS = frozenset({EntryKind.FILE_WRITE, EntryKind.FILE_EDIT})
-#: The steps of a run. A tool's result is the same step; a todo update is bookkeeping.
-_STEP_KINDS = _FILE_KINDS | {
-    EntryKind.TOOL_USE,
-    EntryKind.SHELL_COMMAND,
-    EntryKind.FLOW_COMMAND,
-    EntryKind.SKILL_CALL,
-    EntryKind.SEARCH,
-    EntryKind.WEB_FETCH,
-    EntryKind.AGENT_SPAWN,
-}
+
+
+@cache
+def _kinds() -> tuple[Any, frozenset, frozenset, frozenset]:
+    """``(EntryKind, file kinds, changing kinds, step kinds)``. Read on first use: this module
+    is a registered kind, loaded wherever the schema registry is (the scan child included),
+    and the transcript package is not."""
+    from flow_sdk.transcript_analyzer.entry import EntryKind  # noqa: PLC0415
+
+    file_kinds = frozenset({EntryKind.FILE_WRITE, EntryKind.FILE_EDIT, EntryKind.FILE_READ})
+    changing_kinds = frozenset({EntryKind.FILE_WRITE, EntryKind.FILE_EDIT})
+    # The steps of a run. A tool's result is the same step; a todo update is bookkeeping.
+    step_kinds = file_kinds | {
+        EntryKind.TOOL_USE,
+        EntryKind.SHELL_COMMAND,
+        EntryKind.FLOW_COMMAND,
+        EntryKind.SKILL_CALL,
+        EntryKind.SEARCH,
+        EntryKind.WEB_FETCH,
+        EntryKind.AGENT_SPAWN,
+    }
+    return EntryKind, file_kinds, changing_kinds, step_kinds
 
 
 class PromptRunStep(DataSpec):
@@ -62,6 +72,7 @@ def _shown_path(path: str, root: Optional[str]) -> str:
 def summarize_last_turn(entries: Any, *, root: Optional[str]) -> PromptRunSummary:
     """The summary of the LAST turn, from typed transcript entries — the same backwards
     walk as the reply capture: it stops at the prompt that opened the turn."""
+    EntryKind, _FILE_KINDS, _CHANGING_KINDS, _STEP_KINDS = _kinds()
     steps: list[PromptRunStep] = []
     files: list[str] = []
     seen: set[str] = set()

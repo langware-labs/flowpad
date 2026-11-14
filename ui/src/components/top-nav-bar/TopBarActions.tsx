@@ -1,7 +1,6 @@
 import { useLingui } from '@lingui/react/macro';
 import type { TypeId } from '@sdk';
 import { ContextMenuButton } from '@src/components/entity-actions/ContextMenuButton';
-import { isHubOnly } from '@src/navigation/hub-runtime';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
 import { chromeActionClusterClassName } from '@src/components/entity-actions/action-button-styles';
@@ -72,7 +71,7 @@ export function TopBarActions({
   return (
     <div className={`flex shrink-0 items-center gap-0.5 ${chromeActionClusterClassName}`} data-testid="top-nav-actions">
       <RecordScreenButton />
-      {transcript && !isHubOnly() && <ContextMenuButton typeId={transcript} title={targetTitle} />}
+      {transcript && <ContextMenuButton typeId={transcript} title={targetTitle} />}
       <PageShareButton dock={dock} />
       {favorite && <BookmarksStarButton favorite={favorite} />}
     </div>

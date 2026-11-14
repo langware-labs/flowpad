@@ -27,7 +27,12 @@ const DIRECTION_ICON: Record<ContextRelation['direction'], LucideIcon> = {
  * Read on open through the entity's `context-relations` action; a row only
  * navigates. Nothing here writes context.
  */
-export function ContextMenuButton({ typeId, title }: { typeId: TypeId; title?: string }) {
+export function ContextMenuButton(props: { typeId: TypeId; title?: string }) {
+  // Not on the hub (exception, 2026-11-13): whether the hub keeps context relationships is not yet settled.
+  return dataContext.caps.localFiles ? <ContextMenuPopover {...props} /> : null;
+}
+
+function ContextMenuPopover({ typeId, title }: { typeId: TypeId; title?: string }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const isDev = useIsDev();

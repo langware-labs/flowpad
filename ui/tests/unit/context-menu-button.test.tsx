@@ -6,7 +6,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  hub: false,
   openDock: vi.fn(),
   rows: [
     { direction: 'in', typeid: 'conversation-22222222-2222-4222-8222-222222222222', type: 'conversation', name: 'Spring launch', kind: 'shared', role: 'session', time: '2026-11-13T10:00:00Z' },
@@ -14,7 +13,7 @@ const h = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => h.hub }));
+vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => false }));
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: { openDock: h.openDock } }) }));
 vi.mock('@src/components/view-mode', () => ({ useIsDev: () => false }));
 vi.mock('@src/hooks/entity-hooks', () => ({ useEntity: () => ({ data: null }) }));
@@ -29,7 +28,7 @@ vi.mock('@src/components/entity-actions/CloudAssetPublishButton', () => ({ Cloud
 vi.mock('@src/components/share-to-conversation/ShareToConversationDialog', () => ({ ShareToConversationDialog: () => null }));
 vi.mock('@src/components/project-home/PublishProjectDialog', () => ({ PublishProjectDialog: () => null }));
 
-import { TypeId, dataManager } from '@sdk';
+import { TypeId, dataContext, dataManager } from '@sdk';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
@@ -48,7 +47,7 @@ afterEach(() => {
 
 describe('Context button', () => {
   it('lists both directions and a row opens its entity', async () => {
-    h.hub = false;
+    vi.spyOn(dataContext, 'caps', 'get').mockReturnValue({ localFiles: true } as never);
     vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue({ getContextRelations: () => Promise.resolve(h.rows) } as never);
     render(toolbar);
 
@@ -70,7 +69,7 @@ describe('Context button', () => {
   });
 
   it('is not drawn on the hub', () => {
-    h.hub = true;
+    vi.spyOn(dataContext, 'caps', 'get').mockReturnValue({ localFiles: false } as never);
     render(toolbar);
     expect(screen.queryByTestId('entity-actions-context')).toBeNull();
   });
