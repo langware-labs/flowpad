@@ -673,6 +673,11 @@ msgstr "{0} משוערות · {1} ללא תמחור"
 msgid "{0} failed"
 msgstr "{0} נכשל"
 
+#. placeholder {0}: entries.length
+#: src/components/account/network-errors.tsx
+msgid "{0} failed cloud requests since Flowpad started"
+msgstr ""
+
 #. placeholder {0}: chain.data.paths.length
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "{0} fallback paths"
@@ -6727,6 +6732,7 @@ msgstr "תקופת ניקוי (ימים)"
 msgid "clear"
 msgstr "ניקוי"
 
+#: src/components/account/network-errors.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/assets/editor/changes/useDocChanges.tsx
@@ -16728,6 +16734,7 @@ msgstr "הרצה מקסימלית"
 msgid "last"
 msgstr "אחרונה"
 
+#: src/components/account/network-errors.tsx
 #: src/notifications/error-detail.ts
 msgid "Last"
 msgstr ""
@@ -19139,6 +19146,10 @@ msgstr "נטו"
 msgid "Network ({networkCount})"
 msgstr "רשת ({networkCount})"
 
+#: src/components/account/network-errors.tsx
+msgid "Network errors"
+msgstr ""
+
 #: src/components/automations/BusView.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/pages/discover-page/DiscoverRow.tsx
@@ -19988,6 +19999,10 @@ msgstr "לא נתפסו אירועים"
 msgid "No events yet"
 msgstr "אין אירועים עדיין"
 
+#: src/components/account/network-errors.tsx
+msgid "No failed cloud requests since Flowpad started"
+msgstr ""
+
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "No feed items"
 msgstr "אין פריטים בהזנה"
@@ -20600,6 +20615,10 @@ msgstr "לא נמצאו משאבים בפרויקט זה"
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "No resources match those filters"
 msgstr "אין משאבים התואמים לסינונים אלו"
+
+#: src/components/account/network-errors.tsx
+msgid "No response"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "No restart needed"
@@ -25565,6 +25584,7 @@ msgstr ""
 msgid "Refill the LLM budget of {0} machines?"
 msgstr ""
 
+#: src/components/account/network-errors.tsx
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/code-editor/AssetCompareView.tsx
@@ -26276,6 +26296,7 @@ msgstr "שם המאגר"
 msgid "Repository URL"
 msgstr "כתובת המאגר"
 
+#: src/components/account/network-errors.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/notifications/error-detail.ts
 msgid "Request"
@@ -26951,6 +26972,11 @@ msgstr "קוד הכלל נשמר"
 #: src/components/automations/MessageRulePage.tsx
 msgid "Rule created"
 msgstr "הכלל נוצר"
+
+#. placeholder {0}: group.rule
+#: src/components/account/network-errors.tsx
+msgid "Rule: {0}"
+msgstr ""
 
 #: src/components/asset-counters/channel-project-counters.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
@@ -29639,6 +29665,10 @@ msgstr "מוצג עקב ההרצה הגולמי — הריצו ניתוח כדי
 msgid "Showing: {0}"
 msgstr "מוצג: {0}"
 
+#: src/components/account/network-errors.tsx
+msgid "Shown"
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "Shown at approval"
 msgstr "מוצג בשלב האישור"
@@ -29938,6 +29968,10 @@ msgstr "חותם כל הודעה. נשמר לכתיבה בלבד."
 
 #: src/pages/hub-project/HubProjectGitView.tsx
 msgid "Signs in with your Flowpad account — no password, no token in the URL."
+msgstr ""
+
+#: src/components/account/network-errors.tsx
+msgid "Silent"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -30720,6 +30754,7 @@ msgstr "מצב"
 msgid "status"
 msgstr "סטטוס"
 
+#: src/components/account/network-errors.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
@@ -33508,6 +33543,7 @@ msgstr "Timeout (שניות)"
 msgid "Timeout for Anthropic API calls in ms"
 msgstr "פסק זמן לקריאות ה-API של Anthropic במילישניות"
 
+#: src/components/account/network-errors.tsx
 #: src/notifications/error-detail.ts
 msgid "Times"
 msgstr ""
@@ -35269,6 +35305,7 @@ msgstr "בקשה להריץ במחשב שלך"
 msgid "wants to run prompts on your machine"
 msgstr "רוצה להריץ פרומפטים במחשב שלכם"
 
+#: src/components/account/network-errors.tsx
 #: src/components/conversation/IssueReplyLine.tsx
 msgid "Warning"
 msgstr ""

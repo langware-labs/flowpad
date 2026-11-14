@@ -673,6 +673,11 @@ msgstr "{0} تقديرية · {1} بلا تسعير"
 msgid "{0} failed"
 msgstr "فشل {0}"
 
+#. placeholder {0}: entries.length
+#: src/components/account/network-errors.tsx
+msgid "{0} failed cloud requests since Flowpad started"
+msgstr ""
+
 #. placeholder {0}: chain.data.paths.length
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "{0} fallback paths"
@@ -6727,6 +6732,7 @@ msgstr "فترة التنظيف (أيام)"
 msgid "clear"
 msgstr "مسح"
 
+#: src/components/account/network-errors.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/assets/editor/changes/useDocChanges.tsx
@@ -16728,6 +16734,7 @@ msgstr "أكبر تشغيل"
 msgid "last"
 msgstr "آخر"
 
+#: src/components/account/network-errors.tsx
 #: src/notifications/error-detail.ts
 msgid "Last"
 msgstr ""
@@ -19139,6 +19146,10 @@ msgstr "الصافي"
 msgid "Network ({networkCount})"
 msgstr "الشبكة ({networkCount})"
 
+#: src/components/account/network-errors.tsx
+msgid "Network errors"
+msgstr ""
+
 #: src/components/automations/BusView.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/pages/discover-page/DiscoverRow.tsx
@@ -19988,6 +19999,10 @@ msgstr "لا توجد أحداث مسجلة"
 msgid "No events yet"
 msgstr "لا توجد أحداث حتى الآن"
 
+#: src/components/account/network-errors.tsx
+msgid "No failed cloud requests since Flowpad started"
+msgstr ""
+
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "No feed items"
 msgstr "لا توجد عناصر في الخلاصة"
@@ -20600,6 +20615,10 @@ msgstr "لا توجد موارد في هذا المشروع"
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "No resources match those filters"
 msgstr "لا توجد موارد تطابق هذه المرشحات"
+
+#: src/components/account/network-errors.tsx
+msgid "No response"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "No restart needed"
@@ -25565,6 +25584,7 @@ msgstr ""
 msgid "Refill the LLM budget of {0} machines?"
 msgstr ""
 
+#: src/components/account/network-errors.tsx
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/code-editor/AssetCompareView.tsx
@@ -26276,6 +26296,7 @@ msgstr "اسم المستودع"
 msgid "Repository URL"
 msgstr "عنوان المستودع"
 
+#: src/components/account/network-errors.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/notifications/error-detail.ts
 msgid "Request"
@@ -26951,6 +26972,11 @@ msgstr "تم حفظ كود القاعدة"
 #: src/components/automations/MessageRulePage.tsx
 msgid "Rule created"
 msgstr "تم إنشاء القاعدة"
+
+#. placeholder {0}: group.rule
+#: src/components/account/network-errors.tsx
+msgid "Rule: {0}"
+msgstr ""
 
 #: src/components/asset-counters/channel-project-counters.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
@@ -29639,6 +29665,10 @@ msgstr "يتم عرض أثر التنفيذ الخام — شغّل التحلي
 msgid "Showing: {0}"
 msgstr "المعروض: {0}"
 
+#: src/components/account/network-errors.tsx
+msgid "Shown"
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "Shown at approval"
 msgstr "تظهر عند الموافقة"
@@ -29938,6 +29968,10 @@ msgstr "يوقّع كل رسالة. يُحفظ للكتابة فقط."
 
 #: src/pages/hub-project/HubProjectGitView.tsx
 msgid "Signs in with your Flowpad account — no password, no token in the URL."
+msgstr ""
+
+#: src/components/account/network-errors.tsx
+msgid "Silent"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -30720,6 +30754,7 @@ msgstr "الحالة"
 msgid "status"
 msgstr "الحالة"
 
+#: src/components/account/network-errors.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
@@ -33508,6 +33543,7 @@ msgstr "المهلة (بالثواني)"
 msgid "Timeout for Anthropic API calls in ms"
 msgstr "المهلة الزمنية لاستدعاءات Anthropic API بالميلي ثانية"
 
+#: src/components/account/network-errors.tsx
 #: src/notifications/error-detail.ts
 msgid "Times"
 msgstr ""
@@ -35269,6 +35305,7 @@ msgstr "يطلب التشغيل على جهازك"
 msgid "wants to run prompts on your machine"
 msgstr "يريد تشغيل موجّهات على جهازكم"
 
+#: src/components/account/network-errors.tsx
 #: src/components/conversation/IssueReplyLine.tsx
 msgid "Warning"
 msgstr ""
