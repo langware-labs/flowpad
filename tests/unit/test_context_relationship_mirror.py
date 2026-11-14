@@ -11,8 +11,10 @@ import uuid
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.graph_context import GraphContext
+from flow_sdk.builtin.task import Task
 from flow_sdk.db.drivers.db_base_record import TypeId
 from flow_sdk.db.drivers.query import QueryFilter
+from flow_sdk.db.drivers.sqlite.context_mirror import context_entries
 from flow_sdk.db.relationship_model import ContextRelationship
 from tests.pytest_plugin import async_context
 
@@ -76,9 +78,6 @@ async def test_the_target_lists_its_session_and_a_non_entity_target_gets_no_row(
 
 def test_a_field_of_bare_ids_names_the_type_it_points_at():
     """A task's origin fields hold bare ids; declared with their type, they are context like any other."""
-    from flow_sdk.builtin.task import Task
-    from flow_sdk.db.drivers.sqlite.context_mirror import context_entries
-
     conv, message = str(uuid.uuid4()), str(uuid.uuid4())
     entries = context_entries({"origin_conversation": conv, "origin_message": message}, Task.context_fields)
     assert entries == {("conversation", conv, "origin"): "", ("flow_message", message, "origin"): ""}
@@ -118,21 +117,23 @@ async def test_backfill_writes_only_missing_rows_and_runs_once():
         await s.execute(text("DELETE FROM relationships WHERE type='context' AND to_id=:id"), {"id": str(lost.id)})
         db = (await s.execute(text("PRAGMA database_list"))).fetchall()[0][2]
 
+    marker = Path(db).parent / backfill.MARKER
     try:
         assert (await backfill.lift(dry_run=True, db_path=db)).moved
         first = await backfill.lift(dry_run=False, db_path=db)
         assert first.moved and not first.failed
         assert (await backfill.lift(dry_run=False, db_path=db)).moved == []  # the marker: no second scan
-        # A context field declared later reopens the pass: rows it is missing get written.
-        async with session() as s:
-            await s.execute(text("DELETE FROM relationships WHERE type='context' AND to_id=:id"), {"id": str(kept.id)})
-        (Path(db).parent / backfill.MARKER).write_text("an older set of declarations\n")
-        assert (await backfill.lift(dry_run=False, db_path=db)).moved
+        # A context field declared since the last pass reopens it; one dropped since does not.
+        marker.write_text("shared_context_entities")
+        assert (await backfill.lift(dry_run=False, db_path=db)).moved == []  # scanned, nothing missing
+        assert "private_context_entities_" in marker.read_text()
+        marker.write_text(marker.read_text() + ",task.retired_field=origin")
+        assert (await backfill.lift(dry_run=True, db_path=db)).moved == []
     finally:
-        (Path(db).parent / backfill.MARKER).unlink(missing_ok=True)
+        marker.unlink(missing_ok=True)
 
     rows = await _out(conv)
-    assert {key: row.backfilled for key, row in rows.items()} == {(str(kept), "shared"): True, (str(lost), "shared"): True}
+    assert {key: row.backfilled for key, row in rows.items()} == {(str(kept), "shared"): False, (str(lost), "shared"): True}
     assert rows[(str(lost), "shared")].created_date is not None
 
 

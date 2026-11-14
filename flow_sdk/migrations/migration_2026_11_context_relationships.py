@@ -19,7 +19,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.db.drivers.sqlite.context_mirror import CONTEXT_TYPE, context_entries
+from flow_sdk.db.drivers.sqlite.context_mirror import (
+    CONTEXT_LISTS,
+    CONTEXT_TYPE,
+    context_entries,
+    declared_context_fields,
+)
 
 MARKER = "context_relationships.backfilled"
 
@@ -40,7 +45,7 @@ class Report:
 def _declared(entity_type: str) -> dict[str, str]:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    return getattr(SchemaRegistry.get_entity_cls(entity_type), "context_fields", None) or {}
+    return dict(declared_context_fields(SchemaRegistry.get_entity_cls(entity_type)))
 
 
 def _backfill(path: Path, report: Report) -> None:
@@ -93,18 +98,17 @@ def _backfill(path: Path, report: Report) -> None:
         conn.close()
 
 
-def _declarations() -> str:
-    """Everything that counts as context today, as one line: the marker records it, so a field
-    declared later (a new ``context_fields`` entry) makes the pass run again for it."""
-    from flow_sdk.db.drivers.sqlite.context_mirror import CONTEXT_LISTS  # noqa: PLC0415
+def _declarations() -> set[str]:
+    """Everything that counts as context today. The marker records it, so a field declared
+    later (a new ``context_fields`` entry) makes the pass run again for it."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     declared = {
         f"{cls.get_type()}.{field}={kind}"
         for cls in SchemaRegistry.get_all_entity_classes()
-        for field, kind in (getattr(cls, "context_fields", None) or {}).items()
+        for field, kind in declared_context_fields(cls).items()
     }
-    return ",".join([*CONTEXT_LISTS, *sorted(declared)])
+    return {*CONTEXT_LISTS, *declared}
 
 
 async def lift(*, dry_run: bool = True, db_path: str | None = None) -> Report:
@@ -114,9 +118,10 @@ async def lift(*, dry_run: bool = True, db_path: str | None = None) -> Report:
     marker = path.parent / MARKER
     report = Report(dry_run=dry_run)
     declarations = _declarations()
-    if marker.exists() and marker.read_text().strip() == declarations:
+    mirrored = set(marker.read_text().split(",")) if marker.exists() else set()
+    if declarations <= mirrored:  # nothing declared since the last pass: a dropped declaration needs no scan
         return report
     await asyncio.to_thread(_backfill, path, report)  # a full scan: off the event loop
     if not dry_run:
-        marker.write_text(declarations + "\n")
+        marker.write_text(",".join(sorted(declarations | mirrored)))
     return report

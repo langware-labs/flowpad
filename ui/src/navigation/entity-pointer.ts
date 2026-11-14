@@ -9,11 +9,14 @@ import {
   TypeId,
   ViewType,
   WorldViewProjection,
+  dataManager,
   workerFromSessionType,
+  type AnyEntity,
 } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { folderDockPointer } from '@src/navigation/folder-pointer';
 import { llmEndpointsPointer } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import type { SessionWorker } from '@src/hooks/use-transcript';
 import { withHomePage } from '@src/project-home-page/home-page-state';
@@ -83,7 +86,7 @@ export function buildDockPointer(
     case 'folder': {
       // A folder has no page of its own: it opens in the files browser, which needs its path from the row.
       const path = (resolved as { path?: string | null }).path;
-      return path ? DockPointer.forAssetFsFolder(path) : null;
+      return path ? folderDockPointer(path) : null;
     }
     case 'flow_message': {
       // A message opens in its conversation, scrolled to it.
@@ -133,4 +136,16 @@ export function buildDockPointer(
       }
     }
   }
+}
+
+/**
+ * {@link buildDockPointer} for a caller that holds only a TypeId. A few types have no page of
+ * their own and open through their row (a message in its conversation, a folder in the files
+ * browser): for those the bare reference resolves to nothing, and the row is fetched to ask again.
+ */
+export async function dockPointerForTypeId(typeId: TypeId): Promise<DockPointer | null> {
+  const bare = buildDockPointer({ type: typeId.type, id: typeId.id }, undefined);
+  if (bare) return bare;
+  const entity = await dataManager.getByTypeId<AnyEntity>(typeId).catch(() => null);
+  return entity ? buildDockPointer({ ...entity, type: typeId.type, id: typeId.id }, undefined) : null;
 }

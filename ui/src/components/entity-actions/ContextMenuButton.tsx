@@ -9,7 +9,7 @@ import { iconForType, labelForType } from '@src/components/graph-view/icons/icon
 import { useIsDev } from '@src/components/view-mode';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { buildDockPointer } from '@src/navigation/entity-pointer';
+import { dockPointerForTypeId } from '@src/navigation/entity-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { formatMoment, formatTimeAgo } from '@src/utils/format-time-ago';
@@ -52,16 +52,8 @@ export function ContextMenuButton({ typeId, title }: { typeId: TypeId; title?: s
   };
 
   const openRow = async (row: ContextRelation) => {
-    const peer = new TypeId(row.typeid);
     setOpen(false);
-    // Navigation owns where an entity opens. A few types have no page of their own and open through
-    // their row (a message in its conversation, a folder in the files browser): those get the row.
-    const bare = { type: peer.type, id: peer.id };
-    let pointer = buildDockPointer(bare, undefined);
-    if (!pointer) {
-      const entity = await dataManager.getByTypeId<AnyEntity>(peer).catch(() => null);
-      if (entity) pointer = buildDockPointer({ ...entity, ...bare }, undefined);
-    }
+    const pointer = await dockPointerForTypeId(new TypeId(row.typeid));
     if (pointer) navigation.openDock(pointer);
   };
 

@@ -32,6 +32,18 @@ CONTEXT_LISTS: dict[str, tuple[str, str]] = {
 Entries = dict[tuple[str, str, str], str]  # (to_type, to_id, kind) -> role
 
 
+def declared_context_fields(cls: type | None) -> Mapping[str, str]:
+    """The context fields an entity class declares (``Entity.context_fields``), ``{}`` for none."""
+    return getattr(cls, "context_fields", None) or {}
+
+
+def _is_entity(tid: TypeId) -> bool:
+    """True when a reference has an entity's shape: a type name and a uuid. By shape, never by
+    asking the registry — which classes are registered depends on what this process has imported,
+    and a save in a lean process must not drop (and so delete) rows a full one wrote."""
+    return is_valid_uuid(str(tid.id)) and tid.type.replace("_", "").isalnum()
+
+
 def _typeid_of(ref: object, *, entity_only: bool = False) -> TypeId | None:
     """A stored reference as a TypeId: the object, its ``type-id`` string or its dict form.
 
@@ -46,12 +58,7 @@ def _typeid_of(ref: object, *, entity_only: bool = False) -> TypeId | None:
         tid = TypeId(ref)
     else:
         return None
-    if entity_only:
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-        if not is_valid_uuid(str(tid.id)) or SchemaRegistry.get_entity_cls(tid.type) is None:
-            return None
-    return tid
+    return tid if not entity_only or _is_entity(tid) else None
 
 
 def _holds_no_context(raw: str, declared: Mapping[str, str]) -> bool:
@@ -103,7 +110,7 @@ async def sync_context_rows(session, entity, stored: str | None, new_data: Mappi
 
     Writes ``RelationshipSchema`` rows directly, not through the relationship API: they must share
     the save's own transaction. Nothing caches these rows, so no cache is invalidated here."""
-    declared = getattr(type(entity), "context_fields", None) or {}
+    declared = declared_context_fields(type(entity))
     wanted = context_entries(new_data, declared)
     if wanted == context_entries(stored, declared):
         return
