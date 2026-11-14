@@ -670,7 +670,8 @@ class Entity(DBEntity):
     # context lists every entity has. The driver's save mirrors each one that names
     # an entity as a ``context`` relationship row (``sqlite/context_mirror.py``), so
     # the entity it points at can list it. A process declares its ``target``; a field
-    # holding a list of references declares each of them.
+    # holding a list of references declares each of them. A field holding a bare id
+    # names the type it points at: ``{"origin_message": "origin:flow_message"}``.
     context_fields: ClassVar[dict[str, str]] = {}
 
     # Optional per-instance FS storage configuration

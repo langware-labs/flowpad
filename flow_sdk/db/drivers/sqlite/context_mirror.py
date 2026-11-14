@@ -83,10 +83,15 @@ def context_entries(data: Mapping | str | None, declared: Mapping[str, str]) -> 
                 entry = roles.get(str(tid)) if isinstance(roles, Mapping) else None
                 role = entry.get("role") if isinstance(entry, Mapping) else None
                 out[(tid.type, str(tid.id), kind)] = str(role or "")
-    for field, kind in declared.items():
+    for field, declaration in declared.items():
+        # ``kind`` for a field holding ``<type>-<id>`` references; ``kind:<type>`` for one holding bare ids.
+        kind, _, id_type = declaration.partition(":")
         value = data.get(field)
         for ref in value if isinstance(value, list) else [value]:
-            tid = _typeid_of(ref, entity_only=True)
+            if id_type and isinstance(ref, str) and is_valid_uuid(ref):
+                tid = TypeId(type=id_type, id=ref)
+            else:
+                tid = _typeid_of(ref, entity_only=True)
             if tid is not None:
                 out[(tid.type, str(tid.id), kind)] = ""
     return out

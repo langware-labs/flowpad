@@ -1,12 +1,15 @@
 import { useLingui } from '@lingui/react/macro';
-import type { TypeId } from '@sdk';
+import { ClaudeSession, TypeId } from '@sdk';
+import { ContextMenuButton } from '@src/components/entity-actions/ContextMenuButton';
+import { isHubOnly } from '@src/navigation/hub-runtime';
+import { ViewType } from '@src/types/ViewType';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
 import { chromeActionClusterClassName } from '@src/components/entity-actions/action-button-styles';
 import { BookmarksStarButton } from './BookmarksStarButton';
 import { PageShareButton } from './PageShareButton';
 import { RecordScreenButton } from './RecordScreenButton';
-import type { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer } from '@src/navigation/DockPointer';
 
 /**
  * Record / bookmark / share / pop-out for whatever the bar is currently addressing.
@@ -65,11 +68,34 @@ export function TopBarActions({
   // no subject, except a standalone page (shared as the artifact that names it,
   // minted on click); pop-out gates itself.
   if (!dock) return null;
+  const transcript = transcriptSessionOf(dock);
   return (
     <div className={`flex shrink-0 items-center gap-0.5 ${chromeActionClusterClassName}`} data-testid="top-nav-actions">
       <RecordScreenButton />
+      {transcript && !isHubOnly() && <ContextMenuButton typeId={transcript} title={targetTitle} />}
       <PageShareButton dock={dock} />
       {favorite && <BookmarksStarButton favorite={favorite} />}
     </div>
   );
+}
+
+const SESSION_FILE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
+
+/**
+ * The session a transcript page shows when it is addressed by FILE (a received transcript) and so
+ * has no entity target of its own: a transcript file is named by its session's id. The page keeps
+ * its path address — only the Context button learns which session it is.
+ */
+function transcriptSessionOf(dock: DockPointer | null): TypeId | null {
+  if (dock?.viewType !== ViewType.LENS || !dock.pointer) return null;
+  const lens = DockPointer.parseLensPointer(dock.pointer);
+  if (lens?.category !== 'claude' || lens.type !== 'transcript') return null;
+  let ref = lens.ref;
+  try {
+    ref = decodeURIComponent(ref);
+  } catch {
+    // not an encoded path — match it as it is
+  }
+  const id = SESSION_FILE.exec(ref)?.[1];
+  return id ? new TypeId(ClaudeSession.type, id) : null;
 }

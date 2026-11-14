@@ -74,6 +74,17 @@ async def test_the_target_lists_its_session_and_a_non_entity_target_gets_no_row(
     assert await _out(keyed) == {}
 
 
+def test_a_field_of_bare_ids_names_the_type_it_points_at():
+    """A task's origin fields hold bare ids; declared with their type, they are context like any other."""
+    from flow_sdk.builtin.task import Task
+    from flow_sdk.db.drivers.sqlite.context_mirror import context_entries
+
+    conv, message = str(uuid.uuid4()), str(uuid.uuid4())
+    entries = context_entries({"origin_conversation": conv, "origin_message": message}, Task.context_fields)
+    assert entries == {("conversation", conv, "origin"): "", ("flow_message", message, "origin"): ""}
+    assert context_entries({"origin_conversation": "not-an-id"}, Task.context_fields) == {}
+
+
 @async_context
 async def test_detaching_a_child_keeps_the_context_row_and_delete_drops_it():
     conv = await Conversation(title="c").save()
