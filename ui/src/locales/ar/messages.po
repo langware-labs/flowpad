@@ -4084,6 +4084,10 @@ msgstr "نطاق المرسى"
 msgid "Anchor time range"
 msgstr "نطاق وقت التثبيت"
 
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "and {more} more"
+msgstr "و{more} أخرى"
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Annotate image"
 msgstr "تعليق الصورة"
@@ -4171,6 +4175,7 @@ msgstr "يجري تحديث آخر حاليًا."
 msgid "Another update is in progress. Try again when it is done."
 msgstr "يجري تحديث آخر حاليًا. حاول مرة أخرى عند انتهائه."
 
+#: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/notifications/error-detail.ts
 msgid "Answer"
 msgstr ""
@@ -10160,6 +10165,7 @@ msgid "Declared on the agent's card. Not yet applied to the worker."
 msgstr "معلن على بطاقة الوكيل. لم يُطبَّق على العامل بعد."
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 #: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/PromptCallCard.tsx
@@ -13457,6 +13463,10 @@ msgstr "الملفات"
 msgid "Files & Directories"
 msgstr "الملفات والمجلدات"
 
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "Files changed"
+msgstr "الملفات التي تغيّرت"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
 msgstr "ملفات موجودة على القرص ولم تُضف بعد إلى قاعدة البيانات"
@@ -16242,6 +16252,10 @@ msgstr "عمليات نشر IT · {name} (جهاز واحد)"
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
 msgid "It also changes:"
 msgstr "ما يتغيّر أيضًا:"
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "It answered without using any tool."
+msgstr "أُجيب عنه دون استخدام أي أداة."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
@@ -24630,6 +24644,7 @@ msgstr "موجّه"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/conversation/AttachMenu.tsx
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -26951,6 +26966,7 @@ msgstr "القواعد"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/code-block-run-button.tsx
 #: src/components/code-editor/SnippetView.tsx
+#: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -27109,6 +27125,10 @@ msgstr ""
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Run now"
 msgstr "تشغيل الآن"
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "Run on {host}'s machine"
+msgstr "التشغيل على جهاز {host}"
 
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
@@ -30777,6 +30797,7 @@ msgstr "الخطوة {0} من {1}"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
+#: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Steps"
 msgstr "الخطوات"
@@ -35038,6 +35059,10 @@ msgstr "عرض على PyPI"
 msgid "View Plan"
 msgstr "عرض الخطة"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "View run"
+msgstr "عرض التشغيل"
+
 #: src/notifications/ingest.ts
 msgid "View Session"
 msgstr "عرض الجلسة"
@@ -36316,6 +36341,10 @@ msgstr "وكيلكم يعمل الآن"
 msgid "Your answer"
 msgstr "إجابتك"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Your answer · not sent to {guest} yet"
+msgstr "إجابتك · لم تُرسل إلى {guest} بعد"
+
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Your API key for authenticating API requests to FlowPad"
 msgstr "مفتاح API الخاص بكم لمصادقة طلبات API الموجهة إلى FlowPad"
@@ -36494,27 +36523,3 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
-
-#: src/components/conversation/SessionCard.tsx
-msgid "View run"
-msgstr "عرض التشغيل"
-
-#: src/components/conversation/PromptRunSummaryDialog.tsx
-msgid "Run on {host}'s machine"
-msgstr "التشغيل على جهاز {host}"
-
-#: src/components/conversation/PromptRunSummaryDialog.tsx
-msgid "It answered without using any tool."
-msgstr "أُجيب عنه دون استخدام أي أداة."
-
-#: src/components/conversation/PromptRunSummaryDialog.tsx
-msgid "and {more} more"
-msgstr "و{more} أخرى"
-
-#: src/components/conversation/PromptRunSummaryDialog.tsx
-msgid "Files changed"
-msgstr "الملفات التي تغيّرت"
-
-#: src/components/conversation/SessionCard.tsx
-msgid "Your answer · not sent to {guest} yet"
-msgstr "إجابتك · لم تُرسل إلى {guest} بعد"
