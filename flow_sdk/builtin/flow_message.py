@@ -435,7 +435,8 @@ def derive_help_request_kind(fm: "FlowMessage") -> None:
 def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
     """Carry an IT message's ``metadata.it`` (hub-written) onto the message. Idempotent; absent leaves it as is.
 
-    A MACHINE's reply names its node and lands on ``it_reply``. The owner's request carries ``metadata.it`` too;
+    A MACHINE's reply names its node and lands on ``it_reply``; it arrives READ -- one send answers once per
+    machine, in a table, so it holds nothing unread. The owner's request carries ``metadata.it`` too;
     when it names its send (``send_id``) its ids land on ``it_request`` -- never the request body, which only the
     hub keeps for a rerun."""
     metadata = payload.get("metadata")
@@ -444,6 +445,7 @@ def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
         return
     if it.get("node_typeid"):
         fm.it_reply = dict(it)
+        fm.is_read = True
     elif it.get("send_id"):
         fm.it_request = {k: it.get(k) for k in ("agent_id", "op_id", "send_id")}
 

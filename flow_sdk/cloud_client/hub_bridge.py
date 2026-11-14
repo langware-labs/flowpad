@@ -773,12 +773,14 @@ class HubWsBridge:
                     # still fires the banner/badge/dock-bounce. Skipped for our
                     # own messages (self-sends the hub echoes back — same guard as
                     # the auto-ack below). Own try/except so a notify hiccup is
-                    # never mistaken for a persist failure.
+                    # never mistaken for a persist failure. A machine's IT reply is
+                    # skipped too: one send answers once per machine, in a table.
                     if (
                         local_user
                         and payload.get("sender_id")
                         and payload["sender_id"] != local_user.id
                         and not _is_session_traffic(payload)
+                        and not materialized.it_reply
                     ):
                         try:
                             from flow_sdk.notifications import notify_message_arrival
