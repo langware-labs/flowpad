@@ -112,11 +112,16 @@ async def test_backfill_writes_only_missing_rows_and_runs_once():
         first = await backfill.lift(dry_run=False, db_path=db)
         assert first.moved and not first.failed
         assert (await backfill.lift(dry_run=False, db_path=db)).moved == []  # the marker: no second scan
+        # A context field declared later reopens the pass: rows it is missing get written.
+        async with session() as s:
+            await s.execute(text("DELETE FROM relationships WHERE type='context' AND to_id=:id"), {"id": str(kept.id)})
+        (Path(db).parent / backfill.MARKER).write_text("an older set of declarations\n")
+        assert (await backfill.lift(dry_run=False, db_path=db)).moved
     finally:
         (Path(db).parent / backfill.MARKER).unlink(missing_ok=True)
 
     rows = await _out(conv)
-    assert {key: row.backfilled for key, row in rows.items()} == {(str(kept), "shared"): False, (str(lost), "shared"): True}
+    assert {key: row.backfilled for key, row in rows.items()} == {(str(kept), "shared"): True, (str(lost), "shared"): True}
     assert rows[(str(lost), "shared")].created_date is not None
 
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Network, type LucideIcon } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FlowMessage, GraphContext, TypeId, dataContext, dataManager, type AnyEntity } from '@sdk';
+import { GraphContext, TypeId, dataContext, dataManager, type AnyEntity } from '@sdk';
 import type { ContextRelation } from '@sdk/types/context-relation';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { compactEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
@@ -54,13 +54,14 @@ export function ContextMenuButton({ typeId, title }: { typeId: TypeId; title?: s
   const openRow = async (row: ContextRelation) => {
     const peer = new TypeId(row.typeid);
     setOpen(false);
-    // Navigation owns where an entity opens. A message needs its row for that (it opens in its conversation).
-    const message =
-      peer.type === FlowMessage.type ? await dataManager.getByTypeId<FlowMessage>(peer).catch(() => null) : null;
-    const pointer = buildDockPointer(
-      { type: peer.type, id: peer.id, ...(message ? { conversation_id: message.conversation_id } : {}) },
-      undefined,
-    );
+    // Navigation owns where an entity opens. A few types have no page of their own and open through
+    // their row (a message in its conversation, a folder in the files browser): those get the row.
+    const bare = { type: peer.type, id: peer.id };
+    let pointer = buildDockPointer(bare, undefined);
+    if (!pointer) {
+      const entity = await dataManager.getByTypeId<AnyEntity>(peer).catch(() => null);
+      if (entity) pointer = buildDockPointer({ ...entity, ...bare }, undefined);
+    }
     if (pointer) navigation.openDock(pointer);
   };
 

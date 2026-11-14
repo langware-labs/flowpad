@@ -80,6 +80,11 @@ export function buildDockPointer(
       const typeId = new TypeId(resolved.type, resolved.id);
       return DockPointer.forWorldView(WorldViewProjection.DEPLOYMENT, { focus: typeId, selected: typeId.toString() });
     }
+    case 'folder': {
+      // A folder has no page of its own: it opens in the files browser, which needs its path from the row.
+      const path = (resolved as { path?: string | null }).path;
+      return path ? DockPointer.forAssetFsFolder(path) : null;
+    }
     case 'flow_message': {
       // A message opens in its conversation, scrolled to it.
       const conversationId = (resolved as { conversation_id?: string | null }).conversation_id;

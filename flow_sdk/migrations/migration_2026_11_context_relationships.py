@@ -7,7 +7,8 @@ entity once and writes the rows its context is missing.
 
 No entry recorded when it was made, so a back-filled row's time is an estimate — the later of
 the two entities' creation, never after the holder's last update — and says so
-(``backfilled``). Runs once: a marker beside the database skips the scan on later boots.
+(``backfilled``). Runs once per set of context declarations: a marker beside the database records what was
+mirrored and skips the scan on later boots, until a type declares a new context field.
 """
 
 from __future__ import annotations
@@ -92,15 +93,30 @@ def _backfill(path: Path, report: Report) -> None:
         conn.close()
 
 
+def _declarations() -> str:
+    """Everything that counts as context today, as one line: the marker records it, so a field
+    declared later (a new ``context_fields`` entry) makes the pass run again for it."""
+    from flow_sdk.db.drivers.sqlite.context_mirror import CONTEXT_LISTS  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    declared = {
+        f"{cls.get_type()}.{field}={kind}"
+        for cls in SchemaRegistry.get_all_entity_classes()
+        for field, kind in (getattr(cls, "context_fields", None) or {}).items()
+    }
+    return ",".join([*CONTEXT_LISTS, *sorted(declared)])
+
+
 async def lift(*, dry_run: bool = True, db_path: str | None = None) -> Report:
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     path = Path(db_path or str(get_instance_settings().db_path))
     marker = path.parent / MARKER
     report = Report(dry_run=dry_run)
-    if marker.exists():
+    declarations = _declarations()
+    if marker.exists() and marker.read_text().strip() == declarations:
         return report
     await asyncio.to_thread(_backfill, path, report)  # a full scan: off the event loop
     if not dry_run:
-        marker.write_text("done\n")
+        marker.write_text(declarations + "\n")
     return report
