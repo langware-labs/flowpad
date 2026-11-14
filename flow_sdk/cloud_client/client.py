@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 import httpx
 from pydantic import BaseModel, Field
 
-from flow_sdk.cloud_client.client_hooks import HubAuthExpiredError, build_event_hooks, request_path
+from flow_sdk.cloud_client.client_hooks import QUIET_EXTENSION, HubAuthExpiredError, build_event_hooks, request_path
 from flow_sdk.cloud_client.error_reporter import hub_error_reporter
 from flow_sdk.config import API_PREFIX, FLOWPAD_CLOUD_URL, default_service_config
 
@@ -192,6 +192,7 @@ class FlowpadClient:
                 method=method.upper(),
                 path=self._request_path(e.request.url if e.request else path),
                 message=str(e),
+                quiet=bool((extensions or {}).get(QUIET_EXTENSION)),
             )
             raise
 
