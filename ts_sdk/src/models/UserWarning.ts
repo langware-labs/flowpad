@@ -174,15 +174,24 @@ export function createHubRequestFailedWarning(detail: {
   path: string;
   statusCode: number;
   message: string;
+  /** What the user can do about it. */
+  action?: string;
+  /** ms since epoch of the failure, so an old warning does not read as current. */
+  ts?: number;
   onDismiss?: () => void;
 }): UserWarning {
-  const { method, path, statusCode, message, onDismiss } = detail;
+  const { method, path, statusCode, message, action, ts, onDismiss } = detail;
+  const when = ts
+    ? `Last failed ${new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
+    : '';
   return {
     id: WARNING_IDS.HUB_REQUEST_FAILED,
     icon: 'CloudOff',
     color: 'orange',
     message: 'Cloud Request Failed',
-    description: `${method} ${path} ${statusCode}: ${message}`.trim(),
+    description: [`${method} ${path} ${statusCode}: ${message}`.trim(), when, action && `${action}.`]
+      .filter(Boolean)
+      .join(' '),
     targetView: ViewType.CREDENTIALS,
     targetPointer: CredentialsSubview.CONNECTIONS,
     onClick: onDismiss,

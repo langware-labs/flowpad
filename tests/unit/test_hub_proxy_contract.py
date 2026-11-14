@@ -118,7 +118,7 @@ async def test_a_transport_failure_is_offline_and_reported_as_status_0(hub, monk
     with pytest.raises(HubError) as e:
         await HubProxy.call("POST", "project", TASK_ID, "watch", payload={}, quiet=True)
     assert e.value.kind is HubFailureKind.OFFLINE
-    assert len(reports) == 1, "the quiet call added no report"
+    assert [r["quiet"] for r in reports] == [False, True], "the quiet call is recorded, not shown"
 
 
 async def test_download_streams_with_progress(hub):
@@ -232,7 +232,7 @@ async def test_a_quiet_call_still_raises_but_is_not_a_hub_warning(hub, monkeypat
     reported = []
 
     async def report(**kw):
-        reported.append(kw["path"])
+        reported.append(kw["quiet"])
 
     monkeypatch.setattr("flow_sdk.cloud_client.client_hooks.hub_error_reporter.report", report)
     gone = {"status": "FAIL", "message": "Missing request info(Target entity not found)"}
@@ -246,4 +246,6 @@ async def test_a_quiet_call_still_raises_but_is_not_a_hub_warning(hub, monkeypat
         if quiet:
             request.extensions[QUIET_EXTENSION] = True
         await _on_response(httpx.Response(403, json=gone, request=request))
-    assert reported == [f"/api/v1/graph/agent/{TASK_ID}/unwatch"], "only the call nobody expected to fail is shown"
+    assert reported[-2:] == [True, False] and reported.count(False) == 1, (
+        "only the call nobody expected to fail is shown; the quiet ones are recorded"
+    )

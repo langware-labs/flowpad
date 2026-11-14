@@ -235,8 +235,7 @@ class HubProxy:
         except Exception as e:  # noqa: BLE001 — any transport failure is "offline"
             logger.warning("[hub] %s %s transport error: %s", method, url, e)
             _note_reach(0)
-            if not quiet:  # a quiet call owns its failure; no "hub unreachable" warning for it
-                await _report_unreachable(method, url, e)
+            await _report_unreachable(method, url, e, quiet=quiet)
             raise HubError(0, str(e) or type(e).__name__) from e
         _note_reach(resp.status_code)
         return resp
@@ -706,14 +705,20 @@ async def _require_credential() -> None:
 _CHUNK = 256 * 1024
 
 
-async def _report_unreachable(method: str, url: Any, e: Exception) -> None:
-    """The status-0 report behind the UI's "hub unreachable" warning (as ``FlowpadClient.request`` did)."""
+async def _report_unreachable(method: str, url: Any, e: Exception, *, quiet: bool = False) -> None:
+    """The status-0 report behind the UI's "hub unreachable" warning (as ``FlowpadClient.request`` did).
+
+    A ``quiet`` call owns its failure: it is recorded, and raises no warning."""
     from flow_sdk.cloud_client.client_hooks import request_path  # noqa: PLC0415
     from flow_sdk.cloud_client.error_reporter import hub_error_reporter  # noqa: PLC0415
 
     try:
         await hub_error_reporter.report(
-            status_code=0, method=method.upper(), path=request_path(httpx.URL(str(url))), message=str(e)
+            status_code=0,
+            method=method.upper(),
+            path=request_path(httpx.URL(str(url))),
+            message=str(e) or type(e).__name__,
+            quiet=quiet,
         )
     except Exception:  # noqa: BLE001 — reporting must never mask the failure itself
         logger.debug("[hub] unreachable report failed", exc_info=True)

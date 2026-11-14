@@ -182,8 +182,7 @@ async def _on_response(response: httpx.Response) -> None:
     # elsewhere — by an auth-failure envelope on a 2xx (handled above), or
     # by the hub closing the WS with an auth close code (handled in
     # ws_client._handle_closed_connection).
-    if response.request.extensions.get(QUIET_EXTENSION):
-        return
+    quiet = bool(response.request.extensions.get(QUIET_EXTENSION))
     path = redact(request_path(response.request.url))
     # A large or non-JSON passthrough body stays unread (the proxy streams it); the status
     # still gets reported, and the caller receives the body verbatim.
@@ -193,7 +192,9 @@ async def _on_response(response: httpx.Response) -> None:
         method=response.request.method,
         path=path,
         message=message,
-        detail=_error_detail(response, path=path, message=message, body_read=body_read),
+        # A quiet call owns its failure: recorded, no warning -- so no details to build for one.
+        detail=None if quiet else _error_detail(response, path=path, message=message, body_read=body_read),
+        quiet=quiet,
     )
 
 

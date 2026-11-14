@@ -74,6 +74,7 @@ from .routes import (
     kinds_router,
     markdown_index_router,
     navigate_router,
+    network_errors_router,
     privacy_router,
     project_router,
     pty_stream_router,
@@ -1049,6 +1050,7 @@ server.add_router(toplog_router)
 server.add_router(graph_workflows_router)
 server.add_router(agents_router)
 server.add_router(journeys_router)
+server.add_router(network_errors_router)
 server.add_router(git_router)
 server.add_router(worldview_router)
 from flow_sdk.server.routes.it_session import router as it_session_router  # noqa: E402
