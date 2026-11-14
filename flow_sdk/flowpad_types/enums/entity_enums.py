@@ -15,6 +15,7 @@ class BuiltInRelationshipTypes(StrEnum):
     InvitedBy = "invitedby"
     Role = "role"
     DependsOn = "dependson"
+    Context = "context"
 
 
 class DependsOnKind(StrEnum):

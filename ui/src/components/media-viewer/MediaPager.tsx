@@ -18,7 +18,8 @@ import { useEffect, useMemo, useRef } from 'react';
 /** The tab a step left, closed once the next file's tab is shown. */
 let pagedFrom: string | null = null;
 
-const OVERLAY = 'absolute z-10 bg-background/60 opacity-0 transition-opacity group-hover:opacity-100';
+const OVERLAY =
+  'absolute z-10 bg-background/60 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100';
 const STEP_BUTTON = `${OVERLAY} top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border text-foreground hover:bg-muted`;
 
 interface MediaPagerProps {

@@ -7,7 +7,6 @@ it, runs it, and replies with a ``returned_value-<call_id>`` attachment holding 
 indexed on the receiver, and nothing on either side has a row or a folder for them.
 """
 
-import json
 from typing import Any, ClassVar, Literal, Optional
 
 from flow_sdk.schema.data_spec.compute_op_spec import ExeData
@@ -53,8 +52,9 @@ def process_call_in(attachments: Any) -> Optional[ProcessCall]:
 
 
 def _attachment(kind: str, call_id: str, payload: dict) -> dict:
-    """The attachment dict ``handle_add_message`` adopts (``body["attachment"]``)."""
-    return {"attachment_type": "type_id", "data": f"{kind}-{call_id}", "prompt_preview": json.dumps(payload)}
+    from flow_sdk.builtin.flow_message import value_attachment  # noqa: PLC0415 — builtin imports data_spec
+
+    return value_attachment(kind, call_id, payload)
 
 
 def call_attachment(call: ProcessCall) -> dict:

@@ -32,7 +32,7 @@ function CopyRow({ label, value, extraAction }: { label: string; value: string; 
       <span className="min-w-0 flex-1 select-text break-all font-mono text-[11px]">{value}</span>
       <span className="flex shrink-0 items-start gap-0.5">
         <button
-          className={`${ROW_ICON_BUTTON_CLASS} transition-opacity ${copied ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          className={`${ROW_ICON_BUTTON_CLASS} transition-opacity ${copied ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100'}`}
           onClick={handleCopy}
           title={t`Copy to clipboard`}
           aria-label={t`Copy ${label}`}

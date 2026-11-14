@@ -197,6 +197,12 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
     this.reply_policy = policy;
   }
 
+  /** Host only: run a finished prompt request's prompt once more, at once. It opens a new,
+   *  already approved request; this one stays ended. */
+  public async runAgain(): Promise<void> {
+    await dataManager.callAction(new ActionInfo('run_again', this.typeId.type, this.typeId.id, 'POST'));
+  }
+
   /** Host declines a PENDING session (terminal). */
   public decline(): Promise<void> {
     return this.lifecycleAction('decline', RemoteWorkerSessionStatus.DECLINED);

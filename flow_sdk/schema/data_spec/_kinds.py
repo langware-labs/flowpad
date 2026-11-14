@@ -73,6 +73,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.compute_op_spec  # noqa: F401  — registers ``compute_op`` / ``compute_op.cli`` / ``compute_op.decision`` / ``compute_op.prompt`` / ``compute_op.agent`` / ``compute_op.ask`` / ``compute_op.ask.item``
     import flow_sdk.schema.data_spec.confirm_spec  # noqa: F401  — registers ``confirm``
     import flow_sdk.schema.data_spec.connection_spec  # noqa: F401  — registers ``connection``
+    import flow_sdk.schema.data_spec.context_relation_spec  # noqa: F401  — registers ``context.relation``
     import flow_sdk.schema.data_spec.data_schema_spec  # noqa: F401  — registers ``data_schema.field`` / ``data_schema.rule``
     import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
     import flow_sdk.schema.data_spec.decision_spec  # noqa: F401  — registers ``decision.spec`` / ``decision.result`` and their questions / answers
@@ -103,6 +104,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.permission_spec  # noqa: F401  — registers ``permission.mapping`` / ``permission.need`` / ``permission.authorization``
     import flow_sdk.schema.data_spec.phone_spec  # noqa: F401  — registers ``phone_number``
     import flow_sdk.schema.data_spec.process_call_spec  # noqa: F401  — registers ``process.call``
+    import flow_sdk.schema.data_spec.prompt_run_summary_spec  # noqa: F401  — registers ``prompt.run_summary``
     import flow_sdk.schema.data_spec.project_cleanup_spec  # noqa: F401  — registers ``project.cleanup`` and friends
     import flow_sdk.schema.data_spec.project_manifest_spec  # noqa: F401  — registers ``project.manifest`` / ``project.manifest.entry``
     import flow_sdk.schema.data_spec.project_setup_spec  # noqa: F401  — registers ``project.setup.requirement`` / ``project.setup.var``

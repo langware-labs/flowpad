@@ -63,7 +63,7 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
           <span className="truncate text-sm font-medium">{artifact.displayName}</span>
         </div>
 
-        <div className="flex flex-shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="flex flex-shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100">
           {artifact.id && (
             <Tooltip>
               <TooltipTrigger asChild>

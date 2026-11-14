@@ -1,5 +1,7 @@
 import { useLingui } from '@lingui/react/macro';
 import type { TypeId } from '@sdk';
+import { ContextMenuButton } from '@src/components/entity-actions/ContextMenuButton';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
 import { chromeActionClusterClassName } from '@src/components/entity-actions/action-button-styles';
@@ -53,6 +55,7 @@ export function TopBarActions({
         // must not draw a second one. Riding the `trailing` slot keeps it inside
         // the toolbar's own row rather than in a wrapper repeating its classes.
         hideFavorite
+        showContext
         trailing={favorite && <BookmarksStarButton favorite={favorite} />}
       />
     );
@@ -64,9 +67,12 @@ export function TopBarActions({
   // no subject, except a standalone page (shared as the artifact that names it,
   // minted on click); pop-out gates itself.
   if (!dock) return null;
+  // A transcript opened by file has no entity target, but the page still shows one session.
+  const transcript = dock.transcriptSessionTypeId;
   return (
     <div className={`flex shrink-0 items-center gap-0.5 ${chromeActionClusterClassName}`} data-testid="top-nav-actions">
       <RecordScreenButton />
+      {transcript && !isHubOnly() && <ContextMenuButton typeId={transcript} title={targetTitle} />}
       <PageShareButton dock={dock} />
       {favorite && <BookmarksStarButton favorite={favorite} />}
     </div>

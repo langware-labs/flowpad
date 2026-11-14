@@ -272,12 +272,12 @@ export function createHarnessUpdateWarning(h: {
   update_command?: string;
 }): UserWarning {
   const required = h.update === 'required';
-  const to = h.latest_version ? ` → ${h.latest_version}` : '';
+  const versions = `${h.version}${h.latest_version ? ` → ${h.latest_version}` : ''}`;
   return {
     id: `${WARNING_IDS.HARNESS_UPDATE}-${h.worker_type}`,
     icon: 'ArrowUpCircle',
     color: required ? 'red' : 'yellow',
-    message: required ? `${h.label} is too old for this model` : `${h.label} ${h.version}${to} available`,
+    message: required ? `${h.label} ${versions} — too old for this model` : `${h.label} ${versions} available`,
     description: h.update_command ? `Update it: ${h.update_command}` : `Update ${h.label} to the newest version.`,
     targetView: ViewType.CAPABILITIES,
     diagnosable: false,

@@ -673,7 +673,7 @@ function ConversationRow({
             type="button"
             onClick={() => onDismiss(conv.id)}
             disabled={dismissingId === conv.id}
-            className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground disabled:opacity-40 group-hover:opacity-100"
+            className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground disabled:opacity-40 group-hover:opacity-100 pointer-coarse:opacity-100"
             title={t`Hide from Recent — still visible in Stream Inbox; reappears when a new message arrives`}
             aria-label={t`Hide from Recent conversations`}
             data-testid="dismiss-conversation-button"

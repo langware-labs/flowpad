@@ -22,7 +22,7 @@ export const WORKER_ICON_BUTTON_CLASS =
 
 /** A message header's hover-revealed icon button (needs a `group` ancestor). */
 export const MESSAGE_ROW_ICON_BUTTON_CLASS =
-  'rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100';
+  'rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100';
 
 /** Row style for the `menu-list` variant — shared by the vendor rows, the
  *  "More…" reveal, the extra openers, and the footer funding chip's menus, so

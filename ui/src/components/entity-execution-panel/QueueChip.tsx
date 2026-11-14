@@ -51,7 +51,7 @@ export function QueueChip({ process }: { process: AgenticProcess | null }) {
               type="button"
               aria-label={t`Remove from queue`}
               title={t`Remove from queue`}
-              className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+              className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 pointer-coarse:opacity-100"
               onClick={() => void process.dequeue(entry.id)}
               data-testid="entity-execution-queue-remove"
             >

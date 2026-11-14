@@ -79,7 +79,7 @@ export function ResourceRow({
           {detail && <span className="truncate text-[11px] text-muted-foreground">{detail}</span>}
         </span>
       </button>
-      {action && <div className="flex-shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">{action}</div>}
+      {action && <div className="flex-shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">{action}</div>}
     </div>
   );
 }

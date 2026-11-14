@@ -96,6 +96,7 @@ export interface AssetOccurrence {
 }
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';
+import type { ContextRelation } from './types/context-relation';
 import type { HttpMethod } from './models/ApiUrl';
 import { deepEqual } from './utils/deep-equal';
 
@@ -1407,6 +1408,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const info = new ActionInfo('wiki', this.typeId.type, this.typeId.id, 'GET');
     info.subpath = 'backlinks';
     return (await dataManager.callAction<undefined, WikiLink[]>(info)) ?? [];
+  }
+
+  /**
+   * This entity's context in both directions — what it holds and who holds it —
+   * one row per peer, newest first. Hits
+   * `GET /api/v1/graph/{type}/{id}/context-relations`.
+   */
+  public async getContextRelations(): Promise<ContextRelation[]> {
+    const info = new ActionInfo('context-relations', this.typeId.type, this.typeId.id, 'GET');
+    return (await dataManager.callAction<undefined, ContextRelation[]>(info)) ?? [];
   }
 
   /**

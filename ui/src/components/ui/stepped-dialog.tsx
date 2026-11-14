@@ -64,7 +64,7 @@ export const SteppedDialogContent = forwardRef<
   HTMLDivElement,
   Omit<ContentProps, 'title'> & { crumbs: StepCrumb[]; description?: ReactNode; footer?: ReactNode }
 >(({ crumbs, description, footer, children, className, ...props }, ref) => (
-  <DialogContent ref={ref} className={cn('flex h-[min(640px,85vh)] flex-col gap-4 sm:max-w-lg', className)} {...props}>
+  <DialogContent ref={ref} className={cn('flex h-[min(640px,85dvh)] flex-col gap-4 sm:max-w-lg', className)} {...props}>
     <DialogHeader>
       {/* The trail IS the title: a screen reader hears where the person is, a sighted person sees how they got there. */}
       <DialogTitle asChild>

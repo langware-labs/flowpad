@@ -251,6 +251,9 @@
     /* The notch and the home bar (`viewport-fit=cover`); zero everywhere else. */
     --sat: env(safe-area-inset-top, 0px);
     --sab: env(safe-area-inset-bottom, 0px);
+    /* The visible area while the on-screen keyboard is up (phone-shell/keyboard-inset.ts). */
+    --vvt: 0px;
+    --vvh: 100dvh;
   }
 
   body {
@@ -271,11 +274,24 @@
   #root {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    /* The visible area: `100dvh`, less the on-screen keyboard on a touch device. */
+    height: var(--vvh);
     max-width: 100%;
     margin: 0 auto;
     padding: 0;
     overflow: hidden;
+  }
+
+  @media (pointer: coarse) {
+    /* Pinned to the visible area, so the keyboard never pushes the top bar off screen. */
+    body > #root {
+      position: fixed;
+      inset-inline: 0;
+      top: var(--vvt);
+      /* On its side, the notch and the home bar eat into the left and right edges. */
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+    }
   }
 
   /* Vibe skin: swap the animated app background for a calm warm-black canvas and
@@ -553,5 +569,31 @@
   }
   .asset-grid-row .asset-scope-label {
     display: none;
+  }
+}
+
+/* The message a link opened, on a phone: a tint that fades into the selected look. */
+@keyframes target-tint {
+  from {
+    background-color: hsl(var(--primary) / 0.18);
+  }
+}
+
+/* A finger-sized hit area (44px) around a small control, on touch only — the control itself keeps its size.
+   In `components`, so a positioning utility on the control (`absolute`, `sticky`) still wins. */
+@layer components {
+  @media (pointer: coarse) {
+    .touch-target {
+      position: relative;
+    }
+    .touch-target::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 2.75rem);
+      height: max(100%, 2.75rem);
+      transform: translate(-50%, -50%);
+    }
   }
 }

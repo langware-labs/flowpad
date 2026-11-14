@@ -3,7 +3,8 @@
  * tab strip and footer, which the shell hides with CSS (nothing is unmounted). The menu is `PhoneMenu`.
  */
 import { useLingui } from '@lingui/react/macro';
-import { ArrowLeft, Menu } from 'lucide-react';
+import { ArrowLeft, Menu, PanelLeft } from 'lucide-react';
+import { setPhoneNavigatorOpen, useHasPhoneNavigator } from '@src/components/navigator-panel/phone-navigator';
 import { useEntityBreadcrumbs } from '@src/components/top-nav-bar/use-entity-breadcrumbs';
 import { useSidebar } from '@src/components/ui/sidebar';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
@@ -11,7 +12,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 
 /** A finger-sized control: 44px, the icon centred. */
-const TOUCH = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground active:bg-muted';
+export const TOUCH =
+  'flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground active:bg-muted';
 
 /** Opens the phone menu. A view that draws its own phone header (`ViewerMeta.phoneHeader: 'own'`) carries it too. */
 export function PhoneMenuButton() {
@@ -44,6 +46,8 @@ function Bar() {
   const title = crumbs.find((crumb) => crumb.kind === 'current')?.label ?? '';
   // A freshly loaded Home has nowhere to go back to: no history, and Home is where the fallback leads.
   const atHome = !currentDock || currentDock.viewType === ViewType.HOME;
+  // The view's navigator (docs tree, assets, chats…) is a drawer here.
+  const hasNavigator = useHasPhoneNavigator();
 
   return (
     // `md:hidden` as well as the gate above: the width is known to CSS a frame before it is to JS.
@@ -67,6 +71,17 @@ function Bar() {
       <div className="min-w-0 flex-1 truncate text-base font-medium" data-testid="phone-title">
         {title}
       </div>
+      {hasNavigator && (
+        <button
+          type="button"
+          className={TOUCH}
+          aria-label={t`Browse`}
+          data-testid="phone-browse"
+          onClick={() => setPhoneNavigatorOpen(true)}
+        >
+          <PanelLeft className="h-5 w-5 rtl:-scale-x-100" />
+        </button>
+      )}
       <PhoneMenuButton />
     </div>
   );

@@ -82,6 +82,8 @@ async def test_turn_runs_and_replies_in_the_session(bootstrapped_client, user, f
     assert reply.is_draft is False
     assert reply.text.startswith('Prompt response: "reply #1')
     assert any(a.data == f"remote_worker_session-{rws.id}" for a in reply.attachment)
+    # What the run did rides the same reply, for the sender's View run.
+    assert any((a.data or "").startswith("prompt_run_summary-") for a in reply.attachment)
 
 
 async def test_review_policy_saves_the_reply_as_a_draft(bootstrapped_client, user, fake_worker):
@@ -273,3 +275,38 @@ async def test_a_live_session_never_ends_on_its_own(bootstrapped_client, user, f
         await ep.run_session_turn(rws, fm, conv, someone_typeid=await _someone(user))
     after = await RemoteWorkerSession.get_one({"id": rws.id})
     assert after.status == S.IDLE.value and after.prompts_used == 3
+
+
+async def test_the_host_runs_a_finished_prompt_request_again_at_once(bootstrapped_client, user, fake_worker):
+    """Run again on the host: a new, already approved request with the same prompt, which
+    runs here without asking — and only the host, only on a request that ran."""
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    me = (await User.current_sender_participant()).get("user_id")
+    conv_id = await make_conversation(bootstrapped_client)
+    conv = await Conversation.get_one({"id": conv_id})
+    fm = inbound_prompt_fm(conv_id, None, fm_id="d4d4d4d4-0000-4000-8000-0000000000e1")
+    rws = await make_session(conv_id, S.IDLE.value, prompt_limit=1, host_user_id=me, starting_message_id=fm.id)
+    fm.remote_worker_session_id = rws.id
+    await fm.save(notify=False)
+
+    assert (await rws._http_run_again()).status != "SUCCESS"  # it has not run yet
+    await ep.run_session_turn(rws, fm, conv, someone_typeid=await _someone(user))
+    done = await RemoteWorkerSession.get_one({"id": rws.id})
+    assert done.status == S.ENDED.value
+
+    result = await done._http_run_again()
+    assert result.status == "SUCCESS", getattr(result, "message", None)
+    again_id = result.data["id"]
+    await asyncio.gather(*[t for t in asyncio.all_tasks() if t is not asyncio.current_task()])
+
+    again = await RemoteWorkerSession.get_one({"id": again_id})
+    assert again_id != rws.id and again.guest_user_id == rws.guest_user_id and again.prompt_limit == 1
+    assert again.status == S.ENDED.value and again.prompts_used == 1  # it ran, once, and ended
+    assert len(fake_worker["prompts"]) == 2 and "run the tests" in fake_worker["prompts"][1]
+    fms = await FlowMessage.get_all({"conversation_id": conv_id})
+    assert again.starting_message_id in {m.id for m in fms}
+    assert len(_reply_rows(fms, again_id)) == 1
+
+    done.host_user_id = "someone-else"
+    assert (await done._http_run_again()).status != "SUCCESS"

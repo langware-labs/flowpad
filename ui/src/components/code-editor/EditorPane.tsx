@@ -511,7 +511,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               href={imageUrl}
               download={file.path.split('/').pop() || file.path}
               title={t`Download`}
-              className="absolute right-5 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-lg border bg-background/50 text-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+              className="absolute right-5 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-lg border bg-background/50 text-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100 pointer-coarse:opacity-100"
             >
               <Download className="h-4 w-4" />
             </a>

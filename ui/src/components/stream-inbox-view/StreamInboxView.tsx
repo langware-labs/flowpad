@@ -407,10 +407,10 @@ export const ConversationListRow = memo(function ConversationListRow({
   const attribution = asksTicket
     ? null
     : attributed?.origin?.kind
-    ? attributionFor(attributed.origin, attributed.origin_local, conv.channel_spec)
-    : conv.channel
-      ? attributionFor({ kind: conv.channel, namespace: '', key: '', url: null }, null, conv.channel_spec)
-      : null;
+      ? attributionFor(attributed.origin, attributed.origin_local, conv.channel_spec)
+      : conv.channel
+        ? attributionFor({ kind: conv.channel, namespace: '', key: '', url: null }, null, conv.channel_spec)
+        : null;
   // Alias kept so the existing invitation-row rendering reads cleanly below.
   const isInvitationRow = facets.isInvitation;
 
@@ -478,10 +478,7 @@ export const ConversationListRow = memo(function ConversationListRow({
     } else {
       for (const p of conv.members ?? []) {
         const email = (p?.email || '').trim().toLowerCase();
-        pushName(
-          personName(p),
-          isViewer(p?.user_id, viewer) || (!!myEmail && email === myEmail),
-        );
+        pushName(personName(p), isViewer(p?.user_id, viewer) || (!!myEmail && email === myEmail));
       }
     }
     const names = [...others, ...own];
@@ -669,7 +666,11 @@ export const ConversationListRow = memo(function ConversationListRow({
         <ConversationMarkChips marks={conv.marks} />
         {/* Accepted is the normal ending — only an unanswered or refused share earns a chip. */}
         {latestMessage?.invite && latestMessage.invite.state !== 'accepted' && (
-          <InviteStateChip state={latestMessage.invite.state} resolvedAt={latestMessage.invite.resolved_at} className="me-1" />
+          <InviteStateChip
+            state={latestMessage.invite.state}
+            resolvedAt={latestMessage.invite.resolved_at}
+            className="me-1"
+          />
         )}
         {/* dir="auto" isolates each part: an RTL subject + RTL snippet would otherwise
             merge into one RTL run that pushes the subject past the truncated edge. */}
@@ -685,9 +686,9 @@ export const ConversationListRow = memo(function ConversationListRow({
           </>
         )}
       </span>
-      <span className="shrink-0 text-xs text-muted-foreground transition-opacity group-hover:opacity-0">
+      <span className="shrink-0 text-xs text-muted-foreground transition-opacity group-hover:opacity-0 pointer-coarse:!opacity-100">
         {time}
-        {ago && <span className="ms-1.5 text-muted-foreground/70">· {ago}</span>}
+        {ago && <span className="ms-1.5 text-muted-foreground/70 max-md:hidden">· {ago}</span>}
       </span>
       <RowActions
         specs={actionsFor(facets, {
@@ -723,7 +724,7 @@ const columnInputClass =
 // The From column's width is one CSS variable on the list, so dragging the spacer resizes the
 // header filter and every row without re-rendering a row.
 const FROM_WIDTH_VAR = '--stream-inbox-from-width';
-const FROM_WIDTH_CLASS = 'w-[var(--stream-inbox-from-width)]';
+const FROM_WIDTH_CLASS = 'w-[var(--stream-inbox-from-width)] max-md:w-24';
 const FROM_WIDTH_KEY = 'flowpad.stream-inbox.from-width';
 const FROM_WIDTH_DEFAULT = 176;
 const FROM_WIDTH_MIN = 96;
@@ -816,7 +817,10 @@ export function StreamInboxView({
   // With neither, the last pick on this machine is remembered per owner.
   const channelStoreKey = channelsOwner ? `stream-inbox-channels:${channelsOwner.toString()}` : null;
   const channelFilter = useMemo(
-    () => new Set(currentDock?.streamInboxChannels ?? (initialChannel ? [initialChannel] : readStoredChannels(channelStoreKey))),
+    () =>
+      new Set(
+        currentDock?.streamInboxChannels ?? (initialChannel ? [initialChannel] : readStoredChannels(channelStoreKey)),
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the raw option is the pick; the dock object changes on every navigation
     [rawChannels, initialChannel, channelStoreKey],
   );
@@ -1492,7 +1496,10 @@ export function StreamInboxView({
       )}
       {/* The list's main verbs get a row of their own, full-size, so they can't be missed. */}
       {hasTopRow && (
-        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2" data-testid="stream-inbox-primary-actions">
+        <div
+          className="flex shrink-0 items-center gap-2 border-b px-3 py-2 max-md:flex-wrap"
+          data-testid="stream-inbox-primary-actions"
+        >
           <Button
             onClick={() => setShowNewConversation(true)}
             data-testid="stream-inbox-new-conversation-button"
@@ -1504,7 +1511,11 @@ export function StreamInboxView({
           {desktopStreamInbox && (
             <>
               <ProjectUploadMessageButton variant="outline" size="default" />
-              <Button variant="outline" onClick={() => setShowContacts(true)} data-testid="stream-inbox-contacts-button">
+              <Button
+                variant="outline"
+                onClick={() => setShowContacts(true)}
+                data-testid="stream-inbox-contacts-button"
+              >
                 <BookUser />
                 <Trans>Contacts</Trans>
               </Button>
@@ -1513,7 +1524,7 @@ export function StreamInboxView({
           <div className="ms-auto flex min-w-0 items-center gap-2">{channelButtons}</div>
         </div>
       )}
-      <div className="flex shrink-0 items-center border-b px-3 py-1.5">
+      <div className="flex shrink-0 items-center border-b px-3 py-1.5 max-md:flex-wrap max-md:gap-y-1">
         {/* Selection mode takes over the whole toolbar: the view pills, search and
             New buttons act on the list, not on the ticked rows, so they step aside
             until the selection is closed (X). */}
@@ -1582,7 +1593,7 @@ export function StreamInboxView({
         ) : (
           <>
             {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
-            <div className="flex flex-1 items-center">
+            <div className="flex flex-1 items-center max-md:flex-wrap max-md:gap-y-1">
               <div
                 className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
                 role="tablist"
@@ -1600,14 +1611,14 @@ export function StreamInboxView({
               {/* Text search — filters the list below to conversations whose
                   messages contain the query, spanning archived rows. */}
               {desktopStreamInbox && (
-                <div className="relative ms-2 flex items-center">
+                <div className="relative ms-2 flex items-center max-md:ms-0 max-md:w-full">
                   <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
                   <input
                     type="text"
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
                     placeholder={t`Search messages`}
-                    className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring max-md:h-9 max-md:w-full"
                     data-testid="stream-inbox-search-input"
                     aria-label={t`Search messages`}
                   />
@@ -1776,7 +1787,6 @@ export function StreamInboxView({
           </div>
         )}
 
-
         {initialLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             <Trans>Loading…</Trans>
@@ -1791,26 +1801,30 @@ export function StreamInboxView({
                 : inInvitesView
                   ? t`Nothing has been shared with you yet`
                   : inArchivedView
-                  ? t`No archived conversations`
-                  : inUnreadView
-                    ? t`No unread conversations`
-                    : channelFilter.size > 0
-                      ? t`No messages from this channel yet`
-                      : t`No conversations`}
+                    ? t`No archived conversations`
+                    : inUnreadView
+                      ? t`No unread conversations`
+                      : channelFilter.size > 0
+                        ? t`No messages from this channel yet`
+                        : t`No conversations`}
             </span>
             {/* An owner with no channel connected: the empty list is where connecting one is offered —
                 unless the caller knows better what is missing (an allowlist, not a channel). */}
-            {!embedded && !inArchivedView && !inUnreadView && !searchActive && !columnFilterActive && (
-              emptyHint ? (
+            {!embedded &&
+              !inArchivedView &&
+              !inUnreadView &&
+              !searchActive &&
+              !columnFilterActive &&
+              (emptyHint ? (
                 <span className="text-sm" data-testid="stream-inbox-empty-hint">
                   {emptyHint}
                 </span>
               ) : (
                 // Narrowed to one channel, the list is empty for want of mail on IT: offering other channels
                 // here answers a question nobody asked.
-                channelsOwner && channelFilter.size === 0 && <ConnectChannelPrompt owner={channelsOwner} offers={channelOffers} />
-              )
-            )}
+                channelsOwner &&
+                channelFilter.size === 0 && <ConnectChannelPrompt owner={channelsOwner} offers={channelOffers} />
+              ))}
             {!inArchivedView && !searchActive && !columnFilterActive && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
                 <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />

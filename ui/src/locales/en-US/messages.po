@@ -3283,10 +3283,6 @@ msgid "Added {0} files"
 msgstr "Added {0} files"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
-#~ msgid "Added {0} on this machine"
-#~ msgstr "Added {0} on this machine"
-
-#: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #~ msgid "Added {0}, but the key was not saved"
 #~ msgstr "Added {0}, but the key was not saved"
 
@@ -4088,6 +4084,10 @@ msgstr "Anchor range"
 msgid "Anchor time range"
 msgstr "Anchor time range"
 
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "and {more} more"
+msgstr "and {more} more"
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Annotate image"
 msgstr "Annotate image"
@@ -4175,6 +4175,7 @@ msgstr "Another update is in progress."
 msgid "Another update is in progress. Try again when it is done."
 msgstr "Another update is in progress. Try again when it is done."
 
+#: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/notifications/error-detail.ts
 msgid "Answer"
 msgstr "Answer"
@@ -5481,6 +5482,7 @@ msgid "Brought in"
 msgstr "Brought in"
 
 #: src/components/open-project-component/open-project-component.tsx
+#: src/components/phone-shell/PhoneTopBar.tsx
 msgid "Browse"
 msgstr "Browse"
 
@@ -7047,6 +7049,11 @@ msgstr "Close ({closeIn})"
 msgid "Close (Escape)"
 msgstr "Close (Escape)"
 
+#. placeholder {0}: item.title
+#: src/components/phone-shell/PhoneMenu.tsx
+msgid "Close {0}"
+msgstr "Close {0}"
+
 #: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
 msgid "Close all"
 msgstr "Close all"
@@ -7849,11 +7856,19 @@ msgstr "Content"
 
 #: src/components/conversation/ConversationPanel.tsx
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/types/ViewType.ts
 msgid "Context"
 msgstr "Context"
+
+#. placeholder {0}: graph.id.slice(0, 8)
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Context {0}"
+msgstr "Context {0}"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Context breakdown"
@@ -7878,6 +7893,10 @@ msgstr "Context list actions"
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Context not shared"
 msgstr "Context not shared"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Context of {title}"
+msgstr "Context of {title}"
 
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 msgid "Context to share — review before sending."
@@ -8607,6 +8626,7 @@ msgstr "Could not fix {key}"
 msgid "Could not forward diagnosis"
 msgstr "Could not forward diagnosis"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Could not freeze context"
 msgstr "Could not freeze context"
@@ -8699,6 +8719,10 @@ msgstr "Could not load the app's definition: {0}"
 #: src/components/automations/BusView.tsx
 msgid "Could not load the bus"
 msgstr "Could not load the bus"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Could not load the context."
+msgstr "Could not load the context."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Could not load this automation"
@@ -9241,6 +9265,10 @@ msgstr "Could not start the {0} sign-in."
 #: src/notifications/diagnose/diagnose-and-fix.ts
 msgid "Could not start the diagnosis"
 msgstr "Could not start the diagnosis"
+
+#: src/components/warnings-popover/warnings-popover.tsx
+msgid "Could not start the install"
+msgstr "Could not start the install"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Could not start the live session"
@@ -10137,6 +10165,7 @@ msgid "Declared on the agent's card. Not yet applied to the worker."
 msgstr "Declared on the agent's card. Not yet applied to the worker."
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 #: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/PromptCallCard.tsx
@@ -11788,10 +11817,6 @@ msgstr "Edit {0}"
 msgid "Edit agent"
 msgstr "Edit agent"
 
-#: src/components/llm-endpoints/LlmEndpointDialog.tsx
-#~ msgid "Edit API key"
-#~ msgstr "Edit API key"
-
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/pages/flow-page/app-display-viewer.tsx
 msgid "Edit app"
@@ -13155,6 +13180,7 @@ msgstr "Failed to Save"
 msgid "Failed to save secret"
 msgstr "Failed to save secret"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Failed to save the context snapshot."
 msgstr "Failed to save the context snapshot."
@@ -13436,6 +13462,10 @@ msgstr "Files"
 #: src/components/settings-view/settings-utils.ts
 msgid "Files & Directories"
 msgstr "Files & Directories"
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "Files changed"
+msgstr "Files changed"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
@@ -15623,6 +15653,14 @@ msgstr "Include this file in the next commit (git add)"
 msgid "Included through this source's packages. Changes apply to new sessions."
 msgstr "Included through this source's packages. Changes apply to new sessions."
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Incoming"
+msgstr "Incoming"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Incoming and outgoing"
+msgstr "Incoming and outgoing"
+
 #: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Index (seq)"
 msgstr "Index (seq)"
@@ -15810,6 +15848,7 @@ msgstr "inside"
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/warnings-popover/warnings-popover.tsx
 msgid "Install"
 msgstr "Install"
 
@@ -16213,6 +16252,10 @@ msgstr "IT · {name} deployments (1 machine)"
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
 msgid "It also changes:"
 msgstr "It also changes:"
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "It answered without using any tool."
+msgstr "It answered without using any tool."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
@@ -17725,6 +17768,7 @@ msgstr "Loading..."
 #: src/components/conversation/ContactDialog.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/data-sources/ChoiceField.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
@@ -18767,6 +18811,8 @@ msgstr "more"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/conversation/ConversationRoute.tsx
+#: src/components/conversation/ConversationRoute.tsx
 #: src/components/helpdesk/HelpdeskGuides.tsx
 #: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
@@ -19171,11 +19217,6 @@ msgstr "New {label} chat"
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "New analysis"
 msgstr "New analysis"
-
-#: src/components/llm-endpoints/LlmEndpointDialog.tsx
-#: src/components/llm-endpoints/LlmEndpointsList.tsx
-#~ msgid "New API key"
-#~ msgstr "New API key"
 
 #: src/components/assets/NewAssetMenu.tsx
 #: src/components/assets/NewAssetMenu.tsx
@@ -21473,6 +21514,10 @@ msgstr "Nothing indexed yet. <0>Refresh Index</0> to populate."
 msgid "Nothing is asked: every step runs, and the result is always sent to you."
 msgstr "Nothing is asked: every step runs, and the result is always sent to you."
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Nothing is linked to this yet."
+msgstr "Nothing is linked to this yet."
+
 #: src/components/footer/ActivityDetailsModal.tsx
 msgid "Nothing is running at this address anymore."
 msgstr "Nothing is running at this address anymore."
@@ -22201,6 +22246,11 @@ msgstr "Open analysis"
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Open as a tab"
 msgstr "Open as a tab"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Open as graph"
+msgstr "Open as graph"
 
 #: src/components/account/logs-section.tsx
 msgid "Open assistant project"
@@ -23211,6 +23261,10 @@ msgstr "Other projects"
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Other sessions"
 msgstr "Other sessions"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Outgoing"
+msgstr "Outgoing"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "output"
@@ -24590,6 +24644,7 @@ msgstr "prompt"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/conversation/AttachMenu.tsx
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -26911,6 +26966,7 @@ msgstr "Rules"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/code-block-run-button.tsx
 #: src/components/code-editor/SnippetView.tsx
+#: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -27069,6 +27125,10 @@ msgstr "Run its scheduled parts once now; a part that waits for an event runs wh
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Run now"
 msgstr "Run now"
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "Run on {host}'s machine"
+msgstr "Run on {host}'s machine"
 
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
@@ -30737,6 +30797,7 @@ msgstr "Step {0} of {1}"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
+#: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Steps"
 msgstr "Steps"
@@ -34998,6 +35059,10 @@ msgstr "View on PyPI"
 msgid "View Plan"
 msgstr "View Plan"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "View run"
+msgstr "View run"
+
 #: src/notifications/ingest.ts
 msgid "View Session"
 msgstr "View Session"
@@ -36275,6 +36340,10 @@ msgstr "Your agent is live"
 #: src/components/conversation/SessionCard.tsx
 msgid "Your answer"
 msgstr "Your answer"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Your answer · not sent to {guest} yet"
+msgstr "Your answer · not sent to {guest} yet"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Your API key for authenticating API requests to FlowPad"

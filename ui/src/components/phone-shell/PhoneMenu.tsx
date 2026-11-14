@@ -5,6 +5,7 @@
 import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router';
 import { useLingui } from '@lingui/react/macro';
+import { X } from 'lucide-react';
 import { useRailEntries } from '@src/components/collapsed-sidebar/collapsed-sidebar';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { LanguageSelector } from '@src/components/footer/LanguageSelector';
@@ -16,6 +17,8 @@ import { Sidebar, useSidebar } from '@src/components/ui/sidebar';
 import { WarningsPopover } from '@src/components/warnings-popover';
 import { cn } from '@src/lib/utils';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
+import { TOUCH } from './PhoneTopBar';
+import { requestTabClose } from '@src/tabs/tab-close-request';
 import { useStripTabs } from '@src/tabs/tab-row-item';
 
 const ROW = 'relative flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-start text-sm active:bg-muted';
@@ -53,16 +56,29 @@ function PhoneMenuBody() {
           <div className="mt-3 border-t px-3 pb-1 pt-3 text-xs font-medium text-muted-foreground">{t`Open tabs`}</div>
         )}
         {tabItems.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            data-testid="phone-menu-tab"
-            className={cn(ROW, item.key === activeKey && 'bg-sidebar-accent font-medium')}
-            onClick={() => select(item.key)}
-          >
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center">{item.icon}</span>
-            <span className="min-w-0 truncate">{item.title}</span>
-          </button>
+          <div key={item.key} className="flex items-center">
+            <button
+              type="button"
+              data-testid="phone-menu-tab"
+              className={cn(ROW, 'min-w-0 flex-1', item.key === activeKey && 'bg-sidebar-accent font-medium')}
+              onClick={() => select(item.key)}
+            >
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center">{item.icon}</span>
+              <span className="min-w-0 truncate">{item.title}</span>
+            </button>
+            {item.closable !== false && (
+              // The strip owns closing — where to land afterwards — so this asks it, exactly as its X does.
+              <button
+                type="button"
+                className={TOUCH}
+                aria-label={t`Close ${item.title}`}
+                data-testid="phone-menu-tab-close"
+                onClick={() => requestTabClose(item.key)}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         ))}
       </nav>
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-t p-2">

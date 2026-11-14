@@ -1171,7 +1171,8 @@ class DBEntity(DBBaseRecord):
         relationships = await self.get_incoming_relationships(roles_filter)
         deleted = 0
         for rel in relationships:
-            if rel.from_typeid == removed_entity_typeid:
+            # A context row is not a role: it follows the holder's context, not its membership.
+            if rel.from_typeid == removed_entity_typeid and rel.type != BuiltInRelationshipTypes.Context.value:
                 await self._db.delete_relationship(rel)
                 deleted += 1
         # Clear entire auth cache since role removals can affect child entity permissions

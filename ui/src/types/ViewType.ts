@@ -56,12 +56,15 @@ export interface ViewerMeta {
    * resolves these against exactly this namespace, so this is the real
    * constraint, it still catches a typo, and it cannot go stale.
    *
+   * A glyph of our own pack is named by its tag (`flowpad.context`), which the
+   * same resolver draws.
+   *
    * The NAMESPACE, not lucide's `icons` map: the map has dropped the
    * deprecated aliases (`Home`, `FileQuestion`, `CheckSquare`, `SearchIcon`),
    * which the namespace still exports and `lucideByName` still resolves. The
    * map would have flagged four working icons as typos.
    */
-  iconName: LucideExportName;
+  iconName: LucideExportName | `flowpad.${string}`;
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
@@ -572,7 +575,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   },
   [ViewType.GRAPH_CONTEXT]: {
     title: msg`Context`,
-    iconName: 'BrainCircuit',
+    iconName: 'flowpad.context',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },

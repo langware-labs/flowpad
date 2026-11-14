@@ -1,6 +1,12 @@
 import type { FlowMessage } from '@sdk';
 import { describe, expect, it } from 'vitest';
-import { failedPromptOf, pendingPromptOf, sessionEventOf } from '@src/components/conversation/session-turns';
+import {
+  failedPromptOf,
+  heldResultOf,
+  pendingPromptOf,
+  sentRunSummaryOf,
+  sessionEventOf,
+} from '@src/components/conversation/session-turns';
 
 const SID = 'a1a1a1a1-0000-4000-8000-000000000001';
 const carrier = (marker: Record<string, unknown>) => ({
@@ -58,5 +64,30 @@ describe('pendingPromptOf', () => {
     expect(pendingPromptOf([prompt('p1', 'a'), reply('r1')])).toBeNull();
     expect(pendingPromptOf([prompt('p1', 'a'), failedLine('e1')])).toBeNull();
     expect(pendingPromptOf([approvedLine('a')])).toBeNull();
+  });
+});
+
+describe('sentRunSummaryOf', () => {
+  const answer = (id: string, summary: object | null, draft = false) =>
+    fm({
+      id,
+      is_draft: draft,
+      attachment: [
+        { attachment_type: 'type_id', data: `prompt_completion-${id}`, prompt_preview: 'ok' },
+        ...(summary
+          ? [{ attachment_type: 'type_id', data: `prompt_run_summary-${id}`, prompt_preview: JSON.stringify(summary) }]
+          : []),
+      ],
+    });
+
+  it("reads the run off the answer that was sent — never a held draft's, null from a host that sends none", () => {
+    const sent = { steps: [{ tool: 'Bash' }] };
+    expect(sentRunSummaryOf([prompt('p1', 'go'), answer('r1', sent)])).toEqual(sent);
+    expect(sentRunSummaryOf([prompt('p1', 'go'), answer('r1', sent), answer('r2', { steps: [] }, true)])).toEqual(sent);
+    expect(sentRunSummaryOf([prompt('p1', 'go'), answer('r1', null)])).toBeNull();
+    expect(sentRunSummaryOf([prompt('p1', 'go')])).toBeNull();
+    // The host's own view of an answer it has not sent: held while a draft, not once it went out.
+    expect(heldResultOf([prompt('p1', 'go'), answer('r1', null, true)])).toBe('ok');
+    expect(heldResultOf([prompt('p1', 'go'), answer('r1', null)])).toBeNull();
   });
 });

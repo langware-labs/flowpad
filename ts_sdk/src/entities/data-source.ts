@@ -472,9 +472,16 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.post('sync');
   }
 
-  /** Resume or stop polling. */
-  async setEnabled(enabled: boolean): Promise<{ status: SourceStatus }> {
-    return this.post('set_enabled', { enabled });
+  /** Stop polling, or resume it. A resumed source returns to where it stood and its driver re-checks
+   *  it; this row takes where it landed — `active`, or `setup` with what it still waits on. */
+  async setEnabled(enabled: boolean): Promise<void> {
+    const landed = await this.post<{ status: SourceStatus; setup_detail?: string; setup_needs?: SetupNeed[] }>(
+      'set_enabled',
+      { enabled },
+    );
+    this.status = landed.status;
+    this.setup_detail = landed.setup_detail ?? '';
+    this.setup_needs = landed.setup_needs ?? [];
   }
 
   /**

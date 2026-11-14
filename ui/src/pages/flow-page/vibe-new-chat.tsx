@@ -39,7 +39,7 @@ export function VibeNewChat() {
   const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
 
   return (
-    <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4">
+    <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4 max-md:justify-start max-md:overflow-y-auto max-md:py-3">
       <HomeCustomBackground url={homeBackgroundUrl} />
       {/* The runtime banner used to be pinned here, absolutely positioned so it
           could sit above this centered surface. It now lives once in FlowPage,

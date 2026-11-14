@@ -3,6 +3,7 @@
  * where neither history nor Home leads anywhere; at desktop width the bar is not there at all.
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const nav = vi.hoisted(() => ({ canGoBack: false }));
@@ -14,20 +15,32 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { backOrHome }, currentDock: dock.current }),
 }));
 vi.mock('@src/components/top-nav-bar/use-entity-breadcrumbs', () => ({
-  useEntityBreadcrumbs: () => ({ crumbs: [{ kind: 'project', label: 'P' }, { kind: 'current', label: 'Design notes' }] }),
+  useEntityBreadcrumbs: () => ({
+    crumbs: [
+      { kind: 'project', label: 'P' },
+      { kind: 'current', label: 'Design notes' },
+    ],
+  }),
 }));
 
+import { MemoryRouter } from 'react-router';
+import { usePhoneNavigatorPresence } from '@src/components/navigator-panel/phone-navigator';
 import { PhoneTopBar } from '@src/components/phone-shell/PhoneTopBar';
 import { SidebarProvider } from '@src/components/ui/sidebar';
 import { mockMobile } from '../utils/test-utils';
 
-function show(mobile: boolean) {
-  mockMobile(mobile);
-  return render(
+const bar = (beside?: ReactNode) => (
+  <MemoryRouter>
     <SidebarProvider>
       <PhoneTopBar />
-    </SidebarProvider>,
-  );
+    </SidebarProvider>
+    {beside}
+  </MemoryRouter>
+);
+
+function show(mobile: boolean) {
+  mockMobile(mobile);
+  return render(bar());
 }
 
 afterEach(() => {
@@ -52,8 +65,18 @@ describe('PhoneTopBar', () => {
     expect(screen.queryByTestId('phone-back')).toBeNull();
     expect(screen.getByTestId('phone-menu-button')).toBeTruthy();
     nav.canGoBack = true;
-    act(() => rerender(<SidebarProvider><PhoneTopBar /></SidebarProvider>));
+    act(() => rerender(bar()));
     expect(screen.getByTestId('phone-back')).toBeTruthy();
+  });
+
+  it('offers Browse only while a navigator is on screen', () => {
+    dock.current = { viewType: 'docs' };
+    const Navigator = () => (usePhoneNavigatorPresence(), null);
+    mockMobile(true);
+    const { rerender } = render(bar());
+    expect(screen.queryByTestId('phone-browse')).toBeNull();
+    rerender(bar(<Navigator />));
+    expect(screen.getByTestId('phone-browse')).toBeTruthy();
   });
 
   it('is absent at desktop width', () => {
