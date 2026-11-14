@@ -4084,6 +4084,10 @@ msgstr "Anchor range"
 msgid "Anchor time range"
 msgstr "Anchor time range"
 
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "and {more} more"
+msgstr "and {more} more"
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Annotate image"
 msgstr "Annotate image"
@@ -4171,6 +4175,7 @@ msgstr "Another update is in progress."
 msgid "Another update is in progress. Try again when it is done."
 msgstr "Another update is in progress. Try again when it is done."
 
+#: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/notifications/error-detail.ts
 msgid "Answer"
 msgstr "Answer"
@@ -10160,6 +10165,7 @@ msgid "Declared on the agent's card. Not yet applied to the worker."
 msgstr "Declared on the agent's card. Not yet applied to the worker."
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 #: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/PromptCallCard.tsx
@@ -13457,6 +13463,10 @@ msgstr "Files"
 msgid "Files & Directories"
 msgstr "Files & Directories"
 
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "Files changed"
+msgstr "Files changed"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
 msgstr "Files on disk not yet in the DB"
@@ -16242,6 +16252,10 @@ msgstr "IT · {name} deployments (1 machine)"
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
 msgid "It also changes:"
 msgstr "It also changes:"
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "It answered without using any tool."
+msgstr "It answered without using any tool."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
@@ -24630,6 +24644,7 @@ msgstr "prompt"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/conversation/AttachMenu.tsx
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -26951,6 +26966,7 @@ msgstr "Rules"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/code-block-run-button.tsx
 #: src/components/code-editor/SnippetView.tsx
+#: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -27109,6 +27125,10 @@ msgstr "Run its scheduled parts once now; a part that waits for an event runs wh
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Run now"
 msgstr "Run now"
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "Run on {host}'s machine"
+msgstr "Run on {host}'s machine"
 
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
@@ -30777,6 +30797,7 @@ msgstr "Step {0} of {1}"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
+#: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Steps"
 msgstr "Steps"
@@ -35038,6 +35059,10 @@ msgstr "View on PyPI"
 msgid "View Plan"
 msgstr "View Plan"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "View run"
+msgstr "View run"
+
 #: src/notifications/ingest.ts
 msgid "View Session"
 msgstr "View Session"
@@ -36316,6 +36341,10 @@ msgstr "Your agent is live"
 msgid "Your answer"
 msgstr "Your answer"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Your answer · not sent to {guest} yet"
+msgstr "Your answer · not sent to {guest} yet"
+
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Your API key for authenticating API requests to FlowPad"
 msgstr "Your API key for authenticating API requests to FlowPad"
@@ -36494,27 +36523,3 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
-
-#: src/components/conversation/SessionCard.tsx
-msgid "View run"
-msgstr "View run"
-
-#: src/components/conversation/PromptRunSummaryDialog.tsx
-msgid "Run on {host}'s machine"
-msgstr "Run on {host}'s machine"
-
-#: src/components/conversation/PromptRunSummaryDialog.tsx
-msgid "It answered without using any tool."
-msgstr "It answered without using any tool."
-
-#: src/components/conversation/PromptRunSummaryDialog.tsx
-msgid "and {more} more"
-msgstr "and {more} more"
-
-#: src/components/conversation/PromptRunSummaryDialog.tsx
-msgid "Files changed"
-msgstr "Files changed"
-
-#: src/components/conversation/SessionCard.tsx
-msgid "Your answer · not sent to {guest} yet"
-msgstr "Your answer · not sent to {guest} yet"

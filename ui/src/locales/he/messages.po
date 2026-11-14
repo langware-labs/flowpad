@@ -4084,6 +4084,10 @@ msgstr "טווח העוגן"
 msgid "Anchor time range"
 msgstr "טווח זמן עוגן"
 
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "and {more} more"
+msgstr "ועוד {more}"
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Annotate image"
 msgstr "הערות על התמונה"
@@ -4171,6 +4175,7 @@ msgstr "עדכון אחר מתבצע כעת."
 msgid "Another update is in progress. Try again when it is done."
 msgstr "עדכון אחר מתבצע כעת. נסו שוב כשיסתיים."
 
+#: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/notifications/error-detail.ts
 msgid "Answer"
 msgstr ""
@@ -10160,6 +10165,7 @@ msgid "Declared on the agent's card. Not yet applied to the worker."
 msgstr "מוגדר בכרטיס הסוכן. טרם הוחל על העובד."
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 #: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/PromptCallCard.tsx
@@ -13457,6 +13463,10 @@ msgstr "קבצים"
 msgid "Files & Directories"
 msgstr "קבצים וספריות"
 
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "Files changed"
+msgstr "קבצים ששונו"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
 msgstr "קבצים בדיסק שעדיין לא בDB"
@@ -16242,6 +16252,10 @@ msgstr "פריסות IT · {name} (מכונה אחת)"
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
 msgid "It also changes:"
 msgstr "משנה גם:"
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "It answered without using any tool."
+msgstr "התשובה ניתנה בלי להשתמש בכלים."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
@@ -24630,6 +24644,7 @@ msgstr "הנחיה"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/conversation/AttachMenu.tsx
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -26951,6 +26966,7 @@ msgstr "חוקים"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/code-block-run-button.tsx
 #: src/components/code-editor/SnippetView.tsx
+#: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -27109,6 +27125,10 @@ msgstr ""
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Run now"
 msgstr "הפעילו כעת"
+
+#: src/components/conversation/PromptRunSummaryDialog.tsx
+msgid "Run on {host}'s machine"
+msgstr "הריצה במחשב של {host}"
 
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
@@ -30777,6 +30797,7 @@ msgstr "שלב {0} מתוך {1}"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
+#: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Steps"
 msgstr "שלבים"
@@ -35038,6 +35059,10 @@ msgstr "צפו ב-PyPI"
 msgid "View Plan"
 msgstr "הצגת התוכנית"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "View run"
+msgstr "הצגת הריצה"
+
 #: src/notifications/ingest.ts
 msgid "View Session"
 msgstr "צפייה בסשן"
@@ -36316,6 +36341,10 @@ msgstr "הסוכן שלכם פעיל"
 msgid "Your answer"
 msgstr "התשובה שלך"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Your answer · not sent to {guest} yet"
+msgstr "התשובה שלך · עדיין לא נשלחה אל {guest}"
+
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Your API key for authenticating API requests to FlowPad"
 msgstr "מפתח ה-API שלכם לאימות בקשות API ל-FlowPad"
@@ -36494,27 +36523,3 @@ msgstr "הגדילו"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטינו"
-
-#: src/components/conversation/SessionCard.tsx
-msgid "View run"
-msgstr "הצגת הריצה"
-
-#: src/components/conversation/PromptRunSummaryDialog.tsx
-msgid "Run on {host}'s machine"
-msgstr "הריצה במחשב של {host}"
-
-#: src/components/conversation/PromptRunSummaryDialog.tsx
-msgid "It answered without using any tool."
-msgstr "התשובה ניתנה בלי להשתמש בכלים."
-
-#: src/components/conversation/PromptRunSummaryDialog.tsx
-msgid "and {more} more"
-msgstr "ועוד {more}"
-
-#: src/components/conversation/PromptRunSummaryDialog.tsx
-msgid "Files changed"
-msgstr "קבצים ששונו"
-
-#: src/components/conversation/SessionCard.tsx
-msgid "Your answer · not sent to {guest} yet"
-msgstr "התשובה שלך · עדיין לא נשלחה אל {guest}"
