@@ -10,6 +10,7 @@ import { requestTabClose } from '@src/tabs/tab-close-request';
 import { ViewType, WebappSubview } from '@sdk';
 import { useContext as useSdkContext } from '@sdk/react/hooks';
 import { hasElectronDisplayCapture } from '@src/components/display-toolbar/capture-region';
+import { useDisplayChromeSlot } from '@src/components/display-toolbar';
 import { Check, Copy, ExternalLink, ImagePlus, RefreshCw, Terminal } from 'lucide-react';
 import { useCopied } from '@src/components/ui/copy-button';
 import React, { useCallback, useRef } from 'react';
@@ -78,6 +79,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
   }, [copy, src]);
 
   const hasWebApp = Boolean(src);
+  const chromeSlot = useDisplayChromeSlot();
   const showAnnotate = !!onAnnotate && isDesktop && hasElectronDisplayCapture();
 
   return (
@@ -187,6 +189,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          {chromeSlot}
         </div>
       </div>
       <div ref={contentRef} className="relative flex h-[calc(100%-36px)] w-full flex-col">

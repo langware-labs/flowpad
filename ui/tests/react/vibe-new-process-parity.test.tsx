@@ -118,6 +118,7 @@ vi.mock('@src/components/persistent-iframe', () => ({ default: () => null }));
 vi.mock('@src/components/display-toolbar', () => ({
   DisplayToolbar: ({ children }: { children?: ReactNode }) => <>{children}</>,
   WebappDisplayToolbar: () => null,
+  useDisplayChromeSlot: () => null,
 }));
 vi.mock('@src/pages/flow-page/display-history-button', () => ({ DisplayHistoryButton: () => null }));
 vi.mock('@src/pages/flow-page/workspace-child-strip', () => ({ WorkspaceChildStrip: () => null }));
