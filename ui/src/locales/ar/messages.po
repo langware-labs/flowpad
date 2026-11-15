@@ -21127,6 +21127,10 @@ msgstr "لا توجد إيداعات غير مدفوعة"
 msgid "No unread conversations"
 msgstr "لا توجد محادثات غير مقروءة"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "No unread conversations in this channel"
+msgstr "لا توجد محادثات غير مقروءة في هذه القناة"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "No unsaved changes"
 msgstr "لا توجد تغييرات غير محفوظة."

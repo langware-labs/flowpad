@@ -1465,10 +1465,11 @@ export function StreamInboxView({
   // inactive is ghost.
   const renderViewPill = (mode: StreamInboxViewMode, label: string, Icon: typeof InboxIcon) => {
     const active = viewMode === mode;
-    // Unread in the user's own Stream Inbox: the backend total, on the pill whether or not it is active.
+    // Unread in the user's own Stream Inbox: the backend total, on the pill whether or not it is active —
+    // but that total spans every channel, so it is not shown while the list is narrowed to some of them.
     // Otherwise the rows on this page — a full page holds more than it shows, so it reads "N+".
     let badge: string | null = null;
-    if (mode === 'unread' && ownStreamInbox) badge = streamInboxUnread > 0 ? String(streamInboxUnread) : null;
+    if (mode === 'unread' && ownStreamInbox && channelFilter.size === 0) badge = streamInboxUnread > 0 ? String(streamInboxUnread) : null;
     else if (active && visibleCount > 0)
       badge = visibleCount >= STREAM_INBOX_PAGE_SIZE ? `${STREAM_INBOX_PAGE_SIZE}+` : String(visibleCount);
     return (
@@ -1840,7 +1841,9 @@ export function StreamInboxView({
                   : inArchivedView
                     ? t`No archived conversations`
                     : inUnreadView
-                      ? t`No unread conversations`
+                      ? channelFilter.size > 0
+                        ? t`No unread conversations in this channel`
+                        : t`No unread conversations`
                       : channelFilter.size > 0
                         ? t`No messages from this channel yet`
                         : t`No conversations`}

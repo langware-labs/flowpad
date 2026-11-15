@@ -21127,6 +21127,10 @@ msgstr "No unpushed commits"
 msgid "No unread conversations"
 msgstr "No unread conversations"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "No unread conversations in this channel"
+msgstr "No unread conversations in this channel"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "No unsaved changes"
 msgstr "No unsaved changes"

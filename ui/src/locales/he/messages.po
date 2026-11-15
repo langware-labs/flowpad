@@ -21127,6 +21127,10 @@ msgstr "אין commits שלא נדחפו"
 msgid "No unread conversations"
 msgstr "אין שיחות שלא נקראו"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "No unread conversations in this channel"
+msgstr "אין שיחות שלא נקראו בערוץ הזה"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "No unsaved changes"
 msgstr "אין שינויים שלא נשמרו"
