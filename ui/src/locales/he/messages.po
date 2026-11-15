@@ -2031,6 +2031,10 @@ msgstr "↻ הרצה חוזרת"
 msgid "+ Add"
 msgstr "+ הוסף"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "+ Add browser"
+msgstr ""
+
 #: src/components/tabs/TabStrip.tsx
 #~ msgid "+ Add note"
 #~ msgstr ""
@@ -3018,6 +3022,10 @@ msgstr "יש להוסיף לפחות משתנה אחד"
 msgid "Add Bookmark"
 msgstr "הוסיפו סימנייה"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Add browser"
+msgstr ""
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/InboundView.tsx
@@ -3293,6 +3301,10 @@ msgstr "הוסיפו משתנה"
 msgid "Add…"
 msgstr "הוספה…"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Added"
+msgstr ""
+
 #. placeholder {0}: entries[0].relPath
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "Added \"{0}\""
@@ -3460,6 +3472,12 @@ msgstr "סוכן (הגדרה)"
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Agent {0}"
 msgstr "סוכן {0}"
+
+#: src/components/footer/BrowserChip.tsx
+#: src/components/footer/BrowserChip.tsx
+#: src/components/footer/BrowserChip.tsx
+msgid "Agent browser"
+msgstr ""
 
 #: src/components/quick-create/registry.ts
 msgid "Agent created"
@@ -3957,6 +3975,10 @@ msgstr "פועל תמיד"
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Always on · billed once a month."
 msgstr "פעיל תמיד · חיוב פעם בחודש."
+
+#: src/components/footer/BrowserChip.tsx
+msgid "always ready"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Always Thinking Enabled"
@@ -4725,6 +4747,10 @@ msgstr "ביקשתם כבר? הבקשות הפתוחות שלכם נמצאות �
 msgid "Asked by"
 msgstr "התבקש על ידי"
 
+#: src/components/help/AskForHelpButton.tsx
+msgid "Asked of you"
+msgstr ""
+
 #: src/components/voice/CallControls.tsx
 msgid "Asking for the microphone…"
 msgstr "מבקשים גישה למיקרופון…"
@@ -5206,6 +5232,7 @@ msgstr "אזור AWS עבור Bedrock"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/git/GitSetupWizard.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
@@ -5541,6 +5568,7 @@ msgstr "עיון בתיקיית העבודה"
 msgid "Browse…"
 msgstr "דפדפו…"
 
+#: src/components/footer/BrowserChip.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Browser"
@@ -6383,6 +6411,7 @@ msgstr ""
 msgid "check again"
 msgstr "בדקו שוב"
 
+#: src/components/footer/BrowserChip.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -7081,6 +7110,8 @@ msgstr "משבוט…"
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/terminal/interactive-terminal/PaneBar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 #: src/components/top-nav-bar/AddressAskField.tsx
@@ -7091,8 +7122,6 @@ msgstr "משבוט…"
 #: src/components/ui/sheet.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
-#: src/pages/flow-page/vibe-chat-pane.tsx
-#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Close"
@@ -7799,6 +7828,7 @@ msgid "Connect your GitHub account to open it. Whoever shared the sandbox can't 
 msgstr "יש לחבר את חשבון ה-GitHub שלכם כדי לפתוח אותו. מי ששיתף את הארגז החול לא יכול לעשות זאת עבורכם."
 
 #: src/components/conversation/SessionCard.tsx
+#: src/components/footer/BrowserChip.tsx
 msgid "connected"
 msgstr "מחובר"
 
@@ -7806,6 +7836,7 @@ msgstr "מחובר"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Connected"
 msgstr "מחובר"
@@ -11551,6 +11582,7 @@ msgstr "הושלם"
 #: src/components/conversation/ContactDialog.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/git/GitSetupWizard.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
@@ -11917,6 +11949,10 @@ msgstr "כל מבקר מקבל עותק של פרויקט הסוכן הזה בא
 #: src/components/conversation/ConversationView.tsx
 msgid "Earlier message"
 msgstr "הודעה קודמת"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Edge / Brave / Arc"
+msgstr ""
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "edges"
@@ -12988,6 +13024,14 @@ msgstr "ייצוא SVG"
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Exported"
 msgstr "יוצא"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "extension"
+msgstr ""
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Extension installed"
+msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "External link"
@@ -14321,6 +14365,11 @@ msgstr "מאת"
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "from {0}"
 msgstr "מ-{0}"
+
+#. placeholder {0}: row.task.reporter ?? ''
+#: src/components/help/AskForHelpButton.tsx
+msgid "From {0}"
+msgstr ""
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "From {senderName}"
@@ -16023,6 +16072,7 @@ msgid "inside"
 msgstr "בתוך"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
+#: src/components/footer/BrowserChip.tsx
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
@@ -18815,6 +18865,7 @@ msgstr "ניתובים שגויים ×{0}: המקום החזיר 404 — הער�
 
 #: src/components/assets/DependencyChips.tsx
 #: src/components/credentials-view/CredentialView.tsx
+#: src/components/footer/BrowserChip.tsx
 msgid "missing"
 msgstr "חסר"
 
@@ -21320,6 +21371,10 @@ msgstr "לא בדוק"
 msgid "Not checked yet"
 msgstr "טרם נבדק"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "not connected"
+msgstr ""
+
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager/connection-state-visual.ts
 msgid "Not connected"
@@ -21396,6 +21451,7 @@ msgid "not in a vault yet"
 msgstr ""
 
 #: src/components/assets/DependencyChips.tsx
+#: src/components/footer/BrowserChip.tsx
 msgid "not installed"
 msgstr "לא מותקן"
 
@@ -22077,6 +22133,10 @@ msgstr "ביום {day} בכל חודש בשעה {time}"
 msgid "On Disk"
 msgstr "בדיסק"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "on first browser step"
+msgstr ""
+
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "On load — each time it is shown"
 msgstr "בטעינה — בכל פעם שהוא מוצג"
@@ -22518,6 +22578,10 @@ msgstr ""
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
 msgstr "פתחו תיקיית גיבוי"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Open Chrome Web Store"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Open command in external terminal"
@@ -25540,6 +25604,7 @@ msgid "Reads and updates setup/recovery.md and setup/webapp_handlings.json."
 msgstr ""
 
 #: src/components/assets/DependencyChips.tsx
+#: src/components/footer/BrowserChip.tsx
 msgid "ready"
 msgstr "מוכן"
 
@@ -25737,6 +25802,7 @@ msgstr ""
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Reconnect"
 msgstr "התחברו מחדש"
@@ -27548,6 +27614,7 @@ msgstr "מפעיל"
 #: src/components/conversation/SessionCard.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
+#: src/components/footer/BrowserChip.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
 msgstr "פועל"
@@ -29722,6 +29789,7 @@ msgid "Show all"
 msgstr "הציגו הכל"
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Show all channels"
 msgstr "הצגת כל הערוצים"
 
@@ -30615,6 +30683,10 @@ msgstr "משהו השתבש. נסו שוב."
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Somewhere else"
 msgstr "במקום אחר"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "soon"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Sort by added lines"
@@ -35010,6 +35082,10 @@ msgstr "שימוש במאגר קיים"
 msgid "Use agent"
 msgstr "השתמשו בסוכן"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Use Agent browser"
+msgstr ""
+
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Use an API key"
 msgstr "שימוש במפתח API"
@@ -35033,6 +35109,10 @@ msgstr "שימוש בברירות מחדל"
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Google Vertex AI as the backend"
 msgstr "שימוש ב-Google Vertex AI כשרת הגב"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Use it"
+msgstr ""
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Use letters, digits, '.', '_', '~' or '-', starting with a letter or digit."
@@ -36601,6 +36681,10 @@ msgstr "אתם האורחים — הפרומפטים רצים במחשב של ה
 msgid "You are the host — prompts run on your machine"
 msgstr "אתם המארחים — הפרומפטים רצים במחשב שלכם"
 
+#: src/components/help/AskForHelpButton.tsx
+msgid "You asked"
+msgstr ""
+
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "You become the host — you decide what gets shared into the room."
 msgstr "אתם הופכים למנחים - אתם מחליטים מה משותף לחדר."
@@ -36787,6 +36871,12 @@ msgstr "התקציב שלך: {short}"
 msgid "Your business number in your own Meta app. Meta calls the hub's webhook URL."
 msgstr "מספר העסק באפליקציית Meta שלכם. Meta קוראת לכתובת ה-webhook של ה-hub."
 
+#: src/components/footer/BrowserChip.tsx
+#: src/components/footer/BrowserChip.tsx
+#: src/components/footer/BrowserChip.tsx
+msgid "Your Chrome"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "your Claude Code"
 msgstr "ה-Claude Code שלכם"
@@ -36808,7 +36898,6 @@ msgstr "שם התצוגה שלכם"
 msgid "Your group status report is ready"
 msgstr "דוח הסטטוס הקבוצתי שלכם מוכן"
 
-#: src/components/help/AskForHelpButton.tsx
 #: src/components/help/AskForHelpButton.tsx
 msgid "Your help requests"
 msgstr "בקשות העזרה שלך"

@@ -2031,6 +2031,10 @@ msgstr "↻ re-run"
 msgid "+ Add"
 msgstr "+ Add"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "+ Add browser"
+msgstr "+ Add browser"
+
 #: src/components/tabs/TabStrip.tsx
 #~ msgid "+ Add note"
 #~ msgstr "+ Add note"
@@ -3018,6 +3022,10 @@ msgstr "Add at least one variable"
 msgid "Add Bookmark"
 msgstr "Add Bookmark"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Add browser"
+msgstr "Add browser"
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/InboundView.tsx
@@ -3293,6 +3301,10 @@ msgstr "Add variable"
 msgid "Add…"
 msgstr "Add…"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Added"
+msgstr "Added"
+
 #. placeholder {0}: entries[0].relPath
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "Added \"{0}\""
@@ -3460,6 +3472,12 @@ msgstr "agent (definition)"
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Agent {0}"
 msgstr "Agent {0}"
+
+#: src/components/footer/BrowserChip.tsx
+#: src/components/footer/BrowserChip.tsx
+#: src/components/footer/BrowserChip.tsx
+msgid "Agent browser"
+msgstr "Agent browser"
 
 #: src/components/quick-create/registry.ts
 msgid "Agent created"
@@ -3957,6 +3975,10 @@ msgstr "Always on"
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Always on · billed once a month."
 msgstr "Always on · billed once a month."
+
+#: src/components/footer/BrowserChip.tsx
+msgid "always ready"
+msgstr "always ready"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Always Thinking Enabled"
@@ -4725,6 +4747,10 @@ msgstr "Asked before? Your open requests are in the help desk."
 msgid "Asked by"
 msgstr "Asked by"
 
+#: src/components/help/AskForHelpButton.tsx
+msgid "Asked of you"
+msgstr "Asked of you"
+
 #: src/components/voice/CallControls.tsx
 msgid "Asking for the microphone…"
 msgstr "Asking for the microphone…"
@@ -5206,6 +5232,7 @@ msgstr "AWS region for Bedrock"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/git/GitSetupWizard.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
@@ -5541,6 +5568,7 @@ msgstr "Browse the working directory"
 msgid "Browse…"
 msgstr "Browse…"
 
+#: src/components/footer/BrowserChip.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Browser"
@@ -6383,6 +6411,7 @@ msgstr "Check {0} again"
 msgid "check again"
 msgstr "check again"
 
+#: src/components/footer/BrowserChip.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -7081,6 +7110,8 @@ msgstr "Cloning…"
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/terminal/interactive-terminal/PaneBar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 #: src/components/top-nav-bar/AddressAskField.tsx
@@ -7091,8 +7122,6 @@ msgstr "Cloning…"
 #: src/components/ui/sheet.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
-#: src/pages/flow-page/vibe-chat-pane.tsx
-#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Close"
@@ -7799,6 +7828,7 @@ msgid "Connect your GitHub account to open it. Whoever shared the sandbox can't 
 msgstr "Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you."
 
 #: src/components/conversation/SessionCard.tsx
+#: src/components/footer/BrowserChip.tsx
 msgid "connected"
 msgstr "connected"
 
@@ -7806,6 +7836,7 @@ msgstr "connected"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Connected"
 msgstr "Connected"
@@ -11551,6 +11582,7 @@ msgstr "done"
 #: src/components/conversation/ContactDialog.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/git/GitSetupWizard.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
@@ -11917,6 +11949,10 @@ msgstr "Each visitor gets a copy of this agent's project in their own sandbox."
 #: src/components/conversation/ConversationView.tsx
 msgid "Earlier message"
 msgstr "Earlier message"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Edge / Brave / Arc"
+msgstr "Edge / Brave / Arc"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "edges"
@@ -12988,6 +13024,14 @@ msgstr "Export SVG"
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Exported"
 msgstr "Exported"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "extension"
+msgstr "extension"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Extension installed"
+msgstr "Extension installed"
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "External link"
@@ -14321,6 +14365,11 @@ msgstr "From"
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "from {0}"
 msgstr "from {0}"
+
+#. placeholder {0}: row.task.reporter ?? ''
+#: src/components/help/AskForHelpButton.tsx
+msgid "From {0}"
+msgstr "From {0}"
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "From {senderName}"
@@ -16023,6 +16072,7 @@ msgid "inside"
 msgstr "inside"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
+#: src/components/footer/BrowserChip.tsx
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
@@ -18815,6 +18865,7 @@ msgstr "Misroutes ×{0}: the place answered 404 — that channel is not there an
 
 #: src/components/assets/DependencyChips.tsx
 #: src/components/credentials-view/CredentialView.tsx
+#: src/components/footer/BrowserChip.tsx
 msgid "missing"
 msgstr "missing"
 
@@ -21320,6 +21371,10 @@ msgstr "Not checked"
 msgid "Not checked yet"
 msgstr "Not checked yet"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "not connected"
+msgstr "not connected"
+
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager/connection-state-visual.ts
 msgid "Not connected"
@@ -21396,6 +21451,7 @@ msgid "not in a vault yet"
 msgstr "not in a vault yet"
 
 #: src/components/assets/DependencyChips.tsx
+#: src/components/footer/BrowserChip.tsx
 msgid "not installed"
 msgstr "not installed"
 
@@ -22077,6 +22133,10 @@ msgstr "On day {day} of each month at {time}"
 msgid "On Disk"
 msgstr "On Disk"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "on first browser step"
+msgstr "on first browser step"
+
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "On load — each time it is shown"
 msgstr "On load — each time it is shown"
@@ -22518,6 +22578,10 @@ msgstr "Open automation"
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
 msgstr "Open Backup Folder"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Open Chrome Web Store"
+msgstr "Open Chrome Web Store"
 
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Open command in external terminal"
@@ -25540,6 +25604,7 @@ msgid "Reads and updates setup/recovery.md and setup/webapp_handlings.json."
 msgstr "Reads and updates setup/recovery.md and setup/webapp_handlings.json."
 
 #: src/components/assets/DependencyChips.tsx
+#: src/components/footer/BrowserChip.tsx
 msgid "ready"
 msgstr "ready"
 
@@ -25737,6 +25802,7 @@ msgstr "Recommended automations"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Reconnect"
 msgstr "Reconnect"
@@ -27548,6 +27614,7 @@ msgstr "Runner"
 #: src/components/conversation/SessionCard.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
+#: src/components/footer/BrowserChip.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
 msgstr "running"
@@ -29722,6 +29789,7 @@ msgid "Show all"
 msgstr "Show all"
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Show all channels"
 msgstr "Show all channels"
 
@@ -30615,6 +30683,10 @@ msgstr "Something went wrong. Please try again."
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Somewhere else"
 msgstr "Somewhere else"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "soon"
+msgstr "soon"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Sort by added lines"
@@ -35010,6 +35082,10 @@ msgstr "Use a repository that already exists"
 msgid "Use agent"
 msgstr "Use agent"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Use Agent browser"
+msgstr "Use Agent browser"
+
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Use an API key"
 msgstr "Use an API key"
@@ -35033,6 +35109,10 @@ msgstr "Use defaults"
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Google Vertex AI as the backend"
 msgstr "Use Google Vertex AI as the backend"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Use it"
+msgstr "Use it"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Use letters, digits, '.', '_', '~' or '-', starting with a letter or digit."
@@ -36601,6 +36681,10 @@ msgstr "You are the guest — prompts run on the host's machine"
 msgid "You are the host — prompts run on your machine"
 msgstr "You are the host — prompts run on your machine"
 
+#: src/components/help/AskForHelpButton.tsx
+msgid "You asked"
+msgstr "You asked"
+
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "You become the host — you decide what gets shared into the room."
 msgstr "You become the host — you decide what gets shared into the room."
@@ -36787,6 +36871,12 @@ msgstr "your budget: {short}"
 msgid "Your business number in your own Meta app. Meta calls the hub's webhook URL."
 msgstr "Your business number in your own Meta app. Meta calls the hub's webhook URL."
 
+#: src/components/footer/BrowserChip.tsx
+#: src/components/footer/BrowserChip.tsx
+#: src/components/footer/BrowserChip.tsx
+msgid "Your Chrome"
+msgstr "Your Chrome"
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "your Claude Code"
 msgstr "your Claude Code"
@@ -36808,7 +36898,6 @@ msgstr "Your display name"
 msgid "Your group status report is ready"
 msgstr "Your group status report is ready"
 
-#: src/components/help/AskForHelpButton.tsx
 #: src/components/help/AskForHelpButton.tsx
 msgid "Your help requests"
 msgstr "Your help requests"
