@@ -89,13 +89,20 @@ function useRailItems(): RailEntry[] {
   /** Title/icon/target per id. A LOOKUP, not an order — see RAIL_ITEMS. */
   const navMeta: Record<RailItemId, NavItem> = {
     // Glyph from the type registry: the rail slot and an AgenticProcess entity
-    // are one thing to a user, so one TypeInfo. Vibe has no chats list — it
-    // resumes the last real UI chat in the project.
+    // are one thing to a user, so one TypeInfo. Vibe has no chats list — from
+    // elsewhere it resumes the last real UI chat in the project; from a chat or
+    // a page hosted in one (`carriesViewMode`) it opens the no-process landing, whose "Past builds" list is the way to
+    // another chat (resuming would land on the chat already shown — a dead click).
     chats: {
       title: t`Chats`,
       icon: iconForType(AgenticProcess.type),
       viewType: ViewType.SHELL,
-      open: () => (isVibe ? openLastVibeChat() : navigation.openTab(ViewType.SHELL)),
+      open: () => {
+        if (!isVibe) navigation.openTab(ViewType.SHELL);
+        else if (currentDock?.carriesViewMode)
+          navigation.openDock(DockPointer.forHome(undefined, undefined, { vibeNoProcess: true }));
+        else openLastVibeChat();
+      },
     },
     stream_inbox: {
       title: t`Stream Inbox`,
