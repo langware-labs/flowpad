@@ -90,7 +90,7 @@ async def ontology() -> list[dict[str, str]]:
     rows = await Tag.get_all({"deprecated": False})
     include_flow = settings().include_flow_tags
     result = {row.name: {"name": row.name, "description": row.description or ""}
-              for row in rows if not row.system or (include_flow and row.inbox)}
+              for row in rows if not row.system or (include_flow and row.stream_inbox)}
     return [result[name] for name in sorted(result)]
 
 

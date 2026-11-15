@@ -28,7 +28,7 @@ export const RESERVED_TAG_ROOTS: ReadonlySet<string> = new Set([
 
 export interface ITag extends IEntity {
   color?: string | null;
-  inbox?: boolean;
+  stream_inbox?: boolean;
   /** Canonical dot-separated tag name (the natural key — id is uuid5 of it). */
   name?: string | null;
   /** UX display label. */
@@ -61,7 +61,7 @@ export interface Tag extends EntityMerge<ITag> {}
 @registerEntity
 export class Tag extends APIEntity<Tag> implements ITag {
   color: string | null = null;
-  inbox = false;
+  stream_inbox = false;
   title: string | null = null;
   description: string | null = null;
   alias_of: string | null = null;
@@ -91,7 +91,7 @@ export class Tag extends APIEntity<Tag> implements ITag {
   constructor(entity: Partial<ITag> = {}) {
     super(entity);
     this.color = entity.color ?? null;
-    this.inbox = entity.inbox ?? false;
+    this.stream_inbox = entity.stream_inbox ?? false;
     this.title = entity.title ?? null;
     this.description = entity.description ?? null;
     this.alias_of = entity.alias_of ?? null;

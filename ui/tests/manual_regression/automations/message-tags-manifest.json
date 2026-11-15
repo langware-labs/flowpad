@@ -1,12 +1,12 @@
 {
   "version": 1,
   "mock": "message-tags-20261114",
-  "root": "inbox",
+  "root": "stream_inbox",
   "screens": [
     {
-      "id": "inbox",
+      "id": "stream_inbox",
       "title": "Stream Inbox · tags on arriving messages",
-      "scenario": "Single-line 36px inbox rows. Compact tags at right expand on hover to all tag chips and a details icon.",
+      "scenario": "Single-line 36px stream_inbox rows. Compact tags at right expand on hover to all tag chips and a details icon.",
       "actions": [
         {
           "id": "open",
@@ -278,7 +278,7 @@
     {
       "id": "tagged-messages",
       "title": "Stream Inbox · filtered by tag",
-      "scenario": "Reuse the existing inbox and TagFilterBar to show messages tagged billing.refund, across channels.",
+      "scenario": "Reuse the existing stream_inbox and TagFilterBar to show messages tagged billing.refund, across channels.",
       "actions": [
         {
           "id": "open",
@@ -292,7 +292,7 @@
     {
       "id": "tags",
       "title": "Tags · user ontology and Flowpad",
-      "scenario": "The existing Tags page uses Inbox tags as its default heading.",
+      "scenario": "The existing Tags page uses Stream Inbox tags as its default heading.",
       "actions": [
         {
           "id": "create",

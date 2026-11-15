@@ -47,8 +47,17 @@ def _patch_hub_key(monkeypatch, key: str | None) -> None:
 
 @pytest.fixture
 def hub_login(monkeypatch):
-    """A box the hub has logged in."""
+    """A box the hub has logged in, and a hub that answers an endpoint's models with the sizes it pushed."""
+    from flow_sdk.external_apis.llm.model_selection import EndpointModelConfig
+
+    async def model_config(endpoint_typeid, **_kwargs):
+        return EndpointModelConfig(
+            endpoint_typeid=endpoint_typeid, tiers=BIND["tiers"], default_model=None,
+            effective_default_model=BIND["tiers"]["sm"],  # nothing declared: the hub falls back to the small one
+        )
+
     _patch_hub_key(monkeypatch, "fp-hub-key")
+    monkeypatch.setattr("flow_sdk.instance_settings.llm_endpoint.fetch_model_config", model_config)
     yield
 
 

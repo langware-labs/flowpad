@@ -8,7 +8,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { NodeData } from './graph/graphEngine';
 import { tagGraphCodec } from './codecs';
 import { SubgraphView } from './SubgraphView';
-import { InboxTags } from '@src/components/tags/InboxTags';
+import { StreamInboxTags } from '@src/components/tags/StreamInboxTags';
 import { messageTagReturn } from '@src/components/tags/message-tag-navigation';
 
 export { tagGraphCodec } from './codecs';
@@ -79,7 +79,7 @@ export function TagGraphView() {
       {tag && <button type="button" className="text-xs underline" data-testid="tag-view-messages"
         onClick={() => navigation.openDock(DockPointer.forStreamInbox().withOption('tags', tag))}><Trans>View tagged messages</Trans></button>}
       <button type="button" className="text-xs underline" data-testid="tag-view-manage"
-        onClick={() => navigation.openDock(DockPointer.forTagGraph(null, { carry: { ...activeDock?.options, origin_tag: tag ?? '', manage: 'inbox' } }))}><Trans>Inbox tags</Trans></button>
+        onClick={() => navigation.openDock(DockPointer.forTagGraph(null, { carry: { ...activeDock?.options, origin_tag: tag ?? '', manage: 'stream_inbox' } }))}><Trans>Stream Inbox tags</Trans></button>
     <div className="graph-segmented-toggle" role="group" aria-label={t`Tag shape`}>
       <button
         type="button"
@@ -112,7 +112,7 @@ export function TagGraphView() {
   );
 
   return (
-    activeDock?.options?.manage === 'inbox' ? <InboxTags /> :
+    activeDock?.options?.manage === 'stream_inbox' ? <StreamInboxTags /> :
     <SubgraphView
       projection="tag"
       codec={tagGraphCodec}

@@ -12,10 +12,10 @@ import { errorMessage } from '@src/lib/error-message';
 import { TagInput } from './TagInput';
 import { messageTagContext } from './message-tag-navigation';
 
-export const inboxTagsQuery = new QueryRequest({ type: Tag.type, scope: [], name: 'tags:definitions' });
+export const streamInboxTagsQuery = new QueryRequest({ type: Tag.type, scope: [], name: 'tags:definitions' });
 
 export function useTagDefinitions() {
-  const live = useEntitiesQuery<Tag>(inboxTagsQuery);
+  const live = useEntitiesQuery<Tag>(streamInboxTagsQuery);
   const shipped = useQuery({
     queryKey: ['tags', 'shipped-definitions'],
     queryFn: () => Tag.definitions(),
@@ -40,7 +40,7 @@ export function tagChipStyle(color?: string | null): CSSProperties | undefined {
 
 /** Projection only: assignment and queue decisions are owned by the message actions. */
 export function MessageTags({ message, compact = false }: { message: FlowMessage; compact?: boolean }) {
-  // An inbox row with no tags and nothing queued draws nothing, so it subscribes to nothing.
+  // A Stream Inbox row with no tags and nothing queued draws nothing, so it subscribes to nothing.
   if (compact && !message.tags?.length && !message.message_processing?.queue?.length) return null;
   return <MessageTagStrip message={message} compact={compact} />;
 }
@@ -107,7 +107,7 @@ function MessageTagStrip({ message, compact }: { message: FlowMessage; compact: 
   };
   return (
     <span
-      data-testid={compact ? 'inbox-message-tags' : 'message-tags'}
+      data-testid={compact ? 'stream-inbox-message-tags' : 'message-tags'}
       onClick={(event) => event.stopPropagation()}
       className={
         compact
@@ -171,16 +171,16 @@ function MessageTagStrip({ message, compact }: { message: FlowMessage; compact: 
               type="button"
               className="mt-3 text-xs underline"
               data-testid="message-tags-manage"
-              onClick={() => navigation.openDock(DockPointer.forTagGraph(null, { carry: { ...context, origin_tag: tags[0] ?? '', manage: 'inbox' } }))}
+              onClick={() => navigation.openDock(DockPointer.forTagGraph(null, { carry: { ...context, origin_tag: tags[0] ?? '', manage: 'stream_inbox' } }))}
             >
-              <Trans>Inbox tags</Trans>
+              <Trans>Stream Inbox tags</Trans>
             </button>
             <button
               type="button"
               className="ms-3 mt-3 text-xs underline"
               data-testid="message-tags-create"
               onClick={() =>
-                navigation.openDock(DockPointer.forTagGraph(null, { carry: { ...context, origin_tag: tags[0] ?? '', manage: 'inbox', creating: 'tag' } }))
+                navigation.openDock(DockPointer.forTagGraph(null, { carry: { ...context, origin_tag: tags[0] ?? '', manage: 'stream_inbox', creating: 'tag' } }))
               }
             >
               <Trans>New tag</Trans>

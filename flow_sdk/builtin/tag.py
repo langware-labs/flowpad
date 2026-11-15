@@ -15,7 +15,7 @@ Resolution is wiki-link-style (``resolve_tag`` → entity or None) and NEVER
 mints: blessing is a deliberate act (author, UI, seeder) — an event storm on
 the bus must not become an entity storm.
 
-CRUD is generic. Inbox management adds explicit rename/delete actions so the
+CRUD is generic. Stream Inbox management adds explicit rename/delete actions so the
 message bindings and their automations change together, on the backend.
 """
 
@@ -41,7 +41,7 @@ class Tag(Entity):
     title: Optional[str] = APIField(default=None, description="UX display label")
     description: Optional[str] = APIField(default=None, description="What events/things under this tag mean")
     color: Optional[str] = APIField(default=None, description="Optional #RRGGBB chip colour")
-    inbox: bool = APIField(default=False, description="Shown in Inbox tags management; not a classifier eligibility gate")
+    stream_inbox: bool = APIField(default=False, description="Shown in Stream Inbox tags management; not a classifier eligibility gate")
 
     @field_validator("color")
     @classmethod
@@ -272,7 +272,7 @@ async def seed_system_tags() -> int:
     try:
         for name, title, description in SYSTEM_TAG_SEED:
             expected = Tag(name=name, title=title, description=description, system=True,
-                           inbox=name.startswith("message."))
+                           stream_inbox=name.startswith("message."))
             existing = await Tag.get_by_id(expected.id)
             # A newly shipped vocabulary name may already be user-authored.
             # Never replace that user's ontology with a system definition.
@@ -280,7 +280,7 @@ async def seed_system_tags() -> int:
                 continue
             if existing is not None and (
                 existing.title == title and existing.description == description and existing.system
-                and existing.inbox == expected.inbox
+                and existing.stream_inbox == expected.stream_inbox
             ):
                 continue
             await expected.save(notify=False)

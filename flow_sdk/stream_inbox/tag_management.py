@@ -1,7 +1,7 @@
-"""Inbox tag management: keep bindings and automation references with the name.
+"""Stream Inbox tag management: keep bindings and automation references with the name.
 
 Generic Tag deletion still only unblesses an anonymous tag. These explicit
-message-management operations own the stronger Inbox confirmation semantics.
+message-management operations own the stronger Stream Inbox confirmation semantics.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ async def rename(tag, fields: dict) -> dict:
     async with get_db_driver().write_transaction():
         if await Tag.get_by_id(Tag.allocate_id({"name": name})) is not None:
             raise ValueError("That tag already exists; rename does not merge tags.")
-        successor = Tag(name=name, inbox=tag.inbox,
+        successor = Tag(name=name, stream_inbox=tag.stream_inbox,
                         **{key: fields.get(key, getattr(tag, key)) for key in ("title", "description", "color")})
         messages, rules = await _affected(tag)
         message_count = len(messages)

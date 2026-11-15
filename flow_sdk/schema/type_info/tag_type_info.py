@@ -15,7 +15,7 @@ class TagMeta(BaseMeta):
     title: Optional[str] = None
     description: Optional[str] = None
     color: Optional[str] = None
-    inbox: Optional[bool] = None
+    stream_inbox: Optional[bool] = None
     alias_of: Optional[str] = None
     deprecated: Optional[bool] = None
     system: Optional[bool] = None

@@ -46,7 +46,7 @@ async function openMessage(page: Page) {
   await expect(page.getByTestId(`message-bubble-${messageId}`)).toBeVisible();
 }
 function tags(page: Page) { return page.getByTestId(`message-bubble-${messageId}`).getByTestId('message-tags'); }
-function inboxRow(page: Page, id = conversationId) {
+function streamInboxRow(page: Page, id = conversationId) {
   return page.locator(`[data-testid="stream-inbox-conversation-row"][data-conversation-id="${id}"]`);
 }
 async function openQueue(page: Page) {
@@ -79,7 +79,7 @@ test.beforeAll(async () => {
     await graph('delete', `trigger/${rule.id}`);
   }
   for (const [index, name] of tagNames.entries()) {
-    await graph('post', 'tag', { name, title: name.split('.').at(-1), description: `Acceptance meaning: ${name}`, inbox: true,
+    await graph('post', 'tag', { name, title: name.split('.').at(-1), description: `Acceptance meaning: ${name}`, stream_inbox: true,
       color: ['#3b82f6', '#eab308', '#f97316', '#22c55e', '#a855f7'][index] });
   }
   for (const [index, name] of ['Refund helper', 'Flag for today', 'Review refund'].entries()) {
@@ -108,7 +108,7 @@ test.beforeAll(async () => {
   });
   const channels = await (await api.get(`${control}/channels`)).json();
   const entry = channels.telegram;
-  const source = await graph<{ id: string }>('post', 'data_source', { name: `Message tags acceptance inbox ${Date.now()}`, provider: 'telegram',
+  const source = await graph<{ id: string }>('post', 'data_source', { name: `Message tags acceptance stream_inbox ${Date.now()}`, provider: 'telegram',
     config: entry.config, inbound_allowed_senders: [], ...entry.fields, ...(entry.secret_store ? { secret_store: entry.secret_store } : {}) });
   sourceId = source.id;
   await graph('post', `data_source/${sourceId}/verify`, {});
@@ -135,7 +135,7 @@ test.afterAll(async () => {
   await api?.dispose();
 });
 
-test('arrival classifies, updates mounted inbox, and stays a single 36px row', async ({ page }, info) => {
+test('arrival classifies, updates mounted stream_inbox, and stays a single 36px row', async ({ page }, info) => {
   await page.goto('/dock/stream_inbox');
   expect((await api.post(`${control}/deliver`, { data: { channel: 'telegram', text: body, sender: String(Date.now()) } })).ok()).toBe(true);
   await graph('post', `data_source/${sourceId}/sync`, {});
@@ -146,15 +146,15 @@ test('arrival classifies, updates mounted inbox, and stays a single 36px row', a
     messageId = arrived?.id ?? '';
     return conversationId;
   }).toBeTruthy();
-  const row = inboxRow(page);
+  const row = streamInboxRow(page);
   await expect(row).toBeVisible();
   await expect.poll(async () => (await message()).message_processing?.classification).toMatch(/succeeded|failed|skipped/);
   expect((await message()).message_processing).toMatchObject({ classification: 'succeeded' });
-  await expect(row.getByTestId('inbox-message-tags')).toBeVisible();
+  await expect(row.getByTestId('stream-inbox-message-tags')).toBeVisible();
   expect((await row.boundingBox())!.height).toBe(36);
-  expect((await row.getByTestId('inbox-message-tags').boundingBox())!.width).toBeLessThanOrEqual(112);
-  await coverage.screen('inbox', page, info);
-  await coverage.action('inbox', 'open', async () => {
+  expect((await row.getByTestId('stream-inbox-message-tags').boundingBox())!.width).toBeLessThanOrEqual(112);
+  await coverage.screen('stream_inbox', page, info);
+  await coverage.action('stream_inbox', 'open', async () => {
     await row.click();
     await expect(page.locator('[data-testid^="message-bubble-"]').filter({ hasText: body })).toBeVisible();
   });
@@ -199,9 +199,9 @@ test('arrival classifies, updates mounted inbox, and stays a single 36px row', a
   await page.setViewportSize({ width: 760, height: 900 });
   await page.goto('/dock/stream_inbox');
   expect((await row.boundingBox())!.height).toBe(36);
-  const narrowPath = info.outputPath('inbox-narrow.png');
+  const narrowPath = info.outputPath('stream-inbox-narrow.png');
   await page.screenshot({ path: narrowPath, animations: 'disabled' });
-  await info.attach('inbox-narrow', { path: narrowPath, contentType: 'image/png' });
+  await info.attach('stream-inbox-narrow', { path: narrowPath, contentType: 'image/png' });
 });
 
 test('message tag and automation links resolve exact entities; back/reload retain state', async ({ page }, info) => {
@@ -275,7 +275,7 @@ test('tag removals affect only the chosen tag, persist, and preserve the message
   await coverage.action('unmatched', 'tags', async () => picker(page));
 });
 
-test('tag viewer filters inbox by URL and clears through the existing filter bar', async ({ page }, info) => {
+test('tag viewer filters stream_inbox by URL and clears through the existing filter bar', async ({ page }, info) => {
   await graph('post', `flow_message/${messageId}/set-tags`, { tags: tagNames });
   await page.goto(`/dock/tag/graph/${encodeURIComponent(tagNames[0])}`);
   await expect(page.locator('.graph-view-root')).toBeVisible();
@@ -284,7 +284,7 @@ test('tag viewer filters inbox by URL and clears through the existing filter bar
     await expect(page).toHaveURL((url) => url.searchParams.get('tags') === tagNames[0]);
     await expect(page.getByTestId('stream-inbox-tag-filter')).toContainText(tagNames[0]);
   });
-  const row = inboxRow(page);
+  const row = streamInboxRow(page);
   await expect(row).toBeVisible();
   await coverage.screen('tagged-messages', page, info);
   await page.reload();
@@ -326,10 +326,10 @@ test('new unmatched and failed classifications stay compact and allow manual cor
     }).toBe(marker === 'unmatched-message' ? 'succeeded' : 'failed');
     expect(arrived!.tags).toEqual([]);
     expect(arrived!.message_processing!.queue).toEqual([]);
-    const row = inboxRow(page, arrived!.conversation_id);
+    const row = streamInboxRow(page, arrived!.conversation_id);
     await expect(row).toBeVisible();
     expect((await row.boundingBox())!.height).toBe(36);
-    await expect(row.getByTestId('inbox-message-tags')).toHaveCount(0);
+    await expect(row.getByTestId('stream-inbox-message-tags')).toHaveCount(0);
     await row.click();
     const bubble = page.getByTestId(`message-bubble-${arrived!.id}`);
     await expect(bubble).toContainText(text);
@@ -382,37 +382,37 @@ test('existing tag CRUD, rename aliases, color and Flowpad vocabulary settings',
   await picker(page);
   await coverage.action('tag-picker', 'editor', async () => {
     await page.getByTestId('message-tags-manage').click();
-    await expect(page.getByTestId('inbox-tags-page')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Inbox tags', exact: true })).toBeVisible();
+    await expect(page.getByTestId('stream-inbox-tags-page')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Stream Inbox tags', exact: true })).toBeVisible();
   });
   await coverage.screen('tags', page, info);
   const created = `${prefix}.billing.new-review`;
   const successor = `${prefix}.billing.renamed-review`;
   await coverage.action('tags', 'create', async () => {
-    await page.getByTestId('inbox-tags-create').click();
-    await expect(page.getByTestId('inbox-tag-editor')).toBeVisible();
+    await page.getByTestId('stream-inbox-tags-create').click();
+    await expect(page.getByTestId('stream-inbox-tag-editor')).toBeVisible();
   });
   await coverage.screen('tag-create', page, info);
-  await page.getByTestId('inbox-tag-name').fill(created);
-  await page.getByTestId('inbox-tag-title').fill('New billing review');
-  await page.getByTestId('inbox-tag-description').fill('Messages requiring a second billing review');
-  await page.getByTestId('inbox-tag-color').fill('#2563eb');
+  await page.getByTestId('stream-inbox-tag-name').fill(created);
+  await page.getByTestId('stream-inbox-tag-title').fill('New billing review');
+  await page.getByTestId('stream-inbox-tag-description').fill('Messages requiring a second billing review');
+  await page.getByTestId('stream-inbox-tag-color').fill('#2563eb');
   await coverage.action('tag-create', 'save', async () => {
-    await page.getByTestId('inbox-tag-save').click();
-    await expect(page.getByTestId(`inbox-tag-row-${created}`)).toBeVisible();
+    await page.getByTestId('stream-inbox-tag-save').click();
+    await expect(page.getByTestId(`stream-inbox-tag-row-${created}`)).toBeVisible();
   });
   await coverage.screen('tag-created', page, info);
   await page.reload();
-  await expect(page.getByTestId(`inbox-tag-row-${created}`)).toBeVisible();
+  await expect(page.getByTestId(`stream-inbox-tag-row-${created}`)).toBeVisible();
   let definitions = await graph<Array<{ name: string; color?: string; alias_of?: string; deprecated?: boolean }>>('get', 'tag');
   expect(definitions.find((tag) => tag.name === created)?.color).toBe('#2563eb');
   await coverage.action('tag-created', 'back', async () => {
-    await page.getByTestId('inbox-tag-back').click();
+    await page.getByTestId('stream-inbox-tag-back').click();
     await expect(page).toHaveURL((url) => decodeURIComponent(url.pathname) === `/dock/tag/graph/${tagNames[0]}`);
   });
   await coverage.action('tag-view', 'manage', async () => {
     await page.getByTestId('tag-view-manage').click();
-    await expect(page.getByTestId('inbox-tags-page')).toBeVisible();
+    await expect(page.getByTestId('stream-inbox-tags-page')).toBeVisible();
   });
   await graph('post', `flow_message/${messageId}/tags/${encodeURIComponent(created)}`);
   const beforeRename = (await message()).message_processing!.assignments[created];
@@ -420,15 +420,15 @@ test('existing tag CRUD, rename aliases, color and Flowpad vocabulary settings',
     trigger_type: 'tag', tag_pattern: 'stream_inbox.*.message.projected', enabled: true,
     message_tags: [created], then: { run_script: 'true' } });
   await coverage.action('tags', 'edit', async () => {
-    await page.getByTestId(`inbox-tag-edit-${created}`).click();
-    await expect(page.getByTestId('inbox-tag-name')).toHaveValue(created);
+    await page.getByTestId(`stream-inbox-tag-edit-${created}`).click();
+    await expect(page.getByTestId('stream-inbox-tag-name')).toHaveValue(created);
   });
   await coverage.screen('tag-edit', page, info);
-  await page.getByTestId('inbox-tag-name').fill(successor);
+  await page.getByTestId('stream-inbox-tag-name').fill(successor);
   await coverage.action('tag-edit', 'save', async () => {
-    await page.getByTestId('inbox-tag-save').click();
-    await expect(page.getByTestId(`inbox-tag-row-${successor}`)).toBeVisible();
-    await expect(page.getByTestId(`inbox-tag-row-${created}`)).toHaveCount(0);
+    await page.getByTestId('stream-inbox-tag-save').click();
+    await expect(page.getByTestId(`stream-inbox-tag-row-${successor}`)).toBeVisible();
+    await expect(page.getByTestId(`stream-inbox-tag-row-${created}`)).toHaveCount(0);
   });
   definitions = await graph('get', 'tag');
   expect(definitions.find((tag) => tag.name === created)).toMatchObject({ alias_of: successor, deprecated: true });
@@ -439,23 +439,23 @@ test('existing tag CRUD, rename aliases, color and Flowpad vocabulary settings',
   expect(await graph('get', `trigger/${renameRule.id}`)).toMatchObject({ message_tags: [successor] });
   await coverage.screen('tag-edited', page, info);
   await coverage.action('tag-edited', 'back', async () => {
-    await page.getByTestId('inbox-tag-back').click();
-    await expect(page.getByTestId('inbox-tag-result')).toHaveCount(0);
+    await page.getByTestId('stream-inbox-tag-back').click();
+    await expect(page.getByTestId('stream-inbox-tag-result')).toHaveCount(0);
   });
   await coverage.action('tags', 'delete', async () => {
-    await page.getByTestId(`inbox-tag-delete-${successor}`).click();
-    await expect(page.getByTestId('inbox-tag-delete-confirm')).toBeVisible();
+    await page.getByTestId(`stream-inbox-tag-delete-${successor}`).click();
+    await expect(page.getByTestId('stream-inbox-tag-delete-confirm')).toBeVisible();
   });
   await coverage.screen('tag-delete', page, info);
   await coverage.action('tag-delete', 'cancel', async () => {
-    await page.getByTestId('inbox-tag-delete-confirm').getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(page.getByTestId('inbox-tag-delete-confirm')).toHaveCount(0);
+    await page.getByTestId('stream-inbox-tag-delete-confirm').getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(page.getByTestId('stream-inbox-tag-delete-confirm')).toHaveCount(0);
     expect((await message()).tags).toContain(successor);
   });
-  await page.getByTestId(`inbox-tag-delete-${successor}`).click();
+  await page.getByTestId(`stream-inbox-tag-delete-${successor}`).click();
   await coverage.action('tag-delete', 'delete', async () => {
-    await page.getByTestId('inbox-tag-delete-confirm-confirm').click();
-    await expect(page.getByTestId(`inbox-tag-row-${successor}`)).toHaveCount(0);
+    await page.getByTestId('stream-inbox-tag-delete-confirm-confirm').click();
+    await expect(page.getByTestId(`stream-inbox-tag-row-${successor}`)).toHaveCount(0);
   });
   const deletedMessage = await message();
   expect(deletedMessage.tags).not.toContain(successor);
@@ -464,8 +464,8 @@ test('existing tag CRUD, rename aliases, color and Flowpad vocabulary settings',
   expect(deletedMessage.text).toBe(body);
   await coverage.screen('tag-deleted', page, info);
   await coverage.action('tag-deleted', 'back', async () => {
-    await page.getByTestId('inbox-tag-back').click();
-    await expect(page.getByTestId('inbox-tag-result')).toHaveCount(0);
+    await page.getByTestId('stream-inbox-tag-back').click();
+    await expect(page.getByTestId('stream-inbox-tag-result')).toHaveCount(0);
   });
   await coverage.action('tags', 'flow', async () => {
     await page.getByTestId('message-classification-flow-tags').click();
@@ -476,7 +476,7 @@ test('existing tag CRUD, rename aliases, color and Flowpad vocabulary settings',
   await page.reload();
   await expect(page.getByTestId('message-classification-flow-tags')).toHaveAttribute('data-state', 'checked');
   await coverage.action('flow-tags', 'save', async () => {
-    await page.getByTestId('inbox-tags-save-preferences').click();
+    await page.getByTestId('stream-inbox-tags-save-preferences').click();
     await expect(page).toHaveURL((url) => !url.searchParams.has('settings'));
     expect(await graph('get', 'flow_message/classification-settings')).toMatchObject({ include_flow_tags: true });
   });
@@ -491,12 +491,12 @@ const removedNames: Record<string, string> = {
 };
 const queueScreens = ['queue', 'chained', 'once'];
 
-test('inbox details, picker controls and cancelled tag editors preserve URL state', async ({ page }) => {
+test('stream_inbox details, picker controls and cancelled tag editors preserve URL state', async ({ page }) => {
   await graph('post', `flow_message/${messageId}/set-tags`, { tags: tagNames });
   await page.goto('/dock/stream_inbox');
-  const row = inboxRow(page);
-  await coverage.action('inbox', 'details', async () => {
-    await row.getByTestId('inbox-message-tags').hover();
+  const row = streamInboxRow(page);
+  await coverage.action('stream_inbox', 'details', async () => {
+    await row.getByTestId('stream-inbox-message-tags').hover();
     await row.getByTestId('message-tags-menu').click();
     await expect(page.getByTestId('message-tags-picker')).toBeVisible();
     await expect(page).toHaveURL((url) => url.searchParams.get('message_tags') === `${messageId}:picker`);
@@ -521,21 +521,21 @@ test('inbox details, picker controls and cancelled tag editors preserve URL stat
   await picker(page);
   await coverage.action('tag-picker', 'new', async () => {
     await page.getByTestId('message-tags-create').click();
-    await expect(page.getByTestId('inbox-tag-editor')).toBeVisible();
+    await expect(page.getByTestId('stream-inbox-tag-editor')).toBeVisible();
     await expect(page).toHaveURL((url) => url.searchParams.get('creating') === 'tag');
   });
-  await page.getByTestId('inbox-tag-name').fill(`${prefix}.cancelled`);
+  await page.getByTestId('stream-inbox-tag-name').fill(`${prefix}.cancelled`);
   await coverage.action('tag-create', 'cancel', async () => {
-    await page.getByTestId('inbox-tag-cancel').click();
-    await expect(page.getByTestId('inbox-tag-editor')).toHaveCount(0);
+    await page.getByTestId('stream-inbox-tag-cancel').click();
+    await expect(page.getByTestId('stream-inbox-tag-editor')).toHaveCount(0);
     expect((await graph<Array<{ name: string }>>('get', 'tag')).some((tag) => tag.name === `${prefix}.cancelled`)).toBe(false);
   });
-  await page.getByTestId(`inbox-tag-edit-${tagNames[0]}`).click();
-  await page.getByTestId('inbox-tag-name').fill(`${prefix}.cancelled-rename`);
+  await page.getByTestId(`stream-inbox-tag-edit-${tagNames[0]}`).click();
+  await page.getByTestId('stream-inbox-tag-name').fill(`${prefix}.cancelled-rename`);
   await coverage.action('tag-edit', 'cancel', async () => {
-    await page.getByTestId('inbox-tag-cancel').click();
-    await expect(page.getByTestId('inbox-tag-editor')).toHaveCount(0);
-    await expect(page.getByTestId(`inbox-tag-row-${tagNames[0]}`)).toBeVisible();
+    await page.getByTestId('stream-inbox-tag-cancel').click();
+    await expect(page.getByTestId('stream-inbox-tag-editor')).toHaveCount(0);
+    await expect(page.getByTestId(`stream-inbox-tag-row-${tagNames[0]}`)).toBeVisible();
   });
 });
 

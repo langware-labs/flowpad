@@ -234,12 +234,12 @@ async def test_preview_uses_current_tags_without_queue_effect(explicit_drain):
 
 
 @async_context
-async def test_user_ontology_not_opted_out_by_inbox_flag(monkeypatch):
+async def test_user_ontology_not_opted_out_by_stream_inbox_flag(monkeypatch):
     from flow_sdk.builtin.tag import Tag, seed_system_tags
     from flow_sdk.schema.data_spec.message_processing_spec import MessageClassificationSettings
 
     name = f"--qa--.{mint_uuid()}"
-    await Tag(name=name, inbox=False).save()
+    await Tag(name=name, stream_inbox=False).save()
     await Tag(name=name + ".deprecated", deprecated=True).save()
     await seed_system_tags()
     monkeypatch.setattr(processing, "settings", lambda: MessageClassificationSettings())
@@ -387,7 +387,7 @@ async def test_deleted_rule_is_skipped(explicit_drain):
 async def managed_tag_and_rule():
     from flow_sdk.builtin.tag import Tag
 
-    tag = await Tag(name=f"--qa--.{mint_uuid()}", inbox=True, color="#123456").save()
+    tag = await Tag(name=f"--qa--.{mint_uuid()}", stream_inbox=True, color="#123456").save()
     trigger = await Trigger(name=str(mint_uuid()), trigger_type="tag", scope="user",
                             tag_pattern="stream_inbox.*.message.projected", message_tags=[tag.name]).save()
     return tag, trigger

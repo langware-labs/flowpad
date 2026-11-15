@@ -489,6 +489,9 @@ _LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
     # inline one — the guard follows private helpers for this reason.
     "context_data",
     "tab_order",
+    # What the launch resolved to spend: the endpoint and the model slug it stamped.
+    "resolved_llm_endpoint_typeid",
+    "resolved_model_slug",
 )
 
 # Per-process serialization for prompt-queue drains so two ready edges can't

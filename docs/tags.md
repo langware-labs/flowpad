@@ -136,7 +136,7 @@ Messages use the same `Entity.tags` field and Tag definitions as every other
 entity. Classification considers the user's nondeprecated ontology. The optional
 Flowpad message vocabulary is enabled separately; it does not replace user tags
 or introduce a `labels` field. Tag definitions carry an optional `color` and an
-`inbox` management marker; that marker does not restrict classifier eligibility.
+`stream_inbox` management marker; that marker does not restrict classifier eligibility.
 
 Only new incoming messages enter classification. Historical imports and reads do
 not backfill work, and outgoing/own-automation messages are excluded. A failed
@@ -158,7 +158,7 @@ silently replayed.
 classification, assignment provenance, and queue history. Automation provenance
 identifies the exact rule and run. Tag changes through the existing add/remove
 actions, generic CRUD, or `set-tags` use the same entity mutation seam and publish
-the resulting state to live clients. The inbox remains a single-line row; full
+the resulting state to live clients. The stream inbox remains a single-line row; full
 tag details and queue history are opened on demand.
 
 Read or update instance settings through
@@ -166,7 +166,7 @@ Read or update instance settings through
 `include_flow_tags`. Replace a message's tags atomically through
 `POST /api/v1/graph/flow_message/<id>/set-tags` with `{"tags": [...]}`.
 
-Inbox tag management uses the existing successor/alias convention when renaming:
+Stream Inbox tag management uses the existing successor/alias convention when renaming:
 the old definition resolves to the successor, and message assignments, provenance,
 suppression and automation references follow it without firing again. Its explicit
 delete action removes message attachments, retains messages and disables affected

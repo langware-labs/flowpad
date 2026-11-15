@@ -744,7 +744,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         _OPT,
         folds_pointer=True,
         label="Token sources",
-        aliases=("LLM sources", "harness funding"),
+        aliases=("llm sources", "harness funding"),
         subplaces=tuple(
             (h, f"Token sources > how {name} is funded (its key, plan or allowance)")
             for h, name in (("claude", "Claude Code"), ("codex", "Codex"), ("copilot", "Copilot"), ("opencode", "OpenCode"))

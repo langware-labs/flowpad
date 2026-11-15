@@ -10,14 +10,14 @@ import { Switch } from '@src/components/ui/switch';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { EntityChip } from '@src/components/conversation/EntityChip';
 import { errorMessage } from '@src/lib/error-message';
-import { inboxTagsQuery, tagChipStyle, useTagDefinitions } from './MessageTags';
+import { streamInboxTagsQuery, tagChipStyle, useTagDefinitions } from './MessageTags';
 import { tagReturnContext } from './message-tag-navigation';
 
 /** Existing Tag entities and generic CRUD, exposed beside their existing graph viewer. */
-export function InboxTags() {
+export function StreamInboxTags() {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
-  const { data: tags = [], refetch } = useEntitiesQuery<Tag>(inboxTagsQuery);
+  const { data: tags = [], refetch } = useEntitiesQuery<Tag>(streamInboxTagsQuery);
   const definitions = useTagDefinitions();
   const [settings, setSettings] = useState<MessageClassificationSettings | null>(null);
   const [editing, setEditing] = useState<Tag | 'new' | null>(null);
@@ -63,7 +63,7 @@ export function InboxTags() {
     setBusy(true);
     setError(null);
     try {
-      const values = { name: name.trim(), title: title.trim() || name.trim().split('.').at(-1) || name.trim(), description, color, inbox: true };
+      const values = { name: name.trim(), title: title.trim() || name.trim().split('.').at(-1) || name.trim(), description, color, stream_inbox: true };
       if (editing === 'new') await new Tag(values).save();
       else if (editing.name === values.name)
         await dataManager.save(editing.typeId, [], { ...editing.toJSON(), ...values });
@@ -91,15 +91,15 @@ export function InboxTags() {
     }
   };
   return (
-    <section className="flex h-full min-h-0 flex-col" data-testid="inbox-tags-page">
+    <section className="flex h-full min-h-0 flex-col" data-testid="stream-inbox-tags-page">
       <header className="flex items-center gap-2 border-b border-border p-4">
         <h1 className="flex-1 text-lg font-semibold">
-          <Trans>Inbox tags</Trans>
+          <Trans>Stream Inbox tags</Trans>
         </h1>
         <Button variant="outline" size="sm" onClick={() => navigation.openDock(DockPointer.forTagGraph())}>
           <Trans>Tag graph</Trans>
         </Button>
-        <Button size="sm" data-testid="inbox-tags-create" onClick={() => edit('new')}>
+        <Button size="sm" data-testid="stream-inbox-tags-create" onClick={() => edit('new')}>
           <Trans>New tag</Trans>
         </Button>
       </header>
@@ -108,7 +108,7 @@ export function InboxTags() {
           <Trans>New incoming messages use your ontology. Existing messages are not reclassified.</Trans>
         </p>
         {settings && (
-          <div className="flex flex-wrap gap-4 text-sm" data-testid="inbox-tags-settings">
+          <div className="flex flex-wrap gap-4 text-sm" data-testid="stream-inbox-tags-settings">
             <label className="flex items-center gap-2">
               <Switch
                 checked={settings.enabled}
@@ -129,8 +129,8 @@ export function InboxTags() {
             </label>
           </div>
         )}
-        {settings?.include_flow_tags && <div className="flex flex-wrap gap-1" data-testid="inbox-flow-tags">
-          {definitions.filter((tag) => tag.system && tag.inbox).map((tag) => <EntityChip key={tag.id}
+        {settings?.include_flow_tags && <div className="flex flex-wrap gap-1" data-testid="stream-inbox-flow-tags">
+          {definitions.filter((tag) => tag.system && tag.stream_inbox).map((tag) => <EntityChip key={tag.id}
             entity={{ type: Tag.type, id: tag.id, name: tag.name?.split('.').at(-1) }} style={tagChipStyle(tag.color)}
             onClick={() => navigation.openDock(DockPointer.forTagGraph(tag.name))} />)}
         </div>}
@@ -139,17 +139,17 @@ export function InboxTags() {
             {error}
           </p>
         )}
-        {currentDock?.options?.result && <div role="status" data-testid="inbox-tag-result" className="flex items-center gap-3 rounded border border-border p-3 text-sm">
+        {currentDock?.options?.result && <div role="status" data-testid="stream-inbox-tag-result" className="flex items-center gap-3 rounded border border-border p-3 text-sm">
           <span>{currentDock.options.result === 'created' ? t`Tag created` : currentDock.options.result === 'edited' ? t`Changes saved` : t`Tag deleted`}</span>
-          <Button variant="outline" size="sm" data-testid="inbox-tag-back" onClick={() => navigation.openDock(currentDock.options?.result === 'created'
+          <Button variant="outline" size="sm" data-testid="stream-inbox-tag-back" onClick={() => navigation.openDock(currentDock.options?.result === 'created'
             ? DockPointer.forTagGraph(currentDock.options.origin_tag || currentDock.options.result_tag, { carry: tagReturnContext(currentDock.options) })
             : tagsPointer())}>{currentDock.options.result === 'created' ? t`Back to tag` : t`Back to tags`}</Button>
         </div>}
-        {currentDock?.options?.settings === 'flow' && settings && <Button data-testid="inbox-tags-save-preferences" variant="outline"
+        {currentDock?.options?.settings === 'flow' && settings && <Button data-testid="stream-inbox-tags-save-preferences" variant="outline"
           onClick={() => { void FlowMessage.classificationSettings(settings).then(() => navigation.openDock(tagsPointer())).catch((e) => setError(errorMessage(e, t`Could not save classification settings`))); }}><Trans>Save preferences</Trans></Button>}
         {editing && (
           <form
-            data-testid="inbox-tag-editor"
+            data-testid="stream-inbox-tag-editor"
             onSubmit={(event) => {
               event.preventDefault();
               void save();
@@ -163,20 +163,20 @@ export function InboxTags() {
                 required
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                data-testid="inbox-tag-name"
+                data-testid="stream-inbox-tag-name"
                 className="mt-1 block w-full rounded border border-input bg-background p-2"
               />
             </label>
             <label className="block text-sm">
               <Trans>Title</Trans>
-              <input value={title} onChange={(event) => setTitle(event.target.value)} data-testid="inbox-tag-title" className="mt-1 block w-full rounded border border-input bg-background p-2" />
+              <input value={title} onChange={(event) => setTitle(event.target.value)} data-testid="stream-inbox-tag-title" className="mt-1 block w-full rounded border border-input bg-background p-2" />
             </label>
             <label className="block text-sm">
               <Trans>Description</Trans>
               <textarea
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
-                data-testid="inbox-tag-description"
+                data-testid="stream-inbox-tag-description"
                 className="mt-1 block w-full rounded border border-input bg-background p-2"
               />
             </label>
@@ -186,25 +186,25 @@ export function InboxTags() {
                 type="color"
                 value={color}
                 onChange={(event) => setColor(event.target.value)}
-                data-testid="inbox-tag-color"
+                data-testid="stream-inbox-tag-color"
                 className="h-8 w-10 rounded bg-background"
               />
             </label>
             <div className="flex gap-2">
-              <Button type="submit" disabled={busy || !name.trim()} data-testid="inbox-tag-save">
+              <Button type="submit" disabled={busy || !name.trim()} data-testid="stream-inbox-tag-save">
                 <Trans>Save</Trans>
               </Button>
-              <Button type="button" variant="outline" data-testid="inbox-tag-cancel" onClick={() => navigation.openDock(tagsPointer())}>
+              <Button type="button" variant="outline" data-testid="stream-inbox-tag-cancel" onClick={() => navigation.openDock(tagsPointer())}>
                 <Trans>Cancel</Trans>
               </Button>
             </div>
           </form>
         )}
-        <div className="divide-y divide-border rounded-md border border-border" data-testid="inbox-tags-list">
+        <div className="divide-y divide-border rounded-md border border-border" data-testid="stream-inbox-tags-list">
           {tags
-            .filter((tag) => !tag.deprecated && (!tag.system || tag.inbox))
+            .filter((tag) => !tag.deprecated && (!tag.system || tag.stream_inbox))
             .map((tag) => (
-              <div key={tag.id} className="flex items-center gap-3 p-3" data-testid={`inbox-tag-row-${tag.name}`}>
+              <div key={tag.id} className="flex items-center gap-3 p-3" data-testid={`stream-inbox-tag-row-${tag.name}`}>
                 <EntityChip
                   entity={{ type: Tag.type, id: tag.id, name: tag.name?.split('.').at(-1) }}
                   style={tagChipStyle(tag.color)}
@@ -219,7 +219,7 @@ export function InboxTags() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      data-testid={`inbox-tag-edit-${tag.name}`}
+                      data-testid={`stream-inbox-tag-edit-${tag.name}`}
                       onClick={() => edit(tag)}
                     >
                       <Trans>Edit</Trans>
@@ -227,7 +227,7 @@ export function InboxTags() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      data-testid={`inbox-tag-delete-${tag.name}`}
+                      data-testid={`stream-inbox-tag-delete-${tag.name}`}
                       onClick={() => setDeleting(tag)}
                     >
                       <Trans>Delete</Trans>
@@ -243,7 +243,7 @@ export function InboxTags() {
         onOpenChange={(open) => {
           if (!open) setDeleting(null);
         }}
-        testId="inbox-tag-delete-confirm"
+        testId="stream-inbox-tag-delete-confirm"
         variant="destructive"
         confirmLabel={t`Delete`}
         title={t`Delete tag`}

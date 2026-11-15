@@ -48,16 +48,16 @@ async def test_classification_settings_roundtrip_and_invalid_input(client):
         await client.post(url, json=original)
 
 
-async def test_inbox_tag_uses_generic_crud_with_color(client):
+async def test_stream_inbox_tag_uses_generic_crud_with_color(client):
     created = await client.post("/api/v1/graph/tag", json={
-        "name": "--message-api--.refund", "title": "Refund", "color": "#7c3aed", "inbox": True,
+        "name": "--message-api--.refund", "title": "Refund", "color": "#7c3aed", "stream_inbox": True,
     })
     assert created.status_code == 200, created.text
     tag_id = created.json()["data"]["id"]
     found = await client.get(f"/api/v1/graph/tag/{tag_id}")
     assert found.status_code == 200, found.text
     assert found.json()["data"]["color"] == "#7c3aed"
-    assert found.json()["data"]["inbox"] is True
+    assert found.json()["data"]["stream_inbox"] is True
 
 
 async def test_generic_update_cannot_forge_processing_state(client):
@@ -106,7 +106,7 @@ async def test_concurrent_message_tag_actions_do_not_lose_assignments(client):
     assert set(stored.message_processing.assignments) == set(stored.tags)
 
 
-async def test_inbox_tag_filter_matches_hierarchy_and_the_same_message_as_text(client):
+async def test_stream_inbox_tag_filter_matches_hierarchy_and_the_same_message_as_text(client):
     matching, other = mint_uuid(), mint_uuid()
     await FlowMessage(text="Refund approved", conversation_id=matching, tags=["customer.refund"]).save()
     await FlowMessage(text="Different subject", conversation_id=other, tags=["customer.refund"]).save()
@@ -141,10 +141,10 @@ async def test_automation_message_tags_survive_create_update_and_reload(bootstra
     assert found.json()["data"]["message_tags"] == ["customer.review", "customer.refund"]
 
 
-async def test_inbox_tag_management_actions_preserve_associations_and_delete_attachments(bootstrapped_client):
+async def test_stream_inbox_tag_management_actions_preserve_associations_and_delete_attachments(bootstrapped_client):
     client = bootstrapped_client
     name = f"qa.api.{str(mint_uuid()).replace('-', '')}"
-    created = await client.post("/api/v1/graph/tag", json={"name": name, "inbox": True})
+    created = await client.post("/api/v1/graph/tag", json={"name": name, "stream_inbox": True})
     assert created.status_code == 200, created.text
     tag_id = created.json()["data"]["id"]
     message = await FlowMessage(text="Keep this message", tags=[name]).save()
