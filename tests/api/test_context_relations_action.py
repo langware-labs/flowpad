@@ -40,6 +40,7 @@ async def test_both_directions_with_name_role_and_time(bootstrapped_client):
         "rel-held": "out", "rel-holder": "in", "rel-mutual": "both",
     }
     assert rows["rel-held"]["role"] == "plan" and rows["rel-held"]["kind"] == "shared"
+    assert rows["rel-held"]["via"] == ["user"]  # shared through the action: a person's doing
     assert rows["rel-held"]["typeid"] == f"task-{held['id']}" and rows["rel-held"]["type"] == "task"
     assert all(row["time"] for row in rows.values())
     # Newest first: the mutual entry was made last.

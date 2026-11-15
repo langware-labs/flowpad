@@ -2,17 +2,20 @@ import { useState } from 'react';
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Network, type LucideIcon } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GraphContext, TypeId, dataContext, dataManager, type AnyEntity } from '@sdk';
-import type { ContextRelation } from '@sdk/types/context-relation';
+import type { ContextRelation, ContextVia } from '@sdk/types/context-relation';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { compactEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useIsDev } from '@src/components/view-mode';
 import { cn } from '@src/lib/utils';
+import { SEGMENTED_ACTIVE, SEGMENTED_GROUP, SEGMENTED_IDLE } from '@src/components/ui/segmented';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dockPointerForTypeId } from '@src/navigation/entity-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { formatMoment, formatTimeAgo } from '@src/utils/format-time-ago';
+
+const VIAS: readonly ContextVia[] = ['static', 'dynamic', 'user'];
 
 const DIRECTION_ICON: Record<ContextRelation['direction'], LucideIcon> = {
   in: ArrowDownLeft,
@@ -39,6 +42,16 @@ function ContextMenuPopover({ typeId, title }: { typeId: TypeId; title?: string 
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<ContextRelation[] | null>(null);
   const [failed, setFailed] = useState(false);
+  // Which origins the list shows: a row stays while any way it is held is switched on.
+  const [shown, setShown] = useState<ReadonlySet<ContextVia>>(() => new Set(VIAS));
+  const visible = rows?.filter((row) => row.via.some((via) => shown.has(via))) ?? null;
+  const toggle = (via: ContextVia) =>
+    setShown((current) => {
+      const next = new Set(current);
+      if (next.has(via)) next.delete(via);
+      else next.add(via);
+      return next;
+    });
   const ContextIcon = iconForType(GraphContext.type);
 
   const onOpenChange = (next: boolean) => {
@@ -81,6 +94,12 @@ function ContextMenuPopover({ typeId, title }: { typeId: TypeId; title?: string 
     navigation.openDock(DockPointer.forGraphContext(graph.typeId.id));
   };
 
+  const viaLabel: Record<ContextVia, { label: string; hint: string }> = {
+    static: { label: t`Static`, hint: t`Part of its structure, like a document's project` },
+    dynamic: { label: t`Dynamic`, hint: t`Linked automatically, like a plan found in a session` },
+    user: { label: t`User`, hint: t`Made by someone's action, like starting a chat on it` },
+  };
+
   const directionLabel: Record<ContextRelation['direction'], string> = {
     in: t`Incoming`,
     out: t`Outgoing`,
@@ -106,7 +125,25 @@ function ContextMenuPopover({ typeId, title }: { typeId: TypeId; title?: string 
           <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">
             <Trans>Context</Trans>
           </span>
-          {rows && <span className="text-[11px] text-muted-foreground">{rows.length}</span>}
+          {visible && <span className="text-[11px] text-muted-foreground">{visible.length}</span>}
+          <div className={cn(SEGMENTED_GROUP, 'ms-auto')} role="group" aria-label={t`Show`}>
+            {VIAS.map((via) => (
+              <button
+                key={via}
+                type="button"
+                aria-pressed={shown.has(via)}
+                onClick={() => toggle(via)}
+                title={viaLabel[via].hint}
+                className={cn(
+                  'flex h-5 items-center rounded-sm px-1.5 text-[10px] transition-colors',
+                  shown.has(via) ? SEGMENTED_ACTIVE : cn(SEGMENTED_IDLE, 'line-through'),
+                )}
+                data-testid={`context-menu-filter-${via}`}
+              >
+                {viaLabel[via].label}
+              </button>
+            ))}
+          </div>
           {isDev && (
             <button
               type="button"
@@ -114,7 +151,7 @@ function ContextMenuPopover({ typeId, title }: { typeId: TypeId; title?: string 
               disabled={!rows}
               title={t`Open as graph`}
               aria-label={t`Open as graph`}
-              className="ms-auto inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
               data-testid="context-menu-open-graph"
             >
               <Network className="h-3.5 w-3.5" />
@@ -127,13 +164,15 @@ function ContextMenuPopover({ typeId, title }: { typeId: TypeId; title?: string 
           <Hint text={t`Loading…`} />
         ) : rows.length === 0 ? (
           <Hint text={t`Nothing is linked to this yet.`} />
+        ) : !visible?.length ? (
+          <Hint text={t`Nothing of the kinds switched on.`} />
         ) : (
           // One grid for every row (rows are subgrids), so each field starts on the same line down the list.
           <div
             role="menu"
             className="grid grid-cols-[auto_auto_auto_minmax(0,1fr)_auto] divide-y divide-border rounded border border-border bg-background"
           >
-            {rows.map((row) => {
+            {visible.map((row) => {
               const Direction = DIRECTION_ICON[row.direction];
               const TypeIcon = iconForType(row.type);
               const type = labelForType(row.type);
@@ -149,6 +188,7 @@ function ContextMenuPopover({ typeId, title }: { typeId: TypeId; title?: string 
                   className="col-span-5 grid grid-cols-subgrid items-center gap-x-2 px-2 py-1.5 text-start text-[11px] transition-colors hover:bg-muted/40"
                   data-testid="context-menu-row"
                   data-direction={row.direction}
+                  data-via={row.via.join(' ')}
                 >
                   <Direction className="h-3 w-3 text-foreground" aria-label={directionLabel[row.direction]} />
                   <TypeIcon className="h-3 w-3 text-muted-foreground" aria-hidden="true" />

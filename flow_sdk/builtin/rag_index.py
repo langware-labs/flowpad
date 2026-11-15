@@ -153,7 +153,7 @@ class RagIndex(Entity):
 
         origin = await Folder.detect_origin(canonical)
         folder = await Folder.mint_for_origin(origin, local_path=canonical)
-        self.add_private_context_entities(folder.typeid, data={"path": canonical, "origin_kind": origin.kind})
+        self.add_private_context_entities(folder.typeid, data={"path": canonical, "origin_kind": origin.kind}, via="static")
         # A new root means work to do; the pass decides how much.
         self.pending = True
         await self.save(notify=False)

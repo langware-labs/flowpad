@@ -36,7 +36,7 @@ class Report:
     failed: list[str] = field(default_factory=list)
 
     def lines(self) -> list[str]:
-        out = [f"context relationships: {'would write' if self.dry_run else 'wrote'} {line}" for line in self.moved]
+        out = [f"context relationships: {'(dry run) ' if self.dry_run else ''}{line}" for line in self.moved]
         if self.failed:
             out.append("context relationships: skipped " + ", ".join(self.failed[:10]))
         return out
@@ -54,23 +54,34 @@ def _backfill(path: Path, report: Report) -> None:
     dry_run = report.dry_run
     conn = open_sqlite(str(path), mode="ro" if dry_run else "rw")
     try:
-        have = set()
-        for row in conn.execute("SELECT from_id, to_type, to_id, data FROM relationships WHERE type = ?", (CONTEXT_TYPE,)):
-            have.add((row["from_id"], row["to_type"], row["to_id"], (json.loads(row["data"]) if row["data"] else {}).get("kind", "")))
+        have: dict[tuple, tuple[str, dict]] = {}  # (from, to_type, to_id, kind) -> (row id, data)
+        for row in conn.execute("SELECT id, from_id, to_type, to_id, data FROM relationships WHERE type = ?", (CONTEXT_TYPE,)):
+            data = json.loads(row["data"]) if row["data"] else {}
+            have[(row["from_id"], row["to_type"], row["to_id"], data.get("kind", ""))] = (row["id"], data)
         # Every row is read, but ``context_entries`` parses only the ones that hold context.
-        missing, holders = [], 0
+        missing, holders, unmarked = [], 0, []
         for row in conn.execute("SELECT type, id, created_by, created_date, updated_date, data FROM entities"):
             try:
                 entries = context_entries(row["data"], _declared(row["type"]))
             except Exception as e:  # noqa: BLE001 — one bad row never stops the pass
                 report.failed.append(f"{row['id'][:8]} ({e})")
                 continue
-            found = [(row, key, role) for key, role in entries.items() if key[1] != row["id"] and (row["id"], *key) not in have]
+            found = [(row, key, value) for key, value in entries.items() if key[1] != row["id"] and (row["id"], *key) not in have]
             holders += bool(found)
             missing.extend(found)
+            # A row written before entries recorded how they came to be gets that now.
+            for key, (_role, via) in entries.items():
+                held = have.get((row["id"], *key))
+                if held and not held[1].get("via"):
+                    unmarked.append((json.dumps({**held[1], "via": via}), held[0]))
+        if unmarked:
+            report.moved.append(f"recorded how {len(unmarked)} row(s) came to be")
+            if not dry_run:
+                with conn:
+                    conn.executemany("UPDATE relationships SET data = ? WHERE id = ?", unmarked)
         if not missing:
             return
-        report.moved.append(f"{len(missing)} row(s) for {holders} entit(ies)")
+        report.moved.append(f"wrote {len(missing)} row(s) for {holders} entit(ies)")
         if dry_run:
             return
         targets = sorted({key[1] for _row, key, _role in missing})
@@ -80,13 +91,13 @@ def _backfill(path: Path, report: Report) -> None:
             marks = ",".join("?" * len(chunk))
             born.update(conn.execute(f"SELECT id, created_date FROM entities WHERE id IN ({marks})", chunk).fetchall())
         rows = []
-        for row, (to_type, to_id, kind), role in missing:
+        for row, (to_type, to_id, kind), (role, via) in missing:
             when = max(filter(None, (row["created_date"], born.get(to_id))), default=None)
             if when and row["updated_date"] and when > row["updated_date"]:
                 when = row["updated_date"]
             rows.append((
                 mint_uuid(), CONTEXT_TYPE, row["id"], row["type"], to_id, to_type, row["created_by"], when,
-                row["created_by"], when, json.dumps({"kind": kind, "role": role, "backfilled": True}),
+                row["created_by"], when, json.dumps({"kind": kind, "role": role, "via": via, "backfilled": True}),
             ))
         with conn:
             conn.executemany(
@@ -108,7 +119,7 @@ def _declarations() -> set[str]:
         for cls in SchemaRegistry.get_all_entity_classes()
         for field, kind in declared_context_fields(cls).items()
     }
-    return {*CONTEXT_LISTS, *declared}
+    return {*CONTEXT_LISTS, *declared, "via"}  # "via": rows also record how their entry came to be
 
 
 async def lift(*, dry_run: bool = True, db_path: str | None = None) -> Report:

@@ -2458,7 +2458,7 @@ class AgenticProcess(Entity):
         self.project_id = project_id
         if self.project_id != project_id:
             return False  # write was refused by the binding-freeze guard
-        self.add_shared_context_entities(TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id))
+        self.add_shared_context_entities(TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id), via="static")
         return True
 
     def _force_rebind_project_id(self, project_id: str) -> None:
@@ -2470,7 +2470,7 @@ class AgenticProcess(Entity):
         the matching Project TypeId to shared context.
         """
         object.__setattr__(self, "project_id", project_id)
-        self.add_shared_context_entities(TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id))
+        self.add_shared_context_entities(TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id), via="static")
 
     def _force_rebind_workdir(self, workdir: str) -> None:
         """Bypass the binding-freeze and set ``workdir`` unconditionally.

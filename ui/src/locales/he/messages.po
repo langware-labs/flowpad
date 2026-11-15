@@ -11826,6 +11826,10 @@ msgstr "כפילויות {duplicateCount}"
 msgid "Duration"
 msgstr "משך זמן"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Dynamic"
+msgstr "דינמי"
+
 #: src/components/quick-create/registry.ts
 #: src/i18n/type-labels.ts
 msgid "Dynamic Workflow"
@@ -17386,6 +17390,10 @@ msgstr "מקושר"
 msgid "Linked"
 msgstr "מקושר"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Linked automatically, like a plan found in a session"
+msgstr "קושר אוטומטית, כמו תוכנית שנמצאה בסשן"
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
@@ -18184,6 +18192,10 @@ msgstr ""
 #: src/notifications/error-detail.ts
 msgid "Made by"
 msgstr ""
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Made by someone's action, like starting a chat on it"
+msgstr "נוצר מפעולה של מישהו, כמו פתיחת צ'אט עליו"
 
 #: src/components/automations/KindGallery.tsx
 msgid "Mail that asks for a refund; an agent drafts the reply."
@@ -21752,6 +21764,10 @@ msgstr "אין במחשב הזה שום דבר בשם \"{0}\" — השלב יי�
 msgid "Nothing new to push — message sent"
 msgstr "אין שינויים חדשים לדחיפה — ההודעה נשלחה"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Nothing of the kinds switched on."
+msgstr "אין כלום מהסוגים שמופעלים."
+
 #: src/components/automations/AutomationsList.tsx
 msgid "Nothing of this kind yet."
 msgstr "עדיין אין כאלה."
@@ -22976,6 +22992,11 @@ msgstr "פתחו את העותק"
 msgid "Open the data source"
 msgstr "פתחו את מקור הנתונים"
 
+#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisMessageActions.tsx
+msgid "Open the diagnosis worker"
+msgstr ""
+
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Open the event bus"
 msgstr "פתיחת אפיק האירועים"
@@ -23677,6 +23698,10 @@ msgstr "רכיב"
 #: src/components/ask/AskView.tsx
 msgid "Part of a setup — see its progress"
 msgstr "חלק מהגדרה — צפייה בהתקדמות"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Part of its structure, like a document's project"
+msgstr "חלק מהמבנה שלו, כמו הפרויקט של מסמך"
 
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Participant"
@@ -29651,6 +29676,7 @@ msgstr "צריך"
 msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr "האם להרשות כלי זה? הגב ב-JSON: {0}"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/types/ViewType.ts
 msgid "Show"
 msgstr "הציגו"
@@ -31009,6 +31035,10 @@ msgstr ""
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "State"
 msgstr "מצב"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Static"
+msgstr "קבוע"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "status"
@@ -35053,6 +35083,7 @@ msgstr "משתמש"
 #: src/components/credentials-view/EnvFilesChip.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx

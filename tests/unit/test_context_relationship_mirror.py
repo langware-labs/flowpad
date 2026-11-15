@@ -80,7 +80,7 @@ def test_a_field_of_bare_ids_names_the_type_it_points_at():
     """A task's origin fields hold bare ids; declared with their type, they are context like any other."""
     conv, message = str(uuid.uuid4()), str(uuid.uuid4())
     entries = context_entries({"origin_conversation": conv, "origin_message": message}, Task.context_fields)
-    assert entries == {("conversation", conv, "origin"): "", ("flow_message", message, "origin"): ""}
+    assert entries == {("conversation", conv, "origin"): ("", "static"), ("flow_message", message, "origin"): ("", "static")}
     assert context_entries({"origin_conversation": "not-an-id"}, Task.context_fields) == {}
 
 
@@ -125,7 +125,7 @@ async def test_backfill_writes_only_missing_rows_and_runs_once():
         assert (await backfill.lift(dry_run=False, db_path=db)).moved == []  # the marker: no second scan
         # A context field declared since the last pass reopens it; one dropped since does not.
         marker.write_text("shared_context_entities")
-        assert (await backfill.lift(dry_run=False, db_path=db)).moved == []  # scanned, nothing missing
+        assert not any("row(s) for" in line for line in (await backfill.lift(dry_run=False, db_path=db)).moved)
         assert "private_context_entities_" in marker.read_text()
         marker.write_text(marker.read_text() + ",task.retired_field=origin")
         assert (await backfill.lift(dry_run=True, db_path=db)).moved == []
@@ -142,3 +142,21 @@ async def test_a_frozen_context_lists_its_members():
     conv = await Conversation(title="member").save()
     frozen = await GraphContext(name="frozen", context_typeids=[str(conv.typeid), "not-an-entity"]).save()
     assert set(await _out(frozen)) == {(str(conv.typeid), "member")}
+
+
+@async_context
+async def test_each_entry_records_how_it_came_to_be():
+    """static: structure; dynamic: linked by the system (a server-side add's default); user: a
+    person's action. A later add with new data keeps the entry's recorded origin."""
+    conv = await Conversation(title="via").save()
+    shared, detected = _tid("spec"), _tid("markdown")
+    conv.add_shared_context_entities(shared, via="user")
+    conv.add_private_context_entities(detected, data={"path": "/x.md"})
+    conv.add_shared_context_entities(shared, data={"role": "session"})
+    await conv.save()
+    proc = await AgenticProcess(name="p", visible=False, target_typeid_str=str(conv.typeid)).save()
+
+    rows = await _out(conv)
+    assert (rows[(str(shared), "shared")].via, rows[(str(detected), "private")].via) == ("user", "dynamic")
+    assert conv.get_context_entry_data(detected) == {"path": "/x.md", "context_via": "dynamic"}
+    assert (await _out(proc))[(str(conv.typeid), "target")].via == "static"

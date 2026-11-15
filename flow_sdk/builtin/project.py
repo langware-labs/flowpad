@@ -1736,7 +1736,7 @@ class Project(SetupSkippable, Entity):
 
         parent_tid = parent_share_typeid(self)
         if parent_tid is not None:
-            self.add_shared_context_entities(parent_tid)
+            self.add_shared_context_entities(parent_tid, via="static")
         if self.fs_storage_mount_path:
             origin = await asyncio.to_thread(GitOrigin.for_asset_path, self.fs_storage_mount_path)
             if origin is not None:

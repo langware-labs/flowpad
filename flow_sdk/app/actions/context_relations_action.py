@@ -17,7 +17,7 @@ from flow_sdk.actions import action
 from flow_sdk.app.actions.context_share_action import _resolve_target_entity
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.query import QueryFilter
-from flow_sdk.db.drivers.sqlite.context_mirror import CONTEXT_TYPE
+from flow_sdk.db.drivers.sqlite.context_mirror import CONTEXT_TYPE, DECLARED_VIA
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.context_relation_spec import ContextRelationSpec
@@ -30,13 +30,16 @@ class _Peer:
     typeid: TypeId
     directions: set[str] = field(default_factory=set)
     kinds: list[str] = field(default_factory=list)
+    vias: list[str] = field(default_factory=list)
     role: str = ""
     when: datetime | None = None
 
-    def note(self, direction: str, kind: str, role: str, when: datetime | None) -> None:
+    def note(self, direction: str, kind: str, role: str, when: datetime | None, via: str) -> None:
         self.directions.add(direction)
         if kind and kind not in self.kinds:
             self.kinds.append(kind)
+        if via not in self.vias:
+            self.vias.append(via)
         self.role = self.role or role
         if when is not None and (self.when is None or when > self.when):
             self.when = when
@@ -74,12 +77,12 @@ async def context_relations(entity: Entity) -> list[ContextRelationSpec]:
         return peers.setdefault(str(typeid), _Peer(typeid))
 
     for rel in outgoing:
-        peer(rel.to_typeid).note("out", rel.kind, rel.role, rel.created_date)
+        peer(rel.to_typeid).note("out", rel.kind, rel.role, rel.created_date, rel.via)
     for rel in incoming:
-        peer(rel.from_typeid).note("in", rel.kind, rel.role, rel.created_date)
+        peer(rel.from_typeid).note("in", rel.kind, rel.role, rel.created_date, rel.via)
     for typeid in entity.get_implicit_private_context_entities():
         if str(typeid) not in peers and str(typeid.id) != str(entity.id):  # a project is its own project
-            peer(typeid).note("out", "private", "", entity.created_date)
+            peer(typeid).note("out", "private", "", entity.created_date, DECLARED_VIA)
 
     newest = sorted(peers.values(), key=lambda p: p.when.timestamp() if p.when else 0.0, reverse=True)[:LIMIT]
     targets = await asyncio.gather(*(Entity.load_by_type(p.typeid.type, str(p.typeid.id)) for p in newest))
@@ -87,7 +90,7 @@ async def context_relations(entity: Entity) -> list[ContextRelationSpec]:
         ContextRelationSpec(
             direction="both" if len(p.directions) == 2 else next(iter(p.directions)),
             typeid=str(p.typeid), type=p.typeid.type, name=display_name(target),
-            kind=",".join(p.kinds), role=p.role, time=p.when.isoformat() if p.when else "",
+            kind=",".join(p.kinds), role=p.role, via=p.vias, time=p.when.isoformat() if p.when else "",
         )
         for p, target in zip(newest, targets)
         if target is not None

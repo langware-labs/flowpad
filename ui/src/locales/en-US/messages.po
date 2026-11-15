@@ -11826,6 +11826,10 @@ msgstr "Duplicates {duplicateCount}"
 msgid "Duration"
 msgstr "Duration"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Dynamic"
+msgstr "Dynamic"
+
 #: src/components/quick-create/registry.ts
 #: src/i18n/type-labels.ts
 msgid "Dynamic Workflow"
@@ -17386,6 +17390,10 @@ msgstr "linked"
 msgid "Linked"
 msgstr "Linked"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Linked automatically, like a plan found in a session"
+msgstr "Linked automatically, like a plan found in a session"
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
@@ -18184,6 +18192,10 @@ msgstr "macOS blocks Flowpad from recording the screen. Allow it under Privacy &
 #: src/notifications/error-detail.ts
 msgid "Made by"
 msgstr "Made by"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Made by someone's action, like starting a chat on it"
+msgstr "Made by someone's action, like starting a chat on it"
 
 #: src/components/automations/KindGallery.tsx
 msgid "Mail that asks for a refund; an agent drafts the reply."
@@ -21752,6 +21764,10 @@ msgstr "Nothing named \"{0}\" on this machine — the step will fail when it run
 msgid "Nothing new to push — message sent"
 msgstr "Nothing new to push — message sent"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Nothing of the kinds switched on."
+msgstr "Nothing of the kinds switched on."
+
 #: src/components/automations/AutomationsList.tsx
 msgid "Nothing of this kind yet."
 msgstr "Nothing of this kind yet."
@@ -22976,6 +22992,11 @@ msgstr "Open the copy"
 msgid "Open the data source"
 msgstr "Open the data source"
 
+#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisMessageActions.tsx
+msgid "Open the diagnosis worker"
+msgstr "Open the diagnosis worker"
+
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Open the event bus"
 msgstr "Open the event bus"
@@ -23677,6 +23698,10 @@ msgstr "Part"
 #: src/components/ask/AskView.tsx
 msgid "Part of a setup — see its progress"
 msgstr "Part of a setup — see its progress"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Part of its structure, like a document's project"
+msgstr "Part of its structure, like a document's project"
 
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Participant"
@@ -29651,6 +29676,7 @@ msgstr "should"
 msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr "Should I allow this tool? Respond with JSON: {0}"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/types/ViewType.ts
 msgid "Show"
 msgstr "Show"
@@ -31009,6 +31035,10 @@ msgstr "Starts when any of these happens"
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "State"
 msgstr "State"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Static"
+msgstr "Static"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "status"
@@ -35053,6 +35083,7 @@ msgstr "user"
 #: src/components/credentials-view/EnvFilesChip.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx

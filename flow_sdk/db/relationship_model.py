@@ -81,5 +81,7 @@ class ContextRelationship(Relationship):
     kind: str = ""
     #: The entry's role from the list's side data (``session``, ``plan``), ``""`` when none.
     role: str = ""
+    #: How the entry came to be (``ContextVia``); the boot back-fill stamps rows older than it.
+    via: str = ""
     #: True for a row written by the one-time back-fill: its time is an estimate.
     backfilled: bool = False

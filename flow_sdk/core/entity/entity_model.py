@@ -72,6 +72,7 @@ from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrenc
 from flow_sdk.fs_store.exceptions import AssetRefLookupError
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.schema.data_spec.context_relation_spec import CONTEXT_VIA_KEY, ContextVia
 from flow_sdk.tags.grammar import tag_is_within, to_tag, to_tags
 
 from .blob_index_entity_model import BLOB_INDEX_VFS_PATH, BlobIndexEntity
@@ -368,6 +369,7 @@ def _require_tag(name: str) -> str:
     if tag is None:
         raise ValueError(f"{name!r} has nothing a tag can hold (letters, numbers, '_', '-', '.')")
     return tag
+
 
 
 class Entity(DBEntity):
@@ -2373,7 +2375,7 @@ class Entity(DBEntity):
 
         parent_tid = parent_share_typeid(self)
         if parent_tid is not None:
-            self.add_shared_context_entities(parent_tid)
+            self.add_shared_context_entities(parent_tid, via="static")
         body = {**self._hub_body(), **(with_create or {})}
 
         try:
@@ -3741,6 +3743,7 @@ class Entity(DBEntity):
         bucket: Literal["shared", "private"],
         type_ids: tuple[Any, ...],
         data: dict | None = None,
+        via: ContextVia = "dynamic",
     ) -> bool:
         """Append typeids to a bucket, dedup by (type, id). Optionally attach
         per-entry sidecar ``data`` (applied to every typeid in ``type_ids``).
@@ -3768,11 +3771,13 @@ class Entity(DBEntity):
                 current.append(t)
                 seen.add(key)
                 changed = True
-            if data is not None:
-                tid_str = str(t)
-                validated = self._validate_context_entry_data(t, data)
-                if sidecar.get(tid_str) != validated:
-                    sidecar[tid_str] = validated
+            tid_str = str(t)
+            if data is not None or not (sidecar.get(tid_str) or {}).get(CONTEXT_VIA_KEY):
+                entry = self._validate_context_entry_data(t, data) if data is not None else dict(sidecar.get(tid_str) or {})
+                # How the entry came to be (read by the context mirror): the first add records it.
+                entry[CONTEXT_VIA_KEY] = (sidecar.get(tid_str) or {}).get(CONTEXT_VIA_KEY) or via
+                if sidecar.get(tid_str) != entry:
+                    sidecar[tid_str] = entry
                     changed = True
         if changed:
             setattr(self, field, current)
@@ -3828,12 +3833,13 @@ class Entity(DBEntity):
         self,
         *type_ids: "TypeId | list[TypeId] | None",
         data: dict | None = None,
+        via: "ContextVia" = "dynamic",
     ) -> bool:
         """Append TypeIds to ``shared_context_entities`` (idempotent, deduped
         by (type, id)). Optional ``data`` is stored in
         ``shared_context_entity_data`` keyed by str(typeid); applied to every
         typeid in this call. Last-writer-wins on data conflicts."""
-        return self._add_to_bucket("shared", type_ids, data=data)
+        return self._add_to_bucket("shared", type_ids, data=data, via=via)
 
     def remove_shared_context_entities(self, *type_ids: "TypeId | list[TypeId] | None") -> bool:
         return self._remove_from_bucket("shared", type_ids)
@@ -3842,12 +3848,13 @@ class Entity(DBEntity):
         self,
         *type_ids: "TypeId | list[TypeId] | None",
         data: dict | None = None,
+        via: "ContextVia" = "dynamic",
     ) -> bool:
         """Append TypeIds to ``private_context_entities_`` (idempotent,
         deduped by (type, id)). Optional ``data`` is stored in
         ``private_context_entity_data`` keyed by str(typeid); applied to every
         typeid in this call. Last-writer-wins on data conflicts."""
-        return self._add_to_bucket("private", type_ids, data=data)
+        return self._add_to_bucket("private", type_ids, data=data, via=via)
 
     def remove_private_context_entities(self, *type_ids: "TypeId | list[TypeId] | None") -> bool:
         return self._remove_from_bucket("private", type_ids)

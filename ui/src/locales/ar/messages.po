@@ -11826,6 +11826,10 @@ msgstr "الملفات المكررة {duplicateCount}"
 msgid "Duration"
 msgstr "المدة"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Dynamic"
+msgstr "ديناميكي"
+
 #: src/components/quick-create/registry.ts
 #: src/i18n/type-labels.ts
 msgid "Dynamic Workflow"
@@ -17386,6 +17390,10 @@ msgstr "مرتبط"
 msgid "Linked"
 msgstr "مرتبط"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Linked automatically, like a plan found in a session"
+msgstr "مرتبط تلقائيًا، مثل خطة وُجدت في جلسة"
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
@@ -18184,6 +18192,10 @@ msgstr ""
 #: src/notifications/error-detail.ts
 msgid "Made by"
 msgstr ""
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Made by someone's action, like starting a chat on it"
+msgstr "ناتج عن إجراء شخص ما، مثل بدء محادثة عليه"
 
 #: src/components/automations/KindGallery.tsx
 msgid "Mail that asks for a refund; an agent drafts the reply."
@@ -21752,6 +21764,10 @@ msgstr "لا يوجد شيء باسم \"{0}\" على هذا الجهاز — س�
 msgid "Nothing new to push — message sent"
 msgstr "لا يوجد جديد للإرسال — تم إرسال الرسالة"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Nothing of the kinds switched on."
+msgstr "لا يوجد شيء من الأنواع المفعّلة."
+
 #: src/components/automations/AutomationsList.tsx
 msgid "Nothing of this kind yet."
 msgstr "لا يوجد شيء من هذا النوع بعد."
@@ -22976,6 +22992,11 @@ msgstr "فتح النسخة"
 msgid "Open the data source"
 msgstr "فتح مصدر البيانات"
 
+#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisMessageActions.tsx
+msgid "Open the diagnosis worker"
+msgstr ""
+
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Open the event bus"
 msgstr "فتح ناقل الأحداث"
@@ -23677,6 +23698,10 @@ msgstr "مكوّن"
 #: src/components/ask/AskView.tsx
 msgid "Part of a setup — see its progress"
 msgstr "جزء من إعداد — اطّلعوا على تقدّمه"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Part of its structure, like a document's project"
+msgstr "جزء من بنيته، مثل مشروع المستند"
 
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Participant"
@@ -29651,6 +29676,7 @@ msgstr "ينبغي أن"
 msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr "هل يجب السماح بهذه الأداة؟ استجب بصيغة JSON: {0}"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/types/ViewType.ts
 msgid "Show"
 msgstr "إظهار"
@@ -31009,6 +31035,10 @@ msgstr ""
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "State"
 msgstr "الحالة"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Static"
+msgstr "ثابت"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "status"
@@ -35053,6 +35083,7 @@ msgstr "المستخدم"
 #: src/components/credentials-view/EnvFilesChip.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx

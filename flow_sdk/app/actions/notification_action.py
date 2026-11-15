@@ -415,7 +415,7 @@ async def _merge_shared_context_into_conversation(
     if not typeids:
         return
     try:
-        changed = conv.add_shared_context_entities(*typeids)
+        changed = conv.add_shared_context_entities(*typeids, via="user")  # what the sender attached
         if changed:
             await conv.save(someone_typeid)
         await conv._link_context_to_conversation(typeids, someone_typeid=someone_typeid)
