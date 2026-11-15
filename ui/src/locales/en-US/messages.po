@@ -7091,6 +7091,8 @@ msgstr "Cloning…"
 #: src/components/ui/sheet.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Close"
@@ -8859,8 +8861,8 @@ msgid "Could not name the invites"
 msgstr "Could not name the invites"
 
 #: src/components/conversation/FlowMessageBubble.tsx
-msgid "Could not open"
-msgstr "Could not open"
+#~ msgid "Could not open"
+#~ msgstr "Could not open"
 
 #. placeholder {0}: a.label
 #: src/components/assets/editor/task/TaskAttachments.tsx
@@ -8922,8 +8924,12 @@ msgid "Could not open this document: {error}"
 msgstr "Could not open this document: {error}"
 
 #: src/components/conversation/FlowMessageBubble.tsx
-msgid "Could not open this message."
-msgstr "Could not open this message."
+msgid "Could not open this message"
+msgstr "Could not open this message"
+
+#: src/components/conversation/FlowMessageBubble.tsx
+#~ msgid "Could not open this message."
+#~ msgstr "Could not open this message."
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Could not pause the deployment"
