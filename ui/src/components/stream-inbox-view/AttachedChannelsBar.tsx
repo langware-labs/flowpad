@@ -324,24 +324,26 @@ export function AttachedChannelsBar({
         <Plus />
       </Button>
       {filtering && (
-        <span
-          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-border bg-muted pe-1 ps-2.5 text-xs text-foreground"
+        // The whole chip clears the filter — one target, not a 20px × inside it.
+        <button
+          type="button"
+          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-border bg-muted pe-1 ps-2.5 text-xs text-foreground hover:bg-background"
+          onClick={() => onSelectedChange?.(new Set())}
+          aria-label={t`Show all channels`}
+          title={t`Show all channels`}
           data-testid="attached-channels-showing"
         >
           {t`Showing: ${allKeys
             .filter((k) => selected.has(k))
             .map(nameOf)
             .join(', ')}`}
-          <button
-            type="button"
-            className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
-            onClick={() => onSelectedChange?.(new Set())}
-            aria-label={t`Show all channels`}
+          <span
+            className="grid size-5 place-items-center rounded-full text-muted-foreground"
             data-testid="attached-channels-clear"
           >
             <X className="size-3" />
-          </button>
-        </span>
+          </span>
+        </button>
       )}
       <Popover>
         <PopoverTrigger asChild>

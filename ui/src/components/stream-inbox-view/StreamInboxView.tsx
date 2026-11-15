@@ -855,9 +855,13 @@ export function StreamInboxView({
           // Storage is unavailable: the pick holds for this visit only.
         }
       }
-      if (currentDock) navigation.openDock(currentDock.withStreamInboxChannels([...next], !!initialChannel));
+      // "Every channel" is written out (`channel=all`) whenever the URL alone would not say it: with a default
+      // channel, or with a remembered pick — dropping an absent param leaves the URL unchanged, so the
+      // remembered pick would keep showing.
+      const urlSaysIt = !initialChannel && rawChannels !== undefined;
+      if (currentDock) navigation.openDock(currentDock.withStreamInboxChannels([...next], !urlSaysIt));
     },
-    [currentDock, navigation, initialChannel, channelStoreKey],
+    [currentDock, navigation, initialChannel, channelStoreKey, rawChannels],
   );
   // The query already narrows to the picked sources; this also hides rows pushed live from other channels.
   const channelMatch = useMemo(
@@ -1469,7 +1473,8 @@ export function StreamInboxView({
     // but that total spans every channel, so it is not shown while the list is narrowed to some of them.
     // Otherwise the rows on this page — a full page holds more than it shows, so it reads "N+".
     let badge: string | null = null;
-    if (mode === 'unread' && ownStreamInbox && channelFilter.size === 0) badge = streamInboxUnread > 0 ? String(streamInboxUnread) : null;
+    if (mode === 'unread' && ownStreamInbox && channelFilter.size === 0)
+      badge = streamInboxUnread > 0 ? String(streamInboxUnread) : null;
     else if (active && visibleCount > 0)
       badge = visibleCount >= STREAM_INBOX_PAGE_SIZE ? `${STREAM_INBOX_PAGE_SIZE}+` : String(visibleCount);
     return (
