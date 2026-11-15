@@ -16,7 +16,7 @@ import {
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { uploadFlowMessage, type UploadConflict, type UploadFlowMessageResult } from '@sdk/entities/flow-message';
-import { type UploadedMessage, UploadedMessageReview } from '@src/components/project-home/ProjectUploadMessageButton';
+import { type UploadedMessage, UploadedMessageReview } from '@src/components/conversation/StagedMessageReview';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
 import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';

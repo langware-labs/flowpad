@@ -165,24 +165,29 @@ async def _learn_normalized_members(members: list[dict]) -> int:
 
 async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
     """Accept a .flowmsg zip upload and materialize entities."""
-    local_user = await User.get_one({"uname": "local"})
-    local_user_id = local_user.id if local_user else ""
-
     with tempfile.NamedTemporaryFile(suffix=".flowmsg", delete=False) as tmp:
         tmp_path = Path(tmp.name)
         content = await file.read()
         tmp.write(content)
+    try:
+        return await materialize_flowmsg_file(tmp_path, overwrite)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+async def materialize_flowmsg_file(path: Path, overwrite: bool) -> ApiResponse:
+    """Materialize a .flowmsg already on disk and report what it staged for review."""
+    local_user = await User.get_one({"uname": "local"})
+    local_user_id = local_user.id if local_user else ""
 
     try:
-        fm = await FlowMessage.from_file(tmp_path, local_user_id, overwrite=overwrite)
+        fm = await FlowMessage.from_file(path, local_user_id, overwrite=overwrite)
     except FlowMessageExistsError as exc:
         return ApiFailResponse(
             message="FlowMessage already exists",
             status_code=409,
             data={"conflicts": exc.conflicts},
         )
-    finally:
-        tmp_path.unlink(missing_ok=True)
 
     task_id = next((c.id for c in fm.shared_context_entities if c.type == BuiltinEntityType.TASK.value), None)
     conv_id = next(

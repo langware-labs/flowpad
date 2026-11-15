@@ -602,3 +602,28 @@ async def test_install_overwrite_replaces_on_disk_file_backed_asset(
     assert installed is not None
     assert installed.scope == "project"
     assert installed.project_id == project_id
+
+
+@pytest.mark.asyncio
+async def test_received_flowmsg_file_opens_like_an_upload(bootstrapped_client):
+    """A .flowmsg received as a file stages what IT carries; any other file is refused."""
+    inner_id, task_id = _new_id(), _new_id()
+
+    async def staged(name: str, body: bytes) -> MessageAttachment:
+        fm_id = _new_id()
+        rel = f"unpacked/attachment/file-{_new_id()}"
+        entry = fm_data_ops.default_data_dir(fm_id) / rel
+        entry.mkdir(parents=True)
+        (entry / name).write_bytes(body)
+        ma = MessageAttachment(flow_message_id=fm_id, asset_type="file", asset_id=_new_id(), name=name, unpacked_path=rel)
+        await ma.save()
+        return ma
+
+    ma = await staged("inner.flowmsg", _make_flowmsg_bytes(_msg_data(inner_id, task_id)))
+    ok = await bootstrapped_client.post(f"/api/v1/graph/message_attachment/{ma.id}/open-flowmsg")
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["data"]["message_id"] == inner_id
+
+    other = await staged("notes.txt", b"hi")
+    refused = await bootstrapped_client.post(f"/api/v1/graph/message_attachment/{other.id}/open-flowmsg")
+    assert refused.status_code == 400, refused.text

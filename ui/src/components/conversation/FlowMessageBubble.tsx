@@ -35,6 +35,9 @@ import { profileLabel } from '@sdk/models/MessageEnvelope';
 import { SenderKind, senderOf } from '@sdk/models/MessageSender';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { errorMessage } from '@src/lib/error-message';
+import { notify } from '@src/notifications';
+import { useStagedMessageReview } from '@src/components/conversation/StagedMessageReview';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
@@ -1023,7 +1026,18 @@ function MessageFileChip({
   projectId?: string | null;
   siblingAttachments?: MessageAttachment[];
 }) {
+  const { t } = useLingui();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const nested = useStagedMessageReview(projectId ?? null);
+  // A received `.flowmsg` opens what IT carries, not the file itself.
+  const isFlowmsg = !!attachment.name?.toLowerCase().endsWith('.flowmsg');
+  const openNested = async () => {
+    try {
+      nested.open(await attachment.openFlowmsg());
+    } catch (err: unknown) {
+      notify.error({ title: t`Could not open`, message: errorMessage(err, t`Could not open this message.`) });
+    }
+  };
   const typeId = new TypeId('file', String(attachment.asset_id ?? ''));
   // A value of a kind (`*.value.json`) is named by its kind, not shown as a bare file.
   const value = attachment.value_kind ? valueKindMeta(attachment.value_kind) : null;
@@ -1038,8 +1052,9 @@ function MessageFileChip({
           icon: value?.Icon ?? File,
         }}
         staged={!attachment.installed}
-        onClick={() => setReviewOpen(true)}
+        onClick={() => (isFlowmsg ? void openNested() : setReviewOpen(true))}
       />
+      {nested.dialog}
       {reviewOpen && (
         <AssetReviewDialog
           open={reviewOpen}

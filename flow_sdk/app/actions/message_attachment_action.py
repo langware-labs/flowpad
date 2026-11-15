@@ -1354,6 +1354,23 @@ async def handle_share_reply(attachment_id: str, kind: str, someone_typeid=None)
     )
 
 
+@action.post(action_name="open-flowmsg", types=["message_attachment"])
+async def open_flowmsg_attachment_action() -> ApiResponse:
+    """A received file that is itself a ``.flowmsg``: stage what IT carries, the
+    same as uploading it from project home, so the review dialog can open."""
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found", status_code=400)
+    ma = await _load_ma(str(request_info.target_entity_typeid.id))
+    entry_dir = _entry_dir_for(ma) if ma else None
+    flowmsg = entry_dir / ma.name if entry_dir and ma.name.lower().endswith(".flowmsg") else None
+    if flowmsg is None or not flowmsg.is_file():
+        return ApiFailResponse(message="Not a received .flowmsg", status_code=400)
+    from flow_sdk.app.actions.flow_message_action import materialize_flowmsg_file  # noqa: PLC0415
+
+    return await materialize_flowmsg_file(flowmsg, overwrite=True)
+
+
 @action.post(action_name="request-git-access", types=["message_attachment"])
 async def request_git_access_action() -> ApiResponse:
     request_info = get_current_request_info()
