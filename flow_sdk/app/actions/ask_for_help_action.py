@@ -1005,7 +1005,6 @@ async def _my_helpdesks() -> list[dict]:
     """The help desks this login added on the hub (``my-helpdesks``); none when the hub cannot say."""
     from flow_sdk.cli.app_config import get_principal  # noqa: PLC0415
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
     me = str((get_principal() or {}).get("id") or "")
     if not me:

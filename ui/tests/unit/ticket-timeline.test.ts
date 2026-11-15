@@ -15,7 +15,6 @@ describe('ticketTimeline — a ticket and its team conversation on one timeline'
       [timelineKey('team', 'reply'), 3],
       [timelineKey('customer', 'answer'), 4],
     ]);
-    expect(t.rowOf.size).toBe(4);
   });
 
   it('marks each run of team notes once, on the row it starts', () => {

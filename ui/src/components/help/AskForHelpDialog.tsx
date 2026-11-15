@@ -151,7 +151,8 @@ export function AskForHelpDialog({
     : recipients?.default_state === 'unknown'
       ? [{ kind: 'desk', desk_project_id: null, name: null }]
       : [];
-  const askedDesks = offered.filter((d) => (checkedDesks ?? []).includes(d.desk_project_id ?? ''));
+  const checkedIds = checkedDesks ?? [];
+  const askedDesks = offered.filter((d) => checkedIds.includes(d.desk_project_id ?? ''));
   const people: HelpRecipient[] = picked.map((p) => ({
     kind: 'person',
     email: p.email ?? null,
@@ -330,7 +331,7 @@ export function AskForHelpDialog({
                 <div className="flex flex-wrap gap-1.5" data-testid="ask-for-help-desks">
                   {offered.map((d) => {
                     const id = d.desk_project_id ?? '';
-                    const checked = (checkedDesks ?? []).includes(id);
+                    const checked = checkedIds.includes(id);
                     return (
                       <label
                         key={d.desk_project_id ?? 'nearest'}

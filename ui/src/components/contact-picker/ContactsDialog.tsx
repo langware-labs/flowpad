@@ -8,6 +8,9 @@ import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { SegmentedControl } from '@src/components/ui/segmented-control';
+import { servedPage } from '@src/lib/hub-page-url';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { navigateTo } from '@src/notifications';
 import { ContactListBox, ContactRows, ContactsTitle } from './ContactRows';
 import { CreateContactsGroupDialog } from './CreateContactsGroupDialog';
 import { NewHelpDeskDialog } from './NewHelpDeskDialog';
@@ -63,8 +66,8 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
   }, [open, tab, me]);
   const openDesk = (deskId: string) => {
     onOpenChange(false);
-    // Loaded when used: the contact picker sits inside small dialogs that should not pull in navigation.
-    void import('@src/components/helpdesk/open-help-desk').then((m) => m.openHelpDesk(deskId));
+    // On whichever page this app serves: the hub page, or the desktop.
+    navigateTo(DockPointer.forDesk(deskId).withPage(servedPage()).toUrl());
   };
 
   const people = useMemo(() => filterContacts(contacts, query), [contacts, query]);

@@ -1301,7 +1301,7 @@ export function ConversationView({
         />
       )}
       <div className="flex items-center justify-end gap-2">
-        {ticket && (embed ? embed.statusSlot && createPortal(statusControl, embed.statusSlot) : statusControl)}
+        {embed ? statusControl && embed.statusSlot && createPortal(statusControl, embed.statusSlot) : statusControl}
         {canPickup && !isClosed && (
           <button
             type="button"

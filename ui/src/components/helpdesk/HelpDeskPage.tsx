@@ -130,7 +130,13 @@ export function HelpDeskPage({ deskId }: { deskId: string }) {
             <Button
               className="w-fit"
               disabled={busy || !me}
-              onClick={() => void run(() => addMyHelpDesk(me!, deskId))}
+              // The hub answers the new list: no reload of a page that already shows everything else.
+              onClick={() => {
+                setBusy(true);
+                void addMyHelpDesk(me!, deskId)
+                  .then((desks) => setLoaded({ ...loaded, mine: desks.some((d) => d.id === deskId) }))
+                  .finally(() => setBusy(false));
+              }}
               data-testid="help-desk-add"
             >
               <Trans>Add to my help desks</Trans>

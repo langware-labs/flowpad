@@ -5,18 +5,18 @@
 
 export type TicketSide = 'customer' | 'team';
 
-export interface TimelineItem {
+interface TimelineItem {
   key: string;
   sortAt: number;
 }
 
-export interface SideFeed {
+interface SideFeed {
   items: TimelineItem[];
   /** This side has older messages it has not loaded. */
   hasOlder: boolean;
 }
 
-export interface TicketTimeline {
+interface TicketTimeline {
   /** The grid row (1-based) of each item, by `<side>:<key>`; an item not listed is not drawn yet. */
   rowOf: Map<string, number>;
   /** Where the team wrote while the customer side was quiet: the row their run starts on, and how many notes. */
