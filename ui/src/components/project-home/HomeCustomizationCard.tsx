@@ -61,13 +61,16 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
   // manifest row whenever it changes (another tab, a git pull). Local state so a
   // save is visible without waiting for the row to be re-indexed.
   const declaredHomePage = useProjectHomePage(project?.id);
-  const [homePage, setHomePage] = useState<string | null>(declaredHomePage);
-  useEffect(() => setHomePage(declaredHomePage), [declaredHomePage]);
+  const homePageLoading = declaredHomePage === undefined;
+  const declared = declaredHomePage ?? null;
+  const [homePage, setHomePage] = useState<string | null>(declared);
+  useEffect(() => setHomePage(declared), [declared]);
   // The declared asset, loaded for its name. Any type: the picker offers every
   // registered asset. The manifest may name it by TypeId or by `./path`.
   const { typeId: homePageTypeId, missing: homePageUnresolved } = useHomePageTypeId(project?.id, homePage);
   const { data: homePageAsset, notFound: homePageNotFound } = useEntity(homePageTypeId);
   const homePageMissing = homePageUnresolved || homePageNotFound;
+  const pickerBusy = busyHomePage || homePageLoading;
   // The picker's own list is the backend's default staging set (what a session
   // can attach), which leaves agents out — and an agent is THE home page. So the
   // card asks for the whole asset catalog, for this project, only while open —
@@ -194,24 +197,26 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
           variant="outline"
           className="min-w-0 flex-1 justify-start text-sm font-normal"
           onClick={() => setPickerOpen(true)}
-          disabled={busyHomePage || !project}
+          disabled={pickerBusy || !project}
           data-testid="home-page-picker"
         >
-          {busyHomePage ? (
+          {pickerBusy ? (
             <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
           ) : (
             <HomePageIcon className="h-4 w-4 shrink-0" />
           )}
-          <span className="ms-1.5 truncate">
-            {!homePage ? (
-              <Trans>Default home</Trans>
-            ) : homePageMissing ? (
-              // Declared, but no longer an asset here — Home falls back to the default.
-              <Trans>Missing asset ({homePage})</Trans>
-            ) : (
-              (homePageAsset?.displayName ?? homePage)
-            )}
-          </span>
+          {!homePageLoading && (
+            <span className="ms-1.5 truncate">
+              {!homePage ? (
+                <Trans>Default home</Trans>
+              ) : homePageMissing ? (
+                // Declared, but no longer an asset here — Home falls back to the default.
+                <Trans>Missing asset ({homePage})</Trans>
+              ) : (
+                (homePageAsset?.displayName ?? homePage)
+              )}
+            </span>
+          )}
         </Button>
         {homePage && (
           <Button
