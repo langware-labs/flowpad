@@ -2032,8 +2032,8 @@ msgid "+ Add"
 msgstr "+ הוסף"
 
 #: src/components/tabs/TabStrip.tsx
-msgid "+ Add note"
-msgstr ""
+#~ msgid "+ Add note"
+#~ msgstr ""
 
 #: src/components/graph-view/ui/AccessTab.tsx
 #: src/components/inbound/InboundView.tsx
@@ -3154,6 +3154,8 @@ msgid "Add new token source"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/tabs/TabStrip.tsx
+#: src/components/tabs/TabStrip.tsx
 msgid "Add note"
 msgstr "הוסיפו הערה"
 
