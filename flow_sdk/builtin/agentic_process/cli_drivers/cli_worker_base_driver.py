@@ -786,6 +786,9 @@ class ProcessMcpRuntime(BaseModel):
     config_overrides: tuple[tuple[str, Any], ...] = ()
     #: opencode's ``mcp`` config key.
     config_fragment: dict[str, Any] = Field(default_factory=dict)
+    #: claude ``--strict-mcp-config``. Off only when Flowpad's own ``browser`` server is
+    #: the whole set: the session adds it to the user's servers rather than replacing them.
+    strict: bool = True
 
 
 class AgenticContext(BaseModel):
@@ -861,6 +864,10 @@ class AgenticContext(BaseModel):
     # spawn, so — like plugin_dirs — never persisted or hashed.
     mcp_config_json: str = ""
     mcp_config_fragment: dict[str, Any] = Field(default_factory=dict)
+    # ``--strict-mcp-config`` and ``--chrome`` for this launch — the session's browser
+    # (``browser_choice``). Re-derived every spawn, never persisted.
+    mcp_strict: bool = True
+    chrome: bool = False
     # One-launch acknowledgement for CLIs that gate dynamically supplied hooks
     # behind an explicit trust flag (currently Codex). Never persisted.
     bypass_hook_trust: bool = False
@@ -883,6 +890,8 @@ class AgenticContext(BaseModel):
                 "bypass_hook_trust",
                 "mcp_config_json",
                 "mcp_config_fragment",
+                "mcp_strict",
+                "chrome",
                 # Resolved per turn from the process's endpoint; persisting it would let a
                 # stale baseURL outlive the binding it came from.
                 "provider_options",
@@ -993,6 +1002,10 @@ class AgentOptions:
     # projected by ``prepare_instruction_assets``), or None when it reaches the
     # text another way (developer_instructions / custom dirs / generated config).
     SYSTEM_PROMPT_FILE_FLAG: str | None = None
+    # The session's browser (``browser_choice``), stamped per launch: ``--chrome`` (only
+    # Claude renders it) and ``--strict-mcp-config`` (off when Flowpad's server is additive).
+    chrome: bool = False
+    mcp_strict: bool = True
 
     def __init__(
         self,
@@ -1073,6 +1086,7 @@ class AgentOptions:
         overrides it because its channel is a generated file, not argv.
         """
         self.mcp_config_json = runtime.mcp_config_json
+        self.mcp_strict = runtime.strict
         self.mcp_config_fragment = dict(runtime.config_fragment)
         if runtime.config_overrides:
             self.extra_config_overrides = [
@@ -1970,6 +1984,11 @@ class WorkerDriver(Protocol):
         """True iff this vendor has a transcript to ``--resume`` for the
         process's ``session_id``. Probes the vendor's own session store —
         used by restart recovery to decide whether to relaunch with resume."""
+        ...
+
+    def supports_browser_extension(self) -> bool:
+        """True iff this vendor can drive the user's own browser through an extension
+        (Claude in Chrome, ``--chrome``). Defaults False: such a session gets the agent browser."""
         ...
 
     def supports_plan_mode(self, process: "AgenticProcess") -> bool:

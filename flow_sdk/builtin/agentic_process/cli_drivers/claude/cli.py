@@ -216,7 +216,9 @@ class ClaudeAgentOptions(AgentOptions):
             # to disk for a process's attached servers. ``--strict`` always rides
             # with it: without it the process gets this set PLUS ~/.claude.json,
             # and "which servers does this process have" has no answer.
-            flags.extend(["--mcp-config", self.mcp_config_json, "--strict-mcp-config"])
+            flags.extend(["--mcp-config", self.mcp_config_json])
+            if self.mcp_strict:
+                flags.append("--strict-mcp-config")
         for directory in self.plugin_dirs:
             flags.extend(["--plugin-dir", directory])
         if self.print_mode:

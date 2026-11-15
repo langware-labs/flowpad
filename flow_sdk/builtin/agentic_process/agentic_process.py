@@ -6254,6 +6254,7 @@ class AgenticProcess(Entity):
         # lazily at spawn (``_sync_config_env``), so every contribution is on
         # ``cmd`` by the time anything is rendered.
         cmd.apply_process_mcp(prepared.mcp_runtime, process_id)
+        cmd.chrome = prepared.chrome
         cls._apply_system_instruction_assets(cmd, prepared.instruction_assets)
         runtime = prepared.hook_runtime
         if runtime.plugin_dirs:
@@ -6293,6 +6294,8 @@ class AgenticProcess(Entity):
             ],
             "bypass_hook_trust": prepared.hook_runtime.bypass_hook_trust,
             "mcp_config_json": prepared.mcp_runtime.mcp_config_json,
+            "mcp_strict": prepared.mcp_runtime.strict,
+            "chrome": prepared.chrome,
             "mcp_config_fragment": dict(prepared.mcp_runtime.config_fragment),
         }
 
