@@ -544,8 +544,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
         ref={(node) => {
           tabRefs.current[key] = node;
         }}
-        // A colored chip carries a border in its note's fold shade; the selected one is 2px all round.
-        style={tint ? { ...sizing, ...notePaperStyle(tint), borderColor: tint.fold, ...(isActive && { borderWidth: 2 }) } : sizing}
+        // A colored chip carries a border in its note's fold shade; the selected one is 3px all round.
+        style={tint ? { ...sizing, ...notePaperStyle(tint), borderColor: tint.fold, ...(isActive && { borderWidth: 3 }) } : sizing}
         data-tab-color={tint?.token}
         // `border-t-2` on EVERY state, colored only when active: the accent has
         // to follow the `rounded-t-lg` curve, and a border does that natively.
