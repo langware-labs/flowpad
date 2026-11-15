@@ -316,11 +316,13 @@ export class NavigationActions {
 
   /** `tab_switch` start line: a navigation that will actually move the app. */
   static logTabSwitchStart(via: string, target: DockPointer | null): void {
-    if (!toplog.isOn('tab_switch')) return;
+    if (!toplog.isOn(['tab_switch', 'flow_show'])) return;
     const sw = beginTabSwitch();
+    // The caller: which code moved the app (a click, a show, a restore, a fallback).
+    const caller = (new Error().stack ?? '').split('\n').slice(2, 9).map((l) => l.trim()).join(' < ');
     toplog.log(
-      'tab_switch',
-      `start sw=${sw} via=${via} from=${dockLabel(NavigationActions.currentBrowserDock())} to=${dockLabel(target) ?? '-'} visibility=${document.visibilityState}`,
+      ['tab_switch', 'flow_show'],
+      `start sw=${sw} via=${via} from=${dockLabel(NavigationActions.currentBrowserDock())} to=${dockLabel(target) ?? '-'} visibility=${document.visibilityState} caller=${caller}`,
     );
   }
 

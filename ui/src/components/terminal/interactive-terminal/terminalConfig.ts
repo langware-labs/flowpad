@@ -10,6 +10,7 @@
  * fit.fit() is the authoritative size, and every attach asserts that.
  */
 
+import { HAS_RTL, RTL } from '@src/lib/link-matches';
 import type { WorkerCliVendor } from './process-cli-presentation';
 
 export const FONT_FAMILY = '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace';
@@ -58,13 +59,12 @@ export function applyRtlGridContract(container: HTMLElement, vendor: WorkerCliVe
  * right-to-left letter is returned as is.
  */
 export function visualToLogical(row: string): string {
-  const rtl = '\\u0590-\\u08ff\\ufb1d-\\ufdff\\ufe70-\\ufeff'; // as RTL in src/lib/link-matches.ts
-  if (!new RegExp(`[${rtl}]`).test(row)) return row;
+  if (!HAS_RTL.test(row)) return row;
   const brackets = '()[]{}<>';
   return [...row]
     .reverse()
     .join('')
-    .replace(new RegExp(`[A-Za-z0-9](?:[^${rtl}]*[A-Za-z0-9])?|[()[\\]{}<>]`, 'g'), (run) => {
+    .replace(new RegExp(`[A-Za-z0-9](?:[^${RTL}]*[A-Za-z0-9])?|[()[\\]{}<>]`, 'g'), (run) => {
       const b = brackets.indexOf(run);
       return b >= 0 ? brackets[b ^ 1] : [...run].reverse().join('');
     });

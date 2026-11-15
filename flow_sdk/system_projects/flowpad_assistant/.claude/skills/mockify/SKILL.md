@@ -127,6 +127,8 @@ write `tree` when you touch it.
   the way (grep the UI for the action and the entity type). Plan the change as deltas ON that path, reusing its
   components. A new entry point, dialog or picker only when nothing exists — and say so in the reply. A mock that
   invents its own path beside an existing one gets thrown away.
+- **Terse UI copy.** A menu, picker or popover row is a name plus a few words, on ONE line (`Agent browser · ready`). No subtitles, explanations or descriptions under it; a header is one word.
+- **Real names, never placeholders.** Show a thing by its real name (a profile's own name, the account's email). "default" / "Default" reads as nothing to the reader: use it only to say the real name could not be found, and then say so ("Profile not found").
 - **Shortest path, plain words.** A choice the product can default is a default, not a screen; a technical
   detail (keys, devices, protocols) goes in a tooltip or a settings/expert view, never in the main flow. One
   warning icon with its reason on hover beats a panel of explanations.

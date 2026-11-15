@@ -371,7 +371,6 @@ def _require_tag(name: str) -> str:
     return tag
 
 
-
 class Entity(DBEntity):
     env_vars: SerializeAsAny[EntityEnvVars[EnvVar] | None] = Field(default=None)
     # Auth projection for the requesting caller — computed per request, never
@@ -3772,10 +3771,11 @@ class Entity(DBEntity):
                 seen.add(key)
                 changed = True
             tid_str = str(t)
-            if data is not None or not (sidecar.get(tid_str) or {}).get(CONTEXT_VIA_KEY):
-                entry = self._validate_context_entry_data(t, data) if data is not None else dict(sidecar.get(tid_str) or {})
+            prior = sidecar.get(tid_str) or {}
+            if data is not None or not prior.get(CONTEXT_VIA_KEY):
+                entry = self._validate_context_entry_data(t, data) if data is not None else dict(prior)
                 # How the entry came to be (read by the context mirror): the first add records it.
-                entry[CONTEXT_VIA_KEY] = (sidecar.get(tid_str) or {}).get(CONTEXT_VIA_KEY) or via
+                entry[CONTEXT_VIA_KEY] = prior.get(CONTEXT_VIA_KEY) or via
                 if sidecar.get(tid_str) != entry:
                     sidecar[tid_str] = entry
                     changed = True
