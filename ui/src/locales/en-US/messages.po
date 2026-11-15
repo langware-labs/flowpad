@@ -681,6 +681,11 @@ msgstr "{0} estimated · {1} unpriced"
 msgid "{0} failed"
 msgstr "{0} failed"
 
+#. placeholder {0}: entries.length
+#: src/components/account/network-errors.tsx
+msgid "{0} failed cloud requests since Flowpad started"
+msgstr "{0} failed cloud requests since Flowpad started"
+
 #. placeholder {0}: chain.data.paths.length
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "{0} fallback paths"
@@ -6785,6 +6790,7 @@ msgstr "Cleanup Period (Days)"
 msgid "clear"
 msgstr "clear"
 
+#: src/components/account/network-errors.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/assets/editor/changes/useDocChanges.tsx
@@ -16867,6 +16873,7 @@ msgstr "Largest run"
 msgid "last"
 msgstr "last"
 
+#: src/components/account/network-errors.tsx
 #: src/notifications/error-detail.ts
 msgid "Last"
 msgstr "Last"
@@ -19308,6 +19315,10 @@ msgstr "net"
 msgid "Network ({networkCount})"
 msgstr "Network ({networkCount})"
 
+#: src/components/account/network-errors.tsx
+msgid "Network errors"
+msgstr "Network errors"
+
 #: src/components/automations/BusView.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/pages/discover-page/DiscoverRow.tsx
@@ -20162,6 +20173,10 @@ msgstr "No events captured"
 msgid "No events yet"
 msgstr "No events yet"
 
+#: src/components/account/network-errors.tsx
+msgid "No failed cloud requests since Flowpad started"
+msgstr "No failed cloud requests since Flowpad started"
+
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "No feed items"
 msgstr "No feed items"
@@ -20783,6 +20798,10 @@ msgstr "No resources found in this project"
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "No resources match those filters"
 msgstr "No resources match those filters"
+
+#: src/components/account/network-errors.tsx
+msgid "No response"
+msgstr "No response"
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "No restart needed"
@@ -25800,6 +25819,7 @@ msgstr "Refill budget"
 msgid "Refill the LLM budget of {0} machines?"
 msgstr "Refill the LLM budget of {0} machines?"
 
+#: src/components/account/network-errors.tsx
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/code-editor/AssetCompareView.tsx
@@ -26516,6 +26536,7 @@ msgstr "Repository name"
 msgid "Repository URL"
 msgstr "Repository URL"
 
+#: src/components/account/network-errors.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/notifications/error-detail.ts
 msgid "Request"
@@ -27197,6 +27218,11 @@ msgstr "Rule code saved"
 #: src/components/automations/MessageRulePage.tsx
 msgid "Rule created"
 msgstr "Rule created"
+
+#. placeholder {0}: group.rule
+#: src/components/account/network-errors.tsx
+msgid "Rule: {0}"
+msgstr "Rule: {0}"
 
 #: src/components/asset-counters/channel-project-counters.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
@@ -29890,6 +29916,10 @@ msgstr "Showing the raw execution trace — run analysis to add goals & verdict.
 msgid "Showing: {0}"
 msgstr "Showing: {0}"
 
+#: src/components/account/network-errors.tsx
+msgid "Shown"
+msgstr "Shown"
+
 #: src/components/connections-manager.tsx
 msgid "Shown at approval"
 msgstr "Shown at approval"
@@ -30190,6 +30220,10 @@ msgstr "Signs every delivery. Stored write-only."
 #: src/pages/hub-project/HubProjectGitView.tsx
 msgid "Signs in with your Flowpad account — no password, no token in the URL."
 msgstr "Signs in with your Flowpad account — no password, no token in the URL."
+
+#: src/components/account/network-errors.tsx
+msgid "Silent"
+msgstr "Silent"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Simple actions — click to show all git operations"
@@ -30976,6 +31010,7 @@ msgstr "State"
 msgid "status"
 msgstr "status"
 
+#: src/components/account/network-errors.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
@@ -33809,6 +33844,7 @@ msgstr "Timeout (seconds)"
 msgid "Timeout for Anthropic API calls in ms"
 msgstr "Timeout for Anthropic API calls in ms"
 
+#: src/components/account/network-errors.tsx
 #: src/notifications/error-detail.ts
 msgid "Times"
 msgstr "Times"
@@ -35577,6 +35613,7 @@ msgstr "wants to run on your machine"
 msgid "wants to run prompts on your machine"
 msgstr "wants to run prompts on your machine"
 
+#: src/components/account/network-errors.tsx
 #: src/components/conversation/IssueReplyLine.tsx
 msgid "Warning"
 msgstr "Warning"
