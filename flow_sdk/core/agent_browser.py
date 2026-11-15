@@ -29,8 +29,9 @@ from flow_sdk.instances.paths import instance_dir
 from flow_sdk.pid_probe import pid_is_alive
 from flow_sdk.schema.data_spec.spec import DataSpec
 
-#: The MCP server's name in a session — its tools are ``mcp__browser__*``.
-MCP_NAME = "browser"
+#: The MCP server's name in a session — its tools are ``mcp__agent_browser__*``. Not
+#: ``browser``: Copilot's model API reserves that namespace and refuses the whole turn.
+MCP_NAME = "agent_browser"
 PLAYWRIGHT_MCP = "@playwright/mcp@latest"
 
 

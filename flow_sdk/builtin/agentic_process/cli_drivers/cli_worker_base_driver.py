@@ -867,7 +867,7 @@ class AgenticContext(BaseModel):
     # ``--strict-mcp-config`` and ``--chrome`` for this launch — the session's browser
     # (``browser_choice``). Re-derived every spawn, never persisted.
     mcp_strict: bool = True
-    chrome: bool = False
+    browser_extension: bool = False
     # One-launch acknowledgement for CLIs that gate dynamically supplied hooks
     # behind an explicit trust flag (currently Codex). Never persisted.
     bypass_hook_trust: bool = False
@@ -891,7 +891,7 @@ class AgenticContext(BaseModel):
                 "mcp_config_json",
                 "mcp_config_fragment",
                 "mcp_strict",
-                "chrome",
+                "browser_extension",
                 # Resolved per turn from the process's endpoint; persisting it would let a
                 # stale baseURL outlive the binding it came from.
                 "provider_options",
@@ -1002,10 +1002,24 @@ class AgentOptions:
     # projected by ``prepare_instruction_assets``), or None when it reaches the
     # text another way (developer_instructions / custom dirs / generated config).
     SYSTEM_PROMPT_FILE_FLAG: str | None = None
-    # The session's browser (``browser_choice``), stamped per launch: ``--chrome`` (only
-    # Claude renders it) and ``--strict-mcp-config`` (off when Flowpad's server is additive).
-    chrome: bool = False
+    # How this worker renders the session's browser (``browser_choice``) — CLI switches only,
+    # declared per worker. None: the worker has no such switch (the browser falls back to the
+    # agent browser; the MCP set is additive).
+    EXTENSION_FLAG: str | None = None
+    #: The browser extension's store id — to find the browser profiles it is installed in.
+    EXTENSION_ID: str | None = None
+    STRICT_MCP_FLAG: str | None = None
+    # Stamped per launch: drive the user's browser through the extension; keep the MCP set strict.
+    browser_extension: bool = False
     mcp_strict: bool = True
+
+    def extension_flags(self, extension: bool = False) -> list[str]:
+        """The extension switch, when this worker declares one and the launch wants it."""
+        return [self.EXTENSION_FLAG] if (self.browser_extension or extension) and self.EXTENSION_FLAG else []
+
+    def strict_mcp_flags(self) -> list[str]:
+        """The strict-MCP switch, when this worker declares one and the launch's set is strict."""
+        return [self.STRICT_MCP_FLAG] if self.mcp_config_json and self.mcp_strict and self.STRICT_MCP_FLAG else []
 
     def __init__(
         self,
@@ -1984,11 +1998,6 @@ class WorkerDriver(Protocol):
         """True iff this vendor has a transcript to ``--resume`` for the
         process's ``session_id``. Probes the vendor's own session store —
         used by restart recovery to decide whether to relaunch with resume."""
-        ...
-
-    def supports_browser_extension(self) -> bool:
-        """True iff this vendor can drive the user's own browser through an extension
-        (Claude in Chrome, ``--chrome``). Defaults False: such a session gets the agent browser."""
         ...
 
     def supports_plan_mode(self, process: "AgenticProcess") -> bool:

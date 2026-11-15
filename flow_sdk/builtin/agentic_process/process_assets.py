@@ -9,6 +9,7 @@ from pydantic import Field
 
 from flow_sdk.assets.directory import AssetDir
 from flow_sdk.assets.materialize import MaterializationMode
+from flow_sdk.builtin.agentic_process.browser_choice import BrowserLaunch
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime, ProcessMcpRuntime
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -62,8 +63,8 @@ class PreparedProcessAssets(DataSpec):
     instruction_assets: SystemInstructionAssets | None = None
     hook_runtime: ProcessHookRuntime = Field(default_factory=ProcessHookRuntime)
     mcp_runtime: ProcessMcpRuntime = Field(default_factory=ProcessMcpRuntime)
-    #: The session's browser is the user's Chrome through Claude in Chrome (``--chrome``).
-    chrome: bool = False
+    #: The session's browser, decided once (``browser_choice``); each worker renders it.
+    browser: BrowserLaunch = Field(default_factory=BrowserLaunch)
 
 
 
@@ -442,7 +443,8 @@ class ProcessAssets:
         from flow_sdk.builtin.agentic_process.browser_choice import resolve_for  # noqa: PLC0415
         from flow_sdk.core.agent_browser import MCP_NAME, mcp_spec  # noqa: PLC0415
 
-        browser = await resolve_for(self.process)
+        launch = await resolve_for(self.process)
+        browser = launch.kind
         servers = list(self.process.resolved_mcp_servers())
         if prepare_mcp is not None:
             # The agent browser is ADDED to the user's own servers: when it is the whole set,
@@ -457,7 +459,7 @@ class ProcessAssets:
             instruction_assets=instructions,
             hook_runtime=hook_runtime,
             mcp_runtime=mcp_runtime,
-            chrome=browser == "extension",
+            browser=launch,
         )
 
 

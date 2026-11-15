@@ -554,7 +554,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         # path must carry the same per-process MCP the PTY path does.
         options.mcp_config_json = context.mcp_config_json
         options.mcp_strict = context.mcp_strict
-        options.chrome = context.chrome
+        options.browser_extension = context.browser_extension
         return options
 
     def _build_spawn(

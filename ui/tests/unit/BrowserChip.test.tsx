@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BrowserStatus } from '@sdk';
-import { chipState, extensionState } from '@src/components/footer/BrowserChip';
+import { chipState, extensionProfile, extensionState } from '@src/components/footer/BrowserChip';
 
 const base: BrowserStatus = {
   setting: 'agent',
@@ -35,4 +35,14 @@ describe('chipState', () => {
     expect(chipState({ ...base, effective: 'extension', last_use: use('extension', 3, true) }, now)).toBe('dropped'));
   it('a call on another browser does not light it', () =>
     expect(chipState({ ...base, last_use: use('playwright', 3) }, now)).toBe('idle'));
+});
+
+describe('extensionProfile', () => {
+  const profiles = [
+    { browser: 'Google Chrome', name: 'Shlomo', email: null, installed: false },
+    { browser: 'Google Chrome', name: 'Work', email: 'w@x.com', installed: true },
+  ];
+  it('names the profile the extension is in', () =>
+    expect(extensionProfile({ ...base, extension: { installed: true, device: '', profiles } })).toBe('Work'));
+  it('null when no profile has it (shown as "Profile not found")', () => expect(extensionProfile(base)).toBeNull());
 });

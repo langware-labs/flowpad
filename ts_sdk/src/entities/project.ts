@@ -525,7 +525,14 @@ export interface BrowserStatus {
   effective: SessionBrowser;
   supports_extension: boolean;
   agent: { up: boolean; pid: number | null; port: number | null; browser: string };
-  extension: { installed: boolean; device: string };
+  extension: {
+    installed: boolean;
+    device: string;
+    /** Browser profiles on this machine and whether the worker's extension is in each. */
+    profiles?: { id: string; browser: string; name: string; email: string | null; installed: boolean }[];
+    /** A browser's profile list exists but could not be read (macOS privacy). */
+    profiles_denied?: boolean;
+  };
   last_use: { family: string; tool: string; url: string; at: string | null; failed: boolean } | null;
 }
 

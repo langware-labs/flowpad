@@ -807,6 +807,13 @@ class Project(SetupSkippable, Entity):
 
             process = await AgenticProcess.get_by_id(process_id)
 
+        if process is not None:
+            options = browser_choice.worker_options(process.worker_type)
+        else:
+            from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
+
+            options = browser_choice.worker_options(await resolve_default_worker_type())
+
         def _probe() -> tuple[dict, dict, dict | None]:
             last_use = None
             if process is not None:
@@ -817,14 +824,25 @@ class Project(SetupSkippable, Entity):
                 paths = [transcript_path(process), *process._record_dir().glob("*transcript*.jsonl")]
                 uses = [u for u in map(browser_choice.last_browser_use, paths) if u]
                 last_use = max(uses, key=lambda u: u["at"] or "") if uses else None
-            return agent_status().model_dump(), browser_choice.extension_hint(), last_use
+            # Extension facts only for a worker that has one.
+            extension: dict = {"installed": False, "device": ""}
+            if options.EXTENSION_ID:
+                from flow_sdk.core.browser_profiles import scan_extension  # noqa: PLC0415
+
+                scan = scan_extension(options.EXTENSION_ID)
+                extension = {
+                    **browser_choice.extension_hint(),
+                    "profiles": [{**p.profile.model_dump(), "browser": p.browser, "installed": p.installed} for p in scan.profiles],
+                    "profiles_denied": scan.denied,
+                }
+            return agent_status().model_dump(), extension, last_use
 
         agent, extension, last_use = await asyncio.to_thread(_probe)
         return ApiSuccessResponse(
             data={
                 "setting": setting,
-                "effective": await browser_choice.resolve_for(process, setting) if process else setting,
-                "supports_extension": browser_choice.supports_extension(process) if process else True,
+                "effective": (await browser_choice.resolve_for(process, setting)).kind if process else setting,
+                "supports_extension": options.EXTENSION_FLAG is not None,
                 "agent": agent,
                 "extension": extension,
                 "last_use": last_use,

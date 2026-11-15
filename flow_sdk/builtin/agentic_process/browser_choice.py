@@ -10,22 +10,36 @@ that asked for ``--chrome``) > the project's ``browser`` in ``project_manifest.j
 
 from __future__ import annotations
 
+import functools
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Optional
 
 from flow_sdk.schema.data_spec.project_manifest_spec import BROWSERS
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
 Browser = Literal["agent", "extension"]
 
+
+class BrowserLaunch(DataSpec):
+    """The session's browser for one launch, decided at the agentic-process level. Each worker
+    renders it with its own CLI switches (``AgentOptions.EXTENSION_FLAG`` / ``STRICT_MCP_FLAG``)."""
+
+    kind: Browser = "agent"
+
+    @property
+    def extension(self) -> bool:
+        return self.kind == "extension"
+
 #: Tool-name prefixes that mean "drove a browser", per family.
 _FAMILIES = {
     "mcp__claude-in-chrome__": "extension",
-    "mcp__browser__": "agent",
+    "mcp__agent_browser__": "agent",
     "mcp__playwright__": "playwright",
     "mcp__debugMcp__": "playwright",
     "mcp__chrome-devtools__": "playwright",
@@ -43,11 +57,27 @@ def resolve(*, override: object, legacy_chrome: bool, project_browser: str, supp
     return project_browser if project_browser in BROWSERS else "agent"  # type: ignore[return-value]
 
 
+@functools.lru_cache(maxsize=None)
+def _options_class(driver_cls: type) -> type:
+    method = driver_cls.cli_options
+    hint = method.__annotations__["return"]  # a name under ``from __future__ import annotations``
+    return getattr(sys.modules[method.__module__], hint) if isinstance(hint, str) else hint
+
+
+def worker_options(worker_type: str | None) -> type:
+    """The options CLASS a worker type launches with — where its browser switches are declared
+    (class constants), read off its driver's ``cli_options`` return type: nothing is built."""
+    from flow_sdk.builtin.agentic_process.cli_drivers import get_driver  # noqa: PLC0415
+
+    return _options_class(type(get_driver(worker_type)))
+
+
 def supports_extension(process: "AgenticProcess") -> bool:
-    return bool(process.driver.supports_browser_extension())
+    """The worker declares a switch for the extension (Claude: ``--chrome``)."""
+    return _options_class(type(process.driver)).EXTENSION_FLAG is not None
 
 
-async def resolve_for(process: "AgenticProcess", project_browser: Optional[str] = None) -> Browser:
+async def resolve_for(process: "AgenticProcess", project_browser: Optional[str] = None) -> BrowserLaunch:
     """``project_browser``: the project's setting when the caller already read it."""
     if project_browser is None:
         from flow_sdk.assets.project_manifest import read_browser  # noqa: PLC0415
@@ -57,12 +87,12 @@ async def resolve_for(process: "AgenticProcess", project_browser: Optional[str] 
         mount = project.fs_storage_mount_path if project is not None else None
         root = mount or process.workdir
         project_browser = read_browser(Path(root)) if root else "agent"
-    return resolve(
+    return BrowserLaunch(kind=resolve(
         override=(process.context_data or {}).get("browser"),
         legacy_chrome=bool((process.cli_config or {}).get("chrome")),
         project_browser=project_browser,
         supports_extension=supports_extension(process),
-    )
+    ))
 
 
 def extension_hint() -> dict:
@@ -107,6 +137,18 @@ def last_browser_use(transcript: Optional[Path], tail_bytes: int = 400_000) -> O
             if family:
                 failed = bool(item.get("error")) or item.get("status") == "failed"
                 last = _use(family, str(item.get("tool") or ""), item.get("arguments"), row.get("timestamp"), failed)
+            continue
+        data = row.get("data")
+        if isinstance(data, dict) and row.get("type") in ("tool.execution_start", "tool.execution_complete"):
+            # Copilot: a start names the server and tool, its complete carries the outcome.
+            call_id = data.get("toolCallId", "")
+            if row["type"] == "tool.execution_start":
+                family = _FAMILIES.get(f"mcp__{data.get('mcpServerName')}__")
+                if family:
+                    last = _use(family, str(data.get("mcpToolName") or ""), data.get("arguments"), row.get("timestamp"), False)
+                    pending[call_id] = last
+            elif call_id in pending:
+                pending.pop(call_id)["failed"] = not data.get("success", True)
             continue
         content = (row.get("message") or {}).get("content")
         for block in content if isinstance(content, list) else ():

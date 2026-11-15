@@ -3,6 +3,7 @@ import type { BrowserStatus, SessionBrowser } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useProjectLocation } from '@src/hooks/use-project-location';
+import { ProfileLabel } from '@src/components/links/BrowserProfileItems';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
@@ -24,6 +25,12 @@ export function extensionState(s: BrowserStatus): ExtensionState {
   if (ok && s.last_use?.family === 'extension') return 'connected';
   if (!s.extension.installed) return 'not_installed';
   return ok && s.effective === 'extension' ? 'connected' : 'not_connected';
+}
+
+/** The profile the extension lives in, by its real name; null when none is known. */
+export function extensionProfile(s: BrowserStatus): string | null {
+  const hit = s.extension.profiles?.find((p) => p.installed);
+  return hit ? hit.name : null;
 }
 
 export type ChipState = 'idle' | 'live' | 'dropped';
@@ -78,7 +85,9 @@ function Row({
   action,
   onSelect,
   testId,
+  profile,
 }: {
+  profile?: React.ReactNode;
   icon: React.ReactNode;
   name: React.ReactNode;
   note: React.ReactNode;
@@ -114,6 +123,11 @@ function Row({
           · {note}
         </span>
       </button>
+      {profile && (
+        <span className="shrink-0 text-[11px] text-muted-foreground" data-testid={`${testId}-profile`}>
+          {profile}
+        </span>
+      )}
       {action}
       {selected && <Check className="h-3.5 w-3.5 text-primary" />}
     </div>
@@ -184,6 +198,23 @@ function AddBrowserDialog({
         )}
         {step === 'connect' && (
           <div data-testid="add-browser-checks">
+            <div className="mb-1 text-[11px] text-muted-foreground">
+              <Trans>Chrome profiles on this computer</Trans>
+            </div>
+            {(status.extension.profiles ?? []).map((p) => (
+              <div key={`${p.browser}/${p.name}`} className="flex items-center gap-2 py-1 text-xs" data-testid="add-browser-profile">
+                <Chrome className="h-3.5 w-3.5" />
+                <ProfileLabel profile={p} />
+                <span className={cn('ms-auto text-[11px]', p.installed ? 'text-green-500' : 'text-muted-foreground')}>
+                  {p.installed ? <Trans>extension ✓</Trans> : <Trans>no extension</Trans>}
+                </span>
+              </div>
+            ))}
+            {status.extension.profiles_denied && (
+              <div className="py-1 text-xs text-muted-foreground" data-testid="add-browser-profile-denied">
+                <Trans>Profile not found</Trans>
+              </div>
+            )}
             {check(<Trans>Extension installed</Trans>, ext !== 'not_installed', <Trans>missing</Trans>)}
             {check(<Trans>Connected</Trans>, ext === 'connected', <Trans>on first browser step</Trans>)}
             <div className="mt-2 flex gap-1.5">
@@ -237,6 +268,7 @@ export function BrowserChip() {
   if (!project || !status) return null;
 
   const ext = extensionState(status);
+  const profileName = extensionProfile(status);
   const state = chipState(status, Date.now());
   const usingExtension = status.effective === 'extension';
   const choose = async (browser: SessionBrowser) => {
@@ -285,6 +317,7 @@ export function BrowserChip() {
             name={<Trans>Agent browser</Trans>}
             note={status.agent.up ? <Trans>running</Trans> : <Trans>ready</Trans>}
             tone="ok"
+            profile={<Trans>Profile: not available</Trans>}
             selected={!usingExtension}
             onSelect={() => void choose('agent')}
           />
@@ -295,6 +328,7 @@ export function BrowserChip() {
               name={<Trans>Your Chrome</Trans>}
               note={EXT_ROW[ext].note}
               tone={EXT_ROW[ext].tone}
+              profile={profileName ? <Trans>Profile: {profileName}</Trans> : <Trans>Profile not found</Trans>}
               selected={usingExtension}
               disabled={ext === 'not_installed'}
               onSelect={() => void choose('extension')}
