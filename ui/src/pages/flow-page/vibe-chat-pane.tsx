@@ -18,7 +18,10 @@ import { VibeWorkerSelect } from './vibe-worker-select';
 import { VibeDocChip } from './vibe-doc-chip';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
-import { Agent, AgenticProcess, ProcessKind, toplog, TypeId } from '@sdk';
+import { Agent, AgenticProcess, ProcessKind, tabManager, toplog, TypeId } from '@sdk';
+import { closeTabsWithLifecycle } from '@src/tabs/tab-content-lifecycle';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { X } from 'lucide-react';
 import { startAgentSession } from '@src/components/agents/use-agent-launcher';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useCallback, useEffect, useState } from 'react';
@@ -59,6 +62,18 @@ export function VibeChatPane({
   // A vibe-only agent's session has no tabs and no surface switch: New / Recent
   // replace this session in place instead of opening a tab beside it.
   const vibeOnlyAgent = useVibeOnlyAgent(process?.id);
+  // Close a vibe-only session the way its (hidden) tab's X would — its own tab
+  // and the tabs it hosts — then land where the top bar's Home button lands.
+  const closeVibeOnlySession = useCallback(() => {
+    if (!process) return;
+    const tabs = tabManager.getSnapshot().filter((tab) => {
+      if (!tab.dockPointer) return false;
+      const dock = new DockPointer(tab.dockPointer);
+      return dock.hostProcessId === process.id || DockPointer.forSession(process.id).pointer === dock.pointer;
+    });
+    navigation.goHome();
+    void closeTabsWithLifecycle(tabs).finally(() => void tabManager.refresh());
+  }, [process, navigation]);
   const [pendingWorkerSwitch, setPendingWorkerSwitch] = useState<{
     workerType: WorkerType;
     model: VibeModelChoice;
@@ -262,11 +277,26 @@ export function VibeChatPane({
         allowAttachments
         composerDisabled={startingNewSession}
         leadingSlot={({ startNewSession }) => (
-          <NewSessionPill
-            onClick={() => void handleNewSession(startNewSession)}
-            disabled={startingNewSession}
-            title={t`New build`}
-          />
+          <>
+            {/* A vibe-only session has no tab strip, so no tab X: this is it. */}
+            {vibeOnlyAgent && (
+              <button
+                type="button"
+                onClick={closeVibeOnlySession}
+                title={t`Close`}
+                aria-label={t`Close`}
+                data-testid="vibe-only-close"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <NewSessionPill
+              onClick={() => void handleNewSession(startNewSession)}
+              disabled={startingNewSession}
+              title={t`New build`}
+            />
+          </>
         )}
         emptyStateText={t`What do you want to work on`}
         historyLabel={t`Build history`}
