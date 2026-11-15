@@ -29,6 +29,13 @@ vi.mock('@src/components/assets/editor/agent-profile/use-agent-places', () => ({
 vi.mock('@src/hooks/entity-hooks', () => ({
   // One answer for every entity query the screen makes: an agent to pick, and (as a data source) a channel.
   useEntitiesQuery: () => ({ data: [{ id: 'a1', name: 'Chief of Staff', channel: 'gmail' }] }),
+  // The message a rule was started from: none here.
+  useEntity: () => ({ data: null }),
+}));
+// No tags are defined here: the rule page lists none to pick.
+vi.mock('@src/components/tags/MessageTags', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/components/tags/MessageTags')>()),
+  useTagDefinitions: () => [],
 }));
 
 const state = vi.hoisted(() => ({

@@ -40,6 +40,12 @@ export function tagChipStyle(color?: string | null): CSSProperties | undefined {
 
 /** Projection only: assignment and queue decisions are owned by the message actions. */
 export function MessageTags({ message, compact = false }: { message: FlowMessage; compact?: boolean }) {
+  // An inbox row with no tags and nothing queued draws nothing, so it subscribes to nothing.
+  if (compact && !message.tags?.length && !message.message_processing?.queue?.length) return null;
+  return <MessageTagStrip message={message} compact={compact} />;
+}
+
+function MessageTagStrip({ message, compact }: { message: FlowMessage; compact: boolean }) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   const context = messageTagContext(message);
@@ -99,7 +105,6 @@ export function MessageTags({ message, compact = false }: { message: FlowMessage
       </span>
     );
   };
-  if (compact && !tags.length && !queue.length) return null;
   return (
     <span
       data-testid={compact ? 'inbox-message-tags' : 'message-tags'}
