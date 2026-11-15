@@ -724,6 +724,7 @@ class HubWsBridge:
                         # sync already materialized the row, so the open conversation
                         # ``on('message')`` listener still fires.
                         emit_live_create=True,
+                        classify_message=not _is_session_traffic(payload),
                         # Inbound from the hub: this row mirrors a hub counterpart.
                         remote=True,
                     )

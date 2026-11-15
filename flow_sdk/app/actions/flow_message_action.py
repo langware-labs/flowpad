@@ -2353,7 +2353,7 @@ async def handle_stream_inbox_update(fm_id: str, patch: dict, someone_typeid: st
 
 @action.post(action_name="stream-inbox-search", types=None)
 async def stream_inbox_search() -> ApiResponse:
-    """Full-stream-inbox body search → conversation ids. Body: ``{"q": "<substring>"}``.
+    """Full-stream-inbox search → conversation ids; optional q and all-of tags.
 
     Two lanes because bodies live in two places under the reference model:
     a channel message's text is on its SourceItem (the FlowMessage row is a
@@ -2368,7 +2368,10 @@ async def stream_inbox_search() -> ApiResponse:
         body = await request_info.get_post_data() or {}
         scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
         needle = str(body.get("q") or "").strip()
-        if not needle:
+        from flow_sdk.server.search_filters import apply_tag_filter, wanted_tags
+
+        selected_tags = wanted_tags(body.get("tags"))
+        if not needle and not selected_tags:
             return ApiSuccessResponse(data={"conversation_ids": []})
         like = f"%{needle}%"
 
@@ -2376,6 +2379,26 @@ async def stream_inbox_search() -> ApiResponse:
 
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        # Narrow in the query before the shared hierarchy predicate. LIKE is
+        # only a candidate filter (a legal underscore is a LIKE wildcard), so
+        # apply_tag_filter remains the exact canonical matcher.
+        tag_match = ExpressionNode(op=QueryOp.AND, operands=[
+            ExpressionNode(op=QueryOp.OR, operands=[
+                ExpressionNode(op=QueryOp.LIKE, operands=["tags", f'%"{tag}"%']),
+                ExpressionNode(op=QueryOp.LIKE, operands=["tags", f'%"{tag}.%']),
+            ]) for tag in selected_tags
+        ]) if selected_tags else None
+
+        def filtered(match):
+            return QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[match, tag_match]) if tag_match else match)
+
+        if not needle:
+            messages = apply_tag_filter(await FlowMessage.get_all(QueryFilter(match=tag_match), hydrate=False), selected_tags)
+            ids = {str(m.conversation_id) for m in messages if m.conversation_id}
+            if scope is not None:
+                ids &= scope.conversation_ids
+            return ApiSuccessResponse(data={"conversation_ids": sorted(ids)})
 
         # The two lanes are independent — run them together.
         items, native = await asyncio.gather(
@@ -2391,22 +2414,22 @@ async def stream_inbox_search() -> ApiResponse:
                 )
             ),
             FlowMessage.get_all(
-                QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["text", like])),
+                filtered(ExpressionNode(op=QueryOp.LIKE, operands=["text", like])),
                 hydrate=False,
             ),
         )
-        conversation_ids: set[str] = {str(m.conversation_id) for m in native if m.conversation_id}
+        conversation_ids: set[str] = {str(m.conversation_id) for m in apply_tag_filter(native, selected_tags) if m.conversation_id}
         if items:
             refs = await FlowMessage.get_all(
-                QueryFilter(
-                    match=ExpressionNode(
+                filtered(
+                    ExpressionNode(
                         op=QueryOp.IN,
                         operands=["source_item_id", [str(i.id) for i in items]],
                     )
                 ),
                 hydrate=False,
             )
-            conversation_ids |= {str(m.conversation_id) for m in refs if m.conversation_id}
+            conversation_ids |= {str(m.conversation_id) for m in apply_tag_filter(refs, selected_tags) if m.conversation_id}
         if scope is not None:
             conversation_ids &= scope.conversation_ids
         return ApiSuccessResponse(data={"conversation_ids": sorted(conversation_ids)})
@@ -5019,3 +5042,44 @@ async def invitation_accept() -> ApiResponse:
     except Exception as e:
         logger.error("[flow_message_action] invitation-accept error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
+
+
+@action.all(action_name="classification-settings", types=["flow_message"], methods=["get", "post"])
+async def message_classification_settings() -> ApiResponse:
+    """Instance-owned incoming-message policy; omitted settings retain their value."""
+    from flow_sdk.stream_inbox.message_tags import save_settings, settings
+
+    info = get_current_request_info()
+    if info is None:
+        return ApiFailResponse(message="No request context available", status_code=400)
+    current = settings()
+    if info.request.method.upper() == "POST":
+        body = await info.get_post_data()
+        if not isinstance(body, dict) or set(body) - {"enabled", "include_flow_tags"}:
+            return ApiFailResponse(message="Expected enabled and/or include_flow_tags settings", status_code=400)
+        try:
+            current = save_settings({**current.model_dump(mode="json"), **body})
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+    return ApiSuccessResponse(data=current.model_dump(mode="json"))
+
+
+@action.post(action_name="set-tags", types=["flow_message"])
+async def message_set_tags(self: FlowMessage) -> ApiResponse:
+    """Atomic tag replacement through the same entity seam as add/remove."""
+    info = get_current_request_info()
+    if info is None:
+        return ApiFailResponse(message="No request context available", status_code=400)
+    body = await info.get_post_data()
+    if not isinstance(body, dict) or set(body) != {"tags"} or not isinstance(body["tags"], list):
+        return ApiFailResponse(message="Expected a tags list", status_code=400)
+    if any(not isinstance(tag, str) for tag in body["tags"]):
+        return ApiFailResponse(message="Every tag must be a string", status_code=400)
+    try:
+        await self.set_tags(body["tags"])
+    except ValueError as exc:
+        return ApiFailResponse(message=str(exc), status_code=400)
+    return ApiSuccessResponse(data={
+        "tags": self.tags,
+        "message_processing": self.message_processing.model_dump(mode="json") if self.message_processing else None,
+    })

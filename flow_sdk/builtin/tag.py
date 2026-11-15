@@ -15,8 +15,8 @@ Resolution is wiki-link-style (``resolve_tag`` → entity or None) and NEVER
 mints: blessing is a deliberate act (author, UI, seeder) — an event storm on
 the bus must not become an entity storm.
 
-CRUD is generic (``POST/GET /graph/tag`` via the catch-all router); no
-bespoke actions.
+CRUD is generic. Inbox management adds explicit rename/delete actions so the
+message bindings and their automations change together, on the backend.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from typing import Any, Optional
 from pydantic import field_validator
 
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.core import Entity
+from flow_sdk.core import Entity, action
 from flow_sdk.schema.types import EntityType
 from flow_sdk.tags.grammar import normalize_tag
 
@@ -40,6 +40,17 @@ class Tag(Entity):
     name: str = APIField(description="Canonical dot-separated tag name")
     title: Optional[str] = APIField(default=None, description="UX display label")
     description: Optional[str] = APIField(default=None, description="What events/things under this tag mean")
+    color: Optional[str] = APIField(default=None, description="Optional #RRGGBB chip colour")
+    inbox: bool = APIField(default=False, description="Shown in Inbox tags management; not a classifier eligibility gate")
+
+    @field_validator("color")
+    @classmethod
+    def _color(cls, value):
+        import re
+
+        if value is not None and not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+            raise ValueError("color must be #RRGGBB or null")
+        return value
     # Rename seam: renames never mutate identity (name IS identity) — the old
     # tag stays, deprecated, pointing at its successor.
     alias_of: Optional[str] = APIField(default=None, description="Canonical successor name when this tag was renamed")
@@ -85,6 +96,35 @@ class Tag(Entity):
             self.system = seeding
         return await super().save(owner=owner, notify=notify)
 
+    @action.get(action_name="message-tag-impact")
+    async def message_tag_impact(self):
+        from flow_sdk.responses.response import ApiSuccessResponse
+        from flow_sdk.stream_inbox.tag_management import impact
+
+        return ApiSuccessResponse(data=await impact(self))
+
+    @action.post(action_name="rename-message-tag")
+    async def rename_message_tag(self):
+        from flow_sdk.request_context.methods import get_current_request_info
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+        from flow_sdk.stream_inbox.tag_management import rename
+
+        body = await get_current_request_info().get_post_data()
+        try:
+            return ApiSuccessResponse(data=await rename(self, body))
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+
+    @action.post(action_name="delete-message-tag")
+    async def delete_message_tag(self):
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+        from flow_sdk.stream_inbox.tag_management import delete
+
+        try:
+            return ApiSuccessResponse(data=await delete(self))
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+
     @classmethod
     def _row_id_policy(cls, data: dict) -> str:
         """Name-derived uuid5 — the same name always mints the same id.
@@ -109,6 +149,9 @@ class Tag(Entity):
 # roots and real leaves are blessed here. Dynamic vocabularies (``gcp.*``
 # provider kinds, ``app.ui.<kind>.clicked``) stay anonymous by design.
 SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
+    ("message.action-required", "Action required", "The message asks the recipient to take action."),
+    ("message.information", "Information", "Informational message requiring no action."),
+    ("message.receipt", "Receipt", "A receipt or confirmation of a completed transaction."),
     # ── event families ──
     ("entity", "Entity events", "Local entity lifecycle events (data ops)"),
     ("entity.created", "Entity created", "An entity row was created"),
@@ -228,10 +271,16 @@ async def seed_system_tags() -> int:
     token = _seeding.set(True)
     try:
         for name, title, description in SYSTEM_TAG_SEED:
-            expected = Tag(name=name, title=title, description=description, system=True)
+            expected = Tag(name=name, title=title, description=description, system=True,
+                           inbox=name.startswith("message."))
             existing = await Tag.get_by_id(expected.id)
+            # A newly shipped vocabulary name may already be user-authored.
+            # Never replace that user's ontology with a system definition.
+            if existing is not None and not existing.system:
+                continue
             if existing is not None and (
                 existing.title == title and existing.description == description and existing.system
+                and existing.inbox == expected.inbox
             ):
                 continue
             await expected.save(notify=False)
@@ -251,4 +300,11 @@ async def resolve_tag(name: str) -> Optional[Tag]:
         canonical = normalize_tag(name)
     except (TypeError, ValueError):
         return None
-    return await Tag.get_by_id(Tag.allocate_id({"name": canonical}))
+    visited = set()
+    while canonical not in visited:
+        visited.add(canonical)
+        row = await Tag.get_by_id(Tag.allocate_id({"name": canonical}))
+        if row is None or not row.alias_of:
+            return row
+        canonical = normalize_tag(row.alias_of)
+    return None  # malformed alias cycle has no canonical successor

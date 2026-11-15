@@ -76,6 +76,9 @@ def register_tag_trigger(trigger: "Trigger") -> None:
     from flow_sdk.tags import event_bus
 
     unregister_tag_trigger(trigger.id)
+    if trigger.message_tags:
+        # Message tag admission is durable and message-ordered, not bus fan-out.
+        return
     if not trigger.enabled or not trigger_runs_here(trigger):
         return
     problem = validate_tag_trigger(trigger.tag_pattern)
@@ -434,7 +437,8 @@ async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Option
             **_cause_keys(event), **(gate.row() if gate else {}),
         })
     return {"event_id": execution.event_id, "agentic_process_id": execution.process_id,
-            "error": error, "duration_ms": execution.duration_ms}
+            "error": error, "duration_ms": execution.duration_ms,
+            "accepted": execution.accepted, "reason_code": reason_code}
 
 
 async def run_tag_test(trigger: "Trigger", event: "FlowEvent", event_id: Optional[str], *,

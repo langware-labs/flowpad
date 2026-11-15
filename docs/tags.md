@@ -130,6 +130,58 @@ The same derivation renders as a graph: the `tag` subgraph projection
 files as ghost nodes. It is served through the generic entity-subgraph route
 (`/api/v1/subgraph/{projection}`) and viewed at `/dock/tag/graph[/<name>]`.
 
+## Incoming message classification and automations
+
+Messages use the same `Entity.tags` field and Tag definitions as every other
+entity. Classification considers the user's nondeprecated ontology. The optional
+Flowpad message vocabulary is enabled separately; it does not replace user tags
+or introduce a `labels` field. Tag definitions carry an optional `color` and an
+`inbox` management marker; that marker does not restrict classifier eligibility.
+
+Only new incoming messages enter classification. Historical imports and reads do
+not backfill work, and outgoing/own-automation messages are excluded. A failed
+classifier leaves the message editable: a person can still add tags and trigger
+automations. A person's removal is remembered so an in-flight classifier cannot
+put the removed tag back.
+
+`Trigger.message_tags` binds an existing TAG automation to any of the named tags
+or their descendants. Each message owns a persisted FIFO: a newly attached tag
+appends matching automations, and each automation is admitted once for that
+message, including when a later automation adds another triggering tag. This is
+not `Trigger.fire_once`, which limits the lifetime of a rule. Removing the last
+qualifying tag cancels queued work, not running work. A disabled/deleted rule is
+checked again before execution. A failed automation is recorded and the queue
+continues without automatic retries. Uncertain work after interruption is not
+silently replayed.
+
+`FlowMessage.message_processing` is server-owned, machine-private state carrying
+classification, assignment provenance, and queue history. Automation provenance
+identifies the exact rule and run. Tag changes through the existing add/remove
+actions, generic CRUD, or `set-tags` use the same entity mutation seam and publish
+the resulting state to live clients. The inbox remains a single-line row; full
+tag details and queue history are opened on demand.
+
+Read or update instance settings through
+`GET|POST /api/v1/graph/flow_message/classification-settings` using `enabled` and
+`include_flow_tags`. Replace a message's tags atomically through
+`POST /api/v1/graph/flow_message/<id>/set-tags` with `{"tags": [...]}`.
+
+Inbox tag management uses the existing successor/alias convention when renaming:
+the old definition resolves to the successor, and message assignments, provenance,
+suppression and automation references follow it without firing again. Its explicit
+delete action removes message attachments, retains messages and disables affected
+automations. Generic Tag deletion retains its existing anonymous-tag semantics.
+The management actions are `GET tag/<id>/message-tag-impact`,
+`POST tag/<id>/rename-message-tag` and `POST tag/<id>/delete-message-tag` under
+`/api/v1/graph/`.
+
+The browser acceptance inventory is versioned in
+`ui/tests/manual_regression/automations/message-tags-manifest.json`; its coverage
+ledger fails when an approved screen or action has not been exercised.
+Run `bash scripts/test_message_tags_browser.sh` with a local test hub running.
+It creates a fresh isolated instance, replaces only external model/executor
+boundaries, retains browser evidence and stops its own test processes.
+
 ## Target — what the event is about
 
 - `target` = the **type:id of the event's entity**. Its own envelope field, separate
@@ -255,4 +307,3 @@ it safe to exist. Not built now.
    machinery)
 5. Compute-node liveness unification
 6. Recorder interface stub
-

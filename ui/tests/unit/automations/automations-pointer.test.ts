@@ -12,6 +12,7 @@ describe('automations route', () => {
   it.each([
     [{ place: 'list' }, '/dock/automations'],
     [{ trigger: 'abc' }, '/dock/automations?trigger=abc'],
+    [{ trigger: 'abc', message: 'm-1', conversation: 'c-1' }, '/dock/automations?trigger=abc&message=m-1&conversation=c-1'],
     [{ trigger: 'abc', tab: 'runs' }, '/dock/automations?trigger=abc&tab=runs'],
     [
       { creating: 'schedule', recipe: 'morning-briefing' },

@@ -39,6 +39,17 @@ async def prepare(input: PreparedAutomation, *, context) -> ReturnedValue:
     try:
         if context.preview_state is not None:
             state = context.preview_state
+        elif context.event is not None and getattr(trigger, "message_tags", None):
+            from flow_sdk.builtin.flow_message import FlowMessage
+            from flow_sdk.stream_inbox.message_subject import _self_ids, state_of
+            from flow_sdk.tags.envelope import parse_target
+
+            kind, message_id = parse_target(context.event.target)
+            message = (await FlowMessage.get_one({"source_item_id": message_id}) if kind == "source_item"
+                       else await FlowMessage.get_by_id(message_id))
+            if message is None:
+                raise LookupError("no such message")
+            state = state_of(message, await _self_ids(), allow_foreign_agents=True)
         elif context.event is not None:
             state = await subject.of(context.event.target)
         elif context.preview_message_id:

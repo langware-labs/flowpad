@@ -462,6 +462,7 @@ class Trigger(ProjectedFields, Entity):
     tag_pattern: Optional[str] = APIField(None, description="Bus tag pattern, segment-glob (TAG triggers only), e.g. 'entity.created' or 'graph_workflow.*'. Bare '*' is rejected.")
     tag_target: Optional[str] = APIField(None, description="Optional target filter in colon form: 'usage_report:*' or an exact 'type:id' (TAG only)")
     tag_scope: list[str] = APIField(default_factory=list, description="Optional scope filter — colon-form targets the event's ctx.scope must intersect (TAG only)")
+    message_tags: list[str] = APIField(default_factory=list, description="Any-of message tags (including descendants); FIFO once per message, not ordinary event delivery")
     max_fires_per_minute: int = APIField(default=STORM_CAP_PER_MINUTE, description="Storm guard for TAG triggers: fires beyond this per-minute cap are dropped (one storm_suppressed log entry per window)")
     confirm: Optional[dict[str, Any]] = APIField(None, description="Optional confirm-against-store gate (TAG only): {type, filter} — the entity query must match or the fire is skipped (event != proof)")
     # ONCE-per-machine, expressed where the durable counter already lives.
@@ -1062,7 +1063,8 @@ class Trigger(ProjectedFields, Entity):
 
     @classmethod
     async def on_message(cls, *, catch: str, sources: Optional[list[Any]] = None, agent: Any, prompt: str,
-                         name: str = "", project_id: Optional[str] = None, enabled: bool = True) -> "Trigger":
+                         name: str = "", project_id: Optional[str] = None, enabled: bool = True,
+                         message_tags: Optional[list[str]] = None) -> "Trigger":
         """A rule on messages arriving: when one lands on ``sources`` (every channel when none),
         if ``catch`` is true of it (one yes/no question, 85% sure), have ``agent`` do ``prompt``
         with the message as its input. The screen's Save, the CLI and a ``trigger.json`` all
@@ -1079,7 +1081,8 @@ class Trigger(ProjectedFields, Entity):
             trigger_type=TriggerType.TAG,
             tag_pattern=MESSAGE_PROJECTED,
             tag_scope=scope,
-            gate={"sentence": catch},  # worded by the row (`_word_gate`), like every other writer
+            gate={"sentence": catch} if catch.strip() else None,
+            message_tags=message_tags or [],
             then={"run_agent": {"agent": agent_id, "prompt": prompt}},
             enabled=enabled,
             project_id=project_id,
@@ -1106,14 +1109,16 @@ class Trigger(ProjectedFields, Entity):
 
         subject = for_trigger(self)
         op = self.gate_op
-        if subject is None or op is None:
+        if subject is None or (op is None and not self.message_tags):
             return []
         states = await subject.recent(self, limit)
         known: dict[str, dict[str, Any]] = {}
-        for row in rows_for(str(self.id), self.name, discover(self.name, limit=limit * 4)):
-            sid = row.get("subject_id")
-            if sid and row.get("decision") and sid not in known:
-                known[sid] = row
+        # Current tags, not a historical gate answer, determine tag-rule previews.
+        if not self.message_tags:
+            for row in rows_for(str(self.id), self.name, discover(self.name, limit=limit * 4)):
+                sid = row.get("subject_id")
+                if sid and row.get("decision") and sid not in known:
+                    known[sid] = row
         # The states the log has not decided are asked together: each is one independent call.
         fresh = [s for s in states if subject.subject_id(s) not in known]
         verdicts = dict(zip((subject.subject_id(s) for s in fresh), await asyncio.gather(*(run_decision(self, state=s) for s in fresh))))

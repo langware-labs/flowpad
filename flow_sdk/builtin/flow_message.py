@@ -18,7 +18,7 @@ from pydantic import (
     model_validator,
 )
 
-from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
@@ -26,6 +26,7 @@ from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
+from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import MessageMarkSpec, UserProfile
 from flow_sdk.tags.envelope import parse_target
@@ -613,6 +614,36 @@ class FlowMessage(Entity):
     # subclass could silently drop by forgetting to union.
 
     type: str = APIField(default="flow_message")
+    message_processing: Optional[MessageProcessing] = EntityField(
+        default=None, sharing=Sharing.PRIVATE, persist=Persist.TRUE,
+        description="Local classification, tag provenance and once-per-message automation queue.",
+    )
+
+    async def set_tags(self, tags: list[str]):
+        from flow_sdk.stream_inbox.message_tags import change_tags
+
+        fresh = await change_tags(str(self.id), replace=tags)
+        if fresh is not None:
+            self.tags, self.message_processing = fresh.tags, fresh.message_processing
+        return self
+
+    async def add_tag(self, name: str):
+        from flow_sdk.core.entity.entity_model import _require_tag
+        from flow_sdk.stream_inbox.message_tags import change_tags
+
+        fresh = await change_tags(str(self.id), add=[_require_tag(name)])
+        if fresh is not None:
+            self.tags, self.message_processing = fresh.tags, fresh.message_processing
+        return self
+
+    async def remove_tag(self, name: str):
+        from flow_sdk.core.entity.entity_model import _require_tag
+        from flow_sdk.stream_inbox.message_tags import change_tags
+
+        fresh = await change_tags(str(self.id), remove=[_require_tag(name)])
+        if fresh is not None:
+            self.tags, self.message_processing = fresh.tags, fresh.message_processing
+        return self
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)
     attachment: list[Attachment] = APIField(default_factory=list)
@@ -901,9 +932,10 @@ class FlowMessage(Entity):
         ``release_prompt`` — crash recovery handing a dead turn back — may clear
         it, and it says so through ``releasing_prompt``.
         """
+        kept = ("tags", "message_processing") if current_data.get("message_processing") is not None else ()
         if current_data.get("prompt_auto_handled") and not _RELEASING_PROMPT.get():
-            return ("prompt_auto_handled",)
-        return ()
+            kept += ("prompt_auto_handled",)
+        return kept
 
     #: The body held across a reference row's write — see ``save``.
     _hydrated_text: Optional[str] = None

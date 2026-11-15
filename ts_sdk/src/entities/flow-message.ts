@@ -225,7 +225,34 @@ export interface IMessageInvite {
   resolved_at?: string | null;
 }
 
+export interface MessageTagAssignment {
+  source: 'manual' | 'classification' | 'automation';
+  trigger_id?: string;
+  run_id?: string;
+}
+export interface MessageAutomationEntry {
+  id: string;
+  trigger_id: string;
+  automation_name: string;
+  tag: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled' | 'interrupted';
+  run_id?: string;
+  error?: string;
+}
+export interface MessageProcessing {
+  classification: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
+  classification_error?: string;
+  assignments: Record<string, MessageTagAssignment>;
+  queue: MessageAutomationEntry[];
+  suppressed_tags: string[];
+}
+export interface MessageClassificationSettings {
+  enabled: boolean;
+  include_flow_tags: boolean;
+}
+
 export interface IFlowMessage extends IEntity {
+  message_processing?: MessageProcessing | null;
   text?: string;
   instruction?: string | null;
   attachment?: Attachment[];
@@ -401,6 +428,7 @@ export function itRequestOf(metadata: Record<string, unknown> | null | undefined
 
 @registerEntity
 export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage {
+  message_processing?: MessageProcessing | null;
   text?: string;
   instruction?: string | null;
   attachment?: Attachment[];
@@ -447,6 +475,19 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   mark?: IMessageMark | null;
   static type: string = 'flow_message';
 
+  static async classificationSettings(patch?: Partial<MessageClassificationSettings>): Promise<MessageClassificationSettings> {
+    const action = new ActionInfo('classification-settings', FlowMessage.type, null, patch ? 'POST' : 'GET');
+    if (patch) action.bodyParameters = patch;
+    return (await dataManager.callAction<unknown, MessageClassificationSettings>(action))!;
+  }
+
+  async setTags(tags: string[]): Promise<void> {
+    const action = new ActionInfo('set-tags', FlowMessage.type, this.id ?? null, 'POST');
+    action.bodyParameters = { tags };
+    const result = await dataManager.callAction<unknown, { tags: string[]; message_processing?: MessageProcessing | null }>(action);
+    if (result) dataManager.deepAssign(this, result);
+  }
+
   /** An unnamed message reads as a short quote of its text (chips, tabs); a given name wins. */
   getDisplayName(): string | null {
     if (this.name?.trim()) return null;
@@ -457,6 +498,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
 
   constructor(entity: Partial<IFlowMessage> = {}) {
     super(entity);
+    this.message_processing = entity.message_processing;
     this.text = entity.text;
     this.instruction = entity.instruction;
     this.attachment = entity.attachment;

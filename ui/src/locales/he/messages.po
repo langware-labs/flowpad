@@ -36664,3 +36664,172 @@ msgstr "הגדילו"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטינו"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Automation queue"
+msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Back to automation"
+msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Back to message"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Back to tag"
+msgstr ""
+
+#: src/components/graph-view/TagGraphView.tsx
+#: src/components/tags/InboxTags.tsx
+msgid "Back to tags"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Changes saved"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Classification failed. You can still assign tags."
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Classify arriving messages"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Close automations"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Close tags"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+#: src/components/tags/MessageTags.tsx
+msgid "Could not change tags"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Could not delete tag"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Could not inspect tag usage"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Could not read classification settings"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/InboxTags.tsx
+msgid "Could not save classification settings"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Could not save tag"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Delete tag"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Edit message tags"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Edit tag"
+msgstr ""
+
+#: src/components/graph-view/TagGraphView.tsx
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/MessageTags.tsx
+msgid "Inbox tags"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Include Flowpad message tags"
+msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
+msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Keep the existing automation actions"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Message automation queue"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Message tags"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "New incoming messages use your ontology. Existing messages are not reclassified."
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/MessageTags.tsx
+msgid "New tag"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "No matching tags"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Open source automation for {name}"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Remove all"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Remove tag {name}"
+msgstr ""
+
+#. placeholder {0}: impact.messages
+#. placeholder {1}: impact.automations
+#: src/components/tags/InboxTags.tsx
+msgid "Remove this tag from {0} messages and disable {1} automations. Messages are kept."
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Remove this tag's assignments and disable matching automations. Messages are kept."
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Run history"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Save preferences"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Tag created"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Tag deleted"
+msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Tags on this message"
+msgstr ""
+
+#: src/components/graph-view/TagGraphView.tsx
+msgid "View tagged messages"
+msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "When any of these message tags is assigned"
+msgstr ""

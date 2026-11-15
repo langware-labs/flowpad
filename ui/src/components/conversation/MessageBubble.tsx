@@ -30,6 +30,7 @@ import { MessageMarkChip, QuotedMessage, ReactionChips } from './ChannelMessageE
 import type { IMessageReaction } from '@sdk/entities/flow-message';
 import type { WorkerType } from './conversation-session-constants';
 import { personName } from '@src/components/conversation/participant-display';
+import { MessageTags } from '@src/components/tags/MessageTags';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -441,6 +442,7 @@ export function MessageBubble({
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} message={flowMessage ?? undefined} />}
+          {!editing && flowMessage && <MessageTags message={flowMessage} />}
           {!editing && onAutomate && (
             <button
               type="button"

@@ -36664,3 +36664,172 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Automation queue"
+msgstr "Automation queue"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Back to automation"
+msgstr "Back to automation"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Back to message"
+msgstr "Back to message"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Back to tag"
+msgstr "Back to tag"
+
+#: src/components/graph-view/TagGraphView.tsx
+#: src/components/tags/InboxTags.tsx
+msgid "Back to tags"
+msgstr "Back to tags"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Changes saved"
+msgstr "Changes saved"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Classification failed. You can still assign tags."
+msgstr "Classification failed. You can still assign tags."
+
+#: src/components/tags/InboxTags.tsx
+msgid "Classify arriving messages"
+msgstr "Classify arriving messages"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Close automations"
+msgstr "Close automations"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Close tags"
+msgstr "Close tags"
+
+#: src/components/tags/MessageTags.tsx
+#: src/components/tags/MessageTags.tsx
+msgid "Could not change tags"
+msgstr "Could not change tags"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Could not delete tag"
+msgstr "Could not delete tag"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Could not inspect tag usage"
+msgstr "Could not inspect tag usage"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Could not read classification settings"
+msgstr "Could not read classification settings"
+
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/InboxTags.tsx
+msgid "Could not save classification settings"
+msgstr "Could not save classification settings"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Could not save tag"
+msgstr "Could not save tag"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Delete tag"
+msgstr "Delete tag"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Edit message tags"
+msgstr "Edit message tags"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Edit tag"
+msgstr "Edit tag"
+
+#: src/components/graph-view/TagGraphView.tsx
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/MessageTags.tsx
+msgid "Inbox tags"
+msgstr "Inbox tags"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Include Flowpad message tags"
+msgstr "Include Flowpad message tags"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
+msgstr "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Keep the existing automation actions"
+msgstr "Keep the existing automation actions"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Message automation queue"
+msgstr "Message automation queue"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Message tags"
+msgstr "Message tags"
+
+#: src/components/tags/InboxTags.tsx
+msgid "New incoming messages use your ontology. Existing messages are not reclassified."
+msgstr "New incoming messages use your ontology. Existing messages are not reclassified."
+
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/MessageTags.tsx
+msgid "New tag"
+msgstr "New tag"
+
+#: src/components/tags/MessageTags.tsx
+msgid "No matching tags"
+msgstr "No matching tags"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Open source automation for {name}"
+msgstr "Open source automation for {name}"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Remove all"
+msgstr "Remove all"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Remove tag {name}"
+msgstr "Remove tag {name}"
+
+#. placeholder {0}: impact.messages
+#. placeholder {1}: impact.automations
+#: src/components/tags/InboxTags.tsx
+msgid "Remove this tag from {0} messages and disable {1} automations. Messages are kept."
+msgstr "Remove this tag from {0} messages and disable {1} automations. Messages are kept."
+
+#: src/components/tags/InboxTags.tsx
+msgid "Remove this tag's assignments and disable matching automations. Messages are kept."
+msgstr "Remove this tag's assignments and disable matching automations. Messages are kept."
+
+#: src/components/tags/MessageTags.tsx
+msgid "Run history"
+msgstr "Run history"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Save preferences"
+msgstr "Save preferences"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Tag created"
+msgstr "Tag created"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Tag deleted"
+msgstr "Tag deleted"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Tags on this message"
+msgstr "Tags on this message"
+
+#: src/components/graph-view/TagGraphView.tsx
+msgid "View tagged messages"
+msgstr "View tagged messages"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "When any of these message tags is assigned"
+msgstr "When any of these message tags is assigned"

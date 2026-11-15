@@ -2143,8 +2143,17 @@ class Entity(DBEntity):
         updated_entity = await cls.get_by_id(eid)
         if not updated_entity:
             raise ValueError(f"Entity with id {eid} not found.")
-        updated_entity.apply_field_updates(fields)
-        return await updated_entity.update()
+        # Tags have an entity-owned mutation seam (file carriers, and message
+        # classification/automation admission). A generic update must not bypass
+        # it by assigning a full-row snapshot.
+        updates = dict(fields)
+        requested_tags = updates.pop("tags", None)
+        updated_entity.apply_field_updates(updates)
+        if updates:
+            updated_entity = await updated_entity.update()
+        if "tags" in fields:
+            updated_entity = await updated_entity.set_tags(requested_tags)
+        return updated_entity
 
     @classmethod
     async def delete_by_id(cls, eid: str):

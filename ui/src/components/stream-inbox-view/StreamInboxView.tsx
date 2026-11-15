@@ -62,8 +62,10 @@ import {
 import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
-import { updateMessage, bulkUpdateMessages, searchStreamInbox } from './stream-inbox-api';
+import { updateMessage, bulkUpdateMessages, searchStreamInbox, watchMessageTags } from './stream-inbox-api';
+import { TagFilterBar } from '@src/components/assets/TagFilterBar';
 import { isHubOnly } from '@src/navigation/hub-runtime';
+import { MessageTags } from '@src/components/tags/MessageTags';
 import {
   type ChannelAttribution,
   SourceChip,
@@ -705,6 +707,7 @@ export const ConversationListRow = memo(function ConversationListRow({
           </>
         )}
       </span>
+      {latestMessage && <MessageTags message={latestMessage} compact />}
       <span className="shrink-0 text-xs text-muted-foreground transition-opacity group-hover:opacity-0 pointer-coarse:!opacity-100">
         {time}
         {ago && <span className="ms-1.5 text-muted-foreground/70 max-md:hidden">· {ago}</span>}
@@ -970,19 +973,28 @@ export function StreamInboxView({
     (next) => currentDock && navigation.openDock(currentDock.withStreamInboxFilters({ search: next })),
   );
   const needle = searchQuery.trim();
-  const searchActive = needle !== '';
+  const tagFilterKey = currentDock?.options?.tags ?? '';
+  const tagFilters = useMemo(() => tagFilterKey.split(',').filter(Boolean), [tagFilterKey]);
+  const searchActive = needle !== '' || tagFilters.length > 0;
   const [matchIds, setMatchIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!searchActive) return;
     // `needle` is the URL's, already debounced on its way there.
     let stale = false;
-    void searchStreamInbox(needle, agentId).then((ids) => {
-      if (!stale) setMatchIds(ids);
-    });
+    let request = 0;
+    const refresh = () => {
+      const sequence = ++request;
+      void searchStreamInbox(needle, agentId, tagFilters).then((ids) => {
+        if (!stale && request === sequence) setMatchIds(ids);
+      }).catch((e) => { if (!stale) console.error('[StreamInboxView] search failed', e); });
+    };
+    refresh();
+    const unwatch = tagFilters.length ? watchMessageTags(refresh) : undefined;
     return () => {
       stale = true;
+      unwatch?.();
     };
-  }, [agentId, needle, searchActive]);
+  }, [agentId, needle, searchActive, tagFilters]);
 
   // Scoped by the backend: the query names the owner, so an agent's stream inbox and the
   // user's never load each other's rows. Owned-by strings, not TypeId instances, key the memo:
@@ -1614,6 +1626,11 @@ export function StreamInboxView({
           <>
             {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
             <div className="flex flex-1 items-center max-md:flex-wrap max-md:gap-y-1">
+              {tagFilters.length > 0 && <div data-testid="stream-inbox-tag-filter" className="me-2 max-w-64">
+                <TagFilterBar tags={tagFilters} onTagsChange={(tags) => {
+                  if (currentDock) navigation.openDock(currentDock.withPageBefore(null).withOption('tags', tags.length ? tags.join(',') : null));
+                }} />
+              </div>}
               <div
                 className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
                 role="tablist"
