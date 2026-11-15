@@ -102,12 +102,13 @@ export function TabNotesPopover({
             onCancel={onClose}
             onSave={async (content, color) => {
               if (!content) {
-                // No text: the colour marks the tab — one click to colour it.
-                await setTabMark(target, color, mark);
+                // No text: the colour marks the tab — one click to colour it; no colour clears the mark.
+                if (color) await setTabMark(target, color, mark);
+                else if (mark) await deleteNote(mark);
                 onClose();
                 return;
               }
-              await addNote(target, content, color);
+              await addNote(target, content, color ?? 'gray');
               onView({ key: view.key, mode: 'list' });
             }}
           />
