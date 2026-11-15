@@ -53,6 +53,24 @@ export function applyRtlGridContract(container: HTMLElement, vendor: WorkerCliVe
 }
 
 /**
+ * A row stored in visual (screen) order back in the order it was written: reversed, then each
+ * left-to-right run (words, numbers, a URL) turned back and each bracket mirrored. A row with no
+ * right-to-left letter is returned as is.
+ */
+export function visualToLogical(row: string): string {
+  const rtl = '\\u0590-\\u08ff\\ufb1d-\\ufdff\\ufe70-\\ufeff'; // as RTL in src/lib/link-matches.ts
+  if (!new RegExp(`[${rtl}]`).test(row)) return row;
+  const brackets = '()[]{}<>';
+  return [...row]
+    .reverse()
+    .join('')
+    .replace(new RegExp(`[A-Za-z0-9](?:[^${rtl}]*[A-Za-z0-9])?|[()[\\]{}<>]`, 'g'), (run) => {
+      const b = brackets.indexOf(run);
+      return b >= 0 ? brackets[b ^ 1] : [...run].reverse().join('');
+    });
+}
+
+/**
  * Honor OSC 52 clipboard WRITES from PTY apps.
  *
  * TUIs that own their text selection (Claude Code's renderer, tmux, neovim)
