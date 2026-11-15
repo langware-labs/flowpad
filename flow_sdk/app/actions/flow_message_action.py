@@ -1668,6 +1668,27 @@ async def conversation_return() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to return the ticket: {str(e)}")
 
 
+async def _team_conversation_via_hub(method: str, action_name: str, refused: str, payload: dict | None = None):
+    """Ask the hub for a ticket's team conversation and land it here with its messages. Answers the refusal as
+    an ``ApiResponse``, else ``{id, title}``, else ``None`` when the hub named no conversation."""
+    someone_typeid, ticket_id = _hub_conversation_target()
+    if someone_typeid is None:
+        return ApiFailResponse(message="No authenticated user in request context")
+    if not ticket_id:
+        return ApiFailResponse(message=f"{action_name}: target ticket required", status_code=400)
+    try:
+        team = await HubProxy.call(
+            method, BuiltinEntityType.CONVERSATION, ticket_id, action_name, payload=payload, strict=True
+        )
+    except HubError as e:
+        return e.fail_response(refused)
+    team_id = str(team.get("id") or "") if isinstance(team, dict) else ""
+    if not team_id:
+        return None
+    await _materialize_hub_conversation(team_id, someone_typeid)
+    return {"id": team_id, "title": team.get("title")}
+
+
 @action.post(action_name="open_team_conversation", types=["conversation"])
 async def conversation_open_team_conversation() -> ApiResponse:
     """``POST conversation/<ticket id>/open_team_conversation {title, text}`` — the hub's action, answered
@@ -1676,35 +1697,53 @@ async def conversation_open_team_conversation() -> ApiResponse:
     who is in it and answers one conversation per ticket; it lands here, with its messages, so the team's
     replies reach this machine."""
     try:
-        someone_typeid, ticket_id = _hub_conversation_target()
-        if someone_typeid is None:
-            return ApiFailResponse(message="No authenticated user in request context")
-        if not ticket_id:
-            return ApiFailResponse(message="open_team_conversation: target ticket required", status_code=400)
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() or {}) if request_info else {}
         payload = {"title": str(body.get("title") or ""), "text": str(body.get("text") or "")}
-
-        try:
-            team = await HubProxy.call(
-                "POST",
-                BuiltinEntityType.CONVERSATION,
-                ticket_id,
-                "open_team_conversation",
-                payload=payload,
-                strict=True,
-            )
-        except HubError as e:
-            return e.fail_response("Could not open the team conversation")
-        team_id = str((team or {}).get("id") or "") if isinstance(team, dict) else ""
-        if not team_id:
+        team = await _team_conversation_via_hub(
+            "POST", "open_team_conversation", "Could not open the team conversation", payload
+        )
+        if team is None:
             return ApiFailResponse(message="the hub opened no team conversation")
-
-        await _materialize_hub_conversation(team_id, someone_typeid)
-        return ApiSuccessResponse(data={"conversation_id": team_id, "title": team.get("title")})
+        return team if isinstance(team, ApiResponse) else ApiSuccessResponse(data=team)
     except Exception as e:
         logger.error("[flow_message_action] open_team_conversation error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed to open the team conversation: {str(e)}")
+
+
+@action.get(action_name="team_conversation", types=["conversation"])
+async def conversation_team_conversation() -> ApiResponse:
+    """``GET conversation/<ticket id>/team_conversation`` — the hub's action, answered here: the ticket's private
+    team conversation for the desk's staff, ``null`` while nobody opened one. The hub decides who may ask; what
+    it answers lands here with its messages, so the ticket page reads both sides from this machine."""
+    try:
+        team = await _team_conversation_via_hub("GET", "team_conversation", "Could not read the team conversation")
+        return team if isinstance(team, ApiResponse) else ApiSuccessResponse(data=team)
+    except Exception as e:
+        logger.error("[flow_message_action] team_conversation error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to read the team conversation: {str(e)}")
+
+
+@action.post(action_name="ensure-sources", types=None)
+async def ensure_sources_now() -> ApiResponse:
+    """Make the sources this login should have, now: a desk just created or joined shows its tickets without a
+    restart (``ensure_driver_sources`` otherwise runs on sign-in and start).
+
+    ``{"sync": "<id>"}`` also runs one sync cycle of every source whose config names that id (a desk's ticket
+    source names the desk): what a page asks before opening something the next poll would only bring later."""
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.stream_inbox.catchup import ensure_driver_sources  # noqa: PLC0415
+
+    made = await ensure_driver_sources("asked")
+    request_info = get_current_request_info()
+    named = str(((await request_info.get_post_data() or {}) if request_info else {}).get("sync") or "").strip()
+    synced = 0
+    if named:
+        for source in await DataSource.get_all():
+            if named in (source.config or {}).values():
+                await source.sync()
+                synced += 1
+    return ApiSuccessResponse(data={"made": made, "synced": synced})
 
 
 def _truthy(value) -> bool:

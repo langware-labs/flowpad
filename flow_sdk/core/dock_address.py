@@ -161,6 +161,7 @@ class ViewType(StrEnum):
     DESKTOP = "desktop"  # Full-page favorites desktop (BrowseableGrid)
     LIVE_SESSION = "live_session"  # Live remote-worker session
     HELPDESK = "helpdesk"  # Helpdesk portal - /dock/helpdesk/<projectId>[/article/<path>]
+    SUPPORT_DESK = "support_desk"  # A help desk itself (its team's view; the link a person asking opens) - /dock/support_desk/<hub project id>
     ATLAS = "atlas"  # Retired: redirects to /dock/hub/worldview/…
     HUB_RECORDS = "records"  # Hub entity list by type (page=hub)
     HUB_ENTITY = "entity"  # Hub single-entity viewer (page=hub)
@@ -694,6 +695,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         _REQ, label="Live Session", open_forms=(("agentic_process", "<live_session>", "live session"),)
     ),
     ViewType.HELPDESK: _m(_REQ, folds_pointer=True, label="Help desk", aliases=("support",), opens=("project",)),
+    ViewType.SUPPORT_DESK: _m(_REQ, label="Support desk"),
     ViewType.ATLAS: _m(_OPT, addressable=False),
     ViewType.HUB_RECORDS: _m(_REQ, label="Records", aliases=("hub records",), pages=("hub",)),
     ViewType.HUB_ENTITY: _m(_REQ, label="Entity", aliases=("hub entity",), pages=("hub",)),

@@ -649,7 +649,7 @@ def team_conversation(
         {"title": title or "", "text": message},
         timeout=60,
     )
-    _ok({"conversation_id": data.get("conversation_id"), "title": data.get("title"), "ticket_id": cid})
+    _ok({"conversation_id": data.get("id"), "title": data.get("title"), "ticket_id": cid})
 
 
 def _entity_typeid_or_none(target: str):

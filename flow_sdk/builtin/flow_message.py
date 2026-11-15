@@ -121,6 +121,9 @@ class FlowMessageKind(str, Enum):
     #: What an automation answered (the Daily usage summary): its text the headline, a ``<kind>.value.json`` the
     #: details. Local only -- an automation's conversation is private to this computer.
     AUTOMATION_RESULT = "automation_result"
+    #: A help-desk ticket was closed or reopened: the hub writes this line into the ticket, which is how the other
+    #: side learns of it (``metadata.ticket_event`` = ``{status, by}``; the text is the plain fallback).
+    TICKET_EVENT = "ticket_event"
 
     @classmethod
     def hub_only(cls, value: "str | None") -> bool:

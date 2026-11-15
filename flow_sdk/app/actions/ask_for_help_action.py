@@ -986,8 +986,31 @@ async def help_recipients() -> ApiResponse:
                 kind=HelpRecipientKind.DESK, desk_project_id=default.project_id, name="Flowpad support"
             ).model_dump(mode="json")
         )
+    # The desks this person added themselves, like contacts: theirs in every project.
+    listed = {d["desk_project_id"] for d in desks}
+    for mine in await _my_helpdesks():
+        if mine["id"] not in listed:
+            desks.insert(
+                len(desks) - (1 if default is not None else 0),
+                HelpRecipient(
+                    kind=HelpRecipientKind.DESK, desk_project_id=mine["id"], name=mine.get("display_name") or "Help desk"
+                ).model_dump(mode="json"),
+            )
     state = "known" if default is not None else ("not_configured" if reached else "unknown")
     return ApiSuccessResponse(data={"desks": desks, "default_state": state})
+
+
+async def _my_helpdesks() -> list[dict]:
+    """The help desks this login added on the hub (``my-helpdesks``); none when the hub cannot say."""
+    from flow_sdk.cli.app_config import get_principal  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
+
+    me = str((get_principal() or {}).get("id") or "")
+    if not me:
+        return []
+    rows = await HubProxy.try_call("GET", BuiltinEntityType.USER, me, "helpdesks")
+    return [r for r in rows or [] if isinstance(r, dict) and r.get("id") and r.get("enabled")]
 
 
 async def _portal_queue_id(project_id: Optional[str]) -> Optional[str]:

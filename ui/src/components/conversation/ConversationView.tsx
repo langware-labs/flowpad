@@ -1,11 +1,14 @@
 import { lifecyclesOf, onlyWithSessions, useHandledKeys } from './message-lifecycle';
 import { continuesGroup } from './message-markdown';
 import { useMessageSessions } from '@src/hooks/conversation/useMessageAutomationSessions';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 import { CheckCircle2, LifeBuoy, RefreshCw, RotateCcw } from 'lucide-react';
 import {
+  isHubHeld,
+  ticketMessagesFromHub,
   Agent,
   Conversation,
   DataSource,
@@ -51,7 +54,7 @@ import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { syncConversationMessages } from '@src/components/stream-inbox-view/stream-inbox-api';
-import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
+import { FlowMessageKind, markFlowMessagesReceived, DIAGNOSIS_FILE, attachmentDataString } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { messageSummary } from './ChannelMessageExtras';
 import { SessionEventLine } from './SessionEventLine';
@@ -81,6 +84,7 @@ import { itMessageRequestOf } from '@src/components/assets/editor/agent-profile/
 import { indexForms } from './message-form';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
+import { requestUiAction } from '@src/navigation/ui-actions';
 import { useConversationMessageAttachments } from './useMessageAttachments';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -142,6 +146,37 @@ interface ConversationViewProps {
   onThreadNavigate?: (threadId: string | null) => void;
   /** Restrict this view and every mutation to one Agent's formal stream inbox. */
   agentId?: string | null;
+  /** Drawn as one side of a page that holds two conversations on one timeline (a help-desk ticket and its
+   *  team conversation): the host places every feed item and owns where the controls and the composer go. */
+  embed?: ConversationEmbed | null;
+}
+
+/** One side's feed, as its host needs it to lay both sides out by time. */
+export interface EmbeddedFeed {
+  /** `fromAsker`: the item is a message the conversation's initiator wrote (on a ticket, the person asking). */
+  items: { key: string; sortAt: number; fromAsker: boolean }[];
+  hasOlder: boolean;
+  loadOlder: () => Promise<void>;
+  /** The message window has landed (or failed): an empty `items` then means "no messages". */
+  loaded: boolean;
+  /** Who wrote the earliest message here -- on a ticket, the person asking. */
+  firstSender: string | null;
+}
+
+export interface ConversationEmbed {
+  /** The grid placement of one feed item, by its key. */
+  place: (key: string) => CSSProperties | undefined;
+  /** This side's feed, reported whenever it changes. Must be stable. */
+  onFeed: (feed: EmbeddedFeed) => void;
+  /** Where this side's controls row (ticket status, refresh) is drawn; null hides it. */
+  controlsSlot: HTMLElement | null;
+  /** Where the ticket's status is drawn instead of in the controls row (the page header, before the title). */
+  statusSlot?: HTMLElement | null;
+  /** A ticket's reply box waits for its state: what it says while not picked up / closed (it is disabled then). */
+  locked?: { unpicked: string; closed: string };
+  /** Where this side's composer, and the lines that belong with it, are drawn. */
+  composerSlot: HTMLElement | null;
+  placeholder?: string;
 }
 
 export function ConversationView({
@@ -155,6 +190,7 @@ export function ConversationView({
   threadId,
   onThreadNavigate,
   agentId,
+  embed,
 }: ConversationViewProps) {
   const { t } = useLingui();
   const conversationTypeId = useMemo(() => new TypeId(Conversation.type, conversationId), [conversationId]);
@@ -241,8 +277,8 @@ export function ConversationView({
     });
   }, [conversationId, localUser?.id]);
   const { data: draftMessages = [] } = useEntitiesQuery<FlowMessage>(draftsRequest, {
-    // Drafts are a desktop feature (local rows); the hub page has none to show.
-    enabled: !!conversationId && !isHubOnly(),
+    // Drafts are local rows: only a runtime that keeps a local store has any to show.
+    enabled: !!conversationId && dataContext.caps.localFiles,
   });
 
   // All FlowMessages in this conversation, fetched in ONE live query (replaces
@@ -269,11 +305,32 @@ export function ConversationView({
   const [loadingOlder, setLoadingOlder] = useState(false);
   const olderRows = older?.conversationId === conversationId ? older.rows : null;
   const hasOlder = olderRows ? !!older?.hasMore : windowHasMore;
+  // On the hub page, help-desk staff read a ticket they are not in yet: the watched query answers only what
+  // the role graph reaches (nothing, for them), so the ticket's own `messages` action is asked instead. Once
+  // they are in it (a pickup, or a reply) the query answers and this is not used.
+  const [staffRows, setStaffRows] = useState<{ conversationId: string; rows: FlowMessage[] } | null>(null);
+  const feedLoaded = messagesLoaded || !!messagesError;
+  const staffRead = isHelpdeskKind(conversation?.kind) && feedLoaded && windowMessages.length === 0;
+  const ticketStamp = conversation?.updated_date ? String(conversation.updated_date) : '';
+  useEffect(() => {
+    if (!staffRead) return;
+    let current = true;
+    void ticketMessagesFromHub(conversationId)
+      .then((rows) => current && rows && setStaffRows({ conversationId, rows: rows.map((row) => new FlowMessage(row)) }))
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [staffRead, conversationId, ticketStamp]);
   const conversationMessages = useMemo(() => {
-    if (!olderRows?.length) return windowMessages;
+    const extra = [
+      ...(olderRows ?? []),
+      ...(staffRead && staffRows?.conversationId === conversationId ? staffRows.rows : []),
+    ];
+    if (!extra.length) return windowMessages;
     const held = new Set(windowMessages.map((m) => m.id));
-    return [...windowMessages, ...olderRows.filter((m) => !held.has(m.id))];
-  }, [windowMessages, olderRows]);
+    return [...windowMessages, ...extra.filter((m) => !held.has(m.id))];
+  }, [windowMessages, olderRows, staffRead, staffRows, conversationId]);
   const loadOlder = useCallback(async () => {
     const before = oldestCreatedDate(conversationMessages);
     if (!conversationId || !before || loadingOlder) return;
@@ -746,6 +803,23 @@ export function ConversationView({
   // anchor) renders as a slim centered system line.
   /** ``threadTask``: the task a collapsed thread is about — shown on the message the stack shows (its newest),
    *  so a task's thread offers its chips without expanding it. */
+  const diagnosisHeadline = useMemo(() => {
+    for (const fm of messagesById.values()) {
+      // The kind, or the file every diagnosis carries (a row a channel delivered may have lost its kind).
+      const isDiagnosis =
+        fm.kind === FlowMessageKind.DIAGNOSIS || (fm.attachment ?? []).some((file) => attachmentDataString(file).split('/').pop() === DIAGNOSIS_FILE);
+      if (isDiagnosis) return (fm.text ?? '').trim().split('\n')[0] || null;
+    }
+    return null;
+  }, [messagesById]);
+  const lastTicketEventId = useMemo(() => {
+    for (let i = orderedItems.length - 1; i >= 0; i--) {
+      const it = orderedItems[i];
+      if (it.kind === ConversationItemKind.POINTER && messagesById.get(it.messageId)?.kind === FlowMessageKind.TICKET_EVENT)
+        return it.messageId;
+    }
+    return null;
+  }, [orderedItems, messagesById]);
   const renderConversationItem = (item: ConversationItem, threadTask: Task | null = null, continuation = false) => {
     if (item.kind === ConversationItemKind.POINTER) {
       const id = item.messageId;
@@ -755,6 +829,37 @@ export function ConversationView({
       if (!fm && !messagesLoaded && !messagesError) return null;
       if (fm?.kind === FlowMessageKind.SESSION_EVENT) {
         return <SessionEventLine key={item.key} text={fm.text ?? ''} />;
+      }
+      // A ticket's close or reopen: a line, not a bubble. The person who asked can reopen from the line
+      // that says it is closed (they have no ticket controls of their own).
+      if (fm?.kind === FlowMessageKind.TICKET_EVENT) {
+        const reopenable = isClosed && isConversationOwner && id === lastTicketEventId;
+        return (
+          <div key={item.key} data-testid="ticket-event-line" className="py-0.5 text-center text-[11px] italic text-muted-foreground/80">
+            {fm.text}
+            {reopenable && (
+              <>
+                <button
+                  type="button"
+                  className="ms-2 not-italic text-primary underline"
+                  onClick={() => void handleSettle()}
+                  disabled={settling}
+                  data-testid="ticket-event-reopen"
+                >
+                  <Trans>Reopen</Trans>
+                </button>
+                <button
+                  type="button"
+                  className="ms-2 not-italic text-primary underline"
+                  onClick={() => requestUiAction('ask-for-help-dialog')}
+                  data-testid="ticket-event-ask-new"
+                >
+                  <Trans>Ask something new</Trans>
+                </button>
+              </>
+            )}
+          </div>
+        );
       }
       // Hub-only secured-transfer frames (a sealed value, its ack, a promise, a request) are never chat rows; one
       // that arrived without its kind is removed on the next sync — never shown meanwhile.
@@ -788,6 +893,8 @@ export function ConversationView({
           deleteForEveryone={conversation?.remote === true}
           selfIds={selfIds}
           isHelpdesk={isHelpdeskConversation}
+          // Only a request still saying "Diagnosis: on its way" uses it (the bubble matches that line).
+          diagnosisHeadline={diagnosisHeadline}
           viewerCloudUserId={cloudUserId}
           attachmentProjectId={attachmentProjectId}
           messageAttachments={attachmentsByMessage.get(id)}
@@ -1018,7 +1125,7 @@ export function ConversationView({
     helpdesk: isHelpdeskConversation,
     cloudUserId,
     // A ticket the hub does not hold yet was written here: I am the one who asked, not desk staff.
-    isOwner: isConversationOwner || conversation?.remote !== true,
+    isOwner: isConversationOwner || !isHubHeld(conversation),
     isParticipant,
   });
   useEffect(() => {
@@ -1133,6 +1240,29 @@ export function ConversationView({
     [conversationId, isClosed, isParticipant, handleRefresh],
   );
 
+  // An embedded side that may not be written on yet says why, in place of its placeholder.
+  const lockedText = !embed?.locked ? null : isClosed ? embed.locked.closed : canPickup ? embed.locked.unpicked : null;
+  const onFeed = embed?.onFeed;
+  useEffect(() => {
+    if (!onFeed) return;
+    const first = groupedItems.find((it) => it.kind === ConversationItemKind.POINTER);
+    const firstFm = first?.kind === ConversationItemKind.POINTER ? messagesById.get(first.messageId) : undefined;
+    const asker = conversation?.initiated_by ?? null;
+    const fromAsker = (item: (typeof groupedItems)[number]) => {
+      const fm = item.kind === ConversationItemKind.POINTER ? messagesById.get(item.messageId) : undefined;
+      return !fm || !asker || fm.sender_id === asker || fm.kind === FlowMessageKind.TICKET_EVENT;
+    };
+    onFeed({
+      items: groupedItems.map((item) => ({ key: item.key, sortAt: item.sortAt, fromAsker: fromAsker(item) })),
+      hasOlder,
+      loadOlder,
+      loaded: feedLoaded,
+      firstSender: firstFm?.sender_name ?? null,
+    });
+    // `loadOlder` changes with every loaded page; the feed it pages is what matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onFeed, groupedItems, hasOlder, feedLoaded, messagesById, conversation?.initiated_by]);
+
   const handlePickup = useCallback(async () => {
     setPickingUp(true);
     try {
@@ -1145,8 +1275,21 @@ export function ConversationView({
     }
   }, [conversationId, handleRefresh]);
 
-  return (
-    <div className="space-y-3">
+  /** One feed item; embedded, it sits where the host's timeline puts it. */
+  const placed = (key: string, node: ReactNode) =>
+    embed ? (
+      <div key={key} style={embed.place(key)} className="min-w-0" data-feed-item={key}>
+        {node}
+      </div>
+    ) : (
+      <Fragment key={key}>{node}</Fragment>
+    );
+
+  const statusControl = ticket ? (
+    <TicketStatusControl ticket={ticket} mine={isParticipant} busy={settling} onChoose={(target) => void handleStatus(target)} />
+  ) : null;
+  const controls = (
+    <>
       {approveSessionPicker}
       {/* Its own row: a refusal spans the width under the buttons instead of squeezing beside them. */}
       {conversation && (
@@ -1158,14 +1301,7 @@ export function ConversationView({
         />
       )}
       <div className="flex items-center justify-end gap-2">
-        {ticket && (
-          <TicketStatusControl
-            ticket={ticket}
-            mine={isParticipant}
-            busy={settling}
-            onChoose={(target) => void handleStatus(target)}
-          />
-        )}
+        {ticket && (embed ? embed.statusSlot && createPortal(statusControl, embed.statusSlot) : statusControl)}
         {canPickup && !isClosed && (
           <button
             type="button"
@@ -1206,6 +1342,11 @@ export function ConversationView({
           <RefreshCw className={`h-4 w-4 ${hubSyncing ? 'animate-spin' : ''}`} />
         </button>
       </div>
+    </>
+  );
+
+  const feed = (
+    <>
       {threadId && (
         <ThreadHeader
           title={currentThread?.title ?? ''}
@@ -1213,7 +1354,7 @@ export function ConversationView({
           onShowAll={onThreadNavigate ? () => onThreadNavigate(null) : undefined}
         />
       )}
-      {hasOlder && orderedItems.length > 0 && (
+      {!embed && hasOlder && orderedItems.length > 0 && (
         <div className="flex justify-center">
           <button
             type="button"
@@ -1227,21 +1368,23 @@ export function ConversationView({
         </div>
       )}
       {orderedItems.length === 0 ? (
-        <p className="text-xs italic text-muted-foreground/60">
-          <Trans>No messages yet.</Trans>
-        </p>
+        !embed && (
+          <p className="text-xs italic text-muted-foreground/60">
+            <Trans>No messages yet.</Trans>
+          </p>
+        )
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className={embed ? 'contents' : 'flex flex-col gap-3'}>
           {groupedItems.map((item) => {
             if (item.kind === ConversationItemKind.THREAD_GROUP) {
-              return (
+              return placed(
+                item.key,
                 <ThreadStack
-                  key={item.key}
                   messageCount={item.messageCount}
                   onOpenThread={onThreadNavigate ? () => onThreadNavigate(item.threadId) : undefined}
                 >
                   {renderConversationItem(item.head, threadTaskOf(item.threadId))}
-                </ThreadStack>
+                </ThreadStack>,
               );
             }
             if (item.kind === ConversationItemKind.SESSION_ANCHOR) {
@@ -1250,11 +1393,12 @@ export function ConversationView({
               const turns = turnsBySession.get(item.sessionId);
               const failedPrompt = turns?.failed;
               const promptRequest = !!session?.isPromptRequest;
-              return (
+              return placed(
+                item.key,
                 // The session's ONE line — a live session's opening prompt (or request)
                 // is not drawn as a bubble; the turns live in the session view. A prompt
                 // request keeps the sender's message: its text and prompt ARE the request.
-                <div key={item.key} data-testid="session-anchor" className="flex flex-col gap-1">
+                <div data-testid="session-anchor" className="flex flex-col gap-1">
                   {promptRequest && (
                     <PromptRequestAnswerContext.Provider
                       value={
@@ -1314,13 +1458,18 @@ export function ConversationView({
                         <LiveSessionActivity session={session} />
                       </div>
                     )}
-                </div>
+                </div>,
               );
             }
-            return renderConversationItem(item, null, continuations.has(item.key));
+            return placed(item.key, renderConversationItem(item, null, continuations.has(item.key)));
           })}
         </div>
       )}
+    </>
+  );
+
+  const footer = (
+    <>
 
       {/* A channel's conversation is answered by the owning agent's run, not by this pane —
           so show that run working, and a caller mid-sentence, while it happens. */}
@@ -1367,7 +1516,7 @@ export function ConversationView({
         projectId={attachmentProjectId}
       />
       {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
-      {(messagesLoaded || !!messagesError) && (
+      {feedLoaded && (
         // On a phone the composer stays pinned to the bottom of the screen while the feed scrolls.
         <div className="max-md:sticky max-md:bottom-0 max-md:z-10 max-md:bg-background max-md:pb-2">
           <MessageComposer
@@ -1379,7 +1528,8 @@ export function ConversationView({
               setNotSent(null);
               setSendingText(text);
             }}
-            placeholder={composerPlaceholder}
+            placeholder={lockedText ?? embed?.placeholder ?? composerPlaceholder}
+            disabled={!!lockedText}
             onSend={sendItAgain}
             agentId={agentId ?? undefined}
             sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
@@ -1396,6 +1546,23 @@ export function ConversationView({
           />
         </div>
       )}
+    </>
+  );
+
+  if (embed) {
+    return (
+      <>
+        {embed.controlsSlot && createPortal(controls, embed.controlsSlot)}
+        {feed}
+        {embed.composerSlot && createPortal(<div className="space-y-1.5">{footer}</div>, embed.composerSlot)}
+      </>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {controls}
+      {feed}
+      {footer}
     </div>
   );
 }

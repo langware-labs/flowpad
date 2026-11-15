@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { LifeBuoy, Paperclip, Stethoscope, X } from 'lucide-react';
+import { LifeBuoy, Paperclip, Stethoscope } from 'lucide-react';
 import {
   askForHelp,
   type AskForHelpRequest,
@@ -103,8 +103,11 @@ export function AskForHelpDialog({
   const [reviewing, setReviewing] = useState(false);
   const [picked, setPicked] = useState<ConversationParticipant[]>(initialPerson ? [initialPerson] : []);
   const [recipients, setRecipients] = useState<HelpRecipients | null>(null);
-  const [deskId, setDeskId] = useState<string | null>(desk?.desk_project_id ?? null);
-  const [deskOn, setDeskOn] = useState(true);
+  // The desks asked: any number of them, each gets its own ticket. `null` until the list lands, when the
+  // nearest desk is checked; a desk named only as "the nearest one" is the empty id.
+  const [checkedDesks, setCheckedDesks] = useState<string[] | null>(
+    desk?.desk_project_id ? [desk.desk_project_id] : null,
+  );
   const [showDesk, setShowDesk] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,7 +134,7 @@ export function AskForHelpDialog({
       .then((r) => {
         if (!live) return;
         setRecipients(r);
-        setDeskId((current) => current ?? desk?.desk_project_id ?? r.desks[0]?.desk_project_id ?? null);
+        setCheckedDesks((current) => current ?? [desk?.desk_project_id ?? r.desks[0]?.desk_project_id ?? '']);
       });
     return () => {
       live = false;
@@ -142,17 +145,23 @@ export function AskForHelpDialog({
     const list = recipients?.desks ?? [];
     return desk && !list.some((d) => d.desk_project_id === desk.desk_project_id) ? [desk, ...list] : list;
   }, [recipients, desk]);
-  const deskChoice: HelpRecipient | null =
-    desks.length || recipients?.default_state === 'unknown'
-      ? { kind: 'desk', desk_project_id: deskId, name: desks.find((d) => d.desk_project_id === deskId)?.name ?? null }
-      : null;
+  // What the dialog offers: the known desks, or "the nearest desk" while the hub cannot say which they are.
+  const offered: HelpRecipient[] = desks.length
+    ? desks
+    : recipients?.default_state === 'unknown'
+      ? [{ kind: 'desk', desk_project_id: null, name: null }]
+      : [];
+  const askedDesks = offered.filter((d) => (checkedDesks ?? []).includes(d.desk_project_id ?? ''));
   const people: HelpRecipient[] = picked.map((p) => ({
     kind: 'person',
     email: p.email ?? null,
     user_id: p.user_id ?? null,
     name: p.name ?? null,
   }));
-  const chosen = [...(deskOn && deskChoice ? [deskChoice] : []), ...people];
+  // One request is one conversation: the first desk's ticket (with the people, if any); every further desk
+  // checked gets a ticket of its own, with the same words and context.
+  const chosen = [...askedDesks.slice(0, 1), ...people];
+  const moreDesks = askedDesks.slice(1);
   const pickedEmail = normalizeEmail(picked[0]?.email);
   const alreadyAsked = pickedEmail
     ? openTasks.find((row) => normalizeEmail(row.task.assignee) === pickedEmail)
@@ -194,6 +203,9 @@ export function AskForHelpDialog({
     setError(null);
     try {
       const result = await askForHelp(request(), picker.files);
+      for (const another of moreDesks) {
+        await askForHelp({ ...request(), conversation_id: crypto.randomUUID(), recipients: [another] }, picker.files);
+      }
       const openIt = { label: t`Open`, href: DockPointer.forConversation(result.conversation_id).toUrl() };
       onOpenChange(false);
       onAsked?.(result);
@@ -313,53 +325,42 @@ export function AskForHelpDialog({
 
             <div className="flex flex-col gap-1.5" data-testid="ask-for-help-send-to">
               <span className="text-xs text-muted-foreground">{t`Send to`}</span>
-              {deskChoice && deskOn && (
+              {offered.length > 0 && (
+                // The desks this person can ask, each a checkbox: any number of them, or none.
                 <div className="flex flex-wrap gap-1.5" data-testid="ask-for-help-desks">
-                  {(desks.length ? desks : [deskChoice]).map((d) => (
-                    <span
-                      key={d.desk_project_id ?? 'nearest'}
-                      className={cn(
-                        'flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs',
-                        d.desk_project_id === deskId
-                          ? 'border-primary bg-primary/10 text-foreground'
-                          : 'border-border text-muted-foreground',
-                      )}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setDeskId(d.desk_project_id ?? null)}
-                        data-testid={`ask-for-help-desk-${d.desk_project_id}`}
+                  {offered.map((d) => {
+                    const id = d.desk_project_id ?? '';
+                    const checked = (checkedDesks ?? []).includes(id);
+                    return (
+                      <label
+                        key={d.desk_project_id ?? 'nearest'}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs',
+                          checked ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground',
+                        )}
                       >
-                        {d.desk_project_id === deskId ? '✓ ' : ''}
+                        <input
+                          type="checkbox"
+                          className="h-3 w-3 accent-[hsl(var(--primary))]"
+                          checked={checked}
+                          onChange={() =>
+                            setCheckedDesks((now) => (checked ? (now ?? []).filter((x) => x !== id) : [...(now ?? []), id]))
+                          }
+                          data-testid={`ask-for-help-desk-${d.desk_project_id}`}
+                        />
                         {d.name ?? t`Help desk`}
-                      </button>
-                      {d.desk_project_id === deskId && (
-                        <button
-                          type="button"
-                          onClick={() => setDeskOn(false)}
-                          aria-label={t`Remove the help desk`}
-                          data-testid="ask-for-help-desk-remove"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      )}
-                    </span>
-                  ))}
+                      </label>
+                    );
+                  })}
                 </div>
-              )}
-              {deskChoice && !deskOn && (
-                <button
-                  type="button"
-                  className="self-start text-xs text-primary underline"
-                  onClick={() => setDeskOn(true)}
-                  data-testid="ask-for-help-desk-add"
-                >
-                  {t`Ask the help desk too`}
-                </button>
               )}
               <ContactPicker
                 value={picked}
-                onChange={setPicked}
+                onChange={(next) => {
+                  // A person added: the help desks are unchecked — check one to send it there too.
+                  if (next.length > picked.length) setCheckedDesks([]);
+                  setPicked(next);
+                }}
                 placeholder={t`Add people — pick a person or type an email`}
                 testId="vibe-assign-person"
               />

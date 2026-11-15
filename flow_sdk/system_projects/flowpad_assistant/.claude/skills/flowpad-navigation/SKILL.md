@@ -248,6 +248,7 @@ These take a pointer; without one they are an error, not a landing. Get the id f
 | Entity  *(hub)* | `entity/<id>` | hub entity |
 | Graph | `graph/<id>` | dep graph, dependency graph |
 | Help desk | `helpdesk/<id>` | support |
+| Support desk | `support_desk/<id>` | — |
 | Knowledge Browser | `k-browser/<id>` | docs browser |
 | Lens | `lens/<id>` | transcript |
 | Live Session | `live_session/<id>` | — |

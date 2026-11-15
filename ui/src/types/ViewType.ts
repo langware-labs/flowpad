@@ -448,6 +448,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  [ViewType.SUPPORT_DESK]: {
+    title: msg`Help desk`,
+    iconName: 'LifeBuoy',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.HELPDESK]: {
     title: msg`Help desk`,
     iconName: 'LifeBuoy',
