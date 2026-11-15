@@ -13,7 +13,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const nav = vi.hoisted(() => ({ openDock: vi.fn() }));
 const dock = vi.hoisted(() => ({ current: null as null | { pointer?: string; options?: Record<string, string> } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: nav, currentDock: dock.current }),
+  // A plain dock, plus the one DockPointer method the rule page calls to put an option in the URL.
+  useDockNavigation: () => ({
+    navigation: nav,
+    currentDock: dock.current && {
+      ...dock.current,
+      withOption: (key: string, value: string | null) => ({ ...dock.current, options: { ...dock.current?.options, [key]: value } }),
+    },
+  }),
   useCurrentDock: () => dock.current,
 }));
 vi.mock('@src/hooks/use-default-scope-filter', () => ({
