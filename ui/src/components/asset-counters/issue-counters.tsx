@@ -2,7 +2,7 @@ import { Deployment, Issue, Project, QueryRequest, TypeId, isIssueActive, type I
 import { entityDock } from '@src/lib/hub-page-url';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { formatRelative } from '@src/components/git/relative-time';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
@@ -105,23 +105,42 @@ export function SeverityDot({ severity }: { severity: Issue['severity'] }) {
   return <span className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', SEVERITY_DOT[severity])} />;
 }
 
+/** An issue's fix: a link to where it is fixed, or — when the hub can do it (`fix.action`) — the fix itself. */
 export function IssueFixButton({ issue, className }: { issue: Issue; className?: string }) {
   const { navigation } = useDockNavigation();
+  const [state, setState] = useState<'idle' | 'busy' | 'failed'>('idle');
   const pointer = fixPointer(issue);
   if (!issue.fix || !pointer) return null;
+  const runs = Boolean(issue.fix.action) && isIssueActive(issue.status);
   return (
-    <Button
-      size="sm"
-      variant="outline"
-      className={cn('h-7', className)}
-      onClick={(e) => {
-        e.stopPropagation();
-        void resolveFixPointer(issue).then((target) => navigation.openDockOnThisPage(target ?? pointer));
-      }}
-      data-testid={`issue-fix-${issue.id}`}
-    >
-      {issue.fix.label}
-    </Button>
+    <span className={cn('inline-flex items-center gap-2', className)}>
+      {state === 'failed' && (
+        <span className="text-xs text-destructive" data-testid={`issue-fix-failed-${issue.id}`}>
+          <Trans>It did not work. Try again.</Trans>
+        </span>
+      )}
+      <Button
+        size="sm"
+        variant={runs ? 'default' : 'outline'}
+        className="h-7"
+        disabled={state === 'busy'}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!runs) {
+            void resolveFixPointer(issue).then((target) => navigation.openDockOnThisPage(target ?? pointer));
+            return;
+          }
+          setState('busy');
+          issue.runFix().then(
+            () => setState('idle'),
+            () => setState('failed'),
+          );
+        }}
+        data-testid={`issue-fix-${issue.id}`}
+      >
+        {issue.fix.label}
+      </Button>
+    </span>
   );
 }
 

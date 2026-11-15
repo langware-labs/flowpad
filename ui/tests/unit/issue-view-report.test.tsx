@@ -2,7 +2,7 @@
  * An issue's own page is its report: what happened (the hub's events), the technical cause, whose machine
  * and for how long. Only the entity read is stubbed.
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Issue } from '@sdk';
 
@@ -36,6 +36,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 
 const { IssueView } = await import('@src/components/items/IssueView');
+const { IssueFixButton } = await import('@src/components/asset-counters/issue-counters');
 
 describe('IssueView', () => {
   it('reports what happened, the real cause, the machine and how long it lasted', () => {
@@ -48,5 +49,22 @@ describe('IssueView', () => {
     expect(affected).toContain('visitor 8f99');
     expect(affected).toContain('50s');
     expect(screen.getByTestId('issue-report-evidence').textContent).toContain('deployment-abdd87d7');
+  });
+
+  it('runs a fix the hub can do itself, instead of opening a page', async () => {
+    const gone = new Issue({
+      id: ISSUE_ID,
+      kind: 'box_gone',
+      status: 'open',
+      subject_typeid: 'deployment-abdd87d7-b8ec-45e8-817f-f2e9b1fbefc4',
+      fix: { label: 'Reset machine', pointer: 'deployment-abdd87d7-b8ec-45e8-817f-f2e9b1fbefc4', action: 'reset' },
+    });
+    const runFix = vi.spyOn(gone, 'runFix').mockRejectedValueOnce(new Error('refused')).mockResolvedValue();
+    render(<IssueFixButton issue={gone} />);
+    fireEvent.click(screen.getByText('Reset machine'));
+    await screen.findByTestId(`issue-fix-failed-${ISSUE_ID}`);
+    fireEvent.click(screen.getByText('Reset machine'));
+    await waitFor(() => expect(screen.queryByTestId(`issue-fix-failed-${ISSUE_ID}`)).toBeNull());
+    expect(runFix).toHaveBeenCalledTimes(2);
   });
 });
