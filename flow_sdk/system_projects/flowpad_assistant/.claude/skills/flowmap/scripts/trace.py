@@ -10,7 +10,7 @@ lands in the step whose `match` substrings it contains; a call that matches noth
 A frame is the time the run sat in one node: its seconds run to the next frame, its cost is the usage priced in
 that window plus the whole cost of any helper (sub-agent) spawned in it. No model is called for any number.
 `--from N` picks the N-th start of the skill in the session (default: the last). Writes a `flowmap.run` value
-(the map copied in), default `~/.flow/flowmap/runs/<skill>/<session>.value.json`, and prints a summary.
+(the map copied in), default `<instance dir>/flowmap/runs/<skill>/<session>.value.json`, and prints a summary.
 """
 
 import argparse
@@ -178,7 +178,12 @@ def main() -> None:
     a = ap.parse_args()
     skill_dir = pathlib.Path(a.skill_dir).expanduser().resolve()
     run = trace(a.session, skill_dir, a.worker, a.start_n)
-    out = pathlib.Path(a.out) if a.out else pathlib.Path.home() / ".flow" / "flowmap" / "runs" / run["skill"] / f"{a.session}.value.json"
+    if a.out:
+        out = pathlib.Path(a.out)
+    else:  # this instance's own folder, like every other piece of state
+        from flow_sdk.instance_settings import get_instance_settings
+
+        out = get_instance_settings().instance_dir / "flowmap" / "runs" / run["skill"] / f"{a.session}.value.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(run, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     off = sum(1 for x, y in zip(run["frames"], run["frames"][1:])

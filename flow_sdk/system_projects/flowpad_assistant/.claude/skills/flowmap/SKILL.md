@@ -21,7 +21,7 @@ Three commands. The format is two kinds (shipped, always registered): `flowmap.m
 | command | input | output |
 |---|---|---|
 | `map <skill dir>` | a skill or agent folder | `<skill dir>/flowmap/map.value.json`, checked and shown |
-| `trace <session> <skill dir>` | a session that ran it | `~/.flow/flowmap/runs/<skill>/<session>.value.json`, shown |
+| `trace <session> <skill dir>` | a session that ran it | `~/.flow/instances/<instance>/flowmap/runs/<skill>/<session>.value.json`, shown |
 | `show <skill dir> [<run file>]` | | the map, or the run on it |
 
 Scripts run with Flowpad's Python: `"$FLOWPAD_PYTHON" <this skill>/scripts/<script>` (`map_check.py` needs no

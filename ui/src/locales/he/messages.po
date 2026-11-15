@@ -8858,6 +8858,10 @@ msgstr ""
 msgid "Could not name the invites"
 msgstr ""
 
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Could not open"
+msgstr ""
+
 #. placeholder {0}: a.label
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Could not open {0}"
@@ -8916,6 +8920,10 @@ msgstr "לא ניתן לפתוח את תיקיית סביבת העבודה"
 #: src/components/assets/editor/document-file/DocumentFileViewer.tsx
 msgid "Could not open this document: {error}"
 msgstr "לא ניתן לפתוח את המסמך הזה: {error}"
+
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Could not open this message."
+msgstr ""
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Could not pause the deployment"
@@ -21828,7 +21836,7 @@ msgstr "אין מה לשפר"
 msgid "Nothing to index"
 msgstr "אין מה לאנדקס"
 
-#: src/components/project-home/ProjectUploadMessageButton.tsx
+#: src/components/conversation/StagedMessageReview.tsx
 msgid "Nothing to install"
 msgstr "אין מה להתקין"
 
@@ -33319,7 +33327,7 @@ msgstr "המכונה אינה מחוברת ל-Hub, ולכן לא ניתן לפת
 msgid "This mailbox's agent is gone"
 msgstr "הסוכן של תיבת הדואר הזו כבר לא קיים"
 
-#: src/components/project-home/ProjectUploadMessageButton.tsx
+#: src/components/conversation/StagedMessageReview.tsx
 msgid "This message carries no assets."
 msgstr "ההודעה הזו אינה מכילה נכסים."
 

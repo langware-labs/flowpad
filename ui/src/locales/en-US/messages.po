@@ -8858,6 +8858,10 @@ msgstr "Could not name the invite"
 msgid "Could not name the invites"
 msgstr "Could not name the invites"
 
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Could not open"
+msgstr "Could not open"
+
 #. placeholder {0}: a.label
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Could not open {0}"
@@ -8916,6 +8920,10 @@ msgstr "Could not open the workspace folder"
 #: src/components/assets/editor/document-file/DocumentFileViewer.tsx
 msgid "Could not open this document: {error}"
 msgstr "Could not open this document: {error}"
+
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Could not open this message."
+msgstr "Could not open this message."
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Could not pause the deployment"
@@ -21828,7 +21836,7 @@ msgstr "Nothing to improve"
 msgid "Nothing to index"
 msgstr "Nothing to index"
 
-#: src/components/project-home/ProjectUploadMessageButton.tsx
+#: src/components/conversation/StagedMessageReview.tsx
 msgid "Nothing to install"
 msgstr "Nothing to install"
 
@@ -33319,7 +33327,7 @@ msgstr "This machine is not connected to the hub, so it cannot be opened from he
 msgid "This mailbox's agent is gone"
 msgstr "This mailbox's agent is gone"
 
-#: src/components/project-home/ProjectUploadMessageButton.tsx
+#: src/components/conversation/StagedMessageReview.tsx
 msgid "This message carries no assets."
 msgstr "This message carries no assets."
 

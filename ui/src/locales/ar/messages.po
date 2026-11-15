@@ -8858,6 +8858,10 @@ msgstr ""
 msgid "Could not name the invites"
 msgstr ""
 
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Could not open"
+msgstr ""
+
 #. placeholder {0}: a.label
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Could not open {0}"
@@ -8916,6 +8920,10 @@ msgstr "تعذّر فتح مجلد مساحة العمل"
 #: src/components/assets/editor/document-file/DocumentFileViewer.tsx
 msgid "Could not open this document: {error}"
 msgstr "تعذّر فتح هذا المستند: {error}"
+
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Could not open this message."
+msgstr ""
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Could not pause the deployment"
@@ -21828,7 +21836,7 @@ msgstr "لا توجد تحسينات مقترحة"
 msgid "Nothing to index"
 msgstr "لا يوجد ما يُفهرس"
 
-#: src/components/project-home/ProjectUploadMessageButton.tsx
+#: src/components/conversation/StagedMessageReview.tsx
 msgid "Nothing to install"
 msgstr "لا شيء للتثبيت"
 
@@ -33319,7 +33327,7 @@ msgstr "هذا الجهاز غير متصل بالمركز، لذلك لا يم�
 msgid "This mailbox's agent is gone"
 msgstr "وكيل صندوق البريد هذا لم يعد موجودًا"
 
-#: src/components/project-home/ProjectUploadMessageButton.tsx
+#: src/components/conversation/StagedMessageReview.tsx
 msgid "This message carries no assets."
 msgstr "هذه الرسالة لا تحمل أي أصول."
 
