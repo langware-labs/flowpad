@@ -2,7 +2,7 @@ import { SessionInput } from '@src/components/session-input/session-input';
 import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
 import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
-import { AssetCounterRow } from '@src/components/asset-counters/AssetCounterRow';
+import { AssetCounterChips, AssetCounterRow } from '@src/components/asset-counters/AssetCounterRow';
 import { appCounterGroup } from '@src/components/asset-counters/app-counters';
 import { ItemsSection } from '@src/components/items/ItemsSection';
 import { DESK_TABS } from '@src/components/items/home-tabs';
@@ -86,7 +86,17 @@ export function VibeNewChat() {
             <ProjectActionsRow className="w-full self-start" />
             <QuickCreateNewSection testId="vibe-home-new" />
             <ProjectAgentsStrip startsNew className="w-full self-start" />
-            <AssetCounterRow group={appCounterGroup} />
+            {project ? (
+              <div className="w-full self-start text-left">
+                <ProjectApps
+                  project={project}
+                  headerExtra={<AssetCounterChips group={appCounterGroup} />}
+                  fallback={<AssetCounterRow group={appCounterGroup} />}
+                />
+              </div>
+            ) : (
+              <AssetCounterRow group={appCounterGroup} />
+            )}
             {/* The same items section, card and filters as the hub home — only the tab list is the desk's. */}
             <div className="w-full self-start text-left">
               <ItemsSection tabs={DESK_TABS} onCreate={() => startVibe(t`Make me an agent`, [])} prefKey="desk-home" />
