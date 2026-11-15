@@ -619,31 +619,27 @@ class FlowMessage(Entity):
         description="Local classification, tag provenance and once-per-message automation queue.",
     )
 
-    async def set_tags(self, tags: list[str]):
+    async def _change_tags(self, **delta):
+        """Every tag change goes through the message's processing state, and this row takes the result."""
         from flow_sdk.stream_inbox.message_tags import change_tags
 
-        fresh = await change_tags(str(self.id), replace=tags)
+        fresh = await change_tags(str(self.id), **delta)
         if fresh is not None:
             self.tags, self.message_processing = fresh.tags, fresh.message_processing
         return self
+
+    async def set_tags(self, tags: list[str]):
+        return await self._change_tags(replace=tags)
 
     async def add_tag(self, name: str):
         from flow_sdk.core.entity.entity_model import _require_tag
-        from flow_sdk.stream_inbox.message_tags import change_tags
 
-        fresh = await change_tags(str(self.id), add=[_require_tag(name)])
-        if fresh is not None:
-            self.tags, self.message_processing = fresh.tags, fresh.message_processing
-        return self
+        return await self._change_tags(add=[_require_tag(name)])
 
     async def remove_tag(self, name: str):
         from flow_sdk.core.entity.entity_model import _require_tag
-        from flow_sdk.stream_inbox.message_tags import change_tags
 
-        fresh = await change_tags(str(self.id), remove=[_require_tag(name)])
-        if fresh is not None:
-            self.tags, self.message_processing = fresh.tags, fresh.message_processing
-        return self
+        return await self._change_tags(remove=[_require_tag(name)])
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)
     attachment: list[Attachment] = APIField(default_factory=list)

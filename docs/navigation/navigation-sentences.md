@@ -160,7 +160,7 @@ Measure the navigator against it with `scripts/navigation_coverage.py` (see `nav
 | 112 | show LLM APIs | /dock/ai-config/llm-apis |
 | 113 | show harnesses | /dock/ai-config/clis |
 | 114 | show my CLIs | /dock/ai-config/clis |
-| 115 | open LLM sources | /dock/llm-sources |
+| 115 | open Token sources (also: LLM sources) | /dock/llm-sources |
 | 116 | how is Claude funded | /dock/llm-sources/claude |
 | 117 | show codex funding | /dock/llm-sources/codex |
 | 118 | set up my LLM | /dock/llm-setup |
@@ -270,4 +270,3 @@ Measure the navigator against it with `scripts/navigation_coverage.py` (see `nav
 | 198 | show deployed apps | /dock/worldview/deployment |
 | 199 | discover agents | /discover |
 | 200 | open flowpad cloud | url:https://app.flowpad.ai |
-

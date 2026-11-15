@@ -978,8 +978,9 @@ async def help_recipients() -> ApiResponse:
                 kind=HelpRecipientKind.DESK, desk_project_id=adopted.queue_project_id, name="This project's help desk"
             ).model_dump(mode="json")
         )
-    default = await _hub_default_helpdesk()
-    reached = await get_info() is not None
+    # Three independent hub reads: asked together, the dialog waits for the slowest, not the sum.
+    default, info, my_desks = await asyncio.gather(_hub_default_helpdesk(), get_info(), _my_helpdesks())
+    reached = info is not None
     if default is not None and default.project_id not in {d["desk_project_id"] for d in desks}:
         desks.append(
             HelpRecipient(
@@ -988,7 +989,7 @@ async def help_recipients() -> ApiResponse:
         )
     # The desks this person added themselves, like contacts: theirs in every project.
     listed = {d["desk_project_id"] for d in desks}
-    for mine in await _my_helpdesks():
+    for mine in my_desks:
         if mine["id"] not in listed:
             desks.insert(
                 len(desks) - (1 if default is not None else 0),

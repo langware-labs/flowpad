@@ -70,6 +70,8 @@ export interface EntityExpansion {
   remaining?: RemainingEntry[] | null;
   /** The model each size (sm/md/lg) resolves to down the row's chain (llm_endpoint); `null` = none declared. */
   tiers?: Record<string, string | null> | null;
+  /** Backend-resolved omitted-model choice (llm_endpoint); null means unavailable. */
+  effective_default_model?: string | null;
 }
 
 /** One limit of a row with what is used of it, as the hub reports it. */

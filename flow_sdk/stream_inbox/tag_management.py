@@ -25,14 +25,6 @@ async def impact(tag) -> dict:
     return {"messages": len(messages), "automations": len(rules)}
 
 
-async def _processing_messages():
-    from flow_sdk.builtin.flow_message import FlowMessage
-    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
-
-    return await FlowMessage.get_all(QueryFilter(match=ExpressionNode(
-        op=QueryOp.IS_NOT_NULL, operands=["message_processing"])), hydrate=False)
-
-
 def _editable(tag):
     if tag.system:
         raise ValueError("Flowpad tags cannot be renamed or deleted.")
@@ -42,7 +34,7 @@ async def rename(tag, fields: dict) -> dict:
     from flow_sdk.automations.spec_file import document_path, rewrite
     from flow_sdk.builtin.tag import Tag
     from flow_sdk.db import get_db_driver
-    from flow_sdk.stream_inbox.message_tags import _mutate
+    from flow_sdk.stream_inbox.message_tags import _mutate, enrolled_messages
 
     _editable(tag)
     if not isinstance(fields, dict) or not isinstance(fields.get("name"), str):
@@ -58,7 +50,7 @@ async def rename(tag, fields: dict) -> dict:
         messages, rules = await _affected(tag)
         message_count = len(messages)
         by_id = {str(message.id): message for message in messages}
-        for message in await _processing_messages():
+        for message in await enrolled_messages():
             state = message.message_processing
             if (tag.name in state.suppressed_tags or tag.name in state.assignments
                     or any(entry.tag == tag.name for entry in state.queue)):
@@ -96,7 +88,7 @@ async def rename(tag, fields: dict) -> dict:
 async def delete(tag) -> dict:
     from flow_sdk.builtin.trigger import set_trigger_on
     from flow_sdk.db import get_db_driver
-    from flow_sdk.stream_inbox.message_tags import _mutate
+    from flow_sdk.stream_inbox.message_tags import _mutate, enrolled_messages
 
     _editable(tag)
     async with get_db_driver().write_transaction():
@@ -108,7 +100,7 @@ async def delete(tag) -> dict:
         # A multi-tag rule can be queued on a message which no longer carries
         # this particular tag. Disabling that rule cancels those queued claims too.
         by_id = {str(message.id): message for message in messages}
-        for message in await _processing_messages():
+        for message in await enrolled_messages():
             if any(entry.status == "queued" and entry.trigger_id in affected for entry in message.message_processing.queue):
                 by_id[str(message.id)] = message
         for rule in rules:

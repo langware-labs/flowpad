@@ -1273,6 +1273,11 @@ msgstr "{count} تغيير معلّق — لعرض الفرق"
 msgid "{count} rows"
 msgstr "{count} صفوف"
 
+#. placeholder {0}: count === 1 ? 'note' : 'notes'
+#: src/components/conversation/TicketPage.tsx
+msgid "{count} team {0} · not shown to {asker}"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "{cpuCount} cores"
 msgstr "{cpuCount} أنوية"
@@ -2011,6 +2016,10 @@ msgstr "← رجوع"
 #: src/components/inbound/InboundView.tsx
 msgid "← Channels"
 msgstr "← القنوات"
+
+#: src/components/conversation/TicketPage.tsx
+msgid "← sent to {asker}"
+msgstr ""
 
 #. placeholder {0}: el.absRow
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -2780,6 +2789,10 @@ msgstr "مفتاح الحساب"
 msgid "Accurate"
 msgstr "دقيق"
 
+#: src/components/contact-picker/NewHelpDeskDialog.tsx
+msgid "Acme Support"
+msgstr ""
+
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Act as the \"{name}\" agent and work on the current context."
 msgstr "التصرف كوكيل \"{name}\" والعمل على السياق الحالي."
@@ -2957,6 +2970,10 @@ msgstr "لتضمين حزم مصدر بيانات، أضيفوه إلى المش
 msgid "Add a source"
 msgstr "إضافة مصدر"
 
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Add a staff member by email"
+msgstr ""
+
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Add an agent…"
 msgstr "إضافة وكيل…"
@@ -3116,6 +3133,11 @@ msgstr "إضافة مقدمة بلغة أخرى"
 msgid "Add invites"
 msgstr ""
 
+#. placeholder {0}: card.display_name
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Add it to your help desks to ask {0} for help, like a contact."
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Add key"
@@ -3232,6 +3254,10 @@ msgstr ""
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Add to favorites"
 msgstr "إضافة إلى المفضلة"
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Add to my help desks"
+msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Add to Private Context"
@@ -4269,6 +4295,7 @@ msgstr "يمكن لأي شخص لديه حق الوصول فتح {entityType} م
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
 msgid "Anyone with the link"
 msgstr "أي شخص لديه الرابط"
 
@@ -4356,6 +4383,7 @@ msgstr "مفتاح API: نماذج Gemini فقط — ارفع ملف JSON لحس
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "API keys"
 msgstr "مفاتيح API"
@@ -4677,6 +4705,10 @@ msgstr "يُرجى طلب مشاركة المشروع مع {0} من مالكه."
 msgid "Ask someone for help"
 msgstr "طلب المساعدة من شخص آخر"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Ask something new"
+msgstr ""
+
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "Ask the agent to connect one"
 msgstr "اطلبوا من الوكيل ربط مصدر"
@@ -4690,8 +4722,8 @@ msgid "Ask the Flowpad Assistant anything about this page."
 msgstr "اسألوا مساعد Flowpad عن أي شيء يخص هذه الصفحة."
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Ask the help desk too"
-msgstr "اطلب من مكتب المساعدة أيضًا"
+#~ msgid "Ask the help desk too"
+#~ msgstr "اطلب من مكتب المساعدة أيضًا"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
@@ -5856,6 +5888,7 @@ msgstr "تعذّر التحديث الآن — يُعرض آخر قائمة تم
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
+#: src/components/contact-picker/NewHelpDeskDialog.tsx
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/ConversationActions.tsx
@@ -7163,9 +7196,14 @@ msgstr "إغلاق ما على اليمين"
 #: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/TicketStatusControl.tsx
 #: src/components/help/MyHelpRequests.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
 msgstr "مغلق"
+
+#: src/components/conversation/TicketPage.tsx
+msgid "Closed — reopen to reply to {asker}"
+msgstr ""
 
 #: src/components/conversation/IssueReplyLine.tsx
 msgid "Closed after {took}"
@@ -7837,6 +7875,7 @@ msgstr "تم التحقق من الاتصال"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/connections-manager.tsx
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "Connections"
 msgstr "الاتصالات"
 
@@ -8028,6 +8067,7 @@ msgstr "تم التحويل إلى لوحة Excalidraw"
 
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/components/hooks/event-utils.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/markdown-view.tsx
@@ -8100,6 +8140,7 @@ msgstr "علامة تبويب Copilot"
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/components/hooks/event-utils.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/links/LinkMenu.tsx
@@ -8532,6 +8573,10 @@ msgstr "تعذّر إنشاء المخطط"
 #: src/components/quick-create/DatasetCreateDialog.tsx
 msgid "Could not create the dataset"
 msgstr "تعذّر إنشاء مجموعة البيانات"
+
+#: src/components/contact-picker/NewHelpDeskDialog.tsx
+msgid "Could not create the help desk"
+msgstr ""
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Could not create the MCP server"
@@ -9731,6 +9776,10 @@ msgstr "إنشاء ملف"
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 msgid "Create Folder"
 msgstr "إنشاء مجلد"
+
+#: src/components/contact-picker/NewHelpDeskDialog.tsx
+msgid "Create help desk"
+msgstr ""
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Create it"
@@ -11665,6 +11714,10 @@ msgstr "اسحبوا للتحريك · مرّروا للتكبير · انقرو
 msgid "Drag to resize"
 msgstr "اسحبوا لتغيير الحجم"
 
+#: src/components/conversation/TicketPage.tsx
+msgid "Drag to resize the two sides"
+msgstr ""
+
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Draw from a source you can use"
 msgstr ""
@@ -12011,6 +12064,10 @@ msgstr "تعذّر حفظ إعدادات البريد الإلكتروني."
 #: src/components/account/user-info.tsx
 msgid "Email:"
 msgstr "البريد الإلكتروني:"
+
+#: src/components/contact-picker/NewHelpDeskDialog.tsx
+msgid "Emails, separated by commas — you are in already"
+msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Embedded in message"
@@ -14670,6 +14727,7 @@ msgstr "تُوجَّه إلى"
 msgid "good"
 msgstr "جيد"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Google Cloud project"
@@ -14926,6 +14984,10 @@ msgstr "بحوزة"
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/helpdesk/HelpdeskBrandHeader.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
+#: src/types/ViewType.ts
 #: src/types/ViewType.ts
 msgid "Help desk"
 msgstr "مكتب المساعدة"
@@ -14933,6 +14995,10 @@ msgstr "مكتب المساعدة"
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Help desk files removed"
 msgstr "تم حذف ملفات مكتب المساعدة"
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Help desk on or off"
+msgstr ""
 
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Help desk replied"
@@ -14942,6 +15008,7 @@ msgstr "ردّ مكتب المساعدة"
 msgid "Help desk unavailable"
 msgstr "مكتب المساعدة غير متاح"
 
+#: src/components/contact-picker/ContactsDialog.tsx
 #: src/i18n/type-labels.ts
 msgid "Help desks"
 msgstr "مكاتب المساعدة"
@@ -15371,7 +15438,6 @@ msgid "Hub budgets you can hand out"
 msgstr "ميزانيات Hub يمكنكم منحها"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Hub endpoints"
 msgstr "نقاط النهاية في Hub"
 
@@ -15663,6 +15729,10 @@ msgstr "قيد الاستخدام"
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "In use"
 msgstr "قيد الاستخدام"
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "In your help desks. Ask it from Ask for help, in any project."
+msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "In-app only"
@@ -16070,6 +16140,10 @@ msgstr "تعليمات لوكيلهم"
 msgid "Interface language and text direction."
 msgstr "لغة الواجهة واتجاه النص."
 
+#: src/components/conversation/TicketPage.tsx
+msgid "Internal · never shown to {asker}"
+msgstr ""
+
 #: src/components/footer/activity-words.ts
 #: src/components/hooks/event-summaries.tsx
 msgid "interrupted"
@@ -16196,6 +16270,7 @@ msgstr "الدعوات — المتجاهلة"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
 msgid "Invite"
 msgstr "دعوة"
 
@@ -16237,6 +16312,7 @@ msgstr "رموز الدعوة"
 msgid "Invite failed"
 msgstr "فشل إرسال الدعوة"
 
+#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/pages/entry/InvitePage.tsx
 msgid "Invite link"
 msgstr "رابط الدعوة"
@@ -16328,6 +16404,10 @@ msgstr ""
 #: src/components/automations/MessageRulePage.tsx
 msgid "It did not work"
 msgstr "لم ينجح ذلك"
+
+#: src/components/asset-counters/issue-counters.tsx
+msgid "It did not work. Try again."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "IT Disable"
@@ -17150,7 +17230,6 @@ msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
-#: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 msgid "Limits"
 msgstr "الحدود"
@@ -17446,7 +17525,6 @@ msgid "LLM endpoints"
 msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
-#: src/components/llm-sources/LlmSourcesView.tsx
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
 msgid "LLM Endpoints"
@@ -17477,8 +17555,8 @@ msgstr ""
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/types/ViewType.ts
-msgid "LLM sources"
-msgstr "مصادر LLM"
+#~ msgid "LLM sources"
+#~ msgstr "مصادر LLM"
 
 #. placeholder {0}: saved.capUsd ?? 0
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
@@ -17506,6 +17584,7 @@ msgid "Load more"
 msgstr "تحميل المزيد"
 
 #: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/TicketPage.tsx
 msgid "Load older messages"
 msgstr ""
 
@@ -17911,6 +17990,8 @@ msgstr ""
 msgid "Locally"
 msgstr "محليًا"
 
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Location"
 msgstr "الموقع"
@@ -19024,6 +19105,7 @@ msgstr "الاسم"
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/contact-picker/NewHelpDeskDialog.tsx
 #: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/conversation/SecureSendDialog.tsx
 #: src/components/credentials/DetectedKeys.tsx
@@ -19423,6 +19505,11 @@ msgstr "اسم المجلد الجديد"
 #: src/components/contact-picker/ContactsDialog.tsx
 msgid "New group"
 msgstr "مجموعة جديدة"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+#: src/components/contact-picker/NewHelpDeskDialog.tsx
+msgid "New help desk"
+msgstr ""
 
 #: src/components/rag/RagView.tsx
 msgid "New index"
@@ -20158,6 +20245,10 @@ msgstr ""
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "No help desk in this repository"
 msgstr "لا يوجد مكتب مساعدة في هذا المستودع"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "No help desks yet. Create your own support line, or open a desk's link to add it."
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/CallStackView.tsx
 msgid "No high-level calls in this session."
@@ -20912,6 +21003,10 @@ msgstr ""
 msgid "No team matches."
 msgstr ""
 
+#: src/components/conversation/TicketPage.tsx
+msgid "No team notes yet. Ask a teammate or keep a note about this ticket — it stays between the people who answer this help desk."
+msgstr ""
+
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/tabs/TeamsTab.tsx
 msgid "No teams yet."
@@ -20936,6 +21031,10 @@ msgstr ""
 
 #: src/components/credentials/CredentialTestButton.tsx
 msgid "No test yet — an agent writes one"
+msgstr ""
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "No tickets yet. Share the link — whoever opens it can ask {name}."
 msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
@@ -21323,6 +21422,7 @@ msgstr "لم يُفتح بعد"
 
 #: src/components/conversation/conversation-category.ts
 #: src/components/conversation/TicketStatusControl.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
 msgid "Not picked up"
 msgstr "لم تُستلم بعد"
 
@@ -21502,6 +21602,11 @@ msgstr "ملاحظة"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Note (optional)"
 msgstr "ملاحظة (اختيارية)"
+
+#: src/components/conversation/TicketPage.tsx
+#: src/components/conversation/TicketPage.tsx
+msgid "Note to team"
+msgstr ""
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Note: File is missing"
@@ -21840,6 +21945,10 @@ msgstr "إيقاف"
 msgid "Off"
 msgstr "متوقف"
 
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Off — nobody can ask yet"
+msgstr ""
+
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 msgid "Off · turn on to run it here, free, while this computer is awake"
 msgstr "متوقف · يمكن التفعيل للتشغيل هنا مجاناً ما دام الكمبيوتر مستيقظاً"
@@ -21894,6 +22003,10 @@ msgstr "تشغيل"
 #: src/components/entity-card/entity-card-rows.ts
 msgid "On"
 msgstr "مفعّل"
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "On — people can ask"
+msgstr ""
 
 #. placeholder {0}: (note.data?.name as string) ?? ''
 #: src/components/notes/NoteViews.tsx
@@ -23801,6 +23914,10 @@ msgstr "الأشخاص"
 msgid "People & teams"
 msgstr "الأشخاص والفرق"
 
+#: src/components/contact-picker/NewHelpDeskDialog.tsx
+msgid "People ask it like a contact. You and your team answer."
+msgstr ""
+
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "People without their own limit get this."
 msgstr ""
@@ -23991,6 +24108,10 @@ msgstr "يُرجى تحديد السكربت المراد تشغيله."
 msgid "Pick up"
 msgstr "استلام"
 
+#: src/components/conversation/TicketPage.tsx
+msgid "Pick up to reply to {asker}"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Pick what to do with this invitation."
 msgstr "يُرجى تحديد الإجراء المطلوب لهذه الدعوة."
@@ -24000,6 +24121,7 @@ msgid "Pick who handles it."
 msgstr "حدِّدوا من يتولى المعالجة"
 
 #: src/components/conversation/conversation-category.ts
+#: src/components/helpdesk/HelpDeskPage.tsx
 msgid "Picked up"
 msgstr "تم استلامها"
 
@@ -24522,6 +24644,7 @@ msgstr "مشروع"
 #: src/components/explorer-view/useExplorerModel.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
@@ -26076,8 +26199,8 @@ msgid "Remove tag {tag}"
 msgstr "إزالة الوسم {tag}"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Remove the help desk"
-msgstr "إزالة مكتب المساعدة"
+#~ msgid "Remove the help desk"
+#~ msgstr "إزالة مكتب المساعدة"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Remove this argument"
@@ -26215,6 +26338,7 @@ msgid "Rename worker"
 msgstr "إعادة تسمية العامل"
 
 #: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/IssueReplyLine.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Reopen"
@@ -26313,6 +26437,10 @@ msgstr "الرد في {0}"
 #: src/components/conversation/MessageBubble.tsx
 msgid "Reply in thread"
 msgstr "الرد في السلسلة"
+
+#: src/components/conversation/TicketPage.tsx
+msgid "Reply to {asker}"
+msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Reply to sender…"
@@ -26791,6 +26919,7 @@ msgstr "استُؤنِف — سيتم الفحص في الدورة التالي�
 #: src/components/conversation/SessionEventLine.tsx
 #: src/components/graph-view/webglSupport.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -28309,6 +28438,10 @@ msgstr "شوهد"
 msgid "Seen {0} times since Flowpad started"
 msgstr "شوهد {0} مرة منذ بدء تشغيل Flowpad"
 
+#: src/components/conversation/TicketPage.tsx
+msgid "Sees this side"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Segment dur"
@@ -29097,6 +29230,7 @@ msgstr "جارٍ الإعداد…"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/SourceSetupButton.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/components/project-deployments/ProjectDeploymentPage.tsx
 #: src/components/settings-view/SettingsView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -30553,6 +30687,11 @@ msgstr "جداول البيانات"
 msgid "Staff (sub-agents; the general worker is always there)"
 msgstr "الطاقم (الوكلاء الفرعيون؛ العامل العام متاح دائماً)"
 
+#: src/components/contact-picker/NewHelpDeskDialog.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Staff members"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Stage"
 msgstr "ضم"
@@ -31521,13 +31660,21 @@ msgstr "المهام {openTaskCount}"
 #: src/components/contact-picker/ContactPicker.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/TicketPage.tsx
+#: src/components/conversation/TicketPage.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/components/organization/organization-page.tsx
 #: src/components/organization/tabs/TeamsTab.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/token-plan/AllocateDialog.tsx
 #: src/components/token-plan/FundingChain.tsx
 #: src/i18n/type-labels.ts
 msgid "Team"
 msgstr "الفريق"
+
+#: src/components/conversation/TicketPage.tsx
+msgid "Team · {teamCount}"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Team collaboration mode"
@@ -31546,6 +31693,10 @@ msgstr ""
 #: src/components/organization/tabs/shared.tsx
 msgid "Team name…"
 msgstr "اسم الفريق…"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Team notes on this ticket — only its help desk's staff see them"
+msgstr ""
 
 #: src/components/llm-sources/EndpointSponsorLine.tsx
 msgid "Team: {team}"
@@ -31936,6 +32087,10 @@ msgstr ""
 #: src/components/credentials/CredentialDialog.tsx
 msgid "The credentials could not be saved."
 msgstr "تعذّر حفظ بيانات الاعتماد."
+
+#: src/components/conversation/TicketPage.tsx
+msgid "the customer"
+msgstr ""
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "The data model could not be read."
@@ -32943,6 +33098,10 @@ msgstr "يحتوي هذا المجلد على ملفات"
 msgid "This folder-backed asset has no main file metadata."
 msgstr "هذا الأصل المستند إلى مجلد لا يحتوي على بيانات وصفية للملف الرئيسي."
 
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "This help desk is not available. It may be turned off, or the link may be wrong."
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "This hub isn't configured to run sandboxes"
 msgstr "هذا المركز غير مُهيَّأ لتشغيل البيئات المعزولة"
@@ -33559,6 +33718,15 @@ msgstr ""
 msgid "Ticket status — click to change"
 msgstr ""
 
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Tickets"
+msgstr ""
+
+#. placeholder {0}: tickets.length
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Tickets · {0}"
+msgstr ""
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -33756,7 +33924,10 @@ msgstr "خطة الرموز"
 msgid "Token source"
 msgstr "مصدر الرموز"
 
+#: src/components/automations/MessageRulePage.tsx
+#: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
+#: src/types/ViewType.ts
 msgid "Token sources"
 msgstr ""
 
@@ -35850,6 +36021,10 @@ msgstr "لوحة رسم (Excalidraw)"
 msgid "who calls whom, step by step — with sub-flows and feedback"
 msgstr "من يستدعي من، خطوة بخطوة — مع تدفقات فرعية وملاحظات"
 
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Who can ask"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Who can open it"
 msgstr "من يمكنه فتحه"
@@ -36295,6 +36470,14 @@ msgstr "لديكم بالفعل مشروع باسم <0>{projectName}</0>. افت
 msgid "You already have this. Replace it with the shared version?"
 msgstr ""
 
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "You answer · off"
+msgstr ""
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "You answer · on"
+msgstr ""
+
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "You approved this session only — {guestName} will need your approval again next time."
 msgstr "وافقتم على هذه الجلسة فقط — سيحتاج {guestName} إلى موافقتكم مرة أخرى في المرة القادمة."
@@ -36339,6 +36522,10 @@ msgstr ""
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #~ msgid "You can also add an LLM key in LLM Sources."
 #~ msgstr "يمكنكم أيضاً إضافة مفتاح LLM في LLM Sources."
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "You can ask"
+msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You can see {name}, but its project isn't shared with you, so it can't be launched."

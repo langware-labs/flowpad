@@ -743,16 +743,16 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.LLM_SOURCES: _m(
         _OPT,
         folds_pointer=True,
-        label="LLM sources",
-        aliases=("harness funding",),
+        label="Token sources",
+        aliases=("LLM sources", "harness funding"),
         subplaces=tuple(
-            (h, f"LLM sources > how {name} is funded (its key, plan or allowance)")
+            (h, f"Token sources > how {name} is funded (its key, plan or allowance)")
             for h, name in (("claude", "Claude Code"), ("codex", "Codex"), ("copilot", "Copilot"), ("opencode", "OpenCode"))
         )
         + (
-            ("logins", "LLM sources > each assistant's own login and what it runs on now"),
-            ("keys", "LLM sources > the API keys stored on this machine"),
-            ("endpoints", "LLM sources > the hub endpoints this account can spend"),
+            ("logins", "Token sources > each assistant's device login and what it runs on now"),
+            ("keys", "Token sources > the API keys stored on this machine"),
+            ("endpoints", "Token sources > the hub endpoints this account can spend"),
         ),
     ),
     # Pointer NONE: the screen asks one question and has no selection to address. It is the

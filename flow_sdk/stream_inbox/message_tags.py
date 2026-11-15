@@ -30,10 +30,10 @@ async def enroll(message) -> None:
     from flow_sdk.builtin.user import User
     from flow_sdk.schema.data_spec.message_sender_spec import SenderKind
 
-    sender = message.sender
-    self_ids = await User.self_ids()
     if message.outbound or message.remote_worker_session_id:
         return
+    sender = message.sender
+    self_ids = await User.self_ids()
     if sender is not None and sender.kind is SenderKind.USER and sender.id in self_ids:
         return
     if sender is not None and sender.kind is SenderKind.AGENT:
@@ -308,9 +308,10 @@ async def _classify(message):
         return
     error = ""
     tags = []
+    enabled = settings().enabled
     try:
-        definitions = await ontology()
-        if settings().enabled and definitions:
+        definitions = await ontology() if enabled else []
+        if definitions:
             answer = await classify(message, definitions)
             if answer.exit_code is not ExitCode.OK or not answer.has_value:
                 raise ValueError(answer.detail or "Classification returned no successful value.")
@@ -327,7 +328,7 @@ async def _classify(message):
         from flow_sdk.builtin.tag import resolve_tag
 
         rules = await _rules()
-        s.classification = "failed" if error else "succeeded" if settings().enabled else "skipped"
+        s.classification = "failed" if error else "succeeded" if enabled else "skipped"
         s.classification_error = error
         current_tags = []
         for name in tags if not error else ():
@@ -447,15 +448,25 @@ async def process_message(message_id: str) -> None:
             await _mutate(message_id, finish)
 
 
-async def reconcile() -> None:
-    """Boot recovery reads only enrolled messages. An uncertain fire is never replayed."""
+async def enrolled_messages() -> list:
+    """Every message that was enrolled for classification, as stored."""
     from flow_sdk.builtin.flow_message import FlowMessage
-    from flow_sdk.builtin.trigger import Trigger
     from flow_sdk.db.drivers.query import QueryFilter, ExpressionNode, QueryOp
 
-    rows = await FlowMessage.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IS_NOT_NULL,
-                                                                     operands=["message_processing"])), hydrate=False)
-    for row in rows:
+    return await FlowMessage.get_all(QueryFilter(match=ExpressionNode(
+        op=QueryOp.IS_NOT_NULL, operands=["message_processing"])), hydrate=False)
+
+
+async def reconcile() -> None:
+    """Boot recovery reads only enrolled messages. An uncertain fire is never replayed."""
+    from flow_sdk.builtin.trigger import Trigger
+
+    for row in await enrolled_messages():
+        state = row.message_processing
+        # A settled message has nothing to recover and nothing to run: leave its row alone.
+        if state.classification not in {"pending", "running"} and not any(
+                entry.status in {"queued", "running"} for entry in state.queue):
+            continue
         completed = {}
         for entry in row.message_processing.queue:
             if entry.status == "running" and entry.run_id:

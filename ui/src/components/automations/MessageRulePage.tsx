@@ -261,7 +261,7 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
             <AlertTriangle className="size-4 shrink-0" aria-hidden />
             <span className="min-w-0 flex-1">{noDecisionApi}</span>
             <Button variant="outline" size="sm" className="gap-1" onClick={() => navigation.openTab(ViewType.LLM_SOURCES)}>
-              <Trans>LLM sources</Trans>
+              <Trans>Token sources</Trans>
               <ExternalLink className="size-3.5" aria-hidden />
             </Button>
           </div>

@@ -268,7 +268,3 @@ class VertexClient(LLMClient):
             raise LLMTimeout("Vertex stream timed out") from None
         except (httpx.HTTPError, ValueError):
             raise LLMUpstreamError("Vertex returned an invalid stream") from None
-
-
-def client_factory(**kwargs):
-    return VertexClient(**kwargs)
