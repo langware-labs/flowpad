@@ -5154,6 +5154,10 @@ msgstr "الأتمتة"
 msgid "Automation created"
 msgstr "تم إنشاء الأتمتة"
 
+#: src/components/tags/MessageTags.tsx
+msgid "Automation queue"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/BusView.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -5256,6 +5260,10 @@ msgstr "رجوع"
 msgid "Back on the owner's default"
 msgstr "تمت العودة إلى تمويل المالك الافتراضي"
 
+#: src/components/automations/MessageRulePage.tsx
+msgid "Back to automation"
+msgstr ""
+
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Back to Data sources"
 msgstr "العودة إلى مصادر البيانات"
@@ -5272,6 +5280,10 @@ msgstr "العودة إلى الرسم البياني الكامل"
 msgid "Back to home"
 msgstr "العودة إلى الرئيسية"
 
+#: src/components/automations/MessageRulePage.tsx
+msgid "Back to message"
+msgstr ""
+
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Back to repositories"
 msgstr "العودة إلى المستودعات"
@@ -5280,6 +5292,15 @@ msgstr "العودة إلى المستودعات"
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Back to stream inbox"
 msgstr "العودة إلى صندوق التدفق الوارد"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Back to tag"
+msgstr ""
+
+#: src/components/graph-view/TagGraphView.tsx
+#: src/components/tags/InboxTags.tsx
+msgid "Back to tags"
+msgstr ""
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
@@ -5963,6 +5984,7 @@ msgstr "تعذّر التحديث الآن — يُعرض آخر قائمة تم
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/tags/InboxTags.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -6267,6 +6289,10 @@ msgstr "التغييرات تحتاج إلى دمج — يمكن للمساعد 
 
 #: src/components/assets/editor/changes/useDocChanges.tsx
 msgid "Changes queued on this doc"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Changes saved"
 msgstr ""
 
 #: src/components/asset-counters/channel-project-counters.tsx
@@ -6676,10 +6702,18 @@ msgstr "تم إنشاء الفصل"
 msgid "Class name…"
 msgstr "اسم الفصل…"
 
+#: src/components/tags/MessageTags.tsx
+msgid "Classification failed. You can still assign tags."
+msgstr ""
+
 #: src/components/task-bar/task-utils.ts
 #: src/components/task-bar/task-utils.ts
 msgid "classification.json"
 msgstr "classification.json"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Classify arriving messages"
+msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/terminal/interactive-terminal/PaneSelectorBar.tsx
@@ -7149,6 +7183,10 @@ msgstr "إغلاق الكل ما عدا هذا"
 msgid "Close all side tabs"
 msgstr "إغلاق كل علامات التبويب الجانبية"
 
+#: src/components/tags/MessageTags.tsx
+msgid "Close automations"
+msgstr ""
+
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Close bookmark"
 msgstr "إغلاق الإشارة المرجعية"
@@ -7184,6 +7222,10 @@ msgstr "إغلاق الخطوات"
 #: src/components/tabs/TabStrip.tsx
 msgid "Close tab"
 msgstr "إغلاق علامة التبويب"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Close tags"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Close terminal"
@@ -7403,6 +7445,7 @@ msgid "Collecting…"
 msgstr "جارٍ الجمع…"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
+#: src/components/tags/InboxTags.tsx
 #: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/color-picker.tsx
 msgid "Color"
@@ -8489,6 +8532,11 @@ msgstr "تعذر تغيير وضع الخصوصية"
 msgid "Could not change role"
 msgstr "تعذّر تغيير الدور"
 
+#: src/components/tags/MessageTags.tsx
+#: src/components/tags/MessageTags.tsx
+msgid "Could not change tags"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "Could not change the allocation"
 msgstr "تعذّر تغيير التخصيص"
@@ -8624,6 +8672,10 @@ msgstr "تعذر الحذف"
 msgid "Could not delete {0}"
 msgstr "تعذر حذف {0}"
 
+#: src/components/tags/InboxTags.tsx
+msgid "Could not delete tag"
+msgstr ""
+
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Could not delete the deployment"
 msgstr "تعذّر حذف النشر"
@@ -8722,6 +8774,10 @@ msgstr "تعذر منح هذا المشروع صلاحية الوصول إلى {
 
 #: src/components/conversation/ShareReplyCard.tsx
 msgid "Could not grant access."
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Could not inspect tag usage"
 msgstr ""
 
 #: src/components/project-home/ProjectDependenciesCard.tsx
@@ -8937,6 +8993,10 @@ msgstr "تعذّر الوصول إلى هذا الجهاز السحابي. قد 
 msgid "Could not read {what}: {message}"
 msgstr ""
 
+#: src/components/tags/InboxTags.tsx
+msgid "Could not read classification settings"
+msgstr ""
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Could not read the diagnosis"
 msgstr "تعذّرت قراءة التشخيص"
@@ -9150,6 +9210,11 @@ msgstr "تعذّر الحفظ"
 msgid "Could not save allowed senders"
 msgstr "تعذّر حفظ المرسلين المسموح لهم"
 
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/InboxTags.tsx
+msgid "Could not save classification settings"
+msgstr ""
+
 #: src/components/credentials/DetectedKeys.tsx
 msgid "Could not save environment variables. Your edits are still here; try again."
 msgstr "تعذّر حفظ متغيرات البيئة. التعديلات ما زالت هنا؛ يُرجى المحاولة مجددًا."
@@ -9161,6 +9226,10 @@ msgstr "تعذّر حفظ إعدادات صندوق البريد"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Could not save schedule"
 msgstr "تعذّر حفظ الجدول الزمني"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Could not save tag"
+msgstr ""
 
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/conversation/task-it.tsx
@@ -10462,6 +10531,8 @@ msgstr "حذف"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/InboxTags.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/pages/hub-home/machines-bulk.ts
 #: src/pages/live-status/LiveStatus.tsx
@@ -10707,6 +10778,10 @@ msgstr "حذف المحدد"
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Delete selected ({selectedCount})"
 msgstr "حذف المحدد ({selectedCount})"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Delete tag"
+msgstr ""
 
 #: src/components/browseable-tree/adapters/tagRoot.tsx
 msgid "Delete tag {name}"
@@ -10966,6 +11041,7 @@ msgstr "وصف التطبيق المنطقي أو الخدمة أو المورد
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/project-home/EditDependencyDialog.tsx
+#: src/components/tags/InboxTags.tsx
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Description"
 msgstr "الوصف"
@@ -11897,6 +11973,7 @@ msgstr "الحواف حسب النوع"
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/tags/InboxTags.tsx
 msgid "Edit"
 msgstr "تعديل"
 
@@ -11961,6 +12038,10 @@ msgstr "تحرير في الوكيل"
 msgid "Edit link"
 msgstr "تعديل الرابط"
 
+#: src/components/tags/MessageTags.tsx
+msgid "Edit message tags"
+msgstr ""
+
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Edit name"
 msgstr "تعديل الاسم"
@@ -11995,6 +12076,10 @@ msgstr ""
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Edit SubAgent Hook"
 msgstr "تعديل خطاف SubAgent"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Edit tag"
+msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Edit the fields as JSON"
@@ -14992,7 +15077,6 @@ msgstr "بحوزة"
 #: src/components/helpdesk/HelpdeskBrandHeader.tsx
 #: src/components/helpdesk/HelpDeskPage.tsx
 #: src/components/helpdesk/HelpDeskPage.tsx
-#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/types/ViewType.ts
 #: src/types/ViewType.ts
 msgid "Help desk"
@@ -15760,6 +15844,12 @@ msgstr "نسخة غير نشطة"
 msgid "Inbound routing"
 msgstr "توجيه الوارد"
 
+#: src/components/graph-view/TagGraphView.tsx
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/MessageTags.tsx
+msgid "Inbox tags"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "Include built-in system projects in the project picker."
 msgstr "تضمين مشاريع النظام المدمجة في منتقي المشاريع."
@@ -15767,6 +15857,10 @@ msgstr "تضمين مشاريع النظام المدمجة في منتقي ال
 #: src/components/settings-view/settings-utils.ts
 msgid "Include Co-Authored-By"
 msgstr "تضمين Co-Authored-By"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Include Flowpad message tags"
+msgstr ""
 
 #: src/components/automations/RunsView.tsx
 msgid "Include Flowpad's own"
@@ -15783,6 +15877,10 @@ msgstr "تضمين هذا الملف في الـ commit القادم (git add)"
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Included through this source's packages. Changes apply to new sessions."
 msgstr "مُضمَّن عبر حزم هذا المصدر. تُطبَّق التغييرات على الجلسات الجديدة."
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
+msgstr ""
 
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Incoming"
@@ -16671,6 +16769,10 @@ msgstr "الاحتفاظ بالنص"
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Keep the default greeting…"
 msgstr "الاحتفاظ بالتحية الافتراضية…"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Keep the existing automation actions"
+msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Keep the local copy out of git"
@@ -18623,6 +18725,10 @@ msgstr "إجراءات الرسالة"
 msgid "Message Attachment"
 msgstr "مرفق الرسالة"
 
+#: src/components/tags/MessageTags.tsx
+msgid "Message automation queue"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/dataSourcesRoot.tsx
 #: src/components/project-home/ProjectDataSources.tsx
 msgid "Message channels"
@@ -18658,6 +18764,10 @@ msgstr "تم إرسال الرسالة"
 #: src/i18n/type-labels.ts
 msgid "Message Suggest"
 msgstr "اقتراح الرسالة"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Message tags"
+msgstr ""
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Message the agent"
@@ -19135,6 +19245,7 @@ msgstr "الاسم"
 #: src/components/quick-create/NewOfTypeDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/tags/InboxTags.tsx
 #: src/components/token-plan/RenameButton.tsx
 #: src/components/webapp-display/AppInfoPopover.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
@@ -19522,6 +19633,10 @@ msgstr "مجموعة جديدة"
 msgid "New help desk"
 msgstr ""
 
+#: src/components/tags/InboxTags.tsx
+msgid "New incoming messages use your ontology. Existing messages are not reclassified."
+msgstr ""
+
 #: src/components/rag/RagView.tsx
 msgid "New index"
 msgstr "فهرس جديد"
@@ -19601,6 +19716,12 @@ msgstr "فريق فرعي جديد"
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "New tab"
 msgstr "تبويب جديد"
+
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/InboxTags.tsx
+#: src/components/tags/MessageTags.tsx
+msgid "New tag"
+msgstr ""
 
 #: src/components/organization/org-detail-panel.tsx
 msgid "New team"
@@ -20474,6 +20595,10 @@ msgstr "لا توجد محادثات مطابقة"
 #: src/components/terminal/HistoryModal.tsx
 msgid "No matching sessions"
 msgstr "لا توجد جلسات مطابقة"
+
+#: src/components/tags/MessageTags.tsx
+msgid "No matching tags"
+msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "No MCP servers found"
@@ -22886,6 +23011,10 @@ msgstr "فتح الجلسة"
 #: src/components/data-sources/SourceSetupButton.tsx
 msgid "Open settings of {name}"
 msgstr "فتح إعدادات {name}"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Open source automation for {name}"
+msgstr ""
 
 #: src/components/data-sources/SourceMenu.tsx
 msgid "Open source folder"
@@ -26078,6 +26207,10 @@ msgstr "إزالة {name} من الوكيل"
 msgid "Remove access"
 msgstr "إزالة الوصول"
 
+#: src/components/tags/MessageTags.tsx
+msgid "Remove all"
+msgstr ""
+
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove attachment"
 msgstr "إزالة المرفق"
@@ -26214,6 +26347,10 @@ msgstr "إزالة القاعدة"
 msgid "Remove service"
 msgstr ""
 
+#: src/components/tags/MessageTags.tsx
+msgid "Remove tag {name}"
+msgstr ""
+
 #: src/components/tags/TagInput.tsx
 msgid "Remove tag {tag}"
 msgstr "إزالة الوسم {tag}"
@@ -26246,6 +26383,16 @@ msgstr "إزالة هذا الرقم وقواعده ({0})؟ يتوقف المر�
 #: src/pages/discover-page/discover-page.tsx
 msgid "Remove this row from the manifest"
 msgstr "إزالة هذا الصف من ملف البيان"
+
+#. placeholder {0}: impact.messages
+#. placeholder {1}: impact.automations
+#: src/components/tags/InboxTags.tsx
+msgid "Remove this tag from {0} messages and disable {1} automations. Messages are kept."
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Remove this tag's assignments and disable matching automations. Messages are kept."
+msgstr ""
 
 #: src/components/inbound/InboundView.tsx
 msgid "Remove this? The hub stops routing its messages now. The agents and their channels stay."
@@ -27354,6 +27501,10 @@ msgstr "يُرجى التنفيذ من الطرفية، ثم إعادة تشغي
 msgid "Run headless"
 msgstr "تشغيل بلا واجهة"
 
+#: src/components/tags/MessageTags.tsx
+msgid "Run history"
+msgstr ""
+
 #: src/components/links/LinkMenu.tsx
 msgid "Run in chat"
 msgstr "تشغيل في الدردشة"
@@ -27774,6 +27925,7 @@ msgstr "تمت ترقية البيئة المعزولة"
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+#: src/components/tags/InboxTags.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
@@ -27826,6 +27978,10 @@ msgstr "حفظ التفاصيل"
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Save failed"
 msgstr "فشل الحفظ"
+
+#: src/components/tags/InboxTags.tsx
+msgid "Save preferences"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Save the current asset changes as a version before running improvement."
@@ -31588,7 +31744,16 @@ msgstr "وسم"
 msgid "Tag"
 msgstr "وسم"
 
+#: src/components/tags/InboxTags.tsx
+msgid "Tag created"
+msgstr ""
+
+#: src/components/tags/InboxTags.tsx
+msgid "Tag deleted"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/tagRoot.tsx
+#: src/components/tags/InboxTags.tsx
 msgid "Tag graph"
 msgstr "رسم بياني للعلامات"
 
@@ -31613,6 +31778,10 @@ msgstr "عرض الوسم غير موجود"
 #: src/i18n/type-labels.ts
 msgid "Tags"
 msgstr "وسوم"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Tags on this message"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Takes ~4 seconds"
@@ -32727,6 +32896,7 @@ msgstr "خرج العامل فور تشغيله، لذا أُوقفت إعادة
 #: src/components/automations/blocks/ThenBlock.tsx
 #: src/components/automations/IfThenGraphic.tsx
 #: src/components/automations/IfThenLine.tsx
+#: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Then"
 msgstr "ثم"
@@ -33860,6 +34030,7 @@ msgstr "عدد مرات وقوع هذا الحدث منذ بدء تشغيل Flow
 #: src/components/account/system-diagnoses.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/tags/InboxTags.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Title"
 msgstr "العنوان"
@@ -35425,6 +35596,10 @@ msgstr "عرض نسخة الجلسة"
 msgid "View Skill"
 msgstr "عرض المهارة"
 
+#: src/components/graph-view/TagGraphView.tsx
+msgid "View tagged messages"
+msgstr ""
+
 #. placeholder {0}: row.type
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "View the {indexedCount} {0} entities indexed this run"
@@ -35970,6 +36145,10 @@ msgstr "عندما يقوم وكيل بإجراء ما"
 #: src/components/automations/automation-words.ts
 msgid "When an agent reports {events}"
 msgstr "عندما يُبلغ وكيل عن {events}"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "When any of these message tags is assigned"
+msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "When on, the server re-creates the Welcome bookmark + feed entry on the next start, then turns this off."
@@ -36888,172 +37067,3 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
-
-#: src/components/tags/MessageTags.tsx
-msgid "Automation queue"
-msgstr ""
-
-#: src/components/automations/MessageRulePage.tsx
-msgid "Back to automation"
-msgstr ""
-
-#: src/components/automations/MessageRulePage.tsx
-msgid "Back to message"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Back to tag"
-msgstr ""
-
-#: src/components/graph-view/TagGraphView.tsx
-#: src/components/tags/InboxTags.tsx
-msgid "Back to tags"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Changes saved"
-msgstr ""
-
-#: src/components/tags/MessageTags.tsx
-msgid "Classification failed. You can still assign tags."
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Classify arriving messages"
-msgstr ""
-
-#: src/components/tags/MessageTags.tsx
-msgid "Close automations"
-msgstr ""
-
-#: src/components/tags/MessageTags.tsx
-msgid "Close tags"
-msgstr ""
-
-#: src/components/tags/MessageTags.tsx
-#: src/components/tags/MessageTags.tsx
-msgid "Could not change tags"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Could not delete tag"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Could not inspect tag usage"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Could not read classification settings"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-#: src/components/tags/InboxTags.tsx
-msgid "Could not save classification settings"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Could not save tag"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Delete tag"
-msgstr ""
-
-#: src/components/tags/MessageTags.tsx
-msgid "Edit message tags"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Edit tag"
-msgstr ""
-
-#: src/components/graph-view/TagGraphView.tsx
-#: src/components/tags/InboxTags.tsx
-#: src/components/tags/MessageTags.tsx
-msgid "Inbox tags"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Include Flowpad message tags"
-msgstr ""
-
-#: src/components/automations/MessageRulePage.tsx
-msgid "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
-msgstr ""
-
-#: src/components/automations/MessageRulePage.tsx
-msgid "Keep the existing automation actions"
-msgstr ""
-
-#: src/components/tags/MessageTags.tsx
-msgid "Message automation queue"
-msgstr ""
-
-#: src/components/tags/MessageTags.tsx
-msgid "Message tags"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "New incoming messages use your ontology. Existing messages are not reclassified."
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-#: src/components/tags/InboxTags.tsx
-#: src/components/tags/MessageTags.tsx
-msgid "New tag"
-msgstr ""
-
-#: src/components/tags/MessageTags.tsx
-msgid "No matching tags"
-msgstr ""
-
-#: src/components/tags/MessageTags.tsx
-msgid "Open source automation for {name}"
-msgstr ""
-
-#: src/components/tags/MessageTags.tsx
-msgid "Remove all"
-msgstr ""
-
-#: src/components/tags/MessageTags.tsx
-msgid "Remove tag {name}"
-msgstr ""
-
-#. placeholder {0}: impact.messages
-#. placeholder {1}: impact.automations
-#: src/components/tags/InboxTags.tsx
-msgid "Remove this tag from {0} messages and disable {1} automations. Messages are kept."
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Remove this tag's assignments and disable matching automations. Messages are kept."
-msgstr ""
-
-#: src/components/tags/MessageTags.tsx
-msgid "Run history"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Save preferences"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Tag created"
-msgstr ""
-
-#: src/components/tags/InboxTags.tsx
-msgid "Tag deleted"
-msgstr ""
-
-#: src/components/automations/MessageRulePage.tsx
-msgid "Tags on this message"
-msgstr ""
-
-#: src/components/graph-view/TagGraphView.tsx
-msgid "View tagged messages"
-msgstr ""
-
-#: src/components/automations/MessageRulePage.tsx
-msgid "When any of these message tags is assigned"
-msgstr ""
