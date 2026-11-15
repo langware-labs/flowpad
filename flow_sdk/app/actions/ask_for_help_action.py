@@ -623,6 +623,27 @@ async def _posted_diagnosis(conv, messages=None):
     return None, posted
 
 
+async def _diagnosis_worker(messages) -> str:
+    """The context worker that ran the request's diagnosis here: the record's own private link to its
+    process (``cross_link_entities`` in ``flow diagnose``'s runner). Private, so it never travels."""
+    from flow_sdk.app.actions.diagnose_action import recorded_diagnosis  # noqa: PLC0415
+
+    prefix = "flowpad_diagnosis-"
+    for fm in reversed(messages):
+        if _kind(fm) != FlowMessageKind.DIAGNOSIS.value:
+            continue
+        for a in fm.attachment or []:
+            ref = str(a.data)
+            if not ref.startswith(prefix):
+                continue
+            record = await recorded_diagnosis(ref[len(prefix):])
+            for tid in (record.private_context_entities if record is not None else None) or []:
+                if tid.type == "agentic_process":
+                    return tid.id
+        return ""
+    return ""
+
+
 @action.post(action_name="help-request-diagnosis", types=["conversation"])
 async def help_request_diagnosis() -> ApiResponse:
     """``POST /graph/conversation/<id>/help-request-diagnosis`` — what the diagnosis message offers: its
@@ -648,6 +669,7 @@ async def help_request_diagnosis() -> ApiResponse:
             "replied": reported and _desk_replied(messages),
             "desk": desk,
             "pass_on": pass_on,
+            "worker_process_id": await _diagnosis_worker(messages),
         }
     )
 
