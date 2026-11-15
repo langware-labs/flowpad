@@ -3,9 +3,10 @@ import { useLingui } from '@lingui/react/macro';
 import type { UploadFlowMessageResult } from '@sdk';
 import { AssetReviewDialog } from '@src/components/conversation/asset-review/AssetReviewDialog';
 import { useFlowMessageAttachments } from '@src/components/conversation/useMessageAttachments';
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
-export interface UploadedMessage {
+interface UploadedMessage {
   messageId: string;
   /** Selected first in the review rail. */
   firstAttachmentId: string;
@@ -14,7 +15,7 @@ export interface UploadedMessage {
 /** The review of a staged message that has no conversation to open (an uploaded
  *  `.flowmsg`, or one received as a file): what it carries, with ``projectId``
  *  as the install target. */
-export function UploadedMessageReview({
+function UploadedMessageReview({
   messageId,
   firstAttachmentId,
   projectId,
@@ -42,6 +43,14 @@ export function useStagedMessageReview(projectId: string | null) {
     if (first) setReview({ messageId: result.message_id, firstAttachmentId: first.id });
     else notify.info({ title: t`Nothing to install`, message: t`This message carries no assets.` });
   };
+  /** Await a staging call, then review it — or toast its failure under ``failTitle``. */
+  const openFrom = async (staging: Promise<UploadFlowMessageResult>, failTitle: string) => {
+    try {
+      open(await staging);
+    } catch (err: unknown) {
+      notify.error({ title: failTitle, message: errorMessage(err, failTitle) });
+    }
+  };
   const dialog = review && <UploadedMessageReview {...review} projectId={projectId} onClose={() => setReview(null)} />;
-  return { open, dialog };
+  return { open, openFrom, dialog };
 }

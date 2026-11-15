@@ -35,8 +35,6 @@ import { profileLabel } from '@sdk/models/MessageEnvelope';
 import { SenderKind, senderOf } from '@sdk/models/MessageSender';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { errorMessage } from '@src/lib/error-message';
-import { notify } from '@src/notifications';
 import { useStagedMessageReview } from '@src/components/conversation/StagedMessageReview';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
@@ -733,14 +731,18 @@ export function FlowMessageBubble({
             (solid). No project gate — the review modal resolves the target. */}
         {fileAttachments.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {fileAttachments.map((ma) => (
-              <MessageFileChip
-                key={`file:${ma.id}`}
-                attachment={ma}
-                projectId={attachmentProjectId}
-                siblingAttachments={reviewAttachments}
-              />
-            ))}
+            {fileAttachments.map((ma) =>
+              ma.name?.toLowerCase().endsWith('.flowmsg') ? (
+                <FlowmsgFileChip key={`file:${ma.id}`} attachment={ma} projectId={attachmentProjectId} />
+              ) : (
+                <MessageFileChip
+                  key={`file:${ma.id}`}
+                  attachment={ma}
+                  projectId={attachmentProjectId}
+                  siblingAttachments={reviewAttachments}
+                />
+              ),
+            )}
           </div>
         )}
         {senderLocalValueItems.length > 0 && (
@@ -1010,6 +1012,28 @@ export function FlowMessageBubble({
  *               clickable — opens the review/install modal (no navigation).
  *   hidden    — pre-download (`forceShow` false); the Download button carries it.
  */
+/** A received `.flowmsg` file: clicking opens what IT carries for review, not the file itself. */
+function FlowmsgFileChip({ attachment, projectId }: { attachment: MessageAttachment; projectId?: string | null }) {
+  const { t } = useLingui();
+  const review = useStagedMessageReview(projectId ?? null);
+  return (
+    <>
+      <EntityChip
+        entity={{
+          typeId: new TypeId('file', String(attachment.asset_id ?? '')),
+          type: 'file',
+          id: String(attachment.asset_id ?? ''),
+          name: attachment.name ?? 'file',
+          icon: File,
+        }}
+        staged={!attachment.installed}
+        onClick={() => void review.openFrom(attachment.openFlowmsg(), t`Could not open this message`)}
+      />
+      {review.dialog}
+    </>
+  );
+}
+
 /**
  * A staged/installed RAW FILE attachment (asset_type='file' — the OS-file-picker
  * lane). Unlike entity chips, a file never resolves to an entity: installed-ness
@@ -1026,18 +1050,7 @@ function MessageFileChip({
   projectId?: string | null;
   siblingAttachments?: MessageAttachment[];
 }) {
-  const { t } = useLingui();
   const [reviewOpen, setReviewOpen] = useState(false);
-  const nested = useStagedMessageReview(projectId ?? null);
-  // A received `.flowmsg` opens what IT carries, not the file itself.
-  const isFlowmsg = !!attachment.name?.toLowerCase().endsWith('.flowmsg');
-  const openNested = async () => {
-    try {
-      nested.open(await attachment.openFlowmsg());
-    } catch (err: unknown) {
-      notify.error({ title: t`Could not open`, message: errorMessage(err, t`Could not open this message.`) });
-    }
-  };
   const typeId = new TypeId('file', String(attachment.asset_id ?? ''));
   // A value of a kind (`*.value.json`) is named by its kind, not shown as a bare file.
   const value = attachment.value_kind ? valueKindMeta(attachment.value_kind) : null;
@@ -1052,9 +1065,8 @@ function MessageFileChip({
           icon: value?.Icon ?? File,
         }}
         staged={!attachment.installed}
-        onClick={() => (isFlowmsg ? void openNested() : setReviewOpen(true))}
+        onClick={() => setReviewOpen(true)}
       />
-      {nested.dialog}
       {reviewOpen && (
         <AssetReviewDialog
           open={reviewOpen}
