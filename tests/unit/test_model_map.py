@@ -147,6 +147,9 @@ def test_models_endpoint_resolver_covers_all_providers(env) -> None:
     llm_endpoint.reset_cache()
     for provider in LMApiProvider:
         resolved = _models_endpoint(provider)
+        if provider is LMApiProvider.VERTEX:
+            assert resolved is None  # Declared, model-dependent catalog in the provider adapter.
+            continue
         if provider is LMApiProvider.FLOWPAD:
             assert resolved is None  # unbound: nothing to ask
             continue

@@ -26,6 +26,14 @@ msgstr " · {cohorts} مجموعات قابلة للمقارنة"
 msgid " · {stale} stale"
 msgstr " · {stale} غير محدّثة"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid " · declared catalog"
+msgstr ""
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid " · discovered catalog"
+msgstr ""
+
 #: src/components/credentials-view/CredentialView.tsx
 msgid " · not secret"
 msgstr " · غير سري"
@@ -2972,6 +2980,11 @@ msgstr "إضافة تعليق توضيحي"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Add another"
 msgstr "إضافة آخر"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+msgid "Add API key"
+msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Add argument"
@@ -6061,6 +6074,14 @@ msgstr ""
 msgid "Carries"
 msgstr "يتضمن"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Catalog formats"
+msgstr ""
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Catalog unavailable. Enter a model ID explicitly."
+msgstr ""
+
 #: src/components/automations/MessageRulePage.tsx
 msgid "Catch"
 msgstr "التقاط"
@@ -6478,6 +6499,10 @@ msgstr "رئيس الأركان"
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Choose"
 msgstr "اختيار"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Choose a catalog model or enter its exact ID. Listed models are not proof of access; use Test to check this source."
+msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Choose a credential to share securely…"
@@ -8698,6 +8723,11 @@ msgstr "تعذّر تحميل الأتمتة"
 msgid "Could not load collaboration room {0}. Try again in a moment."
 msgstr "تعذر تحميل غرفة التعاون {0}. يُرجى المحاولة مرة أخرى بعد قليل."
 
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Could not load LLM endpoints"
+msgstr ""
+
 #: src/components/llm-endpoints/ModelsList.tsx
 msgid "Could not load models."
 msgstr "تعذّر تحميل النماذج."
@@ -9833,6 +9863,10 @@ msgstr "بيئة بيانات الاعتماد التي يقرأها هذا ال
 msgid "Credentials"
 msgstr "بيانات الاعتماد"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Credentials and model settings are stored on this machine. Spending limits and filters are not enforced locally."
+msgstr ""
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Credentials name"
 msgstr "اسم بيانات الاعتماد"
@@ -10272,6 +10306,10 @@ msgstr "LLM الافتراضي"
 #: src/components/settings-view/settings-utils.ts
 msgid "Default Mode"
 msgstr "الوضع الافتراضي"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Default model"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Default model to use for conversations"
@@ -10975,6 +11013,7 @@ msgstr "التطوير · محلي"
 msgid "Device login"
 msgstr "تسجيل الدخول عبر الجهاز"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Device logins"
 msgstr "تسجيلات دخول الجهاز"
@@ -11817,6 +11856,10 @@ msgstr "تحرير {0}"
 msgid "Edit agent"
 msgstr ""
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Edit API key"
+msgstr ""
+
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/pages/flow-page/app-display-viewer.tsx
 msgid "Edit app"
@@ -12148,6 +12191,10 @@ msgstr ""
 
 #: src/notifications/error-detail.ts
 msgid "Endpoint"
+msgstr ""
+
+#: src/pages/flow-page/vibe-model-select.tsx
+msgid "Endpoint default"
 msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
@@ -14111,6 +14158,10 @@ msgstr "جاري التفريع…"
 msgid "Format"
 msgstr "التنسيق"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "formats unknown"
+msgstr ""
+
 #: src/components/account/system-diagnoses.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/ShareReplyCard.tsx
@@ -14179,6 +14230,10 @@ msgstr "من الأول"
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "From git"
 msgstr "من Git"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "From service-account JSON"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "From the agent"
@@ -15741,6 +15796,10 @@ msgstr "معلومات"
 #: src/components/llm-endpoints/TiersEditor.tsx
 msgid "Inherit"
 msgstr "وراثة"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Inherit, then small"
+msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "inherited"
@@ -17381,6 +17440,11 @@ msgstr "ميزانية LLM"
 msgid "LLM Endpoint"
 msgstr "نقطة نهاية LLM"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "LLM endpoints"
+msgstr ""
+
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/i18n/type-labels.ts
@@ -17399,8 +17463,8 @@ msgid "LLM Indexers"
 msgstr "مفهرسات LLM"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
-msgid "LLM keys"
-msgstr "مفاتيح LLM"
+#~ msgid "LLM keys"
+#~ msgstr "مفاتيح LLM"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "LLM source — users spend it"
@@ -17630,6 +17694,10 @@ msgstr "جارٍ تحميل الرسالة…"
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "Loading metrics..."
 msgstr "جارٍ تحميل المقاييس..."
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Loading model catalog…"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Loading models…"
@@ -17923,6 +17991,10 @@ msgstr "فشل تسجيل الدخول — يُرجى المحاولة مرة أ
 msgid "Login is required to search Flowpad database"
 msgstr "يتطلب تسجيل الدخول للبحث في قاعدة بيانات Flowpad"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Login model settings"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/login-required-overlay.tsx
 #: src/i18n/cli-messages.ts
@@ -17939,8 +18011,8 @@ msgid "Login: {0}"
 msgstr "تسجيل الدخول: {0}"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
-msgid "Logins"
-msgstr ""
+#~ msgid "Logins"
+#~ msgstr ""
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -18692,8 +18764,23 @@ msgstr "النموذج"
 msgid "Model & Performance"
 msgstr "النموذج والأداء"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Model access from each assistant's signed-in account. Its current token source may be different."
+msgstr ""
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Model access supplied by the hub, with its configured models, formats and spending limits."
+msgstr ""
+
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Model catalog"
+msgstr ""
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Model configuration unavailable"
 msgstr ""
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
@@ -20335,6 +20422,11 @@ msgstr "لا توجد رسائل بعد."
 msgid "No metrics data available"
 msgstr "لا توجد بيانات مقاييس متاحة"
 
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "No model available"
+msgstr ""
+
 #: src/components/llm-endpoints/TiersEditor.tsx
 msgid "No model declared up the chain"
 msgstr ""
@@ -20766,6 +20858,10 @@ msgstr "لا توجد مصادر بعد. اربطوا تغذية أو صندوق
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "No spec specified."
 msgstr "لم يتم تحديد المواصفات."
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "No stored filters."
+msgstr ""
 
 #: src/components/organization/org-detail-panel.tsx
 msgid "No sub-teams yet."
@@ -24812,9 +24908,25 @@ msgstr "المزوّد وعنوان URL الأساسي ثابتان بعد ال�
 msgid "Provider API key"
 msgstr "مفتاح API الخاص بالمزوّد"
 
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Provider credential"
+msgstr ""
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Provider credentials stored on this machine, including Vertex service-account JSON."
+msgstr ""
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Provider default"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Provider ID:"
 msgstr "معرّف المزود:"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Provider is fixed once created."
+msgstr ""
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Provider switched"
@@ -26495,6 +26607,11 @@ msgstr "حُلّ من تلقاء نفسه"
 #: src/components/conversation/IssueReplyLine.tsx
 msgid "Resolved by itself after {took}"
 msgstr "حُلّ من تلقاء نفسه بعد {took}"
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Resolved default"
+msgstr ""
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Resolving [[{name}]]…"
@@ -30902,6 +31019,18 @@ msgstr "التخزين · {0}"
 msgid "stored →"
 msgstr "محفوظ →"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Stored credential: API key"
+msgstr ""
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Stored credential: service account"
+msgstr ""
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "Stored filters (not enforced)"
+msgstr ""
+
 #: src/pages/discover-page/ProvenanceLink.tsx
 msgid "Stored in the project's repository on the hub"
 msgstr "مخزَّن في مستودع المشروع على المركز"
@@ -30914,14 +31043,18 @@ msgstr ""
 msgid "Stored key"
 msgstr "المفتاح المحفوظ"
 
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+msgid "Stored limits (not enforced)"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "stored line"
 msgstr "سطر محفوظ"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
-msgid "Stored on this machine. Limits, filters and model sizes work as on a hub endpoint."
-msgstr ""
+#~ msgid "Stored on this machine. Limits, filters and model sizes work as on a hub endpoint."
+#~ msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -31051,8 +31184,8 @@ msgid "Subprocess runs the file walk in a separate process, so a large or slow t
 msgstr "«عملية فرعية» يشغّل مسح الملفات في عملية منفصلة، بحيث لا تستطيع شجرة كبيرة أو بطيئة تعطيل الخادم (تبقى عمليات الكتابة في قاعدة البيانات داخل الخادم في الحالتين). «خيط» يشغّله داخل العملية — تكلفة بدء أقل، وأفضل للمشاريع الصغيرة."
 
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
-msgid "Subscription"
-msgstr "اشتراك"
+#~ msgid "Subscription"
+#~ msgstr "اشتراك"
 
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -34696,6 +34829,10 @@ msgstr "تُستخدم بواسطة"
 msgid "Used by: {usedBy}"
 msgstr "مستخدَم من: {usedBy}"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Used when no model is requested. Enter sm, md, lg, or an exact model ID. Empty restores inheritance."
+msgstr ""
+
 #: src/components/credentials-view/CredentialView.tsx
 msgid "user"
 msgstr "المستخدم"
@@ -36196,8 +36333,12 @@ msgid "You become the host — you decide what gets shared into the room."
 msgstr "أنتم المضيف — القرار لكم فيما يُشارك في الغرفة."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-msgid "You can also add an LLM key in LLM Sources."
-msgstr "يمكنكم أيضاً إضافة مفتاح LLM في LLM Sources."
+msgid "You can also add a provider credential in Token sources."
+msgstr ""
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#~ msgid "You can also add an LLM key in LLM Sources."
+#~ msgstr "يمكنكم أيضاً إضافة مفتاح LLM في LLM Sources."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You can see {name}, but its project isn't shared with you, so it can't be launched."

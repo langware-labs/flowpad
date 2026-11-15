@@ -22,7 +22,7 @@ import {
   WorldViewProjection,
   type AnyEntity,
 } from '@sdk';
-import { VIEWER_REGISTRY } from '@src/types/ViewType';
+import { VIEWER_REGISTRY, viewerTitle } from '@src/types/ViewType';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { AssetMode, DEFAULT_WIKI_SPACE, PROJECT_LANDING_PAGES } from '@src/navigation/asset-doc-types';
 import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
@@ -185,11 +185,11 @@ function basename(ref: string | null): string | null {
 }
 
 /** Human label for a dock with no target entity (assets list, settings, a bare
- *  shell). The open tab already carries the app's canonical name for it. */
+ *  shell). Preserve explicit tab names, then use the registered view title. */
 function viewLabel(dock: DockPointer | null): string {
   if (!dock) return i18n._(HOME_CRUMB_LABEL);
   const tab = tabManager.findByDockKey(dock.tabHash);
-  return tab?.name?.trim() || labelForType(dock.viewType ?? '') || i18n._(HOME_CRUMB_LABEL);
+  return tab?.name?.trim() || viewerTitle(dock.viewType) || labelForType(dock.viewType ?? '') || i18n._(HOME_CRUMB_LABEL);
 }
 
 // Type names only (the crumb needs no entity class): a live session and the conversation it sits in.

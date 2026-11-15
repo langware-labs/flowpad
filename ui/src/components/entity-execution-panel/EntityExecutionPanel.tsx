@@ -217,7 +217,7 @@ interface EntityExecutionPanelProps {
   modelSelectSlot?: (args: {
     value: string | null;
     disabled: boolean;
-    onChange: (value: string) => void | Promise<void>;
+    onChange: (value: string | null) => void | Promise<void>;
     activeProcess: AgenticProcess | null;
   }) => React.ReactNode;
   /** Optional worker control for surfaces that expose worker selection. */
@@ -576,33 +576,36 @@ export function EntityExecutionPanel({
 
   const activeModelValue = (activeProcess?.cli_config as Record<string, unknown> | undefined)?.model;
   const activeModel = typeof activeModelValue === 'string' && activeModelValue ? activeModelValue : null;
-  const effectiveModel = activeProcess ? (activeModel ?? defaultModel ?? null) : (pendingModel ?? defaultModel ?? null);
+  const effectiveModel = activeProcess ? activeModel : pendingModel;
   const effectiveWorkerType = activeProcess
     ? normalizeWorkerType(activeProcess.worker_type)
     : (pendingWorkerType ?? resolvedDefaultWorkerType);
 
   const handleModelChange = useCallback(
-    async (model: string) => {
+    async (model: string | null) => {
       if (activeProcess && modelSavePending) return;
       setPendingModel(model);
       if (!activeProcess) return;
 
       const previous = activeProcess.cli_config ?? {};
       const previousModel = typeof previous.model === 'string' && previous.model ? previous.model : null;
-      activeProcess.cli_config = { ...previous, model };
+      const next = { ...previous };
+      if (model) next.model = model;
+      else delete next.model;
+      activeProcess.cli_config = next;
       setModelSavePending(true);
       try {
         await activeProcess.save();
       } catch (err) {
         activeProcess.cli_config = previous;
-        setPendingModel(previousModel ?? defaultModel ?? null);
+        setPendingModel(previousModel);
         console.error('[EntityExecutionPanel] model save failed', err);
         notify.error({ title: t`Model not saved`, message: err instanceof Error ? err.message : String(err) });
       } finally {
         setModelSavePending(false);
       }
     },
-    [activeProcess, defaultModel, modelSavePending, t],
+    [activeProcess, modelSavePending, t],
   );
 
   const handleWorkerChange = useCallback(

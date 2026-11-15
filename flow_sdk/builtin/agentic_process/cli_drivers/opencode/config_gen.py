@@ -51,6 +51,7 @@ def build_config(
     plugin_files: list[str] | None = None,
     mcp: dict | None = None,
     provider: dict | None = None,
+    bound_model: str | None = None,
 ) -> dict:
     """The config body — pure, so it can be asserted on without touching disk."""
     config: dict = {"$schema": CONFIG_SCHEMA_URL}
@@ -74,6 +75,11 @@ def build_config(
     # Base-URL redirect only (see the module docstring). Never a credential.
     if provider:
         config["provider"] = dict(provider)
+    if bound_model:
+        # --model selects the main turn, not the automatic title request. Without this,
+        # OpenCode chooses a catalog default (currently Gemini Flash) on the same budget.
+        config["small_model"] = bound_model
+        config["agent"] = {"title": {"model": bound_model}}
     return config
 
 
@@ -87,6 +93,7 @@ def write_process_config(
     plugin_files: list[str] | None = None,
     mcp: dict | None = None,
     provider: dict | None = None,
+    bound_model: str | None = None,
 ) -> Path | None:
     """Write the generated config; return its path, or None when there is
     nothing to say (no instructions, no skills and no MCP — then the CLI's own
@@ -97,6 +104,7 @@ def write_process_config(
         plugin_files=plugin_files,
         mcp=mcp,
         provider=provider,
+        bound_model=bound_model,
     )
     if len(config) == 1:  # only the $schema key
         return None
@@ -109,6 +117,8 @@ def write_process_config(
             return path
         path.write_text(body, encoding="utf-8")
     except OSError:
+        if bound_model:
+            raise  # A bound launch must not fall back to the CLI's unrelated model defaults.
         logger.debug("opencode: failed writing generated config at %s", path, exc_info=True)
         return None
     return path
@@ -120,6 +130,7 @@ def config_for_assets_dir(
     mcp: dict | None = None,
     add_dirs: "Sequence[str | Path] | None" = None,
     provider: dict | None = None,
+    bound_model: str | None = None,
 ) -> Path | None:
     """Generate this process's config from a FlowPad instruction-assets dir.
 
@@ -148,7 +159,10 @@ def config_for_assets_dir(
             plugin_files=[str(hook_plugin)] if hook_plugin and hook_plugin.is_file() else [],
             mcp=mcp,
             provider=provider,
+            bound_model=bound_model,
         )
     except Exception:
+        if bound_model:
+            raise
         logger.debug("opencode: config generation failed for %s", process_id, exc_info=True)
         return None

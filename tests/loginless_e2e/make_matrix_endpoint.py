@@ -7,9 +7,8 @@ One id funds every cell. Behind it, two roots in fallback order:
 * **Vertex first** (service-account JSON, so it can reach everything Vertex serves) — narrowed by
   ``models_allow`` to exactly the slugs it serves, so every other model skips it.
 * **OpenRouter second** — an identity ``model_map`` over every matrix slug makes it the explicit
-  cross-provider fallback the hub's router requires. It takes what Vertex cannot: codex (Responses
-  API), claude-code on non-Claude models (the messages wire), the claude family, and the ``lg``
-  slugs Vertex has no model for.
+  cross-provider fallback the hub's router requires. It takes what the current Vertex adapter
+  cannot serve: codex's Responses wire and models outside the Vertex root's declared inventory.
 
 The entry is an allocation off the Vertex root with a money cap, then made public: its id is the
 only credential the box ever holds, so the cap is the whole defence.
@@ -33,32 +32,49 @@ GCP_PROJECT = os.environ.get("GCP_PROJECT", "my-gcp-project")
 VERTEX_BASE = os.environ.get(
     "VERTEX_BASE_URL", f"https://aiplatform.googleapis.com/v1/projects/{GCP_PROJECT}/locations/global"
 )
-#: What the Vertex root serves of the matrix (probed 2026-10-03; kimi-k2.5 is not on Vertex). Override
-#: with a comma list when a probe shows Vertex refusing one -- it then falls to OpenRouter.
+#: Refreshed 2026-11-14 against Google's current MaaS documentation, not OpenRouter availability:
+#: https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/maas/capabilities/thinking
+#: Kimi K2 Thinking, GLM 4.7/5 and GPT OSS 20B MaaS retired on 2026-10-21:
+#: https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/deprecations/open-models
+#: Those models must not be attempted on Vertex just because OpenRouter still lists them.
 VERTEX_SLUGS = [
     s
     for s in os.environ.get(
         "VERTEX_SLUGS",
-        "moonshotai/kimi-k2-thinking,z-ai/glm-4.7,z-ai/glm-5,openai/gpt-oss-20b,openai/gpt-oss-120b",
+        "z-ai/glm-5.2,openai/gpt-oss-120b",
     ).split(",")
     if s
 ]
 #: Every slug the matrix spends. Was ``model_tiers.FAMILY_TIERS``; the ``<family>:<size>`` syntax is gone
 #: from the SDK (an endpoint declares its sizes now), so the list lives here.
-MATRIX_SLUGS = [
-    "moonshotai/kimi-k2-thinking",
-    "moonshotai/kimi-k2.5",
-    "moonshotai/kimi-k2.6",
-    "z-ai/glm-4.7",
-    "z-ai/glm-5",
-    "z-ai/glm-5.3",
-    "openai/gpt-oss-20b",
-    "openai/gpt-oss-120b",
-    "openai/gpt-5",
-    "anthropic/claude-haiku-5.5",
-    "anthropic/claude-sonnet-4.6",
-    "anthropic/claude-opus-4.8",
-]
+MATRIX_MODELS = {
+    # OpenRouter /api/v1/models/<slug>/endpoints checked 2026-11-14: K2 Thinking has
+    # only Novita, which this rig deliberately excludes. All three replacements
+    # have non-Novita tool-capable hosts and a known hub price (K3.1 Pro does not);
+    # keep three distinct cells, not aliases.
+    "kimi": {"sm": "moonshotai/kimi-k2.5", "md": "moonshotai/kimi-k2.6", "lg": "moonshotai/kimi-k3"},
+    "glm": {"sm": "z-ai/glm-4.7", "md": "z-ai/glm-5.2", "lg": "z-ai/glm-5.3"},
+    "openai": {"sm": "openai/gpt-oss-20b", "md": "openai/gpt-oss-120b", "lg": "openai/gpt-5"},
+    "claude": {
+        "sm": "anthropic/claude-haiku-5.5",
+        "md": "anthropic/claude-sonnet-4.6",
+        "lg": "anthropic/claude-opus-4.8",
+    },
+}
+MATRIX_SLUGS = [slug for sizes in MATRIX_MODELS.values() for slug in sizes.values()]
+
+
+def matrix_cells(families: str, sizes: str) -> list[tuple[str, str, str]]:
+    """Fixture-owned family labels resolve to explicit slugs, never SDK ``family:size`` syntax."""
+    chosen_families, chosen_sizes = families.split(), sizes.split()
+    if not chosen_families or not chosen_sizes:
+        raise ValueError("families and sizes must select at least one cell")
+    if len(set(chosen_families)) != len(chosen_families) or len(set(chosen_sizes)) != len(chosen_sizes):
+        raise ValueError("duplicate families or sizes")
+    try:
+        return [(family, size, MATRIX_MODELS[family][size]) for family in chosen_families for size in chosen_sizes]
+    except KeyError as exc:
+        raise ValueError(f"unknown family or size: {exc.args[0]}") from exc
 
 
 def _data(response: requests.Response) -> dict:
@@ -84,7 +100,18 @@ def main() -> None:
         return made["id"]
 
     vertex = root(
-        {"name": "matrix vertex", "provider": "vertex", "base_url": VERTEX_BASE},
+        {
+            "name": "matrix vertex",
+            "provider": "vertex",
+            "base_url": VERTEX_BASE,
+            # The fixture narrows this root to Model Garden models. Its sizes must
+            # belong to that same inventory, not the provider's Gemini defaults.
+            "tiers": {
+                "sm": MATRIX_MODELS["openai"]["md"],
+                "md": MATRIX_MODELS["openai"]["md"],
+                "lg": MATRIX_MODELS["glm"]["md"],
+            },
+        },
         VERTEX_SA.read_text().strip(),
         {"models_allow": VERTEX_SLUGS},
     )
@@ -109,4 +136,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) == 4 and sys.argv[1] == "--cells":
+        try:
+            for cell in matrix_cells(sys.argv[2], sys.argv[3]):
+                print(" ".join(cell))
+        except ValueError as exc:
+            sys.exit(str(exc))
+    elif len(sys.argv) == 1:
+        main()
+    else:
+        sys.exit("usage: make_matrix_endpoint.py [--cells 'families' 'sizes']")

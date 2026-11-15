@@ -47,15 +47,23 @@ export function TiersEditor({ value, onChange, models, effective, disabled, free
               {label[size]} <span className="text-muted-foreground">({size})</span>
             </Label>
             {freeText ? (
-              <Input
-                id={`tier-${size}`}
-                data-testid={`tier-${size}`}
-                className="h-8"
-                value={own ?? ''}
-                placeholder={emptyLabel}
-                disabled={disabled}
-                onChange={(e) => onChange({ ...value, [size]: e.target.value || null })}
-              />
+              <>
+                <Input
+                  id={`tier-${size}`}
+                  data-testid={`tier-${size}`}
+                  className="h-8"
+                  value={own ?? ''}
+                  placeholder={emptyLabel}
+                  disabled={disabled}
+                  list={models.length ? `tier-${size}-models` : undefined}
+                  onChange={(e) => onChange({ ...value, [size]: e.target.value || null })}
+                />
+                {models.length > 0 && (
+                  <datalist id={`tier-${size}-models`}>
+                    {options.map((model) => <option key={model} value={model} />)}
+                  </datalist>
+                )}
+              </>
             ) : (
               <div className="space-y-0.5">
                 <select

@@ -20,11 +20,14 @@ export interface LmApiKeySummary {
 export interface LmApiKeyValidation {
   valid: boolean;
   message?: string;
+  validation_stage?: 'configuration' | 'authentication' | 'invocation';
 }
 
 export interface LmModel {
   id: string;
   name: string;
+  formats?: ('chat' | 'messages' | 'responses' | 'embeddings')[];
+  catalog_source?: 'declared' | 'discovered';
 }
 
 /**
@@ -39,8 +42,11 @@ export interface LocalEndpointConfig {
   name?: string;
   base_url?: string;
   tiers?: Record<string, string>;
+  /** Omission preserves the override; null clears it. */
+  default_model?: string | null;
   limits?: Record<string, number | null>;
   filters?: Record<string, unknown>;
+  vertex?: { project_id?: string; location?: string };
 }
 
 /** A device login's endpoint row as `GET lm_keys/device` returns it (`LLMEndpoint.to_wire`). */

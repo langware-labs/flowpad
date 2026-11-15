@@ -964,8 +964,13 @@ def _hub_answers(monkeypatch, status_code: int) -> list[tuple[str, dict]]:
     asked: list[tuple[str, dict]] = []
 
     def fake_get(url, headers=None, **_kwargs):
+        import httpx
+
         asked.append((url, headers or {}))
-        return type("Response", (), {"status_code": status_code})()
+        return httpx.Response(status_code, json={"status": "success", "data": {
+            "endpoint_typeid": OPEN, "tiers": {"sm": "vendor/small"},
+            "default_model": None, "effective_default_model": "vendor/small",
+        }})
 
     monkeypatch.setattr(llm_cmd.requests, "get", fake_get)
     return asked
@@ -982,7 +987,7 @@ def test_an_endpoint_id_the_box_never_heard_of_is_bound_as_public(recorder, monk
 
     assert result.exit_code == 0, result.output
     # Asked the hub FIRST, with no credential, about the one thing an anonymous caller may read.
-    assert [url for url, _ in asked] == [f"https://open.hub/api/v1/graph/llm_endpoint/{OPEN_ID}/models"]
+    assert [url for url, _ in asked] == [f"https://open.hub/api/v1/graph/llm_endpoint/{OPEN_ID}/model-config"]
     selects = [body for method, path, body in recorder.calls if method == "POST" and path.endswith("/select")]
     assert sorted(body["harness"] for body in selects) == ["claude", "codex"]
     for body in selects:

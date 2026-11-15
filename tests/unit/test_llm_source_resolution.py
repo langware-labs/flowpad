@@ -97,6 +97,9 @@ def _status_facts(monkeypatch):
         return None
 
     monkeypatch.setattr(llm_source, "check_unchecked_login", no_probe)
+    from tests.utils.hub_proxy_fake import model_config_transport
+
+    model_config_transport(monkeypatch, TIERS, effective_default_model=TIERS["sm"])
 
 
 async def _resolve_source(process):

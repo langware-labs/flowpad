@@ -1,10 +1,10 @@
-import { PrefKey, WorkerModelTier } from '@sdk';
-import { usePreference } from '@src/hooks/use-preference';
+import { WorkerModelTier } from '@sdk';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@src/components/ui/select';
 import { cn } from '@src/lib/utils';
 import { useLingui } from '@lingui/react/macro';
 
-export const VIBE_MODEL_DEFAULT = WorkerModelTier.MD;
+export const VIBE_MODEL_DEFAULT = null;
+const ENDPOINT_DEFAULT_OPTION = '__endpoint_default__';
 
 const VIBE_MODEL_TIERS = [WorkerModelTier.SM, WorkerModelTier.MD, WorkerModelTier.LG] as const;
 
@@ -16,20 +16,18 @@ const TIER_ALIASES: Record<string, VibeModelTier> = {
   opus: WorkerModelTier.LG,
 };
 
-export function normalizeVibeModelTier(value: unknown): VibeModelTier {
+export function normalizeVibeModelTier(value: unknown): VibeModelChoice {
   if (value === WorkerModelTier.SM || value === WorkerModelTier.MD || value === WorkerModelTier.LG) {
     return value;
   }
   if (typeof value === 'string') {
-    return TIER_ALIASES[value] ?? VIBE_MODEL_DEFAULT;
+    return TIER_ALIASES[value] ?? (value || null);
   }
   return VIBE_MODEL_DEFAULT;
 }
 
-/** What the picker can emit: a tier, or a custom model NAME the funding endpoint declares
- *  beside its sizes (`customNames`). Typing it `VibeModelTier` was a lie the component
- *  papered over with a cast — a custom name is legal and reaches `cli_config.model`. */
-export type VibeModelChoice = string;
+/** Null delegates to the endpoint; a tier, custom name, or concrete ID is an explicit choice. */
+export type VibeModelChoice = string | null;
 
 interface VibeModelSelectProps {
   value: unknown;
@@ -61,14 +59,14 @@ export function VibeModelSelect({
   customNames = NO_CUSTOM_NAMES,
 }: VibeModelSelectProps) {
   const { t } = useLingui();
-  // A known custom name passes straight through to cli_config.model (the backend
-  // resolves it from the funding endpoint's tiers); anything else normalizes to a tier.
-  const resolveValue = (v: unknown): string =>
+  // Concrete IDs and custom names stay explicit; null leaves resolution to the endpoint.
+  const resolveValue = (v: unknown): VibeModelChoice =>
     typeof v === 'string' && customNames.includes(v) ? v : normalizeVibeModelTier(v);
-  const selected = pinnedSize ? resolveValue(pinnedSize) : resolveValue(value);
+  const selected = (pinnedSize ? resolveValue(pinnedSize) : resolveValue(value)) ?? ENDPOINT_DEFAULT_OPTION;
   // A size the budget does not offer cannot be run: it is listed, so the person sees it exists, but not pickable.
   const offered = (tier: string) => !availableSizes || availableSizes.includes(tier);
   const labels: Record<string, string> = {
+    [ENDPOINT_DEFAULT_OPTION]: t`Endpoint default`,
     [WorkerModelTier.SM]: t`Fast`,
     [WorkerModelTier.MD]: t`Balanced`,
     [WorkerModelTier.LG]: t`Accurate`,
@@ -78,7 +76,7 @@ export function VibeModelSelect({
   return (
     <Select
       value={selected}
-      onValueChange={(next) => void onChange(resolveValue(next))}
+      onValueChange={(next) => void onChange(next === ENDPOINT_DEFAULT_OPTION ? null : resolveValue(next))}
       disabled={disabled || !!pinnedSize}
     >
       <SelectTrigger
@@ -97,6 +95,9 @@ export function VibeModelSelect({
         </div>
       </SelectTrigger>
       <SelectContent align="start" className="min-w-[7.75rem]">
+        <SelectItem value={ENDPOINT_DEFAULT_OPTION} data-testid="vibe-model-option-default" className="py-1 text-xs">
+          {labels[ENDPOINT_DEFAULT_OPTION]}
+        </SelectItem>
         {VIBE_MODEL_TIERS.map((tier) => (
           <SelectItem
             key={tier}
@@ -116,17 +117,4 @@ export function VibeModelSelect({
       </SelectContent>
     </Select>
   );
-}
-
-/**
- * The Vibe build tier — one owner for the value every Vibe surface starts a build
- * with, persisted so a Fast choice survives a remount rather than silently
- * reverting to the pricier default.
- */
-export function useVibeModelTier(): [VibeModelChoice, (next: VibeModelChoice) => void] {
-  // `usePreference` already resolves an unset key to the registry default and
-  // returns a `useCallback`-stable setter; only an explicitly-stored empty string
-  // needs a fallback here.
-  const [stored, setStored] = usePreference<string>(PrefKey.VIBE_MODEL_TIER);
-  return [stored || VIBE_MODEL_DEFAULT, setStored];
 }

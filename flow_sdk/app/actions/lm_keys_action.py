@@ -97,10 +97,11 @@ async def lm_keys_action() -> ApiResponse:
                 # limits, filters) -- the same fields the shared endpoint editor writes on a hub root.
                 endpoint = await LLMEndpoint.by_provider(provider, key, config)
                 if not key:
-                    return ApiSuccessResponse(data={"ok": True, "endpoint_id": str(endpoint.id)})
+                    result = {"validation_stage": "configuration"} if provider is LMApiProvider.VERTEX else {}
+                    return ApiSuccessResponse(data={"ok": True, "endpoint_id": str(endpoint.id), **result})
                 # Auto-validate on set so the UI can confirm the key immediately;
                 # reuse the in-hand key rather than re-reading the store.
-                result = await validate_lm_api(provider, key=key)
+                result = await validate_lm_api(provider, key=key, configuration_only=True)
                 if result.get("status") in (401, 403):  # the provider refused it (not "unreachable")
                     mark_key_rejected(provider.value, result["message"], f"****{key[-4:]}")
                 return ApiSuccessResponse(data={"ok": True, "endpoint_id": str(endpoint.id), **result})

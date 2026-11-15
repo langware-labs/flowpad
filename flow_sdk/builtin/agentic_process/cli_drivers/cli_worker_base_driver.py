@@ -663,6 +663,14 @@ async def credentials_prompt_block(process: "AgenticProcess") -> str | None:
     return prompt_block(listing(status.model_dump(mode="json"), scope="project"))
 
 
+def shell_secret_env(command_env: dict[str, str], resolved_env: dict[str, str]) -> dict[str, str]:
+    """Keep final auth overrides in the transient shell, not in its later command exports."""
+    injected = {key: value for key, value in resolved_env.items() if command_env.get(key) != value}
+    for key in injected:
+        command_env.pop(key, None)
+    return injected
+
+
 async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
     """Resolve declared credentials (user scope + the process's project) into
     this transient worker env.
@@ -672,6 +680,9 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     """
     from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
 
+    process.__dict__["_spawn_api_auth"] = None  # Failed/not-yet-bound, never reuse an older launch.
+    process.resolved_llm_endpoint_typeid = None
+    process.resolved_model_slug = None
     project = await _process_project(process)
 
     # Node attachment gates the worker too, not only the connector's commands.
@@ -686,15 +697,27 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     # Lazy import avoids a cycle with the driver registry. This wins over device
     # creds by design; the key lands only in this transient spawn env.
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import materialize
 
-    api_auth = await resolve_worker_api_auth(process)
+    try:
+        if "_prepared_api_auth" in process.__dict__:
+            api_auth = process.__dict__.pop("_prepared_api_auth")
+        else:
+            api_auth = await resolve_worker_api_auth(process, include_device=True)
+    except WorkerSpawnError:
+        await process.save()
+        raise
     if api_auth is not None:
+        process.__dict__["_spawn_api_auth"] = api_auth
         for key, value in api_auth.env.items():
             env[key] = value
+        if api_auth.credential_artifact is not None:
+            env.update(materialize(process, api_auth.credential_artifact))
         # Stamp what actually resolved — the tier ('sm'/'md'/'lg') or a models_allow fallback
         # both collapse into one concrete slug here, and this is the one place that slug is
         # known. Skipped when unchanged so a restart on an unmodified spawn writes nothing.
-        if api_auth.model_slug and getattr(process, "resolved_model_slug", None) != api_auth.model_slug:
+        if api_auth.endpoint_typeid:
+            process.resolved_llm_endpoint_typeid = api_auth.endpoint_typeid
             process.resolved_model_slug = api_auth.model_slug
             try:
                 await process.save()
@@ -782,6 +805,8 @@ class AgenticContext(BaseModel):
     env_vars: dict[str, str] = Field(default_factory=dict)
 
     model: str | None = None
+    #: Concrete model selected by the token-source binding, not an unbound CLI preference.
+    bound_model: str | None = None
     max_thinking_tokens: int = 1024
     permission_mode: str = "bypassPermissions"
     #: The agent's ``disallowed_tools`` (Claude-shaped: ``Write``, ``Bash(rm -rf:*)``), for a harness that
@@ -861,6 +886,7 @@ class AgenticContext(BaseModel):
                 # Resolved per turn from the process's endpoint; persisting it would let a
                 # stale baseURL outlive the binding it came from.
                 "provider_options",
+                "bound_model",
             }
         )
         if self.compute_node is not None:

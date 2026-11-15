@@ -11,8 +11,10 @@ import { PageId, ViewType, dataManager, type LLMEndpoint, type LLMEndpointKind }
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Waypoints } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
@@ -22,7 +24,6 @@ import { LlmEndpointDialog } from './LlmEndpointDialog';
 import { LlmEndpointsList } from './LlmEndpointsList';
 import { openLlmEndpoint, parseLlmEndpointsPointer, type LlmEndpointTab } from './llm-endpoints-pointer';
 import { deleteLocalEndpoint, invalidateLocalEndpoints, useLocalEndpoints } from './local-endpoints';
-import { useDeviceEndpoints } from './device-endpoints';
 import { useLlmEndpoints } from './use-llm-endpoints';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
 
@@ -41,6 +42,7 @@ export type EndpointSource = 'hub' | 'local';
 export function LlmEndpointsView({ pointer, embed, source = 'hub' }: LlmEndpointsViewProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  const queryClient = useQueryClient();
   const local = source === 'local';
   const [editorOpen, setEditorOpen] = useState(false);
   // Only the list this view shows is fetched. The API keys tab asks the hub only while the dialog is open,
@@ -62,14 +64,6 @@ export function LlmEndpointsView({ pointer, embed, source = 'hub' }: LlmEndpoint
   // nothing and the dialog resolves its own — see `LlmEndpointDialog`.
   const [editingKind, setEditingKind] = useState<LLMEndpointKind | null>(null);
   const [deleting, setDeleting] = useState<LLMEndpoint | null>(null);
-  // Device logins (subscriptions) are endpoint rows of this machine too: listed after the keys,
-  // edited in the same dialog for their model sizes only (`destination: device`), never deleted.
-  const devices = useDeviceEndpoints(local);
-  const [editingDevice, setEditingDevice] = useState<string | null>(null);
-  const listed = useMemo(
-    () => (local ? [...endpoints, ...devices.endpoints] : endpoints),
-    [local, endpoints, devices.endpoints],
-  );
 
   const go = useCallback(
     (id?: string, nextTab?: LlmEndpointTab) =>
@@ -82,7 +76,6 @@ export function LlmEndpointsView({ pointer, embed, source = 'hub' }: LlmEndpoint
   );
 
   const openAdd = useCallback(() => {
-    setEditingDevice(null);
     setEditing(null);
     setEditingKind(null);
     setEditorOpen(true);
@@ -90,16 +83,8 @@ export function LlmEndpointsView({ pointer, embed, source = 'hub' }: LlmEndpoint
   // "new LLM endpoint" (smart navigation): the same editor the Add button opens.
   useUiActionRequest(['new-endpoint-dialog-hub'], openAdd);
   const openEdit = useCallback((e: LLMEndpoint, kind?: LLMEndpointKind | null) => {
-    setEditingDevice(null);
     setEditing(e);
     setEditingKind(kind ?? null);
-    setEditorOpen(true);
-  }, []);
-
-  const openDevice = useCallback((e: LLMEndpoint) => {
-    setEditingDevice(e.id);
-    setEditing(e);
-    setEditingKind('root');
     setEditorOpen(true);
   }, []);
 
@@ -144,7 +129,22 @@ export function LlmEndpointsView({ pointer, embed, source = 'hub' }: LlmEndpoint
         </>
       )}
 
-      {selectedId ? (
+      {!local && hub.error ? (
+        <div role="alert" className="space-y-3 rounded-md border p-4 text-sm">
+          <h2 className="font-medium">
+            <Trans>Could not load LLM endpoints</Trans>
+          </h2>
+          <p className="text-muted-foreground">{errorMessage(hub.error, t`Could not load LLM endpoints`)}</p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => void refetch()}>
+              <Trans>Retry</Trans>
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => navigation.openCredentials()}>
+              <Trans>Connections</Trans>
+            </Button>
+          </div>
+        </div>
+      ) : selectedId ? (
         <LlmEndpointDetail
           endpoint={selected}
           endpointId={selectedId}
@@ -158,14 +158,13 @@ export function LlmEndpointsView({ pointer, embed, source = 'hub' }: LlmEndpoint
         />
       ) : (
         <LlmEndpointsList
-          endpoints={listed}
+          endpoints={endpoints}
           isLoading={isLoading}
-          onOpen={(e) => (devices.byId.has(e.id) ? openDevice(e) : go(e.id))}
+          onOpen={(e) => go(e.id)}
           onNew={openAdd}
-          onEdit={(e) => (devices.byId.has(e.id) ? openDevice(e) : openEdit(e))}
+          onEdit={openEdit}
           onDelete={setDeleting}
           local={local}
-          deviceIds={devices.byId}
         />
       )}
 
@@ -176,13 +175,12 @@ export function LlmEndpointsView({ pointer, embed, source = 'hub' }: LlmEndpoint
         editingKind={editingKind}
         all={hub.endpoints}
         // The dialog can save to either place whichever tab opened it, so both lists re-read.
-        onSaved={() => {
+        onSaved={(saved) => {
           invalidateLocalEndpoints();
-          devices.invalidate();
           void refetchHub();
+          void queryClient.invalidateQueries({ queryKey: ['llm-endpoint', saved.id, 'model-config'] });
         }}
         destination={local ? 'local' : 'hub'}
-        device={(editingDevice && devices.byId.get(editingDevice)) || null}
       />
 
       <ConfirmDialog

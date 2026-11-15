@@ -1125,6 +1125,9 @@ class AgenticProcess(Entity):
         description="Process-local worker hook events enabled for this process.",
     )
     worker_type: WorkerType | None = APIField(default=None)
+    resolved_llm_endpoint_typeid: str | None = APIField(
+        default=None, description="Actual token source chosen by the final worker binding; null before binding."
+    )
     resolved_model_slug: str | None = APIField(
         default=None,
         description=(
@@ -1874,14 +1877,16 @@ class AgenticProcess(Entity):
             # Runtime env injection: process identity + backend-pinned `flow`
             # CLI — the shared chokepoint all spawn paths use.
             apply_worker_env(cmd.env_vars, self)
-            # API-key auth: stamp the OpenRouter model slug (+ codex -c overrides)
+            # API-key auth: stamp the endpoint model slug (+ codex -c overrides)
             # onto the options before argv is frozen (env/token ride
             # apply_worker_secret_env at spawn time). No-op in device mode.
             from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
                 apply_api_model_to_options,
             )
 
-            await apply_api_model_to_options(cmd, self)
+            self.resolved_llm_endpoint_typeid = None
+            self.resolved_model_slug = None
+            await apply_api_model_to_options(cmd, self, prepare_launch=True)
             toplog.log(
                 "agentic_process.load",
                 "open launch options ready (project + process assets + api model) process=%s ms=%.0f",
@@ -1912,6 +1917,7 @@ class AgenticProcess(Entity):
                 (time.monotonic() - t0) * 1000,
             )
             on_exit = self._make_pty_exit_callback()
+            from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import on_exit_cleanup
             worker_is_alive = False
             execution_info = None
 
@@ -1941,11 +1947,12 @@ class AgenticProcess(Entity):
                 # Legacy path — zsh intermediary
                 secret_extra_env = None
                 if _shell_compute_is_local(shell):
+                    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import shell_secret_env
+
                     secret_env = dict(cmd.env_vars)
-                    explicit_keys = set(secret_env)
                     await apply_worker_secret_env(secret_env, self)
-                    secret_extra_env = {key: value for key, value in secret_env.items() if key not in explicit_keys}
-                await shell.start_pty(on_exit=on_exit, extra_env=secret_extra_env or None)
+                    secret_extra_env = shell_secret_env(cmd.env_vars, secret_env)
+                await shell.start_pty(on_exit=on_exit_cleanup(self, on_exit), extra_env=secret_extra_env or None)
                 worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
                     execution_info = await shell.launch(cmd, instruction=instruction)
@@ -1993,7 +2000,7 @@ class AgenticProcess(Entity):
                 hide_flowpad_interpreter(spawn_env)  # an install agent must not see our python
                 if _shell_compute_is_local(shell):
                     await apply_worker_secret_env(spawn_env, self)
-                spawned = await shell.start_pty(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
+                spawned = await shell.start_pty(on_exit=on_exit_cleanup(self, on_exit), spawn_args=spawn_argv, extra_env=spawn_env)
                 toplog.log(
                     "agentic_process.load",
                     "open PTY spawned process=%s spawned=%s ms=%.0f",
@@ -2071,14 +2078,21 @@ class AgenticProcess(Entity):
             return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=is_resume))
 
         except asyncio.CancelledError:
+            self.__dict__.pop("_prepared_api_auth", None)
             logger.warning(
                 "AgenticProcess %s start_pty cancelled (status=%s shell_id=%s)", self.id, self.status, self.shell_id
             )
+            if launch_shell is not None:
+                await launch_shell.stop()
+                from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import cleanup
+
+                cleanup(self)
             self.status = ProcessStatus.FAILED.value
             await self.save()
             self._requeue_undelivered(launched_head)
             raise
         except Exception as e:
+            self.__dict__.pop("_prepared_api_auth", None)
             logger.exception(f"AgenticProcess {self.id} start_pty error: {e}")
             toplog.log(
                 "agentic_process.load",
@@ -2097,6 +2111,9 @@ class AgenticProcess(Entity):
             if launch_shell is not None:
                 try:
                     await launch_shell.stop()
+                    from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import cleanup
+
+                    cleanup(self)
                 except Exception:
                     logger.warning(
                         "AgenticProcess %s: failed to clean partial shell %s",
@@ -2151,6 +2168,9 @@ class AgenticProcess(Entity):
             return await self._relay_json("exit", body={}, refresh=False)
         await self._stop_headless_turn(source="exit")
         if not self.shell_id:
+            from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import cleanup
+
+            cleanup(self)
             # Headless: a finished turn leaves nothing to kill, but the process still ends STOPPED.
             self.status = ProcessStatus.STOPPED.value
             await self.save()
@@ -2177,6 +2197,10 @@ class AgenticProcess(Entity):
                 logger.info("AgenticProcess %s: exited (shell entity %s preserved)", self.id, self.shell_id)
             else:
                 logger.warning("AgenticProcess %s: Shell entity %s not found on exit", self.id, self.shell_id)
+
+            from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import cleanup
+
+            cleanup(self)
 
             self.status = ProcessStatus.STOPPED.value
             self.context_data = {k: v for k, v in self.context_data.items() if k != "_shell_exit_pending"}
@@ -4321,7 +4345,7 @@ class AgenticProcess(Entity):
         stream worker, not a copy of it.
         """
         from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (  # noqa: PLC0415
-            apply_api_model_to_options,
+            stamp_api_model,
         )
 
         # Resolve the owning project and stamp its context folders onto the
@@ -4363,7 +4387,7 @@ class AgenticProcess(Entity):
         # provider slug and carry codex's -c overrides onto the context. The
         # env/token already landed via apply_worker_secret_env above. Same
         # helper as the visible-PTY path; no-op in device mode.
-        await apply_api_model_to_options(context, self)
+        await stamp_api_model(context, self)
         return context
 
     @action.post(action_name="prompt")
@@ -4467,11 +4491,17 @@ class AgenticProcess(Entity):
             # Refused before any subprocess (an unfunded harness, a size with no mapping): the
             # same latch and typed refusal as a refused spawn inside the turn -- a 400 the
             # person can act on, not a 500 "Internal server error".
+            from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import cleanup
+
+            cleanup(self)
             release_prompt_admission(self.id, admission)
             await latch_spawn_failure(self, e)
             return launch_refusal(str(e), self.launch_failure or {})
         except BaseException:
             release_prompt_admission(self.id, admission)
+            from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import cleanup
+
+            cleanup(self)
             raise
 
         async def _run_turn() -> None:
@@ -4544,6 +4574,9 @@ class AgenticProcess(Entity):
             finally:
                 # Signal end-of-stream to downstream consumers: whichever stream is
                 # attached now (the first turn's, or a later turn's message).
+                from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import cleanup
+
+                cleanup(self)
                 await turns.close()
                 turns.release_lock()
                 turns.discard()
@@ -4560,6 +4593,9 @@ class AgenticProcess(Entity):
         except BaseException:
             turns.discard()
             unregister_prompt_worker(self.id, worker)
+            from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import cleanup
+
+            cleanup(self)
             raise
 
         async def _stream_body():
@@ -6371,9 +6407,11 @@ class AgenticProcess(Entity):
         return value
 
     async def set_llm_endpoint(self, endpoint) -> "AgenticProcess":
-        """Point this process at a hub ``LLMEndpoint``; ``None`` reverts to the box-wide binding.
+        """Pin this process to a local key, device login, or hub ``LLMEndpoint``.
 
-        Accepts an ``LLMEndpoint``, a typeid, or ``None``. All the bookkeeping that matters lives in
+        Accepts an ``LLMEndpoint``, a typeid, or ``None`` to restore normal source resolution.
+        Unsupported local sources are refused, never reinterpreted as hub endpoints.
+        All the bookkeeping that matters lives in
         the save hook: ``llm_endpoint_typeid`` is part of the restart snapshot, so changing it on a
         RUNNING process flips ``restart_required`` and the existing Restart affordance handles the
         rest. A headless process needs no restart -- its next turn re-spawns and re-resolves auth.
@@ -7881,6 +7919,11 @@ class AgenticProcess(Entity):
                 shell: Shell = await Shell.get_by_id(shell_id)
                 if shell:
                     await shell.close()
+
+            await self._stop_headless_turn(source="close")
+            from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import cleanup
+
+            cleanup(self)
 
             self.sidecar_shell_id = None
             self.status = ProcessStatus.STOPPED.value

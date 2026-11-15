@@ -14,7 +14,6 @@ import { ProjectApps } from '@src/components/project-home/ProjectApps';
 import { QuickCreateNewSection } from '@src/components/quick-create';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
-import { useVibeModelTier } from './vibe-model-select';
 
 /**
  * Vibe fallback shown when no build session is active — i.e. we're in Vibe mode
@@ -29,8 +28,7 @@ export function VibeNewChat() {
   const { currentUser } = useAuth();
   const { start: startVibe, installDialog } = useStartVibeSession();
   const [draft, setDraft] = useState('');
-  // No model picker on the home: the stored tier is set from the Vibe chat pane's picker.
-  const [model] = useVibeModelTier();
+  // No model picker on the home: new sessions use their endpoint's default.
   const { project } = useContext();
   // A box an agent or an invite was deployed into is the agent's, not a workspace: no project pickers,
   // no create row, no catalog -- only its agents and apps, and each only when there is one.
@@ -70,7 +68,7 @@ export function VibeNewChat() {
             value={draft}
             onChange={setDraft}
             allowAttachments
-            onSubmit={(msg, files) => startVibe(msg, files, model)}
+            onSubmit={(msg, files) => startVibe(msg, files)}
           />
         </div>
         {installDialog}
@@ -91,11 +89,7 @@ export function VibeNewChat() {
             <AssetCounterRow group={appCounterGroup} />
             {/* The same items section, card and filters as the hub home — only the tab list is the desk's. */}
             <div className="w-full self-start text-left">
-              <ItemsSection
-                tabs={DESK_TABS}
-                onCreate={() => startVibe(t`Make me an agent`, [], model)}
-                prefKey="desk-home"
-              />
+              <ItemsSection tabs={DESK_TABS} onCreate={() => startVibe(t`Make me an agent`, [])} prefKey="desk-home" />
             </div>
           </>
         )}

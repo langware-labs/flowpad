@@ -59,9 +59,9 @@ def _install_command(tool: str) -> str:
 
 def _sm_tier_default() -> str:
     sys.path.insert(0, str(REPO_ROOT))
-    from flow_sdk.builtin.agentic_process.model_tiers import DEEPAGENTS_MODEL_TIERS
+    from flow_sdk.external_apis.llm.dialects import get_dialect
 
-    return DEEPAGENTS_MODEL_TIERS["sm"]
+    return get_dialect("openrouter").default_models["sm"]
 
 
 def _fake_hub_config(scenario: str) -> tuple[str, dict, str]:

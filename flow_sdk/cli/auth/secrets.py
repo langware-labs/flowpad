@@ -283,7 +283,7 @@ def read_secret(name: str) -> str | None:
         return None
 
 
-def write_secret(name: str, value: str, description: str = "") -> None:
+def write_secret(name: str, value: str, description: str = "", *, safe_hint: str | None = None) -> None:
     """Store the value in the per-instance sod and upsert the app_secret
     FSRecord metadata. Requires consent to have been granted — raises
     :class:`SecretsNotEnabledError` otherwise."""
@@ -292,7 +292,7 @@ def write_secret(name: str, value: str, description: str = "") -> None:
     get_instance_settings().sod.write(name, value)
     # The shadow carries a masked ``****last4`` hint so a listing can say WHICH key is stored
     # without opening the sod. Never the value.
-    hint = mask_confidential_value(value)
+    hint = safe_hint if safe_hint is not None else mask_confidential_value(value)
     existing = _get_app_secret(name)
     if existing is not None:
         existing.__dict__["description"] = description
