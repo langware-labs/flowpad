@@ -75,7 +75,6 @@ export default function OpenPcLanding() {
         : t`This agent isn't ready to open yet. Tell whoever gave you the code.`;
     }
     if (status === 429) return t`Too many tries. Try again later.`;
-    if (status === 403) return t`This link is for visitors. Open it in a private window.`;
     return errorMessage(e, t`Couldn't open a sandbox.`);
   };
 
