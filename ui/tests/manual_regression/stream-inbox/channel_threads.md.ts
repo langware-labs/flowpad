@@ -238,7 +238,8 @@ for (const [i, channel] of WANTED.entries()) {
     }
     if (shots) await page.screenshot({ path: `${shots}/${channel}-1-flat.png`, fullPage: true });
 
-    // ── sender: the conversation's composer writes into THIS provider thread ──
+    // ── sender: the open thread's composer writes into THIS provider thread ──
+    await expect(page.getByTestId('composer-thread-banner')).toBeVisible();
     const composer = page.getByPlaceholder(/^Reply in /);
     await composer.fill(`in thread ${nonce}`);
     await sendButton(page).click();
@@ -255,7 +256,7 @@ for (const [i, channel] of WANTED.entries()) {
     // Our copy joins the conversation.
     await expect(bodyOf(`in thread ${nonce}`)).toBeVisible({ timeout: adjusted(15_000) });
 
-    // Reply on the root (⋮ → Reply): the provider sees a reply to the root.
+    // Reply on the root (hover → Reply): the provider sees a reply to the root.
     const rootBubble = page.locator('[data-testid^="message-bubble-"]').filter({ hasText: `root ${nonce}` }).first();
     // Reply is the bubble's own hover action (not in its ⋮ menu).
     await rootBubble.hover();
