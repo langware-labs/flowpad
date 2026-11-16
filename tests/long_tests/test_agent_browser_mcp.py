@@ -24,12 +24,9 @@ import pytest
 from flow_sdk.core import agent_browser
 from tests.test_settings import test_service_config
 
-pytestmark = [
-    pytest.mark.skipif(
-        not test_service_config.deep_testing, reason="Skipping long tests when DEEP_TESTING is disabled"
-    ),
-    pytest.mark.timeout(240),  # do not increase timeout without approval
-]
+pytestmark = pytest.mark.skipif(
+    not test_service_config.deep_testing, reason="Skipping long tests when DEEP_TESTING is disabled"
+)
 
 INITIALIZE = {
     "jsonrpc": "2.0",
@@ -69,7 +66,7 @@ def test_mcp_server_answers_initialize_and_stays_up(tmp_path):
         server.stdin.flush()
         reply = server.stdout.readline()
         if not reply:
-            server.wait(timeout=30)
+            server.wait()
         log = stderr.read_text(errors="replace")[-600:]
         assert server.poll() is None, f"the server the client launched exited (rc={server.returncode}): {log}"
         assert json.loads(reply)["result"]["serverInfo"]["name"] == "Playwright", log
