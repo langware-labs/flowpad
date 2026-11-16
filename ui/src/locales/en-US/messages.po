@@ -33440,8 +33440,8 @@ msgid "This link has nothing to launch."
 msgstr "This link has nothing to launch."
 
 #: src/pages/entry/OpenPcLanding.tsx
-msgid "This link is for visitors. Open it in a private window."
-msgstr "This link is for visitors. Open it in a private window."
+#~ msgid "This link is for visitors. Open it in a private window."
+#~ msgstr "This link is for visitors. Open it in a private window."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
