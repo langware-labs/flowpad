@@ -14276,6 +14276,18 @@ msgid "Git request access"
 msgstr "طلب وصول Git"
 
 #: src/components/git/GitSetupWizard.tsx
+msgid "Git setup did not finish: the folder has no remote yet."
+msgstr ""
+
+#: src/components/git/GitSetupWizard.tsx
+msgid "Git setup did not finish: the folder is not a git repository yet."
+msgstr ""
+
+#: src/components/git/GitSetupWizard.tsx
+msgid "Git setup did not finish: the folder's remote is not a supported host."
+msgstr ""
+
+#: src/components/git/GitSetupWizard.tsx
 msgid "Git setup failed"
 msgstr "فشل إعداد Git"
 
