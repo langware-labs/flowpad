@@ -26,6 +26,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.agent_identity_login.rules: FAILING? read this tag's rules before
+//       editing — an agent Identity is signed in although cloudUser is null
+// flowpad:endcapsule tag
 describe("a data source's stream inbox on an agent's box", () => {
   it('asks to log in until the hub signs the box in as its agent Identity, then stops asking', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue(null as never);
