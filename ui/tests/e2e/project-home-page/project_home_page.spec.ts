@@ -88,11 +88,12 @@ function writeManifestText(text: string): void {
   mkdirSync(manifestDir(home.root), { recursive: true });
   writeFileSync(manifestFile(home.root), text, 'utf8');
   // The card reads the indexed ProjectManifest row, which nothing watches the file for:
-  // index it the way the machine indexes a changed asset folder (`flow record index`).
+  // index it the way the machine indexes a changed asset folder (`flow record index`). `-f`: a failed
+  // index must fail here, or the card's check would pass without the manifest ever being read.
   execFileSync(
     'curl',
-    ['-s', '-X', 'POST', '--max-time', '20', `${GRAPH}/compute_node/@local/fs-records/index?${new URLSearchParams({ type: 'project_manifest', path: manifestDir(home.root) })}`],
-    { stdio: 'ignore' },
+    ['-sSf', '-X', 'POST', '--max-time', '20', `${GRAPH}/compute_node/@local/fs-records/index?${new URLSearchParams({ type: 'project_manifest', path: manifestDir(home.root) })}`],
+    { stdio: 'pipe' },
   );
 }
 
