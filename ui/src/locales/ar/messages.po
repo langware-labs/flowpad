@@ -2834,6 +2834,7 @@ msgstr "نشط"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
@@ -6025,6 +6026,10 @@ msgstr "إلغاء الطلب"
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "أُلغي"
+
+#: src/components/automations/AutomationsList.tsx
+msgid "Cancelled"
+msgstr ""
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Cancelled · ran {runs}"
@@ -11589,6 +11594,7 @@ msgstr "تم"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/conversation/ContactDialog.tsx
@@ -12992,6 +12998,10 @@ msgstr "مساعدة الخبراء"
 msgid "Expert details"
 msgstr "التفاصيل التقنية"
 
+#: src/components/automations/AutomationsList.tsx
+msgid "Expired"
+msgstr ""
+
 #. placeholder {0}: card.sender_name || t`the sender`
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Expired — ask {0} to share again."
@@ -13719,8 +13729,8 @@ msgid "Filter by entity type"
 msgstr "تصفية حسب نوع الكيان"
 
 #: src/components/automations/AutomationsList.tsx
-msgid "Filter by kind"
-msgstr "تصفية حسب النوع"
+#~ msgid "Filter by kind"
+#~ msgstr "تصفية حسب النوع"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Filter by label, pattern, or matched line…"
@@ -13737,6 +13747,10 @@ msgstr "تصفية حسب المرسل"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Filter by session"
 msgstr "تصفية حسب الجلسة"
+
+#: src/components/automations/AutomationsList.tsx
+msgid "Filter by status"
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Filter by subject"
@@ -21809,6 +21823,10 @@ msgstr "لا شيء هنا بعد — يمكن استخدام + أدناه لإ�
 msgid "Nothing here yet."
 msgstr "لا شيء هنا بعد."
 
+#: src/components/automations/AutomationsList.tsx
+msgid "Nothing here."
+msgstr ""
+
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Nothing in private context yet."
 msgstr "لا شيء في السياق الخاص حتى الآن."
@@ -21863,8 +21881,8 @@ msgid "Nothing of the kinds switched on."
 msgstr "لا يوجد شيء من الأنواع المفعّلة."
 
 #: src/components/automations/AutomationsList.tsx
-msgid "Nothing of this kind yet."
-msgstr "لا يوجد شيء من هذا النوع بعد."
+#~ msgid "Nothing of this kind yet."
+#~ msgstr "لا يوجد شيء من هذا النوع بعد."
 
 #: src/components/favorites/FavoritesAddRow.tsx
 msgid "Nothing open to bookmark"
@@ -22059,6 +22077,7 @@ msgid "off"
 msgstr "إيقاف"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Off"
 msgstr "متوقف"

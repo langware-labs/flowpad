@@ -2834,6 +2834,7 @@ msgstr "active"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
@@ -6025,6 +6026,10 @@ msgstr "Cancel request"
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "cancelled"
+
+#: src/components/automations/AutomationsList.tsx
+msgid "Cancelled"
+msgstr "Cancelled"
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Cancelled · ran {runs}"
@@ -11589,6 +11594,7 @@ msgstr "done"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/conversation/ContactDialog.tsx
@@ -12992,6 +12998,10 @@ msgstr "Expert Assistance"
 msgid "Expert details"
 msgstr "Expert details"
 
+#: src/components/automations/AutomationsList.tsx
+msgid "Expired"
+msgstr "Expired"
+
 #. placeholder {0}: card.sender_name || t`the sender`
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Expired — ask {0} to share again."
@@ -13719,8 +13729,8 @@ msgid "Filter by entity type"
 msgstr "Filter by entity type"
 
 #: src/components/automations/AutomationsList.tsx
-msgid "Filter by kind"
-msgstr "Filter by kind"
+#~ msgid "Filter by kind"
+#~ msgstr "Filter by kind"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Filter by label, pattern, or matched line…"
@@ -13737,6 +13747,10 @@ msgstr "Filter by sender"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Filter by session"
 msgstr "Filter by session"
+
+#: src/components/automations/AutomationsList.tsx
+msgid "Filter by status"
+msgstr "Filter by status"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Filter by subject"
@@ -21809,6 +21823,10 @@ msgstr "Nothing here yet — use the + below to add one."
 msgid "Nothing here yet."
 msgstr "Nothing here yet."
 
+#: src/components/automations/AutomationsList.tsx
+msgid "Nothing here."
+msgstr "Nothing here."
+
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Nothing in private context yet."
 msgstr "Nothing in private context yet."
@@ -21863,8 +21881,8 @@ msgid "Nothing of the kinds switched on."
 msgstr "Nothing of the kinds switched on."
 
 #: src/components/automations/AutomationsList.tsx
-msgid "Nothing of this kind yet."
-msgstr "Nothing of this kind yet."
+#~ msgid "Nothing of this kind yet."
+#~ msgstr "Nothing of this kind yet."
 
 #: src/components/favorites/FavoritesAddRow.tsx
 msgid "Nothing open to bookmark"
@@ -22059,6 +22077,7 @@ msgid "off"
 msgstr "off"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Off"
 msgstr "Off"
