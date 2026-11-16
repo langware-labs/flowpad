@@ -30,7 +30,12 @@ SHAPE = {
 @pytest.fixture
 def box(tmp_path, monkeypatch):
     """An instance folder of its own (never the real one), signed out, IT Sessions at its default."""
-    settings = SimpleNamespace(instance_dir=tmp_path / "instance", records_root=tmp_path / "records")
+    settings = SimpleNamespace(
+        instance_dir=tmp_path / "instance",
+        records_root=tmp_path / "records",
+        # FlowMessage serialization resolves body dirs through it once another test left a message.
+        records_data_dir=tmp_path / "records_data",
+    )
     settings.instance_dir.mkdir()
     monkeypatch.setattr(instance_settings, "get_instance_settings", lambda: settings)
     login = {"block": NOBODY}

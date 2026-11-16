@@ -4,6 +4,7 @@
 
 ## Prerequisites
 - A healthy LOCAL hub, run from the separate private `flowpad-hub` checkout (see `AGENTS.md`; default `localhost:8093`), NOT the minimal `flow-hub/` stub in this tree: `$FLOWPAD_HUB_URL` must be localhost/127.0.0.1/::1 and answer `GET /api/v1/health/status`. Otherwise the WHOLE folder is skipped (reason is printed), which is not a pass.
+- Exception, opt-in: a deployed hub (e.g. staging, which refuses password login) runs when `HUB_TESTS_API_KEY` holds that account's API key; the tier then signs in with the key (`GET /current-user`). Use it only for read-mostly files such as `test_oauth_*_real.py`.
 - Hub test users (credentials by name): `ALICE_EMAIL`, `ALICE_PW`, `BOB_EMAIL`, `BOB_PW` for the two-client tests.
 - Real-turn tests: `claude` (or codex/copilot/opencode) CLI on PATH, signed in and onboarded.
 - `test_live_session_llm_matrix.py`: `DEEP_TESTING=1` and `OPENROUTER_API_KEY`.

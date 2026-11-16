@@ -39,13 +39,19 @@ def conv_server():
     """Start the real server (current code) once on a free port for this module.
 
     A dedicated free port avoids colliding with any stale/other server on the
-    default test port. Daemon thread — torn down with the process.
+    default test port. Stopped at module teardown: left running, the app's lifespan
+    work was killed mid-flight at interpreter exit and the process aborted
+    ("FATAL: exception not rethrown") after every test had passed.
     """
-    from flow_sdk.server.app import start_server
+    import uvicorn
+
+    from flow_sdk.server.app import app
     from tests.adjustable_timeout import adjusted
 
     port = _free_port()
-    threading.Thread(target=start_server, args=(port,), daemon=True).start()
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
     base = f"http://127.0.0.1:{port}"
     # Readiness: poll the bootstrap endpoint until the server answers.
     deadline = time.time() + adjusted(15)
@@ -57,7 +63,9 @@ def conv_server():
             time.sleep(0.2)
     else:  # pragma: no cover
         pytest.fail("conv_server did not become ready")
-    return type("Srv", (), {"base_url": base, "port": port})()
+    yield type("Srv", (), {"base_url": base, "port": port})()
+    server.should_exit = True
+    thread.join()
 
 
 @pytest.fixture

@@ -57,6 +57,12 @@ pytestmark = [
 #: inventing one.
 FIXTURE = pathlib.Path(os.environ.get("GMAIL_FIXTURE", "/nonexistent/gmail_last10.csv"))
 
+#: Gated before the fixtures, not inside the test: the `assistant` fixture boots a
+#: live backend, and a missing reference must skip without paying (or timing out on) that.
+needs_fixture = pytest.mark.skipif(
+    not FIXTURE.is_file(), reason="set GMAIL_FIXTURE to a mailbox reference CSV — none found"
+)
+
 #: Compared byte-exact. Identifiers, with no typography to argue about.
 #: `label_ids` is captured in the fixture but deliberately NOT asserted: it is
 #: volatile — the same message read as UNREAD from search and read from
@@ -171,11 +177,10 @@ async def _await_declared_source(assistant) -> str | None:
     return None
 
 
+@needs_fixture
 @pytest.mark.asyncio
 @pytest.mark.timeout(900)  # approved: one turn + the driver's own 300s fetch deadline
 async def test_connect_my_gmail(assistant):
-    if not FIXTURE.is_file():
-        pytest.skip("set GMAIL_FIXTURE to a mailbox reference CSV — none found")
     expected = {row["external_id"]: row for row in csv.DictReader(FIXTURE.open(encoding="utf-8"))}
     assert expected, "fixture carries no messages"
 
@@ -247,10 +252,9 @@ def _assert_matches_mailbox(expected: dict, ingested: dict) -> None:
         # skip rather than a pass so it is never mistaken for clean.
         pytest.skip("recorded text drifted from the mailbox:\n  " + "\n  ".join(drift))
 
+@needs_fixture
 @pytest.mark.asyncio
 @pytest.mark.timeout(10)  # dont touch this timeout without approval: it is a sanity check, not a fetch
 async def test_connect_agent_setup(assistant):
-    if not FIXTURE.is_file():
-        pytest.skip("set GMAIL_FIXTURE to a mailbox reference CSV — none found")
     expected = {row["external_id"]: row for row in csv.DictReader(FIXTURE.open(encoding="utf-8"))}
     assert expected, "fixture carries no messages"

@@ -1,6 +1,7 @@
 """Narrow contract tests for the long-suite live-instance resolver."""
 
 import os
+import sys
 from dataclasses import FrozenInstanceError, replace
 
 import pytest
@@ -79,6 +80,11 @@ def resolver_state(monkeypatch, tmp_path):
     monkeypatch.setattr(paths, "env_file", lambda _name: env_file)
     monkeypatch.setenv("FLOWPAD_E2E_INSTANCE", name)
     monkeypatch.delenv("FLOW_HOME", raising=False)
+    # The conftest read the runner's FLOW_HOME once, at import; a runner that exports it (RUN.md lists it)
+    # would otherwise win over the home this test fakes.
+    for module in list(sys.modules.values()):
+        if str(getattr(module, "__file__", "") or "").replace("\\", "/").endswith("tests/long_tests/conftest.py"):
+            monkeypatch.setattr(module, "_RUNNER_FLOW_HOME", None)
     monkeypatch.setenv("FLOWPAD_PRE_SANDBOX_HOME", str(expected_flow_home.parent))
     return state
 
