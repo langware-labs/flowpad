@@ -33,7 +33,7 @@ from tests.adjustable_timeout import adjusted
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OWNER_INSTANCE = os.environ.get("OWNER_INSTANCE", "dev-1")
 ASSIGNEE_INSTANCE = os.environ.get("ASSIGNEE_INSTANCE", "dev-2")
-CONVERGE = adjusted(10.0)
+CONVERGE = 10.0
 GRAPH = "/api/v1/graph"
 
 
@@ -98,14 +98,15 @@ def _thread(c: httpx.Client, be: str, task_id: str) -> list[dict]:
 
 
 def _until(what: str, probe: Callable[[], Optional[object]]):
-    deadline = time.monotonic() + CONVERGE
+    budget = adjusted(CONVERGE)
+    deadline = time.monotonic() + budget
     last = None
     while time.monotonic() < deadline:
         last = probe()
         if last:
             return last
         time.sleep(0.2)
-    raise AssertionError(f"{what} did not happen within {CONVERGE}s (last: {last!r})")
+    raise AssertionError(f"{what} did not happen within {budget}s (last: {last!r})")
 
 
 def _says(c, be, task_id, body: str, author: Optional[str] = None, *, mine: bool = False) -> Callable[[], Optional[dict]]:

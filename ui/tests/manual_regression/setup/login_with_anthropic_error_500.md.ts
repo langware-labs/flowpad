@@ -20,7 +20,7 @@ test('first configuration visit has no server-error response', async ({ page }) 
   });
 
   await page.goto('/dock/ai-config');
-  await expect(page.getByText('AI Configuration', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'AI Configuration' })).toBeVisible();
   await expect(page.getByText('FlowPad API Key', { exact: true })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Harnesses' }).click();

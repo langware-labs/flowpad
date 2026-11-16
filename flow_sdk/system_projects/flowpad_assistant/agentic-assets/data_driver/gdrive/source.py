@@ -197,6 +197,12 @@ class DriveSource(ObjectSource):
 
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
+    def connection_probe_url(cls, config):
+        """A configured API base is verified there (its ``/about``, the provider probe's endpoint), not on Google."""
+        base = str((config or {}).get("base_url") or "").rstrip("/")
+        return f"{base}/about" if base else None
+
+    @classmethod
     def origin_id_for(cls, row: Any, ref: str, root: Any) -> str:
         """``gdrive:<fileId>`` for a cached file, read out of the index the engine keeps beside the
         cache — a ``fileId`` survives rename, move and content replacement, which neither a path nor

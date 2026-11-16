@@ -61,8 +61,7 @@ async def test_process_hook_acceptance_uses_real_vendor(
     await run_discovery([capability_kind])
 
     cli_config = {"permission_mode": "bypassPermissions"}
-    if worker_type == "codex":
-        cli_config["model"] = "sm"
+    # Codex on its device login has no native size (``_model_tier.model_for``): its vendor chooses.
     process = await AgenticProcess(
         worker_type=worker_type,
         workdir=str(tmp_path),
