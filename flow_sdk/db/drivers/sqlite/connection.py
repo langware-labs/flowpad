@@ -5,7 +5,7 @@ import logging
 import sqlite3
 import threading
 import time
-from datetime import timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote as _urlquote
@@ -44,18 +44,14 @@ def is_development() -> bool:
 
 
 class UTCDateTime(TypeDecorator):
-    """A ``DateTime`` column stored as naive UTC — the one place a zone is resolved.
-
-    SQLite's ``DateTime`` keeps no zone: an aware value is written as its WALL CLOCK, so a
-    sender's ``09:25+05:30`` (03:55Z) was stored as ``09:25`` and read back as UTC — 5.5h in the
-    future. Every source's timestamps reach the row through here, so converting on bind fixes
-    them all. A naive value is already UTC by house convention and passes through."""
+    """``DateTime`` stored as naive UTC, the one place a zone is resolved: SQLite keeps no zone, so an
+    aware value is converted on bind (raw, its wall clock would be stored). Naive values are UTC."""
 
     impl = DateTime
     cache_ok = True
 
     def process_bind_param(self, value, dialect):
-        if value is not None and value.tzinfo is not None:
+        if isinstance(value, datetime) and value.tzinfo is not None:
             return value.astimezone(timezone.utc).replace(tzinfo=None)
         return value
 

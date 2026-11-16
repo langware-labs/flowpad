@@ -96,9 +96,7 @@ class TestEventTimeSurvivesEveryLayer:
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_a_sender_offset_survives_the_store(self):
-        # Mail from India: "09:25 +05:30" is 03:55Z. The DateTime column has no
-        # zone, so storing the aware value raw kept the wall clock (09:25) and
-        # read it back as UTC — the row sat 5.5h in the future, "just now".
+        # 09:25+05:30 == 03:55Z
         src = await _source()
         item = await _item(src, occurred_at="2025-09-01T09:25:00+05:30")
         _, thread_id = await project_source_item(item, source=src, notify=False, announce=False)
