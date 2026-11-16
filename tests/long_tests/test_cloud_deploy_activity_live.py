@@ -238,6 +238,13 @@ async def test_deploy_is_accepted_and_streams_its_steps(instance: LiveE2EInstanc
 
 
 # A real GCP VM is created, then deleted. Do not increase without approval.
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.agent_box_login.rules: FAILING? an agent box that never signs
+#       in reads no mail and refuses its allocation - read this tag's rules first
+# flowpad:endcapsule tag
 @pytest.mark.timeout(DEPLOY_LIMIT_S * 2 + 60)
 async def test_an_unfunded_deploy_is_still_accepted_with_a_warning(
     instance: LiveE2EInstance, mock_agent: tuple[str, str], unfunded_allocation: JsonObject

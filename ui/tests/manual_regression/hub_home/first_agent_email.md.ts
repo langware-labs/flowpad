@@ -52,6 +52,13 @@ test.afterAll(async ({ request }) => {
     await request.delete(`/api/v1/graph/agent/${id}/mailbox`, { headers: HUB }).catch(() => undefined);
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.agent_box_login.rules: FAILING? an agent box that never signs
+//       in reads no mail and refuses its allocation - read this tag's rules first
+// flowpad:endcapsule tag
 test('email first: the wizard ends with an agent that answers my mail', async ({ page, request }) => {
   // The sender: a second agent's address, made through the same wizard (and so the same hub call).
   const sender = await walkToAddress(page);
