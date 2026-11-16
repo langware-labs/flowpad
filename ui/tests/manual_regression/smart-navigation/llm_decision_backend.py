@@ -130,7 +130,7 @@ def main() -> None:
     HubProxy.call = staticmethod(_doubled(real_call))
     HubProxy.try_call = staticmethod(_doubled(real_try_call))
     HubProxy.send = staticmethod(_send)
-    print("[llm-decision] the Decision API answers from the hub LLM endpoint", flush=True)
+    print("[llm-decision] the Decision API answers from the hub LLM endpoint", flush=True)  # noqa: T201
     if os.environ.get("MOCK_WORKER"):
         import tempfile  # noqa: PLC0415
 
@@ -139,7 +139,7 @@ def main() -> None:
 
         driver = MockDriver(Path(os.environ.get("MOCK_TRANSCRIPTS") or tempfile.mkdtemp(prefix="flowpad-mock-worker-")))
         agentic_process.get_driver = lambda _worker_type: driver
-        print("[mock-worker] agent turns answer from MockDriver", flush=True)
+        print("[mock-worker] agent turns answer from MockDriver", flush=True)  # noqa: T201
     run.main()
 
 
