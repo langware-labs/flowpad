@@ -5,6 +5,7 @@ import logging
 import sqlite3
 import threading
 import time
+from datetime import timezone
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote as _urlquote
@@ -12,6 +13,7 @@ from urllib.parse import quote as _urlquote
 from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, event, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.types import TypeDecorator
 
 from flow_sdk import toplog
 
@@ -41,6 +43,23 @@ def is_development() -> bool:
     return get_instance_settings().is_dev
 
 
+class UTCDateTime(TypeDecorator):
+    """A ``DateTime`` column stored as naive UTC — the one place a zone is resolved.
+
+    SQLite's ``DateTime`` keeps no zone: an aware value is written as its WALL CLOCK, so a
+    sender's ``09:25+05:30`` (03:55Z) was stored as ``09:25`` and read back as UTC — 5.5h in the
+    future. Every source's timestamps reach the row through here, so converting on bind fixes
+    them all. A naive value is already UTC by house convention and passes through."""
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None and value.tzinfo is not None:
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+
 class Base(DeclarativeBase):
     """Base class for all SQLAlchemy models."""
 
@@ -59,9 +78,9 @@ class EntitySchema(Base):
     uname = Column(String(255), index=True)
     type_uname = Column(String(512), unique=True, nullable=True)
     created_by = Column(String(50))
-    created_date = Column(DateTime)
+    created_date = Column(UTCDateTime)
     updated_by = Column(String(50))
-    updated_date = Column(DateTime)
+    updated_date = Column(UTCDateTime)
     created_through = Column(String(255))
     updated_through = Column(String(255))
     schema_version = Column(String(50))
@@ -87,9 +106,9 @@ class RelationshipSchema(Base):
     to_id = Column(String(36), nullable=False, index=True)
     to_type = Column(String(50), nullable=False)
     created_by = Column(String(50))
-    created_date = Column(DateTime)
+    created_date = Column(UTCDateTime)
     updated_by = Column(String(50))
-    updated_date = Column(DateTime)
+    updated_date = Column(UTCDateTime)
     created_through = Column(String(255))
     updated_through = Column(String(255))
     # Role-specific fields (denormalized for query performance)

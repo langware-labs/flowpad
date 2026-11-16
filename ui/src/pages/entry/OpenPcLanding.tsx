@@ -55,10 +55,11 @@ export default function OpenPcLanding() {
   const agentId = (useParams().agentId ?? '').trim();
   const agent = useAnonymousAgent(agentId || null);
   const name = agent ? agent.getDisplayName() || agent.name : '';
-  const [phase, setPhase] = useState<'probing' | 'code' | 'opening' | 'failed'>('probing');
-  const [askCode, setAskCode] = useState(false);
-  // A code handed over in the link's fragment (`#code=…`, from the owner's Open machine) is already in the box.
-  const [code, setCode] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('code') ?? '');
+  // An invite link (`#code=…`) just shows the code box with the code filled in; nothing is sent until Open.
+  const [linkCode] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('code') ?? '');
+  const [phase, setPhase] = useState<'probing' | 'code' | 'opening' | 'failed'>(linkCode ? 'code' : 'probing');
+  const [askCode, setAskCode] = useState(Boolean(linkCode));
+  const [code, setCode] = useState(linkCode);
   const [problem, setProblem] = useState<string | null>(null);
 
   const problemOf = (e: unknown, sentCode: boolean): string => {
@@ -86,7 +87,7 @@ export default function OpenPcLanding() {
   // Once per page: a second probe would only wake the same box.
   const probed = useRef(false);
   useEffect(() => {
-    if (!agentId || probed.current) return;
+    if (!agentId || linkCode || probed.current) return;
     probed.current = true;
     void (async () => {
       try {

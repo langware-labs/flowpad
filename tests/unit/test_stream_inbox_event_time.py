@@ -95,6 +95,19 @@ class TestEventTimeSurvivesEveryLayer:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_a_sender_offset_survives_the_store(self):
+        # Mail from India: "09:25 +05:30" is 03:55Z. The DateTime column has no
+        # zone, so storing the aware value raw kept the wall clock (09:25) and
+        # read it back as UTC — the row sat 5.5h in the future, "just now".
+        src = await _source()
+        item = await _item(src, occurred_at="2025-09-01T09:25:00+05:30")
+        _, thread_id = await project_source_item(item, source=src, notify=False, announce=False)
+
+        conv = await _conv_for(thread_id)
+        assert iso_to_utc(conv.updated_date) == iso_to_utc("2025-09-01T03:55:00+00:00")
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_conversation_order_is_occurred_at_not_ingest_order(self):
         # Ingest NEWEST first — exactly what providers hand back — and demand
         # the conversation still reads oldest-first by event time.
