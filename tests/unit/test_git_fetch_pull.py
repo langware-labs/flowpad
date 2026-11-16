@@ -325,3 +325,32 @@ async def test_a_cherry_pick_marked_resolved_but_not_continued_blocks_the_next_s
 
     pulled = await repo.pull()
     assert pulled.kind == "conflict" and "still waiting" in pulled.message, pulled
+
+
+async def test_push_and_pull_never_read_the_shared_fetch_head(clones, monkeypatch):
+    """``git pull`` reads ``.git/FETCH_HEAD``, which every fetch in the repo
+    rewrites: a concurrent one fails it with "Cannot rebase onto multiple
+    branches". Both sync through the tracking ref instead."""
+    mine, theirs = clones
+    ran: list[str] = []
+    real = GitRepo._git
+
+    async def recording(self, *args, **kwargs):
+        ran.append(args[0])
+        return await real(self, *args, **kwargs)
+
+    monkeypatch.setattr(GitRepo, "_git", recording)
+    repo = GitRepo(str(mine), LocalNode())
+
+    _commit(theirs, "notes.md", "from the cloud\n")
+    _git(theirs, "push", "-q")
+    (mine / "draft.md").write_text("mine\n")
+    assert (await repo.push()).kind == "pushed"
+    assert (mine / "notes.md").exists()
+
+    _commit(theirs, "more.md", "again\n")
+    _git(theirs, "pull", "-q", "--rebase")
+    _git(theirs, "push", "-q")
+    assert (await repo.pull()).kind == "pulled"
+
+    assert "pull" not in ran

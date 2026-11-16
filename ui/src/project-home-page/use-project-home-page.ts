@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 /**
- * The home page `projectId`'s manifest declares, or null.
+ * The home page `projectId`'s manifest declares, null when none, or undefined
+ * while the manifest row is still loading (so a caller never shows "default" early).
  *
  * Read off the indexed `ProjectManifest` row — the projection of
  * `project_manifest.json`, which is where the home page lives — so a git pull
@@ -12,7 +13,7 @@ import { useMemo } from 'react';
  * Declared, not resolved: `Project.openHomePage` (`GET project/<id>/home-page`)
  * checks it exists and belongs to this project.
  */
-export function useProjectHomePage(projectId: string | null | undefined): string | null {
+export function useProjectHomePage(projectId: string | null | undefined): string | null | undefined {
   const request = useMemo(
     () =>
       new QueryRequest({
@@ -23,7 +24,8 @@ export function useProjectHomePage(projectId: string | null | undefined): string
       }),
     [projectId],
   );
-  const { data } = useEntitiesQuery<ProjectManifest>(request, { enabled: !!projectId });
+  const { data, isLoading } = useEntitiesQuery<ProjectManifest>(request, { enabled: !!projectId });
+  if (isLoading) return undefined;
   return data?.[0]?.home_page ?? null;
 }
 

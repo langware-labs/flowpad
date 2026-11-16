@@ -155,12 +155,12 @@ def test_auth_headers_differ_by_provider():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("provider", ["openrouter", "openai"])
-async def test_openai_wire_completion_uses_the_configured_md_model(monkeypatch, provider):
+async def test_openai_wire_completion_uses_the_configured_sm_model(monkeypatch, provider):
     recorder = _install_openai(monkeypatch, reply=_text_reply("hello"))
     client = LLMClient.for_dialect(provider, api_key="k")
     assert await client.create_completion("sys", "user") == "hello"
     assert recorder["base_url"] == get_dialect(provider).openai_base()
-    assert recorder["params"]["model"] == get_dialect(provider).default_models["md"]
+    assert recorder["params"]["model"] == get_dialect(provider).default_models["sm"]  # nothing chosen: the small one
     assert recorder["params"]["messages"][0]["content"] == "sys"
 
 
@@ -182,7 +182,7 @@ async def test_the_anthropic_wire_posts_messages_not_chat_completions(monkeypatc
     assert recorder["url"] == "https://api.anthropic.com/v1/messages"
     assert recorder["headers"]["x-api-key"] == "k"
     assert recorder["body"]["system"] == "sys"
-    assert recorder["body"]["model"] == "claude-sonnet-5-5"
+    assert recorder["body"]["model"] == get_dialect("anthropic").default_models["sm"]
 
 
 @pytest.mark.asyncio

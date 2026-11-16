@@ -6,17 +6,19 @@
  * Anything optional (source chips, Close) goes left of it, never between.
  */
 
-import { AgenticProcess, dataManager } from '@sdk';
+import { AgenticProcess, dataManager, tabManager } from '@sdk';
 import { hasWorkerStarted, isProcessRunning, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { CompactIconAction } from '@src/components/entity-actions/CompactIconAction';
 import { TooltipProvider } from '@src/components/ui/tooltip';
-import { GitFork } from 'lucide-react';
+import { GitFork, X } from 'lucide-react';
 import { memo, useCallback, useState, useSyncExternalStore } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useVibeOnlyAgent } from '@src/hooks/use-launching-agent';
 import { SessionActionsMenu } from './SessionActionsMenu';
 import { SessionSurfaceSwitch } from './SessionSurfaceSwitch';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { closeTabsWithLifecycle } from '@src/tabs/tab-content-lifecycle';
 
 interface SessionAnchorProps {
   process: AgenticProcess;
@@ -40,7 +42,7 @@ export const SessionAnchor = memo(function SessionAnchor({
 }: SessionAnchorProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  // A vibe-only agent's session stays in Vibe with no session chrome at all.
+  // A vibe-only agent's session stays in Vibe: its only chrome is Close.
   const vibeOnlyAgent = useVibeOnlyAgent(process.id);
   const injectPrompt = useCallback(
     (text: string) => (onInjectPrompt ? onInjectPrompt(text) : void process.promptOrEnqueue(text)),
@@ -73,7 +75,34 @@ export const SessionAnchor = memo(function SessionAnchor({
     }
   };
 
-  if (vibeOnlyAgent) return null;
+  // A vibe-only session has no tab strip, so no tab X: Close closes its own tab
+  // and the tabs it hosts, then lands where the top bar's Home button lands.
+  const closeVibeOnly = () => {
+    const sessionPointer = DockPointer.forSession(process.id).pointer;
+    const tabs = tabManager.getSnapshot().filter((tab) => {
+      if (!tab.dockPointer) return false;
+      const dock = new DockPointer(tab.dockPointer);
+      return dock.hostProcessId === process.id || dock.pointer === sessionPointer;
+    });
+    navigation.goHome();
+    void closeTabsWithLifecycle(tabs).finally(() => void tabManager.refresh());
+  };
+
+  if (vibeOnlyAgent) {
+    if (embedded) return null;
+    return (
+      <button
+        type="button"
+        onClick={closeVibeOnly}
+        title={t`Close`}
+        aria-label={t`Close`}
+        data-testid="vibe-only-close"
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+      >
+        <X className="h-5 w-5" strokeWidth={2.5} />
+      </button>
+    );
+  }
 
   return (
     <TooltipProvider delayDuration={300}>

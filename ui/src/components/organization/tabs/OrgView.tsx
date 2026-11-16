@@ -2,8 +2,8 @@
  * One organization: tabs Teams | Members | Billing & keys | General, or a team's own page.
  *
  * Every control is gated on what the hub says the caller may press (`can_*` on the budgets read),
- * never on a role read here. A caller the budgets read refuses (a plain member, 401/403) gets
- * `MemberOrgCard`: the teams they are on, no money and no tabs (the page header names the org).
+ * never on a role read here. A caller the hub won't show budgets to (a plain member: `refused`,
+ * or a 401/403) gets `MemberOrgCard`: the teams they are on, no money and no tabs.
  */
 import { QueryRequest, Team } from '@sdk';
 import { Users } from 'lucide-react';
@@ -46,10 +46,11 @@ export function OrgView({
   onDeleted: () => void;
 }) {
   const { t } = useLingui();
-  const { data, isLoading, error, refetch } = useOrgBudgets(orgId);
+  const { data, isLoading, error, refetch, refused } = useOrgBudgets(orgId);
   const invalidate = useInvalidateBudgets();
   const changed = () => void invalidate();
 
+  if (refused) return <MemberOrgCard />;
   if (error) {
     const status = statusOf(error);
     return status === 401 || status === 403 ? <MemberOrgCard /> : <Unreadable onRetry={() => void refetch()} />;

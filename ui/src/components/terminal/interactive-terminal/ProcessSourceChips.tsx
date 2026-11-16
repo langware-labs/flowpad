@@ -1,5 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import { dataManager, type AgenticProcess, type TypeId } from '@sdk';
+import { useEntity } from '@src/hooks/entity-hooks';
 import { ContextEntityChip, chipStyleFor, iconForEntity } from '@src/components/conversation/EntityChip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
 
@@ -36,7 +37,12 @@ export function ProcessSourceChips({ process }: { process: AgenticProcess }) {
       ))}
       {messages.length === 1 && <SourceChip tid={messages[0]} />}
       {messages.length > 1 && <CountChip type="flow_message" items={messages} />}
-      {triggers.length === 1 && <SourceChip tid={triggers[0]} />}
+      {triggers.length === 1 && (
+        <span className="inline-flex items-center gap-0.5">
+          <SourceChip tid={triggers[0]} />
+          <RunCount tid={triggers[0]} />
+        </span>
+      )}
       {triggers.length > 1 && <CountChip type="trigger" items={triggers} />}
     </span>
   );
@@ -47,6 +53,23 @@ function SourceChip({ tid }: { tid: TypeId }) {
     // Opaque and on top: the expanded label covers the centered session title instead of mixing with it.
     <span data-testid={`process-source-${tid.type}`} className="relative z-10 rounded-full bg-background">
       <ContextEntityChip typeId={tid} collapsed />
+    </span>
+  );
+}
+
+/** How many times a callback ran, out of its limit ("3/48") — only for one that already ran. */
+function RunCount({ tid }: { tid: TypeId }) {
+  const rule = useEntity(tid, { watch: true }).data as { counter?: number; max_runs?: number | null } | undefined;
+  const runs = rule?.counter ?? 0;
+  if (!runs) return null;
+  const text = rule?.max_runs ? `${runs}/${rule.max_runs}` : `${runs}`;
+  return (
+    <span
+      data-testid="process-source-trigger-runs"
+      title={`Ran ${text} times`}
+      className="min-w-4 rounded-full bg-foreground/10 px-1 text-center text-[10px] leading-4 tabular-nums"
+    >
+      {text}
     </span>
   );
 }

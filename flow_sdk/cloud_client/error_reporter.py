@@ -10,6 +10,7 @@ from typing import Any
 
 from flow_sdk.api.messages import HubClientErrorMessage, HubClientRecoveredMessage
 from flow_sdk.cloud_client.constants import MAX_HUB_ERRORS_PER_WINDOW, WINDOW_SECONDS
+from flow_sdk.cloud_client.network_error_rules import RULES, NetworkErrorEntry, NetworkErrorRule
 
 BroadcastFunc = Callable[[HubClientErrorMessage | HubClientRecoveredMessage], Awaitable[None]]
 ClockFunc = Callable[[], float]
@@ -18,6 +19,8 @@ MAX_HIDDEN_KEPT = 20
 # Failing calls whose repeats are counted; the oldest is forgotten past this (a call with a unique
 # query each time must not grow the map without bound).
 MAX_GROUPS = 200
+# Every failed call is kept here, shown or not (Logs → Network errors); memory only.
+MAX_ENTRIES = 500
 
 
 @lru_cache(maxsize=1)
@@ -46,16 +49,21 @@ class _HubErrorReporter:
         clock: ClockFunc = time.monotonic,
         wall_clock: ClockFunc = time.time,
         broadcast_func: BroadcastFunc = _broadcast_message,
+        rules: tuple[NetworkErrorRule, ...] = RULES,
     ):
         self.max_per_window = max_per_window
         self.window_seconds = window_seconds
         self.clock = clock
         self.wall_clock = wall_clock
         self.broadcast_func = broadcast_func
+        self.rules = rules
         self._timestamps: deque[float] = deque()
         self._suppressed_in_window = 0
-        # Requests whose last attempt failed, so the hub's next answer to one can clear its error.
-        self._failing: set[tuple[str, str]] = set()
+        # Requests whose last attempt failed (and with what status), so a hub answer can clear the error.
+        self._failing: dict[tuple[str, str], int] = {}
+        self._entries: deque[NetworkErrorEntry] = deque(maxlen=MAX_ENTRIES)
+        # Recent failure times per rule row, for the rows that show only above a rate.
+        self._rule_times: dict[NetworkErrorRule, deque[float]] = {}
         # Repeats of one failing call, per status: (first failed at, times), until it recovers.
         self._groups: dict[tuple[str, str], dict[int, tuple[float, int]]] = {}
         # The errors a full window hid, sent with the next 'suppressed' notice (capped).
@@ -70,14 +78,54 @@ class _HubErrorReporter:
         while self._timestamps and self._timestamps[0] <= cutoff:
             self._timestamps.popleft()
 
+    def entries(self) -> list[NetworkErrorEntry]:
+        return list(self._entries)
+
+    def clear(self) -> None:
+        """Forget the recorded failures and their counts. A warning already up keeps its recovery."""
+        self._entries.clear()
+        self._groups.clear()
+        self._rule_times.clear()
+
+    def _shows(self, rule: NetworkErrorRule, now: float) -> bool:
+        if rule.show != "above_rate":
+            return rule.show == "always"
+        times = self._rule_times.setdefault(rule, deque())
+        times.append(now)
+        while times[0] <= now - rule.window_seconds:
+            times.popleft()
+        return len(times) > rule.max_events
+
     async def report(
-        self, *, status_code: int, method: str, path: str, message: str, detail: dict[str, Any] | None = None
+        self,
+        *,
+        status_code: int,
+        method: str,
+        path: str,
+        message: str,
+        detail: dict[str, Any] | None = None,
+        quiet: bool = False,
     ) -> None:
-        """Report one failed hub call. ``detail`` is its ``ErrorDetail`` (the UI's details popup shape);
-        when it first failed, how often, and the log file are added here."""
-        self._failing.add((method, path))
+        """Record one failed hub call, and raise its warning when its rule says so.
+
+        ``quiet`` is a call that owns its failure: recorded, never shown. ``detail`` is its
+        ``ErrorDetail`` (the UI's details popup shape); when it first failed, how often, what the
+        user can do and the log file are added here."""
         now = self.clock()
-        wall_ms = self.wall_clock() * 1000
+        wall = self.wall_clock()
+        rule = next(r for r in self.rules if r.matches(method, path, status_code))
+        shown = not quiet and self._shows(rule, now)
+        self._entries.append(
+            NetworkErrorEntry(
+                at=wall, method=method, path=path, status=status_code, message=message, rule=rule.reason, shown=shown
+            )
+        )
+        if not shown:
+            return
+        self._failing[(method, path)] = status_code
+        if len(self._failing) > MAX_GROUPS:
+            del self._failing[next(iter(self._failing))]
+        wall_ms = wall * 1000
         first_ms, count = self._groups.setdefault((method, path), {}).get(status_code, (wall_ms, 0))
         self._groups[(method, path)][status_code] = (first_ms, count + 1)
         if len(self._groups) > MAX_GROUPS:
@@ -90,6 +138,7 @@ class _HubErrorReporter:
                 "firstAt": first_ms,
                 "lastAt": wall_ms,
                 "count": count + 1,
+                "action": rule.action,
                 "logFile": _log_file(),
             }
 
@@ -122,16 +171,17 @@ class _HubErrorReporter:
         self._timestamps.append(now)
 
     async def recovered(self, *, method: str, path: str) -> None:
-        """The hub answered a request whose previous attempt failed: say its error is over.
+        """The hub answered: the errors that answer ends are over.
 
-        Only a request that failed and then got an answer clears anything -- one that never got an
-        answer keeps its error up, however long ago it was raised.
+        Any answer ends every "no response" error (status 0) -- the hub is reachable again, whichever
+        call proved it. An error the hub ANSWERED with (4xx/5xx) ends only when that same request
+        succeeds; until then it stays up, however long ago it was raised.
         """
-        if (method, path) not in self._failing:
-            return
-        self._failing.discard((method, path))
-        self._groups.pop((method, path), None)
-        await self.broadcast_func(HubClientRecoveredMessage(method=method, path=path))
+        over = [call for call, status in self._failing.items() if status == 0 or call == (method, path)]
+        for call in over:
+            del self._failing[call]
+            self._groups.pop(call, None)
+            await self.broadcast_func(HubClientRecoveredMessage(method=call[0], path=call[1]))
 
 
 hub_error_reporter = _HubErrorReporter()

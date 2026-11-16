@@ -92,7 +92,7 @@ _refused_for: str | None = None
 def _principal() -> str:
     from flow_sdk.cli import app_config  # noqa: PLC0415
 
-    return str((app_config.get_user() or {}).get("id") or "")
+    return str((app_config.get_principal() or {}).get("typeid") or "")
 
 
 async def catch_up() -> None:

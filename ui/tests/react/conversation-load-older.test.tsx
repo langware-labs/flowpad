@@ -7,6 +7,7 @@
  * real scoped `conversation/<id>/flow_message` reads.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Agent, apiClient, Conversation, dataManager, GRAPH_API_PREFIX } from '@sdk';
@@ -52,9 +53,12 @@ describe('a conversation longer than its window', () => {
   it('draws the newest window, then the older messages on "load older" — no per-message fetch', async () => {
     const get = vi.spyOn(apiClient, 'get');
     render(
-      <MemoryRouter>
-        <ConversationView conversationId={conversation.id} />
-      </MemoryRouter>,
+      // As in the app: a message's tag strip reads the tag definitions through react-query.
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <ConversationView conversationId={conversation.id} />
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     const loadOlder = await screen.findByTestId('conversation-load-older', {}, { timeout: 20_000 });

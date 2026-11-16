@@ -49,6 +49,17 @@ describe('emptyDraft / withProvider', () => {
     const custom = withProvider({ ...emptyDraft(), base_url: 'https://proxy.example/v1' }, 'openai');
     expect(custom.base_url).toBe('https://proxy.example/v1');
   });
+
+  it('a Vertex root starts by allowing Gemini, so its Gemini sizes pass the hub', () => {
+    const d = withProvider(emptyDraft(), 'vertex');
+    expect(d.filters.models_allow).toBe('google/gemini-*');
+    expect(withProvider(d, 'openrouter').filters.models_allow).toBe(emptyDraft().filters.models_allow);
+  });
+
+  it('a hand-edited Models allowed survives a provider switch', () => {
+    const edited = { ...emptyDraft(), filters: { ...emptyDraft().filters, models_allow: 'z-ai/glm-*' } };
+    expect(withProvider(edited, 'vertex').filters.models_allow).toBe('z-ai/glm-*');
+  });
 });
 
 describe('validateDraft — root', () => {
@@ -93,6 +104,21 @@ describe('validateDraft — chain', () => {
 });
 
 describe('buildEntityJson', () => {
+  it('round-trips own defaults, not backend resolution, and clears explicitly', () => {
+    const endpoint = new LLMEndpoint({ id: A, default_model: 'md', effective_default_model: 'provider/model' });
+    const draft = draftFrom(endpoint);
+    expect(draft.default_model).toBe('md');
+    expect(buildEntityJson(draft, true)).toMatchObject({ default_model: 'md' });
+    expect(buildEntityJson(draft, true)).not.toHaveProperty('effective_default_model');
+    for (const value of [null, '', '  ']) {
+      const cleared = { ...draft, default_model: value };
+      expect(buildEntityJson(cleared, true)).toMatchObject({ default_model: null });
+      expect(buildAllocateBody(cleared)).toMatchObject({ default_model: null });
+    }
+    expect(buildAllocateBody({ ...draft, default_model: ' provider/model ' })).toMatchObject({
+      default_model: 'provider/model',
+    });
+  });
   it('never contains the key, on create or edit', () => {
     const d: EndpointDraft = { ...emptyDraft('root'), name: 'r', key: 'sk-secret-123' };
     for (const editing of [false, true]) {

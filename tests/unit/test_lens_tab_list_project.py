@@ -11,13 +11,17 @@ backfill a null ``project_id`` from the target server-side for every listed tab.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+import flow_sdk.instance_settings as instance_settings
 from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: F401  (registers type)
+from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.tab import Tab, _http_list_all, tab_id_for
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
+from tests import pytest_plugin
 
 CLAUDE_SID = "18c0c27d-0e5c-4d36-8e4e-7e0224c72229"
 
@@ -40,6 +44,16 @@ async def test_tab_list_backfills_project_from_unindexed_session(
         "flow_sdk.transcript_analyzer.resolver._claude_projects_dir",
         lambda: projects_root,
     )
+    # The session's cwd sits inside a REAL project (a tab takes only a project
+    # that exists; a non-project folder's derived id is not one). The sync
+    # resolver opens the sqlite file ``db_path`` names: point it at the session's
+    # test database so it sees that row (as test_project_cwd_cache_lifecycle does).
+    settings = replace(
+        instance_settings.get_instance_settings(),
+        db_path=Path(pytest_plugin._test_db_driver.config.database),
+    )
+    monkeypatch.setattr(instance_settings, "get_instance_settings", lambda: settings)
+    await Project(name=f"tab-list-{CLAUDE_SID[:8]}", fs_storage_mount_path=str(cwd)).save()
 
     expected = resolve_project_id_for_cwd(str(cwd))
     assert expected, "precondition: cwd resolves to a project id"

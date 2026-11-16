@@ -3,7 +3,9 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { useLingui } from '@lingui/react/macro';
 import { BrowseableTree, ToolbarButton } from '@src/components/browseable-tree/BrowseableTree';
 import { TreeSelectionContext, useTreeSelection } from '@src/components/browseable-tree/useTreeSelection';
+import { useIsMobile } from '@src/hooks/use-mobile';
 import { useNavigatorSearch } from './NavigatorSearch';
+import { setPhoneNavigatorOpen, usePhoneNavigatorOpen, usePhoneNavigatorPresence } from './phone-navigator';
 import { SelectionActionBar } from './SelectionActionBar';
 import type { NavigatorDescriptor, NavigatorWidth } from './types';
 
@@ -74,6 +76,11 @@ export function NavigatorPanel({
   const [collapsed, setCollapsed] = useState(() => startCollapsed || (readCollapsed(id) ?? false));
   const [width, setWidth] = useState<number>(() => readWidth(id, bounds, legacyKeys));
   const [isResizing, setIsResizing] = useState(false);
+  // A phone (below md): the same panel, drawn as a drawer over the content — see `phone-navigator`.
+  // It is never the collapsed rail there; the phone bar's Browse button opens it.
+  const isMobile = useIsMobile();
+  const phoneOpen = usePhoneNavigatorOpen();
+  usePhoneNavigatorPresence();
 
   // Context-aware search — inert unless the descriptor declares `search`.
   const search = useNavigatorSearch(descriptor.search);
@@ -182,7 +189,7 @@ export function NavigatorPanel({
     />
   );
 
-  if (collapsed) {
+  if (collapsed && !isMobile) {
     return (
       <div className="flex w-9 flex-shrink-0 flex-col items-center border-e py-1.5">
         <button
@@ -205,13 +212,22 @@ export function NavigatorPanel({
 
   return (
     <TreeSelectionContext.Provider value={selectionEnabled ? selection : null}>
+      {phoneOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/80 md:hidden"
+          onClick={() => setPhoneNavigatorOpen(false)}
+          data-testid="navigator-phone-scrim"
+        />
+      )}
       <div
         ref={panelRef}
-        className="flex-shrink-0 overflow-hidden border-e"
+        className={`flex-shrink-0 overflow-hidden border-e max-md:fixed max-md:inset-y-0 max-md:start-0 max-md:z-50 max-md:!w-[min(20rem,85vw)] max-md:bg-background max-md:pt-[var(--sat)] max-md:shadow-lg max-md:transition-transform max-md:duration-200 ${
+          phoneOpen ? '' : 'max-md:invisible max-md:-translate-x-full rtl:max-md:translate-x-full'
+        }`}
         style={{ width }}
         data-testid={`navigator-panel-${id}`}
       >
-        <div className="flex h-full flex-col" style={{ width }}>
+        <div className="flex h-full flex-col max-md:!w-full" style={{ width }}>
           {header && (
             <div className="flex flex-shrink-0 items-center gap-1 border-b px-1.5 py-1">
               {search.active ? (
@@ -220,7 +236,7 @@ export function NavigatorPanel({
                 <>
                   <button
                     type="button"
-                    onClick={() => setCollapsed(true)}
+                    onClick={() => (isMobile ? setPhoneNavigatorOpen(false) : setCollapsed(true))}
                     title={header.title ? t`Hide ${header.title}` : t`Hide panel`}
                     aria-label={t`Collapse navigator`}
                     className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded hover:bg-muted"
@@ -271,7 +287,7 @@ export function NavigatorPanel({
         aria-label={t`Resize navigator`}
         onMouseDown={handleResizeStart}
         onDoubleClick={() => setWidth(bounds.default)}
-        className={`group relative w-1 flex-shrink-0 cursor-col-resize select-none ${
+        className={`group relative w-1 flex-shrink-0 cursor-col-resize select-none max-md:hidden ${
           isResizing ? 'bg-primary/40' : 'hover:bg-primary/30'
         }`}
         data-testid={`navigator-resize-${id}`}

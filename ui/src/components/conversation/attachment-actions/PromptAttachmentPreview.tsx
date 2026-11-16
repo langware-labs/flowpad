@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Paperclip } from 'lucide-react';
 import { Prompt, isImagePath, type TypeId } from '@sdk';
 import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import { useEntity } from '@sdk/react/hooks';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { cn } from '@src/lib/utils';
 import { localAttachmentUrl } from '../attachment-url';
 import { isPromptEntityAttachment } from './prompt-attachment';
 
@@ -59,6 +60,22 @@ interface PromptAttachmentPreviewProps {
   pendingFiles?: File[];
 }
 
+/** The host's answer to a prompt request that still waits for it. */
+export interface PromptRequestAnswer {
+  onRun: () => Promise<void>;
+  onDecline: () => Promise<void>;
+}
+
+/**
+ * Set around the prompt message of a request the viewer hosts and has not answered yet:
+ * the prompt then offers Run and Decline where it is read — on its row and in the
+ * "Prompt to run" window — besides the request line. Null everywhere else.
+ */
+export const PromptRequestAnswerContext = createContext<PromptRequestAnswer | null>(null);
+
+const ANSWER_BUTTON =
+  'shrink-0 rounded px-2 py-0.5 font-sans text-[11px] font-medium not-italic transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
+
 type DialogPart = { kind: 'text'; text: string } | { kind: 'image'; url: string; filename: string };
 
 /**
@@ -84,6 +101,43 @@ export function PromptAttachmentPreview({
 }: PromptAttachmentPreviewProps) {
   const { t } = useLingui();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const request = useContext(PromptRequestAnswerContext);
+  const [answering, setAnswering] = useState(false);
+  const answer = async (fn: () => Promise<void>) => {
+    if (answering) return;
+    setAnswering(true);
+    // The window closes first: Run may ask where to run, in a window of its own.
+    setDialogOpen(false);
+    try {
+      await fn();
+    } finally {
+      setAnswering(false);
+    }
+  };
+  const answerButtons = (where: 'row' | 'dialog') =>
+    request && (
+      // One group: the row wraps, and the two answers must not land on different lines.
+      <span className="inline-flex shrink-0 items-center gap-1.5">
+        <button
+          type="button"
+          disabled={answering}
+          onClick={() => void answer(request.onRun)}
+          data-testid={`prompt-${where}-run`}
+          className={cn(ANSWER_BUTTON, 'bg-blue-600 text-white hover:bg-blue-500')}
+        >
+          <Trans>Run</Trans>
+        </button>
+        <button
+          type="button"
+          disabled={answering}
+          onClick={() => void answer(request.onDecline)}
+          data-testid={`prompt-${where}-decline`}
+          className={cn(ANSWER_BUTTON, 'border border-border text-foreground hover:bg-muted')}
+        >
+          <Trans>Decline</Trans>
+        </button>
+      </span>
+    );
   const entityAttachments = useMemo(() => attachments.filter(isPromptEntityAttachment), [attachments]);
   const inlineAttachments = useMemo(
     () =>
@@ -285,6 +339,8 @@ export function PromptAttachmentPreview({
         );
       })}
 
+      {answerButtons('row')}
+
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -316,6 +372,7 @@ export function PromptAttachmentPreview({
               ),
             )}
           </div>
+          {request && <div className="flex justify-end gap-2">{answerButtons('dialog')}</div>}
         </DialogContent>
       </Dialog>
     </>

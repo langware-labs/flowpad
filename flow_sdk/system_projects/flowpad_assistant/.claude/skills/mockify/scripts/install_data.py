@@ -60,14 +60,16 @@ def install(root: Path, force: bool = False) -> dict:
 
     for slug, (title, description, kind) in DATASETS.items():
         manifest_path = root / "agentic-assets" / "dataset" / slug / "dataset.json"
-        if manifest_path.exists():
+        spec = {"rows": [{"input": f"--{ns}--.{kind}"}]}
+        try:
+            doc = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            doc = {"metadata": {"title": title, "description": description, "data_layout": "io_folder"}, "data": {}}
+        if doc["metadata"].get("spec") == spec:
             continue
+        doc["metadata"]["spec"] = spec   # new, or the namespace moved
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(json.dumps({
-            "metadata": {"title": title, "description": description, "data_layout": "io_folder",
-                         "spec": {"rows": [{"input": f"--{ns}--.{kind}"}]}},
-            "data": {},
-        }, indent=2) + "\n", encoding="utf-8")
+        manifest_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
         wrote.append(str(manifest_path.parent))
 
     datasets = root / "agentic-assets" / "dataset"

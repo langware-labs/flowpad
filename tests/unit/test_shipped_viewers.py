@@ -32,7 +32,7 @@ def _exported_viewers(source: str) -> dict[str, set[str]]:
     }
 
 
-@pytest.mark.parametrize("name", ["navigator-viewers", "diagnosis-viewer"])
+@pytest.mark.parametrize("name", ["navigator-viewers", "diagnosis-viewer", "flowmap-viewer"])
 def test_a_hand_written_viewer_exports_every_view_it_declares(name):
     """The re-exporting modules (data/eval/flow) take their viewers from the SDK; the hand-written ones
     must export a viewer for each kind and shape their manifest's ``views`` promise."""

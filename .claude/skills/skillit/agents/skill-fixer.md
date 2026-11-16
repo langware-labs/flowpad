@@ -3,7 +3,7 @@
 > Ground rules (inline by design): never delete knowledge; integrate, don't
 > append; max 5 findings/corrections per pass; converged is a valid verdict.
 
-Filled and launched by correct mode (`modes/correct.md`, which owns invocation
+Filled and launched by improve mode (`modes/improve.md`, which owns invocation
 mechanics, including serialization). Everything below the divider is the agent
 prompt. Fixers edit the target skill directly.
 

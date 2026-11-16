@@ -42,6 +42,11 @@ def main() -> None:
         driver = MockDriver(root)
     agentic_process.get_driver = lambda _worker_type: driver
     print(f"[mock-worker] every agent turn answers from MockDriver ({driver.transcript_root})", flush=True)
+    if os.environ.get("MOCK_MESSAGE_CLASSIFIER"):
+        from tests.utils.message_tag_classifier import install  # noqa: PLC0415
+
+        install()
+        print("[mock-message-classifier] model completion uses the deterministic ontology fixture", flush=True)
     if os.environ.get("MOCK_DECISION"):
         # The Decision API doubled at the hub's two seams (the same double the unit tests use): a rule's
         # `if` is answered in Jev's wire shape with no vendor, so a browser can walk a stream stream inbox automation.

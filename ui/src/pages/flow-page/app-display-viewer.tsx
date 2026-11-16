@@ -17,9 +17,10 @@ import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
 import { isHubRelayed } from '@src/lib/hub-relayed';
 import { Button } from '@src/components/ui/button';
-import { ExternalLink, Pencil } from 'lucide-react';
+import { ExternalLink, Pencil, RotateCw } from 'lucide-react';
 import { AppInfoPopover } from '@src/components/webapp-display/AppInfoPopover';
 import { CopyButton } from '@src/components/ui/copy-button';
+import { useDisplayChromeSlot } from '@src/components/display-toolbar';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -130,6 +131,7 @@ export function AppDisplayViewer({
   const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
   const { t } = useLingui();
+  const chromeSlot = useDisplayChromeSlot();
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
@@ -254,7 +256,18 @@ export function AppDisplayViewer({
         >
           <ExternalLink className="size-4" />
         </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7 shrink-0"
+          data-testid="webapp-refresh"
+          title={t`Refresh`}
+          onClick={() => frameRef.current?.refresh()}
+        >
+          <RotateCw className="size-4" />
+        </Button>
         <AppInfoPopover display={appDisplay} lifecycle={lifecycle} />
+        {chromeSlot}
         {definition ? (
           <Button
             size="sm"

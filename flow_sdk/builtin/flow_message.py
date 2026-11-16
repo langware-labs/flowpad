@@ -18,7 +18,7 @@ from pydantic import (
     model_validator,
 )
 
-from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
@@ -26,6 +26,7 @@ from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
+from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import MessageMarkSpec, UserProfile
 from flow_sdk.tags.envelope import parse_target
@@ -121,6 +122,9 @@ class FlowMessageKind(str, Enum):
     #: What an automation answered (the Daily usage summary): its text the headline, a ``<kind>.value.json`` the
     #: details. Local only -- an automation's conversation is private to this computer.
     AUTOMATION_RESULT = "automation_result"
+    #: A help-desk ticket was closed or reopened: the hub writes this line into the ticket, which is how the other
+    #: side learns of it (``metadata.ticket_event`` = ``{status, by}``; the text is the plain fallback).
+    TICKET_EVENT = "ticket_event"
 
     @classmethod
     def hub_only(cls, value: "str | None") -> bool:
@@ -270,6 +274,7 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
     # ``process_call`` / ``returned_value`` are a call on a message and its answer
     # (``process_call_spec``): the value IS the header ``prompt_preview``, never a row.
     # ``message_form`` / ``form_answers`` likewise: a form on a message and its answers (``message_form_spec``).
+    # ``prompt_run_summary`` likewise: what a prompt request's run did, on its reply (``prompt_run_summary_spec``).
     {
         "conversation",
         "flow_message",
@@ -281,6 +286,7 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
         "returned_value",
         "message_form",
         "form_answers",
+        "prompt_run_summary",
     }
 )
 
@@ -332,6 +338,14 @@ def carried_value(attachments, kind: str) -> "tuple[str, dict] | None":
             return None
         return (data[len(prefix) :], value) if isinstance(value, dict) else None
     return None
+
+
+def value_attachment(kind: str, value_id: str, payload: dict) -> dict:
+    """The ``<kind>-<id>`` TYPE_ID attachment that carries ``payload`` as a value — what
+    ``carried_value`` reads back. The dict ``handle_add_message`` adopts (``body["attachment"]``)."""
+    import json as _json  # noqa: PLC0415
+
+    return {"attachment_type": "type_id", "data": f"{kind}-{value_id}", "prompt_preview": _json.dumps(payload)}
 
 
 def carrier_marker(attachments) -> "dict | None":
@@ -425,7 +439,8 @@ def derive_help_request_kind(fm: "FlowMessage") -> None:
 def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
     """Carry an IT message's ``metadata.it`` (hub-written) onto the message. Idempotent; absent leaves it as is.
 
-    A MACHINE's reply names its node and lands on ``it_reply``. The owner's request carries ``metadata.it`` too;
+    A MACHINE's reply names its node and lands on ``it_reply``; it arrives READ -- one send answers once per
+    machine, in a table, so it holds nothing unread. The owner's request carries ``metadata.it`` too;
     when it names its send (``send_id``) its ids land on ``it_request`` -- never the request body, which only the
     hub keeps for a rerun."""
     metadata = payload.get("metadata")
@@ -434,8 +449,24 @@ def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
         return
     if it.get("node_typeid"):
         fm.it_reply = dict(it)
+        fm.is_read = True
     elif it.get("send_id"):
         fm.it_request = {k: it.get(k) for k in ("agent_id", "op_id", "send_id")}
+
+
+def issue_of(payload: dict) -> "dict | None":
+    """The ``metadata.issue`` a hub Monitoring message carries (it names ``issue_typeid``), else None."""
+    metadata = payload.get("metadata")
+    issue = metadata.get("issue") if isinstance(metadata, dict) else None
+    return dict(issue) if isinstance(issue, dict) and issue.get("issue_typeid") else None
+
+
+def derive_issue_reply(fm: "FlowMessage", payload: dict) -> None:
+    """Carry a Monitoring message's ``metadata.issue`` (hub-written) onto ``issue_reply``. Idempotent; absent
+    leaves it as is, so a refresh without metadata keeps the last status the hub sent."""
+    issue = issue_of(payload)
+    if issue is not None:
+        fm.issue_reply = issue
 
 
 def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
@@ -583,6 +614,32 @@ class FlowMessage(Entity):
     # subclass could silently drop by forgetting to union.
 
     type: str = APIField(default="flow_message")
+    message_processing: Optional[MessageProcessing] = EntityField(
+        default=None, sharing=Sharing.PRIVATE, persist=Persist.TRUE,
+        description="Local classification, tag provenance and once-per-message automation queue.",
+    )
+
+    async def _change_tags(self, **delta):
+        """Every tag change goes through the message's processing state, and this row takes the result."""
+        from flow_sdk.stream_inbox.message_tags import change_tags
+
+        fresh = await change_tags(str(self.id), **delta)
+        if fresh is not None:
+            self.tags, self.message_processing = fresh.tags, fresh.message_processing
+        return self
+
+    async def set_tags(self, tags: list[str]):
+        return await self._change_tags(replace=tags)
+
+    async def add_tag(self, name: str):
+        from flow_sdk.core.entity.entity_model import _require_tag
+
+        return await self._change_tags(add=[_require_tag(name)])
+
+    async def remove_tag(self, name: str):
+        from flow_sdk.core.entity.entity_model import _require_tag
+
+        return await self._change_tags(remove=[_require_tag(name)])
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)
     attachment: list[Attachment] = APIField(default_factory=list)
@@ -753,6 +810,11 @@ class FlowMessage(Entity):
     # conversation draws the replies that name the same ``send_id`` as a table under it. PRIVATE, re-derived
     # like ``it_reply``.
     it_request: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
+    # An Issue in a project's Monitoring conversation (``ConversationKind.MONITORING``): the hub's
+    # ``metadata.issue`` = ``{issue_typeid, kind, severity, status, count, title, detail, fix, subject_typeid,
+    # cause, machine, opened_at, resolved_at}`` (``follow_up`` marks the "Resolved: …" line posted after it).
+    # The hub updates the same message as the issue moves (count, status). PRIVATE, re-derived like ``it_reply``.
+    issue_reply: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
@@ -866,9 +928,10 @@ class FlowMessage(Entity):
         ``release_prompt`` — crash recovery handing a dead turn back — may clear
         it, and it says so through ``releasing_prompt``.
         """
+        kept = ("tags", "message_processing") if current_data.get("message_processing") is not None else ()
         if current_data.get("prompt_auto_handled") and not _RELEASING_PROMPT.get():
-            return ("prompt_auto_handled",)
-        return ()
+            kept += ("prompt_auto_handled",)
+        return kept
 
     #: The body held across a reference row's write — see ``save``.
     _hydrated_text: Optional[str] = None

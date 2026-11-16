@@ -74,6 +74,8 @@ export enum LLMSourceRefusal {
   SigningIn = 'signing_in',
   NoLogin = 'no_login',
   NoKey = 'no_key',
+  /** This harness cannot spend a local credential of that provider. */
+  UnsupportedProvider = 'unsupported_provider',
   HubSignedOut = 'hub_signed_out',
   EndpointDisabled = 'endpoint_disabled',
   /** Another source is required (a process or project pin) or chosen (a stated preference). */

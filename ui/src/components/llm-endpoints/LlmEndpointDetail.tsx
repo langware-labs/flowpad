@@ -6,12 +6,13 @@
 import { LLM_MODEL_SIZES, LLMEndpoint, TypeId, type LLMChain, type LLMEndpointKind } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowLeft, Pencil, RefreshCw, Trash2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
 import { Button } from '@src/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { errorMessage } from '@src/lib/error-message';
 
 import { ChainTree } from './ChainTree';
 import { consumerRows } from './chain-tree';
@@ -22,7 +23,7 @@ import { UsagePanel } from './UsagePanel';
 import { canConfigure, canRemove, canShare, endpointTypeId, kindFromChain } from './endpoint-catalog';
 import { ENDPOINT_INVITE_ROLES } from './share-endpoint';
 import { LLM_ENDPOINT_TABS, openLlmEndpoint, type LlmEndpointTab } from './llm-endpoints-pointer';
-import { useLlmEndpointChain } from './use-llm-endpoints';
+import { useLlmEndpointChain, useLlmEndpointModelConfig } from './use-llm-endpoints';
 
 export interface LlmEndpointDetailProps {
   endpointId: string;
@@ -35,9 +36,12 @@ export interface LlmEndpointDetailProps {
   /** `kind` is the chain-resolved one; the entity's own is always `root`. */
   onEdit: (endpoint: LLMEndpoint, kind?: LLMEndpointKind | null) => void;
   onDelete: (endpoint: LLMEndpoint) => void;
+  /** This machine's endpoint: a root with a key stored here. No hub chain, members or usage —
+   *  the page shows the row's own fields instead. */
+  local?: boolean;
 }
 
-function EffectiveFilters({ filters }: { filters: Record<string, unknown> }) {
+function EffectiveFilters({ filters, empty }: { filters: Record<string, unknown>; empty?: ReactNode }) {
   const entries = Object.entries(filters).filter(([, v]) => {
     if (v === null || v === undefined) return false;
     if (Array.isArray(v)) return v.length > 0;
@@ -47,7 +51,7 @@ function EffectiveFilters({ filters }: { filters: Record<string, unknown> }) {
   if (entries.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        <Trans>No narrowing — everything the roots allow.</Trans>
+        {empty ?? <Trans>No narrowing — everything the roots allow.</Trans>}
       </p>
     );
   }
@@ -108,21 +112,35 @@ export function LlmEndpointDetail({
   onTab,
   onEdit,
   onDelete,
+  local = false,
 }: LlmEndpointDetailProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const chain = useLlmEndpointChain(endpointId);
+  const chain = useLlmEndpointChain(local ? undefined : endpointId);
+  const modelConfig = useLlmEndpointModelConfig(local ? undefined : endpointId);
+  const resolvedDefault = local ? endpoint?.effective_default_model : modelConfig.data?.effective_default_model;
   // Hop ids are typeids; the pointer is the bare uuid.
   const entryTypeId = endpointTypeId(endpointId);
   const entryHop = chain.data?.hops.find((h) => h.id === entryTypeId);
   // NOT `endpoint.kind`: that reads `sources`, which the hub does not serialize, so it answers
   // `root` for every endpoint. The chain report resolves the real graph — see `kindFromChain`.
   // `null` until it arrives, and the badges below render nothing rather than guess.
-  const kind = kindFromChain(chain.data, endpointId);
+  const kind = local ? 'root' : kindFromChain(chain.data, endpointId);
+  // A local root sets its own sizes; there is nothing to inherit from.
+  const ownTiers = useMemo(
+    () =>
+      Object.fromEntries(
+        LLM_MODEL_SIZES.map((size) => [size, { model: endpoint?.tiers?.[size] || null, set_by: endpointId }]),
+      ) as unknown as LLMChain['effective_tiers'],
+    [endpoint?.tiers, endpointId],
+  );
   const openEndpoint = (id: string) => openLlmEndpoint(navigation, id);
   const consumers = useMemo(() => consumerRows(endpointId, all), [endpointId, all]);
   // One TypeId per endpoint: `useMembers` keys its fetch on the object, so a fresh one per render would refetch.
-  const membersTypeId = useMemo(() => (endpoint?.id ? new TypeId(LLMEndpoint.type, endpoint.id) : null), [endpoint?.id]);
+  const membersTypeId = useMemo(
+    () => (endpoint?.id ? new TypeId(LLMEndpoint.type, endpoint.id) : null),
+    [endpoint?.id],
+  );
   const tabLabels: Record<LlmEndpointTab, string> = { overview: t`Overview`, usage: t`Usage`, models: t`Models` };
 
   return (
@@ -130,7 +148,7 @@ export function LlmEndpointDetail({
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" size="sm" onClick={onBack} data-testid="llm-back">
           <ArrowLeft className="me-1 h-4 w-4" />
-          <Trans>All endpoints</Trans>
+          {local ? <Trans>API keys</Trans> : <Trans>All endpoints</Trans>}
         </Button>
         <h2 className="text-base font-semibold">{endpoint?.name ?? chain.data?.entry.name ?? endpointId}</h2>
         {kind && <KindBadge kind={kind} />}
@@ -142,21 +160,21 @@ export function LlmEndpointDetail({
         )}
         {endpoint && kind && <CredentialChip endpoint={endpoint} kind={kind} />}
         <span className="flex-1" />
-        {endpoint && canConfigure(endpoint) && (
+        {endpoint && (local || canConfigure(endpoint)) && (
           <Button variant="outline" size="sm" onClick={() => onEdit(endpoint, kind)} data-testid="llm-detail-edit">
             <Pencil className="me-1 h-3.5 w-3.5" />
             <Trans>Edit</Trans>
           </Button>
         )}
         {/* The project's own access control: who holds which role, and Invite for whoever may add members. */}
-        {endpoint && membersTypeId && (
+        {endpoint && membersTypeId && !local && (
           <MembersAvatarStack
             typeId={membersTypeId}
             showInviteButton={canShare(endpoint)}
             inviteRoles={ENDPOINT_INVITE_ROLES}
           />
         )}
-        {endpoint && canRemove(endpoint) && (
+        {endpoint && (local || canRemove(endpoint)) && (
           <Button
             variant="ghost"
             size="sm"
@@ -170,43 +188,63 @@ export function LlmEndpointDetail({
         )}
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => onTab(v as LlmEndpointTab)}>
-        <TabsList>
-          {LLM_ENDPOINT_TABS.map((k) => (
-            <TabsTrigger key={k} value={k} data-testid={`llm-tab-${k}`}>
-              {tabLabels[k]}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      {!local && (
+        <Tabs value={tab} onValueChange={(v) => onTab(v as LlmEndpointTab)}>
+          <TabsList>
+            {LLM_ENDPOINT_TABS.map((k) => (
+              <TabsTrigger key={k} value={k} data-testid={`llm-tab-${k}`}>
+                {tabLabels[k]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      )}
 
-      {tab === 'overview' && (
+      {(local || tab === 'overview') && (
         <div className="space-y-6">
-          <section className="space-y-2">
-            <div className="flex items-center gap-2">
+          {local ? (
+            <section className="space-y-2" data-testid="llm-local-credential">
               <h3 className="text-sm font-medium">
-                <Trans>Chain</Trans>
+                <Trans>Credential</Trans>
               </h3>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                aria-label={t`Refresh`}
-                onClick={() => void chain.refetch()}
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${chain.isFetching ? 'animate-spin' : ''}`} />
-              </Button>
-              {chain.data && chain.data.paths.length > 1 && (
-                <span className="text-xs text-muted-foreground">{t`${chain.data.paths.length} fallback paths`}</span>
-              )}
-            </div>
-            {chain.error && (
-              <p className="text-sm text-destructive">
-                <Trans>Could not resolve the chain.</Trans>
+              <p className="text-sm text-muted-foreground">
+                <span className="me-2 font-mono text-xs text-foreground">{endpoint?.credential_hint}</span>
+                <Trans>Stored in this machine's secret store. A local endpoint is a root: it has no chain.</Trans>
               </p>
-            )}
-            <ChainTree chain={chain.data} onOpen={openEndpoint} />
-          </section>
+              {endpoint?.vertex && (
+                <p className="text-sm text-muted-foreground" data-testid="llm-local-vertex">
+                  <Trans>Project</Trans>: {endpoint.vertex.project_id} · <Trans>Location</Trans>:{' '}
+                  {endpoint.vertex.location}
+                </p>
+              )}
+            </section>
+          ) : (
+            <section className="space-y-2">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-medium">
+                  <Trans>Chain</Trans>
+                </h3>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  aria-label={t`Refresh`}
+                  onClick={() => void chain.refetch()}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${chain.isFetching ? 'animate-spin' : ''}`} />
+                </Button>
+                {chain.data && chain.data.paths.length > 1 && (
+                  <span className="text-xs text-muted-foreground">{t`${chain.data.paths.length} fallback paths`}</span>
+                )}
+              </div>
+              {chain.error && (
+                <p className="text-sm text-destructive">
+                  <Trans>Could not resolve the chain.</Trans>
+                </p>
+              )}
+              <ChainTree chain={chain.data} onOpen={openEndpoint} />
+            </section>
+          )}
 
           <section className="space-y-2" data-testid="llm-consumers">
             <h3 className="text-sm font-medium">
@@ -243,30 +281,56 @@ export function LlmEndpointDetail({
             <h3 className="text-sm font-medium">
               <Trans>Model sizes</Trans>
             </h3>
+            <p className="text-sm" data-testid="llm-resolved-default">
+              <Trans>Resolved default</Trans>:{' '}
+              {modelConfig.error
+                ? errorMessage(modelConfig.error, t`Model configuration unavailable`)
+                : resolvedDefault === undefined
+                  ? t`Model configuration unavailable`
+                  : (resolvedDefault ?? t`No model available`)}
+            </p>
             <ModelSizes
-              tiers={chain.data?.effective_tiers}
+              tiers={local ? ownTiers : chain.data?.effective_tiers}
               names={Object.fromEntries((chain.data?.hops ?? []).map((h) => [h.id, h.name]))}
             />
           </section>
 
           <section className="space-y-2">
-            <h3 className="text-sm font-medium">
-              <Trans>Limits remaining</Trans>
-            </h3>
-            <LimitsRemaining hops={chain.data?.hops ?? []} />
+            <h3 className="text-sm font-medium">{local ? <Trans>Limits</Trans> : <Trans>Limits remaining</Trans>}</h3>
+            {local ? (
+              <div className="space-y-1" data-testid="llm-local-limits">
+                <EffectiveFilters
+                  filters={(endpoint?.limits ?? {}) as unknown as Record<string, unknown>}
+                  empty={<Trans>No limits set.</Trans>}
+                />
+                <p className="text-xs text-muted-foreground">
+                  <Trans>Shown, not enforced: only the hub keeps a spending ledger.</Trans>
+                </p>
+              </div>
+            ) : (
+              <LimitsRemaining hops={chain.data?.hops ?? []} />
+            )}
           </section>
 
           <section className="space-y-2">
             <h3 className="text-sm font-medium">
-              <Trans>Effective filters at this endpoint</Trans>
+              {local ? <Trans>Stored filters (not enforced)</Trans> : <Trans>Effective filters at this endpoint</Trans>}
             </h3>
-            <EffectiveFilters filters={(entryHop?.effective_filters ?? {}) as unknown as Record<string, unknown>} />
+            <EffectiveFilters
+              empty={local ? <Trans>No stored filters.</Trans> : undefined}
+              filters={
+                (local ? (endpoint?.filters ?? {}) : (entryHop?.effective_filters ?? {})) as unknown as Record<
+                  string,
+                  unknown
+                >
+              }
+            />
           </section>
         </div>
       )}
 
-      {tab === 'usage' && <UsagePanel endpointId={endpointId} endpoint={endpoint} all={all} />}
-      {tab === 'models' && <ModelsList endpointId={endpointId} all={all} />}
+      {!local && tab === 'usage' && <UsagePanel endpointId={endpointId} endpoint={endpoint} all={all} />}
+      {!local && tab === 'models' && <ModelsList endpointId={endpointId} all={all} />}
     </div>
   );
 }

@@ -190,7 +190,11 @@ describe('secured transfer — the journey in the UI', () => {
     const card = bob.page.locator('[data-testid="sealed-card"][data-state="pending"]').first();
     await pollUntil(async () => {
       if (await card.count()) return true;
-      await bob.page.reload({ waitUntil: 'domcontentloaded' });
+      // Reload only a page that has drawn its panel: a reload every tick restarts the app before the
+      // conversation renders, so the card that already arrived is never seen.
+      if (await bob.page.getByTestId('sealed-values-panel').count()) {
+        await bob.page.reload({ waitUntil: 'domcontentloaded' });
+      }
       return null;
     }, 40_000, 'the values arrived for Bob');
     await shot(bob, 'L3-bob-values-arrived');

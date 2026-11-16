@@ -126,7 +126,9 @@ def _read(folder: Path) -> _Read:
     except OSError as exc:
         raise DeclareError(f"{MAIN} is unreadable: {exc}") from exc
     known = _READ.get(folder)
-    if known is not None and known.source == source:
+    # The namespace may come from an enclosing folder or the project, so an unchanged text is not enough.
+    if known is not None and known.source == source and known.ns == asset_namespace(
+            folder, known.doc.ns or _enclosing_ns(folder), shipped=is_running_install_path(folder)):
         return known
     try:
         header, bodies = read_entity_json(SchemaRegistry.get(FAMILY), folder)
@@ -286,8 +288,11 @@ def _build(folder: Path) -> Optional[type]:
     """Compile and register ONE folder; dependencies first. Raises ``DeclareError``."""
     read = _read(folder)
     built = _BUILT.get(folder)
-    if built is not None and built[0] == read.source and all(DataSpec.parse(k) is c for k, c in built[2]):
-        return built[1]
+    if built is not None and built[0] == read.source:
+        for kind, _ in built[2]:
+            _refresh(kind)  # a kind it names may have changed on disk without being re-read yet
+        if all(DataSpec.parse(k) is c for k, c in built[2]):
+            return built[1]
     doc, tag = read.doc, read.tag
     if doc.resolved_subkind is None:
         _BUILT[folder] = (read.source, None, ())
@@ -331,7 +336,7 @@ def _build(folder: Path) -> Optional[type]:
 
     # Build what this one names before compiling it, so no reference resolves to Any.
     for ref in {r for form in forms.values() for r in kinds_named(form)}:
-        if ref in _BUILDING:
+        if ref != tag and ref in _BUILDING:  # a kind may name itself (``_refresh`` marks it)
             raise DeclareError(f"kind {tag!r} and {ref!r} refer to each other")
         if ref in _PENDING:
             _build_pending(ref)
@@ -391,8 +396,36 @@ def _build(folder: Path) -> Optional[type]:
     finally:
         _BUILDING.discard(tag)
     _OWNER[tag] = folder
-    _BUILT[folder] = (read.source, cls, tuple(included))
+    deps = dict(included)
+    deps.update((ref, DataSpec.parse(ref)) for form in forms.values() for ref in kinds_named(form))
+    _BUILT[folder] = (read.source, cls, tuple(deps.items()))
     return cls
+
+
+def _refresh(kind: str) -> None:
+    """Bring a kind another one depends on up to date with its folder: a pending one is built, a
+    built one re-checked (cheap when unchanged), one whose folder is gone is released -- so the
+    dependent then rebuilds against the new class, or fails naming the kind nobody defines."""
+    if kind in _PENDING:
+        _build_pending(kind)
+        return
+    owner = _OWNER.get(kind)
+    if owner is None or kind in _BUILDING:  # a reference may name itself
+        return
+    if not _still_defines(owner, kind):
+        _release(kind)
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        SchemaRegistry.unregister_kind(kind)
+        return
+    _BUILDING.add(kind)
+    try:
+        _build(owner)
+        _ERRORS[owner] = ""
+    except DeclareError as exc:
+        _ERRORS[owner] = str(exc)
+    finally:
+        _BUILDING.discard(kind)
 
 
 def _build_pending(tag: str) -> None:

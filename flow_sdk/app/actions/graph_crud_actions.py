@@ -508,6 +508,12 @@ async def handle_create_entity(request: Request):
             return ApiSuccessResponse[entity_model](data=merged)
 
         entity: Entity = entity_model.model_validate(sanitized_data)
+        # Creation, like an update, must attach tags through the entity's
+        # mutation seam once identity/ownership exists. In particular, a
+        # message tag also records provenance and admits its automation queue.
+        requested_tags = entity.tags if "tags" in sanitized_data else None
+        if requested_tags is not None:
+            entity.tags = []
         # Assign deterministic ID if entity is new (not yet in DB)
         if not entity.created_by:
             entity.id = entity_model.allocate_id(entity.model_dump())
@@ -537,6 +543,8 @@ async def handle_create_entity(request: Request):
             # A caller-supplied id is an identity minted elsewhere — never swap it
             # for a natural-key match.
             entity = await _dispatch_create_save(entity, request_info, someone_typeid, find_existing=not incoming_id)
+        if requested_tags is not None:
+            entity = await entity.set_tags(requested_tags)
     except AssetPathCollisionError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:

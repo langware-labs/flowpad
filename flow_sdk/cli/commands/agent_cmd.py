@@ -60,6 +60,7 @@ def deploy(
     environment: Annotated[Optional[str], typer.Option("--environment", help="The placement's environment (default: production).")] = None,
     provider: Annotated[str, typer.Option("--provider", help="The compute provider to deploy on; `flow agent providers` lists them.")] = "e2b",
     blocking: Annotated[bool, typer.Option("--blocking/--no-blocking", help="Wait for the deploy to end, printing each step as it reports.")] = True,
+    identity: Annotated[Optional[str], typer.Option("--identity", help="Who the machine signs in as: agent (default), deployment, user or none.")] = None,
 ) -> None:
     """Deploy AGENT's project with AGENT as its main agent; refused (exit 1) until the placement has what it needs.
     Blocks until it ends unless --no-blocking."""
@@ -68,6 +69,8 @@ def deploy(
     agent_id, project_id = str(row["id"]), str(row["project_id"])
     url = graph_url(port, f"project/{project_id}/deploy")
     body = {"environment": environment, "provider": provider, "main_agent_id": f"agent-{agent_id}"}
+    if identity:
+        body["identity"] = identity
     if not blocking or provider == "local":
         data = post_graph_json(url, body, on_error=_refused) or {}
         deployment = data.get("deployment") or {}

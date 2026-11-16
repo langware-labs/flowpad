@@ -1,11 +1,22 @@
 import { sdkConfig } from './config/index';
 
-export type DeployEnv = 'LOCAL' | 'DEVELOPMENT' | 'STAGING' | 'PRODUCTION';
+/** Build modes a bundle can be built as. `DESKTOP` is the published wheel (`build_ui.py`),
+ *  which every hub serves too — so this is never "which hub", see `isHubOnly()` for that. */
+export const deployEnv = ['LOCAL', 'DEVELOPMENT', 'STAGING', 'PRODUCTION', 'DESKTOP'] as const;
+export type DeployEnv = (typeof deployEnv)[number];
+
+/** The build's `DEPLOY_ENV`, checked. Throws on a value outside `deployEnv`. */
+export function createDeployEnv(value: string): DeployEnv {
+  const upper = value.toUpperCase();
+  const env = deployEnv.find((e) => e === upper);
+  if (!env) throw new Error(`Unknown DEPLOY_ENV '${value}', expected one of: ${deployEnv.join(', ')}`);
+  return env;
+}
 
 // Use the new configuration system
 export const config = {
   SUBPATH: '',
-  DEPLOY_ENV: sdkConfig.deploy_env.toUpperCase() as DeployEnv,
+  DEPLOY_ENV: createDeployEnv(sdkConfig.deploy_env),
   AUTH_PROVIDER: sdkConfig.auth_provider,
   SERVER_URL: sdkConfig.serverUrl,
   // HTTP axios base — relative same-origin in local dev (drops CORS preflights),

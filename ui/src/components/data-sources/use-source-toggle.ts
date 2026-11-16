@@ -14,25 +14,17 @@ export function useSourceToggle(source: DataSource) {
   const [busy, setBusy] = useState(false);
 
   const toggle = useCallback(async () => {
-    const previous = source.status;
-    // Un-pausing returns it to `new` rather than `active`: the backend decides
-    // whether this driver still owes a setup step, and a source paused mid-setup
-    // must not skip it.
-    const next = source.isActive || source.needsSetup ? 'disabled' : 'new';
+    const enable = !(source.isActive || source.needsSetup);
     setBusy(true);
     try {
-      source.status = next;
-      const saved = await source.save();
-      // The backend resolves `new` to `setup` or `active` on the way in; adopt its
-      // verdict, or the row reads as un-parked until the next fetch.
-      source.status = saved?.status ?? source.status;
-      source.setup_detail = saved?.setup_detail ?? source.setup_detail;
+      // The backend owns where a resumed source lands: back where it stood, re-checked by its
+      // driver — never a fresh start, which would send a verified source through setup again.
+      await source.setEnabled(enable);
       source.markEdit();
-      notify.success({
-        title: next === 'disabled' ? t`Paused.` : t`Resumed — it polls on the next tick.`,
-      });
+      // One that came back still owing its setup says so on its own row; "Resumed" would be untrue.
+      if (!enable) notify.success({ title: t`Paused.` });
+      else if (source.isActive) notify.success({ title: t`Resumed — it polls on the next tick.` });
     } catch (error) {
-      source.status = previous; // the save failed, so the row never moved
       notify.error({
         title: t`Could not update ${source.name || source.provider}`,
         message: errorMessage(error, t`The change was not saved.`),

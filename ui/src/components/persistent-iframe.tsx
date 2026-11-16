@@ -120,7 +120,7 @@ class IframeRegistry {
     const container = document.createElement('div');
     container.className = 'fixed top-0 left-0 pointer-events-none';
     container.style.width = '100vw';
-    container.style.height = '100vh';
+    container.style.height = '100dvh';
     document.body.appendChild(container);
     return container;
   }

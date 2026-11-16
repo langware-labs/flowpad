@@ -88,4 +88,4 @@ async def test_the_hub_rows_empty_context_never_erases_this_machines_links():
     await Conversation.mirror_from_hub({"id": conv.id, "title": "t", "shared_context_entities": []})
     row = await Conversation.get_by_id(conv.id)
     assert session in row.shared_context_entities
-    assert row.shared_context_entity_data[str(session)] == {"role": "session"}
+    assert row.shared_context_entity_data[str(session)] == {"role": "session", "context_via": "dynamic"}

@@ -137,6 +137,10 @@ class PublishedAssetSpec(DataSpec):
         return split_typeid(self.typeid)[1]
 
 
+#: The browsers a session can use (``project_manifest.json`` ``browser``); the first is the default.
+BROWSERS: tuple[str, ...] = ("agent", "extension")
+
+
 class ProjectManifestSpec(DataSpec):
     """``project_manifest.json`` — the shape, with every rule as a validator.
 
@@ -187,6 +191,16 @@ class ProjectManifestSpec(DataSpec):
     #: in, a receiver fetches it into their own store. Empty: the project has none, and a
     #: credential cannot be shared with its values. A vault names a place, never a value.
     secret_vaults: dict[str, SecretVaultSpec] = Field(default_factory=dict)
+    #: The browser this project's agent sessions use: ``agent`` — Flowpad's own Chrome window
+    #: (always available) — or ``extension`` — the user's Chrome through Claude in Chrome. A
+    #: session may override it; a harness with no extension (Codex) always gets ``agent``.
+    browser: str = "agent"
+
+    @field_validator("browser", mode="before")
+    @classmethod
+    def _known_browser(cls, value: object) -> str:
+        """Lenient like ``home_page``: an unknown value is the default, not a broken ledger."""
+        return value if value in BROWSERS else BROWSERS[0]
 
     @field_validator("env_files", mode="before")
     @classmethod
@@ -300,6 +314,9 @@ class ProjectManifestSpec(DataSpec):
             document.pop("subkind", None)
         else:
             document["subkind"] = str(document["subkind"])
+        if document.get("browser") == "agent":
+            # Silent for ``home_page``'s second reason: an older desk would refuse the key.
+            document.pop("browser", None)
         if not document.get("env_files"):
             # Silent for ``home_page``'s second reason: an older desk would refuse the key.
             document.pop("env_files", None)

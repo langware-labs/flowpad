@@ -11,7 +11,6 @@ A field with a ``default`` is pre-filled; one without (and not ``optional``) mus
 from __future__ import annotations
 
 import datetime
-import json
 from typing import Any, ClassVar, Literal, Optional
 
 from pydantic import model_validator
@@ -162,8 +161,9 @@ def answers_in(attachments: Any) -> Optional[FormAnswers]:
 
 
 def _attachment(kind: str, form_id: str, payload: dict) -> dict:
-    """The attachment dict ``handle_add_message`` adopts (``body["attachment"]``)."""
-    return {"attachment_type": "type_id", "data": f"{kind}-{form_id}", "prompt_preview": json.dumps(payload)}
+    from flow_sdk.builtin.flow_message import value_attachment  # noqa: PLC0415 — builtin imports data_spec
+
+    return value_attachment(kind, form_id, payload)
 
 
 def form_attachment(form: MessageForm) -> dict:

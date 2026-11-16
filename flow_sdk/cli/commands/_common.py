@@ -164,8 +164,16 @@ def local_request(method: str, url: str, **kwargs: Any) -> "requests.Response":
     from flow_sdk.instance_settings import cookie_gate
     from flow_sdk.utils.networking import is_loopback
 
-    gate = cookie_gate.get_header() if is_loopback(urlsplit(url).hostname) else None
+    local = is_loopback(urlsplit(url).hostname)
+    gate = cookie_gate.get_header() if local else None
     headers = {**dict([gate] if gate else []), **(kwargs.pop("headers", None) or {})}
+    if local:
+        from flow_sdk.utils.environment import get_execution_scope
+
+        for scope in get_execution_scope():
+            if isinstance(scope, dict) and scope.get("type") == "agentic_process" and scope.get("id"):
+                headers.setdefault("X-Flow-Process-Id", str(scope["id"]))
+                break
     if headers:
         kwargs["headers"] = headers
     return requests.request(method, url, **kwargs)

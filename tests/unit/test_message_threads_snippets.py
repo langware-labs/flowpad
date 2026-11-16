@@ -54,10 +54,11 @@ async def test_the_page_runs_as_written(monkeypatch):
     page = doc(DOC)
     ns = {"CONVERSATION_ID": await _native_chat()}
 
-    # §1 — a reply opens the root's thread; a send into it joins without quoting.
+    # §1 — a reply only quotes; writing into a message opens its thread; a send into it joins.
     await run_fence(fence_under(page, "1."), ns, filename=f"{DOC} §1")
-    answer, question = ns["answer"], ns["question"]
-    assert answer.reply_to_id == question.id and answer.thread_root_id == question.id and answer.thread_id
+    answer, question, quoted = ns["answer"], ns["question"], ns["quoted"]
+    assert quoted.reply_to_id == question.id and not quoted.thread_id
+    assert answer.reply_to_id is None and answer.thread_root_id == question.id and answer.thread_id
     into = (await ns["chat"].messages())[-1]
     assert into.text == "Snapshot taken." and into.reply_to_id is None and into.thread_id == answer.thread_id
 

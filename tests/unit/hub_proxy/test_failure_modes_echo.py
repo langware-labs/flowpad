@@ -152,3 +152,26 @@ async def test_a_list_too_long_for_the_request_finishes_and_prunes_after_the_ans
     assert await Conversation.get_by_id(held.id) is None, "the background finish did not prune"
     for row in echo_hub.paged[CONVERSATIONS]:
         assert await Conversation.get_by_id(row["id"]) is not None
+
+
+# ── a refusal the screen handles itself is not a failed hub request ─────────────────────────
+
+
+@pytest.mark.parametrize("quiet", [False, True])
+async def test_a_quiet_budgets_refusal_raises_no_cloud_request_failed(desktop, echo_hub, quiet):
+    """A member's org page reads budgets, the hub refuses (403), and the page shows the member card.
+    Sent ``Flowpad-Quiet``, that refusal must not also become a "Cloud Request Failed" warning."""
+    from flow_sdk.api.api_types.identifier import mint_uuid
+    from flow_sdk.app.actions.membership_sync import materialize_remote_organization
+    from flow_sdk.cloud_client.error_reporter import hub_error_reporter
+
+    org = await materialize_remote_organization({"id": mint_uuid(), "name": "Members Only"}, notify=False)
+    path = f"/api/v1/graph/organization/{org.id}/budgets"
+    hub_error_reporter._failing.clear()
+    async with httpx.AsyncClient(base_url=desktop, timeout=30) as c:
+        r = await c.get(
+            path, headers={**REFLECT, "x-echo-status": "403", **({"Flowpad-Quiet": "true"} if quiet else {})}
+        )
+    assert r.status_code == 403, r.text
+    assert any(rec.raw_path.endswith(f"{org.id}/budgets") for rec in echo_hub.received)
+    assert hub_error_reporter.has_failing is not quiet

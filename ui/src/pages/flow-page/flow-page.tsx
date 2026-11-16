@@ -1,6 +1,9 @@
 import { CollapsedSidebar } from '@src/components/collapsed-sidebar';
+import { RailEntriesProvider } from '@src/components/collapsed-sidebar/collapsed-sidebar';
 import { TopNavBar } from '@src/components/top-nav-bar/TopNavBar';
 import { Footer } from '@src/components/footer';
+import { PhoneMenu } from '@src/components/phone-shell/PhoneMenu';
+import { PhoneTopBar } from '@src/components/phone-shell/PhoneTopBar';
 import { SidebarProvider } from '@src/components/ui/sidebar';
 import { useIsVibe } from '@src/components/view-mode';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -14,6 +17,7 @@ import { AssetVibeWorkspace } from './asset-vibe-workspace';
 import { UnifiedTabStrip } from './content-panel/unified-tab-strip';
 import { useVibeOnlyAgent } from '@src/hooks/use-launching-agent';
 import { PageId } from '@sdk';
+import { VIEWER_REGISTRY, type ViewType } from '@src/types/ViewType';
 import { TabFullScreenExit, useTabFullScreen } from '@src/tabs/tab-full-screen';
 
 export default function FlowPage() {
@@ -48,6 +52,12 @@ export default function FlowPage() {
     // The hub page materializes no tabs: its strip would only ever be an empty band.
     currentDock?.page !== PageId.HUB;
 
+  // A phone (below md) is one pane: the nav bar, rail, tab strip and footer are desktop chrome, and
+  // `PhoneTopBar` stands in for them. CSS only — nothing unmounts, and at md and up nothing changes.
+  const phoneChrome = 'contents max-md:hidden';
+  // Unless the view draws its own phone header (`ViewerMeta.phoneHeader`).
+  const ownsPhoneHeader = VIEWER_REGISTRY[currentDock?.viewType as ViewType]?.phoneHeader === 'own';
+
   return (
     /* `flex-col` on the provider's own root (it appends className to a flex div)
        rather than a wrapper of our own: that makes the navigation bar the app's
@@ -57,44 +67,59 @@ export default function FlowPage() {
        runtime signal nor the back button may depend on where you navigated.
        One mount, one place. */
     <SidebarProvider defaultOpen={false} className="h-full !min-h-0 flex-col overflow-hidden bg-background">
-      <TopNavBar />
-      <div data-testid="flow-page" className="flex min-h-0 w-full flex-1 overflow-hidden">
-        {/* Collapsed Icon Sidebar (~50px wide) */}
-        <CollapsedSidebar />
-
-        {/* Main Content Area. min-w-0 is load-bearing: without it this
-            flex-row child sizes to max-content and the unified tab strip
-            (dozens of chips) blows the column out to thousands of px,
-            pushing the right arrow / close-all / opener toolbar off-screen. */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          {framedByStrip && <UnifiedTabStrip />}
-          <TabStripOwnedAbove.Provider value={framedByStrip}>
-            <div
-              data-testid="tab-content-area"
-              className={
-                fullScreen
-                  ? 'fixed inset-0 z-50 overflow-hidden bg-background'
-                  : `flex-1 overflow-hidden ${framedByStrip ? 'border-t border-border' : ''}`
-              }
-            >
-              {fullScreen && <TabFullScreenExit />}
-              {layout === DockLayout.ASSET_WORKSPACE ? (
-                <AssetVibeWorkspace chatBeside={assetChatBeside} session={vibeSession} />
-              ) : layout === DockLayout.VIBE_WORKSPACE && vibeSession ? (
-                <VibeWorkspace session={vibeSession} />
-              ) : layout === DockLayout.VIBE_NO_PROCESS ? (
-                <VibeNoProcessWorkspace />
-              ) : layout === DockLayout.VIBE_NEW_CHAT ? (
-                <VibeNewChat />
-              ) : (
-                <ContentPanel />
-              )}
-            </div>
-          </TabStripOwnedAbove.Provider>
-
-          <Footer />
+      {/* One rail list for the icon rail and the phone menu. */}
+      <RailEntriesProvider>
+        <div className={phoneChrome}>
+          <TopNavBar />
         </div>
-      </div>
+        {!ownsPhoneHeader && <PhoneTopBar />}
+        <PhoneMenu />
+        <div data-testid="flow-page" className="flex min-h-0 w-full flex-1 overflow-hidden">
+          {/* Collapsed Icon Sidebar (~50px wide) */}
+          <div className={phoneChrome}>
+            <CollapsedSidebar />
+          </div>
+
+          {/* Main Content Area. min-w-0 is load-bearing: without it this
+              flex-row child sizes to max-content and the unified tab strip
+              (dozens of chips) blows the column out to thousands of px,
+              pushing the right arrow / close-all / opener toolbar off-screen. */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            {framedByStrip && (
+              <div className={phoneChrome}>
+                <UnifiedTabStrip />
+              </div>
+            )}
+            <TabStripOwnedAbove.Provider value={framedByStrip}>
+              <div
+                data-testid="tab-content-area"
+                className={
+                  fullScreen
+                    ? 'fixed inset-0 z-50 overflow-hidden bg-background'
+                    : `flex-1 overflow-hidden ${framedByStrip ? 'border-t border-border' : ''}`
+                }
+              >
+                {fullScreen && <TabFullScreenExit />}
+                {layout === DockLayout.ASSET_WORKSPACE ? (
+                  <AssetVibeWorkspace chatBeside={assetChatBeside} session={vibeSession} />
+                ) : layout === DockLayout.VIBE_WORKSPACE && vibeSession ? (
+                  <VibeWorkspace session={vibeSession} />
+                ) : layout === DockLayout.VIBE_NO_PROCESS ? (
+                  <VibeNoProcessWorkspace />
+                ) : layout === DockLayout.VIBE_NEW_CHAT ? (
+                  <VibeNewChat />
+                ) : (
+                  <ContentPanel />
+                )}
+              </div>
+            </TabStripOwnedAbove.Provider>
+
+            <div className={phoneChrome}>
+              <Footer />
+            </div>
+          </div>
+        </div>
+      </RailEntriesProvider>
     </SidebarProvider>
   );
 }

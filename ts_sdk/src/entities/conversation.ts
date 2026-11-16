@@ -100,6 +100,8 @@ export enum ConversationKind {
   HELPDESK = 'helpdesk',
   /** An agent owner's IT message to its deployments; the hub writes one reply per machine. */
   IT = 'it',
+  /** A project's Monitoring channel: one hub message per Issue, kept current by the hub. */
+  MONITORING = 'monitoring',
 }
 
 /** Mirrors ``flow_sdk.builtin.conversation.ConversationStatus``. Only these two
@@ -117,6 +119,11 @@ export function isClosedConversation(status?: ConversationStatus | string | null
 /** True when `kind` denotes an IT conversation (an owner's IT message to its deployments). */
 export function isItKind(kind?: ConversationKind | string | null): boolean {
   return kind === ConversationKind.IT;
+}
+
+/** True when `kind` denotes a project's Monitoring channel (the hub's issue messages). */
+export function isMonitoringKind(kind?: ConversationKind | string | null): boolean {
+  return kind === ConversationKind.MONITORING;
 }
 
 /** True when `kind` denotes a helpdesk ticket. */

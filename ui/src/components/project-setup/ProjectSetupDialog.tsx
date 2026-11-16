@@ -40,6 +40,7 @@ import { ROOT_KIND, rowId as rowIdOf, rowKey } from './setup-labels';
 import { countDrawn, SetupTreeView } from './SetupTreeView';
 import { useSetupReadiness, withNotify } from './use-setup-readiness';
 import { useSetupRun } from './use-setup-run';
+import { useFirstRunFirst } from '@src/components/setup-incomplete/first-run-gate';
 
 /**
  * The project's setup, run in the app: what the footer's "Project setup required" opens.
@@ -134,12 +135,14 @@ function JustificationInfo({ req }: { req: ProjectSetupRequirement }) {
 
 export function ProjectSetupDialogRoot() {
   const { open, payload, setOpen } = useProjectSetupStore();
+  // First-run setup comes first: the dialog opens once the first-run wizard's window is closed.
+  const ready = useFirstRunFirst(open && !!payload);
   if (!payload) return null;
   return (
     <ProjectSetupDialog
       projectId={payload.projectId}
       projectName={payload.projectName}
-      open={open}
+      open={open && ready}
       onOpenChange={setOpen}
     />
   );

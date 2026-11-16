@@ -443,6 +443,19 @@ class Wizard(Entity):
         await show_wizard_fresh(self)
         return ApiSuccessResponse(data={"opened": True})
 
+    @action.post(action_name="closed")
+    async def closed_action(self) -> ApiResponse:
+        """`POST /wizard/<id>/closed` — the person closed this wizard's window, finished or not.
+
+        Closing the first-run wizard lets project setup go ahead (``core/wizard/first_run``).
+        """
+        from flow_sdk.core.wizard.first_run import mark_closed  # noqa: PLC0415
+        from flow_sdk.server.builtin_triggers import LLM_SETUP_WIZARD  # noqa: PLC0415
+
+        if self.name == LLM_SETUP_WIZARD:
+            mark_closed()
+        return ApiSuccessResponse(data={"closed": True})
+
     @action.post(action_name="start")
     async def start_action(self) -> ApiResponse:
         """`POST /wizard/<id>/start` — the wizard's own Start button: run it with the person present.

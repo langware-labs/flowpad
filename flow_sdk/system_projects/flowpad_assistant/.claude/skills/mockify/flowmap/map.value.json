@@ -1,0 +1,305 @@
+{
+ "spec_kind": "flowmap.map",
+ "skill": "mockify",
+ "line": "Turns a product idea into a clickable mock you can walk and comment on.",
+ "source_hash": "0a91740b9e7eded8",
+ "entries": [
+  {
+   "id": "e_mock",
+   "name": "Mock a flow",
+   "say": [
+    "mock this",
+    "/mockify",
+    "show me the ux",
+    "clickable mock"
+   ],
+   "gives": "A clickable mock of the journey, open beside the chat"
+  },
+  {
+   "id": "e_test",
+   "name": "Define a test",
+   "say": [
+    "mockify test"
+   ],
+   "gives": "A test scenario file for that flow",
+   "lane": 2
+  },
+  {
+   "id": "e_save",
+   "name": "Save to repo",
+   "say": [
+    "Save mock"
+   ],
+   "gives": "The mock's folder in your repo — not committed",
+   "lane": 0,
+   "row": 11
+  },
+  {
+   "id": "e_fb",
+   "name": "Send feedback",
+   "say": [
+    "Mock feedback on"
+   ],
+   "gives": "A revised mock, shown again",
+   "lane": 2,
+   "row": 11
+  }
+ ],
+ "steps": [
+  {
+   "id": "setup",
+   "title": "Set up the mock project",
+   "type": "code",
+   "takes": "Your repo",
+   "gives": "A mock project with two lists: mocks and feedback",
+   "source": "scripts/mock_project.py ensure",
+   "match": [
+    "mock_project.py ensure"
+   ]
+  },
+  {
+   "id": "trace",
+   "title": "Trace today's path",
+   "type": "instructions",
+   "takes": "Your idea",
+   "gives": "Where the user starts and which parts are reused",
+   "source": "SKILL.md · Phase 1",
+   "match": [
+    "\"Grep\"",
+    "ui/src/"
+   ]
+  },
+  {
+   "id": "tree",
+   "title": "Write the mock tree",
+   "type": "instructions",
+   "takes": "The idea and today's path",
+   "gives": "The plan: screens, actions, state",
+   "source": "SKILL.md · Phase 1",
+   "match": [
+    "tree.py show"
+   ]
+  },
+  {
+   "id": "treecheck",
+   "title": "Check the tree",
+   "type": "code",
+   "takes": "The plan",
+   "gives": "OK — or every broken link, by name",
+   "source": "scripts/tree.py validate",
+   "match": [
+    "tree.py validate"
+   ]
+  },
+  {
+   "id": "assemble",
+   "title": "Assemble the page",
+   "type": "code",
+   "takes": "The screens",
+   "gives": "One page holding every screen",
+   "source": "scripts/build_mock.py · slim_mock.py",
+   "match": [
+    "build_mock.py",
+    "slim_mock.py"
+   ]
+  },
+  {
+   "id": "build",
+   "title": "Build every screen",
+   "type": "instructions",
+   "takes": "The plan and the running app",
+   "gives": "One full screen per step",
+   "source": "SKILL.md · Phase 2",
+   "match": [
+    "capture/",
+    "templates/fast-mock",
+    "gen.py",
+    "/webapp/mock-"
+   ]
+  },
+  {
+   "id": "validate",
+   "title": "Check the mock",
+   "type": "code",
+   "takes": "The page and the plan",
+   "gives": "Pass or fail, and a picture of every screen",
+   "source": "scripts/validate_mock.py",
+   "match": [
+    "validate_mock.py"
+   ]
+  },
+  {
+   "id": "look",
+   "title": "Look at every picture",
+   "type": "instructions",
+   "takes": "The pictures",
+   "gives": "Looks right — or a list to fix",
+   "source": "SKILL.md · Phase 3",
+   "match": [
+    ".png"
+   ]
+  },
+  {
+   "id": "serve",
+   "title": "Serve and show",
+   "type": "code",
+   "takes": "The checked page",
+   "gives": "The mock, open in Flowpad",
+   "source": "flow app serve · flow show",
+   "match": [
+    "flow app serve",
+    "flow show"
+   ]
+  },
+  {
+   "id": "mock",
+   "title": "The mock and its journey bar",
+   "type": "screen",
+   "takes": "Your clicks, comments and images",
+   "gives": "Comments saved; Execute sends them back",
+   "source": "assets/journey-bar.js"
+  },
+  {
+   "id": "revise",
+   "title": "Read feedback and revise",
+   "type": "instructions",
+   "takes": "Your comments",
+   "gives": "Revised screens; comments marked as handled",
+   "source": "SKILL.md · Reading feedback",
+   "match": [
+    "mock-feedback"
+   ]
+  },
+  {
+   "id": "testmd",
+   "title": "Write the test file",
+   "type": "code",
+   "takes": "The approved mock",
+   "gives": "A test scenario file",
+   "source": "scripts/test_md.py",
+   "match": [
+    "test_md.py"
+   ]
+  },
+  {
+   "id": "save",
+   "title": "Copy the mock into the repo",
+   "type": "code",
+   "takes": "The mock's name",
+   "gives": "The mock's folder in your repo",
+   "source": "scripts/mock_project.py save",
+   "match": [
+    "mock_project.py save"
+   ]
+  }
+ ],
+ "links": [
+  {
+   "from": "e_mock",
+   "to": "setup"
+  },
+  {
+   "from": "e_test",
+   "to": "setup"
+  },
+  {
+   "from": "setup",
+   "to": "trace"
+  },
+  {
+   "from": "trace",
+   "to": "tree"
+  },
+  {
+   "from": "tree",
+   "to": "treecheck"
+  },
+  {
+   "from": "treecheck",
+   "to": "tree",
+   "label": "broken links",
+   "loop": true
+  },
+  {
+   "from": "treecheck",
+   "to": "build"
+  },
+  {
+   "from": "build",
+   "to": "assemble"
+  },
+  {
+   "from": "assemble",
+   "to": "validate"
+  },
+  {
+   "from": "validate",
+   "to": "build",
+   "label": "fails",
+   "loop": true
+  },
+  {
+   "from": "validate",
+   "to": "look"
+  },
+  {
+   "from": "look",
+   "to": "build",
+   "label": "looks wrong",
+   "loop": true
+  },
+  {
+   "from": "look",
+   "to": "serve"
+  },
+  {
+   "from": "serve",
+   "to": "mock"
+  },
+  {
+   "from": "mock",
+   "to": "o_ok"
+  },
+  {
+   "from": "mock",
+   "to": "testmd",
+   "label": "test approved"
+  },
+  {
+   "from": "testmd",
+   "to": "o_test"
+  },
+  {
+   "from": "e_fb",
+   "to": "revise"
+  },
+  {
+   "from": "revise",
+   "to": "build",
+   "label": "rebuild",
+   "loop": true
+  },
+  {
+   "from": "e_save",
+   "to": "save"
+  },
+  {
+   "from": "save",
+   "to": "o_saved"
+  }
+ ],
+ "outcomes": [
+  {
+   "id": "o_ok",
+   "title": "Approved — nothing left to change"
+  },
+  {
+   "id": "o_test",
+   "title": "A test scenario file"
+  },
+  {
+   "id": "o_saved",
+   "title": "The mock is in your repo"
+  }
+ ]
+}

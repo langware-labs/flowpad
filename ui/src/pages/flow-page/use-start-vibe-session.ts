@@ -29,7 +29,7 @@ import { useLingui } from '@lingui/react/macro';
 import { useCallback, type ReactNode } from 'react';
 import { systemSubagentRef, systemVibeKindSubagentRefs } from './vibe-personas';
 import { chatTargetForProject } from '@src/lib/chat-target';
-import { VIBE_MODEL_DEFAULT, type VibeModelChoice } from './vibe-model-select';
+import { type VibeModelChoice } from './vibe-model-select';
 import type { WorkerType } from '@src/components/workers/worker-types';
 
 // The vibe sub-agent's asset_ref is stable for the app's lifetime — resolve
@@ -140,7 +140,7 @@ export async function createVibeProcessForProject(opts: {
   /** Entity TypeIds the session starts with in its context. */
   sharedContextEntities?: string[];
 }): Promise<AgenticProcess> {
-  const { projectId, workdir, targetVfsPath, navigation, open = true, model = VIBE_MODEL_DEFAULT, workerType } = opts;
+  const { projectId, workdir, targetVfsPath, navigation, open = true, model, workerType } = opts;
   const target = targetVfsPath ?? (projectId ? chatTargetForProject(projectId) : undefined);
 
   const computeNode = await ComputeNode.getById('@local');
@@ -154,7 +154,7 @@ export async function createVibeProcessForProject(opts: {
       processType: ProcessKind.Chat,
       loadFlowpadAssistant: true,
       outputFormat: 'stream-json',
-      model,
+      ...(model ? { model } : {}),
       ...(workerType ? { workerType } : {}),
       ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),
     },
@@ -246,7 +246,7 @@ export async function continueVibeSessionForProject(opts: {
   workdir?: string;
   targetVfsPath?: string;
   navigation: OpenShell;
-  model: VibeModelChoice;
+  model?: VibeModelChoice;
   workerType: WorkerType;
 }): Promise<string> {
   const { sourceProcess, projectId, workdir, targetVfsPath, navigation, model, workerType } = opts;

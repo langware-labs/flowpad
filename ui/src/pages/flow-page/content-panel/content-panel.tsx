@@ -90,6 +90,9 @@ const GraphView = lazyWebglView(() =>
 );
 // Lazy like its neighbours: the portal drags react-markdown + the article
 // renderer, which no user who never opens a help desk should pay for.
+const HelpDeskPage = lazy(() =>
+  import('@src/components/helpdesk/HelpDeskPage').then((m) => ({ default: m.HelpDeskPage })),
+);
 const HelpdeskPortalPage = lazy(() =>
   import('@src/components/helpdesk/HelpdeskPortalPage').then((m) => ({ default: m.HelpdeskPortalPage })),
 );
@@ -321,6 +324,9 @@ function ContentPanelBody({
       case ViewType.CONVERSATION:
         // Reuse the OSS conversation viewer (pure-graph, hub-safe) under page=hub.
         return <ConversationRoute />;
+      case ViewType.SUPPORT_DESK:
+        // The same help desk view as the desktop's: everything in it is the hub's to answer.
+        return <HelpDeskPage deskId={currentDock?.pointer ?? ''} />;
       case ViewType.SHELL:
         // A terminal on a hub compute node (a connected machine's PTY session).
         return <HubTerminal className="h-full" />;
@@ -616,6 +622,8 @@ function ContentPanelBody({
         return <AssetsPage />;
       case ViewType.HELPDESK:
         return <HelpdeskPortalPage />;
+      case ViewType.SUPPORT_DESK:
+        return <HelpDeskPage deskId={currentDock?.pointer ?? ''} />;
       case ViewType.PROJECT: {
         // A project dock scoped to a collaboration_room (…/collaboration_room/<id>)
         // renders the collaboration room; a bare project dock is the assets

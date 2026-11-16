@@ -10,6 +10,7 @@
  * fit.fit() is the authoritative size, and every attach asserts that.
  */
 
+import { HAS_RTL, RTL } from '@src/lib/link-matches';
 import type { WorkerCliVendor } from './process-cli-presentation';
 
 export const FONT_FAMILY = '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace';
@@ -50,6 +51,23 @@ export const FONT_SIZE_PX = 14;
 export function applyRtlGridContract(container: HTMLElement, vendor: WorkerCliVendor): void {
   const isWindows = navigator.platform.toLowerCase().includes('win');
   container.classList.toggle('xterm-rtl-grid', isWindows && vendor === 'claude');
+}
+
+/**
+ * A row stored in visual (screen) order back in the order it was written: reversed, then each
+ * left-to-right run (words, numbers, a URL) turned back and each bracket mirrored. A row with no
+ * right-to-left letter is returned as is.
+ */
+export function visualToLogical(row: string): string {
+  if (!HAS_RTL.test(row)) return row;
+  const brackets = '()[]{}<>';
+  return [...row]
+    .reverse()
+    .join('')
+    .replace(new RegExp(`[A-Za-z0-9](?:[^${RTL}]*[A-Za-z0-9])?|[()[\\]{}<>]`, 'g'), (run) => {
+      const b = brackets.indexOf(run);
+      return b >= 0 ? brackets[b ^ 1] : [...run].reverse().join('');
+    });
 }
 
 /**

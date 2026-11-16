@@ -151,8 +151,9 @@ per `add_message`: the entity-save auto-notify (no `from_entity`, broadcast to
 the sender) and the explicit `_fanout_message` (with `from_entity`, to everyone
 but the sender). The auto-notify copy is useless to us — we already know about
 our own sends, and it lacks the conversation parent. The bridge matches
-`payload.sender_id` against the **cloud** user id (`get_user()`, not the local
-`User` row, which uses a different per-machine id) and **returns early** when
+`payload.sender_id` against the **cloud** principal's id (`get_principal()` — the
+person, or the agent's `Identity` on its box — not the local `User` row, which uses
+a different per-machine id) and **returns early** when
 they match (`hub_bridge.py:424-425`).
 
 **Conversation-id resolution (`hub_bridge.py:428-463`)**, in precedence order:

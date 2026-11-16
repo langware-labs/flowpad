@@ -1,5 +1,5 @@
-import { History, Layers, type LucideIcon } from 'lucide-react';
-import { Task } from '@sdk';
+import { History, type LucideIcon } from 'lucide-react';
+import { GraphContext, Task } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -36,7 +36,7 @@ export function ConversationBottomRibbon({
 }: ConversationBottomRibbonProps) {
   // Order matches the drawer's tab strip: Context, Tasks, then Runs.
   const tabs: RibbonTab[] = [
-    { id: 'context', icon: Layers, description: 'Context' },
+    { id: 'context', icon: iconForType(GraphContext.type), description: 'Context' },
     { id: 'tasks', icon: iconForType(Task.type), description: 'Tasks', badge: tasksBadge },
   ];
   if (showRuns) {

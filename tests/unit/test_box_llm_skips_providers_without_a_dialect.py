@@ -1,6 +1,7 @@
 """A prompt op is an API call: the box's LLM source for it must be a provider that has an API dialect.
 
-A stored Vertex source ranked first and was picked, then the call failed with "unknown LLM provider 'vertex'".
+A stored source of a provider with no dialect ranked first and was picked, then the call failed with
+"unknown LLM provider". (That provider was Vertex until it got a dialect of its own.)
 A hub endpoint that names no provider still has a dialect (``openrouter``), so it stays a valid source.
 """
 
@@ -24,7 +25,7 @@ def _rank(monkeypatch, *endpoints):
 
 @pytest.mark.asyncio
 async def test_a_source_without_an_api_dialect_is_not_the_box_llm(monkeypatch):
-    _rank(monkeypatch, LLMEndpoint(provider="vertex"), LLMEndpoint(provider="openrouter"))
+    _rank(monkeypatch, LLMEndpoint(provider="bedrock"), LLMEndpoint(provider="openrouter"))
     chosen = await runner._box_llm()
     assert chosen is not None and chosen.provider == "openrouter"
 

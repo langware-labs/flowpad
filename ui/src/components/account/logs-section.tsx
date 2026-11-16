@@ -10,6 +10,7 @@ import { Terminal } from 'lucide-react';
 /** The SmartNavigationLog dataset's title (`flow_sdk/core/navigation_log.py` TITLE). */
 const SMART_NAVIGATION_LOG = 'SmartNavigationLog';
 import { SystemLog } from './system-log';
+import { NetworkErrors } from './network-errors';
 import { SystemDiagnoses } from './system-diagnoses';
 
 export function LogsSection({ onNavigate }: { onNavigate?: () => void } = {}) {
@@ -20,7 +21,7 @@ export function LogsSection({ onNavigate }: { onNavigate?: () => void } = {}) {
   const DatasetIcon = iconForType(Dataset.type);
 
   // The log opens in the app that edits it, like any dataset (record-type-nav's dataset action).
-  // None yet means the log was never on: send the user to the switch (Preferences → Advanced).
+  // None yet means the log was never on: send the user to the switch (Preferences → Developer → Smart navigation).
   const openSmartNavigationLog = async () => {
     onNavigate?.();
     const [log] = await Dataset.query(
@@ -32,7 +33,7 @@ export function LogsSection({ onNavigate }: { onNavigate?: () => void } = {}) {
       }),
     );
     if (!log) {
-      navigation.openPreferences('advanced');
+      navigation.openPreferences('developer/smart-navigation');
       return;
     }
     const subject = `dataset-${log.id}`;
@@ -82,6 +83,8 @@ export function LogsSection({ onNavigate }: { onNavigate?: () => void } = {}) {
       <SystemDiagnoses />
 
       <SystemLog />
+
+      <NetworkErrors />
     </div>
   );
 }

@@ -6,22 +6,34 @@ import { ColorPicker } from '@src/components/ui/color-picker';
 import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
 import { noteTitle } from '@src/hooks/use-entity-notes';
 import { formatTimeAgoShort } from '@src/utils/format-time-ago';
-import { DEFAULT_NOTE_COLOR, NOTE_COLOR_TOKENS, NOTE_PALETTE, noteColor, type NoteColorToken } from './note-palette';
+import {
+  NOTE_COLOR_TOKENS,
+  NOTE_PALETTE,
+  noteColor,
+  type NoteColorToken,
+  notePaperStyle,
+} from './note-palette';
 import { StickyNoteShape } from './StickyNoteShape';
 import { useNoteWorker } from './useNoteWorker';
 
 /** The note swatches as the shared ColorPicker reads them: a token and the colour it shows. */
 const SWATCHES = NOTE_COLOR_TOKENS.map((token) => ({ token, hex: NOTE_PALETTE[token].face[1] }));
 
-function NoteColorPicker({ value, onChange }: { value: NoteColorToken; onChange: (c: NoteColorToken) => void }) {
+/** `null` is "no color", the composer's default; clicking the chosen swatch again goes back to it. */
+function NoteColorPicker({
+  value,
+  onChange,
+}: {
+  value: NoteColorToken | null;
+  onChange: (c: NoteColorToken | null) => void;
+}) {
   return (
     <ColorPicker
       palette={SWATCHES}
-      allowNone={false}
-      value={NOTE_PALETTE[value].face[1]}
+      value={value ? NOTE_PALETTE[value].face[1] : null}
       onChange={(hex) => {
         const hit = SWATCHES.find((s) => s.hex === hex);
-        if (hit) onChange(hit.token);
+        onChange(hit && hit.token !== value ? hit.token : null);
       }}
       size="sm"
       className="gap-1"
@@ -30,14 +42,12 @@ function NoteColorPicker({ value, onChange }: { value: NoteColorToken; onChange:
 }
 
 /** The paper itself: the note's colour, with the folded corner cut out. */
-function NotePaper({ color, children }: { color: string | undefined; children: React.ReactNode }) {
-  const c = noteColor(color);
+function NotePaper({ color, children }: { color: string | null | undefined; children: React.ReactNode }) {
   return (
     <div
-      className="relative px-3.5 pb-6 pt-3"
+      className={color === null ? 'relative bg-muted px-3.5 pb-6 pt-3 text-foreground' : 'relative px-3.5 pb-6 pt-3'}
       style={{
-        background: `linear-gradient(${c.face[0]}, ${c.face[1]})`,
-        color: c.ink,
+        ...(color === null ? {} : notePaperStyle(noteColor(color))),
         clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 22px), calc(100% - 22px) 100%, 0 100%)',
       }}
     >
@@ -50,19 +60,19 @@ export function NoteComposer({
   onSave,
   onCancel,
 }: {
-  onSave: (content: string, color: NoteColorToken) => void | Promise<void>;
+  onSave: (content: string, color: NoteColorToken | null) => void | Promise<void>;
   onCancel: () => void;
 }) {
   const { t } = useLingui();
   const [text, setText] = useState('');
-  const [color, setColor] = useState<NoteColorToken>(DEFAULT_NOTE_COLOR);
+  const [color, setColor] = useState<NoteColorToken | null>(null);
   const save = () => {
-    if (text.trim()) void onSave(text.trim(), color);
+    void onSave(text.trim(), color);
   };
   return (
     <div className="space-y-2 p-2.5" data-testid="note-composer">
       <div className="flex items-center gap-1.5">
-        <StickyNoteShape color={color} size={14} />
+        <StickyNoteShape color={color ?? 'gray'} size={14} />
         <p className="text-sm font-semibold text-foreground">
           <Trans>New note</Trans>
         </p>
@@ -93,9 +103,9 @@ export function NoteComposer({
         <button
           type="button"
           onClick={save}
-          disabled={!text.trim()}
+          title={text.trim() ? undefined : t`Colour the tab`}
           data-testid="note-composer-save"
-          className="rounded bg-primary px-2 py-1 text-[11px] text-primary-foreground disabled:opacity-50"
+          className="rounded bg-primary px-2 py-1 text-[11px] text-primary-foreground"
         >
           <Trans>Save</Trans>
         </button>
@@ -187,7 +197,7 @@ export function NoteCard({
           <span className="flex-1 whitespace-nowrap text-[10px] opacity-70">
             {formatTimeAgoShort(note.iso_timestamp)}
           </span>
-          <NoteColorPicker value={color} onChange={(c) => void onSave({ color: c })} />
+          <NoteColorPicker value={color} onChange={(c) => void onSave({ color: c ?? 'gray' })} />
           <button
             type="button"
             title={t`Delete note`}

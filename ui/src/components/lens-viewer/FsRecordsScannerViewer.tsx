@@ -249,7 +249,7 @@ function TypeRow({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100"
+                  className="h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100"
                   disabled={indexing || clearing}
                   onClick={() => onIndex(row.type)}
                 >
@@ -266,7 +266,7 @@ function TypeRow({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-5 w-5 text-destructive opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    className="h-5 w-5 text-destructive opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 pointer-coarse:opacity-100"
                     disabled={indexing || clearing}
                     onClick={() => onClear(row.type)}
                   >
@@ -1306,7 +1306,7 @@ export function FsRecordsScannerViewer() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100"
+                                    className="h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100"
                                     disabled={isIndexing}
                                     onClick={() => void handleRefreshTypeFromStats(row.type)}
                                   >

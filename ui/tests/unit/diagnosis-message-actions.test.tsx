@@ -6,6 +6,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const sdk = vi.hoisted(() => ({ diagnosis: vi.fn(), report: vi.fn() }));
+// The actions open screens through the dock; these tests read the buttons only.
+vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: null }) }));
 vi.mock('@sdk', async (orig) => ({
   ...(await orig<typeof import('@sdk')>()),
   helpRequestDiagnosis: sdk.diagnosis,

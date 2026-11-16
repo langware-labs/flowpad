@@ -271,16 +271,27 @@ async function namedProject(id: string | null | undefined): Promise<string | nul
   return !live || live.has(id) ? id : null;
 }
 
+/** A project id stamped on the target (step 5), or null when no such project exists: an asset
+ *  indexed from a folder that is not a project carries that folder's derived id. Never trusted by
+ *  shape like `namedProject` — on a cold load the list isn't cached yet and the derived id is a
+ *  valid uuid — so an id the cached list lacks is looked up (a 404 is negative-cached). */
+async function existingProject(id: string | null | undefined): Promise<string | null> {
+  if (!id) return null;
+  if ((await cachedProjectIds())?.has(id)) return id;
+  return (await dataManager.getByTypeId(new TypeId(EntityTypes.Project, id)).catch(() => null)) ? id : null;
+}
+
 /**
  * The asset's OWN project — `resolveTabProject`'s steps 2, 5, 6 (the loader's redirect
- * target, the tab's `target_project_id`); mirrors the backend's `tab_owner_project`.
+ * target, the tab's `target_project_id`); mirrors the backend's `tab_owner_project`, except
+ * that a step-5 stamp must name an existing project.
  */
 export async function tabOwnerProject(dock: IDockPointer, target: TabProjectTarget): Promise<string | null> {
   const targetTypeId = dock.targetTypeId ?? target?.typeId ?? null;
   // 2
   if (targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
-  // 5
-  const own = target?.project_id ?? target?.effective_project_id ?? null;
+  // 5 — a stamp naming no project (a non-project folder's derived id) falls through to the path.
+  const own = await existingProject(target?.project_id ?? target?.effective_project_id);
   if (own) return own;
   // 6 — an unminted file still sits inside a project folder.
   for (const path of [dock.vfsPath?.machinePath, target?.cwd ?? target?.workdir]) {

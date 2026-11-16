@@ -383,6 +383,40 @@ async def test_project_cleanup_apply_drops_the_picker_snapshot(project_db, tmp_p
     assert disk.scans == 2
 
 
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_project_cleanup_trashes_a_listed_folder_with_no_project_row(project_db, tmp_path, monkeypatch):
+    """A folder the listing found with no Project row (harness history only) is trashed by the path
+    the screen sent, once that path hashes to the row's id; a path that does not is refused."""
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.faas import scan_actions
+    from flow_sdk.fs_store.operations import project_cleanup
+
+    disk = _PickerDisk(monkeypatch, tmp_path, "leftover", "other")
+    listed = (await project_list.list_projects_from_indexer())["projects"]
+    row_id = next(r["id"] for r in listed if r["cwd"] == disk.cwd("leftover"))
+    sent = {"project_ids": [row_id], "cwds": {row_id: disk.cwd("leftover")}}
+
+    async def body():
+        return sent
+
+    trashed: list[str] = []
+    monkeypatch.setattr(scan_actions, "get_current_request_info", lambda: SimpleNamespace(request=SimpleNamespace(json=body)))
+    monkeypatch.setattr(project_cleanup.HarnessIndex, "build", classmethod(lambda cls: None))
+    monkeypatch.setattr(project_cleanup, "guard_deletable", lambda cwd: cwd)
+    monkeypatch.setattr(project_cleanup, "clear_harness_state", lambda row, index: {"cwd": row["cwd"]})
+    monkeypatch.setattr(project_cleanup, "trash_folder", lambda cwd: trashed.append(cwd) or "trash")
+
+    response = await scan_actions.ScanActionsMixin._scan_project_cleanup_apply(None, permanent=True)
+    assert response.data["succeeded"] == 1, response.data
+    assert trashed == [disk.cwd("leftover")]
+
+    sent["cwds"] = {row_id: disk.cwd("other")}
+    response = await scan_actions.ScanActionsMixin._scan_project_cleanup_apply(None, permanent=True)
+    assert response.data["failed"] == 1
+
+
 def test_copilot_project_iterator_rejects_home_but_keeps_subdir(
     tmp_path,
     monkeypatch,
