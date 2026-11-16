@@ -77,8 +77,14 @@ describe('stream inbox unread truth table — conversationFacets parity', () => 
     // The scalar the backend derives for this single-conversation world must
     // match what the row facets imply: one when visible-and-unread, plus any
     // pending membership invitations.
+    // A membership invite threaded into a conversation is that row's, not a line of its own.
     const membershipPending = c.invitations.filter(
-      (i) => i.target_type && i.target_id && !i.accepted && i.recipient_email === viewer.email,
+      (i) =>
+        i.target_type &&
+        i.target_id &&
+        !i.accepted &&
+        i.recipient_email === viewer.email &&
+        !(i.target_url_path ?? '').startsWith('/conversation/'),
     ).length;
     const rowContribution = !facets.isArchived && facets.isUnread ? 1 : 0;
     expect(rowContribution + membershipPending, 'scalar parity').toBe(c.expected);

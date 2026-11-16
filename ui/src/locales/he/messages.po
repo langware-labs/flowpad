@@ -2834,6 +2834,7 @@ msgstr "פעיל"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
@@ -3534,6 +3535,10 @@ msgstr "עקבת סוכן"
 msgid "Agent turn"
 msgstr "סבב סוכן"
 
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Agent visitors / outside teams"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Agentic Process"
 msgstr "תהליך סוכני"
@@ -3708,6 +3713,10 @@ msgstr "כל ה-hooks"
 #: src/components/locale/LocalePicker.tsx
 msgid "All languages"
 msgstr "כל השפות"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "All local files in this folder, including uncommitted Git changes, will be permanently deleted. This cannot be undone."
+msgstr "כל הקבצים המקומיים בתיקייה, כולל שינויים ב-Git שעוד לא בוצע להם commit, יימחקו לצמיתות. לא ניתן לבטל את הפעולה."
 
 #: src/components/conversation/ThreadHeader.tsx
 #: src/components/data-sources/DataSourcePage.tsx
@@ -3947,6 +3956,10 @@ msgstr "כבר מעודכן"
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Also"
 msgstr "בנוסף"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "Also delete the project folder from my computer"
+msgstr "מחיקת תיקיית הפרויקט גם מהמחשב שלי"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Also deliver to…"
@@ -6017,6 +6030,10 @@ msgstr "ביטול הבקשה"
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "בוטל"
+
+#: src/components/automations/AutomationsList.tsx
+msgid "Cancelled"
+msgstr ""
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Cancelled · ran {runs}"
@@ -10672,7 +10689,7 @@ msgstr "מחקו צ'אט"
 msgid "Delete chat?"
 msgstr "מחק שיחה?"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/assets/confirm-project-delete.ts
 msgid "Delete chats"
 msgstr "מחיקת צ׳אטים"
 
@@ -11581,6 +11598,7 @@ msgstr "הושלם"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/conversation/ContactDialog.tsx
@@ -12984,6 +13002,10 @@ msgstr "עזרה מומחה"
 msgid "Expert details"
 msgstr "פרטים למומחים"
 
+#: src/components/automations/AutomationsList.tsx
+msgid "Expired"
+msgstr ""
+
 #. placeholder {0}: card.sender_name || t`the sender`
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Expired — ask {0} to share again."
@@ -13711,8 +13733,8 @@ msgid "Filter by entity type"
 msgstr "סננו לפי סוג ישות"
 
 #: src/components/automations/AutomationsList.tsx
-msgid "Filter by kind"
-msgstr "סינון לפי סוג"
+#~ msgid "Filter by kind"
+#~ msgstr "סינון לפי סוג"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Filter by label, pattern, or matched line…"
@@ -13729,6 +13751,10 @@ msgstr "סינון לפי שולח"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Filter by session"
 msgstr "סננו לפי סשן"
+
+#: src/components/automations/AutomationsList.tsx
+msgid "Filter by status"
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Filter by subject"
@@ -16777,7 +16803,7 @@ msgstr ""
 msgid "Keep the local copy out of git"
 msgstr "הוציאו את העותק המקומי מ-Git"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/assets/confirm-project-delete.ts
 msgid "Keeping chat history can make this project reappear when projects are scanned."
 msgstr "שמירת היסטוריית הצ׳אטים עלולה לגרום לפרויקט להופיע שוב בסריקת פרויקטים."
 
@@ -21801,6 +21827,10 @@ msgstr "אין כאן עדיין — השתמשו בפלוס למטה כדי ל�
 msgid "Nothing here yet."
 msgstr "אין כאן כלום עדיין"
 
+#: src/components/automations/AutomationsList.tsx
+msgid "Nothing here."
+msgstr ""
+
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Nothing in private context yet."
 msgstr "אין דבר בהקשר הפרטי עדיין."
@@ -21855,8 +21885,8 @@ msgid "Nothing of the kinds switched on."
 msgstr "אין כלום מהסוגים שמופעלים."
 
 #: src/components/automations/AutomationsList.tsx
-msgid "Nothing of this kind yet."
-msgstr "עדיין אין כאלה."
+#~ msgid "Nothing of this kind yet."
+#~ msgstr "עדיין אין כאלה."
 
 #: src/components/favorites/FavoritesAddRow.tsx
 msgid "Nothing open to bookmark"
@@ -22051,6 +22081,7 @@ msgid "off"
 msgstr "כבוי"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Off"
 msgstr "כבוי"
@@ -26315,6 +26346,14 @@ msgstr "הסירו מספר"
 msgid "Remove package"
 msgstr "הסרת חבילה"
 
+#: src/components/assets/confirm-project-delete.ts
+msgid "Remove Project"
+msgstr "הסרת הפרויקט"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "Remove Project & Delete Files"
+msgstr "הסרת הפרויקט ומחיקת הקבצים"
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Remove prompt"
 msgstr ""
@@ -26428,6 +26467,10 @@ msgstr "הסוכן הוסר מסוכני Vibe"
 msgid "Removed: {0}"
 msgstr "הוסרו: {0}"
 
+#: src/components/assets/confirm-project-delete.ts
+msgid "Removes {path} and every file in it."
+msgstr "התיקייה {path} וכל הקבצים שבה יימחקו."
+
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Removes {removes} from the project — the deletion is staged in git"
 msgstr ""
@@ -26439,6 +26482,10 @@ msgstr "העותק ב-Flowpad יוסר. ההודעה נשארת במקום שנ�
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
 msgstr "הסר אותו בכל מקום"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "Removes the project folder and every file in it."
+msgstr "תיקיית הפרויקט וכל הקבצים שבה יימחקו."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Removes: {removes}"
@@ -33501,12 +33548,16 @@ msgid "This permanently deletes the message and all of its data for everyone in 
 msgstr "זה מוחק את ההודעה וכל הנתונים שלה בצורה קבועה לכולם בשיחה. לא ניתן לבטל זאת."
 
 #: src/components/assets/AssetsPage.tsx
-msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
-msgstr "הפעולה תמחק לצמיתות את הפרויקט ואת כל מה שבו — כל הרשומות המאונדקסות והצאצאים שלהן, ואת תיקיית הפרויקט בדיסק ({path}). לא ניתן לבטל את הפעולה."
+#~ msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
+#~ msgstr "הפעולה תמחק לצמיתות את הפרויקט ואת כל מה שבו — כל הרשומות המאונדקסות והצאצאים שלהן, ואת תיקיית הפרויקט בדיסק ({path}). לא ניתן לבטל את הפעולה."
 
 #: src/components/assets/AssetsPage.tsx
-msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
-msgstr "הפעולה תמחק לצמיתות את הפרויקט ואת כל מה שבו — כל הרשומות המאונדקסות והצאצאים שלהן, ואת תיקיית הפרויקט בדיסק. לא ניתן לבטל את הפעולה."
+#~ msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+#~ msgstr "הפעולה תמחק לצמיתות את הפרויקט ואת כל מה שבו — כל הרשומות המאונדקסות והצאצאים שלהן, ואת תיקיית הפרויקט בדיסק. לא ניתן לבטל את הפעולה."
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "This permanently deletes the project and everything in it — all indexed records and their children. This cannot be undone."
+msgstr "הפעולה תמחק לצמיתות את הפרויקט ואת כל מה שבו — כל הרשומות המאונדקסות והצאצאים שלהן. לא ניתן לבטל את הפעולה."
 
 #: src/components/assets/delete-asset-modal.tsx
 msgid "This permanently removes the file from disk. This cannot be undone."
@@ -33536,6 +33587,7 @@ msgstr "התהליך הזה נעצר."
 msgid "This process points to a deleted project."
 msgstr "התהליך הזה מצביע על פרויקט שנמחק."
 
+#: src/components/assets/confirm-project-delete.ts
 #: src/components/connections-manager.tsx
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "this project"

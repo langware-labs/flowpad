@@ -2834,6 +2834,7 @@ msgstr "active"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
@@ -3534,6 +3535,10 @@ msgstr "Agent Trace"
 msgid "Agent turn"
 msgstr "Agent turn"
 
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Agent visitors / outside teams"
+msgstr "Agent visitors / outside teams"
+
 #: src/i18n/type-labels.ts
 msgid "Agentic Process"
 msgstr "Agentic Process"
@@ -3708,6 +3713,10 @@ msgstr "All hooks"
 #: src/components/locale/LocalePicker.tsx
 msgid "All languages"
 msgstr "All languages"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "All local files in this folder, including uncommitted Git changes, will be permanently deleted. This cannot be undone."
+msgstr "All local files in this folder, including uncommitted Git changes, will be permanently deleted. This cannot be undone."
 
 #: src/components/conversation/ThreadHeader.tsx
 #: src/components/data-sources/DataSourcePage.tsx
@@ -3947,6 +3956,10 @@ msgstr "Already up to date"
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Also"
 msgstr "Also"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "Also delete the project folder from my computer"
+msgstr "Also delete the project folder from my computer"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Also deliver to…"
@@ -6017,6 +6030,10 @@ msgstr "Cancel request"
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "cancelled"
+
+#: src/components/automations/AutomationsList.tsx
+msgid "Cancelled"
+msgstr "Cancelled"
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Cancelled · ran {runs}"
@@ -10672,7 +10689,7 @@ msgstr "Delete chat"
 msgid "Delete chat?"
 msgstr "Delete chat?"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/assets/confirm-project-delete.ts
 msgid "Delete chats"
 msgstr "Delete chats"
 
@@ -11581,6 +11598,7 @@ msgstr "done"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/conversation/ContactDialog.tsx
@@ -12984,6 +13002,10 @@ msgstr "Expert Assistance"
 msgid "Expert details"
 msgstr "Expert details"
 
+#: src/components/automations/AutomationsList.tsx
+msgid "Expired"
+msgstr "Expired"
+
 #. placeholder {0}: card.sender_name || t`the sender`
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Expired — ask {0} to share again."
@@ -13711,8 +13733,8 @@ msgid "Filter by entity type"
 msgstr "Filter by entity type"
 
 #: src/components/automations/AutomationsList.tsx
-msgid "Filter by kind"
-msgstr "Filter by kind"
+#~ msgid "Filter by kind"
+#~ msgstr "Filter by kind"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Filter by label, pattern, or matched line…"
@@ -13729,6 +13751,10 @@ msgstr "Filter by sender"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Filter by session"
 msgstr "Filter by session"
+
+#: src/components/automations/AutomationsList.tsx
+msgid "Filter by status"
+msgstr "Filter by status"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Filter by subject"
@@ -16777,7 +16803,7 @@ msgstr "Keep the existing automation actions"
 msgid "Keep the local copy out of git"
 msgstr "Keep the local copy out of git"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/assets/confirm-project-delete.ts
 msgid "Keeping chat history can make this project reappear when projects are scanned."
 msgstr "Keeping chat history can make this project reappear when projects are scanned."
 
@@ -21801,6 +21827,10 @@ msgstr "Nothing here yet — use the + below to add one."
 msgid "Nothing here yet."
 msgstr "Nothing here yet."
 
+#: src/components/automations/AutomationsList.tsx
+msgid "Nothing here."
+msgstr "Nothing here."
+
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Nothing in private context yet."
 msgstr "Nothing in private context yet."
@@ -21855,8 +21885,8 @@ msgid "Nothing of the kinds switched on."
 msgstr "Nothing of the kinds switched on."
 
 #: src/components/automations/AutomationsList.tsx
-msgid "Nothing of this kind yet."
-msgstr "Nothing of this kind yet."
+#~ msgid "Nothing of this kind yet."
+#~ msgstr "Nothing of this kind yet."
 
 #: src/components/favorites/FavoritesAddRow.tsx
 msgid "Nothing open to bookmark"
@@ -22051,6 +22081,7 @@ msgid "off"
 msgstr "off"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Off"
 msgstr "Off"
@@ -26315,6 +26346,14 @@ msgstr "Remove number"
 msgid "Remove package"
 msgstr "Remove package"
 
+#: src/components/assets/confirm-project-delete.ts
+msgid "Remove Project"
+msgstr "Remove Project"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "Remove Project & Delete Files"
+msgstr "Remove Project & Delete Files"
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Remove prompt"
 msgstr "Remove prompt"
@@ -26428,6 +26467,10 @@ msgstr "Removed vibe agent"
 msgid "Removed: {0}"
 msgstr "Removed: {0}"
 
+#: src/components/assets/confirm-project-delete.ts
+msgid "Removes {path} and every file in it."
+msgstr "Removes {path} and every file in it."
+
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Removes {removes} from the project — the deletion is staged in git"
 msgstr "Removes {removes} from the project — the deletion is staged in git"
@@ -26439,6 +26482,10 @@ msgstr "Removes Flowpad's copy. The message stays where it was sent."
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
 msgstr "Removes it everywhere"
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "Removes the project folder and every file in it."
+msgstr "Removes the project folder and every file in it."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Removes: {removes}"
@@ -33501,12 +33548,16 @@ msgid "This permanently deletes the message and all of its data for everyone in 
 msgstr "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
 
 #: src/components/assets/AssetsPage.tsx
-msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
-msgstr "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
+#~ msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
+#~ msgstr "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
 
 #: src/components/assets/AssetsPage.tsx
-msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
-msgstr "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+#~ msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+#~ msgstr "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+
+#: src/components/assets/confirm-project-delete.ts
+msgid "This permanently deletes the project and everything in it — all indexed records and their children. This cannot be undone."
+msgstr "This permanently deletes the project and everything in it — all indexed records and their children. This cannot be undone."
 
 #: src/components/assets/delete-asset-modal.tsx
 msgid "This permanently removes the file from disk. This cannot be undone."
@@ -33536,6 +33587,7 @@ msgstr "This process has stopped."
 msgid "This process points to a deleted project."
 msgstr "This process points to a deleted project."
 
+#: src/components/assets/confirm-project-delete.ts
 #: src/components/connections-manager.tsx
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "this project"
