@@ -28,22 +28,27 @@ Process:
 1. If a matching checkout already exists, use it.
 2. Otherwise clone `cloneUrl`, checking out `branch` when present.
 3. Verify `<checkout>/<relPath>` exists.
-4. Create or identify the Flowpad project whose `fs_storage_mount_path` is the
-   checkout root.
+4. Register the checkout root as a Flowpad project:
+
+```bash
+flow project register <checkout-root>
+```
+
+   Use the printed `project_id` as `projectId`. A refusal because the checkout
+   is already a project is fine: carry on without `projectId`. Any other
+   refusal: show the message and stop.
 5. Close the wizard with:
 
 ```bash
 flow wizard <wizard-process-id> close '{"status":"done","data":{"localPath":"<checkout-root>","projectId":"<project-id>"}}'
 ```
 
+Without a `projectId` (the checkout was already a project), leave the key out:
+`{"status":"done","data":{"localPath":"<checkout-root>"}}`.
+
 If setup cannot complete, close with `status:"error"` and an `errorStr`.
 If the user cancels, close with `status:"cancel"`.
 
-To create a project from Bash, call the local graph API. Discover the server
-port from `~/.flow/server.json` or `LOCAL_SERVER_PORT`, then POST:
-
-```json
-{"name":"<repo-folder-name>","fs_storage_mount_path":"<checkout-root>"}
-```
-
-to `/api/v1/graph/project`. Use the returned `data.id` as `projectId`.
+Never call the Flowpad API yourself (`curl`, `requests`, a port read from
+`server.json`): the local server refuses a request without the instance's gate
+secret (HTTP 403), and only the `flow` CLI sends it.
