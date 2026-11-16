@@ -341,6 +341,16 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: false,
     foldsPointer: true,
   },
+  // Email notification rules (page=hub; the desktop serves the hub page too, so one view).
+  // Pointer = a rule key (`notification.email.issue.budget_exhausted[.<type>.id.<uuid>]`):
+  // an in-view selection, so it folds into one chip (TOKEN_PLAN precedent).
+  [ViewType.NOTIFICATIONS]: {
+    title: msg`Notifications`,
+    iconName: 'BellOff',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
+  },
   // What funds this machine's harnesses (page=desk, NOT hub: a device token, a stored key
   // and the endpoint binding are all box facts, and the producing box action 404s on the
   // hub). Pointer = `<section>[/<key>]`, an in-view selection, so it folds into one chip.

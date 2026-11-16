@@ -35,6 +35,7 @@ const LAYOUT_LABELS: Record<string, MessageDescriptor> = {
   developer: msg`Developer`,
   'general/appearance': msg`Appearance`,
   'general/notifications': msg`Notifications`,
+  'email-rules': msg`Email rules`,
   'terminal/behavior': msg`Behavior`,
   'terminal/display': msg`Display`,
   'ai/models': msg`Models`,

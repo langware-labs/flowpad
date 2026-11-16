@@ -11,10 +11,14 @@ import { PrefKey } from './prefRegistry';
 /** A tab that renders something other than pref rows. */
 export type PrefCustomTab = 'toplog';
 
+/** A link a tab shows under its rows, to a screen of its own (the UI names and opens it). */
+export type PrefTabLink = 'email-rules';
+
 export interface PrefTab {
   id: string;
   keys: PrefKey[];
   custom?: PrefCustomTab;
+  link?: PrefTabLink;
 }
 
 export interface PrefGroup {
@@ -30,7 +34,7 @@ export const PREF_GROUPS: PrefGroup[] = [
         id: 'appearance',
         keys: [PrefKey.VIEW_MODE, PrefKey.LOCALE, PrefKey.SHOW_SYSTEM_PROJECTS, PrefKey.SHOW_SYSTEM_SKILLS],
       },
-      { id: 'notifications', keys: [PrefKey.SOUND_ENABLED, PrefKey.SOUND_KEY] },
+      { id: 'notifications', keys: [PrefKey.SOUND_ENABLED, PrefKey.SOUND_KEY], link: 'email-rules' },
     ],
   },
   {
