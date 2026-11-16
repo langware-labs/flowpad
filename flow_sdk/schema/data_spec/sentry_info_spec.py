@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 #: ``https://<public key>@<host>/<numeric project id>`` -- and nothing else: no secret, no query,
 #: no fragment, no path prefix. Kept identical to ``DSN_RE`` in ``ui/src/telemetry/sentry.ts`` (two
 #: runtimes, one rule): change both together.
-_DSN = re.compile(r"^https://[0-9a-f]{16,64}@[a-z0-9.-]+(?::\d{1,5})?/\d{1,20}$")
+_DSN = re.compile(r"^https://[0-9a-f]{16,64}@[a-z0-9.-]+(?::[0-9]{1,5})?/[0-9]{1,20}$")
 
 SentryEnvironment = Literal["development", "staging", "production"]
 
@@ -35,9 +35,24 @@ class SentryInfo(DataSpec):
     @field_validator("dsn")
     @classmethod
     def _public_dsn_only(cls, value: str) -> str:
-        if not _DSN.match(value):
+        # fullmatch + [0-9]: `$` would let a trailing newline through and `\d` matches any Unicode digit.
+        if not _DSN.fullmatch(value):
             raise ValueError("dsn must be https://<public_key>@<host>/<project_id>")
         return value
+
+
+class SentryInfoStatus(DataSpec):
+    """What ``GET @local/sentry-info`` answers: the effective value and how fresh the hub's word is."""
+
+    sentry_info: SentryInfo | None = None
+    synced_at: str | None = None
+    expired: bool = False
+
+
+class SentryInfoSyncResult(SentryInfoStatus):
+    """What ``POST @local/sentry-info/sync`` answers: the status after the sync, and how it went."""
+
+    outcome: str
 
 
 def parse_sentry_info(raw: object) -> SentryInfo | None:
@@ -50,6 +65,11 @@ def parse_sentry_info(raw: object) -> SentryInfo | None:
         return None
     if isinstance(raw, SentryInfo):
         return raw
+    if isinstance(raw, dict):
+        # A FOREIGN dict (the hub's answer, config.json): read the two fields we know, field by field.
+        # `extra="forbid"` is for programmers building a value, not for a later hub adding a field --
+        # that must not switch Sentry off on every box still running this wheel.
+        raw = {"dsn": raw.get("dsn"), "environment": raw.get("environment")}
     try:
         return SentryInfo.model_validate(raw)
     except ValidationError:

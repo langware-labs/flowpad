@@ -31,6 +31,11 @@ class PrivacyManager extends EventEmitter {
     return this._mode === 'local';
   }
 
+  /** Whether `seedBootstrap` has run. Before it, `mode` is only the default, not what the backend said. */
+  get initialized(): boolean {
+    return this._initialized;
+  }
+
   /** Seed initial state from bootstrapInfo.privacy_mode. Called once from main.ts. */
   seedBootstrap(seedMode: PrivacyMode | string | null | undefined) {
     if (this._initialized) return;

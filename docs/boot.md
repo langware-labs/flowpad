@@ -148,6 +148,18 @@ It preserves locale and avoids constructing the full project population.
 The middleware reports header timing in `Server-Timing` and logs elapsed
 time when the complete bootstrap response body has been sent.
 
+`sentry_info` (browser error reporting) is stamped the same way, per request and outside the
+cache, and only for a sandbox runtime; a desktop, a browser tab and an agent always get an
+explicit `null`. A sandbox PULLS the value: the hub POSTs
+`compute_node/@local/sentry-info/sync` (no body, and no write endpoint exists) on workspace-ready,
+and `flow_sdk/instance_settings/sentry_info.py` reads `GET compute_node/sentry-info` from the hub
+with the box's own login and keeps it in `config.json`. Only a 404/422 ("this hub has no such
+action") clears it; any other refusal, or an unreachable hub, keeps it; and a value the hub has not
+re-confirmed for 7 days reads as `null` from the next bootstrap on (nothing is broadcast on expiry).
+A change broadcasts `sentry_info_msg` over the WebSocket. In the UI,
+`ui/src/telemetry/sentry.ts` follows `dataContext.bootstrapInfo` and starts, restarts or stops
+Sentry without a reload.
+
 **Rule: nothing on this path may walk a filesystem tree, parse files, or do
 unbounded per-file DB writes.** The frontend's `initSdk` awaits this endpoint
 before the first render — every Home load that lands on a cache miss pays
@@ -183,7 +195,7 @@ whole project collection. Explicit global scopes skip that restoration.
 Project-context notifications continue to drive the project locale.
 
 `asyncSdkInit()` owns optional info/sniffer work, desktop cloud refresh, shared
-resource prefetch, live cloud/privacy listeners and proactive socket connection. It registers the
+resource prefetch, live cloud/privacy/sentry-info listeners and proactive socket connection. It registers the
 listeners before connecting and isolates each job's failure. Requested
 workspace discovery also runs here, discarding a result if workspace selection
 changed while discovery was pending. It never selects an active project.

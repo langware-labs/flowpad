@@ -74,12 +74,22 @@ def _hub(answer):
         {"dsn": "https://key:secret@o1.sentry.io/1", "environment": "staging"},  # legacy secret DSN
         {"dsn": DSN_A + "?x=1", "environment": "staging"},
         {"dsn": DSN_A, "environment": "local"},
-        {"dsn": DSN_A, "environment": "staging", "auth_token": "x"},  # extra key
+        {"dsn": DSN_A + "\n", "environment": "staging"},  # a trailing newline must not slip past `$`
+        {"dsn": DSN_A.replace("/11", "/\u0661\u0662"), "environment": "staging"},  # non-ASCII digits
+        {"dsn": DSN_A, "environment": "qa"},  # an environment this wheel does not know
+        {"environment": "staging"},  # no dsn
         "not a dict",
     ],
 )
 def test_invalid_values_read_as_off_and_never_raise(raw):
     assert parse_sentry_info(raw) is None
+
+
+def test_fields_a_newer_hub_adds_are_ignored_not_fatal():
+    """The hub's answer is a FOREIGN dict: only `dsn` and `environment` are read, so a later hub that
+    adds a field cannot switch Sentry off on every box still running this wheel."""
+    answer = {**A, "release": "0.2.300", "sample_rate": 0.5}
+    assert parse_sentry_info(answer) == SentryInfo(**A)
 
 
 def test_a_public_dsn_is_accepted():
@@ -204,7 +214,7 @@ async def test_a_value_the_hub_stopped_vouching_for_goes_stale_then_comes_back(a
     later = time.time() + box.MAX_STALENESS_SECONDS + 60
     with patch.object(box.time, "time", return_value=later):
         assert box.get_sentry_info() is None
-        assert box.sentry_info_status()["expired"] is True
+        assert box.sentry_info_status().expired is True
         with _hub({"sentry_info": A}):
             # Re-confirmed after going stale: on again, and the clients are told.
             assert await box.sync_sentry_info_from_hub() == box.SyncOutcome.UPDATED
@@ -255,3 +265,31 @@ async def test_anything_but_get_and_sync_is_refused_and_stores_nothing(announced
     assert response.status != "success"
     call.assert_not_called()
     assert box.get_sentry_info() is None
+
+
+@pytest.mark.asyncio
+async def test_a_newer_hub_answer_with_extra_fields_still_syncs(announced):
+    with _hub({"sentry_info": {**A, "release": "0.2.300"}, "something_else": True}):
+        assert await box.sync_sentry_info_from_hub() == box.SyncOutcome.UPDATED
+    assert box.get_sentry_info() == SentryInfo(**A)
+
+
+def test_the_ws_frame_and_the_action_results_are_typed_values_with_the_shape_the_ui_reads():
+    import json
+
+    from flow_sdk.api.messages import SentryInfoMessage
+    from flow_sdk.schema.data_spec.sentry_info_spec import SentryInfoStatus, SentryInfoSyncResult
+
+    frame = json.loads(SentryInfoMessage(sentry_info=SentryInfo(**A)).model_dump_json())
+    assert frame["message_type"] == "sentry_info_msg"
+    assert frame["sentry_info"] == A
+    assert json.loads(SentryInfoMessage().model_dump_json())["sentry_info"] is None
+
+    status = SentryInfoStatus(sentry_info=SentryInfo(**A), synced_at="2026-11-16T10:00:00+00:00")
+    assert status.model_dump(mode="json") == {
+        "sentry_info": A,
+        "synced_at": "2026-11-16T10:00:00+00:00",
+        "expired": False,
+    }
+    result = SentryInfoSyncResult(outcome="updated", **status.model_dump())
+    assert result.model_dump(mode="json")["outcome"] == "updated"

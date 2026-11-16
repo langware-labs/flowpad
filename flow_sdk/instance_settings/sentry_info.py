@@ -8,7 +8,9 @@ every workspace-ready; the box then READS the value from the hub it is logged in
 A pull, not a push, because nothing on the box can tell the hub's call from anyone else's: the
 sandbox gate admits the browser (grant cookie) and every worker on the box (``X-Cookie-Gate``)
 just as it admits the hub. A write endpoint taking a DSN would let any of them send this box's
-error reports somewhere else; a trigger can only make the box re-read the true value.
+error reports somewhere else; a trigger can only make the box re-read the true value. That holds
+for HTTP callers: a process running as the box's own user can still write ``config.json``
+directly -- the same trust boundary that already covers ``runtime_kind`` and the cookie gate.
 
 Stored via ``app_config`` (``<instance_dir>/config.json``) like ``runtime.py`` and
 ``llm_endpoint.py``: not a secret (a DSN is a public client key), and it must survive a restart
@@ -31,7 +33,7 @@ from datetime import datetime, timezone
 from flow_sdk._compat import StrEnum
 from flow_sdk.cli import app_config
 from flow_sdk.instance_settings import get_instance_settings
-from flow_sdk.schema.data_spec.sentry_info_spec import SentryInfo, parse_sentry_info
+from flow_sdk.schema.data_spec.sentry_info_spec import SentryInfo, SentryInfoStatus, parse_sentry_info
 
 logger = logging.getLogger(__name__)
 
@@ -107,15 +109,14 @@ def get_sentry_info() -> SentryInfo | None:
     return info
 
 
-def sentry_info_status() -> dict:
+def sentry_info_status() -> SentryInfoStatus:
     """What ``GET @local/sentry-info`` answers: the effective value and how fresh it is."""
     info, synced_at = _read()
-    effective = get_sentry_info()
-    return {
-        "sentry_info": effective.model_dump() if effective else None,
-        "synced_at": datetime.fromtimestamp(synced_at, tz=timezone.utc).isoformat() if synced_at else None,
-        "expired": info is not None and _expired(synced_at),
-    }
+    return SentryInfoStatus(
+        sentry_info=get_sentry_info(),
+        synced_at=datetime.fromtimestamp(synced_at, tz=timezone.utc).isoformat() if synced_at else None,
+        expired=info is not None and _expired(synced_at),
+    )
 
 
 def _store(info: SentryInfo | None) -> bool:
@@ -139,7 +140,7 @@ async def _announce(info: SentryInfo | None) -> None:
         from flow_sdk.api.messages import SentryInfoMessage  # noqa: PLC0415
         from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415
 
-        await broadcast(SentryInfoMessage(sentry_info=info.model_dump() if info else None).model_dump_json())
+        await broadcast(SentryInfoMessage(sentry_info=info).model_dump_json())
     except Exception:  # noqa: BLE001
         logger.debug("sentry_info: broadcast failed", exc_info=True)
 

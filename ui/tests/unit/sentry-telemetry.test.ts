@@ -157,7 +157,37 @@ describe('runtime configuration changes, without a reload', () => {
     await settle();
     expect(__testing.activeConfig()).toBeNull();
     expect(() => reportError(new Error('x'), 'router')).not.toThrow();
-    __testing.load = () => import('@src/telemetry/sentry-sdk');
+  });
+});
+
+describe('review follow-ups', () => {
+  it('tells Sentry not to infer the visitor\'s IP: `sdk.settings.infer_ip` survives the sanitizer', async () => {
+    startSentryReaction();
+    setBootstrap(sandbox({ dsn: DSN_A, environment: 'staging' }));
+    await settle();
+    await boom();
+    expect(sent).toHaveLength(1);
+    expect(sent[0].event.sdk?.settings?.infer_ip).toBe('never');
+  });
+
+  it('Local privacy in the bootstrap payload itself keeps Sentry off before the privacy manager is seeded', async () => {
+    // `initSdk` stores the bootstrap, and only a few awaits later seeds the privacy manager from it:
+    // in between, the manager still says "connected" although the payload says "local".
+    expect(privacyManager.initialized).toBe(false);
+    startSentryReaction();
+    setBootstrap({ ...sandbox({ dsn: DSN_A, environment: 'staging' }), privacy_mode: 'local' });
+    await settle();
+    expect(__testing.activeConfig()).toBeNull();
+    reportError(new Error('x'), 'boundary');
+    expect(sent).toEqual([]);
+  });
+
+  it('resetting stops the reaction and its privacy listener, so tests do not stack them', () => {
+    const baseline = privacyManager.listenerCount('privacy_mode_changed');
+    startSentryReaction();
+    expect(privacyManager.listenerCount('privacy_mode_changed')).toBe(baseline + 1);
+    __testing.reset();
+    expect(privacyManager.listenerCount('privacy_mode_changed')).toBe(baseline);
   });
 });
 
@@ -231,8 +261,9 @@ describe('privacy-sensitive exception payloads', () => {
     )!;
     // What goes on the wire (undefined keys never serialize).
     expect(Object.keys(JSON.parse(JSON.stringify(out))).sort()).toEqual(
-      ['contexts', 'environment', 'event_id', 'exception', 'level', 'platform', 'request', 'tags'].sort(),
+      ['contexts', 'environment', 'event_id', 'exception', 'level', 'platform', 'request', 'sdk', 'tags'].sort(),
     );
+    expect(out.sdk).toEqual({ settings: { infer_ip: 'never' } }); // even for an event that carried no `sdk`
     expect(out.request).toEqual({ url: 'app:///dock/…' });
     expect(out.contexts).toEqual({ flowpad_error: { name: 'Error', status: 503, code: 'HUB_DOWN' } });
     expect(out.tags).toEqual({ runtime_kind: 'sandbox', where: 'boundary' });

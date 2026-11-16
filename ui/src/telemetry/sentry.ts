@@ -11,7 +11,8 @@
  * box"). The SDK is a lazy chunk (`./sentry-sdk`): a desktop never downloads it.
  *
  * Privacy: no replay, no tracing, no breadcrumbs, no data collection (`dataCollection`, v11's
- * successor to `sendDefaultPii: false`). Every event is REBUILT from an
+ * successor to `sendDefaultPii: false`; its `infer_ip: 'never'` is carried onto the wire by the
+ * sanitizer). Every event is REBUILT from an
  * allowlist (`sanitizeEvent`) — the error message is never sent, because a message can carry a
  * prompt or file contents — and then scanned; anything that still looks sensitive drops the whole
  * event. Any failure in here is swallowed: reporting must never affect the app.
@@ -34,8 +35,20 @@ export interface EffectiveConfig {
 }
 
 // Kept identical to `_DSN` in flow_sdk/schema/data_spec/sentry_info_spec.py (two runtimes, one rule): change both together.
-const DSN_RE = /^https:\/\/[0-9a-f]{16,64}@[a-z0-9.-]+(?::\d{1,5})?\/\d{1,20}$/;
+const DSN_RE = /^https:\/\/[0-9a-f]{16,64}@[a-z0-9.-]+(?::[0-9]{1,5})?\/[0-9]{1,20}$/;
 const ENVIRONMENTS = new Set(['development', 'staging', 'production']);
+
+/**
+ * Whether privacy mode is Local right now. The manager is seeded from the bootstrap payload a few
+ * awaits AFTER `initSdk` stores it, and until then it only holds its default ("connected") -- so
+ * until it is seeded the payload itself is the answer. After that the manager alone decides, which
+ * is what lets a live toggle back to Connected turn reporting on again.
+ */
+function privacyIsLocal(): boolean {
+  if (privacyManager.isLocal) return true;
+  if (privacyManager.initialized) return false;
+  return (dataContext.bootstrapInfo as { privacy_mode?: unknown } | null | undefined)?.privacy_mode === 'local';
+}
 
 export function isValidSentryInfo(value: unknown): value is SentryInfo {
   if (!value || typeof value !== 'object') return false;
@@ -107,7 +120,13 @@ function scrubException(value: Record<string, unknown>): Record<string, unknown>
   };
 }
 
-/** `app:///<first segment>/…` — the area of the app, never the entity, file or query. */
+/**
+ * `app:///<first segment>/…` — the area of the app, never the entity, file or query.
+ *
+ * With `defaultIntegrations: false` no request integration runs, so the SDK does not set
+ * `event.request.url` and in practice this answers `app:///`. It stays so that whatever URL an
+ * integration may later provide is reduced here and never forwarded as it came.
+ */
 export function sanitizeUrl(raw: unknown): string {
   if (typeof raw !== 'string') return 'app:///';
   let path = '/';
@@ -169,7 +188,10 @@ export function sanitizeEvent(event: ErrorEvent, hint?: EventHint): ErrorEvent |
     },
     request: { url: sanitizeUrl(event.request?.url) },
     ...(facts ? { contexts: { flowpad_error: facts } } : {}),
-    ...(event.sdk ? { sdk: { name: event.sdk.name, version: event.sdk.version } } : {}),
+    // `infer_ip: 'never'` is the SDK's own instruction (from `dataCollection.userInfo: false`) that
+    // Sentry must not infer the visitor's IP from the connection. Rebuilding `sdk` from name/version
+    // alone used to drop it; it is set unconditionally so it can never be lost again.
+    sdk: { ...(event.sdk ? { name: event.sdk.name, version: event.sdk.version } : {}), settings: { infer_ip: 'never' } },
   } as ErrorEvent;
   return passesDenyScan(out) ? out : null;
 }
@@ -179,7 +201,7 @@ function safeSanitize(event: ErrorEvent, hint: EventHint): ErrorEvent | null {
   // asynchronously (and `close` would still flush what is queued), so the decision is also taken
   // here, synchronously, at the moment an event would be sent. Events already on the wire cannot be
   // recalled; nothing new gets there.
-  if (privacyManager.isLocal) return null;
+  if (privacyIsLocal()) return null;
   try {
     const sanitized = sanitizeEvent(event, hint);
     // Never the content: only the fact, so the team can notice if the sanitizer starts dropping everything.
@@ -197,18 +219,26 @@ let sentry: SentryModule | null = null;
 let active: EffectiveConfig | null = null;
 let queue: Promise<void> = Promise.resolve();
 let started = false;
+let stopReaction: (() => void) | null = null;
+
+const loadSdk = (): Promise<SentryModule> => import('./sentry-sdk');
 
 /** Test seams: the module loader and a transport, so tests run the real SDK without a network. */
 export const __testing = {
-  load: (): Promise<SentryModule> => import('./sentry-sdk'),
+  load: loadSdk,
   transport: undefined as NonNullable<Parameters<SentryModule['init']>[0]>['transport'],
   activeConfig: (): EffectiveConfig | null => active,
   settled: (): Promise<void> => queue,
+  /** Back to a cold start: stops the reaction and its privacy listener, restores the seams. */
   reset(): void {
+    stopReaction?.();
+    stopReaction = null;
     sentry = null;
     active = null;
     queue = Promise.resolve();
     started = false;
+    __testing.load = loadSdk;
+    __testing.transport = undefined;
   },
 };
 
@@ -276,7 +306,7 @@ async function applyConfig(next: EffectiveConfig | null): Promise<void> {
 }
 
 function reconcile(): void {
-  const next = effectiveConfig(dataContext.bootstrapInfo, privacyManager.isLocal);
+  const next = effectiveConfig(dataContext.bootstrapInfo, privacyIsLocal());
   queue = queue.then(() => applyConfig(next)).catch(() => undefined);
 }
 
@@ -289,12 +319,20 @@ export function startSentryReaction(): void {
   if (started) return;
   started = true;
   try {
-    reaction(
-      () => [dataContext.bootstrapInfo?.sentry_info, dataContext.bootstrapInfo?.runtime?.kind],
+    const dispose = reaction(
+      () => [
+        dataContext.bootstrapInfo?.sentry_info,
+        dataContext.bootstrapInfo?.runtime?.kind,
+        dataContext.bootstrapInfo?.privacy_mode,
+      ],
       reconcile,
       { fireImmediately: true, equals: comparer.structural },
     );
     privacyManager.on('privacy_mode_changed', reconcile);
+    stopReaction = () => {
+      dispose();
+      privacyManager.off('privacy_mode_changed', reconcile);
+    };
   } catch {
     /* reporting must never affect startup */
   }
