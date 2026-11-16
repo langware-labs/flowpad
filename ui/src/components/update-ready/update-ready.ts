@@ -29,6 +29,8 @@ export interface UpdateReadyApi {
   activateUpdate?: () => Promise<ActivationResult>;
   /** The toast the desktop asked for and the UI has not shown yet — taken once (null when none). */
   takeUpdateReadyToast?: () => Promise<UpdateReadyState | null>;
+  /** PyPI has a newer release than the engine update waiting: the desktop looks now and quietly replaces it. */
+  refreshWaitingEngine?: () => Promise<{ started: boolean }>;
   onUpdateReadyState?: (callback: (state: UpdateReadyState) => void) => () => void;
   onUpdateReadyToast?: (callback: (state: UpdateReadyState) => void) => () => void;
 }

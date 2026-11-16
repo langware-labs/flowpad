@@ -26,7 +26,11 @@ async function post(url: string, body: unknown): Promise<any> {
 
 afterAll(async () => {
   if (projectId && apiUrl) {
-    await fetch(`${apiUrl}/api/v1/graph/project/${projectId}/delete-with-children`, { method: 'POST' }).catch(() => {});
+    await fetch(`${apiUrl}/api/v1/graph/project/${projectId}/delete-with-children`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delete_folder: true }),
+    }).catch(() => {});
   }
 });
 
