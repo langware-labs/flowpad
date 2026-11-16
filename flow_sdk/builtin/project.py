@@ -4241,8 +4241,9 @@ class Project(SetupSkippable, Entity):
         """Permanently delete this project and everything that belongs to it.
 
         ``folder`` says what happens to the user's own files at
-        ``fs_storage_mount_path``: ``rmtree`` destroys them (the default, what
-        the assets-page delete has always done), ``trash`` moves them to the
+        ``fs_storage_mount_path``: ``rmtree`` destroys them (the default here, for
+        internal callers that own the folder; the HTTP route and the assets-page
+        dialog pass ``keep`` unless the user asks), ``trash`` moves them to the
         desktop Trash so the deletion is recoverable, and ``keep`` leaves them
         alone. Everything else — the child records, their bundles, the ``@local``
         detach and the project's own record — is identical in all three, which

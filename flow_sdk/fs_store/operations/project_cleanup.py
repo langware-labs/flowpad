@@ -202,8 +202,16 @@ PER_USER_MOUNT_CONTAINERS = {"/run/media"}
 FSTAB = Path("/etc/fstab")
 
 
+_fstab_cache: tuple[tuple[str, int], set[str]] | None = None
+
+
 def _fstab_mount_points() -> set[str]:
+    # A scan asks once per missing folder; re-read only when fstab changes.
+    global _fstab_cache
     try:
+        key = (str(FSTAB), FSTAB.stat().st_mtime_ns)
+        if _fstab_cache is not None and _fstab_cache[0] == key:
+            return _fstab_cache[1]
         lines = FSTAB.read_text().splitlines()
     except OSError:
         return set()
@@ -213,6 +221,7 @@ def _fstab_mount_points() -> set[str]:
         if len(fields) >= 2 and not fields[0].startswith("#") and fields[1].startswith("/") and fields[1] != "/":
             # fstab octal-escapes whitespace in a path: "/mnt/My\\040Drive".
             points.add(re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), fields[1]))
+    _fstab_cache = (key, points)
     return points
 
 

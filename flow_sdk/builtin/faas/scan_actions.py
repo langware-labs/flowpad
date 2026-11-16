@@ -420,8 +420,9 @@ class ScanActionsMixin:
                 if permanent:
                     # A row whose folder is gone is an orphan: nothing on disk to
                     # guard, wherever the path was, and removing the row IS the
-                    # whole job. "keep" makes sure no folder is ever touched.
-                    orphan = not row["cwd"] or not os.path.lexists(row["cwd"])
+                    # whole job. "keep" makes sure no folder is ever touched. A broken
+                    # symlink counts as gone, as `classify` (which stats through it) says.
+                    orphan = not row["cwd"] or not os.path.exists(row["cwd"])
                     if orphan and row["cwd"] and on_unavailable_volume(row["cwd"]):
                         # Not gone, just unreachable: removing the row would also drop
                         # its chats while the folder may come back with its drive.
