@@ -119,6 +119,12 @@ asset whose `format` (`sequence` / `excalidraw` / `mermaid`) says which source f
 WHITEBOARD entity (a whiteboard is an excalidraw chart; migrated in 0.2.215). Not a
 data-viz chart over a dataset, and not the `graph-view`.
 
+**Flowmap** (the `flowmap` skill, kinds `flowmap.*` in the assistant's `agentic-assets/data_schema/`) is ours:
+the map of one skill or agent — its **entries** (ways to start it), **steps** (typed `instructions` / `code` /
+`screen`; the viewer calls them blocks), **links** and **outcomes** — kept as `<skill>/flowmap/map.value.json`.
+A `flowmap.run` is one real run laid on it as **run frames** (node, seconds, cost), drawn by `flowmap-viewer`.
+Not a FlowCall block (`ComputeOp`), not an agent trace (`AgentTraceSpec`), not a `GraphWorkflow`.
+
 ## Contexts — three different things
 
 | Name | What it holds | Owner / scope |

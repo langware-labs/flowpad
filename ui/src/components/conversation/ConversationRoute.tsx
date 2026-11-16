@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, EllipsisVertical, FolderOpen, Loader2 } from 'lucide-react';
-import { Agent, Conversation, Project, type Task, TypeId } from '@sdk';
+import { Agent, Conversation, Project, type Task, TypeId, isStaffTicket } from '@sdk';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -28,6 +28,7 @@ import { MembersAvatarStack } from './MembersAvatarStack';
 import { ConversationMembersLine } from './ConversationMembersLine';
 import { ConversationAutomationChip } from './ConversationAutomationChip';
 import { ChannelParticipants } from './ChannelParticipants';
+import { TicketHeaderSlot } from './ticket-header-slot';
 import { ConversationMarkChips } from './ChannelMessageExtras';
 import { applyProjectToConversation, applyProjectToTask, persistRemoteToLocalMapping } from './apply-project-choice';
 import { useConversation } from './useConversation';
@@ -162,6 +163,8 @@ export function ConversationRoute() {
 
   const scopeKey = agentId && conversationId ? `${agentId}:${conversationId}` : null;
   const [scopeDecision, setScopeDecision] = useState<{ key: string; allowed: boolean | null } | null>(null);
+  // Where a staff ticket's status is drawn in this header (before the title); the ticket page fills it.
+  const [ticketSlot, setTicketSlot] = useState<HTMLElement | null>(null);
   const scopeAllowed = !scopeKey ? true : scopeDecision?.key === scopeKey ? scopeDecision.allowed : null;
   useEffect(() => {
     let live = true;
@@ -251,6 +254,7 @@ export function ConversationRoute() {
   // the conversation's own click-to-rename title (same component as the panel
   // header) — a rename here saves with Hub-Reflect and fans out to every
   // member. Untitled conversations fall back to the generic "Conversation".
+  const staffTicket = isStaffTicket(conversation, cloudUser?.id);
   const headerTools = (
     <>
       {/* Open-the-session / launch-a-worker — the conversation always shows
@@ -260,7 +264,7 @@ export function ConversationRoute() {
       {/* Roster fetch is pointless under the logged-out overlay — skip it. */}
       {/* A channel's people are on the channel — no roster to fetch, nobody to invite. */}
       {conversation?.isChannel ? (
-        <ChannelParticipants conversation={conversation} />
+        <ChannelParticipants conversation={conversation} noChip={staffTicket} />
       ) : (
         cloudUser && convTypeId && <MembersAvatarStack typeId={convTypeId} showInviteButton />
       )}
@@ -280,6 +284,13 @@ export function ConversationRoute() {
         <Avatar className="h-8 w-8 md:hidden">
           <AvatarFallback className="text-xs">{initialsFromLabel(conversation?.title, 1)}</AvatarFallback>
         </Avatar>
+        {/* A ticket, for its desk's staff: its status and its desk come first, then what it is about. */}
+        {staffTicket && (
+          <span className="flex shrink-0 items-center gap-1.5" data-testid="ticket-header-chips">
+            <span ref={setTicketSlot} className="flex items-center" />
+            {conversation?.isChannel && <ChannelParticipants conversation={conversation} chipOnly />}
+          </span>
+        )}
         <EditableConversationTitle
           conv={conversation ?? null}
           fallback={t`Conversation`}
@@ -357,19 +368,21 @@ export function ConversationRoute() {
       {header}
       {!isMobile && !conversation.isChannel && convTypeId && <ConversationMembersLine typeId={convTypeId} />}
       <div className="flex min-h-0 flex-1 flex-col">
-        <ConversationPanel
-          task={task}
-          conversationId={conversationId}
-          senderName={senderName}
-          // Title + members stack live in the route header above — suppress
-          // the panel's own header row so the subject isn't rendered twice.
-          headerLabel={null}
-          selectedMessageId={messageId}
-          onMessageNavigate={handleMessageNavigate}
-          threadId={threadId}
-          onThreadNavigate={handleThreadNavigate}
-          agentId={agentId}
-        />
+        <TicketHeaderSlot.Provider value={ticketSlot}>
+          <ConversationPanel
+            task={task}
+            conversationId={conversationId}
+            senderName={senderName}
+            // Title + members stack live in the route header above — suppress
+            // the panel's own header row so the subject isn't rendered twice.
+            headerLabel={null}
+            selectedMessageId={messageId}
+            onMessageNavigate={handleMessageNavigate}
+            threadId={threadId}
+            onThreadNavigate={handleThreadNavigate}
+            agentId={agentId}
+          />
+        </TicketHeaderSlot.Provider>
       </div>
     </div>
   );

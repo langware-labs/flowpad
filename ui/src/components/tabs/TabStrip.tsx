@@ -40,7 +40,8 @@ import { animateGlow } from '@src/lib/animate-glow';
 import { chipSizing } from '@src/components/tabs/close-freeze';
 import { useCloseFreeze } from '@src/components/tabs/use-close-freeze';
 import { consumeTabHighlight, TAB_HIGHLIGHT_MS, useTabHighlights } from '@src/tabs/tab-highlight';
-import { ExternalLink, Maximize2, X, type LucideIcon } from 'lucide-react';
+import { ExternalLink, Maximize2, Plus, X, type LucideIcon } from 'lucide-react';
+import { StickyNoteShape } from '@src/components/notes/StickyNoteShape';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
@@ -543,7 +544,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
         ref={(node) => {
           tabRefs.current[key] = node;
         }}
-        style={tint ? { ...sizing, ...notePaperStyle(tint) } : sizing}
+        // A colored chip carries a border in its note's fold shade; the selected one is 3px all round.
+        style={tint ? { ...sizing, ...notePaperStyle(tint), borderColor: tint.fold, ...(isActive && { borderWidth: 3 }) } : sizing}
         data-tab-color={tint?.token}
         // `border-t-2` on EVERY state, colored only when active: the accent has
         // to follow the `rounded-t-lg` curve, and a border does that natively.
@@ -690,7 +692,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 {displayTitle && (
                   <div className="px-3 py-1.5">
                     <div className="flex items-center gap-1">
-                      <TabTooltipName name={displayTitle} className={tipBody ? undefined : 'font-normal'} />
+                      <TabTooltipName name={displayTitle} className={tipBody ? undefined : 'text-base font-normal'} />
                       {onFullScreen &&
                         renderCardAction(
                           key,
@@ -724,10 +726,19 @@ export const TabStrip: React.FC<TabStripProps> = ({
                     </span>
                     <button
                       type="button"
-                      className="rounded px-1.5 py-0.5 text-foreground hover:bg-muted"
+                      className="flex items-center rounded px-1.5 py-0.5 text-foreground hover:bg-muted"
+                      title={chipNotes.length ? undefined : t`Add note`}
+                      aria-label={chipNotes.length ? undefined : t`Add note`}
                       onClick={() => setNotesView({ key, mode: chipNotes.length ? 'list' : 'compose' })}
                     >
-                      {chipNotes.length > 0 ? t`Show notes` : t`+ Add note`}
+                      {chipNotes.length ? (
+                        t`Show notes`
+                      ) : (
+                        <>
+                          <Plus size={11} strokeWidth={2.5} />
+                          <StickyNoteShape size={14} />
+                        </>
+                      )}
                     </button>
                   </div>
                 )}

@@ -115,7 +115,7 @@ async def share_context() -> ApiResponse:
             status_code=400,
             detail="context-share: 'data' must be an object when provided",
         )
-    changed = entity.add_shared_context_entities(*typeids, data=data)
+    changed = entity.add_shared_context_entities(*typeids, data=data, via="user")
     if changed:
         await entity.save(request_info.someone_typeid)
     return ApiSuccessResponse(data={"ok": changed, **_response_payload(entity)})

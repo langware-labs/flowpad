@@ -87,6 +87,9 @@ def _status_facts(monkeypatch):
         return None
 
     monkeypatch.setattr(llm_source, "check_unchecked_login", no_probe)
+    from tests.utils.hub_proxy_fake import model_config_transport
+
+    model_config_transport(monkeypatch, HUB_TIERS, effective_default_model=HUB_TIERS["sm"])
 
 
 async def _signed_in(*workers: str) -> None:
@@ -101,7 +104,8 @@ async def _signed_in(*workers: str) -> None:
         await cap.save(notify=False)
 
 
-HUB_INVOKE = "https://hub.test/api/v1/graph/llm_endpoint/ep1/invoke"
+EP1_ID = "11111111-2222-4333-8444-555555555555"
+HUB_INVOKE = f"https://hub.test/api/v1/graph/llm_endpoint/{EP1_ID}/invoke"
 
 #: The model sizes the bound test endpoint declares (an endpoint decides what each size runs).
 HUB_TIERS = {"sm": "anthropic/claude-haiku-5.5", "md": "anthropic/claude-sonnet-4.5", "lg": "anthropic/claude-opus-4.1"}
@@ -120,8 +124,8 @@ def _bind_hub(monkeypatch: pytest.MonkeyPatch, *, login: bool = True) -> None:
         set_api_key("fp-hub-key")
     llm_endpoint.reset_cache()
     llm_endpoint.set_hub_llm_endpoint(
-        "llm_endpoint:ep1",
-        "/api/v1/graph/llm_endpoint/ep1/invoke",
+        f"llm_endpoint-{EP1_ID}",
+        f"/api/v1/graph/llm_endpoint/{EP1_ID}/invoke",
         provider="openrouter",
         name="OpenRouter",
         tiers=HUB_TIERS,
@@ -247,7 +251,7 @@ async def test_api_auth_overrides_append_after_process_hook_overrides(monkeypatc
         extra_config_overrides=[("features.hooks", True)],
     )
 
-    async def resolve(_process):
+    async def resolve(_process, *, include_device=False):
         return api_auth.WorkerApiAuth(
             model_slug="openai/gpt-5-mini",
             config_overrides=[("model_provider", "openrouter")],
@@ -343,6 +347,28 @@ async def test_copilot_hub_endpoint_binding(env, monkeypatch) -> None:
     assert auth.env["COPILOT_PROVIDER_API_KEY"] == "fp-hub-key"
     for var in ("COPILOT_PROVIDER_MODEL_ID", "COPILOT_PROVIDER_WIRE_MODEL", "COPILOT_MODEL"):
         assert auth.env[var] == "anthropic/claude-haiku-5.5"
+
+
+async def test_launch_freezes_metadata_then_refreshes_for_next_spawn(env, monkeypatch):
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import apply_api_model_to_options
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import apply_worker_secret_env
+    from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions
+    from tests.utils.hub_proxy_fake import model_config_transport
+
+    _bind_hub(monkeypatch)
+    hub = model_config_transport(monkeypatch, HUB_TIERS, effective_default_model=HUB_TIERS["sm"])
+    process = AgenticProcess(worker_type="copilot", cli_config={}, llm_endpoint_typeid=f"llm_endpoint-{EP1_ID}")
+    cmd = CopilotAgentOptions()
+    await apply_api_model_to_options(cmd, process, prepare_launch=True)
+    hub.on("GET", "llm_endpoint", action="model-config", answer={"endpoint_typeid": f"llm_endpoint-{EP1_ID}",
+        "tiers": HUB_TIERS, "default_model": "lg", "effective_default_model": HUB_TIERS["lg"]})
+    first = await apply_worker_secret_env({}, process)
+    assert cmd.model == first["COPILOT_MODEL"] == HUB_TIERS["sm"] and len(hub.calls) == 1
+    await apply_api_model_to_options(cmd, process, prepare_launch=True)
+    second = await apply_worker_secret_env({}, process)
+    assert cmd.model == second["COPILOT_MODEL"] == process.resolved_model_slug == HUB_TIERS["lg"]
+    assert len(hub.calls) == 2 and not process.cli_config.get("model")
 
 
 async def test_hub_endpoint_unbound_raises(env, monkeypatch) -> None:
@@ -457,31 +483,31 @@ async def test_a_process_endpoint_resolves_with_no_box_binding(env, monkeypatch)
 
 
 @pytest.mark.parametrize(
-    "bad", ["not-a-typeid", "", "llm_endpoint-ep2", "project-11111111-2222-4333-8444-555555555555"]
+    "bad", ["not-a-typeid", "llm_endpoint-ep2", "project-11111111-2222-4333-8444-555555555555"]
 )
-async def test_an_unusable_process_endpoint_falls_back_to_the_binding(env, monkeypatch, bad) -> None:
-    """Garbage, a non-uuid id, and a well-formed typeid of the WRONG type all fall back rather than
-    building a plausible-looking invoke URL for something that is not a budget."""
+async def test_an_unusable_process_endpoint_refuses_instead_of_spending_the_box_binding(env, monkeypatch, bad) -> None:
+    """An invalid explicit source pin never silently spends a different source."""
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
 
     _bind_hub(monkeypatch)
     await _set_harness_api("claude", provider="flowpad")
 
-    auth = await resolve_worker_api_auth(_process_on("claude", bad))
-    assert auth is not None and auth.env["ANTHROPIC_BASE_URL"] == HUB_INVOKE
+    with pytest.raises((ValueError, WorkerSpawnError)):
+        await resolve_worker_api_auth(_process_on("claude", bad))
 
 
 @pytest.mark.parametrize("bad", ["not-a-typeid", "llm_endpoint-ep2"])
-async def test_an_unusable_process_endpoint_falls_back_to_the_bindings_sizes(env, monkeypatch, bad) -> None:
-    """A size asked on an unusable pin runs the BOUND endpoint's slug, as its invoke URL does."""
+async def test_an_unusable_process_endpoint_cannot_use_the_bindings_sizes(env, monkeypatch, bad) -> None:
+    """A size cannot turn an invalid explicit source pin into a fallback."""
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
 
     _bind_hub(monkeypatch)
     await _set_harness_api("claude", provider="flowpad")
 
-    auth = await resolve_worker_api_auth(_process_on("claude", bad, model="sm"))
-    assert auth.env["ANTHROPIC_BASE_URL"] == HUB_INVOKE
-    assert auth.model_slug == HUB_TIERS["sm"]
+    with pytest.raises((ValueError, WorkerSpawnError)):
+        await resolve_worker_api_auth(_process_on("claude", bad, model="sm"))
 
 
 async def test_a_named_endpoint_is_enough_on_a_device_mode_harness(env, monkeypatch) -> None:
@@ -689,8 +715,8 @@ async def test_apply_worker_secret_env_stamps_the_resolved_model_slug(env) -> No
     )
     assert process.resolved_model_slug is None
     await apply_worker_secret_env({}, process)
-    # No model asked -> the default size (md) of the OpenRouter key endpoint.
-    assert process.resolved_model_slug == "anthropic/claude-sonnet-5.5"
+    # No endpoint default declared -> sm, independent of instance preferences.
+    assert process.resolved_model_slug == "anthropic/claude-haiku-5.5"
 
 
 async def test_deepagents_has_no_device_login_to_fall_back_on(env) -> None:
@@ -720,9 +746,9 @@ async def test_deepagents_has_no_device_login_to_fall_back_on(env) -> None:
         ("haiku", HUB_TIERS["sm"]),
         # The caller's literal slug is kept, so the endpoint can refuse it.
         ("anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4.5"),
-        # A size reads the endpoint; no model at all is the default size (md).
+        # A size reads the endpoint; an unset endpoint default uses sm.
         ("sm", HUB_TIERS["sm"]),
-        (None, HUB_TIERS["md"]),
+        (None, HUB_TIERS["sm"]),
     ],
 )
 async def test_a_named_model_is_not_swapped_for_a_models_allow_default(env, tier, expected) -> None:

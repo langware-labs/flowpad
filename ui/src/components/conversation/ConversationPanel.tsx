@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ItOperationChip } from './ItOperationChip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { Conversation, GraphContext, Task, TypeId } from '@sdk';
-import { useEntity } from '@sdk/react/hooks';
+import { Conversation, GraphContext, Task, TypeId, isStaffTicket } from '@sdk';
+import { useAuth, useEntity } from '@sdk/react/hooks';
 import { History, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { cn } from '@src/lib/utils';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
@@ -23,6 +23,7 @@ import { TicketHeaderChips } from './TicketHeaderChips';
 import { ConversationMarkChips } from './ChannelMessageExtras';
 import { ProjectChip } from '@src/components/project/ProjectChip';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
+import { TicketPage } from './TicketPage';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { ConversationTasksPanel } from './ConversationTasksPanel';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -347,6 +348,21 @@ export function ConversationPanel({
     [showRuns],
   );
 
+  const { cloudUser } = useAuth();
+  const viewProps = {
+    conversationId,
+    task,
+    senderName,
+    ensureMapped,
+    selectedMessageIds,
+    onSelectMessage: selectOneMessage,
+    onOpenRun: openRun,
+    threadId,
+    onThreadNavigate,
+    agentId,
+  };
+  const staffTicket = variant !== 'compact' && isStaffTicket(convEntity, cloudUser?.id);
+
   return (
     <div className={`flex h-full min-h-0 flex-1 flex-col ${className ?? ''}`}>
       <div className="flex min-h-0 flex-1">
@@ -365,24 +381,16 @@ export function ConversationPanel({
               )}
             </div>
           )}
-          <LatestScroll className={`${bodyWrapper} relative`}>
-            <ConversationView
-              // Keyed so switching conversations RESETS the view's local
-              // state. Without it the instance is reused and an in-flight
-              // "composing…" line follows you into the next conversation.
-              key={conversationId}
-              conversationId={conversationId}
-              task={task}
-              senderName={senderName}
-              ensureMapped={ensureMapped}
-              selectedMessageIds={selectedMessageIds}
-              onSelectMessage={selectOneMessage}
-              onOpenRun={openRun}
-              threadId={threadId}
-              onThreadNavigate={onThreadNavigate}
-              agentId={agentId}
-            />
-          </LatestScroll>
+          {staffTicket ? (
+            // A help-desk ticket, for its desk's staff: the ticket and the team's conversation, side by side.
+            <TicketPage key={conversationId} {...viewProps} />
+          ) : (
+            <LatestScroll className={`${bodyWrapper} relative`}>
+              {/* Keyed so switching conversations RESETS the view's local state. Without it the instance is
+                  reused and an in-flight "composing…" line follows you into the next conversation. */}
+              <ConversationView key={conversationId} {...viewProps} />
+            </LatestScroll>
+          )}
         </div>
 
         {sideOpen ? (

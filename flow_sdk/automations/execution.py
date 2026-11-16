@@ -165,6 +165,12 @@ def _gate_of(result, trigger, event):
 
 
 async def run_decision(trigger, *, state=None, text=None, message_id=None) -> DecisionVerdict:
+    if getattr(trigger, "message_tags", None):
+        from flow_sdk.stream_inbox.message_tags import preview
+
+        verdict = await preview(trigger, state=state, text=text, message_id=message_id)
+        if not verdict.met or not trigger.gate:
+            return verdict
     execution = await run_automation(trigger, mode=AutomationMode.PREVIEW, preview_state=state,
                                       preview_text=text, preview_message_id=message_id)
     if execution.gate is not None and execution.gate.verdict is not None:

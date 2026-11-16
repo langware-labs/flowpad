@@ -110,6 +110,7 @@ class LLMSourceRefusal(StrEnum):
     SIGNING_IN = "signing_in"
     NO_LOGIN = "no_login"
     NO_KEY = "no_key"
+    UNSUPPORTED_PROVIDER = "unsupported_provider"
     HUB_SIGNED_OUT = "hub_signed_out"
     ENDPOINT_DISABLED = "endpoint_disabled"
     #: Another source is required (a process or project pin) or chosen (a stated preference).

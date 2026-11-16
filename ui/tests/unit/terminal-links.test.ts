@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
 import type { Terminal, ILink } from '@xterm/xterm';
 import { TerminalLinkProvider, linkAtCell, selectionText } from '@src/components/terminal/interactive-terminal/terminal-links';
+import { visualToLogical } from '@src/components/terminal/interactive-terminal/terminalConfig';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 
@@ -437,6 +438,31 @@ describe('a command or path a TUI wrapped, clicked anywhere', () => {
     try {
       await new Promise<void>((resolve) => terminal.write(rows.map((r, i) => `\x1b[${i + 1};1H${r}`).join(''), resolve));
       for (const [x, y] of cells) expect(linkAtCell(terminal as unknown as Terminal, x, y)).toBe(want);
+    } finally {
+      terminal.dispose();
+    }
+  });
+});
+
+describe('visualToLogical (a Claude Code row on Windows, copied)', () => {
+  it.each([
+    ['ריוואה גזמ יפל זאו', 'ואז לפי מזג האוויר'],
+    ['השקבב https://open-meteo.com/en/docs הזה API ה תא הצור', 'רוצה את ה API הזה https://open-meteo.com/en/docs בבקשה'],
+    ['תולעמב °26 וישכע', 'עכשיו 26° במעלות'],
+    ['תדבוע (הטושפ) היצקנופה', 'הפונקציה (פשוטה) עובדת'],
+    ['npm run build (prod)', 'npm run build (prod)'],
+  ])('%s → %s', (visual, logical) => {
+    expect(visualToLogical(visual)).toBe(logical);
+  });
+
+  it('turns back each row of a wrapped line on its own, in a .xterm-rtl-grid terminal', async () => {
+    const terminal = new HeadlessTerminal({ cols: 10, rows: 4, allowProposedApi: true });
+    try {
+      // Two soft-wrapped rows, each pre-reversed on its own: "אבגדה ושזח" then "טי".
+      await new Promise<void>((resolve) => terminal.write('חזשו הדגבאיט', resolve));
+      Object.defineProperty(terminal, 'element', { value: { closest: (s: string) => (s === '.xterm-rtl-grid' ? {} : null) } });
+      const all = { start: { x: 0, y: 0 }, end: { x: 2, y: 1 } };
+      expect(selectionText(terminal as unknown as Terminal, all)).toBe('אבגדה ושזחטי');
     } finally {
       terminal.dispose();
     }

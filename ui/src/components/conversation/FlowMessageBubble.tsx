@@ -35,6 +35,7 @@ import { profileLabel } from '@sdk/models/MessageEnvelope';
 import { SenderKind, senderOf } from '@sdk/models/MessageSender';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { useStagedMessageReview } from '@src/components/conversation/StagedMessageReview';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
@@ -48,13 +49,13 @@ import {
   isAttachmentMissing,
 } from '@sdk/entities/flow-message';
 import { Download, File, Loader2, Play, X } from 'lucide-react';
-import { valueKindMeta } from '@src/components/value-viewer/useValueKind';
+import { useValueKind, valueKindMeta } from '@src/components/value-viewer/useValueKind';
 import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageRunStatus } from './MessageRunStatus';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { isLightboxMedia } from '@src/components/ui/media-lightbox';
-import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
+import { AssetEditor, LOCAL_COMPUTE_NODE, editorForPath } from '@src/navigation/asset-doc-types';
 import { basename } from '@src/components/asset-manager/asset-row-helpers';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { CredentialValueLock } from './CredentialValueLock';
@@ -242,6 +243,9 @@ interface FlowMessageBubbleProps {
    *  responder's `sender_id` is intentionally absent from the guest's roster,
    *  so we suppress the unresolved-sender alert and its telemetry. */
   isHelpdesk?: boolean;
+  /** The diagnosis this help request was waiting for, once it arrived: its bottom line replaces the request's
+   *  "Diagnosis: on its way". */
+  diagnosisHeadline?: string | null;
   /** The viewer's hub user id. A hub-mirrored row names its sender by hub
    *  id while a locally written row names the local user, so "this is me"
    *  has to accept both — otherwise my own replies wear two names. */
@@ -313,6 +317,7 @@ export function FlowMessageBubble({
   rosterReady = false,
   isHelpdesk = false,
   viewerCloudUserId = null,
+  diagnosisHeadline = null,
   attachmentProjectId,
   messageAttachments,
   messageTask = null,
@@ -575,7 +580,12 @@ export function FlowMessageBubble({
   const issueCard = fm.issue_reply && !fm.issue_reply.follow_up ? fm.issue_reply : null;
   const message: ConversationMessage = {
     role,
-    content: isConvIdPointer || issueCard ? '' : (fm.text ?? ''),
+    content:
+      isConvIdPointer || issueCard
+        ? ''
+        : diagnosisHeadline
+          ? (fm.text ?? '').replace(/Diagnosis: on its way\s*$/, `Diagnosis: ${diagnosisHeadline}`)
+          : (fm.text ?? ''),
     sender_id: fm.sender_id ?? '',
     timestamp,
   };
@@ -633,13 +643,18 @@ export function FlowMessageBubble({
   // The SENDER's own downloaded files have no staged MA row (staging happens on
   // receive/unpack). Render them ungated so the sender sees their file
   // immediately — open/reveal work off the local path, no project needed.
-  const senderLocalFileItems = attachmentItems.filter(
+  const senderLocalItems = attachmentItems.filter(
     (i) =>
       i.state === AttachmentChipState.Downloaded &&
       !localImageItems.includes(i) &&
       !stagedFileNames.has(i.filename) &&
       i.filename !== HELP_REQUEST_FILE,
   );
+  // A value of a kind (`*.value.json`) is the same chip on both ends: the sender's own is not a file card.
+  const isLocalValue = (i: (typeof attachmentItems)[number]) =>
+    !!i.localPath && editorForPath(i.localPath) === AssetEditor.VALUE;
+  const senderLocalValueItems = senderLocalItems.filter(isLocalValue);
+  const senderLocalFileItems = senderLocalItems.filter((i) => !isLocalValue(i));
   // Ask for help: the message names itself, and -- while its context waits on this computer -- says so. The
   // carrier counts too: a desk ticket's echo from the hub can come back without ``kind`` on a path that does
   // not re-derive it.
@@ -716,13 +731,24 @@ export function FlowMessageBubble({
             (solid). No project gate — the review modal resolves the target. */}
         {fileAttachments.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {fileAttachments.map((ma) => (
-              <MessageFileChip
-                key={`file:${ma.id}`}
-                attachment={ma}
-                projectId={attachmentProjectId}
-                siblingAttachments={reviewAttachments}
-              />
+            {fileAttachments.map((ma) =>
+              ma.name?.toLowerCase().endsWith('.flowmsg') ? (
+                <FlowmsgFileChip key={`file:${ma.id}`} attachment={ma} projectId={attachmentProjectId} />
+              ) : (
+                <MessageFileChip
+                  key={`file:${ma.id}`}
+                  attachment={ma}
+                  projectId={attachmentProjectId}
+                  siblingAttachments={reviewAttachments}
+                />
+              ),
+            )}
+          </div>
+        )}
+        {senderLocalValueItems.length > 0 && (
+          <div className="flex flex-wrap gap-1" data-testid="sender-value-chips">
+            {senderLocalValueItems.map((item) => (
+              <LocalValueChip key={item.key} filename={item.filename} localPath={item.localPath ?? ''} />
             ))}
           </div>
         )}
@@ -986,6 +1012,28 @@ export function FlowMessageBubble({
  *               clickable — opens the review/install modal (no navigation).
  *   hidden    — pre-download (`forceShow` false); the Download button carries it.
  */
+/** A received `.flowmsg` file: clicking opens what IT carries for review, not the file itself. */
+function FlowmsgFileChip({ attachment, projectId }: { attachment: MessageAttachment; projectId?: string | null }) {
+  const { t } = useLingui();
+  const review = useStagedMessageReview(projectId ?? null);
+  return (
+    <>
+      <EntityChip
+        entity={{
+          typeId: new TypeId('file', String(attachment.asset_id ?? '')),
+          type: 'file',
+          id: String(attachment.asset_id ?? ''),
+          name: attachment.name ?? 'file',
+          icon: File,
+        }}
+        staged={!attachment.installed}
+        onClick={() => void review.openFrom(attachment.openFlowmsg(), t`Could not open this message`)}
+      />
+      {review.dialog}
+    </>
+  );
+}
+
 /**
  * A staged/installed RAW FILE attachment (asset_type='file' — the OS-file-picker
  * lane). Unlike entity chips, a file never resolves to an entity: installed-ness
@@ -1141,6 +1189,20 @@ function ProjectMessageChip({
         />
       )}
     </span>
+  );
+}
+
+/** The sender's own value file, drawn as the chip the receiver gets: named by its kind, opening the value. */
+function LocalValueChip({ filename, localPath }: { filename: string; localPath: string }) {
+  const { navigation } = useDockNavigation();
+  const kind = useValueKind(localPath);
+  const value = kind ? valueKindMeta(kind) : null;
+  return (
+    <EntityChip
+      entity={{ type: 'file', name: value?.label ?? filename, icon: value?.Icon ?? File }}
+      title={filename}
+      onClick={() => navigation.openDock(dockPointerForLocalFile(localPath))}
+    />
   );
 }
 

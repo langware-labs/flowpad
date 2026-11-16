@@ -840,7 +840,7 @@ class ScanActionsMixin:
                     except Exception:
                         logging.debug(f"createProcess: skipping unparseable shared_context_entity {raw!r}")
                 if tids:
-                    process.add_shared_context_entities(*tids)
+                    process.add_shared_context_entities(*tids, via="user")  # what the launch was opened on
             await process.save(owner)
             if launch_title:
                 try:

@@ -104,6 +104,21 @@ describe('validateDraft — chain', () => {
 });
 
 describe('buildEntityJson', () => {
+  it('round-trips own defaults, not backend resolution, and clears explicitly', () => {
+    const endpoint = new LLMEndpoint({ id: A, default_model: 'md', effective_default_model: 'provider/model' });
+    const draft = draftFrom(endpoint);
+    expect(draft.default_model).toBe('md');
+    expect(buildEntityJson(draft, true)).toMatchObject({ default_model: 'md' });
+    expect(buildEntityJson(draft, true)).not.toHaveProperty('effective_default_model');
+    for (const value of [null, '', '  ']) {
+      const cleared = { ...draft, default_model: value };
+      expect(buildEntityJson(cleared, true)).toMatchObject({ default_model: null });
+      expect(buildAllocateBody(cleared)).toMatchObject({ default_model: null });
+    }
+    expect(buildAllocateBody({ ...draft, default_model: ' provider/model ' })).toMatchObject({
+      default_model: 'provider/model',
+    });
+  });
   it('never contains the key, on create or edit', () => {
     const d: EndpointDraft = { ...emptyDraft('root'), name: 'r', key: 'sk-secret-123' };
     for (const editing of [false, true]) {

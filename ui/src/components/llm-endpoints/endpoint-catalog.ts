@@ -1,6 +1,13 @@
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
-import type { LLMChain, LLMEndpoint, LLMEndpointKind, LLMEndpointProvider, LLMEndpointTiers } from '@sdk';
+import type {
+  LLMChain,
+  LLMEndpoint,
+  LLMEndpointKind,
+  LLMEndpointProvider,
+  LLMEndpointTiers,
+  LocalEndpointConfig,
+} from '@sdk';
 import { EMPTY_LLM_TIERS, LLM_ENDPOINT_PROVIDERS } from '@sdk';
 
 import {
@@ -110,7 +117,7 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     defaultBaseUrl: VERTEX_BASE_URL,
     keyPlaceholder: '{ "type": "service_account", … }',
     keyPrefix: '{',
-    supportsLocal: false,
+    supportsLocal: true,
     // The hub opens the Gemini family on a new Vertex budget (core/llm/vertex.py CLIENT_DEFAULTS).
     defaultModelsAllow: 'google/gemini-*',
   },
@@ -228,6 +235,10 @@ export interface EndpointDraft {
   provider: LLMEndpointProvider;
   /** Root only. */
   base_url: string;
+  /** Local provider configuration; normalized by the backend, never parsed from URLs here. */
+  vertex?: LocalEndpointConfig['vertex'];
+  /** An explicit URL edit takes precedence over omitting a stale derived Vertex URL. */
+  baseUrlEdited?: boolean;
   /** Chain only: the typeid of the endpoint this one draws from.
    *
    *  One parent, not a list. The hub makes the link a `partof` (endpoint → endpoint) relationship written
@@ -238,6 +249,7 @@ export interface EndpointDraft {
   limits: LimitsForm;
   /** The model each size runs; `null` = inherit from the endpoint this one draws on. */
   tiers: LLMEndpointTiers;
+  default_model: string | null;
   /** Root only: the catalog this root offers, one model per line. Empty = the provider's listing. */
   models: string;
   /** Root only, create only; NEVER part of the entity payload. */
@@ -259,6 +271,7 @@ export function emptyDraft(kind: LLMEndpointKind = 'root'): EndpointDraft {
     filters: { ...filtersToForm(null), models_allow: provider.defaultModelsAllow },
     limits: limitsToForm(null),
     tiers: { ...EMPTY_LLM_TIERS },
+    default_model: null,
     models: '',
     key: '',
   };
@@ -275,6 +288,8 @@ export function withProvider(draft: EndpointDraft, provider: LLMEndpointProvider
   return {
     ...draft,
     provider,
+    vertex: undefined,
+    baseUrlEdited: keepUrl && draft.baseUrlEdited,
     base_url: keepUrl ? draft.base_url : (next?.defaultBaseUrl ?? ''),
     filters: keepAllow ? draft.filters : { ...draft.filters, models_allow: next?.defaultModelsAllow ?? '' },
   };
@@ -312,12 +327,14 @@ export function draftFrom(entity: LLMEndpoint, kind?: LLMEndpointKind | null): E
     enabled: entity.enabled ?? true,
     provider,
     base_url: entity.base_url || providerSpec(provider)?.defaultBaseUrl || '',
+    vertex: entity.vertex,
     // Only ever read back from a hub that still serialized the field; a current one does not, and
     // the parent is fixed at allocation anyway, so this is display-only on edit.
     source: entity.sources?.[0] ?? '',
     filters: filtersToForm(entity.filters),
     limits: limitsToForm(entity.limits),
     tiers: { ...EMPTY_LLM_TIERS, ...(entity.tiers ?? {}) },
+    default_model: entity.default_model,
     models: (entity.models ?? []).join('\n'),
     key: '',
   };
@@ -386,6 +403,7 @@ export function buildEntityJson(draft: EndpointDraft, editing: boolean): Record<
     filters: formToFilters(draft.filters),
     limits: formToLimits(draft.limits),
     tiers: { ...draft.tiers },
+    default_model: draft.default_model?.trim() || null,
   };
   if (draft.kind === 'root') json.models = catalogFromText(draft.models);
   if (draft.kind === 'root' && !editing) {
@@ -399,11 +417,13 @@ export function buildEntityJson(draft: EndpointDraft, editing: boolean): Record<
  *  the URL. `enabled` is not here because a freshly allocated endpoint is enabled. */
 export function buildAllocateBody(draft: EndpointDraft): {
   name: string;
+  default_model: string | null;
   filters: ReturnType<typeof formToFilters>;
   limits: ReturnType<typeof formToLimits>;
 } {
   return {
     name: draft.name.trim(),
+    default_model: draft.default_model?.trim() || null,
     filters: formToFilters(draft.filters),
     limits: formToLimits(draft.limits),
   };

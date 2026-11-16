@@ -20,6 +20,7 @@ from flow_sdk.api.api_types.identifier import is_valid_uuid, mint_uuid
 from flow_sdk.db.drivers.sqlite.connection import RelationshipSchema
 from flow_sdk.flowpad_types.enums import BuiltInRelationshipTypes
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.context_relation_spec import CONTEXT_VIA_KEY, ContextVia
 
 CONTEXT_TYPE = BuiltInRelationshipTypes.Context.value
 
@@ -29,7 +30,22 @@ CONTEXT_LISTS: dict[str, tuple[str, str]] = {
     "private_context_entities_": ("private", "private_context_entity_data"),
 }
 
-Entries = dict[tuple[str, str, str], str]  # (to_type, to_id, kind) -> role
+Entries = dict[tuple[str, str, str], tuple[str, str]]  # (to_type, to_id, kind) -> (role, via)
+
+#: How an entry came to be when nothing recorded it (``ContextVia``): a declared field is
+#: structure; a list entry put there by a constructor (a launch's context) a person's action.
+DECLARED_VIA: ContextVia = "static"
+LIST_VIA: ContextVia = "user"
+
+
+def _list_entry_via(tid: TypeId, entry: Mapping) -> str:
+    """How a list entry came to be: as recorded, else read from what the entry carries — a harvested
+    ``path`` means the system found it, a project is what the entity belongs to."""
+    if entry.get(CONTEXT_VIA_KEY):
+        return str(entry[CONTEXT_VIA_KEY])
+    if entry.get("path"):
+        return "dynamic"
+    return DECLARED_VIA if tid.type == "project" else LIST_VIA
 
 
 def declared_context_fields(cls: type | None) -> Mapping[str, str]:
@@ -88,8 +104,8 @@ def context_entries(data: Mapping | str | None, declared: Mapping[str, str]) -> 
             tid = _typeid_of(ref)
             if tid is not None:
                 entry = roles.get(str(tid)) if isinstance(roles, Mapping) else None
-                role = entry.get("role") if isinstance(entry, Mapping) else None
-                out[(tid.type, str(tid.id), kind)] = str(role or "")
+                entry = entry if isinstance(entry, Mapping) else {}
+                out[(tid.type, str(tid.id), kind)] = (str(entry.get("role") or ""), _list_entry_via(tid, entry))
     for field, declaration in declared.items():
         # ``kind`` for a field holding ``<type>-<id>`` references; ``kind:<type>`` for one holding bare ids.
         kind, _, id_type = declaration.partition(":")
@@ -100,7 +116,7 @@ def context_entries(data: Mapping | str | None, declared: Mapping[str, str]) -> 
             else:
                 tid = _typeid_of(ref, entity_only=True)
             if tid is not None:
-                out[(tid.type, str(tid.id), kind)] = ""
+                out[(tid.type, str(tid.id), kind)] = ("", DECLARED_VIA)
     return out
 
 
@@ -115,7 +131,7 @@ async def sync_context_rows(session, entity, stored: str | None, new_data: Mappi
     if wanted == context_entries(stored, declared):
         return
     from_type, from_id = (entity.type or entity.get_type()).lower(), str(entity.id)
-    wanted = {key: role for key, role in wanted.items() if key[1] != from_id}
+    wanted = {key: value for key, value in wanted.items() if key[1] != from_id}
     rows = (
         await session.execute(
             select(RelationshipSchema).where(RelationshipSchema.from_id == from_id, RelationshipSchema.type == CONTEXT_TYPE)
@@ -124,15 +140,15 @@ async def sync_context_rows(session, entity, stored: str | None, new_data: Mappi
     have = {(row.to_type, row.to_id, (json.loads(row.data) if row.data else {}).get("kind", "")): row for row in rows}
     now = datetime.now(UTC)
     by = getattr(entity, "updated_by", None) or getattr(entity, "created_by", None)
-    for (to_type, to_id, kind), role in wanted.items():
+    for (to_type, to_id, kind), (role, via) in wanted.items():
         held = have.pop((to_type, to_id, kind), None)
         if held is None:
             session.add(RelationshipSchema(
                 id=mint_uuid(), type=CONTEXT_TYPE, from_id=from_id, from_type=from_type, to_id=to_id, to_type=to_type,
                 created_by=by, created_date=now, updated_by=by, updated_date=now, is_child=False, is_final=False,
-                data=json.dumps({"kind": kind, "role": role}),
+                data=json.dumps({"kind": kind, "role": role, "via": via}),
             ))
-        elif (extra := json.loads(held.data) if held.data else {}).get("role", "") != role:
-            held.data, held.updated_date, held.updated_by = json.dumps({**extra, "role": role}), now, by
+        elif (extra := json.loads(held.data) if held.data else {}) != (updated := {**extra, "role": role, "via": via}):
+            held.data, held.updated_date, held.updated_by = json.dumps(updated), now, by
     for row in have.values():
         await session.delete(row)

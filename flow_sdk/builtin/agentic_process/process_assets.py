@@ -9,6 +9,7 @@ from pydantic import Field
 
 from flow_sdk.assets.directory import AssetDir
 from flow_sdk.assets.materialize import MaterializationMode
+from flow_sdk.builtin.agentic_process.browser_choice import BrowserLaunch
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime, ProcessMcpRuntime
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -62,6 +63,8 @@ class PreparedProcessAssets(DataSpec):
     instruction_assets: SystemInstructionAssets | None = None
     hook_runtime: ProcessHookRuntime = Field(default_factory=ProcessHookRuntime)
     mcp_runtime: ProcessMcpRuntime = Field(default_factory=ProcessMcpRuntime)
+    #: The session's browser, decided once (``browser_choice``); each worker renders it.
+    browser: BrowserLaunch = Field(default_factory=BrowserLaunch)
 
 
 
@@ -437,12 +440,26 @@ class ProcessAssets:
             )
         mcp_runtime = ProcessMcpRuntime()
         prepare_mcp = getattr(self.process.driver, "prepare_process_mcp", None)
+        from flow_sdk.builtin.agentic_process.browser_choice import resolve_for  # noqa: PLC0415
+        from flow_sdk.core.agent_browser import MCP_NAME, mcp_spec  # noqa: PLC0415
+
+        launch = await resolve_for(self.process)
+        browser = launch.kind
+        servers = list(self.process.resolved_mcp_servers())
         if prepare_mcp is not None:
-            mcp_runtime = prepare_mcp(self.process.resolved_mcp_servers())
+            # The agent browser is ADDED to the user's own servers: when it is the whole set,
+            # the launch is not strict, so ``~/.claude.json`` still applies.
+            additive = browser == "agent" and not servers
+            if browser == "agent" and all(s.name != MCP_NAME for s in servers):
+                servers.append(mcp_spec())
+            mcp_runtime = prepare_mcp(servers)
+            if additive:
+                mcp_runtime = mcp_runtime.model_copy(update={"strict": False})
         return PreparedProcessAssets(
             instruction_assets=instructions,
             hook_runtime=hook_runtime,
             mcp_runtime=mcp_runtime,
+            browser=launch,
         )
 
 

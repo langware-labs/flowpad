@@ -12,6 +12,7 @@ import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarSt
 import { Button } from '@src/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { errorMessage } from '@src/lib/error-message';
 
 import { ChainTree } from './ChainTree';
 import { consumerRows } from './chain-tree';
@@ -22,7 +23,7 @@ import { UsagePanel } from './UsagePanel';
 import { canConfigure, canRemove, canShare, endpointTypeId, kindFromChain } from './endpoint-catalog';
 import { ENDPOINT_INVITE_ROLES } from './share-endpoint';
 import { LLM_ENDPOINT_TABS, openLlmEndpoint, type LlmEndpointTab } from './llm-endpoints-pointer';
-import { useLlmEndpointChain } from './use-llm-endpoints';
+import { useLlmEndpointChain, useLlmEndpointModelConfig } from './use-llm-endpoints';
 
 export interface LlmEndpointDetailProps {
   endpointId: string;
@@ -116,6 +117,8 @@ export function LlmEndpointDetail({
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const chain = useLlmEndpointChain(local ? undefined : endpointId);
+  const modelConfig = useLlmEndpointModelConfig(local ? undefined : endpointId);
+  const resolvedDefault = local ? endpoint?.effective_default_model : modelConfig.data?.effective_default_model;
   // Hop ids are typeids; the pointer is the bare uuid.
   const entryTypeId = endpointTypeId(endpointId);
   const entryHop = chain.data?.hops.find((h) => h.id === entryTypeId);
@@ -134,7 +137,10 @@ export function LlmEndpointDetail({
   const openEndpoint = (id: string) => openLlmEndpoint(navigation, id);
   const consumers = useMemo(() => consumerRows(endpointId, all), [endpointId, all]);
   // One TypeId per endpoint: `useMembers` keys its fetch on the object, so a fresh one per render would refetch.
-  const membersTypeId = useMemo(() => (endpoint?.id ? new TypeId(LLMEndpoint.type, endpoint.id) : null), [endpoint?.id]);
+  const membersTypeId = useMemo(
+    () => (endpoint?.id ? new TypeId(LLMEndpoint.type, endpoint.id) : null),
+    [endpoint?.id],
+  );
   const tabLabels: Record<LlmEndpointTab, string> = { overview: t`Overview`, usage: t`Usage`, models: t`Models` };
 
   return (
@@ -183,15 +189,15 @@ export function LlmEndpointDetail({
       </div>
 
       {!local && (
-      <Tabs value={tab} onValueChange={(v) => onTab(v as LlmEndpointTab)}>
-        <TabsList>
-          {LLM_ENDPOINT_TABS.map((k) => (
-            <TabsTrigger key={k} value={k} data-testid={`llm-tab-${k}`}>
-              {tabLabels[k]}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+        <Tabs value={tab} onValueChange={(v) => onTab(v as LlmEndpointTab)}>
+          <TabsList>
+            {LLM_ENDPOINT_TABS.map((k) => (
+              <TabsTrigger key={k} value={k} data-testid={`llm-tab-${k}`}>
+                {tabLabels[k]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       )}
 
       {(local || tab === 'overview') && (
@@ -205,33 +211,39 @@ export function LlmEndpointDetail({
                 <span className="me-2 font-mono text-xs text-foreground">{endpoint?.credential_hint}</span>
                 <Trans>Stored in this machine's secret store. A local endpoint is a root: it has no chain.</Trans>
               </p>
+              {endpoint?.vertex && (
+                <p className="text-sm text-muted-foreground" data-testid="llm-local-vertex">
+                  <Trans>Project</Trans>: {endpoint.vertex.project_id} · <Trans>Location</Trans>:{' '}
+                  {endpoint.vertex.location}
+                </p>
+              )}
             </section>
           ) : (
-          <section className="space-y-2">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-medium">
-                <Trans>Chain</Trans>
-              </h3>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                aria-label={t`Refresh`}
-                onClick={() => void chain.refetch()}
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${chain.isFetching ? 'animate-spin' : ''}`} />
-              </Button>
-              {chain.data && chain.data.paths.length > 1 && (
-                <span className="text-xs text-muted-foreground">{t`${chain.data.paths.length} fallback paths`}</span>
+            <section className="space-y-2">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-medium">
+                  <Trans>Chain</Trans>
+                </h3>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  aria-label={t`Refresh`}
+                  onClick={() => void chain.refetch()}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${chain.isFetching ? 'animate-spin' : ''}`} />
+                </Button>
+                {chain.data && chain.data.paths.length > 1 && (
+                  <span className="text-xs text-muted-foreground">{t`${chain.data.paths.length} fallback paths`}</span>
+                )}
+              </div>
+              {chain.error && (
+                <p className="text-sm text-destructive">
+                  <Trans>Could not resolve the chain.</Trans>
+                </p>
               )}
-            </div>
-            {chain.error && (
-              <p className="text-sm text-destructive">
-                <Trans>Could not resolve the chain.</Trans>
-              </p>
-            )}
-            <ChainTree chain={chain.data} onOpen={openEndpoint} />
-          </section>
+              <ChainTree chain={chain.data} onOpen={openEndpoint} />
+            </section>
           )}
 
           <section className="space-y-2" data-testid="llm-consumers">
@@ -269,6 +281,14 @@ export function LlmEndpointDetail({
             <h3 className="text-sm font-medium">
               <Trans>Model sizes</Trans>
             </h3>
+            <p className="text-sm" data-testid="llm-resolved-default">
+              <Trans>Resolved default</Trans>:{' '}
+              {modelConfig.error
+                ? errorMessage(modelConfig.error, t`Model configuration unavailable`)
+                : resolvedDefault === undefined
+                  ? t`Model configuration unavailable`
+                  : (resolvedDefault ?? t`No model available`)}
+            </p>
             <ModelSizes
               tiers={local ? ownTiers : chain.data?.effective_tiers}
               names={Object.fromEntries((chain.data?.hops ?? []).map((h) => [h.id, h.name]))}
@@ -276,9 +296,7 @@ export function LlmEndpointDetail({
           </section>
 
           <section className="space-y-2">
-            <h3 className="text-sm font-medium">
-              {local ? <Trans>Limits</Trans> : <Trans>Limits remaining</Trans>}
-            </h3>
+            <h3 className="text-sm font-medium">{local ? <Trans>Limits</Trans> : <Trans>Limits remaining</Trans>}</h3>
             {local ? (
               <div className="space-y-1" data-testid="llm-local-limits">
                 <EffectiveFilters
@@ -296,9 +314,10 @@ export function LlmEndpointDetail({
 
           <section className="space-y-2">
             <h3 className="text-sm font-medium">
-              <Trans>Effective filters at this endpoint</Trans>
+              {local ? <Trans>Stored filters (not enforced)</Trans> : <Trans>Effective filters at this endpoint</Trans>}
             </h3>
             <EffectiveFilters
+              empty={local ? <Trans>No stored filters.</Trans> : undefined}
               filters={
                 (local ? (endpoint?.filters ?? {}) : (entryHop?.effective_filters ?? {})) as unknown as Record<
                   string,

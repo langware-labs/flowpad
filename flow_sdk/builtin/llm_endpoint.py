@@ -28,7 +28,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from pydantic import BaseModel, Field, PrivateAttr, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
@@ -37,6 +37,7 @@ from flow_sdk.core.urls.service_urls import urls_service
 from flow_sdk.flowpad_types.enums.auth_enums import HubRole
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.credential_contract import LM_SECRET_PREFIX
+from flow_sdk.schema.data_spec.llm_model_spec import VertexConfig
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 if TYPE_CHECKING:
@@ -159,11 +160,20 @@ class LLMEndpointConfig(DataSpec):
     #: Slugs to change, by tier (``sm`` / ``md`` / ``lg`` / ``embedding``). Merged over the row's
     #: own, so naming one tier leaves the others alone.
     tiers: dict[str, str] | None = None
+    default_model: str | None = None
     base_url: str | None = None
+    vertex: VertexConfig | None = None
     name: str | None = None
     #: Stored on the row and shown; NOT enforced on this machine (only the hub keeps a ledger).
     limits: LLMLimits | None = None
     filters: LLMFilters | None = None
+
+    @field_validator("default_model")
+    @classmethod
+    def _clean_default(cls, value):
+        from flow_sdk.external_apis.llm.model_selection import clean_default_model
+
+        return clean_default_model(value)
 
     @model_validator(mode="before")
     @classmethod
@@ -193,6 +203,7 @@ class LLMEndpoint(Entity):
     member_default_limits: LLMLimits = APIField(default_factory=LLMLimits)
     #: ``****last4`` of the provider key, when this endpoint is a root. Never the key itself.
     credential_hint: str = APIField(default="")
+    credential_kind: str = APIField(default="api_key")
     #: Is this budget THIS BOX'S USER'S OWN to spend, as opposed to one they merely administer?
     #: The hub's own answer, off the ``expand.mine`` half of the permission expansion the listing
     #: already asks for -- so it is one read with ``can_administer`` and not a second.
@@ -213,6 +224,15 @@ class LLMEndpoint(Entity):
     #: ``{sm, md, lg, embedding}`` model slugs for this credential. Per-credential, not
     #: per-harness: the same map serves a spawned worker and an in-process call.
     tiers: dict[str, str] = APIField(default_factory=dict, sharing=Sharing.PRIVATE)
+    default_model: str | None = APIField(default=None)
+    effective_default_model: str | None = APIField(default=None, persist=Persist.FALSE)
+
+    @field_validator("default_model")
+    @classmethod
+    def _clean_default(cls, value):
+        from flow_sdk.external_apis.llm.model_selection import clean_default_model
+
+        return clean_default_model(value)
     #: DEVICE only: which harness's login this row configures (``claude``, ``codex``, ...). Stored:
     #: it is the device row's natural key (``find_device``).
     harness: str = APIField(default="")
@@ -269,8 +289,8 @@ class LLMEndpoint(Entity):
     def _fill_local_defaults(self) -> "LLMEndpoint":
         """Give a local key endpoint its provider's base URL, secret name and model slugs.
 
-        Gated on ``API_KEY`` **and** an empty field, so hydrating a stored row or a hub
-        projection can never have a default painted over a value that was read from disk.
+        Gated on ``API_KEY``; model defaults only initialize an omitted tier map.
+        An explicitly empty map stays empty, including when hydrating a saved row.
         """
         if self.kind == LLMEndpointKind.DEVICE:
             # ``invocable`` is not persisted, so a device row read back from disk is re-told here.
@@ -288,7 +308,7 @@ class LLMEndpoint(Entity):
             self.base_url = dialect.default_base_url
         if not self.secret_name:
             self.secret_name = f"{LM_SECRET_PREFIX}{self.provider}"
-        if not self.tiers:
+        if "tiers" not in self.model_fields_set:
             self.tiers = dict(dialect.default_models)
         if not self.name:
             self.name = f"{self.provider} key"
@@ -309,12 +329,15 @@ class LLMEndpoint(Entity):
             "limits",
             "member_default_limits",
             "credential_hint",
+            "credential_kind",
             "is_mine",
             # Listed explicitly: ``invocable`` is Persist.FALSE, and a picker that cannot see it
             # would offer the user a device endpoint the backend can never call.
             "kind",
             "secret_name",
             "tiers",
+            "default_model",
+            "effective_default_model",
             "harness",
             "invocable",
             "can_administer",
@@ -326,7 +349,23 @@ class LLMEndpoint(Entity):
     def to_wire(self) -> dict[str, Any]:
         """The endpoint as something choosing between endpoints needs to see it."""
         data = self.model_dump(mode="json", include=self.WIRE_FIELDS)
+        if self.kind == LLMEndpointKind.API_KEY:
+            from flow_sdk.external_apis.llm.errors import LLMError
+            from flow_sdk.external_apis.llm.model_selection import resolve_completion_model
+
+            try:
+                data["effective_default_model"] = resolve_completion_model(self.tiers, default_model=self.default_model)
+            except LLMError:
+                data["effective_default_model"] = None
         data["invoke_path"] = self.invoke_path()
+        if self.kind == LLMEndpointKind.API_KEY and self.provider == LMApiProvider.VERTEX:
+            from flow_sdk.external_apis.llm.vertex import canonical_config
+
+            try:
+                _, vertex = canonical_config(self.base_url)
+                data["vertex"] = vertex.model_dump()
+            except ValueError:
+                pass  # An unconfigured projection has no project yet.
         return data
 
     def invoke_path(self) -> str:
@@ -465,23 +504,30 @@ class LLMEndpoint(Entity):
                 raise LLMNotInvocable(f"{self.name or self.id} is not reachable: this box has no hub origin")
             # No referer/title headers on the hub hop: the bearer is the hub login key and the
             # hub adds the root's own auth on the far side.
+            from flow_sdk.instance_settings.llm_endpoint import fetch_model_config
+
+            async def model_config(model):
+                return await fetch_model_config(str(self.typeid), public=self.public, model=model)
+
             return LLMClient.for_dialect(
                 self.provider or "openrouter",
                 api_key=self.resolve_api_key(),
                 base_url=base_url,
-                # ``or None`` so an empty map falls back to the ROOT provider's slugs. The hub
-                # serializes no model names, so a hub endpoint carries none of its own, and
-                # without this every hub call had to name a model explicitly — which the docs
-                # said it did not.
+                # Preserve embedding/probe defaults. Text generation never reads
+                # these provider defaults: it uses the live model-config loader.
                 models=tiers or None,
                 extra_headers={},
                 label=self.name or "hub endpoint",
+                relay=True,
+                default_model=self.default_model,
+                model_config_loader=model_config,
             )
         return LLMClient.for_dialect(
             self.provider,
             api_key=self.resolve_api_key(),
             base_url=self.base_url,
-            models=tiers or None,
+            models=tiers,
+            default_model=self.default_model,
             label=self.name or self.provider,
         )
 
@@ -574,6 +620,29 @@ class LLMEndpoint(Entity):
         provider = LMApiProvider(provider)
         if provider is LMApiProvider.FLOWPAD:
             raise ValueError("flowpad is bound by the hub login; it has no local key endpoint")
+        # Validate the entire configuration before either the secret or row is changed.
+        existing = await cls.find_by_secret(f"{LM_SECRET_PREFIX}{provider.value}")
+        canonical_base = None
+        if provider is LMApiProvider.VERTEX:
+            from flow_sdk.external_apis.llm.vertex import canonical_config
+
+            credential = key or cls.key_projection(provider.value).resolve_api_key(allow_environment=False)
+            if not credential:
+                raise LLMNoCredential("no Vertex service account is stored on this machine; pass key=")
+            vertex_config = config.vertex if config else None
+            base = (config.base_url if config else None) or (existing.base_url if existing else "")
+            if vertex_config is not None and not config.base_url and existing:
+                _, previous = canonical_config(existing.base_url, credential=credential)
+                vertex_config = VertexConfig(
+                    project_id=vertex_config.project_id or previous.project_id,
+                    location=vertex_config.location or previous.location,
+                )
+                base = ""  # Explicit settings replace the old derived URL, not a caller's URL.
+            canonical_base, _ = canonical_config(
+                base,
+                vertex_config,
+                credential,
+            )
         if key:
             set_lm_api(key, provider)
         elif not cls.key_projection(provider.value).resolve_api_key(allow_environment=False):
@@ -581,12 +650,19 @@ class LLMEndpoint(Entity):
         endpoint = await cls.ensure_for_secret(provider.value)
         if config is not None:
             endpoint.tiers = {**endpoint.tiers, **(config.tiers or {})}
+            if "default_model" in config.model_fields_set:
+                endpoint.default_model = config.default_model
             endpoint.base_url = config.base_url or endpoint.base_url
             endpoint.name = config.name or endpoint.name
             if config.limits is not None:
                 endpoint.limits = config.limits
             if config.filters is not None:
                 endpoint.filters = config.filters
+        if canonical_base:
+            endpoint.base_url = canonical_base
+            endpoint.credential_kind = "service_account"
+            endpoint.credential_hint = "Service account configured"
+        if config is not None or canonical_base:
             await endpoint.save()
         return endpoint
 

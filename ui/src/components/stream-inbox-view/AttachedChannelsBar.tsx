@@ -264,6 +264,7 @@ export function AttachedChannelsBar({
           label={t`Flowpad — standard messages`}
           glyph={<img src={flowpadIcon} alt="" className="size-[17px] rounded-sm" />}
           pressed={lit(FLOWPAD_CHANNEL)}
+          selected={filtering && selected.has(FLOWPAD_CHANNEL)}
           onClick={(e) => pick(FLOWPAD_CHANNEL, e)}
           hint={markHint}
         />
@@ -274,6 +275,7 @@ export function AttachedChannelsBar({
           group={group}
           spec={specFor(group.provider)}
           pressed={lit(group.key)}
+          selected={filtering && selected.has(group.key)}
           onClick={(e) => pick(group.key, e)}
           hint={markHint}
           onDelete={setDeleting}
@@ -286,6 +288,7 @@ export function AttachedChannelsBar({
           label={t`Diagnosis — diagnoses and the help desk`}
           glyph={<DiagnosisGlyph />}
           pressed={lit(DIAGNOSIS_CHANNEL)}
+          selected={filtering && selected.has(DIAGNOSIS_CHANNEL)}
           onClick={(e) => pick(DIAGNOSIS_CHANNEL, e)}
           hint={markHint}
         />
@@ -296,6 +299,7 @@ export function AttachedChannelsBar({
           label={t`Automations — what your automations report`}
           glyph={<AutomationsGlyph />}
           pressed={lit(AUTOMATIONS_CHANNEL)}
+          selected={filtering && selected.has(AUTOMATIONS_CHANNEL)}
           onClick={(e) => pick(AUTOMATIONS_CHANNEL, e)}
           hint={markHint}
         />
@@ -320,24 +324,26 @@ export function AttachedChannelsBar({
         <Plus />
       </Button>
       {filtering && (
-        <span
-          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-border bg-muted pe-1 ps-2.5 text-xs text-foreground"
+        // The whole chip clears the filter — one target, not a 20px × inside it.
+        <button
+          type="button"
+          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-border bg-muted pe-1 ps-2.5 text-xs text-foreground hover:bg-background"
+          onClick={() => onSelectedChange?.(new Set())}
+          aria-label={t`Show all channels`}
+          title={t`Show all channels`}
           data-testid="attached-channels-showing"
         >
           {t`Showing: ${allKeys
             .filter((k) => selected.has(k))
             .map(nameOf)
             .join(', ')}`}
-          <button
-            type="button"
-            className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
-            onClick={() => onSelectedChange?.(new Set())}
-            aria-label={t`Show all channels`}
+          <span
+            className="grid size-5 place-items-center rounded-full text-muted-foreground"
             data-testid="attached-channels-clear"
           >
             <X className="size-3" />
-          </button>
-        </span>
+          </span>
+        </button>
       )}
       <Popover>
         <PopoverTrigger asChild>
@@ -382,6 +388,8 @@ const CONTROL = 'size-7 shrink-0 rounded-full text-muted-foreground';
 // first child — an svg, or the <img>/<span> a brand mark renders as.
 const MARK =
   'relative grid size-8 shrink-0 place-items-center rounded-full border-[1.5px] transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+// The channel a filter picked: a 2px primary ring with a soft halo, so it reads at a glance.
+const MARK_SELECTED = 'border-2 border-primary ring-[3px] ring-primary/25';
 const MARK_GREYED = '[&>:first-child]:opacity-45 [&>:first-child]:grayscale';
 const MARK_BADGE = 'absolute -bottom-0.5 -end-0.5 rounded-full border-2 border-background';
 const MARK_HOVER = { openDelay: 150, closeDelay: 120 };
@@ -474,6 +482,7 @@ function BuiltInMark({
   label,
   glyph,
   pressed,
+  selected,
   onClick,
   hint,
   badge,
@@ -482,6 +491,7 @@ function BuiltInMark({
   label: string;
   glyph: ReactNode;
   pressed: boolean;
+  selected?: boolean;
   onClick: (e: MouseEvent) => void;
   hint?: string;
   badge?: ReactNode;
@@ -494,7 +504,7 @@ function BuiltInMark({
       aria-label={label}
       aria-description={hint}
       title={hint ? `${label}\n${hint}` : label}
-      className={cn(MARK, 'border-border bg-background', !pressed && MARK_GREYED)}
+      className={cn(MARK, 'border-border bg-background', !pressed && MARK_GREYED, selected && MARK_SELECTED)}
       data-testid="attached-channel"
       data-provider={channel}
     >
@@ -515,6 +525,7 @@ function ChannelMark({
   group,
   spec,
   pressed,
+  selected,
   onClick,
   hint,
   onDelete,
@@ -522,6 +533,7 @@ function ChannelMark({
   group: ChannelGroup;
   spec: DataDriver | undefined;
   pressed: boolean;
+  selected?: boolean;
   onClick: (e: MouseEvent) => void;
   hint?: string;
   onDelete: (source: DataSource) => void;
@@ -549,6 +561,7 @@ function ChannelMark({
             'bg-background',
             state === 'off' ? 'border-dashed border-border' : 'border-border',
             (!pressed || state === 'off') && MARK_GREYED,
+            selected && MARK_SELECTED,
           )}
           data-testid="attached-channel"
           data-provider={group.provider}

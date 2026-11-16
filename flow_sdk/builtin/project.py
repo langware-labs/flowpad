@@ -772,6 +772,83 @@ class Project(SetupSkippable, Entity):
         await self._reindex_manifest()
         return ApiSuccessResponse(data={"env_files": spec.env_files})
 
+    @action.post(action_name="set-browser")
+    async def set_browser_action(self, browser: str = "agent") -> "ApiResponse":
+        """`POST /project/<id>/set-browser {browser}` — the browser this project's sessions use
+        (``agent`` | ``extension``). Written into ``project_manifest.json``; a session reads it
+        at its next launch."""
+        from flow_sdk.assets.project_manifest import ManifestError, set_browser  # noqa: PLC0415
+
+        if not self.fs_storage_mount_path:
+            return ApiFailResponse(message="Project has no local working directory")
+        try:
+            spec = set_browser(Path(self.fs_storage_mount_path), browser)
+        except ManifestError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        await self._reindex_manifest()
+        return ApiSuccessResponse(data={"browser": spec.browser})
+
+    @action.get(action_name="browser-status")
+    async def browser_status_action(self, process_id: str = "") -> "ApiResponse":
+        """`GET /project/<id>/browser-status?process_id=` — the project's browser, what is
+        available (agent window up, extension hint), and — for a session — what it resolves to
+        and its last browser call. Polled by the footer chip, so the file and CDP reads run
+        off the event loop."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.assets.project_manifest import read_browser  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process import browser_choice  # noqa: PLC0415
+        from flow_sdk.core.agent_browser import status as agent_status  # noqa: PLC0415
+
+        setting = read_browser(Path(self.fs_storage_mount_path)) if self.fs_storage_mount_path else "agent"
+        process = None
+        if process_id:
+            from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+
+            process = await AgenticProcess.get_by_id(process_id)
+
+        if process is not None:
+            options = browser_choice.worker_options(process.worker_type)
+        else:
+            from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
+
+            options = browser_choice.worker_options(await resolve_default_worker_type())
+
+        def _probe() -> tuple[dict, dict, dict | None]:
+            last_use = None
+            if process is not None:
+                from flow_sdk.builtin.agentic_process.transcript_cache import transcript_path  # noqa: PLC0415
+
+                # The harness transcript, then any the process tees into its own record folder
+                # (the headless stream) — the newest call wins.
+                paths = [transcript_path(process), *process._record_dir().glob("*transcript*.jsonl")]
+                uses = [u for u in map(browser_choice.last_browser_use, paths) if u]
+                last_use = max(uses, key=lambda u: u["at"] or "") if uses else None
+            # Extension facts only for a worker that has one.
+            extension: dict = {"installed": False, "device": ""}
+            if options.EXTENSION_ID:
+                from flow_sdk.core.browser_profiles import scan_extension  # noqa: PLC0415
+
+                scan = scan_extension(options.EXTENSION_ID)
+                extension = {
+                    **browser_choice.extension_hint(),
+                    "profiles": [{**p.profile.model_dump(), "browser": p.browser, "installed": p.installed} for p in scan.profiles],
+                    "profiles_denied": scan.denied,
+                }
+            return agent_status().model_dump(), extension, last_use
+
+        agent, extension, last_use = await asyncio.to_thread(_probe)
+        return ApiSuccessResponse(
+            data={
+                "setting": setting,
+                "effective": (await browser_choice.resolve_for(process, setting)).kind if process else setting,
+                "supports_extension": options.EXTENSION_FLAG is not None,
+                "agent": agent,
+                "extension": extension,
+                "last_use": last_use,
+            }
+        )
+
     async def _reindex_manifest(self) -> None:
         """Re-index ``project_manifest.json`` after a field write. The row is the
         projection every reader queries (the home-page picker, Credentials), and
@@ -1736,7 +1813,7 @@ class Project(SetupSkippable, Entity):
 
         parent_tid = parent_share_typeid(self)
         if parent_tid is not None:
-            self.add_shared_context_entities(parent_tid)
+            self.add_shared_context_entities(parent_tid, via="static")
         if self.fs_storage_mount_path:
             origin = await asyncio.to_thread(GitOrigin.for_asset_path, self.fs_storage_mount_path)
             if origin is not None:

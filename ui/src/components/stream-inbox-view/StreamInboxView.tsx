@@ -23,6 +23,7 @@ import { NewConversationDialog } from '@src/components/new-conversation-dialog/N
 import { ContactsDialog } from '@src/components/contact-picker/ContactsDialog';
 import {
   Conversation,
+  ticketOfTeamConversation,
   FlowMessage,
   Invitation,
   QueryRequest,
@@ -61,8 +62,10 @@ import {
 import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
-import { updateMessage, bulkUpdateMessages, searchStreamInbox } from './stream-inbox-api';
+import { updateMessage, bulkUpdateMessages, searchStreamInbox, watchMessageTags } from './stream-inbox-api';
+import { TagFilterBar } from '@src/components/assets/TagFilterBar';
 import { isHubOnly } from '@src/navigation/hub-runtime';
+import { MessageTags } from '@src/components/tags/MessageTags';
 import {
   type ChannelAttribution,
   SourceChip,
@@ -231,6 +234,8 @@ export function matchesColumnFilter(
 }
 
 interface ConversationListRowProps {
+  /** A help-desk ticket's team notes (its private team conversation), drawn as a chip on its row; null = none. */
+  teamNotes?: number | null;
   /** The newest session an automation started on a message of this conversation. */
   automationMark?: AgenticProcess;
   conv: Conversation;
@@ -285,6 +290,12 @@ interface ConversationListRowProps {
   onOpenConversation?: (conversationId: string) => void;
 }
 
+/** How many notes a ticket's team conversation holds; null when the ticket has none. */
+function teamNotes(team: Conversation | undefined): number | null {
+  if (!team) return null;
+  return team.message_count ?? team.conversationMessageIds?.length ?? 0;
+}
+
 /** `ConversationListRow`'s `revision`: everything stored on the row's conversation, plus its
  *  automation mark's state. A field the row reads through a hook (its messages, the viewer)
  *  re-renders it on its own. */
@@ -331,6 +342,7 @@ export const ConversationListRow = memo(function ConversationListRow({
   agentId,
   onOpenConversation,
   automationMark,
+  teamNotes: teamNoteCount = null,
 }: ConversationListRowProps) {
   const rowId = conv.id;
   const rowRef = useCallback(
@@ -637,6 +649,15 @@ export const ConversationListRow = memo(function ConversationListRow({
             the kind chip — that is for the requester's side, where no source
             exists — and still wears its state chip (waiting / picked / closed). */}
         <CategoryChips facets={attribution ? { ...facets, kind: 'direct' } : facets} className="me-1" />
+        {teamNoteCount !== null && (
+          <span
+            className="me-1 inline-flex items-center rounded border border-amber-500/40 bg-amber-500/10 px-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
+            title={t`Team notes on this ticket — only its help desk's staff see them`}
+            data-testid="stream-inbox-row-team-chip"
+          >
+            <Trans>Team</Trans> · {teamNoteCount}
+          </span>
+        )}
         {automationMark && (
           // An automation ran on a message in here: ⚡ + who. Opens that session; the row opens the conversation.
           <button
@@ -686,6 +707,7 @@ export const ConversationListRow = memo(function ConversationListRow({
           </>
         )}
       </span>
+      {latestMessage && <MessageTags message={latestMessage} compact />}
       <span className="shrink-0 text-xs text-muted-foreground transition-opacity group-hover:opacity-0 pointer-coarse:!opacity-100">
         {time}
         {ago && <span className="ms-1.5 text-muted-foreground/70 max-md:hidden">· {ago}</span>}
@@ -833,9 +855,13 @@ export function StreamInboxView({
           // Storage is unavailable: the pick holds for this visit only.
         }
       }
-      if (currentDock) navigation.openDock(currentDock.withStreamInboxChannels([...next], !!initialChannel));
+      // "Every channel" is written out (`channel=all`) whenever the URL alone would not say it: with a default
+      // channel, or with a remembered pick — dropping an absent param leaves the URL unchanged, so the
+      // remembered pick would keep showing.
+      const urlSaysIt = !initialChannel && rawChannels !== undefined;
+      if (currentDock) navigation.openDock(currentDock.withStreamInboxChannels([...next], !urlSaysIt));
     },
-    [currentDock, navigation, initialChannel, channelStoreKey],
+    [currentDock, navigation, initialChannel, channelStoreKey, rawChannels],
   );
   // The query already narrows to the picked sources; this also hides rows pushed live from other channels.
   const channelMatch = useMemo(
@@ -951,19 +977,28 @@ export function StreamInboxView({
     (next) => currentDock && navigation.openDock(currentDock.withStreamInboxFilters({ search: next })),
   );
   const needle = searchQuery.trim();
-  const searchActive = needle !== '';
+  const tagFilterKey = currentDock?.options?.tags ?? '';
+  const tagFilters = useMemo(() => tagFilterKey.split(',').filter(Boolean), [tagFilterKey]);
+  const searchActive = needle !== '' || tagFilters.length > 0;
   const [matchIds, setMatchIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!searchActive) return;
     // `needle` is the URL's, already debounced on its way there.
     let stale = false;
-    void searchStreamInbox(needle, agentId).then((ids) => {
-      if (!stale) setMatchIds(ids);
-    });
+    let request = 0;
+    const refresh = () => {
+      const sequence = ++request;
+      void searchStreamInbox(needle, agentId, tagFilters).then((ids) => {
+        if (!stale && request === sequence) setMatchIds(ids);
+      }).catch((e) => { if (!stale) console.error('[StreamInboxView] search failed', e); });
+    };
+    refresh();
+    const unwatch = tagFilters.length ? watchMessageTags(refresh) : undefined;
     return () => {
       stale = true;
+      unwatch?.();
     };
-  }, [agentId, needle, searchActive]);
+  }, [agentId, needle, searchActive, tagFilters]);
 
   // Scoped by the backend: the query names the owner, so an agent's stream inbox and the
   // user's never load each other's rows. Owned-by strings, not TypeId instances, key the memo:
@@ -1014,12 +1049,20 @@ export function StreamInboxView({
   if (isSuccess) hasLoadedOnce.current = true;
   const initialLoading = (isLoading || request === null) && !hasLoadedOnce.current;
 
-  const sorted = useMemo(() => {
+  const { sorted, teamOf } = useMemo(() => {
+    // A ticket's team conversation is read on the ticket's page: it rides on the ticket's row as a chip
+    // (`teamOf`) instead of taking a row -- unless its ticket is not listed, when it stays reachable here.
+    const listed = new Set(conversations.map((c) => c.id));
+    const teamOf = new Map<string, Conversation>();
+    const list = conversations.filter((c) => {
+      const ticketId = ticketOfTeamConversation(c);
+      if (ticketId) teamOf.set(ticketId, c);
+      return !ticketId || !listed.has(ticketId);
+    });
     // Sorted here too: a live push appends a newly matching row without re-sorting or trimming
     // the page, so the page is cut back to its size after the sort.
-    const list = [...conversations];
     list.sort(compareConversationsByRecency);
-    return list.slice(0, STREAM_INBOX_PAGE_SIZE);
+    return { sorted: list.slice(0, STREAM_INBOX_PAGE_SIZE), teamOf };
   }, [conversations]);
 
   // ── Batch-hydrate the per-row first+latest FlowMessages (X2) ────────────────
@@ -1426,10 +1469,12 @@ export function StreamInboxView({
   // inactive is ghost.
   const renderViewPill = (mode: StreamInboxViewMode, label: string, Icon: typeof InboxIcon) => {
     const active = viewMode === mode;
-    // Unread in the user's own Stream Inbox: the backend total, on the pill whether or not it is active.
+    // Unread in the user's own Stream Inbox: the backend total, on the pill whether or not it is active —
+    // but that total spans every channel, so it is not shown while the list is narrowed to some of them.
     // Otherwise the rows on this page — a full page holds more than it shows, so it reads "N+".
     let badge: string | null = null;
-    if (mode === 'unread' && ownStreamInbox) badge = streamInboxUnread > 0 ? String(streamInboxUnread) : null;
+    if (mode === 'unread' && ownStreamInbox && channelFilter.size === 0)
+      badge = streamInboxUnread > 0 ? String(streamInboxUnread) : null;
     else if (active && visibleCount > 0)
       badge = visibleCount >= STREAM_INBOX_PAGE_SIZE ? `${STREAM_INBOX_PAGE_SIZE}+` : String(visibleCount);
     return (
@@ -1508,19 +1553,12 @@ export function StreamInboxView({
             <SquarePen />
             <Trans>New conversation</Trans>
           </Button>
-          {desktopStreamInbox && (
-            <>
-              <ProjectUploadMessageButton variant="outline" size="default" />
-              <Button
-                variant="outline"
-                onClick={() => setShowContacts(true)}
-                data-testid="stream-inbox-contacts-button"
-              >
-                <BookUser />
-                <Trans>Contacts</Trans>
-              </Button>
-            </>
-          )}
+          {desktopStreamInbox && <ProjectUploadMessageButton variant="outline" size="default" />}
+          {/* Contacts (people, groups, help desks) is the same on the hub page and the desktop. */}
+          <Button variant="outline" onClick={() => setShowContacts(true)} data-testid="stream-inbox-contacts-button">
+            <BookUser />
+            <Trans>Contacts</Trans>
+          </Button>
           <div className="ms-auto flex min-w-0 items-center gap-2">{channelButtons}</div>
         </div>
       )}
@@ -1594,6 +1632,11 @@ export function StreamInboxView({
           <>
             {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
             <div className="flex flex-1 items-center max-md:flex-wrap max-md:gap-y-1">
+              {tagFilters.length > 0 && <div data-testid="stream-inbox-tag-filter" className="me-2 max-w-64">
+                <TagFilterBar tags={tagFilters} onTagsChange={(tags) => {
+                  if (currentDock) navigation.openDock(currentDock.withPageBefore(null).withOption('tags', tags.length ? tags.join(',') : null));
+                }} />
+              </div>}
               <div
                 className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
                 role="tablist"
@@ -1803,7 +1846,9 @@ export function StreamInboxView({
                   : inArchivedView
                     ? t`No archived conversations`
                     : inUnreadView
-                      ? t`No unread conversations`
+                      ? channelFilter.size > 0
+                        ? t`No unread conversations in this channel`
+                        : t`No unread conversations`
                       : channelFilter.size > 0
                         ? t`No messages from this channel yet`
                         : t`No conversations`}
@@ -1847,12 +1892,15 @@ export function StreamInboxView({
         <EntityBatchHydrator type={Invitation.type} ids={invitationIds} />
         {!initialLoading &&
           rowsReady.current &&
-          sorted.map((conv) => (
+          sorted.map((conv) => {
+            const notes = teamNotes(conv.id ? teamOf.get(conv.id) : undefined);
+            return (
             <ConversationListRow
               key={conv.id ?? ''}
               conv={conv}
               isFocused={false}
-              revision={rowRevision(conv, conv.id ? automationMarks.get(conv.id) : undefined)}
+              revision={`${rowRevision(conv, conv.id ? automationMarks.get(conv.id) : undefined)}|${notes}`}
+              teamNotes={notes}
               onArchive={rowArchive}
               onUnarchive={rowUnarchive}
               onToggleRead={rowToggleRead}
@@ -1870,7 +1918,8 @@ export function StreamInboxView({
               onOpenConversation={onOpenConversation}
               automationMark={conv.id ? automationMarks.get(conv.id) : undefined}
             />
-          ))}
+            );
+          })}
         {!initialLoading && !searchActive && scope && <StreamInboxPager scope={scope} view={viewMode} rows={sorted} />}
       </div>
 

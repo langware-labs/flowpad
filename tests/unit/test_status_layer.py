@@ -96,7 +96,7 @@ async def test_stored_keys_are_read_by_name_and_never_opened(monkeypatch):
     )
     assert build_mod.stored_key_providers() == {"openrouter": "2026-10-01"}
     keys = {k.provider: k.stored for k in build_mod._keys()}
-    assert keys == {"openrouter": True, "anthropic": False, "openai": False}
+    assert keys == {"openrouter": True, "anthropic": False, "openai": False, "vertex": False}
 
 
 async def test_a_stored_keys_masked_hint_is_carried_and_an_old_record_has_none(monkeypatch):
@@ -111,7 +111,7 @@ async def test_a_stored_keys_masked_hint_is_carried_and_an_old_record_has_none(m
     )
     assert build_mod.stored_key_hints() == {"openrouter": "****ab12", "anthropic": ""}
     hints = {k.provider: k.hint for k in build_mod._keys()}
-    assert hints == {"openrouter": "****ab12", "anthropic": "", "openai": ""}
+    assert hints == {"openrouter": "****ab12", "anthropic": "", "openai": "", "vertex": ""}
 
 
 # ── hub: the hub's own answer ────────────────────────────────────────────────

@@ -18,7 +18,7 @@ from pydantic import (
     model_validator,
 )
 
-from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
@@ -26,6 +26,7 @@ from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
+from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import MessageMarkSpec, UserProfile
 from flow_sdk.tags.envelope import parse_target
@@ -121,6 +122,9 @@ class FlowMessageKind(str, Enum):
     #: What an automation answered (the Daily usage summary): its text the headline, a ``<kind>.value.json`` the
     #: details. Local only -- an automation's conversation is private to this computer.
     AUTOMATION_RESULT = "automation_result"
+    #: A help-desk ticket was closed or reopened: the hub writes this line into the ticket, which is how the other
+    #: side learns of it (``metadata.ticket_event`` = ``{status, by}``; the text is the plain fallback).
+    TICKET_EVENT = "ticket_event"
 
     @classmethod
     def hub_only(cls, value: "str | None") -> bool:
@@ -610,6 +614,32 @@ class FlowMessage(Entity):
     # subclass could silently drop by forgetting to union.
 
     type: str = APIField(default="flow_message")
+    message_processing: Optional[MessageProcessing] = EntityField(
+        default=None, sharing=Sharing.PRIVATE, persist=Persist.TRUE,
+        description="Local classification, tag provenance and once-per-message automation queue.",
+    )
+
+    async def _change_tags(self, **delta):
+        """Every tag change goes through the message's processing state, and this row takes the result."""
+        from flow_sdk.stream_inbox.message_tags import change_tags
+
+        fresh = await change_tags(str(self.id), **delta)
+        if fresh is not None:
+            self.tags, self.message_processing = fresh.tags, fresh.message_processing
+        return self
+
+    async def set_tags(self, tags: list[str]):
+        return await self._change_tags(replace=tags)
+
+    async def add_tag(self, name: str):
+        from flow_sdk.core.entity.entity_model import _require_tag
+
+        return await self._change_tags(add=[_require_tag(name)])
+
+    async def remove_tag(self, name: str):
+        from flow_sdk.core.entity.entity_model import _require_tag
+
+        return await self._change_tags(remove=[_require_tag(name)])
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)
     attachment: list[Attachment] = APIField(default_factory=list)
@@ -898,9 +928,10 @@ class FlowMessage(Entity):
         ``release_prompt`` — crash recovery handing a dead turn back — may clear
         it, and it says so through ``releasing_prompt``.
         """
+        kept = ("tags", "message_processing") if current_data.get("message_processing") is not None else ()
         if current_data.get("prompt_auto_handled") and not _RELEASING_PROMPT.get():
-            return ("prompt_auto_handled",)
-        return ()
+            kept += ("prompt_auto_handled",)
+        return kept
 
     #: The body held across a reference row's write — see ``save``.
     _hydrated_text: Optional[str] = None

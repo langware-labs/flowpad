@@ -39,9 +39,6 @@ export interface LlmEndpointsListProps {
   /** This machine's endpoints (the API keys tab): every row is a root with a key stored here —
    *  edited and deleted locally, tested with the stored key, no hub usage, no chain columns. */
   local?: boolean;
-  /** Rows that are a device login (a vendor subscription) rather than a stored key, by id: no key,
-   *  no test with a provider key, no delete — only their model sizes are edited. */
-  deviceIds?: ReadonlyMap<string, unknown>;
 }
 
 
@@ -132,7 +129,6 @@ export function LlmEndpointsList({
   onEdit,
   onDelete,
   local = false,
-  deviceIds,
 }: LlmEndpointsListProps) {
   const { t } = useLingui();
   // Usage is the hub's ledger; a local endpoint has none to ask for.
@@ -160,7 +156,7 @@ export function LlmEndpointsList({
       <div className="flex items-center justify-end">
         <Button size="sm" onClick={onNew} data-testid="llm-new-endpoint">
           <Plus className="me-1 h-4 w-4" />
-          <Trans>New endpoint</Trans>
+          {local ? <Trans>Add API key</Trans> : <Trans>New endpoint</Trans>}
         </Button>
       </div>
       <div className="rounded-md border">
@@ -203,7 +199,7 @@ export function LlmEndpointsList({
               </TableHead>
               {local && (
                 <TableHead>
-                  <Trans>Limits</Trans>
+                    <Trans>Stored limits (not enforced)</Trans>
                 </TableHead>
               )}
               <TableHead className="text-end">
@@ -222,9 +218,8 @@ export function LlmEndpointsList({
             )}
             {endpoints.map((e) => {
               const totals = usage.get(e.id)?.totals;
-              const device = !!deviceIds?.has(e.id);
               const configurable = local || canConfigure(e);
-              const removable = !device && (local || canRemove(e));
+              const removable = local || canRemove(e);
               const parentIds = e.parentIds;
               const sources = parentIds.map((id) => byId.get(id) ?? null);
               const consumers = consumersById.get(e.id) ?? [];
@@ -239,13 +234,7 @@ export function LlmEndpointsList({
                   {local && (
                     <>
                       <TableCell>
-                        {device ? (
-                          <span className="text-xs text-muted-foreground" data-testid="device-login-badge">
-                            <Trans>Subscription</Trans>
-                          </span>
-                        ) : (
-                          <ProviderBadge provider={e.provider} />
-                        )}
+                        <ProviderBadge provider={e.provider} />
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{e.base_url}</TableCell>
                     </>
@@ -295,7 +284,7 @@ export function LlmEndpointsList({
                     />
                   </TableCell>
                   <TableCell>
-                    {device ? <span className="text-xs text-muted-foreground">—</span> : <CredentialChip endpoint={e} />}
+                    <CredentialChip endpoint={e} />
                   </TableCell>
                   {local && (
                     <TableCell>
@@ -307,9 +296,7 @@ export function LlmEndpointsList({
                   </TableCell>
                   <TableCell className="text-end">
                     <span className="inline-flex items-center gap-1" onClick={(ev) => ev.stopPropagation()}>
-                      {!device && (
-                        <TestEndpointButton endpointId={e.id} localProvider={local ? e.provider : undefined} />
-                      )}
+                      <TestEndpointButton endpointId={e.id} localProvider={local ? e.provider : undefined} />
                       {configurable && (
                         <Button
                           variant="ghost"

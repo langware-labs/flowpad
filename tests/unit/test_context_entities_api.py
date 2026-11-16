@@ -351,7 +351,7 @@ def test_add_context_entry_data_validates_against_target_schema(monkeypatch):
     # Good data — schema validates, dict stored, no warning.
     task.add_private_context_entities(plan_tid, data={"path": "/tmp/foo.md"})
     assert task.private_context_entity_data == {
-        plan_typeid_str: {"path": "/tmp/foo.md"}
+        plan_typeid_str: {"path": "/tmp/foo.md", "context_via": "dynamic"}
     }
     assert not any("context_entry_data validation failed" in m for m in captured)
 
@@ -360,7 +360,7 @@ def test_add_context_entry_data_validates_against_target_schema(monkeypatch):
     task2 = Task(title="t2")
     task2.add_private_context_entities(plan_tid, data={"not_path": 123})
     assert task2.private_context_entity_data == {
-        plan_typeid_str: {"not_path": 123}
+        plan_typeid_str: {"not_path": 123, "context_via": "dynamic"}
     }
     assert any(
         "context_entry_data validation failed for plan-" in m for m in captured
@@ -407,4 +407,4 @@ def test_add_context_entry_data_passes_through_for_unschema_d_type():
     other_task_tid = TypeId(type="task", id=TASK_ID_1)
     task.add_private_context_entities(other_task_tid, data={"anything": "goes", "n": 7})
     key = f"task-{TASK_ID_1}"
-    assert task.private_context_entity_data[key] == {"anything": "goes", "n": 7}
+    assert task.private_context_entity_data[key] == {"anything": "goes", "n": 7, "context_via": "dynamic"}

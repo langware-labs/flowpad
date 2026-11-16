@@ -69,6 +69,8 @@ class HubLLMEndpoint:
     #: ``{sm, md, lg}`` -> model, inherited down the endpoint's chain, as the hub pushed it -- so a
     #: spawn knows each size's model before any listing has been read.
     tiers: dict = field(default_factory=dict)
+    default_model: str | None = None
+    effective_default_model: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -94,7 +96,8 @@ def _config_stamp() -> tuple[int, int] | None:
 
 
 def _validated(
-    endpoint_typeid, invoke_path, provider="", name="", public=False, hub_origin="", models_allow=(), tiers=None
+    endpoint_typeid, invoke_path, provider="", name="", public=False, hub_origin="", models_allow=(), tiers=None,
+    default_model=None, effective_default_model=None,
 ) -> HubLLMEndpoint:
     """The ONE rule for a usable binding: a non-empty id and a hub-relative path.
     Raises ``ValueError`` -- callers decide whether that is a 400 or "unbound"."""
@@ -116,6 +119,8 @@ def _validated(
         hub_origin=hub_origin if public else "",
         models_allow=tuple(str(m) for m in (models_allow or ()) if str(m).strip()),
         tiers=_clean_tiers(tiers),
+        default_model=default_model,
+        effective_default_model=effective_default_model,
     )
 
 
@@ -132,6 +137,8 @@ def _parse(raw) -> HubLLMEndpoint | None:
             raw.get("hub_origin"),
             raw.get("models_allow"),
             raw.get("tiers"),
+            raw.get("default_model"),
+            raw.get("effective_default_model"),
         )
     except ValueError:
         # A record written by a newer/older build must not brick spawn: unbound.
@@ -160,13 +167,16 @@ def set_hub_llm_endpoint(
     hub_origin: str = "",
     models_allow=(),
     tiers=None,
+    default_model=None,
+    effective_default_model=None,
 ) -> HubLLMEndpoint:
     """Persist the hub's binding for this instance and return it.
 
     Raises ``ValueError`` on an empty id or a path that is not hub-relative. The
     sole writer is the ``llm-endpoint`` box action, which only the hub calls.
     """
-    bound = _validated(endpoint_typeid, invoke_path, provider, name, public, hub_origin, models_allow, tiers)
+    bound = _validated(endpoint_typeid, invoke_path, provider, name, public, hub_origin, models_allow, tiers,
+                       default_model, effective_default_model)
     app_config.set_config(_CONFIG_KEY, bound.to_dict())
     instance = get_instance_settings().instance_name
     _cache[instance] = bound
@@ -306,6 +316,38 @@ def _row_tiers(row: dict) -> dict[str, str]:
     expand = row.get("expand") if isinstance(row, dict) else None
     tiers = expand.get("tiers") if isinstance(expand, dict) else None
     return _clean_tiers(tiers if isinstance(tiers, dict) else (row.get("tiers") if isinstance(row, dict) else None))
+
+
+async def fetch_model_config(endpoint_typeid: str, *, public: bool = False, model: str | None = None):
+    """Fresh narrow metadata, never the stale inventory cache; concrete old-hub calls remain usable."""
+    from flow_sdk.builtin.llm_endpoint import PUBLIC_ENDPOINT_TOKEN
+    from flow_sdk.cloud_client.hub_proxy import HubProxy, _unwrap
+    from flow_sdk.external_apis.llm.errors import LLMError
+    from flow_sdk.external_apis.llm.model_selection import TEXT_TIERS, EndpointModelConfig
+    from flow_sdk.fs_store.type_id import TypeId
+    from flow_sdk.schema.types import EntityType
+
+    parsed = TypeId(endpoint_typeid)
+    if parsed.type != EntityType.LLM_ENDPOINT:
+        raise LLMError("Model configuration requires an LLM endpoint")
+    url = f"{hub_origin(endpoint_typeid)}/api/v1/graph/llm_endpoint/{parsed.id}/model-config"
+    try:
+        response = await HubProxy.send(
+            "GET", url, anonymous=public, quiet=True,
+            headers={"Authorization": f"Bearer {PUBLIC_ENDPOINT_TOKEN}"} if public else None,
+        )
+        # Only a missing/unsupported route on an older hub permits bypassing
+        # metadata. Authorization, transport and malformed success responses
+        # are real failures, even when a concrete model was supplied.
+        if response.status_code in (404, 405, 501) and model and model not in TEXT_TIERS and model != "embedding":
+            return EndpointModelConfig(endpoint_typeid=endpoint_typeid, tiers={}, default_model=None,
+                                       effective_default_model=None)
+        config = EndpointModelConfig.model_validate(_unwrap(response, strict=True))
+        if str(TypeId(config.endpoint_typeid)) != str(parsed):
+            raise ValueError("endpoint identity mismatch")
+        return config
+    except Exception as exc:
+        raise LLMError("Cannot read this endpoint's model configuration; restore hub access or update the hub") from exc
 
 
 async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndpoint"]:
@@ -462,6 +504,8 @@ async def _read_hub_listing(name: str, stale: list["LLMEndpoint"]) -> list["LLME
                 payload["provider"] = root_provider
             # The model each size runs, inherited down the hub chain.
             payload["tiers"] = _row_tiers(row)
+            expansion = row.get("expand") or {}
+            payload["effective_default_model"] = expansion.get("effective_default_model", row.get("effective_default_model"))
             endpoints.append(LLMEndpoint(**payload))
             if row_id:
                 seen.add(row_id)

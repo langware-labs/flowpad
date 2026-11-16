@@ -680,6 +680,9 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.builtin.tag_triggers import start_tag_triggers
 
         await start_tag_triggers()
+        from flow_sdk.stream_inbox.message_tags import reconcile as reconcile_message_processing
+
+        await reconcile_message_processing()
         # Arm graph-level flow subscriptions (flow-events phase 5).
         from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 

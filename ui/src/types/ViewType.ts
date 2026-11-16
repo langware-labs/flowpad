@@ -345,7 +345,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   // and the endpoint binding are all box facts, and the producing box action 404s on the
   // hub). Pointer = `<section>[/<key>]`, an in-view selection, so it folds into one chip.
   [ViewType.LLM_SOURCES]: {
-    title: msg`LLM sources`,
+    title: msg`Token sources`,
     // An LLM is not a key — a source may be a device login or a hub endpoint. Sparkles is
     // the LLM glyph (LLM_SETUP wears it too).
     iconName: 'Sparkles',
@@ -447,6 +447,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Activity',
     tabLocation: 'dedicated',
     canAddAsTab: false,
+  },
+  [ViewType.SUPPORT_DESK]: {
+    title: msg`Help desk`,
+    iconName: 'LifeBuoy',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
   },
   [ViewType.HELPDESK]: {
     title: msg`Help desk`,

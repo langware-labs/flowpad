@@ -47,6 +47,14 @@ export interface LLMEndpointModel {
   root_id: string;
 }
 
+/** Narrow public/authorized projection: no upstream topology, credentials or accounting. */
+export interface LLMModelConfig {
+  endpoint_typeid: string;
+  tiers: Record<string, string | null>;
+  default_model: string | null;
+  effective_default_model: string | null;
+}
+
 /** What one provider declares as its small, medium and large model (hub `ClientDefaults.tiers`). */
 export interface LLMProviderSizes {
   provider: string;
@@ -258,6 +266,10 @@ export class LlmEndpointsService {
     return dataManager.callAction<undefined, LLMChain>(action('chain', id, 'GET'));
   }
 
+  getModelConfig(id: string): Promise<LLMModelConfig> {
+    return dataManager.callAction<undefined, LLMModelConfig>(action('model-config', id, 'GET'));
+  }
+
   /**
    * Create an endpoint that draws on `parentId` — the only way a source link comes into being.
    *
@@ -272,7 +284,13 @@ export class LlmEndpointsService {
    */
   allocate(
     parentId: string,
-    body: { name: string; limits?: LLMEndpointLimits; filters?: LLMEndpointFilters; grant_to?: string },
+    body: {
+      name: string;
+      limits?: LLMEndpointLimits;
+      filters?: LLMEndpointFilters;
+      grant_to?: string;
+      default_model?: string | null;
+    },
   ): Promise<LLMEndpoint> {
     const info = action('allocate', parentId, 'POST');
     info.bodyParameters = { ...body };

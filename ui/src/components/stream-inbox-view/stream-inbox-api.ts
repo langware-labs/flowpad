@@ -1,4 +1,5 @@
 import { ActionInfo, Agent, dataManager } from '@sdk';
+import { ConnectionManager } from '@sdk/websocket';
 import type { ConversationScope } from './channel-owner';
 
 export interface FetchResult {
@@ -71,11 +72,21 @@ export async function bulkUpdateMessages(
  * client-side match over FlowMessage.text would go blind to every ingested
  * message. The action searches both residences and returns the union.
  */
-export async function searchStreamInbox(q: string, agentId?: string): Promise<Set<string>> {
+export async function searchStreamInbox(q: string, agentId?: string, tags: string[] = []): Promise<Set<string>> {
   const action = new ActionInfo('stream-inbox-search', null, null, 'POST');
-  action.bodyParameters = { q, ...(agentId ? { agent_id: agentId } : {}) };
+  action.bodyParameters = { q, ...(tags.length ? { tags } : {}), ...(agentId ? { agent_id: agentId } : {}) };
   const result = await dataManager.callAction<{ q: string }, { conversation_ids?: string[] }>(action);
   return new Set(result?.conversation_ids ?? []);
+}
+
+/** Re-evaluate a server-owned tag filter when its source rows change, without polling. */
+export function watchMessageTags(changed: () => void): () => void {
+  const connection = ConnectionManager.getInstance();
+  const listener = (typeId: string, _op: string, data: { tags?: string[] } | null) => {
+    if (typeId.startsWith('flow_message-') && data?.tags !== undefined) changed();
+  };
+  connection.on('on_data_op', listener);
+  return () => connection.off('on_data_op', listener);
 }
 
 export interface LoadOlderResult {

@@ -30,7 +30,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ currentDock: null, navigation: { openDock: vi.fn() } }),
 }));
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: { id: projectId } }) }));
-vi.mock('@src/components/display-toolbar', () => ({ WebappDisplayToolbar: () => null }));
+vi.mock('@src/components/display-toolbar', () => ({ WebappDisplayToolbar: () => null, useDisplayChromeSlot: () => null }));
 const lifecycle = vi.hoisted(() => ({
   of: (id: string | null) =>
     ({

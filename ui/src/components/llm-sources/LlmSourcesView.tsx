@@ -24,7 +24,7 @@ import {
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertCircle, ArrowLeft, ArrowUpRight, Check, KeyRound, Loader2, Route, Waypoints } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { openHarnessSignIn } from '@src/components/harness-login/harness-sign-in-store';
 import { useRefreshStatusOnArrival, useStatusRecord } from '@src/components/status/use-status-record';
@@ -39,6 +39,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 
 import { LlmEndpointsView } from '@src/components/llm-endpoints/LlmEndpointsView';
+import { LlmEndpointDialog } from '@src/components/llm-endpoints/LlmEndpointDialog';
+import { useDeviceEndpoints } from '@src/components/llm-endpoints/device-endpoints';
 import { llmEndpointsPointer, type LlmEndpointTab } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 
 import { EndpointSponsorLine } from './EndpointSponsorLine';
@@ -309,10 +311,14 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const resolvedFor = useCallback((kind: string) => status?.resolved?.[kind] ?? undefined, [status]);
   // `<tab>[/<rest>]`: the tab, and below it an assistant (Logins) or an endpoint (the two endpoint tabs).
   const { tab, rest } = parseLlmSourcesTab(pointer);
+  const devices = useDeviceEndpoints(tab === 'logins');
+  const [editingDevice, setEditingDevice] = useState(false);
   // Matched against the kinds the box actually reported rather than rebuilt as
   // `harness.<worker>.cli`: a stale or hand-typed worker then shows the Logins table instead of a
   // kind that matches no source list.
   const focused = tab === 'logins' && rest ? (kinds.find((kind) => workerOf(kind) === rest) ?? null) : null;
+  const device = focused ? [...devices.byId.values()].find((row) => row.harness === workerOf(focused)) : undefined;
+  const deviceEndpoint = device ? devices.endpoints.find((row) => row.id === device.id) : undefined;
   // The open endpoint tab embeds the shared endpoints view; its drill-down stays in this URL.
   const embed = useMemo(
     () => ({
@@ -323,9 +329,14 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   );
   const counts: Record<LlmSourcesTab, number> = { logins: 0, keys: keys.count, endpoints: hubCount };
   const tabLabels: Record<LlmSourcesTab, string> = {
-    logins: t`Logins`,
+    logins: t`Device logins`,
     keys: t`API keys`,
-    endpoints: t`LLM Endpoints`,
+    endpoints: t`LLM endpoints`,
+  };
+  const tabDescriptions: Record<LlmSourcesTab, string> = {
+    logins: t`Model access from each assistant's signed-in account. Its current token source may be different.`,
+    keys: t`Provider credentials stored on this machine, including Vertex service-account JSON.`,
+    endpoints: t`Model access supplied by the hub, with its configured models, formats and spending limits.`,
   };
 
   const onSelect = useCallback(
@@ -384,8 +395,8 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const GROUPS: [LLMFundingKind, string][] = useMemo(
     () => [
       [LLMFundingKind.Device, t`Device logins`],
-      [LLMFundingKind.ApiKey, t`LLM keys`],
-      [LLMFundingKind.Hub, t`Hub endpoints`],
+      [LLMFundingKind.ApiKey, t`API keys`],
+      [LLMFundingKind.Hub, t`LLM endpoints`],
     ],
     [t],
   );
@@ -404,7 +415,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
       <header>
         <h1 className="flex items-center gap-2 text-lg font-semibold">
           <KeyRound className="h-5 w-5" />
-          <Trans>LLM sources</Trans>
+          <Trans>Token sources</Trans>
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           <Trans>Where each assistant gets its model access, and why.</Trans>
@@ -421,6 +432,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
           ))}
         </TabsList>
       </Tabs>
+      <p className="text-sm text-muted-foreground">{tabDescriptions[tab]}</p>
 
       {tab === 'logins' && !focused && (
         <LoginsTable status={status} record={record} onOpen={(worker) => openLlmSources(navigation, `logins/${worker}`)} />
@@ -437,6 +449,11 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
           <span className="text-sm text-muted-foreground">
             {resolvedLabel(status, focused, t`nothing eligible`)}
           </span>
+          {device && (
+            <Button variant="outline" size="sm" onClick={() => setEditingDevice(true)} data-testid="device-model-settings">
+              <Trans>Login model settings</Trans>
+            </Button>
+          )}
         </div>
       )}
 
@@ -490,6 +507,19 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
             );
           })}
         </section>
+      )}
+      {device && deviceEndpoint && (
+        <LlmEndpointDialog
+          key={device.id}
+          open={editingDevice}
+          onOpenChange={setEditingDevice}
+          editing={deviceEndpoint}
+          editingKind="root"
+          device={device}
+          destination="device"
+          all={[]}
+          onSaved={devices.invalidate}
+        />
       )}
     </div>
   );

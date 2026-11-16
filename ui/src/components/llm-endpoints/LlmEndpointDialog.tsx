@@ -51,7 +51,12 @@ import { draftFor, providersFor, saveEndpoint, type EndpointDestination } from '
 import { hasLocalEndpoints } from './local-endpoints';
 import { SourcePicker } from './SourcePicker';
 import { TiersEditor } from './TiersEditor';
-import { useLlmEndpointChain, useLlmEndpointModels } from './use-llm-endpoints';
+import {
+  useLlmEndpointChain,
+  useLlmEndpointModels,
+  useLlmEndpointModelConfig,
+  useLocalEndpointModels,
+} from './use-llm-endpoints';
 import {
   canConfigure,
   catalogFromText,
@@ -117,7 +122,9 @@ export function LlmEndpointDialog({
   // Sizes: what each one resolves to today (for "Inherit"), and the models the chain may name.
   const tierChain = useLlmEndpointChain(hubId);
   const allowedModels = useLlmEndpointModels(hubId);
+  const modelConfig = useLlmEndpointModelConfig(hubId);
   const [draft, setDraft] = useState<EndpointDraft>(() => emptyDraft('root'));
+  const localModels = useLocalEndpointModels(open && destination === 'local' ? editing?.provider : undefined);
   const [busy, setBusy] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [storedHint, setStoredHint] = useState('');
@@ -200,12 +207,29 @@ export function LlmEndpointDialog({
   };
 
   const spec = providerSpec(draft.provider);
+  const modelChoices =
+    destination === 'local'
+      ? (localModels.data ?? []).map((m) => m.id)
+      : rootCatalog.length
+        ? rootCatalog
+        : (allowedModels.data ?? []).map((m) => m.id);
+  const resolvedDefault = local ? editing?.effective_default_model : modelConfig.data?.effective_default_model;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl" data-testid="llm-endpoint-dialog">
         <DialogHeader>
-          <DialogTitle>{isDevice ? t`Edit device login` : isEdit ? t`Edit endpoint` : t`New endpoint`}</DialogTitle>
+          <DialogTitle>
+            {isDevice
+              ? t`Edit device login`
+              : local
+                ? isEdit
+                  ? t`Edit API key`
+                  : t`Add API key`
+                : isEdit
+                  ? t`Edit endpoint`
+                  : t`New endpoint`}
+          </DialogTitle>
           <DialogDescription>
             {isDevice ? (
               <Trans>
@@ -213,7 +237,10 @@ export function LlmEndpointDialog({
                 assistant's own default.
               </Trans>
             ) : local ? (
-              <Trans>Stored on this machine. Limits, filters and model sizes work as on a hub endpoint.</Trans>
+              <Trans>
+                Credentials and model settings are stored on this machine. Spending limits and filters are not enforced
+                locally.
+              </Trans>
             ) : draft.kind === 'root' ? (
               <Trans>Funded by a provider API key you supply.</Trans>
             ) : (
@@ -316,7 +343,11 @@ export function LlmEndpointDialog({
                 </div>
                 {isEdit && (
                   <p className="text-xs text-muted-foreground">
-                    <Trans>Provider and base URL are fixed once created.</Trans>
+                    {local ? (
+                      <Trans>Provider is fixed once created.</Trans>
+                    ) : (
+                      <Trans>Provider and base URL are fixed once created.</Trans>
+                    )}
                   </p>
                 )}
               </div>
@@ -331,10 +362,38 @@ export function LlmEndpointDialog({
                   value={draft.base_url}
                   disabled={isEdit && !local}
                   placeholder={spec?.defaultBaseUrl}
-                  onChange={(e) => setDraft((d) => ({ ...d, base_url: e.target.value }))}
+                  onChange={(e) => setDraft((d) => ({ ...d, base_url: e.target.value, baseUrlEdited: true }))}
                   data-testid="llm-base-url"
                 />
               </div>
+              {destination === 'local' && draft.provider === 'vertex' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="vertex-project">
+                      <Trans>Google Cloud project</Trans>
+                    </Label>
+                    <Input
+                      id="vertex-project"
+                      data-testid="vertex-project"
+                      value={draft.vertex?.project_id ?? ''}
+                      placeholder={t`From service-account JSON`}
+                      onChange={(e) => setDraft((d) => ({ ...d, vertex: { ...d.vertex, project_id: e.target.value } }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="vertex-location">
+                      <Trans>Location</Trans>
+                    </Label>
+                    <Input
+                      id="vertex-location"
+                      data-testid="vertex-location"
+                      value={draft.vertex?.location ?? ''}
+                      placeholder="global"
+                      onChange={(e) => setDraft((d) => ({ ...d, vertex: { ...d.vertex, location: e.target.value } }))}
+                    />
+                  </div>
+                </div>
+              )}
               <CredentialField
                 endpointId={local ? undefined : editing?.id}
                 provider={draft.provider}
@@ -345,6 +404,13 @@ export function LlmEndpointDialog({
                 onStored={setStoredHint}
                 disabled={readOnly}
               />
+              {local && editing?.credential_kind && (
+                <p className="text-xs text-muted-foreground">
+                  {editing.credential_kind === 'service_account'
+                    ? t`Stored credential: service account`
+                    : t`Stored credential: API key`}
+                </p>
+              )}
             </>
           )}
 
@@ -357,7 +423,7 @@ export function LlmEndpointDialog({
             />
           )}
 
-          {!isDevice && (
+          {!local && (
             <div className="flex items-center justify-between rounded border p-2">
               <Label htmlFor="llm-enabled" className="text-sm">
                 <Trans>Enabled</Trans>
@@ -388,6 +454,43 @@ export function LlmEndpointDialog({
             </div>
           )}
 
+          {!isDevice && (
+            <div className="space-y-2">
+              <Label htmlFor="llm-default-model">
+                <Trans>Default model</Trans>
+              </Label>
+              <Input
+                id="llm-default-model"
+                data-testid="llm-default-model"
+                value={draft.default_model ?? ''}
+                onChange={(event) => setDraft((d) => ({ ...d, default_model: event.target.value || null }))}
+                disabled={readOnly}
+                list="llm-default-model-options"
+                placeholder={t`Inherit, then small`}
+              />
+              <datalist id="llm-default-model-options">
+                {[...new Set(['sm', 'md', 'lg', ...modelChoices])].map((model) => (
+                  <option key={model} value={model} />
+                ))}
+              </datalist>
+              <p className="text-xs text-muted-foreground">
+                <Trans>
+                  Used when no model is requested. Enter sm, md, lg, or an exact model ID. Empty restores inheritance.
+                </Trans>
+              </p>
+              {isEdit && (
+                <p className="text-xs text-muted-foreground" data-testid="llm-resolved-default">
+                  <Trans>Resolved default</Trans>:{' '}
+                  {modelConfig.error
+                    ? errorMessage(modelConfig.error, t`Model configuration unavailable`)
+                    : resolvedDefault === undefined
+                      ? t`Model configuration unavailable`
+                      : (resolvedDefault ?? t`No model available`)}
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="space-y-2">
             <h4 className="text-sm font-medium">
               <Trans>Model sizes</Trans>
@@ -395,12 +498,40 @@ export function LlmEndpointDialog({
             <TiersEditor
               value={draft.tiers}
               onChange={(tiers) => setDraft((d) => ({ ...d, tiers }))}
-              models={rootCatalog.length ? rootCatalog : (allowedModels.data ?? []).map((m) => m.id)}
+              models={modelChoices}
               effective={tierChain.data?.effective_tiers}
               disabled={readOnly}
-              freeText={isDevice}
-              emptyLabel={t`Assistant default`}
+              freeText={local}
+              emptyLabel={isDevice ? t`Assistant default` : t`Provider default`}
             />
+            {destination === 'local' && (
+              <p className="text-xs text-muted-foreground" data-testid="local-model-catalog-status">
+                {localModels.isFetching
+                  ? t`Loading model catalog…`
+                  : localModels.error
+                    ? t`Catalog unavailable. Enter a model ID explicitly.`
+                    : t`Choose a catalog model or enter its exact ID. Listed models are not proof of access; use Test to check this source.`}
+              </p>
+            )}
+            {destination === 'local' && !!localModels.data?.length && (
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer">
+                  <Trans>Catalog formats</Trans>
+                </summary>
+                <ul className="mt-1 space-y-1">
+                  {localModels.data.map((model) => (
+                    <li key={model.id}>
+                      <code>{model.id}</code> — {model.formats?.join(', ') || t`formats unknown`}
+                      {model.catalog_source === 'declared'
+                        ? t` · declared catalog`
+                        : model.catalog_source === 'discovered'
+                          ? t` · discovered catalog`
+                          : ''}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </div>
 
           {isDevice && (
@@ -413,7 +544,7 @@ export function LlmEndpointDialog({
             />
           )}
 
-          {!isDevice && (
+          {!local && (
             <button
               type="button"
               className="text-xs text-muted-foreground hover:text-foreground"
@@ -424,7 +555,7 @@ export function LlmEndpointDialog({
             </button>
           )}
 
-          {showAdvanced && !isDevice && (
+          {showAdvanced && !local && (
             <div className="space-y-4 rounded border p-3">
               <h4 className="text-sm font-medium">
                 <Trans>Filters</Trans>

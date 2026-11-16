@@ -20,6 +20,7 @@ import { Button } from '@src/components/ui/button';
 import { ExternalLink, Pencil, RotateCw } from 'lucide-react';
 import { AppInfoPopover } from '@src/components/webapp-display/AppInfoPopover';
 import { CopyButton } from '@src/components/ui/copy-button';
+import { useDisplayChromeSlot } from '@src/components/display-toolbar';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -130,6 +131,7 @@ export function AppDisplayViewer({
   const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
   const { t } = useLingui();
+  const chromeSlot = useDisplayChromeSlot();
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
@@ -265,6 +267,7 @@ export function AppDisplayViewer({
           <RotateCw className="size-4" />
         </Button>
         <AppInfoPopover display={appDisplay} lifecycle={lifecycle} />
+        {chromeSlot}
         {definition ? (
           <Button
             size="sm"

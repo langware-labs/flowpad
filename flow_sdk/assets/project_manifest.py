@@ -332,6 +332,21 @@ def set_home_page(root: Path, typeid: Optional[str]) -> ProjectManifestSpec:
     return _set_field(root, "home_page", typeid, clears=typeid is None)
 
 
+def read_browser(root: Path) -> str:
+    """The project's browser (``agent`` | ``extension``). Never raises — read on every spawn."""
+    spec = _read_lenient(root)
+    return spec.browser if spec is not None else "agent"
+
+
+def set_browser(root: Path, browser: str) -> ProjectManifestSpec:
+    """Set the project's browser; ``agent`` (the default) clears the declaration."""
+    from flow_sdk.schema.data_spec.project_manifest_spec import BROWSERS  # noqa: PLC0415
+
+    if browser not in BROWSERS:
+        raise ManifestError(f"browser {browser!r} must be one of {', '.join(BROWSERS)}")
+    return _set_field(root, "browser", browser, clears=browser == "agent")
+
+
 def read_env_files(root: Path) -> list[str]:
     """The env files the manifest declares (project-relative). Never raises —
     read on every credential status and spawn."""

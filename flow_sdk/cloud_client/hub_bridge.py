@@ -724,6 +724,7 @@ class HubWsBridge:
                         # sync already materialized the row, so the open conversation
                         # ``on('message')`` listener still fires.
                         emit_live_create=True,
+                        classify_message=not _is_session_traffic(payload),
                         # Inbound from the hub: this row mirrors a hub counterpart.
                         remote=True,
                     )
@@ -990,6 +991,10 @@ class HubWsBridge:
 
                 # Publish the freshly persisted row, the way every other
                 # server-managed field write does (``mark-edit`` is the precedent).
+                # In its READ shape: a source message stores no text of its own, and
+                # announcing the stored row blanked it in every open view until the
+                # next poll (a staff member's own reply, the moment the hub said "sent").
+                await FlowMessage._hydrate([persisted])
                 await _publish_server_managed_field_update(existing, persisted, last_field)
             # Body just landed on the hub — pull it now so asset chips become
             # clickable without a refresh. ``_maybe_eager_pull_bundle`` is a
@@ -1224,6 +1229,10 @@ class HubWsBridge:
             entity_type,
             getattr(entity, "id", None),
         )
+        # A role that just landed may be one a driver makes a source for (a help desk's staff get its tickets).
+        from flow_sdk.stream_inbox.catchup import ensure_driver_sources  # noqa: PLC0415
+
+        await ensure_driver_sources("membership")
 
     async def _handle_task_op(self, op: str, task_id: str, data: dict) -> None:
         """A task was handed to this user — materialize it locally.

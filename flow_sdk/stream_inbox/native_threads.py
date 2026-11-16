@@ -28,16 +28,20 @@ _NO_SOURCE = ""
 _UNTITLED = "Thread"
 
 
-async def thread_root_for_reply(conversation_id: str, reply_to_id: str) -> Optional[str]:
-    """The root of the thread a reply to ``reply_to_id`` joins, or None when that message is not
-    one of this conversation's. A reply to a message already in a thread joins that thread; a
-    reply to anything else opens the thread rooted at it."""
+async def thread_root_for_reply(conversation_id: str, reply_to_id: str, *, open_new: bool = True) -> "str | None | bool":
+    """The root of the thread a message anchored on ``reply_to_id`` joins, or False when that message
+    is not one of this conversation's. A message already in a thread gives that thread; any other
+    gives the thread rooted at it when ``open_new`` (writing into a thread), else None — a plain
+    quoting reply stays in the timeline."""
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
     parent = await FlowMessage.get_one({"id": reply_to_id})
     if parent is None or (parent.conversation_id or "") != conversation_id:
-        return None
-    return parent.thread_root_id or parent.id
+        return False
+    if parent.thread_root_id:
+        return parent.thread_root_id
+    # A thread's root carries only its ``thread_id`` stamp; it roots the thread it is in.
+    return parent.id if (open_new or parent.thread_id) else None
 
 
 def _title_of(root: Optional["FlowMessage"]) -> str:

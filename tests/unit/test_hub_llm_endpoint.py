@@ -269,7 +269,7 @@ async def _harness_states() -> dict[str, tuple[str, str | None]]:
     return out
 
 
-async def test_bind_offers_the_endpoint_without_rewriting_the_users_choice(env) -> None:
+async def test_bind_offers_the_endpoint_without_rewriting_the_users_choice(env, monkeypatch) -> None:
     """Binding makes the endpoint available and the resolver takes it -- WITHOUT touching
     ``auth_mode``/``api_provider``.
 
@@ -305,6 +305,18 @@ async def test_bind_offers_the_endpoint_without_rewriting_the_users_choice(env) 
         "binding must not rewrite the user's stored choice"
     )
     assert await hub_llm_endpoint_status() == status
+
+    # The spawn asks the hub for the endpoint's models; here the hub answers the sizes it pushed.
+    from flow_sdk.external_apis.llm.model_selection import EndpointModelConfig
+    from flow_sdk.instance_settings import llm_endpoint as endpoint_settings
+
+    async def model_config(endpoint_typeid, **_kwargs):
+        return EndpointModelConfig(
+            endpoint_typeid=endpoint_typeid, tiers={"sm": "anthropic/claude-haiku-5.5"},
+            default_model=None, effective_default_model=None,
+        )
+
+    monkeypatch.setattr(endpoint_settings, "fetch_model_config", model_config)
 
     process = SimpleNamespace(driver=SimpleNamespace(name="claude"), cli_config={"model": "sm"})
     auth = await resolve_worker_api_auth(process)

@@ -1,0 +1,27 @@
+{
+  "type": "data_schema",
+  "id": "b0266dd7-57bd-4f6d-ae3f-f9c3741e6373",
+  "name": "flowmap.run_frame",
+  "fields": {
+    "node": {
+      "shape": "string",
+      "description": "The entry, step or outcome id it was in."
+    },
+    "start": {
+      "shape": "string",
+      "description": "When the frame began (ISO time)."
+    },
+    "seconds": {
+      "shape": "float",
+      "description": "Time in it, in seconds."
+    },
+    "cost": {
+      "shape": "float",
+      "description": "Cost in it, in USD."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "What happened worth saying: failed, waiting for you, left the map."
+    }
+  }
+}

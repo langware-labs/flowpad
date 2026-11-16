@@ -103,6 +103,7 @@ export * from './organization';
 export * from './team';
 export * from './access';
 export * from './members';
+export * from './help-desk';
 export * from './git-workdir';
 export * from './git-repo';
 export * from './stream-inbox-manager';

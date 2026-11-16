@@ -17,6 +17,8 @@ vi.mock('@src/navigation', async (importOriginal) => ({
     navigation: { openLink: mocks.openLink, openLinkInBrowser: vi.fn(), openLinkInVibe: mocks.openLinkInVibe, openLinkInBrowserProfile: vi.fn() },
   }),
 }));
+// The tag strip reads the tag definitions; this suite is about links.
+vi.mock('@src/components/tags/MessageTags', () => ({ MessageTags: () => null }));
 vi.mock('@src/lib/browser-profiles', () => ({
   fetchBrowserProfiles: () => Promise.resolve([]),
   useBrowserProfiles: () => [],

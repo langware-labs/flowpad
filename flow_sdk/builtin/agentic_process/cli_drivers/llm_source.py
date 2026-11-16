@@ -90,7 +90,8 @@ def _rank(kind: str) -> int:
 
 
 def _hub_stub(
-    typeid: str, *, name: str = "", provider: str = "", public: bool = False, tiers: dict | None = None
+    typeid: str, *, name: str = "", provider: str = "", public: bool = False, tiers: dict | None = None,
+    default_model: str | None = None, effective_default_model: str | None = None,
 ) -> "LLMEndpoint":
     """A hub endpoint we know only by typeid.
 
@@ -105,7 +106,8 @@ def _hub_stub(
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
 
     return LLMEndpoint.projection(
-        "hub", typeid, name=name, provider=provider, public=public, tiers=dict(tiers or {})
+        "hub", typeid, name=name, provider=provider, public=public, tiers=dict(tiers or {}),
+        default_model=default_model, effective_default_model=effective_default_model,
     )
 
 
@@ -241,26 +243,31 @@ def _key_sources(spec, rows: dict, stored: set[str], hints: dict[str, str] | Non
     from flow_sdk.builtin.llm_endpoint import LM_SECRET_PREFIX, LLMEndpoint  # noqa: PLC0415
 
     out: list[Candidate] = []
-    for provider in spec.supported_providers:
-        if provider is LMApiProvider.FLOWPAD:
+    providers = dict.fromkeys((*(p.value for p in spec.supported_providers), *(row.provider for row in rows.values())))
+    for provider in providers:
+        if provider == LMApiProvider.FLOWPAD:
             continue  # the hub endpoint is its own kind, not a "key"
-        secret_name = f"{LM_SECRET_PREFIX}{provider.value}"
-        endpoint = rows.get(secret_name) or LLMEndpoint.key_projection(provider.value)
+        secret_name = f"{LM_SECRET_PREFIX}{provider}"
+        endpoint = rows.get(secret_name) or LLMEndpoint.key_projection(provider)
         # An ``OPENROUTER_API_KEY`` in the environment is a convenience for in-process calls,
         # not a statement about what this box is configured to spend, so it is not consulted.
-        has_key = provider.value in stored
-        rejected = KEY_REJECTIONS.get(provider.value) if has_key else None
-        reason, code = ((f"{provider.value} rejected the stored key: {rejected['reason']}", "key_rejected")
-                        if rejected else ("", "") if has_key else (f"no {provider.value} key is stored on this machine", "no_key"))
+        has_key = provider in stored
+        rejected = KEY_REJECTIONS.get(provider) if has_key else None
+        reason, code = ((f"{provider} rejected the stored key: {rejected['reason']}", "key_rejected")
+                        if rejected else ("", "") if has_key else (f"no {provider} key is stored on this machine", "no_key"))
+        if provider not in spec.supported_providers:
+            reason, code = f"this harness cannot use local {provider} credentials", "unsupported_provider"
+        elif not endpoint.enabled:
+            reason, code = "this endpoint is disabled", "endpoint_disabled"
         out.append(
             Candidate(
                 endpoint,
                 LLMSource(
                     endpoint_typeid=str(endpoint.typeid),
-                    name=endpoint.name or f"{provider.value} key",
+                    name=endpoint.name or f"{provider} key",
                     # Display only: the masked hint of the stored key, so the picker can say
                     # WHICH key funds this; nothing for a slot with no key.
-                    detail=(hints or {}).get(provider.value, "") if has_key else "",
+                    detail=(hints or {}).get(provider, "") if has_key else "",
                     rank=_rank("api_key"),
                     eligible=not reason,
                     auto=not reason,
@@ -297,6 +304,8 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candi
             provider=bound.provider if bound else "",
             public=bool(bound and bound.public),
             tiers=bound.tiers if bound else None,
+            default_model=bound.default_model if bound else None,
+            effective_default_model=bound.effective_default_model if bound else None,
         )
     out: list[Candidate] = []
     for typeid, endpoint in rows.items():

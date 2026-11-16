@@ -1456,6 +1456,11 @@ export class DockPointer implements IDockPointer {
     return new DockPointer(ViewType.HELPDESK, pointer, undefined, layout);
   }
 
+  /** A help desk itself, by its hub project id: its team's view, and where its invite link lands. */
+  static forDesk(deskId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.SUPPORT_DESK, deskId, undefined, layout);
+  }
+
   /**
    * Parse a helpdesk pointer. Returns nulls for anything absent or malformed —
    * never throws, so a hand-edited URL renders the portal root rather than
@@ -2701,6 +2706,9 @@ export class DockPointer implements IDockPointer {
     // 'helpdesk' target — untitled and projectless. The article sub-pointer is
     // deliberately dropped: every article belongs to the one portal project, so
     // the tab stays on the portal (see `foldsPointer` in the viewer registry).
+    // A desk is a HUB project, usually not a row on this machine: its tab names no local entity (asking for
+    // the project here would fail the tab on a desk this computer has never seen).
+    if (this.viewType === ViewType.SUPPORT_DESK) return null;
     if (this.viewType === ViewType.HELPDESK) {
       const { projectId } = DockPointer.parseHelpdeskPointer(pointer);
       return projectId ? DockPointer.tryTypeId(Project.type, projectId) : null;

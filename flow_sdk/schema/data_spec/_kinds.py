@@ -97,6 +97,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``
     import flow_sdk.schema.data_spec.message_form_spec  # noqa: F401  — registers ``message.form`` / ``message.form_answers``
     import flow_sdk.schema.data_spec.message_invite_spec  # noqa: F401  — registers ``message.invite``
+    import flow_sdk.schema.data_spec.message_processing_spec  # noqa: F401  — registers ``stream_inbox.message.processing``
     import flow_sdk.schema.data_spec.message_reaction_spec  # noqa: F401  — registers ``message.reaction``
     import flow_sdk.schema.data_spec.message_sender_spec  # noqa: F401  — registers ``message.sender``
     import flow_sdk.schema.data_spec.message_state_spec  # noqa: F401  — registers ``stream_inbox.message.state``

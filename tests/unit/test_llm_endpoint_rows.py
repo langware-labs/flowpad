@@ -213,6 +213,10 @@ async def test_an_endpoint_embeds_with_no_database_and_no_stored_key(env, monkey
 
 @pytest.mark.asyncio
 async def test_a_hub_endpoint_calls_the_hub_not_the_vendor(env, monkeypatch):
+    from tests.utils.hub_proxy_fake import model_config_transport
+
+    model_config_transport(monkeypatch, {"md": "anthropic/claude-sonnet-4.5"}, default_model="md",
+                           effective_default_model="anthropic/claude-sonnet-4.5")
     """The hub relays verbatim, so the wire is the root's — only the URL and the token move."""
     calls: dict = {}
 
@@ -243,6 +247,7 @@ async def test_a_hub_endpoint_calls_the_hub_not_the_vendor(env, monkeypatch):
         calls["base_url"] == "https://hub.test/api/v1/graph/llm_endpoint/11111111-2222-4333-8444-555555555555/invoke/v1"
     )
     assert calls["api_key"] == "fp-hub-key"
+    assert calls["params"]["model"] == "anthropic/claude-sonnet-4.5"
 
 
 async def test_a_hub_endpoint_embeds_through_the_hub(env, monkeypatch):

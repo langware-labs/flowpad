@@ -7,7 +7,17 @@ import { SourceChip, channelLabel, useChannelAttribution } from './channel-attri
  * people are on that channel (a phone, a chat id, an address), not on the Flowpad roster, so there is nobody to invite
  * and nothing to manage here: the channel's mark and the addresses it talks to, read-only.
  */
-export function ChannelParticipants({ conversation }: { conversation: Conversation }) {
+export function ChannelParticipants({
+  conversation,
+  chipOnly = false,
+  noChip = false,
+}: {
+  conversation: Conversation;
+  /** Only the channel's mark (a ticket's header draws it before the title). */
+  chipOnly?: boolean;
+  /** Only the addresses: the mark is drawn elsewhere. */
+  noChip?: boolean;
+}) {
   const { t } = useLingui();
   const { attributionForConversation } = useChannelAttribution();
   const attribution = attributionForConversation(conversation);
@@ -19,8 +29,8 @@ export function ChannelParticipants({ conversation }: { conversation: Conversati
       data-testid="channel-participants"
       title={t`This conversation is on ${label}: the people in it are on ${label}, not Flowpad members.`}
     >
-      <SourceChip attribution={attribution} />
-      {addresses.length > 0 && <span className="truncate font-mono">{addresses.join(', ')}</span>}
+      {!noChip && <SourceChip attribution={attribution} />}
+      {!chipOnly && addresses.length > 0 && <span className="truncate font-mono">{addresses.join(', ')}</span>}
     </span>
   );
 }

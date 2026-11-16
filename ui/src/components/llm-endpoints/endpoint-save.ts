@@ -82,8 +82,10 @@ async function saveLocal(draft: EndpointDraft, isEdit: boolean): Promise<SaveRes
     key: draft.key.trim() || undefined,
     config: {
       name: draft.name.trim() || undefined,
-      base_url: draft.base_url.trim() || undefined,
+      base_url: draft.provider === 'vertex' && !draft.baseUrlEdited ? undefined : draft.base_url.trim() || undefined,
+      vertex: draft.provider === 'vertex' ? draft.vertex : undefined,
       tiers,
+      default_model: draft.default_model?.trim() || null,
       limits: json.limits as Record<string, number | null>,
       filters: json.filters as Record<string, unknown>,
     },

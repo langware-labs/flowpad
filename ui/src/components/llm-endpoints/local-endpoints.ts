@@ -28,7 +28,20 @@ export function useLocalEndpoints(): LLMEndpoint[] {
     return (status?.available ?? [])
       .filter((offer) => offer.kind === (LLMFundingKind.ApiKey as string) && hints.has(offer.provider))
       .map(
-        ({ id, name, provider, enabled, base_url, tiers, limits, filters }) =>
+        ({
+          id,
+          name,
+          provider,
+          enabled,
+          base_url,
+          tiers,
+          default_model,
+          effective_default_model,
+          limits,
+          filters,
+          vertex,
+          credential_kind,
+        }) =>
           // Only the entity's own fields: the offer's `kind` is a funding kind, and on the entity
           // `kind` is a derived getter (root/chain).
           new LLMEndpoint({
@@ -38,8 +51,12 @@ export function useLocalEndpoints(): LLMEndpoint[] {
             enabled,
             base_url,
             tiers,
+            default_model,
+            effective_default_model,
             limits,
             filters,
+            vertex,
+            credential_kind,
             credential_hint: hints.get(provider) || '****',
           } as never),
       );

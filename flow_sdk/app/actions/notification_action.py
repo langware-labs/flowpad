@@ -415,7 +415,7 @@ async def _merge_shared_context_into_conversation(
     if not typeids:
         return
     try:
-        changed = conv.add_shared_context_entities(*typeids)
+        changed = conv.add_shared_context_entities(*typeids, via="user")  # what the sender attached
         if changed:
             await conv.save(someone_typeid)
         await conv._link_context_to_conversation(typeids, someone_typeid=someone_typeid)
@@ -1049,16 +1049,23 @@ async def handle_add_message(
     conv = await Conversation.get_one({"id": conversation_id})
     if not conv:
         return ApiFailResponse(message=f"Conversation not found: {conversation_id}")
-    # A reply quotes one message of THIS conversation and joins the thread rooted at it.
+    # A reply QUOTES one message of THIS conversation; it never opens a thread. It stays in the
+    # thread its parent is already in; only writing into a thread (``thread_root_id``) threads.
     thread_root_id: Optional[str] = None
     if reply_to_id or join_thread_of:
         from flow_sdk.stream_inbox.native_threads import thread_root_for_reply  # noqa: PLC0415
 
         anchor = reply_to_id or join_thread_of
-        thread_root_id = await thread_root_for_reply(conv.id, anchor)
-        if thread_root_id is None:
+        thread_root_id = await thread_root_for_reply(conv.id, anchor, open_new=not reply_to_id)
+        if thread_root_id is False:
             field = "reply_to_id" if reply_to_id else "thread_root_id"
             return ApiFailResponse(message=f"{field} {anchor} is not a message of this conversation", status_code=400)
+        if join_thread_of and not thread_root_id:
+            thread_root_id = await thread_root_for_reply(conv.id, join_thread_of)
+            if thread_root_id is False:
+                return ApiFailResponse(
+                    message=f"thread_root_id {join_thread_of} is not a message of this conversation", status_code=400
+                )
 
     # Merge the items being shared into THIS conversation's context (both the
     # conversation row and the items themselves), so a re-share into an existing

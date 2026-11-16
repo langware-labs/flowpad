@@ -8,8 +8,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   openDock: vi.fn(),
   rows: [
-    { direction: 'in', typeid: 'conversation-22222222-2222-4222-8222-222222222222', type: 'conversation', name: 'Spring launch', kind: 'shared', role: 'session', time: '2026-11-13T10:00:00Z' },
-    { direction: 'out', typeid: 'spec-33333333-3333-4333-8333-333333333333', type: 'spec', name: '', kind: 'private', role: '', time: '' },
+    { direction: 'in', typeid: 'conversation-22222222-2222-4222-8222-222222222222', type: 'conversation', name: 'Spring launch', kind: 'shared', role: 'session', via: ['user'], time: '2026-11-13T10:00:00Z' },
+    { direction: 'out', typeid: 'spec-33333333-3333-4333-8333-333333333333', type: 'spec', name: '', kind: 'private', role: '', via: ['static'], time: '' },
   ],
 }));
 
@@ -66,6 +66,25 @@ describe('Context button', () => {
     fireEvent.click(rows[0]);
     await waitFor(() => expect(h.openDock).toHaveBeenCalledTimes(1));
     expect(String(h.openDock.mock.calls[0][0].pointer)).toContain('22222222-2222-4222-8222-222222222222');
+  });
+
+  it('the header toggles hide and show rows by how they came to be', async () => {
+    vi.spyOn(dataContext, 'caps', 'get').mockReturnValue({ localFiles: true } as never);
+    vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue({ getContextRelations: () => Promise.resolve(h.rows) } as never);
+    render(toolbar);
+
+    fireEvent.click(screen.getByTestId('entity-actions-context'));
+    await waitFor(() => expect(screen.getAllByTestId('context-menu-row')).toHaveLength(2));
+
+    fireEvent.click(screen.getByTestId('context-menu-filter-static'));
+    expect(screen.getByTestId('context-menu-filter-static').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getAllByTestId('context-menu-row').map((row) => row.dataset.via)).toEqual(['user']);
+
+    fireEvent.click(screen.getByTestId('context-menu-filter-user'));
+    expect(screen.queryAllByTestId('context-menu-row')).toHaveLength(0);
+
+    fireEvent.click(screen.getByTestId('context-menu-filter-static'));
+    expect(screen.getAllByTestId('context-menu-row').map((row) => row.dataset.via)).toEqual(['static']);
   });
 
   it('is not drawn on the hub', () => {

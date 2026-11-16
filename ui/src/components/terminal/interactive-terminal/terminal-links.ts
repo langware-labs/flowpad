@@ -1,6 +1,7 @@
 import type { IBuffer, IBufferCell, IBufferLine, IBufferRange, ILink, ILinkProvider, Terminal } from '@xterm/xterm';
 import { COMMAND_LINK } from '@src/lib/link-kind';
 import { BOX_GLYPHS, UUID, commandLinkMatches, ENDS_WHOLE, fileLinkMatches, HAS_RTL, linkMatches, type LinkMatch } from '@src/lib/link-matches';
+import { visualToLogical } from './terminalConfig';
 import { isPrimaryClick, type LinkHandlers } from '@src/components/links/link-events';
 
 type ActivateLink = LinkHandlers['activate'];
@@ -364,18 +365,27 @@ function buildLine(terminal: Terminal, start: number, end: number, below: Below)
  */
 export function selectionText(terminal: Terminal, range = terminal.getSelectionPosition()): string {
   if (!range) return terminal.getSelection();
+  // A `.xterm-rtl-grid` terminal holds each screen row pre-reversed (see applyRtlGridContract),
+  // so each row is turned back on its own, before a TUI-wrapped line's rows are joined.
+  const toLogical = terminal.element?.closest('.xterm-rtl-grid') ? visualToLogical : (row: string) => row;
   const below = judge(terminal);
   // xterm's selection in rangeContains' terms: 1-based cells, `end` inclusive.
   const selected = { start: { x: range.start.x + 1, y: range.start.y + 1 }, end: { x: range.end.x, y: range.end.y + 1 } };
   const lines: string[] = [];
   for (let row = range.start.y; row <= range.end.y; ) {
     const rows = rowsOf(terminal, row, below);
-    if (!rows) return terminal.getSelection();
+    if (!rows) return toLogical(terminal.getSelection());
     const line = buildLine(terminal, rows.start, rows.end, below);
     let text = '';
+    let piece = '';
     for (let i = 0; i < line.text.length; i++) {
-      if (rangeContains(selected, line.starts[i].x, line.starts[i].y)) text += line.text[i];
+      if (i > 0 && line.starts[i].y !== line.starts[i - 1].y) {
+        text += toLogical(piece);
+        piece = '';
+      }
+      if (rangeContains(selected, line.starts[i].x, line.starts[i].y)) piece += line.text[i];
     }
+    text += toLogical(piece);
     lines.push(text.trimEnd());
     row = rows.end + 1;
   }

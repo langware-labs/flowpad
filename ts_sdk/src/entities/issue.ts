@@ -24,6 +24,8 @@ export function isIssueActive(status: IssueStatus | string | null | undefined): 
 export interface IssueFix {
   label: string;
   pointer: string;
+  /** Set when the hub does the fix itself (`Issue.runFix`), e.g. `reset`: a new machine for the one that is gone. */
+  action?: string;
 }
 
 /** One line of an issue's history; `at` is epoch seconds. */
@@ -93,7 +95,13 @@ export class Issue extends APIEntity<Issue> implements IIssue {
     this.cause = issue.cause ?? '';
     this.machine = issue.machine ?? '';
     this.events = Array.isArray(issue.events) ? issue.events : [];
-    this.fix = issue.fix?.pointer ? { label: issue.fix.label ?? '', pointer: issue.fix.pointer } : null;
+    this.fix = issue.fix?.pointer
+      ? {
+          label: issue.fix.label ?? '',
+          pointer: issue.fix.pointer,
+          ...(issue.fix.action ? { action: issue.fix.action } : {}),
+        }
+      : null;
     this.affected = Array.isArray(issue.affected) ? issue.affected : [];
     this.status = issueStatusOf(issue.status);
     this.opened_at = issue.opened_at ?? 0;
@@ -113,6 +121,11 @@ export class Issue extends APIEntity<Issue> implements IIssue {
   async setStatus(status: IssueManualStatus): Promise<void> {
     await Issue.setStatus(this.id, status);
     this.status = status;
+  }
+
+  /** Have the hub do this issue's fix (`POST issue/<id>/fix`); a fix that works resolves the issue there. */
+  async runFix(): Promise<void> {
+    await dataManager.callAction<Record<string, never>, unknown>(new ActionInfo('fix', Issue.type, this.id, 'POST'));
   }
 
   /** Whether this issue is about `typeid` — its subject, or one of the things it stops. */

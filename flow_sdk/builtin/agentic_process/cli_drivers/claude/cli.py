@@ -56,6 +56,9 @@ class ClaudeAgentOptions(AgentOptions):
     EXECUTABLE = "claude"
     PROMPT_CHANNEL = "argv"  # claude takes the prompt as a `-- <text>` positional
     SYSTEM_PROMPT_FILE_FLAG = "--append-system-prompt-file"
+    EXTENSION_FLAG = "--chrome"
+    EXTENSION_ID = "fcoeoabgfenejglbffodgkkbkcdhcgfn"  # Claude in Chrome
+    STRICT_MCP_FLAG = "--strict-mcp-config"
 
     def configure_fork(self, source_session_id: str) -> None:
         self.resume = True
@@ -181,8 +184,8 @@ class ClaudeAgentOptions(AgentOptions):
         elif self.permission_mode in ("plan", "default", "acceptEdits"):
             # ``plan`` is required for the model to call ``ExitPlanMode``.
             flags.extend(["--permission-mode", self.permission_mode])
-        if self.chrome:
-            flags.append("--chrome")
+        # ``chrome``: a caller that asked for the extension in its persisted options.
+        flags.extend(self.extension_flags(extension=self.chrome))
         if self.debug:
             flags.append("--debug")
         if self.debug_file:
@@ -216,7 +219,8 @@ class ClaudeAgentOptions(AgentOptions):
             # to disk for a process's attached servers. ``--strict`` always rides
             # with it: without it the process gets this set PLUS ~/.claude.json,
             # and "which servers does this process have" has no answer.
-            flags.extend(["--mcp-config", self.mcp_config_json, "--strict-mcp-config"])
+            flags.extend(["--mcp-config", self.mcp_config_json])
+        flags.extend(self.strict_mcp_flags())
         for directory in self.plugin_dirs:
             flags.extend(["--plugin-dir", directory])
         if self.print_mode:

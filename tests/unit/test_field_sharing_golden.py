@@ -328,6 +328,8 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "it_request",
                 # `issue_reply`: a Monitoring message's issue, re-derived from the hub's metadata on every arrival.
                 "issue_reply",
+                # `message_processing`: this machine's classification, tag provenance and automation queue.
+                "message_processing",
             ],
             # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [
@@ -350,6 +352,7 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
             # `delivery_failure` is a nested HubFailure, None until a send fails.
             # `mark` is a nested MessageMarkSpec, None on a message that did nothing.
             # `invite` is a nested MessageInvite, None on every message but an invite.
+            # `message_processing` is a nested MessageProcessing, None until the message is enrolled.
             [
                 "attachment",
                 "body_status",
@@ -363,6 +366,7 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "last_active_at",
                 "last_edited_at",
                 "mark",
+                "message_processing",
                 "origin",
                 "origin_local",
                 "private_context_entities_",

@@ -72,6 +72,8 @@ class LLMClient:
         models: Mapping[str, str] | None = None,
         extra_headers: Mapping[str, str] | None = None,
         label: str = "",
+        default_model: str | None = None,
+        model_config_loader: Any = None,
     ) -> None:
         self.dialect = dialect
         #: The root. ``/v1`` is applied per transport, never stored.
@@ -80,6 +82,8 @@ class LLMClient:
         self.models = dict(models or {})
         self.extra_headers = dict(extra_headers or {})
         self.label = label or dialect.provider.value
+        self.default_model = default_model
+        self.model_config_loader = model_config_loader
         #: Built once per client. A fresh ``AsyncOpenAI`` rebuilds the TLS context and reloads
         #: the CA bundle from disk; ``cloud_client/transport/hub_http.py`` measured that at
         #: ~40% of a request, and an embedder calls this per query.
@@ -95,19 +99,39 @@ class LLMClient:
         models: Mapping[str, str] | None = None,
         extra_headers: Mapping[str, str] | None = None,
         label: str = "",
+        relay: bool = False,
+        default_model: str | None = None,
+        model_config_loader: Any = None,
     ) -> "LLMClient":
         """Build a client for a provider, letting the dialect supply the base URL and models."""
         dialect = get_dialect(provider)
-        return cls(
+        factory = cls if relay else dialect.client_factory or cls
+        return factory(
             dialect=dialect,
             base_url=base_url,
             api_key=api_key,
             models=models if models is not None else dict(dialect.default_models),
             extra_headers=extra_headers,
             label=label,
+            default_model=default_model,
+            model_config_loader=model_config_loader,
         )
 
     # ── credentials ─────────────────────────────────────────────────────────
+
+    async def model_catalog(self) -> list:
+        from flow_sdk.schema.data_spec.llm_model_spec import LLMModelInfo
+
+        return [LLMModelInfo(id=slug, name=slug) for slug in await self.list_models()]
+
+    async def test_completion(self, *, timeout: float = PROBE_TIMEOUT_SECONDS) -> str:
+        """Explicit minimal invocation; never used by an automatic credential save."""
+        slug = self._model_for(None, "sm")
+        path = "v1/messages" if self.dialect.wire == WIRE_ANTHROPIC else "v1/chat/completions"
+        await self._request_json("POST", path, json_body={
+            "model": slug, "max_tokens": 1, "messages": [{"role": "user", "content": "Hi"}],
+        }, timeout=timeout)
+        return "Invocation succeeded"
 
     def _require_key(self) -> str:
         if not self.api_key:
@@ -122,6 +146,14 @@ class LLMClient:
 
     # ── completions ─────────────────────────────────────────────────────────
 
+    async def _completion_model(self, model: str | None) -> str:
+        from flow_sdk.external_apis.llm.model_selection import resolve_completion_model
+
+        if self.model_config_loader is not None:
+            config = await self.model_config_loader(model)
+            return config.resolve(model)
+        return resolve_completion_model(self.models, model, default_model=self.default_model)
+
     async def create_completion(
         self,
         system: str,
@@ -134,7 +166,7 @@ class LLMClient:
         timeout: float = 60.0,
     ) -> "str | dict | AsyncGenerator[str, None]":
         """One chat turn. Returns text, parsed JSON, or a stream of text chunks."""
-        slug = self._model_for(model, "md")
+        slug = await self._completion_model(model)
         if self.dialect.wire == WIRE_ANTHROPIC:
             if stream:
                 raise LLMNotSupported(f"{self.label}: streaming is not implemented for the Anthropic wire")
@@ -324,6 +356,15 @@ class LLMClient:
 
         message = f"{self.label}: upstream returned {status}"
         trimmed = body[:500]
+        try:
+            detail = json_module.loads(body).get("error", {}).get("message")
+            if isinstance(detail, str) and detail:
+                message = detail
+        except (ValueError, AttributeError):
+            pass
+        if self.api_key:
+            message = message.replace(self.api_key, "[credential]")
+            trimmed = trimmed.replace(self.api_key, "[credential]")
         if status in (401, 403):
             return LLMAuthError(message, status=status, body=trimmed)
         if status == 429:

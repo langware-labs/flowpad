@@ -1,4 +1,4 @@
-# Mode: correct
+# Mode: improve
 
 > Ground rules (inline by design): never delete knowledge; integrate, don't
 > append; max 5 findings/corrections per pass; converged is a valid verdict.
@@ -7,6 +7,15 @@ Input: the target skill plus a list of issues — review findings, run-time
 observations, or a failed transcript. Output: edits applied to the target via
 fixer agents, with an issue → outcome mapping. The aim of every correction:
 the next run does it right with no awareness that it went wrong.
+
+**From a run (the usual input):** given a session, first lay it on the map —
+`modes/trace.md` (it maps the skill first when the map is missing or stale).
+Read the run against the map before collecting issues: a move the map does not
+have (the run went somewhere the instructions do not lead), a loop taken many
+times, a step that cost most of the run, a frame noted `failed`. Each issue
+names the map step it happened in (its `source` is where the fixer starts) and
+quotes the run as evidence. A move off the map is either a gap in the skill or
+a gap in the map — say which; fix the map with `modes/map.md`, the skill here.
 
 Run-time issues often arrive **per-asset** from the agent-trace analyzer —
 `annotations.by_skill[<this skill>]`, a bucket already scoped to this one skill.

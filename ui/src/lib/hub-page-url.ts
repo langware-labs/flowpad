@@ -16,6 +16,11 @@ export function hubProjectUrl(
   return `${trimHubHost(hubAppUrl)}${dockPath}`;
 }
 
+/** The address people ask a help desk through: the desk's own page on the hub. */
+export function helpDeskUrl(hubAppUrl: string, deskId: string): string {
+  return `${trimHubHost(hubAppUrl)}${DockPointer.forDesk(deskId).withPage(PageId.HUB).toUrl()}`;
+}
+
 /** The project's sub-route under the hub page: `/dock/hub/project/<id>/<sub>`. */
 const PROJECT_GIT_SUB = 'git';
 

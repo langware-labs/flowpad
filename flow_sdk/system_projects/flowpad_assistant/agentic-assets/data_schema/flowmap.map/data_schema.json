@@ -1,0 +1,43 @@
+{
+  "type": "data_schema",
+  "id": "65235976-ca51-4ac3-98dd-9b381c92d878",
+  "name": "flowmap.map",
+  "fields": {
+    "skill": {
+      "shape": "string",
+      "description": "The skill or agent the map is of (its folder name)."
+    },
+    "line": {
+      "shape": "string",
+      "description": "What it does, in one plain sentence."
+    },
+    "source_hash": {
+      "shape": "string",
+      "description": "A hash of the skill's files when the map was made; a different hash means the map is stale."
+    },
+    "entries": {
+      "shape": [
+        "flowmap.entry"
+      ],
+      "description": "Every way to start it."
+    },
+    "steps": {
+      "shape": [
+        "flowmap.step"
+      ],
+      "description": "What it does, one step per block on the map."
+    },
+    "links": {
+      "shape": [
+        "flowmap.link"
+      ],
+      "description": "Which step leads to which: entry → step → … → outcome."
+    },
+    "outcomes": {
+      "shape": [
+        "flowmap.outcome"
+      ],
+      "description": "What you can end up with."
+    }
+  }
+}

@@ -193,7 +193,9 @@ def _config_path_from_context(context: AgenticContext, process_id: str | None = 
         # No instruction assets, but attached servers and extra mounted roots
         # still need a config. Whether there is anything worth writing is the
         # generator's call, not ours.
-        generated = config_for_assets_dir(process_id, None, mcp, add_dirs, provider=provider)
+        generated = config_for_assets_dir(
+            process_id, None, mcp, add_dirs, provider=provider, bound_model=context.bound_model
+        )
         return str(generated) if generated else None
     candidate = Path(dirs[0])
     if candidate.is_file():
@@ -201,5 +203,7 @@ def _config_path_from_context(context: AgenticContext, process_id: str | None = 
     if not candidate.is_dir():
         return None
 
-    generated = config_for_assets_dir(process_id, candidate, mcp, add_dirs, provider=provider)
+    generated = config_for_assets_dir(
+        process_id, candidate, mcp, add_dirs, provider=provider, bound_model=context.bound_model
+    )
     return str(generated) if generated else None

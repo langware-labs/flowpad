@@ -20,7 +20,7 @@ BEHAVIOUR_FIELDS: tuple[str, ...] = (
     "trigger_type",
     "expr", "sched_trigger_type", "timezone",
     "watch_path", "recursive", "watch_glob", "ignore_patterns", "respect_gitignore",
-    "tag_pattern", "tag_target", "tag_scope", "confirm", "fire_once",
+    "tag_pattern", "tag_target", "tag_scope", "message_tags", "confirm", "fire_once",
     "mask", "hook_events",
     "instruction", "workdir",
     "gate", "then",

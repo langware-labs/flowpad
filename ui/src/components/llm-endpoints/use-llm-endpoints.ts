@@ -7,7 +7,14 @@
  * action calls, wrapped in react-query for caching + refetch; they are keyed by
  * endpoint id and, for usage, the requested range.
  */
-import { LLMEndpoint, QueryRequest, llmEndpointsService, type LLMUsageQuery } from '@sdk';
+import {
+  LLMEndpoint,
+  QueryRequest,
+  llmEndpointsService,
+  lmKeysService,
+  type LMApiProvider,
+  type LLMUsageQuery,
+} from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
@@ -74,6 +81,23 @@ export function useLlmEndpointModels(id: string | undefined) {
     queryFn: () => llmEndpointsService.listModels(id as string),
     enabled: !!id,
     staleTime: 60_000,
+  });
+}
+
+export function useLlmEndpointModelConfig(id: string | undefined) {
+  return useQuery({
+    queryKey: ['llm-endpoint', id, 'model-config'],
+    queryFn: () => llmEndpointsService.getModelConfig(id as string),
+    enabled: !!id,
+  });
+}
+
+/** Local catalogs use the same configured source that Test and invocation use. */
+export function useLocalEndpointModels(provider: string | undefined) {
+  return useQuery({
+    queryKey: ['lm-keys', provider, 'models'],
+    queryFn: () => lmKeysService.listModels(provider as LMApiProvider),
+    enabled: !!provider,
   });
 }
 

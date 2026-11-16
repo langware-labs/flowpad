@@ -1,6 +1,6 @@
 /**
  * Device logins as endpoint rows: each vendor subscription (Claude / Codex / Copilot) is an
- * endpoint of its own on this machine, listed in the API keys table beside the stored keys.
+ * endpoint of its own on this machine, edited from the Device logins tab.
  *
  * It has no key — the vendor CLI holds its own session — only what the user sets on it: the model
  * each size runs and any custom named models (`tiers`, written by `lm_keys/device`). This replaced

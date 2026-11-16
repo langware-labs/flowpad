@@ -25,6 +25,7 @@ import shlex
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
+from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import CredentialArtifact
 from flow_sdk.builtin.agentic_process.model_tiers import (
     CLAUDE_CLI_ALIASES,
     is_model_tier,
@@ -125,6 +126,8 @@ class ApiAuthSpec:
     #: all -- otherwise an unproven, rank-0 "device login" that cannot exist outranks the real
     #: funding and the worker is spawned with no credentials.
     has_device_login: bool = True
+    local_bindings: dict[LMApiProvider, Callable] = field(default_factory=dict)
+    local_env_vars: tuple[str, ...] = ()
 
     def binding_for(self, provider: LMApiProvider, *, hub_invoke_url: str | None) -> ProviderBinding:
         """The binding to spawn with for *provider*.
@@ -160,6 +163,8 @@ class WorkerApiAuth:
     #: chose it -- so a renderer composes the key path instead of parsing it back out of the
     #: very TOML keys that binding had just formatted.
     provider_key: str = ""
+    credential_artifact: CredentialArtifact | None = field(default=None, repr=False)
+    endpoint_typeid: str | None = None
 
 
 # ── Per-driver specs (proven OpenRouter values) ──────────────────────────────
@@ -170,6 +175,35 @@ class WorkerApiAuth:
 # provider type "openai") and the OpenRouter model slugs are unchanged; only the
 # base URL and the token move. claude appends `/v1/messages` to its base itself;
 # codex and copilot expect the `/v1` root.
+
+
+def _claude_vertex_binding(endpoint, key: str, slug: str) -> WorkerApiAuth:
+    from flow_sdk.external_apis.llm.errors import LLMNotSupported
+    from flow_sdk.external_apis.llm.vertex import canonical_config, is_claude, vertex_model
+
+    _, config = canonical_config(endpoint.base_url, credential=key)
+    if not is_claude(slug):
+        raise LLMNotSupported("Claude Code requires a Claude model on the Vertex endpoint; configure its model tiers")
+    return WorkerApiAuth(
+        env={
+            "CLAUDE_CODE_USE_VERTEX": "1",
+            "ANTHROPIC_VERTEX_PROJECT_ID": config.project_id,
+            "CLOUD_ML_REGION": config.location,
+            "ANTHROPIC_API_KEY": "", "ANTHROPIC_AUTH_TOKEN": "", "ANTHROPIC_BASE_URL": "",
+            "CLAUDE_CODE_OAUTH_TOKEN": "", "GOOGLE_API_KEY": "",
+            "CLAUDE_CODE_USE_BEDROCK": "", "CLAUDE_CODE_USE_FOUNDRY": "",
+            "CLAUDE_CODE_SKIP_VERTEX_AUTH": "",
+            "ANTHROPIC_SMALL_FAST_MODEL": "", "CLAUDE_CODE_SUBAGENT_MODEL": "",
+            "GOOGLE_CLOUD_PROJECT": config.project_id,
+            **{
+                f"ANTHROPIC_DEFAULT_{alias.upper()}_MODEL": vertex_model(endpoint.tiers.get(tier, ""))
+                if is_claude(endpoint.tiers.get(tier, "")) else ""
+                for alias, tier in CLAUDE_CLI_ALIASES.items()
+            },
+        },
+        model_slug=vertex_model(slug),
+        credential_artifact=CredentialArtifact("GOOGLE_APPLICATION_CREDENTIALS", key),
+    )
 
 
 def _claude_hub_binding(url: str) -> ProviderBinding:
@@ -225,6 +259,43 @@ def _copilot_hub_binding(url: str) -> ProviderBinding:
     )
 
 
+def _claude_anthropic_binding(endpoint, key: str, slug: str) -> WorkerApiAuth:
+    """A direct Anthropic key must not inherit another Claude auth mode."""
+    base = endpoint.base_url.rstrip("/").removesuffix("/v1")
+    return WorkerApiAuth(
+        env={
+            "ANTHROPIC_API_KEY": key, "ANTHROPIC_BASE_URL": base,
+            "ANTHROPIC_AUTH_TOKEN": "", "CLAUDE_CODE_OAUTH_TOKEN": "",
+            "CLAUDE_CODE_USE_VERTEX": "", "CLAUDE_CODE_USE_BEDROCK": "",
+            "CLAUDE_CODE_USE_FOUNDRY": "", "ANTHROPIC_MODEL": slug,
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": slug, "ANTHROPIC_DEFAULT_SONNET_MODEL": slug,
+            "ANTHROPIC_DEFAULT_OPUS_MODEL": slug,
+            "ANTHROPIC_SMALL_FAST_MODEL": slug, "CLAUDE_CODE_SUBAGENT_MODEL": slug,
+            "GOOGLE_APPLICATION_CREDENTIALS": "", "GOOGLE_API_KEY": "",
+            "CLAUDE_CODE_SKIP_VERTEX_AUTH": "", "ANTHROPIC_VERTEX_PROJECT_ID": "",
+            "CLOUD_ML_REGION": "",
+        },
+        model_slug=slug, token_env_var="ANTHROPIC_API_KEY",
+    )
+
+
+def _codex_openai_binding(endpoint, key: str, slug: str) -> WorkerApiAuth:
+    """An explicit key-backed Responses provider, independent of Codex's account login."""
+    provider = "flowpad_openai"
+    base = endpoint.dialect.openai_base(endpoint.base_url)
+    return WorkerApiAuth(
+        env={"OPENAI_API_KEY": key, "OPENAI_BASE_URL": ""},
+        model_slug=slug, token_env_var="OPENAI_API_KEY", provider_key=provider,
+        config_overrides=[
+            ("model_provider", provider),
+            (f"model_providers.{provider}.name", "OpenAI"),
+            (f"model_providers.{provider}.base_url", base),
+            (f"model_providers.{provider}.wire_api", "responses"),
+            (f"model_providers.{provider}.env_key", "OPENAI_API_KEY"),
+        ],
+    )
+
+
 CLAUDE_API_AUTH_SPEC = ApiAuthSpec(
     token_env_var="ANTHROPIC_AUTH_TOKEN",
     base_env={
@@ -237,10 +308,15 @@ CLAUDE_API_AUTH_SPEC = ApiAuthSpec(
         "MAX_THINKING_TOKENS": "0",
         "DISABLE_INTERLEAVED_THINKING": "1",
     },
-    # OpenRouter directly, or the hub's LLMEndpoint (a passthrough to it). A
-    # direct vendor is NOT here: base_env is fixed to OpenRouter's URL, so
-    # selecting one would post its key to OpenRouter.
-    supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
+    # Direct vendors use their own factories, never the static OpenRouter recipe.
+    supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD, LMApiProvider.VERTEX, LMApiProvider.ANTHROPIC),
+    local_bindings={LMApiProvider.VERTEX: _claude_vertex_binding, LMApiProvider.ANTHROPIC: _claude_anthropic_binding},
+    local_env_vars=("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_BEDROCK",
+                    "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
+                    "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL",
+                    "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_API_KEY", "CLAUDE_CODE_SKIP_VERTEX_AUTH",
+                    "ANTHROPIC_VERTEX_PROJECT_ID", "CLOUD_ML_REGION"),
     default_provider=LMApiProvider.OPENROUTER,
     prompt_model_env_vars=("ANTHROPIC_MODEL",),
     native_tiers=dict(CLAUDE_CLI_ALIASES),
@@ -253,7 +329,9 @@ CLAUDE_API_AUTH_SPEC = ApiAuthSpec(
 CODEX_API_AUTH_SPEC = ApiAuthSpec(
     token_env_var="OPENROUTER_API_KEY",
     base_env={},
-    supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
+    supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD, LMApiProvider.OPENAI),
+    local_bindings={LMApiProvider.OPENAI: _codex_openai_binding},
+    local_env_vars=("OPENAI_API_KEY", "OPENAI_BASE_URL"),
     default_provider=LMApiProvider.OPENROUTER,
     # OpenRouter serves an OpenAI Responses-compatible endpoint; codex 0.144
     # dropped the chat wire, so wire_api must be "responses".
@@ -407,34 +485,19 @@ def endpoint_invoke_url(typeid) -> str | None:
 
 
 def default_size() -> str:
-    """The size a spawn runs when nobody named one: ``preferences.llm.default_size``, else ``md``."""
+    """Device-login size preference when omitted; funded sources use their endpoint default."""
     from flow_sdk.preferences import DEFAULT_LLM_SIZE, PREF_LLM_DEFAULT_SIZE, read_instance_pref  # noqa: PLC0415
 
     size = read_instance_pref(PREF_LLM_DEFAULT_SIZE, DEFAULT_LLM_SIZE)
     return size if is_model_tier(size) else DEFAULT_LLM_SIZE
 
 
-async def _fresh_hub_tiers(endpoint_typeid) -> dict[str, str]:
-    """The sizes the hub serves for one endpoint NOW, read past the listing's memo; ``{}`` when unreadable."""
-    from flow_sdk.instance_settings.llm_endpoint import _list_cache, fetch_hub_llm_endpoints  # noqa: PLC0415
-
-    _list_cache.clear()
-    try:
-        endpoints = await fetch_hub_llm_endpoints()
-    except Exception:  # noqa: BLE001 -- the refusal below explains a size that stays missing
-        return {}
-    wanted = str(endpoint_typeid or "")
-    for endpoint in endpoints:
-        if str(getattr(endpoint, "typeid", "")) == wanted or str(getattr(endpoint, "endpoint_typeid", "")) == wanted:
-            return dict(getattr(endpoint, "tiers", None) or {})
-    return {}
-
-
-def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: str | None) -> str:
+def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: str | None,
+              default_model: str | None = None) -> str:
     """The model a funded spawn runs: the slug the ENDPOINT declares for the size, never a code default.
 
     A size (``sm``/``md``/``lg``, the harness's own word for one such as claude's ``haiku``, or nothing
-    at all -> the preferred default size) reads ``sizes[size]`` -- the endpoint's own map, which for a hub
+    at all -> the endpoint default, else ``sm``) reads ``sizes[size]`` -- the endpoint's own map, which for a hub
     endpoint is the size inherited down its chain. A custom name the endpoint declares beside its sizes
     (such as ``coding``) runs the model it names. A size the endpoint does not declare is refused in words -- a
     guessed model is how a worker ended up silently answered by another vendor. Anything else is a
@@ -442,36 +505,17 @@ def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: 
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.launch_health import LaunchErrorCode  # noqa: PLC0415
+    from flow_sdk.external_apis.llm.errors import LLMError
+    from flow_sdk.external_apis.llm.model_selection import resolve_completion_model
 
-    def spelled(slug: str) -> str:
-        return slug if slug.startswith(spec.slug_prefix) else f"{spec.slug_prefix}{slug}"
-
-    if tier and not is_model_tier(tier) and tier not in spec.native_tiers and sizes.get(tier):
-        return spelled(sizes[tier])  # a custom name the endpoint declares
-    size = spec.native_tiers.get(tier, tier) if tier else default_size()
-    if not is_model_tier(size):
-        return tier  # a named model
-    slug = sizes.get(size)
-    if not slug:
-        where = source.endpoint_typeid or source.name or "this endpoint"
-        if tier:
-            # A size was ASKED for (the agent's model size, or the composer's picker): the budget the person
-            # works with and what was asked for disagree, and the person is the one who can settle it.
-            raise WorkerSpawnError(
-                worker_type,
-                f"Model mismatch: this session needs the {size!r} model size, but the budget it runs on "
-                f"({where}) does not offer it -- use a budget that does, or change the size the agent asks for",
-                LaunchErrorCode.MODEL_UNAVAILABLE,
-            )
-        raise WorkerSpawnError(
-            worker_type,
-            f"{where} declares no {size!r} model -- set its model sizes (sm/md/lg) on the endpoint, or name a model",
-            LaunchErrorCode.MODEL_UNAVAILABLE,
-        )
-    return spelled(slug)
+    try:
+        slug = resolve_completion_model(sizes, spec.native_tiers.get(tier, tier), default_model=default_model)
+    except LLMError as exc:
+        raise WorkerSpawnError(worker_type, str(exc), LaunchErrorCode.MODEL_UNAVAILABLE) from exc
+    return slug if slug.startswith(spec.slug_prefix) else f"{spec.slug_prefix}{slug}"
 
 
-async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:
+async def resolve_worker_api_auth(process: "AgenticProcess", *, include_device: bool = False) -> WorkerApiAuth | None:
     """Materialize the spawn binding for whichever ``LLMSource`` funds *process*.
 
     DEVICE sources keep the vendor CLI's own credentials. A configured device model
@@ -509,6 +553,11 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
 
     model = (process.cli_config or {}).get("model")
     auth = await binding_for_candidate(worker_type, candidate, tier=model)
+    if auth is None and not include_device:
+        return None
+    if auth is None:
+        auth = WorkerApiAuth()
+    auth.endpoint_typeid = candidate.source.endpoint_typeid
     return auth
 
 
@@ -523,8 +572,8 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     DEVICE sources inject no credentials. The sizes and custom names set on the device login's
     own endpoint row return a model-only binding; otherwise native aliases/defaults apply.
 
-    *tier* is the ``sm``/``md``/``lg`` key (or a literal slug); ``None`` means the default size from
-    preferences (``preferences.llm.default_size``).
+    *tier* is the ``sm``/``md``/``lg`` key (or a literal slug). Omission uses the funded
+    endpoint's default, then ``sm``; only device logins retain the instance size preference.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
     from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
@@ -576,27 +625,19 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
         key = endpoint.resolve_api_key(allow_environment=False)
     if not key:
         raise WorkerSpawnError(worker_type, f"{worker_type}: {source.name} is unusable (no credential available)")
-    try:
-        binding = spec.binding_for(provider, hub_invoke_url=hub_invoke_url)
-    except ValueError as exc:
-        raise WorkerSpawnError(worker_type, str(exc)) from exc
-
     sizes = dict(endpoint.tiers or {})
-    if is_hub and not sizes:
-        # Known only by id so far (no listing yet): the sizes the hub pushed with the box binding
-        # apply when the spawn is routed down that binding -- the same endpoint, or a pin that
-        # could not name an invoke URL of its own and so falls back to it.
-        from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint  # noqa: PLC0415
+    if is_hub:
+        from flow_sdk.external_apis.llm.errors import LLMError
+        from flow_sdk.instance_settings.llm_endpoint import fetch_model_config
 
-        bound = get_hub_llm_endpoint()
-        if bound is not None and (not own_url or bound.endpoint_typeid == source.endpoint_typeid):
-            sizes = dict(bound.tiers)
-    wanted = spec.native_tiers.get(tier, tier) if tier else default_size()
-    if is_hub and is_model_tier(wanted) and not sizes.get(wanted):
-        # The sizes above are a copy (the listing's memo, or what the hub pushed when this box was bound);
-        # a pool's sizes set since then reach a spawn only through a fresh read of the hub's listing.
-        sizes = {**sizes, **await _fresh_hub_tiers(source.endpoint_typeid)}
-    if not is_hub:
+        wanted = spec.native_tiers.get(tier, tier)
+        try:
+            metadata = await fetch_model_config(source.endpoint_typeid, public=endpoint.public, model=wanted)
+            slug = metadata.resolve(wanted)
+        except LLMError as exc:
+            raise WorkerSpawnError(worker_type, str(exc)) from exc
+        slug = slug if slug.startswith(spec.slug_prefix) else f"{spec.slug_prefix}{slug}"
+    else:
         # The legacy per-harness overrides land on this key row; migrate before reading its sizes.
         from flow_sdk.builtin.agentic_process.cli_drivers.device_endpoints import (  # noqa: PLC0415
             migrate_capability_model_maps,
@@ -605,7 +646,22 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
         await migrate_capability_model_maps()
         if endpoint.secret_name and (fresh := await type(endpoint).find_by_secret(endpoint.secret_name)):
             sizes = dict(fresh.tiers or {})
-    slug = _slug_for(worker_type, spec, sizes, source, tier)
+            endpoint = fresh
+        slug = _slug_for(worker_type, spec, sizes, source, tier, endpoint.default_model)
+    if factory := spec.local_bindings.get(provider):
+        from flow_sdk.external_apis.llm.errors import LLMError
+
+        try:
+            auth = factory(endpoint, key, slug)
+        except (ValueError, LLMError) as exc:
+            raise WorkerSpawnError(worker_type, str(exc)) from exc
+        if spec.max_output_env_var:
+            auth.env[spec.max_output_env_var] = str(FUNDED_MAX_OUTPUT_TOKENS)
+        return auth
+    try:
+        binding = spec.binding_for(provider, hub_invoke_url=hub_invoke_url)
+    except ValueError as exc:
+        raise WorkerSpawnError(worker_type, str(exc)) from exc
     env = {**binding.base_env, binding.token_env_var: key}
     if spec.max_output_env_var:
         env[spec.max_output_env_var] = str(FUNDED_MAX_OUTPUT_TOKENS)
@@ -622,9 +678,19 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     )
 
 
-async def apply_api_model_to_options(cmd, process: "AgenticProcess") -> None:
+async def apply_api_model_to_options(cmd, process: "AgenticProcess", *, prepare_launch: bool = False) -> None:
     """Stamp the source's resolved model and config onto options before argv is frozen."""
-    auth = await resolve_worker_api_auth(process)
+    if prepare_launch:
+        process.__dict__.pop("_prepared_api_auth", None)
+    auth = await resolve_worker_api_auth(process, include_device=prepare_launch)
+    if prepare_launch:
+        process.__dict__["_prepared_api_auth"] = auth
+    _apply_auth_to_options(cmd, auth)
+
+
+def _apply_auth_to_options(cmd, auth: WorkerApiAuth | None) -> None:
+    if hasattr(cmd, "bound_model"):
+        cmd.bound_model = auth.model_slug if auth and auth.endpoint_typeid else None
     if auth is None:
         return
     if auth.model_slug:
@@ -640,19 +706,15 @@ async def apply_api_model_to_options(cmd, process: "AgenticProcess") -> None:
 
 
 async def stamp_api_model(context, process: "AgenticProcess") -> None:
-    """Best-effort :func:`apply_api_model_to_options` for a headless turn.
+    """Use exactly the binding that funded this headless launch.
 
-    The API-key path must reach the model too: without this the provider token is
-    injected but the model stays the vendor default, which the provider (e.g.
-    OpenRouter) would not recognise. Failures are logged and swallowed — a broken
-    override must not take down a turn that device-login auth would have run.
+    A cached None means env setup failed: the driver's existing setup_error gate
+    owns that refusal. An unattempted binding still resolves and propagates errors.
     """
-    import logging  # noqa: PLC0415
-
-    try:
+    if "_spawn_api_auth" in process.__dict__:
+        _apply_auth_to_options(context, process.__dict__["_spawn_api_auth"])
+    else:
         await apply_api_model_to_options(context, process)
-    except Exception:
-        logging.getLogger(__name__).debug("stamp_api_model: api model override failed", exc_info=True)
 
 
 # ── rendering a binding for a human's terminal ───────────────────────────────
@@ -720,7 +782,8 @@ def managed_env_vars() -> tuple[str, ...]:
     names: set[str] = set()
     for spec in _SPECS.values():
         names.update(
-            {spec.token_env_var, spec.pointer_env, *spec.base_env, *spec.model_env_vars, *spec.prompt_model_env_vars}
+            {spec.token_env_var, spec.pointer_env, *spec.base_env, *spec.model_env_vars, *spec.prompt_model_env_vars,
+             *spec.local_env_vars}
         )
         if spec.hub_endpoint_binding is not None:
             # The URL is never read back -- only the variable NAMES are -- so any well-formed
@@ -781,6 +844,8 @@ def shell_binding(worker_type: str, auth: WorkerApiAuth) -> ShellBinding:
     is a sub-question. Testing the format first conflated it with "is this codex", which would
     have emitted a file with no variable able to point at it.
     """
+    if auth.credential_artifact is not None:
+        raise ValueError("This credential requires a managed worker process; use AgenticProcess")
     spec = driver_api_auth_spec(worker_type)
     if spec is None:
         return ShellBinding(env=dict(auth.env))

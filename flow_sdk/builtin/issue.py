@@ -34,7 +34,7 @@ class Issue(Entity):
     machine: str = APIField(default="")
     #: What happened to it, oldest first: ``{"at", "what", "detail"}`` (opened, seen_again, resolved, ...).
     events: list[dict] = APIField(default_factory=list)
-    #: ``{"label": …, "pointer": …}`` — what to open to fix it.
+    #: ``{"label": …, "pointer": …}`` — what to open to fix it; with ``"action"`` the hub does it (``issue/<id>/fix``).
     fix: Optional[dict] = APIField(default=None)
     #: What the subject's problem stops (e.g. the deployments a budget funds), as typeids.
     affected: list[str] = APIField(default_factory=list)

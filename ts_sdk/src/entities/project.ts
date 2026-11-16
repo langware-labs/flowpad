@@ -518,6 +518,24 @@ export function getOrCreateLocalMemberId(): string {
   }
 }
 
+export type SessionBrowser = 'agent' | 'extension';
+
+export interface BrowserStatus {
+  setting: SessionBrowser;
+  effective: SessionBrowser;
+  supports_extension: boolean;
+  agent: { up: boolean; pid: number | null; port: number | null; browser: string };
+  extension: {
+    installed: boolean;
+    device: string;
+    /** Browser profiles on this machine and whether the worker's extension is in each. */
+    profiles?: { id: string; browser: string; name: string; email: string | null; installed: boolean }[];
+    /** A browser's profile list exists but could not be read (macOS privacy). */
+    profiles_denied?: boolean;
+  };
+  last_use: { family: string; tool: string; url: string; at: string | null; failed: boolean } | null;
+}
+
 @registerEntity
 export class Project extends APIEntity<Project> {
   static type: string = 'project';
@@ -1236,6 +1254,19 @@ export class Project extends APIEntity<Project> {
    *  Returns the list as now declared. */
   async setEnvFiles(paths: string[]): Promise<{ env_files: string[] }> {
     return this.post<{ env_files: string[] }>('set-env-files', { paths });
+  }
+
+  /** The browser this project's agent sessions use — `agent` (Flowpad's own Chrome window)
+   *  or `extension` (the user's Chrome through Claude in Chrome). Written into the manifest. */
+  async setBrowser(browser: SessionBrowser): Promise<{ browser: SessionBrowser }> {
+    return this.post<{ browser: SessionBrowser }>('set-browser', { browser });
+  }
+
+  /** The project's browser, what is available, and — for a session — what it resolves to
+   *  and its last browser call. */
+  async browserStatus(processId?: string): Promise<BrowserStatus> {
+    const qs = processId ? `?process_id=${encodeURIComponent(processId)}` : '';
+    return this.get<BrowserStatus>(`browser-status${qs}`);
   }
 
   /** The hub projects this desktop has never seen (`POST new-cloud-projects`), mirrored
