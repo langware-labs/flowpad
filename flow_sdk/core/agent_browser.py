@@ -8,7 +8,8 @@ session's ``browser`` MCP server reuse one window.
 
 A session whose browser is ``agent`` gets ONE MCP server, ``browser``, whose command
 is this module (``python -m flow_sdk.core.agent_browser``): it starts (or reuses) the
-window, then execs Playwright MCP attached to it over CDP. Starting it there, not at
+window, then runs Playwright MCP attached to it over CDP (exec on POSIX; a child on
+Windows, which has no exec). Starting it there, not at
 spawn, keeps the launch path free of a browser start.
 """
 
@@ -158,7 +159,12 @@ def _serve_mcp() -> None:
     if not npx:
         print("NEEDS_SETUP: npx (Node.js) is not installed", file=sys.stderr)
         sys.exit(8)
-    os.execv(npx, [npx, "-y", PLAYWRIGHT_MCP, "--cdp-endpoint", f"http://127.0.0.1:{running.port}"])
+    argv = [npx, "-y", PLAYWRIGHT_MCP, "--cdp-endpoint", f"http://127.0.0.1:{running.port}"]
+    if sys.platform == "win32":
+        # Windows has no exec: os.execv starts a new process and ends this one, so the MCP
+        # client sees its server exit at once. Run Playwright MCP on this stdio instead.
+        sys.exit(subprocess.call(argv))
+    os.execv(npx, argv)
 
 
 if __name__ == "__main__":
