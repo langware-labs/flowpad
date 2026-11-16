@@ -6158,7 +6158,6 @@ msgid "Caught by"
 msgstr "נתפס על ידי"
 
 #: src/components/conversation/DiagnosisMessageActions.tsx
-#: src/components/conversation/IssueReplyLine.tsx
 msgid "Cause"
 msgstr ""
 
@@ -8892,6 +8891,10 @@ msgstr "לא ניתן לטעון משימה זו. יש לנסות שוב בעו�
 msgid "Could not load usage."
 msgstr "לא ניתן היה לטעון את נתוני השימוש."
 
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Could not load your email rules."
+msgstr ""
+
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Could not load your token plan."
 msgstr "לא ניתן לטעון את תוכנית הטוקנים שלך."
@@ -9715,6 +9718,10 @@ msgstr "לא ניתן לקבוע את פקודות ההפעלה לתיקייה �
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Couldn’t resolve this process."
 msgstr "לא ניתן היה לזהות את התהליך הזה."
+
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Couldn't save. Try again."
+msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Couldn't set up the project"
@@ -12165,6 +12172,10 @@ msgstr "מייל › תיבת הדואר של Flowpad"
 msgid "Email {0}"
 msgstr "מייל {0}"
 
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Email notifications"
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Email or name"
 msgstr "אימייל או שם"
@@ -12172,6 +12183,10 @@ msgstr "אימייל או שם"
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Email or name to invite"
 msgstr "אימייל או שם להזמנה"
+
+#: src/i18n/pref-labels.ts
+msgid "Email rules"
+msgstr ""
 
 #: src/hooks/use-allocate-agent-mailbox.ts
 msgid "Email settings could not be saved."
@@ -15025,6 +15040,11 @@ msgstr "בטיפול"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 msgid "Handlings — webapp_handlings.json"
+msgstr ""
+
+#. placeholder {0}: reply.count
+#: src/components/conversation/IssueReplyLine.tsx
+msgid "Happened {0} times"
 msgstr ""
 
 #: src/components/items/IssueView.tsx
@@ -18232,7 +18252,6 @@ msgstr "מכונה"
 
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/ItSendTable.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/hub/AddMachineDialog.tsx
@@ -19169,6 +19188,19 @@ msgstr "הודעות"
 #: src/components/organization/budgets/MoneyBox.tsx
 msgid "Must be a number, or blank for no limit."
 msgstr "יש להזין מספר, או להשאיר ריק ללא הגבלה."
+
+#: src/components/notifications-view/NotificationsView.tsx
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Mute"
+msgstr ""
+
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "muted"
+msgstr ""
+
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Muted:"
+msgstr ""
 
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
 msgid "My assets only"
@@ -20224,6 +20256,10 @@ msgstr "אין קצוות"
 #: src/components/assets/editor/AssetEditorRouter.tsx
 msgid "No editor for: {editorName}"
 msgstr "אין עורך עבור: {editorName}"
+
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "No email rules. Every notification email is on."
+msgstr ""
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -22006,6 +22042,7 @@ msgstr "הודעה"
 
 #: src/i18n/pref-labels.ts
 #: src/notifications/feed/NotificationFeed.tsx
+#: src/types/ViewType.ts
 msgid "Notifications"
 msgstr "התראות"
 
@@ -27401,6 +27438,7 @@ msgid "Rule: {0}"
 msgstr ""
 
 #: src/components/asset-counters/channel-project-counters.tsx
+#: src/components/notifications-view/NotificationsView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/ui/settings-pane.tsx
 msgid "Rules"
@@ -28253,6 +28291,7 @@ msgstr "תזמונים · {0}"
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
+#: src/components/notifications-view/NotificationsView.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Scope"
@@ -31215,7 +31254,6 @@ msgstr "סטטוס"
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
-#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/ItSendTable.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
@@ -33507,6 +33545,10 @@ msgstr "בחודש זה"
 msgid "This month"
 msgstr "החודש"
 
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "This notification can't be found."
+msgstr ""
+
 #: src/components/ask/AskItems.tsx
 msgid "This one is required. Without it, setup will end unfinished."
 msgstr "זהו שדה חובה. בלעדיו ההגדרה תסתיים ללא השלמה."
@@ -34653,6 +34695,7 @@ msgstr "תחת OAuth & Permissions הוסיפו את ה-bot scopes channels:hist
 
 #: src/components/conversation/task-it.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/notifications-view/NotificationsView.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Undo"
 msgstr "בטלו"
@@ -35923,7 +35966,6 @@ msgstr "סימנייה ברוכה הבאה וערך עדכוני ראשון, ז�
 msgid "Welcome! Tell the user what this agent can do and how to start…"
 msgstr "ברוכים הבאים! ספרו למשתמשים מה הסוכן הזה יכול לעשות ואיך מתחילים…"
 
-#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "What"
 msgstr "פעולה"
