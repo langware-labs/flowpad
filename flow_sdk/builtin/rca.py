@@ -15,6 +15,11 @@ from flow_sdk.schema.types import EntityType
 
 class Rca(Entity):
     type: str = APIField(default=EntityType.RCA.value)
+
+    async def find_existing_for_create(self) -> "Rca | None":
+        """One analysis per subject (``RCA.natural_key``): a create for an analysed subject answers with its row."""
+        return await Rca.get_one({"subject": self.subject}) if self.subject else None
+
     #: What it analyses, by typeid (e.g. a ``qa_test_execution``).
     subject: str = APIField(default="")
     #: How hard the fix is: ``low`` | ``moderate`` | ``high``.

@@ -23,6 +23,14 @@ def test_test_executions_and_test_cases_are_not_pushed_to_every_connection():
     assert hidden == {"qa_test_case", "qa_test_execution"}
 
 
+def test_every_qa_type_is_found_by_its_natural_key_through_an_index():
+    """The create route looks a row up by its natural key: one indexed read, never a scan of the shared table."""
+    for type_name in QA_TYPES:
+        info = SchemaRegistry.get(type_name)
+        assert info.natural_key, type_name
+        assert info.natural_key in info.indexes, type_name
+
+
 @pytest.mark.asyncio
 async def test_an_execution_is_saved_and_found_by_its_iteration():
     cycle = await QACycle(cycle_id="qa-20261112-120000", name="nightly", repo="org/repo", branch="main", commit_sha="abc").save()

@@ -5,9 +5,11 @@ cycles (``QACycle``), each a series of passes (``QAIteration``), records every a
 (``QATestExecution``). The root-cause analysis of an execution that did not pass is the generic ``Rca`` (builtin/rca.py).
 
 Q writes and reads these rows from its own process through the generic graph API (``/api/v1/graph/<type>``).
-Each row's id is Q's natural key, made a fixed uuid by ``allocate_id``, so a retried write lands on the same
-row. A reference to another QA row holds that row's id. Test-file and phase verdicts are not
-stored: Q infers them from the test executions.
+**Identity is the natural key, looked up — not derived.** A row's id is an ordinary uuid4, minted on its first
+create; Q sends no id. Each type declares its natural key once (``TypeInfo.natural_key``, indexed), and a create
+for a key a row already holds answers with that row (``find_existing_for_create``), so a retried write lands on
+it. A reference to another QA row holds that row's id. Test-file and phase verdicts are not stored: Q infers
+them from the test executions.
 """
 
 from __future__ import annotations
@@ -16,10 +18,21 @@ from typing import Optional
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.types import EntityType
 
 
-class QAPhase(Entity):
+class _FoundByNaturalKey:
+    """A create for a natural key a stored row already holds answers with that row (the graph create route's hook)."""
+
+    async def find_existing_for_create(self) -> "Entity | None":
+        key = {name: getattr(self, name) for name in SchemaRegistry.get(self.get_type()).natural_key}
+        if any(value in (None, "") for value in key.values()):
+            return None
+        return await type(self).get_one(key)
+
+
+class QAPhase(_FoundByNaturalKey, Entity):
     """A phase of the plan: a group of test files run together (e.g. "pytest unit", "Playwright")."""
 
     type: str = APIField(default=EntityType.QA_PHASE.value)
@@ -30,10 +43,12 @@ class QAPhase(Entity):
     created_at: Optional[str] = APIField(default=None, description="When it was defined, ISO-8601 UTC")
 
 
-class QATestFile(Entity):
+class QATestFile(_FoundByNaturalKey, Entity):
     """A test file of the plan, in exactly one phase."""
 
     type: str = APIField(default=EntityType.QA_TEST_FILE.value)
+    #: The target repository, ``org/repo``: a file is one row per repository, whatever its phase.
+    repo: str = APIField(default="")
     #: The ``QAPhase`` it belongs to (its id).
     phase: str = APIField(default="")
     #: The file, from the repository root (normalized).
@@ -49,7 +64,7 @@ class QATestFile(Entity):
     created_at: Optional[str] = APIField(default=None, description="When it was defined, ISO-8601 UTC")
 
 
-class QATestCase(Entity):
+class QATestCase(_FoundByNaturalKey, Entity):
     """A test case of the plan, in one test file. ``name`` is the test case as its runner names it."""
 
     type: str = APIField(default=EntityType.QA_TEST_CASE.value)
@@ -64,7 +79,7 @@ class QATestCase(Entity):
     created_at: Optional[str] = APIField(default=None, description="When it was registered, ISO-8601 UTC")
 
 
-class QACycle(Entity):
+class QACycle(_FoundByNaturalKey, Entity):
     """One QA cycle: the plan run on a repository's branch, in iterations. ``name`` says what it is."""
 
     type: str = APIField(default=EntityType.QA_CYCLE.value)
@@ -84,7 +99,7 @@ class QACycle(Entity):
     notes: Optional[str] = APIField(default=None)
 
 
-class QAIteration(Entity):
+class QAIteration(_FoundByNaturalKey, Entity):
     """One pass over the plan within a cycle; fixes land between iterations."""
 
     type: str = APIField(default=EntityType.QA_ITERATION.value)
@@ -112,7 +127,7 @@ class QAIteration(Entity):
     request: Optional[str] = APIField(default=None)
 
 
-class QATestExecution(Entity):
+class QATestExecution(_FoundByNaturalKey, Entity):
     """One attempt at one test case in an iteration: the one record test-file and phase verdicts are inferred from."""
 
     type: str = APIField(default=EntityType.QA_TEST_EXECUTION.value)
