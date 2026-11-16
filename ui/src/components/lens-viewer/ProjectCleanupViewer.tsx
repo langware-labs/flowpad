@@ -287,16 +287,23 @@ const CleanupRow = memo(function CleanupRow({ item, selected, onToggle, computeN
 });
 
 interface Props {
-  /** Optional project id to focus — passed by the picker's info icon. */
-  focusProjectId?: string;
+  /** Optional focus from the lens ref: a project id (the picker's info icon) to
+   *  start selected, or a verdict (a footer warning, e.g. `orphaned`) whose tab
+   *  to open. */
+  focus?: string;
 }
 
-export function ProjectCleanupViewer({ focusProjectId }: Props) {
+const isVerdict = (value: string | undefined): value is CleanupVerdict =>
+  TABS.some((spec) => spec.verdict === value);
+
+export function ProjectCleanupViewer({ focus }: Props) {
+  const focusVerdict = isVerdict(focus) ? focus : undefined;
+  const focusProjectId = focusVerdict ? undefined : focus;
   const { t, i18n } = useLingui();
   const { computeNode } = useAgentContext();
   const [items, setItems] = useState<ProjectCleanupItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<CleanupVerdict>('empty');
+  const [tab, setTab] = useState<CleanupVerdict>(focusVerdict ?? 'empty');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirming, setConfirming] = useState<'harness' | 'delete' | null>(null);
   const [outcome, setOutcome] = useState<CleanupApplyResponse | null>(null);
@@ -387,6 +394,12 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
     setSelected(new Set());
     setOutcome(null);
   }, []);
+
+  // The lens can already be open when the warning is clicked: a new verdict ref
+  // still moves it to that tab.
+  useEffect(() => {
+    if (focusVerdict) switchTab(focusVerdict);
+  }, [focusVerdict, switchTab]);
 
   const apply = useCallback(
     async (kind: 'harness' | 'delete') => {

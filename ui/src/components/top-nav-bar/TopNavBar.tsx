@@ -32,7 +32,7 @@ export function useNavBarPlaces(): (RailEntry & { icon: LucideIcon })[] {
   const { currentDock, navigation } = useDockNavigation();
   const at = (viewType: ViewType) => currentDock?.viewType === viewType;
   return [
-    { key: 'home', id: 'home', title: t`Home`, icon: Home, active: at(ViewType.HOME), open: () => navigation.goHome() },
+    { key: 'home', id: 'home', title: t`Home`, icon: Home, active: at(ViewType.HOME), open: () => navigation.goHome({ homePage: true }) },
     {
       key: 'files',
       id: 'files',

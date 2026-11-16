@@ -75,6 +75,11 @@ def desk_conversation_id(conversation_id: str) -> str:
 #: Diagnoses running for a request: held here so a finished request is never garbage-collected mid-run.
 _DIAGNOSING: set[asyncio.Task] = set()
 
+
+def _diagnosis_running(conv_id: str) -> bool:
+    """Whether a request's background diagnosis is still running here (its task is named for the conversation)."""
+    return any(t.get_name() == conv_id for t in _DIAGNOSING)
+
 #: The hub capability that lets a ticket be opened under the id this machine minted (hub f9ff57ace).
 IDEMPOTENT_TICKETS = "idempotent_guest_conversation"
 
@@ -131,10 +136,12 @@ async def ask_for_help() -> ApiResponse:
     capture = ask.model_copy(update={"diagnose": False}) if background else ask
     context: Optional[dict[str, bytes]] = None
     answers = []
+    wrote = False
     for one in asks:
         conv, task, created = await _capture_conversation(one, someone)
         opening = await _opening_message(conv)
         if opening is None:
+            wrote = True
             if context is None:
                 context = await capture_context(capture, recorded)
             sent = await _write_request(conv, task, one, body.get("files"), context, someone, diagnosing=background)
@@ -145,7 +152,14 @@ async def ask_for_help() -> ApiResponse:
             opening = await FlowMessage.get_one({"id": sent.data["id"]})
         answers.append((conv, task, opening))
 
-    if background:
+    # A repeat Send (its first answer was lost) finds the request written and its diagnosis running or done --
+    # never a second one. Running: that run delivers when it is done. Done: deliver as without a diagnosis.
+    running = background and not wrote and _diagnosis_running(answers[0][0].id)
+    if background and not wrote and not running:
+        background = not (await _posted_diagnosis(answers[0][0]))[1]
+    if running:
+        pass
+    elif background:
         run = asyncio.create_task(
             _diagnose_then_deliver([c.id for c, _t, _o in answers], ask, someone), name=answers[0][0].id
         )
@@ -662,7 +676,7 @@ async def help_request_diagnosis() -> ApiResponse:
         _id, desk, pass_on = await _report_target(conv, diagnosis)
     return ApiSuccessResponse(
         data={
-            "diagnosing": not posted and any(t for t in _DIAGNOSING if t.get_name() == conv.id),
+            "diagnosing": not posted and _diagnosis_running(conv.id),
             "diagnosis": diagnosis.model_dump(mode="json") if diagnosis is not None else None,
             "reportable": bool(diagnosis is not None and diagnosis.reportable and not reported),
             "reported": reported,

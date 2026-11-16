@@ -23,7 +23,7 @@ import { assetTargetLookup, opensThroughLookup } from '@src/navigation/record-ty
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, RecordType, TypeId, VFSPath } from '@sdk';
 import type { Project } from '@sdk';
-import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { confirmProjectDelete } from '@src/components/assets/confirm-project-delete';
 import apiClient from '@sdk/client';
 import { BookOpen, ChevronRight, PackageSearch, Trash2, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -299,24 +299,9 @@ export function AssetsPage() {
     const proj = projectEntity;
     if (!proj) return;
     const name = proj.displayName ?? 'this project';
-    const path = proj.fs_storage_mount_path;
-    showDeleteAssetModal({
-      name,
-      description: path
-        ? t`This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk (${path}). This cannot be undone.`
-        : t`This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone.`,
-      checkbox: {
-        label: t`Delete chats`,
-        description: t`Keeping chat history can make this project reappear when projects are scanned.`,
-        defaultChecked: true,
-      },
-      onConfirm: async (deleteChats) => {
-        await proj.deleteWithChildren(deleteChats);
-      },
-      onAfterDelete: () => {
-        notify.success({ title: t`Project deleted`, message: name });
-        navigation.closeDock();
-      },
+    confirmProjectDelete(proj, () => {
+      notify.success({ title: t`Project deleted`, message: name });
+      navigation.closeDock();
     });
   }, [projectEntity, navigation]);
   // Non-scope filter state (query / tags / per-type filters / folder path).

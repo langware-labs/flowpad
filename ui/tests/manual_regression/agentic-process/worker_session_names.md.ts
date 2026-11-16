@@ -221,7 +221,10 @@ for (const worker of workers.filter((candidate) => !selected || candidate.type =
         await expect(page).toHaveURL(new RegExp(`/project/${projectId}`));
         await chip(page, id).getByRole('button', { name: 'Close tab', exact: true }).click();
         await expect(chip(page, id)).toHaveCount(0);
-        await page.goto('/dock/shell');
+        // State the project like every address here does its mode: URL-first, a bare /dock/shell names
+        // no project, so the chats navigator scopes to user assets only ('No current project') and this
+        // project's session row is not listed.
+        await page.goto(withViewMode(`/dock/shell?scope-mode=project&scope-activeProjectId=${projectId}`, mode));
         await historyRow(page, id).click();
         await expectNames(page, id, chosenName);
         await selectViewMode(page, pty ? 'standard' : 'advanced');

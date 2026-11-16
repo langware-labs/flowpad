@@ -40,11 +40,16 @@ test.describe('incremented tab names', () => {
     await addTerminalTab(page);
     await expect(page.locator('[data-testid^="tab-shell|"]')).toHaveCount(tabsBefore + 1, { timeout: adjusted(15_000) });
 
-    // The two tabs have distinct, incremented names (e.g. "Tab 1" + "Tab 2").
+    // The new tab gets its own, incremented name (e.g. "Tab 1" + "Tab 2"): distinct from every tab
+    // already open. Tabs other scenarios left behind on this instance (agent sessions keep their
+    // own default title) are not this scenario's to judge, so only the added one is compared.
     await expect(async () => {
       const names = await tabNames(page);
-      expect(names.length).toBeGreaterThanOrEqual(2);
-      expect(new Set(names).size).toBe(names.length); // all distinct
+      expect(names.length).toBe(before.length + 1);
+      const added = [...names];
+      for (const n of before) if (added.includes(n)) added.splice(added.indexOf(n), 1);
+      expect(added).toHaveLength(1);
+      expect(before).not.toContain(added[0]); // a fresh name, not a copy of an open tab's
       expect(names.filter((n) => n === firstName).length).toBe(1); // first not duplicated
     }).toPass({ timeout: adjusted(10_000) });
   });

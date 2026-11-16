@@ -1,7 +1,7 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { requestUiAction } from '@src/navigation/ui-actions';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
-import { useIsDev, useIsVibe } from '@src/components/view-mode';
+import { useIsDev, useIsVibe, ViewMode } from '@src/components/view-mode';
 import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
 import { OrgTeamsButton } from './OrgTeamsButton';
 import { RAIL_ITEMS, type RailItemId } from './rail-visibility';
@@ -21,7 +21,6 @@ import {
 } from '@src/components/ui/sidebar';
 import { AgenticProcess, PageId } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
-import { useLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { TAB_LINE_HEIGHT_CLASS } from '@src/components/tabs/TabStrip';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
 import { AMBIENT_JOURNEYS_ENABLED } from '@src/journey/journeys-enabled';
@@ -83,26 +82,22 @@ function useRailItems(): RailEntry[] {
   const { navigation, currentDock } = useDockNavigation();
   const { unread: unreadCount } = useStreamInboxManager();
   const isVibe = useIsVibe();
-  const openLastVibeChat = useLastVibeChat();
   const { t } = useLingui();
 
   /** Title/icon/target per id. A LOOKUP, not an order — see RAIL_ITEMS. */
   const navMeta: Record<RailItemId, NavItem> = {
     // Glyph from the type registry: the rail slot and an AgenticProcess entity
-    // are one thing to a user, so one TypeInfo. Vibe has no chats list — from
-    // elsewhere it resumes the last real UI chat in the project; from a chat or
-    // a page hosted in one (`carriesViewMode`) it opens the no-process landing, whose "Past builds" list is the way to
-    // another chat (resuming would land on the chat already shown — a dead click).
+    // are one thing to a user, so one TypeInfo. Chats always opens the tabs
+    // view. From Vibe it states Advanced: a bare shell URL would resolve to the
+    // last chat in its remembered Vibe mode and redirect back to its display.
     chats: {
       title: t`Chats`,
       icon: iconForType(AgenticProcess.type),
       viewType: ViewType.SHELL,
-      open: () => {
-        if (!isVibe) navigation.openTab(ViewType.SHELL);
-        else if (currentDock?.carriesViewMode)
-          navigation.openDock(DockPointer.forHome(undefined, undefined, { vibeNoProcess: true }));
-        else openLastVibeChat();
-      },
+      open: () =>
+        isVibe
+          ? navigation.openDock(DockPointer.forTab(ViewType.SHELL).withViewMode(ViewMode.Advanced))
+          : navigation.openTab(ViewType.SHELL),
     },
     stream_inbox: {
       title: t`Stream Inbox`,
