@@ -218,18 +218,17 @@ flow navigate file <tmp>/git-setup-report.html
 
 ## Modes `existing` and `new` — register and add
 
-1. Register the repo as its own Flowpad project (same shape git-created
-   projects use). Discover the server port from
-   `~/.flow/instances/${FLOW_INSTANCE:-prod}/server.json` (fallback
-   `~/.flow/server.json` or `LOCAL_SERVER_PORT`), then POST:
+1. Register the repo as its own Flowpad project. It reuses the project
+   already registered for that folder, so it never makes a duplicate:
 
-```json
-{"name":"<dir>","fs_storage_mount_path":"<dir>"}
+```bash
+flow project register <dir>
 ```
 
-to `/api/v1/graph/project`. Keep the returned `data.id` as `newProjectId`.
-If a project for that exact path already exists, reuse it instead of
-creating a duplicate.
+   Keep the printed `project_id` as `newProjectId`. Never call the Flowpad
+   API yourself (`curl`, `requests`, a port read from `server.json`): the
+   local server refuses a request without the instance's gate secret (HTTP
+   403), and only the `flow` CLI sends it.
 
 2. Add the repo to the TARGET project as a dependency (in its `flow.json`, or on this device only when `local` is true) — the folder
    is recorded as its repository (`git+<url>#<branch>`) and this checkout is the
