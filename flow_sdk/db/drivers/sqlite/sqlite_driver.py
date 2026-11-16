@@ -11,12 +11,12 @@ import re
 from collections import defaultdict
 from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal, Optional, Sequence, Set, Tuple
 
 from fastapi import HTTPException
 from pydantic import TypeAdapter
-from sqlalchemy import DateTime, and_, asc, case, delete, desc, func, or_, select, text, update
+from sqlalchemy import and_, asc, case, delete, desc, func, or_, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -81,6 +81,7 @@ from .connection import (
     Base,
     EntitySchema,
     RelationshipSchema,
+    UTCDateTime,
     get_database_path,
     get_database_url,
     install_pragmas_and_immediate,
@@ -118,15 +119,12 @@ def _as_stored_datetime(col, value: Any) -> Any:
     ``2026-10-23T11:25:00Z`` compared raw sorts after every stored row of the same day (``' '`` <
     ``'T'``), so ``$LT`` answered every row and keyset paging broke. Parsed and bound as a datetime,
     SQLAlchemy writes it in the stored format and the comparison is chronological."""
-    if not isinstance(value, str) or not isinstance(getattr(col, "type", None), DateTime):
+    if not isinstance(value, str) or not isinstance(getattr(col, "type", None), UTCDateTime):
         return value
     try:
-        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        return datetime.fromisoformat(value.strip().replace("Z", "+00:00"))  # UTCDateTime resolves the zone
     except ValueError:
         return value
-    if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
-    return parsed
 
 
 # Hand-written per-type indexes now declared on their ``TypeInfo.indexes``.

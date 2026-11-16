@@ -252,20 +252,21 @@ describe('My automations', () => {
     expect([pointer.pointer, pointer.options]).toEqual(['runs', { status: 'failed' }]);
   });
 
-  it('kind chips filter, and only kinds that exist are offered', () => {
+  it('status tabs filter, and an ended automation has no switch', () => {
     state.automations = [
-      automation({ id: 's' }),
-      automation({
-        id: 'e',
-        kind: 'event',
-        when: { kind: 'event', text: '', event: { pattern: 'app.ready', title: 'App ready', description: '' } },
-      }),
+      automation({ id: 'live', status: 'active' }),
+      automation({ id: 'paused', enabled: false, status: 'off' }),
+      automation({ id: 'once', status: 'done', fires: 1 }),
     ];
     render(<AutomationsView />);
-    expect(screen.queryByTestId('automations-chip-file')).toBeNull();
-    fireEvent.click(screen.getByTestId('automations-chip-event'));
-    expect(screen.queryByTestId('automation-row-s')).toBeNull();
-    expect(screen.getByTestId('automation-row-e').textContent).toContain('When App ready happens');
+    expect(screen.getByTestId('automations-status-done').textContent).toContain('1');
+    expect(screen.getByTestId('automations-status-expired').textContent).toContain('0');
+    expect(screen.queryByTestId('automation-toggle-once')).toBeNull();
+    expect(screen.getByTestId('automation-toggle-live')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('automations-status-done'));
+    expect(screen.queryByTestId('automation-row-live')).toBeNull();
+    expect(screen.queryByTestId('automation-row-paused')).toBeNull();
+    expect(screen.getByTestId('automation-row-once').textContent).toContain('Done · ran 1');
   });
 
   it('the switch and Run now act without opening the automation', () => {
