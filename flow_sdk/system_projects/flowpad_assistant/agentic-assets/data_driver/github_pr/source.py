@@ -1,16 +1,16 @@
-"""``GithubPrSource`` — the open pull requests you opened or that await your review, each a conversation.
+"""``GithubPrSource`` — the open pull requests you opened, that await your review or mention you, each a conversation.
 
-**A PR is the conversation; what happens on it is the messages.** Issue comments, review comments,
-reviews, the timeline's assignments, pushes, merges, closes and reopens, and one CI summary for the
-head commit. The conversation is ``(github_pr, <account>, <owner>/<repo>#<n>)``; a message is
+**A PR is the conversation; its chat is the messages.** Issue comments, review comments and reviews,
+each linking back to GitHub, plus the merge, close or reopen that ends or reopens the conversation.
+Pushes, CI and assignments are not messages. The conversation is ``(github_pr, <account>, <owner>/<repo>#<n>)``; a message is
 ``(github_pr, <account>/<owner>/<repo>#<n>, <kind>-<id>)``, keyed on GitHub's own object id per kind
 (``comment-`` an issue comment, ``review-comment-`` a review comment, ``review-``, ``event-``,
-``commit-<sha>``, ``check-<head sha>``) — ids GitHub never reuses, so a key is unique across PRs.
+``ended-``) — ids GitHub never reuses, so a key is unique across PRs.
 
 **No window** (``windowed = False``). A first read lists every open PR the filter names, whole, however
 old its last update: the open PRs are a small, live set, unlike a mailbox's unbounded past.
 
-**The cursor is a high-water mark on ``updated``.** The searches (``is:pr is:open author:@me`` and ``review-requested:@me`` by default, merged)
+**The cursor is a high-water mark on ``updated``.** The searches (``is:pr is:open author:@me``, ``review-requested:@me`` and ``mentions:@me`` by default, merged)
 is read sorted by ``updated`` ascending, a search page at a time; the resume cursor carries the
 newest ``updated`` seen and the next pass narrows to ``updated:>=<mark>``. A PR seen again yields
 the same keys, so re-reading is free (the application's digest absorbs it).
@@ -82,7 +82,7 @@ SEEN_CAP = 500
 MEMBERSHIP_PAGE = 100
 #: Each filter is the search qualifiers whose open PRs it lists, merged (GitHub search has no OR).
 FILTERS = {
-    "mine": ("author", "review-requested"),
+    "mine": ("author", "review-requested", "mentions"),
     "assigned": ("assignee",),
     "review_requested": ("review-requested",),
 }
@@ -119,8 +119,9 @@ def _review_mark(state: Any) -> Optional[MessageMarkSpec]:
     return _MARKS.get(str(state or "").upper())
 
 
-#: Timeline events that are messages; the rest (labels, mentions, renames) are bookkeeping.
-_EVENTS = frozenset({"assigned", "unassigned", "committed", "head_ref_force_pushed", "merged", "closed", "reopened"})
+#: Timeline events that are messages: only what opens or ends the conversation. A PR's channel is its
+#: chat -- comments and reviews -- so pushes, CI, assignments and labels are not messages.
+_EVENTS = frozenset({"unassigned", "merged", "closed", "reopened"})
 #: What a PR's state says when it left the search without a timeline event to show for it.
 OWN_PR = "GitHub does not let you review your own pull request"
 
@@ -131,8 +132,6 @@ class OwnPullRequest(Rejected):
 
 class MergeBlocked(Rejected):
     """GitHub will not merge the PR as it stands (405 not mergeable, 409 head moved)."""
-#: A check that finished without failing.
-_GREEN = frozenset({"success", "neutral", "skipped"})
 
 
 class GithubPrMessageData(MessageData):
@@ -434,14 +433,6 @@ class GithubPrSource(MessageSource):
             add(f"review-{r['id']}", who, str(r.get("body") or "") or _review_line(who, r.get("state")), r.get("submitted_at"), r.get("html_url"), r, mark=_review_mark(state))
         self._events(timeline, add, pr, head)
 
-        sha = str((head.get("head") or {}).get("sha") or "")
-        if sha:
-            runs = await self._list(f"{base}/commits/{sha}/check-runs", key="check_runs")
-            summary = _checks_line(runs)
-            if summary is not None:
-                when = max((str(r.get("completed_at") or "") for r in runs), default="") or None
-                app = next((str((r.get("app") or {}).get("name") or "") for r in runs if isinstance(r, dict) and (r.get("app") or {}).get("name")), "")
-                add(f"check-{sha}", app or "CI", summary, when, f"{pr.get('html_url') or ''}/checks" if pr.get("html_url") else None, {"check_runs": runs})
         out.sort(key=lambda item: (item.data.sent_at or datetime.min.replace(tzinfo=timezone.utc), item.origin.key))
         return out
 
@@ -487,26 +478,11 @@ class GithubPrSource(MessageSource):
             self._event(e, kind, add, pr)
 
     def _event(self, e: dict, kind: str, add, pr: dict) -> None:
-        if kind == "committed":
-            sha = str(e.get("sha") or "")
-            if not sha:
-                return
-            author = e.get("author") or {}
-            who = str(author.get("name") or "")
-            subject = str(e.get("message") or "").splitlines()[0] if e.get("message") else ""
-            line = f"{who or 'someone'} pushed 1 commit" + (f": {subject}" if subject else "")
-            add(f"commit-{sha}", who, line, author.get("date") or (e.get("committer") or {}).get("date"), e.get("html_url"), e)
-            return
         if not e.get("id"):
             return
         who = _login(e.get("actor"))
-        if kind == "assigned":
-            assignee = _login(e.get("assignee"))
-            line = f"{who} assigned {'you' if assignee and assignee == self.binding.account_key else assignee}"
-        elif kind == "unassigned":
+        if kind == "unassigned":
             line = f"{who} unassigned you"
-        elif kind == "head_ref_force_pushed":
-            line = f"{who} force-pushed"
         elif kind in ("closed", "merged"):
             line = f"{kind} by {who}" if who else kind
         else:
@@ -784,16 +760,6 @@ def _line_comment(c: dict) -> str:
 def _review_line(who: str, state: Any) -> str:
     verb = {"APPROVED": "approved", "CHANGES_REQUESTED": "requested changes", "DISMISSED": "had a review dismissed"}.get(str(state or "").upper(), "reviewed")
     return f"{who or 'someone'} {verb}"
-
-
-def _checks_line(runs: list) -> Optional[str]:
-    """``CI passed · 3 checks`` once every run finished; ``None`` while any still runs."""
-    runs = [r for r in runs if isinstance(r, dict)]
-    if not runs or any(str(r.get("status") or "") != "completed" for r in runs):
-        return None
-    failed = sum(1 for r in runs if str(r.get("conclusion") or "") not in _GREEN)
-    plural = "check" if len(runs) == 1 else "checks"
-    return f"CI passed · {len(runs)} {plural}" if not failed else f"CI failed · {failed} of {len(runs)} {plural}"
 
 
 def _parse_time(value: Any) -> Optional[datetime]:

@@ -111,3 +111,21 @@ async def test_a_wait_past_its_time_never_fires():
     await _arrive(rule, await _message(conv.id, "Team"))
 
     assert _queued(process) == []
+
+
+@async_context
+async def test_the_sessions_own_send_is_not_the_reply():
+    """A session sends again into the conversation it waits on: its own send, through the send handler,
+    never wakes it — however soon the reply check runs after the save."""
+    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+
+    from ._helpers import settle  # noqa: PLC0415
+
+    process, conv, _, rule = await _setup()
+    await arm_trigger(await Trigger.get_by_id(rule.id), replace=True)
+
+    await handle_add_message({"conversation_id": str(conv.id), "message": "Change of plan"}, None,
+                             pending_send=True, origin_process=process.id)
+    await settle()
+
+    assert _queued(process) == []

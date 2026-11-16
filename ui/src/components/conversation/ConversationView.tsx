@@ -714,7 +714,10 @@ export function ConversationView({
       (it) =>
         !(
           it.kind === ConversationItemKind.POINTER &&
-          (calls.answerMessageIds.has(it.messageId) || itSends.replyMessageIds.has(it.messageId))
+          (calls.answerMessageIds.has(it.messageId) ||
+            itSends.replyMessageIds.has(it.messageId) ||
+            // The hub's "Resolved: …" line repeats what the issue's card already shows (it is updated in place).
+            !!getFm(it.messageId)?.issue_reply?.follow_up)
         ),
     );
     if (threadId) {
