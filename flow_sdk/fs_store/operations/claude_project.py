@@ -33,9 +33,21 @@ def _read_cwd(record_dir: Path) -> str | None:
     return _read_meta_field(record_dir, "cwd")
 
 
-async def clean_temp_projects() -> int:
+def _is_doomed_temp(path: str | Path, within: Path | None) -> bool:
+    """A temp path, and inside ``within`` when one is given."""
+    if not is_temp_path(path):
+        return False
+    return within is None or Path(path).resolve().is_relative_to(within.resolve())
+
+
+async def clean_temp_projects(within: Path | None = None) -> int:
     """Remove records pointing at temp paths from both records_root and the
     Claude on-disk encoded-name dirs (best-effort cleanup of stale data).
+
+    ``within`` limits the sweep to temp paths under that directory. A Claude home
+    shared with other processes holds THEIR live sessions under temp workdirs too
+    (another test session, a backend's worker mid-resume): sweeping every temp
+    project there deletes a transcript a ``--resume`` is about to read.
 
     Replaces ``ProjectFsRecord.clean_temp_projects``. Returns total dirs removed.
     """
@@ -48,7 +60,7 @@ async def clean_temp_projects() -> int:
             if not d.is_dir():
                 continue
             mount_path = _read_mount_path(d) or _read_cwd(d)
-            if mount_path and is_temp_path(mount_path):
+            if mount_path and _is_doomed_temp(mount_path, within):
                 # Just remove the shadow folder. Entity row cleanup happens
                 # via the Entity API path; here we only handle disk hygiene.
                 shutil.rmtree(d, ignore_errors=True)
@@ -62,7 +74,7 @@ async def clean_temp_projects() -> int:
             # Deletion requires positive temp-path evidence. Undecodable or
             # structurally unsafe non-temp sources fail safe and stay intact.
             decoded = _decode_claude_encoded(d)
-            if decoded is not None and is_temp_path(decoded):
+            if decoded is not None and _is_doomed_temp(decoded, within):
                 shutil.rmtree(d, ignore_errors=True)
                 removed += 1
 
