@@ -178,6 +178,46 @@ describe('loading it', () => {
     expect(__testing.activeConfig()).toBeNull();
   });
 
+  it('a failed load is retried when the backend connection comes back, not before', async () => {
+    runInAction(() => dataContext.setLocalConnectionStatus('connected'));
+    startSentryReaction();
+    setBootstrap(bootstrap());
+    await tick();
+    injected[0].onerror?.(new Event('error'));
+    await settle();
+    expect(injected).toHaveLength(1);
+
+    runInAction(() => dataContext.setLocalConnectionStatus('disconnected'));
+    await tick();
+    expect(injected).toHaveLength(1); // going down does not retry
+
+    const sdk = fakeSdk();
+    runInAction(() => dataContext.setLocalConnectionStatus('connected'));
+    await tick();
+    expect(injected).toHaveLength(2);
+    loaded(1, sdk);
+    await settle();
+    expect(sdk.init).toHaveBeenCalledTimes(1);
+  });
+
+  it('an exception from init is not remembered as a failed load', async () => {
+    const sdk = fakeSdk();
+    sdk.init.mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+    startSentryReaction();
+    setBootstrap(bootstrap());
+    await tick();
+    loaded(0, sdk);
+    await settle();
+    expect(__testing.activeConfig()).toBeNull();
+
+    setBootstrap(bootstrap({}, { dsn: DSN_B, environment: 'staging' }));
+    await settle();
+    expect(sdk.init).toHaveBeenCalledTimes(2);
+    expect(injected).toHaveLength(1); // the script was already there; only init is tried again
+  });
+
   it('never loads for a desktop, or without a sentry_info', async () => {
     startSentryReaction();
     setBootstrap(bootstrap({ runtime: { kind: 'desktop' } }));

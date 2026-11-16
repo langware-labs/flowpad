@@ -8,6 +8,7 @@
  *
  * `SDK_CONTRACT` is the version of this surface. The hub's script states which one it implements
  * and the loader refuses any other, so the two repos can change on their own schedules.
+ * It is a COMPATIBILITY check, not a security one: it says nothing about who built the script.
  */
 
 export const SDK_CONTRACT = 1;

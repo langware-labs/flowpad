@@ -261,7 +261,11 @@ let desired: EffectiveConfig | null = null;
 let queue: Promise<void> = Promise.resolve();
 let started = false;
 let stopReaction: (() => void) | null = null;
-/** Script URLs that already failed this page load, so a privacy toggle does not re-request a 404. */
+/**
+ * Script URLs whose LOAD failed, so a privacy toggle or a DSN change does not re-request a 404. Not
+ * permanent: it is cleared when the connection to the backend comes back (see `startSentryReaction`),
+ * so a hub restart or a deploy that had not reached the route yet does not silence a long-lived tab.
+ */
 const failedLoads = new Set<string>();
 
 function isSdk(candidate: unknown): candidate is SentrySdk {
@@ -348,8 +352,16 @@ async function applyConfig(next: EffectiveConfig | null): Promise<void> {
     }
   }
   if (!next || failedLoads.has(next.sdkUrl)) return;
+  let mod: SentrySdk;
   try {
-    const mod = (sentry ??= await __testing.load(next.sdkUrl));
+    mod = sentry ??= await __testing.load(next.sdkUrl);
+  } catch (e) {
+    active = null;
+    failedLoads.add(next.sdkUrl); // only a failed LOAD is remembered, not an `init` exception
+    console.debug('[sentry] not started', e instanceof Error ? e.name : typeof e);
+    return;
+  }
+  try {
     // The script may have taken a while: the config can have changed (turned off, Local, another DSN).
     if (!sameConfig(desired, next)) return;
     mod.init({
@@ -393,7 +405,6 @@ async function applyConfig(next: EffectiveConfig | null): Promise<void> {
     active = next;
   } catch (e) {
     active = null;
-    failedLoads.add(next.sdkUrl);
     console.debug('[sentry] not started', e instanceof Error ? e.name : typeof e);
   }
 }
@@ -424,8 +435,19 @@ export function startSentryReaction(): void {
       { fireImmediately: true, equals: comparer.structural },
     );
     privacyManager.on('privacy_mode_changed', reconcile);
+    // The backend (and with it the hub) is reachable again: give a script that failed another try.
+    // No timer and no retry budget -- this only reacts to the connection coming back.
+    const disposeReconnect = reaction(
+      () => dataContext.localConnectionStatus === 'connected',
+      (connected) => {
+        if (!connected) return;
+        failedLoads.clear();
+        reconcile();
+      },
+    );
     stopReaction = () => {
       dispose();
+      disposeReconnect();
       privacyManager.off('privacy_mode_changed', reconcile);
     };
   } catch {

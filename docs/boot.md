@@ -165,6 +165,15 @@ runtime, only once a valid `sentry_info` is present, from the hub's own origin a
 (`ui/src/telemetry/sentry-contract.ts`); no config names a script URL. A hub that cannot serve it
 leaves Sentry off, and a desktop never requests it. The script defines `window.__FlowpadSentry` and
 states a `contract` number the UI checks before using it; the hub repo builds and serves it.
+**Trust:** loading this script widens what the UI trusts the hub for, from its *data* to its *code*: the
+script runs in the UI's own origin with full page privileges. The `contract` check is a compatibility
+check (the shape of 8 functions), **not** a security check, and `no-referrer` and the fixed path do not
+change that. The origin comes from the box's own config (`cloud_app_url`), so whoever controls that
+config controls which hub's code runs; that is the same control that already decides which hub the box
+signs in to. A failed load is remembered per script URL for the page, and forgotten when the backend
+connection comes back (no timer, no retry budget). `POST .../sentry-info/sync` is not rate-limited on
+the box: concurrent calls share one hub read, sequential ones each ask the hub, and the hub-side
+throttle on its own triggers is the only limit.
 
 **Rule: nothing on this path may walk a filesystem tree, parse files, or do
 unbounded per-file DB writes.** The frontend's `initSdk` awaits this endpoint

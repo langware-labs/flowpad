@@ -176,7 +176,12 @@ async def _sync_once() -> SyncOutcome:
 
 
 async def sync_sentry_info_from_hub() -> SyncOutcome:
-    """Re-read the value from the hub. Never raises; concurrent callers share one hub read."""
+    """Re-read the value from the hub. Never raises; concurrent callers share one hub read.
+
+    Sequential callers each ask the hub: the trigger is open to the browser and every worker on the box
+    (that is why there is no write endpoint), and the only rate limit is the hub's own throttle on the
+    triggers it sends. A minimum interval here would be a new throttle; it is deliberately not added.
+    """
     key = (get_instance_settings().instance_name, id(asyncio.get_running_loop()))
     pending = _inflight.get(key)
     if pending is None:
