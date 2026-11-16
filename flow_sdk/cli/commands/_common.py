@@ -326,11 +326,17 @@ def project_for_path(port: int, cwd: str, *, create: bool) -> "str | None":
         params={"filter": json.dumps({"fs_storage_mount_path": canonical})},
         on_error=server_error,
     )
+    project_id: str | None = None
+
     for row in rows if isinstance(rows, list) else []:
-        if row.get("id"):
-            return str(row["id"])
-    if not create:
-        return None
+        project_id = row.get("id")
+
+        if project_id is not None:
+            break
+
+    if not create or project_id is not None:
+        return project_id
+
     created = post_graph_json(
         graph_url(port, "project"),
         {
