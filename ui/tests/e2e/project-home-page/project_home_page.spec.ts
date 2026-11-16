@@ -152,7 +152,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   for (const project of [home, foreign]) {
     try {
-      if (project?.id) await post(`${GRAPH}/project/${project.id}/delete-with-children`);
+      if (project?.id) await post(`${GRAPH}/project/${project.id}/delete-with-children`, { delete_folder: true });
     } catch {
       /* best effort */
     }
