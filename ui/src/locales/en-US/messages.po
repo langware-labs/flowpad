@@ -6677,6 +6677,10 @@ msgstr "Chrome"
 msgid "Chrome browser"
 msgstr "Chrome browser"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Chrome profiles on this computer"
+msgstr "Chrome profiles on this computer"
+
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "Chunk <0>{chunkSeq}</0> — {chunkSize}"
 msgstr "Chunk <0>{chunkSeq}</0> — {chunkSize}"
@@ -13028,6 +13032,10 @@ msgstr "Exported"
 #: src/components/footer/BrowserChip.tsx
 msgid "extension"
 msgstr "extension"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "extension ✓"
+msgstr "extension ✓"
 
 #: src/components/footer/BrowserChip.tsx
 msgid "Extension installed"
@@ -20239,6 +20247,10 @@ msgstr "No events captured"
 msgid "No events yet"
 msgstr "No events yet"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "no extension"
+msgstr "no extension"
+
 #: src/components/account/network-errors.tsx
 msgid "No failed cloud requests since Flowpad started"
 msgstr "No failed cloud requests since Flowpad started"
@@ -24727,9 +24739,22 @@ msgstr "Processes (pid)"
 msgid "Profile"
 msgstr "Profile"
 
+#: src/components/footer/BrowserChip.tsx
+#: src/components/footer/BrowserChip.tsx
+msgid "Profile not found"
+msgstr "Profile not found"
+
 #: src/components/account/user-info.tsx
 msgid "Profile Picture:"
 msgstr "Profile Picture:"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Profile: {profileName}"
+msgstr "Profile: {profileName}"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Profile: not available"
+msgstr "Profile: not available"
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "program kind"

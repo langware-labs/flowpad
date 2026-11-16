@@ -20,14 +20,14 @@ vi.mock('@src/hooks/use-my-vibe-tasks', async (orig) => {
   const real = await orig<typeof import('@src/hooks/use-my-vibe-tasks')>();
   return {
     ...real,
-    useMyVibeTasks: (projectId: string | null) =>
-      real.vibeTaskRows(
-        real.openHelpTasks(
-          h.tasks.filter((t) => (t as { project_id?: string }).project_id === projectId) as never,
-          'me@x.com',
-        ),
-        h.conversations as never,
-      ),
+    useMyVibeTasks: (projectId: string | null) => {
+      const tasks = h.tasks.filter((t) => (t as { project_id?: string }).project_id === projectId) as never;
+      const conversations = h.conversations as never;
+      // What I asked (rows) and what others asked of me (incoming), as the hook answers.
+      const outgoing = real.vibeTaskRows(real.openHelpTasks(tasks, 'me@x.com'), conversations);
+      const incoming = real.vibeTaskRows(real.incomingHelpTasks(tasks, 'me@x.com'), conversations);
+      return { ...outgoing, incoming: incoming.rows, unread: outgoing.unread + incoming.unread };
+    },
   };
 });
 vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => () => Promise.resolve({ ok: true }) }));
@@ -151,7 +151,7 @@ describe('AskForHelpButton — the current task button', () => {
       mine,
       helpTask({ title: 'done one', status: 'done' }),
       helpTask({ title: 'canceled one', status: 'canceled' }),
-      // The helper's received copy: no reporter, assigned to me — never "my request".
+      // The helper's received copy: no reporter, assigned to me — asked of me, not mine.
       helpTask({ title: 'shared with me', reporter: null, assignee: ME }),
       helpTask({ title: 'asked by someone else', reporter: 'carol@x.com' }),
       helpTask({ title: 'other project', project_id: P2 }),
@@ -161,7 +161,9 @@ describe('AskForHelpButton — the current task button', () => {
 
     const icon = screen.getByTestId('vibe-assign-task');
     expect(icon).toHaveAttribute('data-open-tasks', '1');
-    expect(icon).toHaveTextContent('3');
+    // The badge counts open requests both ways: mine, and the one asked of me.
+    expect(icon).toHaveAttribute('data-incoming-tasks', '1');
+    expect(icon).toHaveTextContent('2');
     act(() => {
       fireEvent.click(icon);
     });
@@ -170,7 +172,9 @@ describe('AskForHelpButton — the current task button', () => {
     expect(list).toHaveTextContent('Popout button is disabled');
     expect(list).not.toHaveTextContent('done one');
     expect(list).not.toHaveTextContent('canceled one');
-    expect(list).not.toHaveTextContent('shared with me');
+    // The helper's received copy is asked OF me: it is listed, under its own heading.
+    expect(list).toHaveTextContent('Asked of you');
+    expect(list).toHaveTextContent('shared with me');
     expect(list).not.toHaveTextContent('asked by someone else');
     expect(list).not.toHaveTextContent('other project');
     expect(screen.getByTestId(`vibe-help-task-unread-${mine.id}`)).toHaveTextContent('3');
@@ -180,7 +184,7 @@ describe('AskForHelpButton — the current task button', () => {
     expect(h.openDock.mock.calls[0][0].tabHash).toContain('conv-1');
   });
 
-  it('sums the waiting messages across tasks, and a read conversation counts nothing', () => {
+  it('counts the open requests, and waiting messages tint the count', () => {
     h.tasks = [helpTask(), helpTask({ origin_conversation: 'conv-2' }), helpTask({ origin_conversation: 'conv-3' })];
     h.conversations = [
       { id: 'conv-1', unread_count: 2 },
@@ -189,7 +193,8 @@ describe('AskForHelpButton — the current task button', () => {
     ];
     render(<AskForHelpButton projectId={P1} sessionTypeId={null} origin="vibe" />);
 
-    expect(screen.getByTestId('vibe-assign-task')).toHaveTextContent('7');
+    expect(screen.getByTestId('vibe-assign-task')).toHaveTextContent('3');
+    expect(screen.getByTestId('vibe-help-count')).not.toHaveClass('bg-primary');
   });
 
   it('lists my open desk tickets too, and a click opens the ticket', async () => {

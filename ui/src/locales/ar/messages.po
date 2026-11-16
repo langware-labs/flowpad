@@ -6677,6 +6677,10 @@ msgstr "Chrome"
 msgid "Chrome browser"
 msgstr "متصفح Chrome"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Chrome profiles on this computer"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "Chunk <0>{chunkSeq}</0> — {chunkSize}"
 msgstr "الجزء <0>{chunkSeq}</0> — {chunkSize}"
@@ -13027,6 +13031,10 @@ msgstr "تم التصدير"
 
 #: src/components/footer/BrowserChip.tsx
 msgid "extension"
+msgstr ""
+
+#: src/components/footer/BrowserChip.tsx
+msgid "extension ✓"
 msgstr ""
 
 #: src/components/footer/BrowserChip.tsx
@@ -20239,6 +20247,10 @@ msgstr "لا توجد أحداث مسجلة"
 msgid "No events yet"
 msgstr "لا توجد أحداث حتى الآن"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "no extension"
+msgstr ""
+
 #: src/components/account/network-errors.tsx
 msgid "No failed cloud requests since Flowpad started"
 msgstr ""
@@ -24727,9 +24739,22 @@ msgstr "العمليات (pid)"
 msgid "Profile"
 msgstr "الملف الشخصي"
 
+#: src/components/footer/BrowserChip.tsx
+#: src/components/footer/BrowserChip.tsx
+msgid "Profile not found"
+msgstr ""
+
 #: src/components/account/user-info.tsx
 msgid "Profile Picture:"
 msgstr "صورة الملف الشخصي:"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Profile: {profileName}"
+msgstr ""
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Profile: not available"
+msgstr ""
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "program kind"
