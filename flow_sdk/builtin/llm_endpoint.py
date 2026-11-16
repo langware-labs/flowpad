@@ -454,7 +454,7 @@ class LLMEndpoint(Entity):
             # No referer/title headers on the hub hop: the bearer is the hub login key and the
             # hub adds the root's own auth on the far side.
             return LLMClient.for_dialect(
-                self.provider or "openrouter",
+                self._hub_wire_provider(),
                 api_key=self.resolve_api_key(),
                 base_url=base_url,
                 # ``or None`` so an empty map falls back to the ROOT provider's slugs. The hub
@@ -480,9 +480,22 @@ class LLMEndpoint(Entity):
         from flow_sdk.external_apis.llm.dialects import get_dialect  # noqa: PLC0415
 
         try:
-            return get_dialect(self.provider or "openrouter")
+            return get_dialect(self._hub_wire_provider() if self.kind == LLMEndpointKind.HUB else self.provider or "openrouter")
         except ValueError:
             return None
+
+    def _hub_wire_provider(self) -> str:
+        """The wire a HUB row speaks to the hub: its root's, ``openrouter`` when the hub named none,
+        and the OpenAI wire for a root the box has no dialect of (``vertex``): the hub serves
+        ``v1/chat/completions`` and ``v1/embeddings`` for every root it relays to."""
+        from flow_sdk.external_apis.llm.dialects import get_dialect  # noqa: PLC0415
+
+        provider = self.provider or LMApiProvider.OPENROUTER.value
+        try:
+            get_dialect(provider)
+        except ValueError:
+            return LMApiProvider.OPENAI.value
+        return provider
 
     def _hub_invoke_url(self) -> str:
         from flow_sdk.instance_settings.llm_endpoint import hub_origin  # noqa: PLC0415

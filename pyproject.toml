@@ -104,6 +104,9 @@ dev = [
     "memray>=1.19.2; sys_platform != 'win32'",
     "pre-commit>=4.0.0",
     "pandas>=2.0.0",
+    # tests/long_tests/test_llm_endpoint_workers.py prices the hub's bill with this table; it must know
+    # every model the hub (genai-prices>=0.1.13) bills, e.g. gemini-3.5-flash-lite.
+    "genai-prices>=0.1.13,<0.2",
 ]
 
 [tool.setuptools.dynamic]
