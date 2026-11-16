@@ -7,12 +7,13 @@
  * config, never a baked port.
  */
 import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import { apiBase } from '../_shared/api';
 
 const API = apiBase();
-const UNKNOWN_ID = '00000000-0000-4000-8000-000000000000';
+const UNKNOWN_ID = randomUUID();
 
 interface MarkdownEntity {
   id: string;
@@ -51,6 +52,13 @@ test.describe('Wiki link layer', () => {
   test('backend actions and parser handle ghost, wiki URL, and invalid sub-path contracts', async ({
     request,
   }) => {
+    // Each run uses a fresh ghost id, so it starts with no links; the cleanup at the end drops
+    // the edges this run indexed for it.
+    const clearGhost = async () => {
+      await data(
+        await request.post(`${API}/api/v1/graph/skill/${UNKNOWN_ID}/wiki/reindex`, { data: { body: '' } }),
+      );
+    };
     expect(await data(await request.get(
       `${API}/api/v1/graph/skill/${UNKNOWN_ID}/wiki/links`,
     ))).toEqual([]);
@@ -89,6 +97,7 @@ test.describe('Wiki link layer', () => {
     );
     expect(invalid.status()).toBe(404);
     expect((await invalid.json()).status).toBe('FAIL');
+    await clearGhost();
   });
 
   test('three backlinks converge through source edit/delete and target delete without rewriting source text', async ({

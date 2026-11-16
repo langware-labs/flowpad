@@ -24,7 +24,7 @@ Sender:
   - a channel whose replies only thread (gmail, slack, agentmail, teams) addresses the thread (its key, root
     or newest message);
   - a quoting channel (telegram, whatsapp) sends to the chat and quotes nobody;
-- ⋮ → Reply on the root (`message-reply`, `composer-reply-banner`) reaches the provider as a reply to the root;
+- hover → Reply on the root (`message-reply`, `composer-reply-banner`) reaches the provider as a reply to the root;
 - our copies join the thread: the header count reaches 5.
 
 Back: `thread-header-all` ("All messages") drops `?thread=`; the feed is flat again, our reply in it.

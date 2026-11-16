@@ -130,7 +130,7 @@ async def run_case(name: str, driver, client, monkeypatch, tmp_path) -> None:
 
     # Each case doubles its provider's credentials; the machine's sign-in for its connector is part of
     # that double. Verify asks it, and a source still owing a sign-in is refused a sync.
-    async def signed_in(_provider):
+    async def signed_in(_provider, _url=None):
         return {"ok": True}
 
     monkeypatch.setattr(provider_probe, "connection_answer", signed_in)

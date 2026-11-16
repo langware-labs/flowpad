@@ -35,7 +35,10 @@ test('home prompt → close chat emits no 401', async ({ page }) => {
   const chatUrl = page.url();
   expect(chatUrl).toMatch(/\/dock\/(shell|vibe)\/agentic_process-/);
 
-  const chip = page.locator('[data-testid="terminal-tab-bar"] [data-testid^="tab-shell|agentic_process-"]').first();
+  // THIS chat's own chip: the strip also holds every other process tab still open on the instance, and
+  // closing the first of those leaves this chat on screen (the URL rightly stays).
+  const processId = /agentic_process-([0-9a-f-]{36})/.exec(chatUrl)![1];
+  const chip = page.locator(`[data-testid="terminal-tab-bar"] [data-testid="tab-shell|agentic_process-${processId}"]`);
   const close = chip.getByRole('button', { name: 'Close tab' });
   await expect(close).toBeVisible();
   await close.click();

@@ -3535,6 +3535,10 @@ msgstr "تتبع الوكيل"
 msgid "Agent turn"
 msgstr "دور الوكيل"
 
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Agent visitors / outside teams"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Agentic Process"
 msgstr "عملية الوكيل"

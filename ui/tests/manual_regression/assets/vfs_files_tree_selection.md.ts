@@ -56,9 +56,10 @@ test('a VFS editor URL selects the real file in the Files tree', async ({ page, 
     await page.keyboard.press('Escape');
     await expect(details).toBeHidden();
     // The indexed file is an entity, so the bar's cluster is the entity toolbar
-    // (Share).
+    // (Share); Chat with the doc is the viewer's own toggle (or its strip).
     const topBar = page.getByTestId('top-nav-bar');
     await expect(topBar.getByTestId('entity-actions-share')).toBeVisible();
+    await expect(page.getByTestId('viewer-chat-toggle').or(page.getByTestId('viewer-chat-strip')).first()).toBeVisible();
     await expect(page.getByTestId('assets-page-header')).toHaveCount(0);
 
     const editorHeader = page.getByTestId('asset-editor-header');

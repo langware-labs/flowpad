@@ -1041,11 +1041,30 @@ test.describe('Interactive tabs / project filtering matrix', () => {
       await expect(dialog.locator('[data-testid="switch-project-active-title"]')).toBeVisible();
       const recentTitle = dialog.locator('[data-testid="switch-project-recent-title"]');
       await expect(recentTitle).toBeVisible();
-      // A row is a <div> holding the open button (plus the info control), so
-      // the first Recent row is the next sibling div's row button.
-      const targetRow = recentTitle.locator(
-        'xpath=following-sibling::div[1]//button[starts-with(@data-testid,"switch-project-row-")]',
+      // A row is a <div> holding the open button (plus the info control). Recent also lists folders
+      // seen in the shared Claude history (other instances' workspaces); opening one whose name a project
+      // here already holds is refused (unique names, d0c2a3ee8) — a different subject. The switch under
+      // test targets the first Recent row that IS already a project on this instance (matched by path).
+      // Every row after the Recent title (each row is its own <div>).
+      const recentRows = recentTitle.locator(
+        'xpath=following-sibling::div//button[starts-with(@data-testid,"switch-project-row-")]',
       );
+      await expect(recentRows.first()).toBeVisible();
+      const knownPaths = new Set(
+        ((await beforeResponse.json()).data as Array<{ fs_storage_mount_path?: string }>)
+          .map((p) => (p.fs_storage_mount_path ?? '').replace(/\/+$/, ''))
+          .filter(Boolean),
+      );
+      let targetRow = recentRows.first();
+      for (let i = 0; i < (await recentRows.count()); i++) {
+        const row = recentRows.nth(i);
+        const id = ((await row.getAttribute('data-testid')) ?? '').replace('switch-project-row-', '');
+        const cwd = ((await dialog.getByTestId(`switch-project-path-${id}`).getAttribute('title')) ?? '').trim();
+        if (knownPaths.has(cwd.replace(/\/+$/, '')) && cwd.replace(/\/+$/, '') !== rootA.replace(/\/+$/, '')) {
+          targetRow = row;
+          break;
+        }
+      }
       await expect(targetRow).toBeVisible();
       const targetId = (await targetRow.getAttribute('data-testid'))!.replace('switch-project-row-', '');
       const targetName = (await targetRow.locator('span.font-medium').innerText()).trim();
@@ -1403,7 +1422,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let r = 0; r < 2; r++) {
       await clickHome(page);
       await waitForRootUrl(page);
-      await page.goto('/dock/shell');
+      // Re-enter the way gotoDockShell entered: a bare /dock/shell shows the UNSTATED mode (Vibe), whose
+      // strip lists no shell tabs, so the count read 0.
+      await page.goto(withViewMode('/dock/shell', 'advanced'));
       await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
       await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
       expect(await tabIds(page)).toEqual(before);

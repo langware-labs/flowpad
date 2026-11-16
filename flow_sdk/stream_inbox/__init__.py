@@ -86,6 +86,7 @@ def viewer_email() -> Optional[str]:
 
 # ── the formula (pure — REPL/table-testable with plain objects) ─────────────
 
+
 def invitation_is_pending(inv, viewer_email: Optional[str], now: datetime) -> bool:
     """Pending = unaccepted, unexpired (vs the injected clock), addressed to
     this viewer. No cloud account → nothing is pending for us."""
@@ -105,13 +106,12 @@ def invitation_is_pending(inv, viewer_email: Optional[str], now: datetime) -> bo
 
 
 def pending_conversation_ids(pending) -> set[str]:
-    """The conversations the pending invitations point at. Membership invites
-    (``target_type``/``target_id``) have no conversation at all."""
+    """The conversations the pending invitations point at — a membership invite too, once the hub
+    threads it into a conversation: the Stream Inbox shows it there, not as its own line."""
     return {
         (inv.target_url_path or "").removeprefix("/conversation/")
         for inv in pending
-        if not (getattr(inv, "target_type", None) and getattr(inv, "target_id", None))
-        and (getattr(inv, "target_url_path", None) or "").startswith("/conversation/")
+        if (getattr(inv, "target_url_path", None) or "").startswith("/conversation/")
     }
 
 
@@ -189,7 +189,8 @@ def project_unread(
     # flipped ``accepted`` — it carries no action, so it must not hold the row unread.
     joined = {conv.id for conv in conversations if _viewer_joined(conv, self_ids, viewer_email)}
     pending = [
-        inv for inv in invitations
+        inv
+        for inv in invitations
         if invitation_is_pending(inv, viewer_email, now)
         and (getattr(inv, "target_url_path", None) or "").removeprefix("/conversation/") not in joined
     ]
@@ -308,9 +309,7 @@ async def _load_rows() -> tuple[list, dict]:
     return conversations, dict(
         conversations=conversations,
         fm_by_id=await _messages_the_formula_reads(conversations, self_ids, fetch),
-        invitations=(
-            await Invitation.get_all(QueryFilter(type=EntityType.INVITATION.value)) if email else []
-        ),
+        invitations=(await Invitation.get_all(QueryFilter(type=EntityType.INVITATION.value)) if email else []),
         self_ids=self_ids,
         viewer_email=email,
         now=datetime.now(timezone.utc),
@@ -341,6 +340,7 @@ def start_stream_inbox() -> None:
 
 
 # ── public surface ───────────────────────────────────────────────────────────
+
 
 def touch(reason: str) -> None:
     """THE one call a mutation site makes after changing read-state.
@@ -457,9 +457,7 @@ async def accept_mark_preview_read(
     def _verified(fm) -> bool:
         if fm is None or fm.kind != FlowMessageKind.INVITATION:
             return False
-        contexts = (getattr(fm, "shared_context_entities", None) or []) + (
-            getattr(fm, "context_entities", None) or []
-        )
+        contexts = (getattr(fm, "shared_context_entities", None) or []) + (getattr(fm, "context_entities", None) or [])
         return any(inv_ref in str(c) for c in contexts)
 
     preview = None
@@ -481,7 +479,9 @@ async def accept_mark_preview_read(
     elif preview is None and (linked_fm_id or conversation_id):
         logger.info(
             "[stream-inbox] accept %s: no verified preview (fm=%s conv=%s) — leaving read state untouched",
-            invitation.id, linked_fm_id, conversation_id,
+            invitation.id,
+            linked_fm_id,
+            conversation_id,
         )
 
     await invitation.resolve("accepted", owner)

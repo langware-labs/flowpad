@@ -91,6 +91,12 @@ class GcsSource(ObjectSource):
         return _bucket_name(binding.config) or cls.provider
 
     @classmethod
+    def connection_probe_url(cls, config):
+        """A configured API base is verified there (its bucket's metadata), not on Google."""
+        base, bucket = str((config or {}).get("base_url") or "").rstrip("/"), _bucket_name(config or {})
+        return f"{base}/b/{quote(bucket, safe='')}" if base and bucket else None
+
+    @classmethod
     def origin_id_for(cls, row: Any, ref: str, root: Any) -> str:
         """``gcs:<bucket>/<object>`` — an object's name IS its identity and the cache mirrors it, so
         the handle falls out of the path with no sidecar."""
