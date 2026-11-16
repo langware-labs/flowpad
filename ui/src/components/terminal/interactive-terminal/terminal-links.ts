@@ -82,6 +82,8 @@ const PATH_LIKE = /[/\\]|:\/\//;
 const WHOLE_FILE = /\.[A-Za-z]\w{0,5}$/;
 /** A word that starts a fresh reference of its own. */
 const FRESH_START = /^(?:\/|~\/|\.{1,2}\/|[A-Za-z]:[\\/]|https?:)/i;
+/** A word a shell prompt ends with: zsh `%`, bash `$`, root `#`, `>`, starship `❯`. */
+const PROMPT_END = /[$%#>❯]$/u;
 /** What a path or URL is cut after mid-way: a separator or a query's punctuation. */
 const JOINER = String.raw`/\\._=&?#-`;
 
@@ -198,6 +200,9 @@ function continuesBelow(buffer: IBuffer, row: number, cols: number): Continuatio
   if (!head.cells) return undefined;
   const above = textSpan(line, cols);
   if (commandContinues(buffer, row, cols, above, below, head.cells)) return { kind: 'hard', end: above.end, space: true };
+  // A bare shell prompt (`host%`, `dir $`, `❯`) is the next command line, not the rest of a path —
+  // also when the path filled its last row to the edge.
+  if (PROMPT_END.test(head.text)) return undefined;
   if (above.margin <= MAX_MARGIN) {
     const tail = edgeWord(line, above, -1);
     // A rule row (`+----+`) under a narrow table names nothing, so it carries no cut word on.
