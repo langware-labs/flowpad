@@ -44,6 +44,7 @@ import {
   type AgenticProcess,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
+import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { EntityBatchHydrator, useEntityBatchState } from '@src/components/entity-batch/EntityBatchHydrator';
 import { useConversationAutomationMarks } from '@src/hooks/conversation/useMessageAutomationSessions';
@@ -806,6 +807,8 @@ export function StreamInboxView({
   const [membershipPendingCount, setMembershipPendingCount] = useState(0);
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const { cloudUser } = useAuth();
+  // Signed in as anyone: `cloudUser` is a person only, so it is empty on an agent's box signed in as its Identity.
+  const signedIn = useCloudAuthed();
   // Whose channels the header line shows: the agent's on an agent stream inbox, else
   // the local user's — absent until that typeid is known, so no empty bar flashes.
   // `localUser.id`, not `userTypeId`: that alias resolves to the `@local` pointer,
@@ -1534,7 +1537,7 @@ export function StreamInboxView({
 
   return (
     <div className="relative flex h-full flex-col">
-      {!cloudUser && (
+      {!signedIn && (
         <LoginRequiredOverlay
           description={t`Sign in to your Flowpad Cloud account to view your stream inbox and conversations.`}
         />
