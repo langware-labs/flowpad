@@ -308,6 +308,18 @@
       inset 0 0 36px hsl(var(--ring) / 0.2);
     animation: view-mode-glow-flicker 640ms ease-out forwards;
   }
+
+  /* The same flicker under another name: swapping the name restarts a running
+     flicker without the forced reflow a remove/re-add of the class needs. */
+  @keyframes view-mode-glow-flicker-alt {
+    0% { opacity: 0; }
+    18% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  html.view-mode-glow-flicker.view-mode-glow-flicker-alt body::after {
+    animation-name: view-mode-glow-flicker-alt;
+  }
 }
 
 /* Developer mode: the avatar's border is on fire — a ring of flame colours

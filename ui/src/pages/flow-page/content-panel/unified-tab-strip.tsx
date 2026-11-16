@@ -37,8 +37,8 @@ import {
   useTabLifecycles,
 } from '@src/tabs/use-tab-manager';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
-import React, { useCallback, useEffect, useMemo } from 'react';
-import { useNavigation } from 'react-router';
+import React, { useCallback, useContext as useReactContext, useEffect, useMemo } from 'react';
+import { UNSAFE_DataRouterContext } from 'react-router';
 
 export interface UnifiedTabStripProps {
   /** `'project'` (default) shows the active project's tabs; `'all'` shows every
@@ -151,16 +151,19 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   // OR that pending target, so the close still heals to a surviving tab. Purely
   // additive: with no navigation in flight `pendingActiveKey` is null and the
   // behavior is identical to `key === activeKey`.
-  const routerNavigation = useNavigation();
-  const pendingActiveKey = useMemo(() => {
-    const loc = routerNavigation.location;
+  // Read when a close asks, not subscribed: `useNavigation()` re-rendered the whole
+  // strip on every router state change (loading, then idle) of every tab switch,
+  // for a value only the close handlers below ever use.
+  const dataRouter = useReactContext(UNSAFE_DataRouterContext)?.router ?? null;
+  const pendingActiveKey = useCallback((): string | null => {
+    const loc = dataRouter?.state.navigation.location;
     if (!loc) return null;
     try {
       return DockPointer.fromUrl(`${loc.pathname}${loc.search}`).tabHash;
     } catch {
       return null;
     }
-  }, [routerNavigation.location]);
+  }, [dataRouter]);
   // Keyed on the ON-SCREEN chip, so an ancestor standing in for a child counts:
   // that chip is lit, so its X is persistent rather than hover-revealed, and
   // closing it must navigate away like any other active chip. Otherwise the row
@@ -168,7 +171,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   // its child, and the child stays filtered out of every strip until the parent
   // is reopened.
   const isCurrentTab = useCallback(
-    (key: string) => key !== '' && (key === activeKey || key === pendingActiveKey),
+    (key: string) => key !== '' && (key === activeKey || key === pendingActiveKey()),
     [activeKey, pendingActiveKey],
   );
 

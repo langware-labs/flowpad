@@ -347,6 +347,14 @@ function requestCounts(page: Page, sinceMs: number): Promise<Record<string, numb
   }, sinceMs);
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.warm_tab_switch_perf.rules: FAILING? warm switch re-fetches local
+//       entities, re-renders chrome on unrelated context keys, or forces layout - read
+//       this tag's rules first
+// flowpad:endcapsule tag
 test('warm tab switches: content visible within budget', async ({ page }) => {
   const { toplog: trail } = await installObservers(page);
 
@@ -414,6 +422,14 @@ test('warm tab switches: content visible within budget', async ({ page }) => {
   if (loaderShaped.length) console.log('[perf] loader-shaped requests inside warm switches', loaderShaped.join(', '));
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.warm_tab_switch_perf.rules: FAILING? warm switch re-fetches local
+//       entities, re-renders chrome on unrelated context keys, or forces layout - read
+//       this tag's rules first
+// flowpad:endcapsule tag
 test('project switch between visited projects: content visible within budget', async ({ page }) => {
   const { toplog } = await installObservers(page);
   await page.goto('/dock/desktop?viewMode=advanced');
@@ -631,6 +647,13 @@ async function coldOpen(page: Page, w: World): Promise<{ ms: number; line: strin
   return { ms: sw.ready!, line: line.slice(line.indexOf('ready')) };
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.terminal_cold_open.rules: FAILING? a cold open waits serially
+//       or replays a checkpoint it need not - read this tag's rules first
+// flowpad:endcapsule tag
 test('cold open of a terminal with a large recording: from its checkpoint, within budget', async ({ browser }) => {
   // Its own session: an earlier spec opens `a` in Standard, which turns its terminal into a chat
   // (chat and the terminal are mutually exclusive), so `a` has no PTY left to flood.

@@ -96,6 +96,14 @@ async function init() {
         <LocaleProviders>
           <RouterProvider
             router={router}
+            // Route updates commit as ordinary renders, not transitions. A transition is
+            // interruptible, and a tab switch always has updates landing while it renders
+            // (the context write, the process entity's activation echo, PTY sync): each one
+            // preempted the route render and React started it again from the top. Measured
+            // on the perf VM, warm switch to a terminal p90 176 ms with transitions, 126-135
+            // without (tab_switch_perf.md.ts). Lazy views suspend into
+            // `PrimaryContentFallback`, which draws nothing, so nothing flashes instead.
+            unstable_useTransitions={false}
             onError={(error) => {
               console.error('Error loading session:', error);
               toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=router_on_error err:`, error);

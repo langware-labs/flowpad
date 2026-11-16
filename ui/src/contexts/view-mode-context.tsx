@@ -11,7 +11,7 @@ import {
 } from '@sdk';
 import { usePreferenceValue } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
-import { createContext, type ReactNode, useContext, useEffect, useRef, useSyncExternalStore } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useSyncExternalStore } from 'react';
 import { NavigationType, useLocation, useNavigationType } from 'react-router';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -169,17 +169,19 @@ function applyAttribute(val: ViewMode, animate = true): void {
   if (prev !== val) {
     root.setAttribute('data-view', val);
     if (animate && prev != null) {
-      root.classList.remove('view-mode-glow-flicker');
-      // Restart the CSS animation even when changes happen in quick succession.
-      void root.offsetWidth;
-      root.classList.add('view-mode-glow-flicker');
+      // Restart the CSS animation even when changes happen in quick succession:
+      // a running flicker restarts by swapping to its twin keyframes (index.css).
+      // Never by remove + `offsetWidth` + add: that forced a layout of the whole
+      // re-styled page inside every tab switch that changes the mode.
+      if (root.classList.contains('view-mode-glow-flicker')) root.classList.toggle('view-mode-glow-flicker-alt');
+      else root.classList.add('view-mode-glow-flicker');
       if (flickerTimer !== undefined) window.clearTimeout(flickerTimer);
       // Hold the element, not the `document` global: this timer can outlive the
       // document (a jsdom test environment is torn down between files), and
       // dereferencing the global afterwards throws `document is not defined`,
       // which vitest reports as an unhandled error and fails an otherwise green run.
       flickerTimer = window.setTimeout(() => {
-        root.classList.remove('view-mode-glow-flicker');
+        root.classList.remove('view-mode-glow-flicker', 'view-mode-glow-flicker-alt');
         flickerTimer = undefined;
       }, 700);
     }
@@ -401,19 +403,58 @@ export function useViewMode(): ViewMode {
   return pinned ?? live;
 }
 
-/** The mode on screen. `paint`: also reflect it on the document root (never for
- *  a pinned, off-screen reader — its mode is not the one on screen). */
-function useLiveViewMode(paint = true): ViewMode {
+/** The mode on screen, derived ONCE for the tree by `LiveViewModeProvider`. */
+const LiveViewModeContext = createContext<ViewMode | null>(null);
+
+/**
+ * Derives the mode on screen once, for every `useViewMode` below it, and paints
+ * it on the document root. Mounted in `App`, which re-renders with the location
+ * anyway: the value is computed in the SAME render as the URL (a panel's mode
+ * and its `useCurrentDock` never disagree — see `SessionPaneViewMode`), but it is
+ * a string, so a reader re-renders only when the mode itself changes. Every
+ * reader used to read the location for it and re-render on every tab switch.
+ */
+export function LiveViewModeProvider({ children }: { children: ReactNode }) {
+  const mode = useDerivedViewMode();
+  useEffect(() => {
+    applyAttribute(mode);
+  }, [mode]);
+  return <LiveViewModeContext.Provider value={mode}>{children}</LiveViewModeContext.Provider>;
+}
+
+function useDerivedViewMode(): ViewMode {
   const currentDock = useCurrentDock();
-  const override = useSyncExternalStore(
-    subscribeViewModeOverride,
-    getViewModeOverrideSnapshot,
-    getViewModeOverrideSnapshot,
-  );
   // URL-first: a committed dock URL is authoritative immediately; the transient
   // override is a projection adopted by a later effect. An address that states
   // no mode shows the app's one mode — never the stored preference.
-  const mode = currentDock?.viewMode ?? override ?? UNSTATED_VIEW_MODE;
+  //
+  // A dock's mode is its URL's, on the very commit that shows it: the override
+  // only ever mirrors that URL one effect later (`useDockViewModeOverrideSync`),
+  // so reading it under a dock showed the PREVIOUS tab's mode for one commit and
+  // then re-rendered. The override speaks only where there is no dock.
+  //
+  // Subscribed through the DERIVED mode: the override's own write after every tab
+  // switch re-rendered every one of this hook's readers (the whole dock chrome),
+  // although none of them showed another mode.
+  const stated = currentDock ? (currentDock.viewMode ?? UNSTATED_VIEW_MODE) : null;
+  const getMode = useCallback(() => stated ?? getViewModeOverrideSnapshot() ?? UNSTATED_VIEW_MODE, [stated]);
+  return useSyncExternalStore(subscribeViewModeOverride, getMode, getMode);
+}
+
+/** The mode on screen. `paint`: also reflect it on the document root (never for
+ *  a pinned, off-screen reader — its mode is not the one on screen). */
+function useLiveViewMode(paint = true): ViewMode {
+  const provided = useContext(LiveViewModeContext);
+  // The provider paints. Without one (a unit test's tree, an error screen), derive
+  // here — whether a tree has the provider never changes while it is mounted, so
+  // the hook order is stable.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  if (provided !== null) return provided;
+  return useFallbackViewMode(paint);
+}
+
+function useFallbackViewMode(paint: boolean): ViewMode {
+  const mode = useDerivedViewMode();
   useEffect(() => {
     if (paint) applyAttribute(mode);
   }, [mode, paint]);

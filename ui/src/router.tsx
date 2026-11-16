@@ -86,6 +86,29 @@ function DevToDockRedirect() {
 }
 
 /**
+ * `tab_switch` paint point for EVERY tab kind — home, the dock, the `/win`
+ * focus window: it sits in the one parent of every body, and a parent's effect
+ * runs after its children committed, so the rAF lands on the first frame that
+ * shows the new URL. Kinds with async content (terminal replay, chat
+ * history…) add their own `ready` line.
+ *
+ * Its own component so that only IT reads the location: `RootLayout` used to,
+ * and re-rendered `<App>` and every global root below it on each tab switch.
+ */
+function TabSwitchPaintMark() {
+  const { pathname, search } = useLocation();
+  useEffect(() => {
+    if (!toplog.isOn('tab_switch')) return;
+    const [, layout, viewType] = pathname.split('/');
+    const frame = requestAnimationFrame(() => {
+      toplog.log('tab_switch', `painted ${sinceTabSwitch()} kind=${viewType || layout || 'home'} path=${pathname}`);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pathname, search]);
+  return null;
+}
+
+/**
  * Root layout — sits inside the loader-gated subtree so `<App>` and every
  * entity-touching hook it contains (useAuth, useGlobalEvents, …) only mount
  * after `loadRoot` has resolved (i.e. SDK schemas + bootstrap are ready).
@@ -96,24 +119,10 @@ function DevToDockRedirect() {
  * `<App>`) own the open/close state across route changes.
  */
 function RootLayout() {
-  // `tab_switch` paint point for EVERY tab kind — home, the dock, the `/win`
-  // focus window: this is the one parent of every body, and a parent's effect
-  // runs after its children committed, so the rAF lands on the first frame that
-  // shows the new URL. Kinds with async content (terminal replay, chat
-  // history…) add their own `ready` line.
-  const { pathname, search } = useLocation();
-  useEffect(() => {
-    if (!toplog.isOn('tab_switch')) return;
-    const [, layout, viewType] = pathname.split('/');
-    const frame = requestAnimationFrame(() => {
-      toplog.log('tab_switch', `painted ${sinceTabSwitch()} kind=${viewType || layout || 'home'} path=${pathname}`);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [pathname, search]);
-
   return (
     <App>
       <Outlet />
+      <TabSwitchPaintMark />
       <WizardHost />
       <FloatingChatWindow />
       {/* Every terminal runtime lives here, above every layout, for the life of its

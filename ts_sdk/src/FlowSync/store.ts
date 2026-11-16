@@ -1450,6 +1450,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   /** Register a created entity and splice it into every matching live query. */
   private applyCreate(typeId: TypeId, data: IEntity): void {
     const entity = this.castAndDeepAssign(data);
+    if (!data.expand?.expansions?.length && entity.remote !== true && !this.getSchema(typeId.type)?.hasBlobs) {
+      entity.markAsExpanded();
+    }
     this.register_new_entity(typeId, entity);
     // X5a: splice the already-delivered entity into every matching live
     // query locally (mirror of `removeEntityFromResults` for delete) instead
@@ -2206,6 +2209,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           continue;
         }
         const entity = this.castAndDeepAssign(entityJson);
+        // Local SQLite list queries (`DBEntity.get_all`, db_entity.py:865) do not
+        // compute role/permission expansions (`permissions`, `auth_scopes`), and
+        // `_query` already requests `expand=blobs` when `hasBlobs` is true (line 2177).
+        // Mark local query rows expanded so context setters (`_onAddedToContext`,
+        // `loadProject`) don't re-fetch a cached entity with a second GET on navigation.
+        if (!entityJson.expand?.expansions?.length && entity.remote !== true) {
+          entity.markAsExpanded();
+        }
         this.register_new_entity(entity.typeId, entity);
         const ref = this.getRef(entity.typeId);
         // A data-op that landed while the batch owned this ref was buffered.
@@ -2502,6 +2513,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    */
   public updateEntityFromJson<U extends T>(entityJson: any): U {
     const entity = this.castAndDeepAssign<U>(entityJson);
+    if (!entityJson?.expand?.expansions?.length && entity.remote !== true && !this.getSchema(entity.typeId.type)?.hasBlobs) {
+      entity.markAsExpanded();
+    }
     // Register the entity in cache if it's not already there
     if (!this.getByTypeIdFromCache(entity.typeId)) {
       this.register_new_entity(entity.typeId, entity);

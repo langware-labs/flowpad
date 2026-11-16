@@ -110,20 +110,21 @@ export function useOpenTabTargetIds(): Set<string> {
   return useMemo(() => openTabTargetIds(tabs), [tabs]);
 }
 
+/**
+ * The lifecycle a tab SHOWS (closing, failed), or null — Opening and Opened look
+ * alike, and re-rendering on them re-rendered the panel on every tab switch.
+ */
 export function useTabLifecycle(key: string | null | undefined): TabLifecycleEntry | null {
-  const lifecycles = useSyncExternalStore(
-    tabManager.lifecycle.subscribe,
-    tabManager.lifecycle.getSnapshot,
-    tabManager.lifecycle.getSnapshot,
-  );
-  return key ? (lifecycles.get(key) ?? null) : null;
+  const select = useCallback(() => (key ? (tabManager.lifecycle.getShownSnapshot().get(key) ?? null) : null), [key]);
+  return useSyncExternalStore(tabManager.lifecycle.subscribe, select, select);
 }
 
+/** Every tab's SHOWN lifecycle (see {@link useTabLifecycle}), keyed by tab hash. */
 export function useTabLifecycles(): ReadonlyMap<string, TabLifecycleEntry> {
   return useSyncExternalStore(
     tabManager.lifecycle.subscribe,
-    tabManager.lifecycle.getSnapshot,
-    tabManager.lifecycle.getSnapshot,
+    tabManager.lifecycle.getShownSnapshot,
+    tabManager.lifecycle.getShownSnapshot,
   );
 }
 

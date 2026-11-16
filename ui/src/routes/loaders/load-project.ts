@@ -154,7 +154,7 @@ function throwShellTabLoadError(error: ShellLoadError): never {
 export async function loadProject(projectTypeId: TypeId): Promise<Project> {
   let project: Project | null = null;
   try {
-    project = await dataManager.getByTypeId<Project>(projectTypeId);
+    project = await dataManager.getByTypeId<Project>(projectTypeId, Project.getLoadingExpansions());
   } catch (cause) {
     const status = errorStatus(cause);
     if (status === 404 || status === 403) {

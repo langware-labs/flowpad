@@ -18,7 +18,7 @@ import { FilePreviewRoot } from '@src/components/file-preview/FilePreviewRoot';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
 import { ImageAnnotatorRoot } from '@src/components/image-annotator/image-annotator-store';
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
@@ -44,7 +44,7 @@ import { JourneyController } from '@src/journey/JourneyController';
 import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
 import { UiTagEmitter } from '@src/tags/ui.onTag';
 import { TagHighlightObserver } from '@src/tags/highlight.onTag';
-import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
+import { LiveViewModeProvider, useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 
 import { queryClient } from '@sdk/lazy';
@@ -201,11 +201,21 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
+/**
+ * Memoized: `App` re-renders on every navigation (it reads the location for the
+ * primary-content barrier), and without this every global root and dialog below
+ * re-rendered with it on every tab switch. Its `children` come from
+ * `RootLayout`, which does not re-render on navigation.
+ */
+const MemoAppContent = memo(AppContent);
+
 const App = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   return (
     <PrimaryContentProvider navigationKey={location.key}>
-      <AppContent>{children}</AppContent>
+      <LiveViewModeProvider>
+        <MemoAppContent>{children}</MemoAppContent>
+      </LiveViewModeProvider>
     </PrimaryContentProvider>
   );
 };
