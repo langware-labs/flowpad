@@ -182,6 +182,20 @@ def test_the_wire_form_round_trips():
     assert NodeHealth.model_validate(report.model_dump(mode="json")) == report
 
 
+def test_the_hubs_health_report_parses():
+    """The hub's ``EndpointHealth`` carries ``provider_silent``; a deploy's last step reads it back."""
+    hub_report = {
+        "endpoint_id": "e",
+        "name": "api",
+        "state": "unknown",
+        "detail": "node unreachable",
+        "latency_ms": 12,
+        "provider_silent": True,
+    }
+    assert EndpointHealth.model_validate(hub_report).provider_silent is True
+    assert EndpointHealth(endpoint_id="e", name="api", state="alive").provider_silent is False
+
+
 def test_a_declared_check_rides_the_endpoint_wire_form():
     endpoint = ServiceEndpoint(
         name="db",
