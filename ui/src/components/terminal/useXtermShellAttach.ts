@@ -2,7 +2,24 @@ import { connectionManager, toplog, type Shell } from '@sdk';
 import type { OutputChunk } from '@sdk/pty-sync/types';
 import type { Terminal as XTerm } from '@xterm/xterm';
 import { useEffect, useRef } from 'react';
-import { fetchPtyStream, replayPtyStream, saveReplayCheckpoint } from './interactive-terminal/pty-replay';
+import {
+  fetchPtyStream,
+  replayPtyStream,
+  saveReplayCheckpoint,
+  takePrefetchedPtyReplay,
+} from './interactive-terminal/pty-replay';
+
+/**
+ * Whether a recording read before this attach, covering output through `coveredSeq`, leaves no
+ * gap before the live output: the first live chunk follows straight on, or — none yet — the PTY
+ * printed nothing past it by the time the attach completed.
+ */
+function reachesLiveOutput(shell: Shell, coveredSeq: number): boolean {
+  const first = shell.getPtyChunks()[0];
+  if (first) return first.seq <= coveredSeq + 1;
+  const latest = shell.ptyConnection.attachLatestSeq;
+  return latest !== null && latest <= coveredSeq;
+}
 
 /** Which trigger ran an attach — the same shell fetching its stream several times per mount shows up here. */
 export type AttachSource = 'mount' | 'status' | 'recovered' | 'reconnected';
@@ -77,15 +94,19 @@ export function useXtermShellAttach(
         try {
           const ptyId = shell.pty_pid ?? shell.id;
           const tFetch = performance.now();
-          const stream = await fetchPtyStream(ptyId);
+          // The panel fetched and replayed the recording while the runtime started; it stands in
+          // for this fetch only when it reaches the live output (nothing printed in between).
+          const early = source === 'mount' || source === 'status' ? await takePrefetchedPtyReplay(ptyId) : null;
+          const usable = early != null && reachesLiveOutput(shell, early.replay?.lastSeq ?? early.stream.checkpoint?.last_seq ?? 0);
+          const stream = usable ? early.stream : await fetchPtyStream(ptyId);
           const tReplay = performance.now();
           toplog.log(
             ['process_load', 'pty', 'agentic_process.load'],
-            `onConnected pty-stream fetch took ${(tReplay - tFetch).toFixed(1)}ms events=${stream?.events.length ?? 0} pty=${ptyId.slice(0, 8)}`,
+            `onConnected pty-stream fetch took ${(tReplay - tFetch).toFixed(1)}ms events=${stream?.events.length ?? 0} pty=${ptyId.slice(0, 8)} prefetched=${early ? (usable ? 'used' : 'stale') : 'none'} covered=${early?.replay?.lastSeq ?? early?.stream.checkpoint?.last_seq ?? '-'} first_live=${shell.getPtyChunks()[0]?.seq ?? '-'} attach_latest=${shell.ptyConnection.attachLatestSeq ?? '-'}`,
           );
           if (gen !== connectGen) return; // don't burn a full replay for a dead attach
           if (stream) {
-            const replay = await replayPtyStream(stream);
+            const replay = usable ? early.replay : await replayPtyStream(stream);
             toplog.log(
               ['process_load', 'pty', 'agentic_process.load'],
               `onConnected replay took ${(performance.now() - tReplay).toFixed(1)}ms serializedKB=${replay ? (replay.serialized.length / 1024).toFixed(1) : 0}`,

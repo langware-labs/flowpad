@@ -73,6 +73,12 @@ export class PtyConnection {
   started = false;
   restarting = false;
   lastSeq = 0;
+  /**
+   * The PTY's latest output seq when the last attach completed (its reply's `latest_seq`), or null
+   * when the reply did not say. A recording read BEFORE the attach reaches the live output only if
+   * it covers this far, or the first live chunk follows straight on from it.
+   */
+  attachLatestSeq: number | null = null;
 
   /**
    * Live in-session output chunks keyed by seq — feeds pty-sync (VT rebuild, gutters) and the
@@ -875,6 +881,8 @@ export class PtyConnection {
     }
 
     this.started = true;
+    const latest: unknown = result?.latest_seq;
+    this.attachLatestSeq = typeof latest === 'number' && Number.isFinite(latest) ? latest : null;
 
     // Flush any orphan chunks that arrived before attach() was called
     const { ptyOrphanBuffer } = await import('./ptyOrphanBuffer.js');

@@ -60,6 +60,13 @@ async function viaCheckpointAt(full: FramedPtyStream, k: number) {
   });
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.terminal_cold_open.rules: FAILING? a cold open waits serially
+//       or replays a checkpoint it need not - read this tag's rules first
+// flowpad:endcapsule tag
 describe('replay from a checkpoint', () => {
   const full = recording();
   const resizeAt = full.events.flatMap((e, i) => (e[0] === 'r' ? [i] : []));
@@ -79,6 +86,24 @@ describe('replay from a checkpoint', () => {
     const tuiAt = full.events.length - 1; // the mouse request is the frame before the prompt
     const resumed = await viaCheckpointAt(full, tuiAt);
     expect(resumed!.serialized).toContain('\x1b[?1006h');
+  });
+
+  it('a run of resizes with no output between them replays as its last one', async () => {
+    const jiggled = { ...full, events: full.events.flatMap((e) => (e[0] === 'r' ? [['r', [117, 32]], ['r', [117, 31]], e] : [e])) };
+    expect((await replayPtyStream(jiggled))!.serialized).toBe((await replayPtyStream(full))!.serialized);
+  });
+
+  it("a reopen's resizes alone (its attach, the winsize jiggle) need no replay: the view shows the same screen", async () => {
+    const reopen: FramedPtyStream['events'] = [['r', [117, 32]], ['r', [117, 31]], ['r', [117, 32]]];
+    const whole = await replayPtyStream({ ...full, events: [...full.events, ...reopen] });
+    const at = full.events.length;
+    const resumed = await viaCheckpointAt({ ...full, events: [...full.events, ...reopen] }, at);
+    const checkpointed = await replayPtyStream({ ...full });
+    expect(resumed!.serialized).toBe(checkpointed!.serialized); // returned as stored, no headless pass
+    // The view writes it at its own size -- the one the reopen asserted.
+    const a = snapshot(await restore(whole!.serialized, 117, 32));
+    const b = snapshot(await restore(resumed!.serialized, 117, 32));
+    expect(b).toEqual(a);
   });
 
   it('with nothing after the checkpoint, the checkpoint IS the terminal — no replay', async () => {

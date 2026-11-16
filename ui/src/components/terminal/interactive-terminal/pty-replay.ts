@@ -94,7 +94,12 @@ const REPLAY_SCROLLBACK = 50000; // matches the visible terminal's scrollback
 export async function replayPtyStream(stream: FramedPtyStream): Promise<ReplayResult | null> {
   const checkpoint = stream.checkpoint;
   // Nothing happened since the checkpoint: it IS the terminal — no replay at all.
-  if (checkpoint && !stream.events.length) {
+  // Nor when only resizes came after it -- what every reopen records (its attach asserts its size,
+  // then jiggles the winsize). The serialized screen carries its lines unwrapped, so it reflows to
+  // any width where it is written; replaying it here to reflow and serialize it again cost a parse
+  // and a serialize of the whole scrollback (~1 s on a 3.9 MB screen) for the same text. Below
+  // CHECKPOINT_MIN_FRAMES only: a result that becomes the next checkpoint keeps its true size.
+  if (checkpoint && stream.events.length < CHECKPOINT_MIN_FRAMES && stream.events.every((ev) => ev[0] === 'r')) {
     return { serialized: checkpoint.serialized, lastSeq: checkpoint.last_seq, cols: checkpoint.cols, rows: checkpoint.rows };
   }
   if (!stream.events.length) return null;
@@ -160,7 +165,13 @@ export async function replayPtyStream(stream: FramedPtyStream): Promise<ReplayRe
       void write(checkpoint.serialized);
       lastSeq = checkpoint.last_seq;
     }
-    for (const ev of stream.events) {
+    for (const [i, ev] of stream.events.entries()) {
+      if (ev[0] === 'r' && stream.events[i + 1]?.[0] === 'r') {
+        // A resize with no output before the next one is never seen: only the last size of a run
+        // matters. Each attach records its size (and a winsize jiggle), so a reopened terminal's
+        // tail is mostly such runs -- and every resize reflows the whole 50k-line scrollback.
+        continue;
+      }
       if (ev[0] === 'o' && typeof ev[1] === 'string') {
         pendingOutput.push(decoder.decode(base64ToBytes(ev[1]), { stream: true }));
         if (typeof ev[2] === 'number' && ev[2] > lastSeq) lastSeq = ev[2];
@@ -180,6 +191,36 @@ export async function replayPtyStream(stream: FramedPtyStream): Promise<ReplayRe
   } finally {
     term.dispose();
   }
+}
+
+export interface PrefetchedReplay {
+  stream: FramedPtyStream;
+  replay: ReplayResult | null;
+}
+
+/** How long a prefetched replay waits for its attach before it is dropped as stale. */
+const PREFETCH_TTL_MS = 30_000;
+const prefetched = new Map<string, { at: number; result: Promise<PrefetchedReplay | null> }>();
+
+/**
+ * Fetch and replay a shell's recording while its panel is still starting the runtime (`/open`,
+ * attach, the xterm's first fit) instead of after it — a cold open waited for all of them in turn
+ * (docs/navigation/dock-loading.md, step 7). The attach takes it with `takePrefetchedPtyReplay`
+ * and still checks it reaches the live output; one that does not is fetched again.
+ */
+export function prefetchPtyReplay(shellId: string): void {
+  if (!shellId || prefetched.has(shellId)) return;
+  const result = fetchPtyStream(shellId)
+    .then(async (stream) => (stream ? { stream, replay: await replayPtyStream(stream) } : null))
+    .catch(() => null);
+  prefetched.set(shellId, { at: performance.now(), result });
+}
+
+/** The replay `prefetchPtyReplay` started for this shell, once; null when none (or it went stale). */
+export function takePrefetchedPtyReplay(shellId: string): Promise<PrefetchedReplay | null> | null {
+  const entry = prefetched.get(shellId);
+  prefetched.delete(shellId);
+  return entry && performance.now() - entry.at < PREFETCH_TTL_MS ? entry.result : null;
 }
 
 /**

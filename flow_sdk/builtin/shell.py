@@ -103,6 +103,23 @@ class _OutputFeed:
             return b""
         return chunk
 
+    def pending(self) -> bytes:
+        """Every chunk already queued, joined, without waiting: a reader that fell behind a flood of
+        output catches up in one step instead of doing its per-chunk work once per chunk."""
+        chunks: list[bytes] = []
+        while not self.closed:
+            try:
+                item = self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if item is None:
+                self.closed = True
+                break
+            seq, chunk = item
+            if seq > self._snapshot_max_seq:
+                chunks.append(chunk)
+        return b"".join(chunks)
+
 
 class ShellStatus(StrEnum):
     IDLE = "idle"
