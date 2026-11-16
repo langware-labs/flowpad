@@ -3,10 +3,9 @@
  * (`agentic-assets/project_manifest/project_manifest.json`).
  *
  *   1. Configure: pick the project's agent in Customize → Home → Home page (the
- *      shared asset picker). Launching the project then lands in the agent's
- *      chat in Vibe; the Home button steps off to Flowpad's home; launching
- *      again RESUMES the same chat. Only a launch lands there — the project page
- *      itself (no ask) stays on its page.
+ *      shared asset picker). Home then lands in the agent's chat in Vibe, and
+ *      Home again RESUMES the same chat. Only Home lands there — opening the
+ *      project stays on its page.
  *   2. Deleting: resetting the setting, or deleting the agent it names, means
  *      a launch lands nowhere but the project page, and Home on the default home.
  *   3. Malformed: a manifest naming an unknown type, a bad id, or neither, or a
@@ -138,8 +137,8 @@ async function clickHome(page: Page) {
 }
 
 /** Launch the project the way picking or opening one does: its dock, asking for the home page
- *  (`withHomePage(DockPointer.forProject(id))`). The Home button no longer asks (4380657ba): it is
- *  Flowpad's own home. */
+ *  (`withHomePage(DockPointer.forProject(id))`). The Home button asks too (55d52da4f); with no home
+ *  page declared, both end on Flowpad's own home. */
 async function launchProject(page: Page, projectId: string) {
   await page.goto(`/dock/project/${projectId}?homePage=open`);
 }
@@ -178,7 +177,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   for (const project of [home, foreign]) {
     try {
-      if (project?.id) await post(`${GRAPH}/project/${project.id}/delete-with-children`);
+      if (project?.id) await post(`${GRAPH}/project/${project.id}/delete-with-children`, { delete_folder: true });
     } catch {
       /* best effort */
     }
@@ -262,14 +261,9 @@ test.describe('project home page', () => {
     const src = await page.getByTestId('vibe-app-frame').first().getAttribute('src');
     expect(src ?? '').not.toContain('scope-');
 
-    // Every launch asks for the home page: the app again.
-    await launchProject(page, home.id);
-    await expect(page).toHaveURL(new RegExp(`/dock/app/${appTypeId}\\?.*scope-activeProjectId=${home.id}`));
-    // The Home button is Flowpad's home, never the project's home page.
+    // Home from the app lands on it again; the card still names the app after a reload.
     await clickHome(page);
-    await expectDefaultHome(page);
-    await page.goto('/');
-    await expectDefaultHome(page);
+    await expect(page).toHaveURL(new RegExp(`/dock/app/${appTypeId}`));
     const reloaded = await openCustomize(page, home.id);
     await expect(reloaded.getByTestId('home-page-picker')).toContainText(appName);
 
@@ -277,7 +271,7 @@ test.describe('project home page', () => {
     expect(errors).toEqual([]);
   });
 
-  test('Home lands on the home agent chat in Vibe, steps off it, and resumes it', async ({ page }) => {
+  test('Home lands on the home agent chat in Vibe, and Home again resumes the same chat', async ({ page }) => {
     const errors = collectPageErrors(page);
     declare(`agent-${homeAgent.id}`);
     await page.goto(projectHomeUrl(home.id));
@@ -289,16 +283,12 @@ test.describe('project home page', () => {
     const firstProcess = SESSION_URL.exec(page.url())?.[1];
     expect(firstProcess).toBeTruthy();
 
-    // 3. The Home button steps off the chat to Flowpad's home (it never asks for the project's home page).
+    // 3. Home from the home page itself → the SAME chat, resumed rather than a new one.
     await clickHome(page);
-    await expectDefaultHome(page);
-
-    // 4. Launching the project again → the SAME chat, resumed rather than a new one.
-    await launchProject(page, home.id);
     await expect(page).toHaveURL(SESSION_URL);
     expect(SESSION_URL.exec(page.url())?.[1]).toBe(firstProcess);
 
-    // 5. Only a launch lands there: the project page without the ask stays on the project page,
+    // 4. Only a launch or Home lands there: the project page without the ask stays on the project page,
     //    where the home page is configured.
     await page.goto(`/dock/project/${home.id}`);
     await expect(page).toHaveURL(new RegExp(`/dock/project/${home.id}`));

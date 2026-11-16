@@ -67,6 +67,8 @@ test.afterAll(async () => {
     if (projectId) {
       await fetch(`${GRAPH}/project/${projectId}/delete-with-children`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delete_folder: true }),
         signal: AbortSignal.timeout(20_000),
       });
     }
@@ -98,7 +100,9 @@ test('opening the project auto-launches the selected agent once, with its intro 
   //    drained into the first user turn. Either proves delivery through the queue
   //    path rather than a direct first turn (the process was opened with `use()`).
   const queued = page.getByTestId('entity-execution-queue-entry').filter({ hasText: 'AUTO LAUNCH OK' });
-  const userTurn = page.locator('[data-testid="execution-message"][data-role="user"]').filter({ hasText: 'AUTO LAUNCH OK' });
+  const userTurn = page
+    .locator('[data-testid="execution-message"][data-role="user"]')
+    .filter({ hasText: 'AUTO LAUNCH OK' });
   await expect(queued.or(userTurn).first()).toBeVisible();
 
   // 4. Backend agrees: the one flagged agent is marked, a second call has nothing to launch.
