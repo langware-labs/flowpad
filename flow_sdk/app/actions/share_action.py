@@ -372,7 +372,7 @@ async def conversation_add_message() -> ApiResponse:
         body,
         request_info.someone_typeid,
         pending_send=pending_send,
-        origin_process=origin_process or None,
+        origin_process=origin_process,
     )
     if on_reply and isinstance(response, ApiSuccessResponse) and isinstance(response.data, dict):
         from datetime import timedelta  # noqa: PLC0415

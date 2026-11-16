@@ -14,7 +14,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { Agent, isTypeId, TypeId, WebApp } from '@sdk';
 import { Loader2 } from 'lucide-react';
 import { externalUrl, OPEN_AGENT_MESSAGE, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
-import { agentSessionDock } from '@src/components/agents/use-agent-launcher';
+import { agentDockById } from '@src/components/agents/use-agent-launcher';
 import { openExternal } from '@src/lib/open-external';
 import { isHubRelayed } from '@src/lib/hub-relayed';
 import { Button } from '@src/components/ui/button';
@@ -209,10 +209,9 @@ export function AppDisplayViewer({
       const outside = guestExternalUrl(event.data);
       if (outside) return openExternal(outside);
       const agent = guestAgent(event.data);
-      if (agent && project?.id) {
-        const projectId = project.id;
-        void Agent.getById<Agent>(agent.id)
-          .then((found) => (found ? agentSessionDock(found, projectId) : null))
+      const projectId = project?.id;
+      if (agent && projectId) {
+        void agentDockById(agent.toString(), projectId)
           .then((dock) => dock && navigation.openDock(dock))
           .catch((e) => console.warn('[app-display] open agent failed', e));
       }

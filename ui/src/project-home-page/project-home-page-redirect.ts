@@ -6,18 +6,12 @@ import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { isAppType } from '@src/navigation/app-dock';
 import { projectScope } from '@src/lib/scope-filter';
 import { ambientLoadProjectId, registerLoadRedirect } from '@src/routes/loaders/load-redirects';
-import { agentSessionDock } from '@src/components/agents/use-agent-launcher';
+import { agentDockById } from '@src/components/agents/use-agent-launcher';
 import { PROVIDER_PROJECT_PARAM, HOME_AGENT_PARAM } from './dependency-home';
 import { HOME_PAGE_OPEN, HOME_PAGE_PARAM } from './home-page-state';
 
 /** Registration IS the switch: `false` takes the resolver out of the chain entirely. */
 export const PROJECT_HOME_PAGE_ENABLED = true;
-
-/** An AGENT home page lands where opening the agent does (`agentSessionDock`); null when the agent is gone. */
-async function agentHomePageDock(agentTypeId: string, projectId: string): Promise<DockPointer | null> {
-  const agent = await Agent.getById<Agent>(new TypeId(agentTypeId).id);
-  return agent ? agentSessionDock(agent, projectId) : null;
-}
 
 /**
  * Where a resolved home page lives: an agent's chat in Vibe; a web app RUNNING
@@ -38,7 +32,7 @@ export async function homePageDock(data: ProjectHomePage, projectId: string): Pr
           .withOption(HOME_AGENT_PARAM, data.asset) ?? null
       );
     }
-    return agentHomePageDock(data.asset, projectId);
+    return agentDockById(data.asset, projectId);
   }
   if (isAppType(data.type)) {
     return DockPointer.forAppEntity(new TypeId(data.asset))
