@@ -134,7 +134,8 @@ def test_a_self_managed_backend_is_running_not_orphaned(spawn_owned, free_port):
     working backend and every worker under it.
     """
     port = free_port()
-    proc = spawn_owned("selfmanaged", port=port, env_instance=False)
+    # It is a backend by its cmdline, as a hand-started one is (`python -m flow_sdk.server.run`).
+    proc = spawn_owned("selfmanaged", port=port, env_instance=False, argv=("-m", "flow_sdk.server.run"))
     d = paths.instance_dir("selfmanaged")
     d.mkdir(parents=True)
     (d / "server.json").write_text(json.dumps({"port": port, "server_pid": proc.pid}))
@@ -149,8 +150,9 @@ def test_a_self_managed_backend_is_running_not_orphaned(spawn_owned, free_port):
     # A first-class field, not a warning substring: kill/reset/teardown all
     # need the predicate and matching prose for it is fragile both ways.
     assert st.launcher_owned is False
-    # And its processes must not be offered up for reaping.
-    assert [o.instance for o in report.orphans] == []
+    # And its processes must not be offered up for reaping. (The orphan list is machine-wide:
+    # another Flowpad running on the same box is not this instance's to answer for.)
+    assert "selfmanaged" not in [o.instance for o in report.orphans]
 
 
 def test_a_stale_server_json_is_reported_as_a_broadcast_hazard():

@@ -568,7 +568,7 @@ def _openrouter_key() -> str:
 
 @pytest.fixture(autouse=True)
 async def _fund_opencode_rows(request, _real_home_for_cli_subprocess_tests):
-    """Every row parametrized with ``opencode`` runs funded by key.
+    """Every row parametrized with ``opencode`` runs funded through the hub (``fund_worker_without_a_login``).
 
     Depends on ``_real_home_for_cli_subprocess_tests`` so the key is written into the
     store of the HOME the test then runs under. Without it pytest may fund first, into the
@@ -586,38 +586,70 @@ async def _fund_opencode_rows(request, _real_home_for_cli_subprocess_tests):
     yield
 
 
+async def _sign_in_to_the_local_hub(worker: str) -> None:
+    """Sign this test box in to the LOCAL QA hub as a brand-new user, or SKIP.
+
+    The hub mints a new user's default allowance on first contact (its bootstrap), funded by the
+    hub's own root -- on the QA hub a Vertex root with sm/md/lg sizes. A NEW user, not the shared
+    ``/login/local`` account, so the allowance is the only budget the box can see: that account
+    collects whatever budgets earlier runs made for it. Only a local hub is ever used: the login
+    writes this box's hub credentials, and a test must never sign in anywhere real.
+    """
+    import uuid
+    from urllib.parse import urlparse
+
+    import httpx
+
+    from flow_sdk.config import default_service_config
+    from tests.hub_tests._local_login import login_as
+
+    hub = (os.environ.get("FLOWPAD_HUB_URL") or "").rstrip("/")
+    if not hub or urlparse(hub).hostname not in {"localhost", "127.0.0.1", "::1"}:
+        pytest.skip(f"{worker}: has no vendor login to ride and no LOCAL hub (FLOWPAD_HUB_URL) funds it")
+    default_service_config.flowpad_hub_url = hub
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
+
+    if resolve_hub_api_key():
+        # Already signed in here (an earlier worker of this test): one account per box, or the
+        # endpoint list cached for the first account would be spent with the second one's login.
+        return
+    account = {"email": f"fund-{uuid.uuid4().hex[:12]}@local.test", "password": f"pw-{uuid.uuid4().hex[:16]}"}
+    try:
+        async with httpx.AsyncClient(base_url=f"{hub}/api/v1", timeout=30.0) as anon:
+            await anon.post("/signup", json={**account, "name": f"{worker} funding"})
+            login = await anon.post("/login", json=account)
+    except httpx.HTTPError as exc:
+        pytest.skip(f"{worker}: local hub {hub} unreachable ({type(exc).__name__})")
+    if login.status_code != 200:
+        pytest.skip(f"{worker}: local hub login failed: {login.status_code} {login.text[:200]}")
+    login_as(login.json()["data"])
+
+
 async def fund_worker_without_a_login(worker: str, *, even_with_device_login: bool = False) -> None:
     """A harness with no account of its own (``ApiAuthSpec.has_device_login`` False) cannot ride
-    this machine's vendor logins like the others do: give it a stored provider key through the
-    product's own store, or SKIP — an unfunded worker is an environment gap, not a failure."""
+    this machine's vendor logins like the others do: fund it through the hub -- the signed-in
+    user's default allowance, the way a new Flowpad user's box is funded -- or SKIP: an unfunded
+    worker is an environment gap, not a failure. No provider key is stored or read here."""
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
-    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
+    from flow_sdk.lm_api import LMApiProvider
 
     spec = driver_api_auth_spec(worker)
     if spec is None or (spec.has_device_login and not even_with_device_login):
         return
-    key = _openrouter_key()
-    if not key:
-        pytest.skip(f"{worker}: needs OPENROUTER_API_KEY (env or .env.local) — it has no vendor login to ride")
-    try:
-        set_lm_api(key, LMApiProvider.OPENROUTER)
-    except Exception as exc:  # noqa: BLE001 — ANY store failure is an environment gap here: skip, never fail
-        # The test process holds an in-memory keyring, so it can only write a store IT created.
-        # An existing store (a real instance picked up from a parent ``.env.local``) is not ours
-        # to write — say so rather than fail, and never touch it.
-        from flow_sdk.instance_settings import get_instance_settings
-
-        pytest.skip(
-            f"{worker}: cannot store a provider key in instance {get_instance_settings().instance_name!r} "
-            f"({type(exc).__name__}) — run with a throwaway FLOW_HOME + FLOW_INSTANCE"
-        )
+    await _sign_in_to_the_local_hub(worker)
+    await HubProxy.try_call("GET", "bootstrap")  # mints the default allowance on first contact
+    if not await fetch_hub_llm_endpoints():  # also warms the list the spawn resolver reads
+        pytest.skip(f"{worker}: the local hub offered this box no LLM endpoint to spend")
     cap = await Capability.get_by_kind(worker_capability_kind(worker))
     if cap is None:
         pytest.skip(f"{worker}: no harness capability row seeded in this test DB")
+    # ``flowpad`` is the capability's word for "a hub endpoint" (``llm_source._matches_preference``).
     cap.auth_mode = "api"
-    cap.api_provider = LMApiProvider.OPENROUTER.value
+    cap.api_provider = LMApiProvider.FLOWPAD.value
     await cap.save(notify=False)
 
 

@@ -45,10 +45,10 @@ def _e2b_reachable() -> bool:
     if not E2B_KEY:
         return False
     try:
-        import socket
-        socket.setdefaulttimeout(2.0)
-        sock = socket.create_connection(("api.e2b.dev", 443), timeout=2.0)
-        sock.close()
+        # An HTTPS request, not a raw socket: the E2B SDK is an HTTP client and honours HTTPS_PROXY, and on a host that
+        # only reaches the internet through a proxy a raw connect cannot even resolve the name.
+        import urllib.request
+        urllib.request.urlopen("https://api.e2b.dev/health", timeout=2.0).close()
         return True
     except OSError:
         return False

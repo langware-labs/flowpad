@@ -222,8 +222,11 @@ async def test_probe_may_not_overturn_a_refusal_the_cli_itself_made(monkeypatch)
         resolve_worker_probe_context,
     )
 
-    # A credential that is present and cannot authenticate.
+    # A credential that is present and cannot authenticate -- and no working one beside it: a real
+    # API key in the runner's env (a developer's shell) outranks the token and answers the turn.
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-invalid-000")
+    for working in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
+        monkeypatch.delenv(working, raising=False)
     await run_discovery([CLAUDE_KIND])
 
     context = resolve_worker_probe_context("claude")

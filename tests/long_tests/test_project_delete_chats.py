@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-import shutil
 from contextlib import aclosing
 from pathlib import Path
 from time import perf_counter
@@ -11,10 +10,12 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.agentic_process import prompt_worker_active
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_is_installed
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.session_history import find_opencode_session
 from flow_sdk.builtin.project import Project
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.flowpad_types.vendors import VENDORS
+from tests.long_tests.conftest import fund_worker_without_a_login
 from flow_sdk.fs_store import FSRef, RecordType
 from flow_sdk.fs_store.indexer import IndexerOptions, build_default_indexer
 from flow_sdk.fs_store.indexer.functions.claude_projects import claude_project_identity_key
@@ -51,7 +52,8 @@ async def _start_hi(process):
 async def test_deleted_project_chats_do_not_reappear_in_project_scan(initialize_test_db, tmp_path, monkeypatch):
     started = perf_counter()
     timings = [("start", started)]
-    missing = [v.key for v in VENDORS if shutil.which(v.key) is None]
+    # The product's own install gate: a binary on PATH, or a ``python -m`` harness's distributions (deepagents).
+    missing = [v.key for v in VENDORS if not worker_is_installed(v.key)]
     if missing:
         pytest.skip(f"Missing worker CLIs: {missing}")
     # The CLI-auth fixture restores HOME; point discovery at those SAME stores.
@@ -74,12 +76,15 @@ async def test_deleted_project_chats_do_not_reappear_in_project_scan(initialize_
             # Native Copilot's portable sm means auto; explicitly select a small model here.
             if vendor.worker_type == WorkerType.COPILOT:
                 model = "gpt-5.4-mini"
+            # A harness with no login of its own (deepagents) and opencode's signed-out test HOME
+            # are funded through the hub; a no-op for the harnesses with a device login.
+            await fund_worker_without_a_login(vendor.key, even_with_device_login=(vendor.key == "opencode"))
             process = await AgenticProcess(
                 worker_type=WorkerType(vendor.worker_type), project_id=project.id, workdir=cwd,
                 visible=False, pty_mode=False, load_flowpad_assistant=False,
-                cli_config={"model": model},
+                cli_config={"model": model} if model else {},
             ).save()
-            assert process.cli_options.model == model and process.cli_options.resolved_model
+            assert process.cli_options.model == model
             processes.append(process)
         timings.append(("create project/processes", perf_counter()))
         starts = [asyncio.create_task(_start_hi(process)) for process in processes]

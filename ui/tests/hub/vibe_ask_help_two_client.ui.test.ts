@@ -66,7 +66,7 @@ const getApi = (apiUrl: string, p: string) => fetch(`${apiUrl}/api/v1${p}`).then
  *  it the default-on checkbox would silently downgrade to "not attached", and
  *  the test would pass while proving nothing about the transcript. */
 function seedTranscript(): void {
-  const dir = path.join(os.homedir(), '.claude', 'projects', workdir.replace(/\//g, '-'));
+  const dir = path.join(process.env.FLOWPAD_CLAUDE_HOME || path.join(os.homedir(), '.claude'), 'projects', workdir.replace(/\//g, '-'));
   mkdirSync(dir, { recursive: true });
   const lines = [
     { type: 'user', timestamp: new Date(0).toISOString(), message: { role: 'user', content: `vibe session ${token}` } },

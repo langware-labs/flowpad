@@ -458,6 +458,17 @@ async def test_first_run_setup_settles_the_llm_source_then_runs_the_wizard(monke
         await _cleanup(wizard, trigger)
 
 
+def _unfunded(monkeypatch):
+    """A fresh box: no LLM source yet. A funded one (a signed-in Claude on the host running the
+    tests) is never shown setup at all, so the popup paths below would never be reached."""
+    from flow_sdk.core.compute import llm_source
+
+    async def _no():
+        return False
+
+    monkeypatch.setattr(llm_source, "llm_source_funded", _no)
+
+
 @async_context
 async def test_a_live_tab_gets_the_popup_and_waits_for_start_instead_of_racing_a_question_onto_it(monkeypatch):
     """A person watching gets the popup — steps blank, explanation readable —
@@ -492,6 +503,7 @@ async def test_a_live_tab_gets_the_popup_and_waits_for_start_instead_of_racing_a
         navigated.append(str(wizard.id))
 
     monkeypatch.setattr(ws_routes, "get_active_connection", lambda: ("conn-1", object()))
+    _unfunded(monkeypatch)
     monkeypatch.setattr(wizard_start, "_resolve_llm_source", _resolve_source)
     monkeypatch.setattr(wizard_start, "navigate_to_wizard", _navigate)
     monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
@@ -531,6 +543,7 @@ async def test_a_box_with_everything_installed_gets_no_popup(monkeypatch):
         navigated.append(str(wizard.id))
 
     monkeypatch.setattr(ws_routes, "get_active_connection", lambda: ("conn-1", object()))
+    _unfunded(monkeypatch)
     monkeypatch.setattr(wizard_start, "navigate_to_wizard", _navigate)
     monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
 

@@ -27,6 +27,7 @@ and one conversation both users belong to.
 
 from __future__ import annotations
 
+import json
 import os
 import signal
 import subprocess
@@ -61,6 +62,14 @@ def _hub_socket_count(hub_port: int) -> int:
         check=False,
     ).stdout
     return sum(1 for line in out.splitlines() if "ESTABLISHED" in line)
+
+
+def _server_pid(instance) -> int:
+    """The pid of the backend SERVER (``server.json``). ``backend_pid`` is the launcher's ``uv run`` wrapper: freezing it leaves
+    the server -- and its hub socket -- running, so there is no gap to test."""
+    path = os.path.join(instance.flow_home, "instances", instance.name, "server.json")
+    with open(path, encoding="utf-8") as fh:
+        return int(json.load(fh)["server_pid"])
 
 
 def _has_message(port: int, fm_id: str) -> bool:
@@ -123,7 +132,7 @@ def rig(resolve_live_e2e_instance) -> dict:
 def test_message_sent_during_a_socket_gap_arrives_after_reconnect(rig):
     sender = rig["sender"]
     recipient = rig["recipient"]
-    recipient_pid = recipient.backend_pid
+    recipient_pid = _server_pid(recipient)
     resumed = False
 
     # Freeze the recipient. Its process stays alive and its conversation stays

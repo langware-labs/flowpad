@@ -38,6 +38,7 @@ async def channel(bootstrapped_client, hub_faked, monkeypatch):
     import flow_sdk.cli.app_config as app_config  # noqa: PLC0415
 
     monkeypatch.setattr(app_config, "get_user", lambda: {"email": ME})
+    before = {str(t.id) for t in await Task.get_all({})}
     runtime.start(watchdog=False)
     source = await ensure_user_tasks_channel()
     try:
@@ -47,6 +48,11 @@ async def channel(bootstrapped_client, hub_faked, monkeypatch):
         runtime.stop()
         await outbound.settle()
         await source.delete()
+        # The DB outlives the test: tasks left behind are every later channel's to pull, project
+        # and purge again, so each test in the file ran longer than the last.
+        for task in await Task.get_all({}):
+            if str(task.id) not in before:
+                await task.delete()
 
 
 async def _thread(source, task_id: str) -> list[tuple[SourceItem, FlowMessage]]:

@@ -28,6 +28,18 @@ runner = CliRunner()
 _RUN = "flow_sdk.cli.commands.diagnose_cmd._run_diagnose"
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _registries_loaded():
+    """The one-time load a process pays before its first diagnose: every builtin entity class
+    and the shipped data drivers (~3.5 s on a slow host). The 5 s ``wait_for`` below detects a
+    HANG in the run; it does not time this load, which whichever test runs first would pay."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    from flow_sdk.ingest.driver_runtime import DRIVERS
+
+    SchemaRegistry.get_entity_cls("agent")
+    DRIVERS.get_or_none("")
+
+
 @pytest.fixture(autouse=True)
 def swept(monkeypatch):
     """Step 1 (the diagnose spec) answers a known diagnosis here, and records what it was asked:
@@ -80,6 +92,9 @@ class _TakesTurns:
     """``AgenticProcess.send_turn`` as the command calls it, answered as the
     ``PromptResult`` the real method returns for an accepted turn. It never registers
     in ``_PROMPT_WORKERS``, so a test that wants a live worker puts one there itself."""
+
+    #: ``Deployment.create_process`` stamps which agent the process runs as into it.
+    context_data = None
 
     async def send_turn(self, _text):
         return PromptResult.satisfied("The turn was accepted.", executor=f"agentic_process-{self.id}")
@@ -681,8 +696,7 @@ async def test_diagnose_process_prompt_routes_headless_not_pty():
     Real AgenticProcess and the runner's real construction; nothing mocked. The
     assertion is on the routing decision itself: prompt() must not be refused.
     """
-    from flow_sdk.builtin.agentic_process import agentic_process as ap_mod
-    from flow_sdk.cli.commands.diagnose_cmd import _build_diagnose_process
+    from flow_sdk.cli.commands.diagnose_cmd import _build_diagnose_process, _stop_worker
     from flow_sdk.responses.response import ApiFailResponse
 
     ap = await _build_diagnose_process()
@@ -694,11 +708,10 @@ async def test_diagnose_process_prompt_routes_headless_not_pty():
             f"(pty_mode={ap.pty_mode}) instead of headless"
         )
     finally:
-        # If the headless path DID start a worker turn, shut it down so the
-        # test leaves no live subprocess behind.
-        worker = ap_mod._PROMPT_WORKERS.pop(ap.id, None)
-        if worker is not None:
-            await worker.close_session()
+        # If the headless path DID start a worker turn, shut it down so the test leaves no
+        # live subprocess behind -- the child AND the turn task (the runner's own teardown): a
+        # turn left running on a host with a signed-in claude outlives the test's loop.
+        await _stop_worker(ap)
 
 
 # --------------------------------------------------------------------------- #

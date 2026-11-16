@@ -37,7 +37,7 @@ def kept_files(scanner, root: Path) -> set[str]:
 
 # Each folder's rules. ``sub/local`` is excluded by its parent, so its own file is never read.
 RULES = {
-    "": "# a comment\n*.log\n!keep.log\n/top.txt\ndocs/*.tmp\na/**/b\nab**/c\n[!x]y.cfg\n"
+    "": "# a comment\n*.log\n!keep.log\n/top.txt\ndocs/*.tmp\na/**/b\n[!x]y.cfg\n"
         "[[:digit:]]*.dat\n\\#hash\ntrail   \nout/\n*.md\n",
     "sub": "!keep.md\r\n!out/\nlocal/\n**/gen/**\n",
     "sub/local": "!inner.txt\n",
@@ -66,10 +66,21 @@ def test_the_walk_keeps_exactly_what_git_keeps(scanner, tmp_path, name):
     git_keeps = {os.path.normpath(p) for p in set(every) - set(ignored) if p}
 
     assert kept_files(scanner, tmp_path) == git_keeps
-    # The rules bite both ways: a nested "!" re-includes, an excluded folder stays excluded,
-    # and a "**" right after a literal is one star.
-    assert {"sub/keep.md", "sub/deeper/d.log", "sub/out/o.txt", "ab/x/c"} <= git_keeps
-    assert not {"sub/a.md", "sub/local/inner.txt", "abq/c", "out/o.txt"} & git_keeps
+    # The rules bite both ways: a nested "!" re-includes, an excluded folder stays excluded.
+    assert {"sub/keep.md", "sub/deeper/d.log", "sub/out/o.txt"} <= git_keeps
+    assert not {"sub/a.md", "sub/local/inner.txt", "out/o.txt"} & git_keeps
+
+
+@pytest.mark.parametrize("name", [".gitignore", ".flowignore"])
+def test_a_double_star_right_after_a_literal_is_one_star(scanner, tmp_path, name):
+    """``ab**/c`` is ``ab*/c`` (gitignore(5): "other consecutive asterisks are regular
+    asterisks"). Pinned rather than asked of host git: git 2.47 lets this ``**`` cross '/'."""
+    touch(tmp_path / name, "ab**/c\n")
+    for rel in ("abq/c", "ab/x/c"):
+        touch(tmp_path / rel)
+    kept = kept_files(scanner, tmp_path)
+    assert "ab/x/c" in kept
+    assert "abq/c" not in kept
 
 
 def test_a_flowignore_decides_before_the_gitignore_and_the_force_include(scanner, tmp_path):

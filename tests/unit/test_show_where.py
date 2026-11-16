@@ -10,6 +10,19 @@ from tests.unit.agent._seed import seed_project
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
+@pytest.fixture(autouse=True)
+def _no_fixer_agent(monkeypatch):
+    """The mock app has no files, so bringing it up fails and recovery would hand it to the
+    webapp-fixer AGENT -- a real LLM run on any host with a signed-in worker. Where the tab goes is
+    the question here, so the fixer answers as on a box with no assistant: it could not run."""
+    from flow_sdk.core.webapp import coordinator
+
+    async def _absent(key, request):
+        raise RuntimeError("no fixer in this test")
+
+    monkeypatch.setattr(coordinator, "_run_fixer", _absent)
+
+
 async def _app_and_process(tmp_path, same_project: bool):
     session_project = await seed_project(tmp_path / "session")
     app_project = session_project if same_project else await seed_project(tmp_path / "mocks")
