@@ -930,6 +930,7 @@ async def handle_add_message(
     someone_typeid: str,
     *,
     pending_send: bool = False,
+    origin_process: Optional[str] = None,
 ) -> ApiResponse:
     """Append a message to a Conversation — the single message-send handler.
 
@@ -1149,6 +1150,10 @@ async def handle_add_message(
         reply_to_id=reply_to_id,
         thread_root_id=thread_root_id,
     )
+    if origin_process:
+        # Link the writing session BEFORE the message is announced: a session's `--on-reply` wait
+        # tells its own sends from replies by this link, and the check runs on the save's event.
+        await link_origin_session(conv.id, reply_fm.id, origin_process, someone_typeid)
 
     if start_settings is not None:
         # Guest-side row for the session this prompt opens. The host adopts the
