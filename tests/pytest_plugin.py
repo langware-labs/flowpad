@@ -14,6 +14,8 @@ import logging
 import os
 import shutil
 import subprocess
+import threading
+import time
 
 import pytest
 
@@ -297,6 +299,7 @@ def pytest_addoption(parser):
 def _apply_adjustable_timeout(config, items) -> None:
     """Add ADJUSTABLE_TIMEOUT to every test's timeout: its own ``@pytest.mark.timeout`` if it has one, else the global
     ``--timeout``. Public API only - the adjusted value goes on as a closer marker, the committed values stay untouched."""
+    from tests import adjustable_timeout
     from tests.adjustable_timeout import ADJUSTABLE_TIMEOUT, adjusted
 
     if not ADJUSTABLE_TIMEOUT:
@@ -309,6 +312,52 @@ def _apply_adjustable_timeout(config, items) -> None:
             continue
         kwargs = {k: v for k, v in (marker.kwargs if marker else {}).items() if k != "timeout"}
         item.add_marker(pytest.mark.timeout(adjusted(float(base)), **kwargs), append=False)
+    if not config.pluginmanager.has_plugin(_GrowingCap.NAME):
+        cap = _GrowingCap()
+        config.pluginmanager.register(cap, _GrowingCap.NAME)
+        adjustable_timeout.grow_running_test = cap.grow
+
+
+class _GrowingCap:
+    """With ADJUSTABLE_TIMEOUT on, a running test's cap grows by the slack each ``adjusted()`` wait inside it adds:
+    the hook above adds it to the cap once, while a test can hold several waits. pytest-timeout's own hooks only -
+    the timer is re-armed with what was left of it plus the slack."""
+
+    NAME = "adjustable-timeout-growing-cap"
+
+    def __init__(self) -> None:
+        self.item = None
+        self.settings = None
+        self.deadline = 0.0
+        self.rearming = False
+
+    @pytest.hookimpl(tryfirst=True, optionalhook=True)
+    def pytest_timeout_set_timer(self, item, settings):
+        self.item, self.settings = item, settings
+        self.deadline = time.monotonic() + settings.timeout
+        # Returns None: pytest-timeout's own hook arms the timer.
+
+    @pytest.hookimpl(tryfirst=True, optionalhook=True)
+    def pytest_timeout_cancel_timer(self, item):
+        if not self.rearming:
+            self.item = self.settings = None
+
+    def grow(self, seconds: float) -> None:
+        item, settings = self.item, self.settings
+        if item is None:
+            return  # not inside a timed test (collection, a module constant)
+        if settings.method == "signal" and threading.current_thread() is not threading.main_thread():
+            return  # a SIGALRM timer is re-armed only from the main thread
+        left = self.deadline - time.monotonic()
+        if left <= 0:
+            return
+        hook = item.config.hook
+        self.rearming = True
+        try:
+            hook.pytest_timeout_cancel_timer(item=item)
+            hook.pytest_timeout_set_timer(item=item, settings=settings._replace(timeout=left + seconds))
+        finally:
+            self.rearming = False
 
 
 def pytest_collection_modifyitems(config, items):

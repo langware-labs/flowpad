@@ -370,29 +370,31 @@ def test_contacts_find_nobody_is_not_found(conv_cli, contacts):
     assert result.exit_code == 4
 
 
+@pytest.fixture
+def signed_in(monkeypatch):
+    monkeypatch.setattr(conversation_cmd, "_signed_in", lambda: True)
+
+
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_new_refuses_an_ambiguous_name_before_creating(conv_cli, contacts, monkeypatch):
-    monkeypatch.setattr(conversation_cmd, "_post_json", _no_auth_wrapper(conversation_cmd._post_json))
+def test_new_refuses_an_ambiguous_name_before_creating(conv_cli, contacts, signed_in):
     result = conv_cli.invoke(["conversation", "new", f"Nir {contacts}", "hi"])
     assert result.exit_code == 2 and "AMBIGUOUS" in result.output
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_new_refuses_when_signed_out(conv_cli, contacts, monkeypatch):
-    real = conversation_cmd._post_json
+    # The gate is the local sign-in check (``_signed_in``), before anything is posted.
+    monkeypatch.setattr(conversation_cmd, "_signed_in", lambda: False)
     monkeypatch.setattr(conversation_cmd, "_post_json",
-                        lambda url, payload, **kw: {"auth_required": True} if url.endswith("conversation-list")
-                        else pytest.fail(f"posted {url} while signed out"))
+                        lambda url, payload, **kw: pytest.fail(f"posted {url} while signed out"))
     result = conv_cli.invoke(["conversation", "new", f"gadi-{contacts}@example.com", "hi"])
     assert result.exit_code == 7 and "AUTH_REQUIRED" in result.output
-    assert real  # untouched
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_new_creates_with_the_contact_and_reports_the_id_when_invite_fails(conv_cli, contacts, monkeypatch):
+def test_new_creates_with_the_contact_and_reports_the_id_when_invite_fails(conv_cli, contacts, signed_in):
     """No hub in the test server, so the invite fails: the conversation must exist,
     carry the contact as member, and the error must name its id for a retry."""
-    monkeypatch.setattr(conversation_cmd, "_post_json", _no_auth_wrapper(conversation_cmd._post_json))
     result = conv_cli.invoke(["conversation", "new", f"gadi {contacts}", "hello"])
     assert result.exit_code == 7 and "SHARE_FAILED" in result.output, result.output
     cid = result.output.split("conversation ", 1)[1].split(" was created", 1)[0]
@@ -400,29 +402,15 @@ def test_new_creates_with_the_contact_and_reports_the_id_when_invite_fails(conv_
     assert [m.get("email") for m in conv["members"]] == [f"gadi-{contacts}@example.com"]
 
 
-def _no_auth_wrapper(real):
-    """The test server is signed out; pretend the listing says signed in."""
-    def wrapped(url, payload, **kw):
-        data = real(url, payload, **kw)
-        return {**data, "auth_required": False} if url.endswith("conversation-list") else data
-    return wrapped
-
-
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_new_takes_an_email_nobody_knows_yet(conv_cli, contacts, monkeypatch):
+def test_new_takes_an_email_nobody_knows_yet(conv_cli, contacts, signed_in):
     """Not in the address book: the email itself is the member and the invitee."""
-    monkeypatch.setattr(conversation_cmd, "_post_json", _no_auth_wrapper(conversation_cmd._post_json))
     stranger = f"stranger-{contacts}@example.com"
     result = conv_cli.invoke(["conversation", "new", stranger, "hello"])
     assert "SHARE_FAILED" in result.output and stranger in result.output, result.output
     cid = result.output.split("conversation ", 1)[1].split(" was created", 1)[0]
     conv = requests.get(f"{conv_cli.base}/api/v1/graph/conversation/{cid}", timeout=10).json()["data"]
     assert [m.get("email") for m in conv["members"]] == [stranger]
-
-
-@pytest.fixture
-def signed_in(monkeypatch):
-    monkeypatch.setattr(conversation_cmd, "_signed_in", lambda: True)
 
 
 def _conversation_with_a_host(conv_cli, host_user_id: str) -> str:

@@ -206,12 +206,13 @@ def _in_instance_user_dir(path: str, instances_root: str) -> bool:
     return len(parts) >= 3 and parts[1] in INSTANCE_USER_DIRS and all(parts[:3])
 
 
-def is_instance_user_content(path: Path | str) -> bool:
+def is_instance_user_content(path: Path | str, keyed: tuple[str, str, str] | None = None) -> bool:
     """Whether *path* is a project inside an instance's own user dir (``<instances>/<name>/workspace/<p>``).
 
     Everything else under ``flow_home`` is Flowpad's state; these are real projects — never protected
-    from deletion as state, and walked by the indexer (``special_folders.classify_special_folder``)."""
-    keyed = _path_policy_key(path)
+    from deletion as state, and walked by the indexer (``special_folders.classify_special_folder``).
+    A caller that already holds the path's policy key passes it as *keyed*, so the path resolves once."""
+    keyed = keyed or _path_policy_key(path)
     if keyed is None:
         return False
     flavour, candidate, _ = keyed
@@ -320,7 +321,7 @@ def _is_protected_keyed(path: Path | str, keyed: tuple[str, str, str] | None) ->
             value = getattr(settings, attr, None)
             if value:
                 internal_roots.append(value)
-    if is_instance_user_content(path):
+    if is_instance_user_content(path, keyed):
         return False
     for raw_root in internal_roots:
         root = _root_key(raw_root, flavour)

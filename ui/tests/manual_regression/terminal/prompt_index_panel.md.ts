@@ -102,6 +102,10 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   cachedAgenticUrl = page.url();
 }
 
+/** Ribbon positions (TerminalBottomRibbon: sideTabsAt('ribbon') — Prompts, Files, Dir, Queue). */
+const PROMPTS = 0;
+const FILES = 1;
+
 test.describe('Prompt Index Panel', () => {
   test.beforeEach(async ({ page }) => {
     await dismissSetupModal(page);
@@ -120,15 +124,15 @@ test.describe('Prompt Index Panel', () => {
     const ribbonLoc = panel.locator(RIBBON_TABS);
     await expect(ribbonLoc).toBeVisible({ timeout: adjusted(15_000) });
 
-    // Context(0), Git(1), Prompts(2), Analysis(3), SkillsAgents(4), Files(5), Dir(6), Queue(7)
-    await expect(ribbonLoc.locator('button').nth(2)).toBeVisible({ timeout: adjusted(15_000) });
+    // Prompts(0), Files(1), Dir(2), Queue(3) — since 17a3e3420 the ribbon carries only these;
+    // Git and the Prompt Library left it, Context/Analysis/Skills moved to the session menu.
+    await expect(ribbonLoc.locator('button').nth(PROMPTS)).toBeVisible({ timeout: adjusted(15_000) });
 
-    // Validate all 9 buttons are present (8 ribbon side-tabs — Context, Git,
-    // Prompts, Analysis, SkillsAgents, Files, Dir, Queue — plus the Prompt Library button).
-    await expect(ribbonLoc.locator('button')).toHaveCount(9, { timeout: adjusted(5_000) });
+    // Validate all 4 ribbon side-tab buttons are present.
+    await expect(ribbonLoc.locator('button')).toHaveCount(4, { timeout: adjusted(5_000) });
 
-    // Files button should also be visible (index 5)
-    await expect(ribbonLoc.locator('button').nth(5)).toBeVisible({ timeout: adjusted(5_000) });
+    // Files button should also be visible
+    await expect(ribbonLoc.locator('button').nth(FILES)).toBeVisible({ timeout: adjusted(5_000) });
 });
 
   // ---------------------------------------------------------------------------
@@ -140,7 +144,7 @@ test.describe('Prompt Index Panel', () => {
     await gotoAgenticProcess(page);
 
     const panel = activePanel(page);
-    await ensureSideTabOpen(page, 2, 'Prompts');
+    await ensureSideTabOpen(page, PROMPTS, 'Prompts');
 
     // Side window should appear
     const sideWindow = getSideWindow(page);
@@ -175,7 +179,7 @@ test.describe('Prompt Index Panel', () => {
 
     // Open the panel
     const panel = activePanel(page);
-    await ensureSideTabOpen(page, 2, 'Prompts');
+    await ensureSideTabOpen(page, PROMPTS, 'Prompts');
 
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
@@ -197,7 +201,7 @@ test.describe('Prompt Index Panel', () => {
 
     const panel = activePanel(page);
     await ensureSideTabClosed(page, 'Prompts');
-    const promptsBtn = panel.locator(`${RIBBON_TABS} button`).nth(2);
+    const promptsBtn = panel.locator(`${RIBBON_TABS} button`).nth(PROMPTS);
 
     // First click — opens
     await promptsBtn.click();
@@ -262,16 +266,16 @@ test.describe('Prompt Index Panel', () => {
     const panel = activePanel(page);
     const ribbonLoc = panel.locator(RIBBON_TABS);
 
-    // Open Files (index 5)
-    await ribbonLoc.locator('button').nth(5).click();
+    // Open Files
+    await ribbonLoc.locator('button').nth(FILES).click();
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: adjusted(5_000) });
     // Use tab strip + exact match to avoid strict-mode violation (other elements contain 'Files')
     const tabStrip = sideWindow.locator('.border-b').first();
     await expect(tabStrip.getByText('Files', { exact: true })).toBeVisible({ timeout: adjusted(3_000) });
 
-    // Open Prompts (index 2) — should add to the same side window
-    await ribbonLoc.locator('button').nth(2).click();
+    // Open Prompts — should add to the same side window
+    await ribbonLoc.locator('button').nth(PROMPTS).click();
     await expect(tabStrip.getByText('Prompts', { exact: true })).toBeVisible({ timeout: adjusted(3_000) });
 
     // Both tabs should be in the same tab strip
