@@ -11,9 +11,10 @@ import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { isTypeId, TypeId, WebApp } from '@sdk';
+import { Agent, isTypeId, TypeId, WebApp } from '@sdk';
 import { Loader2 } from 'lucide-react';
-import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
+import { externalUrl, OPEN_AGENT_MESSAGE, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
+import { agentSessionDock } from '@src/components/agents/use-agent-launcher';
 import { openExternal } from '@src/lib/open-external';
 import { isHubRelayed } from '@src/lib/hub-relayed';
 import { Button } from '@src/components/ui/button';
@@ -104,6 +105,14 @@ export function guestNavigation(data: unknown, projectId?: string | null): DockP
   }
   if (typeof message.address !== 'string' || !message.address.startsWith('/dock/')) return null;
   return tryParseDock(message.address);
+}
+
+/** The agent a guest app asks the host to open the chat of (`{type: 'flowpad:open-agent', agent}`), or null. */
+export function guestAgent(data: unknown): TypeId | null {
+  const message = data as { type?: unknown; agent?: unknown } | null;
+  if (message?.type !== OPEN_AGENT_MESSAGE || typeof message.agent !== 'string' || !isTypeId(message.agent)) return null;
+  const typeId = new TypeId(message.agent);
+  return typeId.type === Agent.type ? typeId : null;
 }
 
 /**
@@ -198,7 +207,15 @@ export function AppDisplayViewer({
       const dock = guestNavigation(event.data, project?.id);
       if (dock) return navigation.openDock(dock);
       const outside = guestExternalUrl(event.data);
-      if (outside) openExternal(outside);
+      if (outside) return openExternal(outside);
+      const agent = guestAgent(event.data);
+      if (agent && project?.id) {
+        const projectId = project.id;
+        void Agent.getById<Agent>(agent.id)
+          .then((found) => (found ? agentSessionDock(found, projectId) : null))
+          .then((dock) => dock && navigation.openDock(dock))
+          .catch((e) => console.warn('[app-display] open agent failed', e));
+      }
     };
     window.addEventListener('message', onGuest);
     return () => window.removeEventListener('message', onGuest);
