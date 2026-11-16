@@ -48,6 +48,13 @@ def _kill_tree(pid: int | None) -> None:
             pass
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.agent_browser_mcp.rules: FAILING? read this tag's rules before
+#       editing
+# flowpad:endcapsule tag
 def test_mcp_server_answers_initialize_and_stays_up(tmp_path):
     if agent_browser.find_browser() is None:
         pytest.skip("neither Chrome nor Edge is installed")
