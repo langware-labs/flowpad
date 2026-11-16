@@ -35,9 +35,10 @@ class PrivacyModeMessage(BaseMessage):
 
 
 class SentryInfoMessage(BaseMessage):
-    """Broadcast when this sandbox's browser error-reporting config changes (set, replaced,
-    cleared or expired), so every open client starts, reconfigures or stops Sentry without a
-    reload. ``None`` means off."""
+    """Broadcast when this sandbox's browser error-reporting config changes (set, replaced or
+    cleared), so every open client starts, reconfigures or stops Sentry without a reload.
+    ``None`` means off. Expiry is NOT announced: a value the hub stopped confirming reads as null
+    from the next bootstrap on, so a tab that stays open keeps its config until it reloads."""
 
     message_type: str = WSMessageType.SENTRY_INFO_MSG.value
     sentry_info: Optional[Dict[str, str]] = None

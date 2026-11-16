@@ -21,7 +21,8 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 logger = logging.getLogger(__name__)
 
 #: ``https://<public key>@<host>/<numeric project id>`` -- and nothing else: no secret, no query,
-#: no fragment, no path prefix.
+#: no fragment, no path prefix. Kept identical to ``DSN_RE`` in ``ui/src/telemetry/sentry.ts`` (two
+#: runtimes, one rule): change both together.
 _DSN = re.compile(r"^https://[0-9a-f]{16,64}@[a-z0-9.-]+(?::\d{1,5})?/\d{1,20}$")
 
 SentryEnvironment = Literal["development", "staging", "production"]

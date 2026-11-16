@@ -5,7 +5,7 @@
 import { createTransport } from '@sentry/browser';
 import type { ErrorEvent } from '@sentry/browser';
 import { runInAction } from 'mobx';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataContext, privacyManager } from '@sdk';
 import {
   __testing,
@@ -134,6 +134,22 @@ describe('runtime configuration changes, without a reload', () => {
     expect(__testing.activeConfig()?.dsn).toBe(DSN_A);
   });
 
+  it('Local privacy drops an event at send time, before the lifecycle has even stopped Sentry', async () => {
+    startSentryReaction();
+    setBootstrap(sandbox({ dsn: DSN_A, environment: 'staging' }));
+    await settle();
+    expect(__testing.activeConfig()?.dsn).toBe(DSN_A);
+
+    // The toggle's reconcile is queued but has NOT run: Sentry is still active here, and `close`
+    // would flush whatever is pending. An error in this window must still not leave.
+    (privacyManager as any)._apply('local');
+    expect(__testing.activeConfig()?.dsn).toBe(DSN_A);
+    reportError(new Error('captured right after the user chose Local'), 'boundary');
+    await (await __testing.load()).getClient()?.flush(1000);
+    await settle();
+    expect(sent).toEqual([]);
+  });
+
   it('a Sentry that fails to load never reaches the app', async () => {
     __testing.load = () => Promise.reject(new Error('chunk failed'));
     startSentryReaction();
@@ -245,6 +261,21 @@ describe('privacy-sensitive exception payloads', () => {
       { filename: 'app:///assets/index-a1b2.js', function: 'render', lineno: 3, colno: 9 },
       { lineno: 1 },
     ]);
+  });
+
+  it('says that an event was dropped without saying anything about it', async () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    startSentryReaction();
+    setBootstrap(sandbox({ dsn: DSN_A, environment: 'staging' }));
+    await settle();
+    // Not an exception, so the sanitizer drops it; its text must not reach the log either.
+    (await __testing.load()).getClient()?.captureEvent({ message: prompt });
+    await (await __testing.load()).getClient()?.flush(1000);
+    expect(sent).toEqual([]);
+    const lines = debug.mock.calls.map((call) => call.join(' '));
+    expect(lines.some((line) => line.includes('dropped by the sanitizer'))).toBe(true);
+    expect(lines.join('\n')).not.toContain(prompt.slice(0, 20));
+    debug.mockRestore();
   });
 
   it('fails closed', () => {

@@ -43,6 +43,12 @@ MAX_STALENESS_SECONDS = 7 * 24 * 3600
 #: The hub action the box reads (``/graph/<type>/<action>``).
 HUB_ENTITY_TYPE = "compute_node"
 HUB_ACTION = "sentry-info"
+#: How a hub WITHOUT that action answers (measured on a release/v0.29 hub, anonymous or signed in
+#: alike): ``422 {"message": "Unknown resource type or action: sentry-info ..."}``. 404 is what any
+#: other server would say. Only these two mean "this hub has no such action"; every other refusal
+#: (a 400, a 401 without a code, a 403 from a policy or a gateway) says nothing about the hub's
+#: support, so it must not switch a good value off.
+_NO_SUCH_ACTION_STATUSES = frozenset({404, 422})
 
 
 class SyncOutcome(StrEnum):
@@ -50,7 +56,7 @@ class SyncOutcome(StrEnum):
     UNCHANGED = "unchanged"  # the hub re-confirmed the stored value (freshness renewed)
     CLEARED = "cleared"  # the hub answered null (or an invalid value): off
     UNSUPPORTED = "unsupported"  # the hub has no such action (an older hub): off
-    KEPT = "kept"  # no authoritative answer (offline, 5xx, no hub): stored value untouched
+    KEPT = "kept"  # no authoritative answer (offline, 5xx, no hub, another refusal): stored value untouched
     SIGNED_OUT = "signed_out"  # no hub login to ask with: stored value untouched
     PRIVACY_LOCAL = "privacy_local"  # Local privacy mode: nothing may leave the box
 
@@ -151,8 +157,8 @@ async def _sync_once() -> SyncOutcome:
     except HubError as e:
         if e.kind == HubFailureKind.SIGNED_OUT:
             return SyncOutcome.SIGNED_OUT
-        if e.kind != HubFailureKind.REJECTED:
-            return SyncOutcome.KEPT  # offline / server_error / not_configured: not an answer
+        if e.kind != HubFailureKind.REJECTED or e.status_code not in _NO_SUCH_ACTION_STATUSES:
+            return SyncOutcome.KEPT  # offline / server_error / not_configured / a refusal that is not "no such action"
         # The hub answered and has no such action: an older hub, which reports nothing.
         changed = _store(None)
         if changed:

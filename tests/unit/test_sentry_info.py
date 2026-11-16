@@ -113,7 +113,16 @@ async def test_a_changed_dsn_replaces_the_old_one(announced):
     [
         ({"sentry_info": None}, box.SyncOutcome.CLEARED),
         ({"sentry_info": {"dsn": "https://key:secret@x/1", "environment": "staging"}}, box.SyncOutcome.CLEARED),
-        (HubError(400, "Invalid request", kind=HubFailureKind.REJECTED), box.SyncOutcome.UNSUPPORTED),
+        # The real answer of a hub without the action (measured on a release/v0.29 hub): 422, for anyone.
+        (
+            HubError(
+                422,
+                "Unknown resource type or action: sentry-info for /api/v1/graph/compute_node/sentry-info",
+                kind=HubFailureKind.REJECTED,
+            ),
+            box.SyncOutcome.UNSUPPORTED,
+        ),
+        (HubError(404, "not found", kind=HubFailureKind.REJECTED), box.SyncOutcome.UNSUPPORTED),
     ],
 )
 @pytest.mark.asyncio
@@ -133,6 +142,11 @@ async def test_an_authoritative_no_turns_it_off(announced, answer, outcome):
         (HubError(503, "down", kind=HubFailureKind.SERVER_ERROR), box.SyncOutcome.KEPT),
         (HubError(0, "no hub", kind=HubFailureKind.NOT_CONFIGURED), box.SyncOutcome.KEPT),
         (HubError(0, "signed out", kind=HubFailureKind.SIGNED_OUT), box.SyncOutcome.SIGNED_OUT),
+        # A refusal that is not "no such action" says nothing about the hub's support: a policy
+        # change, a gateway rule, an agent key ("sign in first") must not switch a good value off.
+        (HubError(400, "Invalid request", kind=HubFailureKind.REJECTED), box.SyncOutcome.KEPT),
+        (HubError(401, "sign in first", kind=HubFailureKind.REJECTED), box.SyncOutcome.KEPT),
+        (HubError(403, "Forbidden access", kind=HubFailureKind.REJECTED), box.SyncOutcome.KEPT),
     ],
 )
 @pytest.mark.asyncio

@@ -33,6 +33,7 @@ export interface EffectiveConfig {
   runtimeKind: RuntimeKindReported;
 }
 
+// Kept identical to `_DSN` in flow_sdk/schema/data_spec/sentry_info_spec.py (two runtimes, one rule): change both together.
 const DSN_RE = /^https:\/\/[0-9a-f]{16,64}@[a-z0-9.-]+(?::\d{1,5})?\/\d{1,20}$/;
 const ENVIRONMENTS = new Set(['development', 'staging', 'production']);
 
@@ -174,9 +175,18 @@ export function sanitizeEvent(event: ErrorEvent, hint?: EventHint): ErrorEvent |
 }
 
 function safeSanitize(event: ErrorEvent, hint: EventHint): ErrorEvent | null {
+  // Local privacy means nothing may leave the machine. The lifecycle below reacts to the toggle
+  // asynchronously (and `close` would still flush what is queued), so the decision is also taken
+  // here, synchronously, at the moment an event would be sent. Events already on the wire cannot be
+  // recalled; nothing new gets there.
+  if (privacyManager.isLocal) return null;
   try {
-    return sanitizeEvent(event, hint);
+    const sanitized = sanitizeEvent(event, hint);
+    // Never the content: only the fact, so the team can notice if the sanitizer starts dropping everything.
+    if (!sanitized) console.debug('[sentry] an event was dropped by the sanitizer');
+    return sanitized;
   } catch {
+    console.debug('[sentry] an event was dropped: the sanitizer threw');
     return null; // fail closed
   }
 }
