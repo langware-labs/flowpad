@@ -6,7 +6,7 @@ import {
   coercePrefValue,
   PrefDataType,
   PrefKey,
-  PREF_CATEGORIES,
+  PREF_GROUPS,
   PREF_REGISTRY,
 } from '@sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -56,9 +56,6 @@ describe('preferences store + registry', () => {
       // 1:1 enum ↔ registry, and the map key matches the info.key field.
       expect(PREF_REGISTRY[info.key]).toBe(info);
       expect(Object.values(PrefKey)).toContain(info.key);
-      // PREF_CATEGORIES is surfaced-only (drives the screen's tabs); a surfaced
-      // pref's category must be present, a hidden pref's need not be.
-      if (info.surfaced) expect(PREF_CATEGORIES).toContain(info.category);
       // Select-style string prefs must have a source of options.
       if (info.dataType === PrefDataType.STRING && info.options == null) {
         // ok to be a free-text string; only assert options shape when present.
@@ -176,18 +173,18 @@ describe('preferences store + registry', () => {
 
   // ===== surfaced flag =====
 
-  it('only surfaced prefs drive the screen categories', () => {
+  it('only surfaced prefs are on the screen', () => {
+    const onScreen = PREF_GROUPS.flatMap((g) => g.tabs).flatMap((t) => t.keys);
     for (const info of getSurfacedPrefInfos()) {
       expect(info.surfaced).toBe(true);
-      expect(PREF_CATEGORIES).toContain(info.category);
+      expect(onScreen).toContain(info.key);
     }
     // A hidden contextual pref is in the full registry but not surfaced, and its
     // category-only-from-hidden does not leak into the screen tabs.
     const traceInfo = PREF_REGISTRY[PrefKey.TRACE_FILTERS];
     expect(traceInfo.surfaced).toBeFalsy();
     expect(getSurfacedPrefInfos()).not.toContain(traceInfo);
-    // 'indexing' has only a hidden pref, so it never becomes a tab.
-    expect(PREF_CATEGORIES).not.toContain('indexing');
+    expect(onScreen).not.toContain(traceInfo.key);
   });
 
   // ===== boot keys: localStorage write-through mirror =====
@@ -279,6 +276,5 @@ describe('preferences store + registry', () => {
     expect(info).toBeDefined();
     expect(info.surfaced).toBe(true);
     expect(info.category).toBe('onboarding');
-    expect(PREF_CATEGORIES).toContain('onboarding');
   });
 });

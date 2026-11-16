@@ -1648,17 +1648,24 @@ async def tab_owner_project(
     *,
     target: Any = _UNSET,
     mounts: "tuple[tuple[str, str], ...] | None" = None,
+    existing_projects: "set[str] | None" = None,
 ) -> str | None:
     """The content's OWN project (the tab's ``target_project_id``; steps 2, 5, 6 of
     ``resolve_tab_project``): a Project target is its own; else the target's
     project (its stamp, else — only when it has a parent — its
-    ``effective_project_id`` ancestor walk); else the deepest project mount holding
-    its path (pointer vfs, then the target's cwd/workdir) — so an unminted file in
-    a project folder still has an owner.
+    ``effective_project_id`` ancestor walk) when that project exists; else the
+    deepest project mount holding its path (pointer vfs, then the target's
+    cwd/workdir) — so an unminted file in a project folder still has an owner.
+
+    A stamp naming no project falls through to the path: an asset indexed from a
+    folder that is not a project carries that folder's derived id. The frontend's
+    ``tabOwnerProject`` (``existingProject``) checks the same way.
 
     ``target`` is an already-loaded row (``None`` = known missing; ``_UNSET`` loads
     it here). ``mounts`` is a list read's one ``load_project_mounts()`` snapshot
-    (``None`` loads it here, only when a path needs it).
+    (``None`` loads it here, only when a path needs it). ``existing_projects`` is a
+    list read's batched answer (``_existing_projects``): a stamp in it is live with
+    no lookup; any other stamp is looked up here.
     """
     if target_type == EntityType.PROJECT.value and target_id:
         return str(target_id)
@@ -1671,7 +1678,7 @@ async def tab_owner_project(
                 own = await target.effective_project_id()
             except Exception:
                 own = None
-        if own:
+        if own and (str(own) in (existing_projects or ()) or await _project_exists(str(own))):
             return str(own)
     view_type, sub = _pointer_target(pointer, fold=False)
     paths = [
@@ -1766,7 +1773,9 @@ async def _resolve_tab_projects(
     from flow_sdk.fs_store.indexer.roots import load_project_mounts  # noqa: PLC0415
 
     target_map = target_map or {}
-    existing = await _existing_projects(_pointer_project_candidates(tabs))
+    # The targets' own stamps go into the same one query, so a live stamp costs no lookup.
+    stamps = {str(pid) for t in target_map.values() if (pid := getattr(t, "project_id", None))}
+    existing = await _existing_projects(_pointer_project_candidates(tabs) | stamps)
     mounts = await load_project_mounts()
     for tab in tabs:
         key = (tab.target_type, str(tab.target_id)) if tab.target_type and tab.target_id else None
@@ -1775,7 +1784,9 @@ async def _resolve_tab_projects(
             # Unstamped and absent from the batch: maybe merely unindexed — one
             # lookup with on-disk recovery (a stamped row keeps its stamp instead).
             target = await Entity.load_by_type(tab.target_type, tab.target_id)
-        owner = await tab_owner_project(tab.pointer, tab.target_type, tab.target_id, target=target, mounts=mounts)
+        owner = await tab_owner_project(
+            tab.pointer, tab.target_type, tab.target_id, target=target, mounts=mounts, existing_projects=existing
+        )
         tab.target_project_id = owner
         tab.project_id = await resolve_tab_project(
             tab.pointer,

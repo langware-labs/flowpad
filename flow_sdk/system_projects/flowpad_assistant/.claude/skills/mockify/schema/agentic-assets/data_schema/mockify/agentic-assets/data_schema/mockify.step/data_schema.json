@@ -37,7 +37,7 @@
     },
     "scenario": {
       "shape": "?string",
-      "description": "Phase 1: what the user sees and does on this screen, in a sentence or two \u2014 the brief the screen is built from."
+      "description": "Phase 1: what the user sees and does on this screen, in a sentence or two — the brief the screen is built from."
     },
     "source": {
       "shape": "?string",
@@ -56,6 +56,24 @@
     "expect": {
       "shape": "?[string]",
       "description": "Test mode: what must be true on this screen. Each one becomes a 'validate' line in the test .md. Write it from the captured screen (label, data-testid, state); it may also be a check no screen can show (no 401, no console error, still there after refresh)."
+    },
+    "changes": {
+      "shape": [
+        "mockify.change"
+      ],
+      "description": "The proposed changes on this screen. The screen is always today; each change is a pin that reveals the suggested version. Empty on a screen that only exists in the suggestion or does not change."
+    },
+    "path": {
+      "shape": "?string",
+      "description": "'today' = only on today's path (a screen the suggestion replaces); 'suggested' = only in the suggestion (reached through a change, or the Suggested path mode). Absent = on both."
+    },
+    "device": {
+      "shape": "?enum:desktop|iphone|android",
+      "description": "The screen this step is shown on: desktop (default), iphone (390x844) or android (412x915). A phone step is laid out at its device width, inside a device frame. This step's screen; absent = the mock's device."
+    },
+    "persona": {
+      "shape": "?string",
+      "description": "Whose screen this is: a `personas` id of the mock. Absent = the mock's `persona`."
     }
   }
 }

@@ -78,7 +78,7 @@ async def test_connect_passes_reauthorize_to_the_orchestrator_only_when_asked(mo
     fake_connections(monkeypatch, [held])
     asked: list[bool] = []
 
-    async def connect(provider, presenter, *, reauthorize=False):
+    async def connect(provider, presenter, *, reauthorize=False, scopes=()):
         asked.append(reauthorize)
         return ConnectionResult(spec=held, test=ConnectionTestResult(ok=True, identity="me@example.com"))
 

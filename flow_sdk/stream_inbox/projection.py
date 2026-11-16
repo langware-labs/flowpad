@@ -745,6 +745,7 @@ async def _place_message(
         someone_typeid=None,
         bundle_ts=(item.occurred_at or None),
         notify=notify,
+        classify_message=announce and first_placement,
     )
     if notify and not first_placement and (dirty or item_changed):
         # `materialize_flow_message` leaves an existing local row untouched and

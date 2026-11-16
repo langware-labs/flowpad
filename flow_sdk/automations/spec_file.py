@@ -60,7 +60,7 @@ def apply_patch(doc: dict[str, Any], patch: dict[str, Any], *, parent_type_id: s
     """The document with the row-field ``patch`` applied. Fields not in the patch survive."""
     out = dict(doc)
     # Never ``enabled``: on/off is the machine's, not the file's (``set_trigger_on``).
-    for key in ("name", "description", "fire_once", "max_fires_per_minute"):
+    for key in ("name", "description", "fire_once", "max_fires_per_minute", "message_tags"):
         if key in patch:
             out[key] = patch[key]
     if any(k in patch for k in ("tag_pattern", "tag_target", "tag_scope")):

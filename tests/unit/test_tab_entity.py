@@ -830,7 +830,12 @@ async def test_tab_project_id_follows_target_entity_project_change() -> None:
     # project color ("stays blue"). This is the project-change sibling of the
     # orphan-close hook that already exists for Entity.delete
     # (test_deleting_target_soft_closes_its_tabs) but is MISSING for a project change.
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    # REAL Project rows: a tab takes its target's project only when that project
+    # exists (a stamp naming no project is a non-project folder's derived id).
     p1 = str(uuid.uuid4())
+    await Project(id=p1, name=f"tab-follow-a-{p1[:8]}").save()
     probe = _TabTargetProbe(id=str(uuid.uuid4()), project_id=p1)
     await probe.save()
     tab = await ensure_tab(
@@ -843,6 +848,7 @@ async def test_tab_project_id_follows_target_entity_project_change() -> None:
 
     # The target entity is reassigned to a different project (the user's action).
     p2 = str(uuid.uuid4())
+    await Project(id=p2, name=f"tab-follow-b-{p2[:8]}").save()
     probe.project_id = p2
     await probe.save()
 

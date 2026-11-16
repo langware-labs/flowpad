@@ -214,7 +214,7 @@ opens a different screen and reports success.
 | Machines *(hub)* | `machines` | sandboxes, computers |
 | Stream Inbox | `stream_inbox` | messages |
 | LLM Endpoints  *(hub)* | `llm-endpoints` | endpoints |
-| LLM sources | `llm-sources` | harness funding |
+| Token sources | `llm-sources` | llm sources, harness funding |
 | Set up LLM | `llm-setup` | llm setup, choose llm, connect llm |
 | Machine | `machine` | system, this machine |
 | Markdown | `markdown` |  |
@@ -248,6 +248,7 @@ These take a pointer; without one they are an error, not a landing. Get the id f
 | Entity  *(hub)* | `entity/<id>` | hub entity |
 | Graph | `graph/<id>` | dep graph, dependency graph |
 | Help desk | `helpdesk/<id>` | support |
+| Support desk | `support_desk/<id>` | — |
 | Knowledge Browser | `k-browser/<id>` | docs browser |
 | Lens | `lens/<id>` | transcript |
 | Live Session | `live_session/<id>` | — |

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, ClassVar, List, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
@@ -9,6 +9,11 @@ from flow_sdk.schema.data_spec.task_spec import TaskKind, TaskStatus, TaskType
 
 class Task(Entity):
     type: str = APIField(default="task")
+    #: Where a task came from is its context: the conversation and the message can list it.
+    context_fields: ClassVar[dict[str, str]] = {
+        "origin_conversation": "origin:conversation",
+        "origin_message": "origin:flow_message",
+    }
     title: str = APIField("")
     # Task is a folder-backed markdown asset (see task_type_info): asset_ref is
     # the ``tasks/<name>/`` folder holding ``task.md`` + inner ``spec.md``.

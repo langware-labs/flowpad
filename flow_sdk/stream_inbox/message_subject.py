@@ -243,7 +243,7 @@ async def _message(message_id: str) -> Any:
     return fm
 
 
-def state_of(fm: Any, self_ids: set[str]) -> MessageState:
+def state_of(fm: Any, self_ids: set[str], *, allow_foreign_agents: bool = False) -> MessageState:
     """A ``FlowMessage`` (hydrated) as the state. Our own and our agents' messages are refused; a
     person-sender is ours only when its id is one of ``self_ids`` (``User.self_ids()``)."""
     from flow_sdk.schema.data_spec.message_sender_spec import SenderKind  # noqa: PLC0415
@@ -251,7 +251,7 @@ def state_of(fm: Any, self_ids: set[str]) -> MessageState:
     sender = getattr(fm, "sender", None)
     if (
         getattr(fm, "outbound", False)
-        or (sender is not None and sender.kind is SenderKind.AGENT)
+        or (sender is not None and sender.kind is SenderKind.AGENT and not allow_foreign_agents)
         or (sender is not None and sender.kind is SenderKind.USER and str(sender.id or "") in self_ids)
     ):
         raise NotCaught("own message")

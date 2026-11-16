@@ -33,7 +33,8 @@ export function LatestScroll({
   return (
     <ScrollToLatestContext.Provider value={scrollToLatest}>
       <div ref={boxRef} className={cn('flex min-h-0 flex-1 flex-col-reverse overflow-y-auto', className)}>
-        <div className="mb-auto">{children}</div>
+        {/* A phone keeps the feed at the bottom, the newest message right above the composer. */}
+        <div className="mb-auto max-md:mb-0">{children}</div>
       </div>
       {after}
     </ScrollToLatestContext.Provider>

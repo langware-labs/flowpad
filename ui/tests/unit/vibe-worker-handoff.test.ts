@@ -37,7 +37,10 @@ vi.mock('@sdk', async (importOriginal) => {
 });
 vi.mock('@sdk/react/hooks', () => ({ useProject: vi.fn(() => ({ project: null })) }));
 
-import { continueVibeSessionForProject } from '@src/pages/flow-page/use-start-vibe-session';
+import {
+  continueVibeSessionForProject,
+  createVibeProcessForProject,
+} from '@src/pages/flow-page/use-start-vibe-session';
 
 describe('continueVibeSessionForProject', () => {
   beforeEach(() => {
@@ -66,11 +69,32 @@ describe('continueVibeSessionForProject', () => {
     expect(mocks.createProcess).toHaveBeenCalledWith(
       expect.objectContaining({
         workerType: 'codex',
+        model: 'md',
         targetVfsPath: 'markdown-cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       }),
       // The caller establishes the watch instead of createProcess awaiting it.
       { pty_mode: false, watchProcess: false },
     );
     expect(mocks.prompt).toHaveBeenCalledWith('HANDOFF PROMPT — unchanged');
+  });
+
+  it.each([undefined, null])('omits the model at the SDK create boundary for %s', async (model) => {
+    await createVibeProcessForProject({ projectId: null, open: false, model });
+    expect(mocks.createProcess.mock.calls[0][0]).not.toHaveProperty('model');
+  });
+
+  it('preserves an explicit concrete model at the SDK create boundary', async () => {
+    await createVibeProcessForProject({ projectId: null, open: false, model: 'provider/explicit' });
+    expect(mocks.createProcess.mock.calls[0][0]).toHaveProperty('model', 'provider/explicit');
+  });
+
+  it('does not invent a model when continuing with another worker', async () => {
+    await continueVibeSessionForProject({
+      sourceProcess: { continuationPrompt: mocks.continuationPrompt } as never,
+      projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      navigation: { openShellProcess: mocks.openShellProcess },
+      workerType: 'codex',
+    });
+    expect(mocks.createProcess.mock.calls[0][0]).not.toHaveProperty('model');
   });
 });

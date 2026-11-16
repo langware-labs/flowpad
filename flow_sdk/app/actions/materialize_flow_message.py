@@ -24,6 +24,7 @@ from flow_sdk.builtin.flow_message import (
     FlowMessage,
     FlowMessageKind,
     derive_help_request_kind,
+    derive_issue_reply,
     derive_it_reply,
     derive_session_fields,
     session_snapshot_from_header,
@@ -198,6 +199,7 @@ async def materialize_flow_message(
     notify: bool = True,
     emit_live_create: bool = False,
     remote: bool = False,
+    classify_message: bool = False,
 ) -> Optional[FlowMessage]:
     """Create or upsert a FlowMessage, append its pointer to the conversation,
     project ``message_ids`` / ``message_count``, and (optionally) notify.
@@ -260,6 +262,7 @@ async def materialize_flow_message(
             derive_session_fields(fm)
             derive_help_request_kind(fm)
             derive_it_reply(fm, payload)
+            derive_issue_reply(fm, payload)
             # Pure reflection: preserve the hub's created_by/updated_by/dates
             # verbatim, never the local sync user.
             with remote_reflection():
@@ -289,12 +292,25 @@ async def materialize_flow_message(
         derive_session_fields(fm)
         derive_help_request_kind(fm)
         derive_it_reply(fm, payload)
+        derive_issue_reply(fm, payload)
+        if classify_message:
+            from flow_sdk.stream_inbox.message_tags import enroll
+
+            await enroll(fm)
         # Save with notify=False — the CREATE is emitted explicitly below. Remote
         # rows reflect (preserve hub attribution); local rows stamp normally.
         with remote_reflection() if remote else nullcontext():
             fm = await fm.save(someone_typeid, notify=False)
         if remote:
             await _adopt_header_session_snapshot(fm, someone_typeid)
+
+    if not is_new and classify_message and emit_live_create:
+        from flow_sdk.stream_inbox.message_tags import enroll_live_existing
+
+        # Catch-up can win the row-creation race before the live hub CREATE.
+        # Its historical materialization is not classification enrollment; the
+        # explicit live arrival claims an eligible unprocessed row atomically.
+        fm = await enroll_live_existing(str(fm.id)) or fm
 
     # Emit the explicit local CREATE that drives entity-event subscribers
     # (TS SDK ``conv.on('message')``).
@@ -403,4 +419,12 @@ async def materialize_flow_message(
         except Exception as e:  # noqa: BLE001
             logger.warning("[materialize_flow_message] notify failed: %s", e)
 
+    if classify_message and fm.message_processing is not None:
+        from flow_sdk.db import get_db_driver
+        from flow_sdk.stream_inbox.message_tags import wake
+
+        async def wake_processing(message_id=str(fm.id)):
+            wake(message_id)
+
+        await get_db_driver().after_commit(wake_processing)
     return fm

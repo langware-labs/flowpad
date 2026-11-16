@@ -20,6 +20,7 @@ import {
 } from '@src/components/assets/editor/agent-profile/deployment/DeploymentFunding';
 import { DeploymentHealth } from '@src/components/assets/editor/agent-profile/deployment/DeploymentHealth';
 import { DeploymentProcessPanel } from '@src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel';
+import { cn } from '@src/lib/utils';
 import { DeploymentThreads } from '@src/components/assets/editor/agent-profile/deployment/DeploymentThreads';
 import { ThreadPane, type ThreadView } from '@src/components/assets/editor/agent-profile/deployment/ThreadPane';
 import { useDeploymentThreads } from '@src/components/assets/editor/agent-profile/deployment/use-deployment-threads';
@@ -53,7 +54,7 @@ export function ProjectDeploymentPage({ project, deploymentId }: { project: Proj
   const display = usePlaceDisplay();
   // Open with its controls when the URL already names its open chat (a chat link lands on it).
   const [settings, setSettings] = useState(() => !!currentDock?.options?.chat);
-  const { threads, error } = useDeploymentThreads(deployment);
+  const { threads, error, errorIsNotYet } = useDeploymentThreads(deployment);
   // The model is what the deployment's funding runs (its size → that size's model), not the agent's own size.
   const { data: funding } = useDeploymentFunding(deployment);
   const fundedModel = funding?.model ? (funding.size ? `${funding.size} → ${funding.model}` : funding.model) : null;
@@ -132,11 +133,7 @@ export function ProjectDeploymentPage({ project, deploymentId }: { project: Proj
         {/* The same state words as its card: failed or stopped-while-on ask for you; else the provider's state. */}
         {deployment && (
           <span data-testid="deployment-state">
-            <StatePill
-              state={
-                failed || notRunning ? 'attention' : deploymentRowState(deployment)
-              }
-            />
+            <StatePill state={failed || notRunning ? 'attention' : deploymentRowState(deployment)} />
           </span>
         )}
         <RoleChip role={roleOf(deployment)} />
@@ -192,7 +189,9 @@ export function ProjectDeploymentPage({ project, deploymentId }: { project: Proj
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {error ? (
-              <p className="px-5 py-6 text-sm text-destructive">{error}</p>
+              <p className={cn('px-5 py-6 text-sm', errorIsNotYet ? 'text-muted-foreground' : 'text-destructive')}>
+                {error}
+              </p>
             ) : threads === null ? (
               // A cloud deployment's threads are read from its machine, which takes seconds: a blank
               // list there read as "no threads yet".

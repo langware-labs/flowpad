@@ -1023,7 +1023,7 @@ async def _reconcile(project: "Project", desired: dict[str, tuple["Folder", dict
             if tid in current:
                 project.remove_shared_context_entities(folder.typeid)
                 project.remove_private_context_entities(folder.typeid)
-            project.add_private_context_entities(folder.typeid, data=data)
+            project.add_private_context_entities(folder.typeid, data=data, via="static")
             changed = True
             if (current.get(tid) or {}).get("path") != data["path"]:
                 added.append(tid)

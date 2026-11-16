@@ -1,13 +1,11 @@
-import { isOk, type UserWarning, ViewType, WARNING_IDS, type Wizard, type WizardResult } from '@sdk';
-import { isTerminal } from '@sdk/activity';
-import { useContext, useEntity } from '@sdk/react/hooks';
+import { isOk, type UserWarning, ViewType, WARNING_IDS, type WizardResult } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import { notify } from '@src/notifications';
-import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
 
-import { findSetupWizard, openSetupWizard } from './open-setup-wizard';
+import { openSetupWizard } from './open-setup-wizard';
+import { useFirstRunWizard } from './use-first-run-wizard';
 
 /**
  * Whether the first-run setup ended short of all green: a step failed, or a person declined or
@@ -29,35 +27,9 @@ export function setupIncomplete(result: WizardResult | null | undefined, live: b
  */
 export function useSetupIncompleteWarning(): UserWarning | null {
   const { t } = useLingui();
-  const { isDesktop } = useContext();
-  // Found once: the wizard ships with the app, so its address never changes. A plain effect, not a
-  // query — this hook runs in the footer, and needs nothing from the query cache.
-  const [setup, setSetup] = useState<Wizard | undefined>();
-  useEffect(() => {
-    if (!isDesktop) return undefined;
-    let cancelled = false;
-    findSetupWizard()
-      .then((found) => {
-        if (!cancelled) setSetup(found);
-      })
-      .catch(() => {
-        // Not found yet: no wizard to read, so no warning — nothing to report as an error.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isDesktop]);
-  const { data: wizard } = useEntity<Wizard>(setup?.typeId ?? null, { watch: true, enabled: Boolean(setup) });
+  const { wizard, live } = useFirstRunWizard();
 
-  // The same two nodes `useWizardRun` reads: an attended run scopes its activity to the wizard,
-  // the first-run trigger's unattended one to nothing. Whichever is live wins.
-  const path = wizard?.activity_path ?? '';
-  const scoped = useActivitySpec(path, wizard?.typeId.toString());
-  const unattended = useActivitySpec(path, undefined);
-  const root = pickLiveActivity(scoped, unattended);
-  const live = Boolean(root && !isTerminal(root));
-
-  const incomplete = isDesktop && setupIncomplete(wizard?.run_state?.result, live);
+  const incomplete = setupIncomplete(wizard?.run_state?.result, live);
 
   return useMemo(() => {
     if (!incomplete) return null;

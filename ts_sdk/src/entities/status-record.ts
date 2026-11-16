@@ -61,6 +61,12 @@ export interface HarnessStatus {
   key_providers: string[];
   install_command: string;
   homepage_url: string;
+  /** Newest published version (empty when unknown). Absent from older servers. */
+  latest_version?: string;
+  /** `available`: a newer version is out; `required`: a session failed because this one is too old. */
+  update?: 'none' | 'available' | 'required';
+  /** The command that brings the CLI to the newest version. */
+  update_command?: string;
 }
 
 export interface KeyStatus {

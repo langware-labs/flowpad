@@ -255,6 +255,7 @@ class TriggerSpec(DataSpec):
     #: event: an ordinary lifecycle event fires on every boot, and a trigger
     #: that wants to answer it only the first time says so itself.
     fire_once: bool = False
+    message_tags: list[str] = Field(default_factory=list)
     #: Storm guard — fires beyond this per-minute cap are dropped.
     max_fires_per_minute: int = 60
     #: Confirm-against-store gate: ``{type, filter}`` must match a real row or

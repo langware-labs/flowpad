@@ -5,6 +5,7 @@ import { CredentialsSubview, ViewType } from '../utils/ui/view-types';
  */
 export type WarningIconName =
   | 'AlertTriangle'
+  | 'ArrowUpCircle'
   | 'AlertCircle'
   | 'AlertOctagon'
   | 'Info'
@@ -46,6 +47,11 @@ export interface UserWarning {
   onClick?: () => void;
   /** Optional button drawn inside the warning, for the one thing a person can do about it. */
   action?: { label: string; onClick: () => void };
+  /**
+   * False for an informational warning where nothing is broken (its click is the fix): the entry
+   * offers Review, which does the same as clicking it, instead of Diagnose & fix, and is not counted.
+   */
+  diagnosable?: false;
 }
 
 /**
@@ -66,6 +72,7 @@ export const WARNING_IDS = {
   EMPTY_PROJECTS: 'empty-projects',
   ORPHANED_PROJECTS: 'orphaned-projects',
   SETUP_INCOMPLETE: 'setup-incomplete',
+  HARNESS_UPDATE: 'harness-update',
 } as const;
 
 /**
@@ -168,15 +175,24 @@ export function createHubRequestFailedWarning(detail: {
   path: string;
   statusCode: number;
   message: string;
+  /** What the user can do about it. */
+  action?: string;
+  /** ms since epoch of the failure, so an old warning does not read as current. */
+  ts?: number;
   onDismiss?: () => void;
 }): UserWarning {
-  const { method, path, statusCode, message, onDismiss } = detail;
+  const { method, path, statusCode, message, action, ts, onDismiss } = detail;
+  const when = ts
+    ? `Last failed ${new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
+    : '';
   return {
     id: WARNING_IDS.HUB_REQUEST_FAILED,
     icon: 'CloudOff',
     color: 'orange',
     message: 'Cloud Request Failed',
-    description: `${method} ${path} ${statusCode}: ${message}`.trim(),
+    description: [`${method} ${path} ${statusCode}: ${message}`.trim(), when, action && `${action}.`]
+      .filter(Boolean)
+      .join(' '),
     targetView: ViewType.CREDENTIALS,
     targetPointer: CredentialsSubview.CONNECTIONS,
     onClick: onDismiss,
@@ -232,6 +248,7 @@ export function createEmptyProjectsWarning(count: number): UserWarning {
     description: 'Old workspace folders with no sessions or files. Click to review and clean up.',
     targetView: ViewType.LENS,
     targetPointer: 'projects/cleanup',
+    diagnosable: false,
   };
 }
 
@@ -266,6 +283,31 @@ export function createHarnessLoginWarning(reason: string): UserWarning {
     // The funding layer's own sentence for why — it is the only author of that fact.
     description: `${reason} Click to sign in or add a key.`,
     targetView: ViewType.CAPABILITIES,
+  };
+}
+
+/**
+ * A harness CLI is behind its newest release (`available`), or a session proved it too old
+ * for the model it asked for (`required`). The description is the command that updates it.
+ */
+export function createHarnessUpdateWarning(h: {
+  worker_type: string;
+  label: string;
+  version: string;
+  latest_version?: string;
+  update?: string;
+  update_command?: string;
+}): UserWarning {
+  const required = h.update === 'required';
+  const versions = `${h.version}${h.latest_version ? ` → ${h.latest_version}` : ''}`;
+  return {
+    id: `${WARNING_IDS.HARNESS_UPDATE}-${h.worker_type}`,
+    icon: 'ArrowUpCircle',
+    color: required ? 'red' : 'yellow',
+    message: required ? `${h.label} ${versions} — too old for this model` : `${h.label} ${versions} available`,
+    description: h.update_command ? `Update it: ${h.update_command}` : `Update ${h.label} to the newest version.`,
+    targetView: ViewType.CAPABILITIES,
+    diagnosable: false,
   };
 }
 

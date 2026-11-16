@@ -163,6 +163,8 @@ class APIMessage(BaseMessage, APIRequest):
     # This call names its own socket as the initiator of a flow the server answers
     # back to (the HTTP path sends ``X-Flow-Connection-Id``).
     carries_initiator: bool = False
+    # ``ActionInfo.quiet`` on the WS path (``Flowpad-Quiet`` on HTTP).
+    quiet: bool = False
 
 
 class ComputeMessage(BaseMessage):

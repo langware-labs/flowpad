@@ -110,6 +110,30 @@ async def test_stream_lines_are_teed_verbatim(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("tool_step", [False, True])
+async def test_normal_stop_delivers_exactly_one_end_after_the_answer(monkeypatch, tmp_path, tool_step):
+    worker = OpenCodeCLIStreamWorker(transcript_path=tmp_path / "tee.jsonl")
+    events = [_step_start()]
+    if tool_step:
+        events.append(_step_finish("tool-calls"))
+    events.extend([_text(), _step_finish()])
+    patch_build_spawn(
+        monkeypatch, OpenCodeCLIStreamWorker, fake_stream_argv(events)
+    )
+    frames = await _drain(worker)
+    types = [frame.attributes.get("element-type") for frame in frames]
+    assert types.count(FlowElementType.END) == 1
+    assert types.index(FlowElementType.CHAT) < types.index(FlowElementType.END) == len(types) - 1
+
+
+def test_tool_call_step_does_not_end_the_turn():
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.event_to_flowdata import OpenCodeEventConverter
+
+    frames = OpenCodeEventConverter().convert_event(_step_finish("tool-calls"))
+    assert all(frame.attributes.get("element-type") != FlowElementType.END for frame in frames)
+
+
+@pytest.mark.asyncio
 async def test_clean_exit_without_step_finish_gets_a_synthetic_terminal(monkeypatch, tmp_path):
     """Upstream #26855: a successful turn can exit before its final
     ``step_finish``. Termination is driven by EOF on stdout — no added wait."""
@@ -118,7 +142,8 @@ async def test_clean_exit_without_step_finish_gets_a_synthetic_terminal(monkeypa
     patch_build_spawn(
         monkeypatch, OpenCodeCLIStreamWorker, fake_stream_argv([_step_start(), _text()])
     )
-    await _drain(worker)
+    frames = await _drain(worker)
+    assert sum(fd.attributes.get("element-type") == FlowElementType.END for fd in frames) == 1
 
     types = [json.loads(line)["type"] for line in tee.read_text(encoding="utf-8").splitlines()]
     assert types[-1] == "flowpad.result"
@@ -133,7 +158,8 @@ async def test_tool_calls_reason_is_not_treated_as_terminal(monkeypatch, tmp_pat
         OpenCodeCLIStreamWorker,
         fake_stream_argv([_step_start(), _step_finish("tool-calls")]),
     )
-    await _drain(worker)
+    frames = await _drain(worker)
+    assert sum(fd.attributes.get("element-type") == FlowElementType.END for fd in frames) == 1
     # No real terminal was seen, so the worker closed the turn itself.
     types = [json.loads(line)["type"] for line in tee.read_text(encoding="utf-8").splitlines()]
     assert types[-1] == "flowpad.result"
@@ -151,6 +177,7 @@ async def test_nonzero_exit_writes_an_error_terminal(monkeypatch, tmp_path):
     types = [json.loads(line)["type"] for line in tee.read_text(encoding="utf-8").splitlines()]
     assert types[-1] == "flowpad.error"
     assert any(fd.attributes.get("element-type") == FlowElementType.ERROR for fd in frames)
+    assert sum(fd.attributes.get("element-type") == FlowElementType.END for fd in frames) == 1
 
 
 @pytest.mark.asyncio

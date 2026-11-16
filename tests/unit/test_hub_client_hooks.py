@@ -281,7 +281,10 @@ async def test_a_hub_answer_clears_the_error_of_the_same_request_only(monkeypatc
     async def broadcast(message):
         messages.append(message)
 
-    monkeypatch.setattr(hooks, "hub_error_reporter", _HubErrorReporter(broadcast_func=broadcast))
+    from flow_sdk.cloud_client.network_error_rules import NetworkErrorRule
+
+    show_all = (NetworkErrorRule(show="always", action="Report it", reason="test"),)
+    monkeypatch.setattr(hooks, "hub_error_reporter", _HubErrorReporter(broadcast_func=broadcast, rules=show_all))
     answers = {"/api/v1/flaky": [502, 200], "/api/v1/down": [502, 502], "/api/v1/fine": [200]}
 
     async def handler(request: httpx.Request):

@@ -155,20 +155,23 @@ async def test_a_key_with_no_credit_fails_the_test_in_the_providers_own_words():
 
     class _Response:
         status_code = 402
-        text = ""
+        text = '{"error":{"message":"Insufficient credits"}}'
 
         @staticmethod
         def json() -> dict:
             return {"error": {"message": "Insufficient credits"}}
 
     class _Client:
+        def __init__(self, **_kwargs):
+            pass
+
         async def __aenter__(self):
             return self
 
         async def __aexit__(self, *_):
             return False
 
-        async def post(self, *_a, **_k):
+        async def request(self, *_a, **_k):
             return _Response()
 
     with (

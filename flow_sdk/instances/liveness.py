@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
+from flow_sdk.core.sockets import is_listener
+
 from .model import KILL_TIER, Role, Tier
 
 #: argv fragments that identify a backend / frontend process.
@@ -279,10 +281,16 @@ def _attach_listen_ports(table: ProcTable) -> None:
     got_systemwide = False
     try:
         for conn in psutil.net_connections(kind="inet"):
-            if conn.status != psutil.CONN_LISTEN or not conn.laddr or not conn.pid:
+            if not is_listener(conn):
                 continue
+            if not conn.pid:
+                # Windows 26300 can name no owner for a listener: this table cannot attribute
+                # it, so ask each process instead — it knows its own sockets.
+                by_pid.clear()
+                break
             by_pid.setdefault(conn.pid, set()).add(conn.laddr.port)
-        got_systemwide = True
+        else:
+            got_systemwide = True
     except (psutil.AccessDenied, OSError):
         pass
 
@@ -294,7 +302,7 @@ def _attach_listen_ports(table: ProcTable) -> None:
             except (*gone, OSError):
                 continue
             for conn in conns:
-                if conn.status == psutil.CONN_LISTEN and conn.laddr:
+                if is_listener(conn):
                     by_pid.setdefault(pid, set()).add(conn.laddr.port)
         table.ports_degraded = not by_pid
 

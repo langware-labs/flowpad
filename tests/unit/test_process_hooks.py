@@ -466,7 +466,7 @@ async def test_each_worker_launch_entry_prepares_once_with_runtime_parity(
     monkeypatch.setattr(AgenticProcess, "end_headless_turn", end_turn)
     monkeypatch.setattr(AgenticProcess, "reap_if_orphaned", no_op)
 
-    async def no_auth(_options, _process):
+    async def no_auth(_options, _process, **_kwargs):
         return None
 
     from flow_sdk.builtin.agentic_process.cli_drivers import api_auth

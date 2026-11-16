@@ -90,7 +90,8 @@ def _rank(kind: str) -> int:
 
 
 def _hub_stub(
-    typeid: str, *, name: str = "", provider: str = "", public: bool = False, tiers: dict | None = None
+    typeid: str, *, name: str = "", provider: str = "", public: bool = False, tiers: dict | None = None,
+    default_model: str | None = None, effective_default_model: str | None = None,
 ) -> "LLMEndpoint":
     """A hub endpoint we know only by typeid.
 
@@ -105,8 +106,19 @@ def _hub_stub(
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
 
     return LLMEndpoint.projection(
-        "hub", typeid, name=name, provider=provider, public=public, tiers=dict(tiers or {})
+        "hub", typeid, name=name, provider=provider, public=public, tiers=dict(tiers or {}),
+        default_model=default_model, effective_default_model=effective_default_model,
     )
+
+
+class Constraint(NamedTuple):
+    """The endpoint a scope is REQUIRED to answer with (``resolve_constraint``), and what the pin says of it."""
+
+    typeid: str
+    origin: LLMSourceOrigin
+    public: bool = False
+    #: The endpoint's sizes, when the pin carries them (a public budget's brief); else none known.
+    tiers: dict | None = None
 
 
 class Candidate(NamedTuple):
@@ -141,7 +153,9 @@ class LLMSourceError(Exception):
 # ── inventory ────────────────────────────────────────────────────────────────────
 
 
-def _device_source(worker_type: str, install: "InstallState", login: "LoginState") -> Candidate:
+def _device_source(
+    worker_type: str, install: "InstallState", login: "LoginState", stored: "LLMEndpoint | None" = None
+) -> Candidate:
     """The vendor device login for *worker_type*, judged on the STATUS record's facts.
 
     Funding never re-derives a status fact: whether the CLI is installed and whether it is
@@ -155,7 +169,8 @@ def _device_source(worker_type: str, install: "InstallState", login: "LoginState
     from flow_sdk.core.status import InstallState, LoginState  # noqa: PLC0415
 
     name = f"{worker_type} device login"
-    endpoint = LLMEndpoint.device_projection(worker_type, name=name)
+    # The stored row (its model sizes and custom names) when the user configured one; same typeid.
+    endpoint = stored if stored is not None else LLMEndpoint.device_projection(worker_type, name=name)
     typeid = str(endpoint.typeid)
 
     def verdict(
@@ -228,26 +243,31 @@ def _key_sources(spec, rows: dict, stored: set[str], hints: dict[str, str] | Non
     from flow_sdk.builtin.llm_endpoint import LM_SECRET_PREFIX, LLMEndpoint  # noqa: PLC0415
 
     out: list[Candidate] = []
-    for provider in spec.supported_providers:
-        if provider is LMApiProvider.FLOWPAD:
+    providers = dict.fromkeys((*(p.value for p in spec.supported_providers), *(row.provider for row in rows.values())))
+    for provider in providers:
+        if provider == LMApiProvider.FLOWPAD:
             continue  # the hub endpoint is its own kind, not a "key"
-        secret_name = f"{LM_SECRET_PREFIX}{provider.value}"
-        endpoint = rows.get(secret_name) or LLMEndpoint.key_projection(provider.value)
+        secret_name = f"{LM_SECRET_PREFIX}{provider}"
+        endpoint = rows.get(secret_name) or LLMEndpoint.key_projection(provider)
         # An ``OPENROUTER_API_KEY`` in the environment is a convenience for in-process calls,
         # not a statement about what this box is configured to spend, so it is not consulted.
-        has_key = provider.value in stored
-        rejected = KEY_REJECTIONS.get(provider.value) if has_key else None
-        reason, code = ((f"{provider.value} rejected the stored key: {rejected['reason']}", "key_rejected")
-                        if rejected else ("", "") if has_key else (f"no {provider.value} key is stored on this machine", "no_key"))
+        has_key = provider in stored
+        rejected = KEY_REJECTIONS.get(provider) if has_key else None
+        reason, code = ((f"{provider} rejected the stored key: {rejected['reason']}", "key_rejected")
+                        if rejected else ("", "") if has_key else (f"no {provider} key is stored on this machine", "no_key"))
+        if provider not in spec.supported_providers:
+            reason, code = f"this harness cannot use local {provider} credentials", "unsupported_provider"
+        elif not endpoint.enabled:
+            reason, code = "this endpoint is disabled", "endpoint_disabled"
         out.append(
             Candidate(
                 endpoint,
                 LLMSource(
                     endpoint_typeid=str(endpoint.typeid),
-                    name=endpoint.name or f"{provider.value} key",
+                    name=endpoint.name or f"{provider} key",
                     # Display only: the masked hint of the stored key, so the picker can say
                     # WHICH key funds this; nothing for a slot with no key.
-                    detail=(hints or {}).get(provider.value, "") if has_key else "",
+                    detail=(hints or {}).get(provider, "") if has_key else "",
                     rank=_rank("api_key"),
                     eligible=not reason,
                     auto=not reason,
@@ -284,6 +304,8 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candi
             provider=bound.provider if bound else "",
             public=bool(bound and bound.public),
             tiers=bound.tiers if bound else None,
+            default_model=bound.default_model if bound else None,
+            effective_default_model=bound.effective_default_model if bound else None,
         )
     out: list[Candidate] = []
     for typeid, endpoint in rows.items():
@@ -347,6 +369,11 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     spec = driver_api_auth_spec(worker_type)
     if spec is None:
         return [], None
+    # Legacy ``Capability.model_map`` sizes/custom names move onto endpoint rows first (once per
+    # process, idempotent), so the device row and key rows read below already carry them.
+    from flow_sdk.builtin.agentic_process.cli_drivers.device_endpoints import migrate_capability_model_maps
+
+    await migrate_capability_model_maps()
 
     cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
     bound = get_hub_llm_endpoint()
@@ -360,7 +387,14 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
 
     # A harness with no account of its own has no device rung to rank (``has_device_login``).
     candidates = (
-        [_device_source(worker_type, install, login_state(install, spec.has_device_login, cap))]
+        [
+            _device_source(
+                worker_type,
+                install,
+                login_state(install, spec.has_device_login, cap),
+                await LLMEndpoint.find_device(worker_type),
+            )
+        ]
         if spec.has_device_login
         else []
     )
@@ -416,7 +450,7 @@ def _hub_spendable() -> bool:
     return _hub_has_token() or public_binding() is not None
 
 
-async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin, bool] | None:
+async def resolve_constraint(scope: LLMScope) -> Constraint | None:
     """The endpoint this question is REQUIRED to answer with, and who required it.
 
     Process beats project. A scope with no project contributes nothing rather than
@@ -429,7 +463,12 @@ async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin, boo
     pin was invisible on the one screen whose job is to say what funds a spawn.
     """
     if scope.process_llm_endpoint_typeid:
-        return scope.process_llm_endpoint_typeid, LLMSourceOrigin.PROCESS, scope.process_llm_endpoint_public
+        return Constraint(
+            scope.process_llm_endpoint_typeid,
+            LLMSourceOrigin.PROCESS,
+            scope.process_llm_endpoint_public,
+            dict(scope.process_llm_endpoint_tiers),
+        )
 
     from flow_sdk.builtin.project import Project
 
@@ -444,12 +483,17 @@ async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin, boo
             project = None
     typeid = str(getattr(project, "llm_endpoint_typeid", "") or "") if project is not None else ""
     if typeid:
-        return typeid, LLMSourceOrigin.PROJECT, False
+        return Constraint(typeid, LLMSourceOrigin.PROJECT)
     return None
 
 
 def _apply_constraint(
-    candidates: list[Candidate], typeid: str, origin: LLMSourceOrigin, known_public: bool, hub_logged_in: bool
+    candidates: list[Candidate],
+    typeid: str,
+    origin: LLMSourceOrigin,
+    known_public: bool,
+    known_tiers: dict | None,
+    hub_logged_in: bool,
 ) -> list[Candidate]:
     """Render the constraint ONTO the list: the named endpoint stays, everything else
     comes back ineligible carrying the sentence that says why.
@@ -488,7 +532,8 @@ def _apply_constraint(
         public = known_public or public_binding(typeid) is not None
         unusable = "" if hub_logged_in or public else "this box is not logged in to the hub"
         unusable_code = "" if not unusable else LLMSourceRefusal.HUB_SIGNED_OUT.value
-        stub = _hub_stub(typeid, name=typeid, public=public)
+        # The sizes the pin carries (a public budget's brief) are all a signed-out box can know of it.
+        stub = _hub_stub(typeid, name=typeid, public=public, tiers=known_tiers)
         out.append(
             Candidate(
                 stub,
@@ -596,7 +641,7 @@ def _overlay(
     candidates: list[Candidate],
     cap,
     worker_type: str,
-    constraint: tuple[str, LLMSourceOrigin, bool] | None,
+    constraint: Constraint | None,
 ) -> list[Candidate]:
     """The ranked answer for an inventory that has ALREADY been read.
 
@@ -701,7 +746,7 @@ async def llm_picker_view(worker_type: str, scope: LLMScope = LLMScope()) -> Pic
     return await picker_view_for(worker_type, await resolve_constraint(scope))
 
 
-async def picker_view_for(worker_type: str, constraint: tuple[str, LLMSourceOrigin, bool] | None) -> PickerView:
+async def picker_view_for(worker_type: str, constraint: Constraint | None) -> PickerView:
     """:func:`llm_picker_view` for a constraint that has already been resolved.
 
     The batch form. ``resolve_constraint`` is a project lookup and does not depend on the harness, so

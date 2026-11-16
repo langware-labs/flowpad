@@ -30,6 +30,9 @@ import re
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import tree as mock_tree  # noqa: E402 -- the mock tree: validated and compiled here, walked by assets/mock-tree.js
+from tree import PRESETS, load_row  # noqa: E402, F401 -- load_row is re-exported: validate_mock and test_md read rows the same way
 SKIP = ("http:", "https:", "data:", "blob:", "#", "%23", "//", "/sdk/", "about:", "mailto:", "javascript:")
 
 
@@ -86,16 +89,6 @@ def load(path: pathlib.Path) -> tuple[list[str], str]:
     return blocks, body
 
 
-def load_row(row_path: str) -> dict:
-    """The mock row's value from a file: the value itself, a row with `input`, or `DM ds-rows` output."""
-    row = json.loads(pathlib.Path(row_path).read_text())
-    if isinstance(row, dict) and "rows" in row:
-        row = row["rows"]
-    if isinstance(row, list):
-        row = row[0] if row else {}
-    return row.get("input", row)
-
-
 STATES_RUNNER = """
 (() => {
   const fns = window.mockStates || {};
@@ -118,6 +111,37 @@ STATES_RUNNER = """
 """
 
 
+# A phone step is laid out at its device's own size, 1:1, in a frame (templates/fast-mock/device-frame.css).
+# The presets are data (assets/devices.json): add a device there, not here.
+DEVICES = {k: (v["width"], v["height"]) for k, v in PRESETS.items()}
+FRAME_CSS = HERE.parent / "templates" / "fast-mock" / "device-frame.css"
+
+
+def to_container_css(css: str) -> str:
+    """One document, many screen sizes: a width media query answers the browser window, not the phone. Turn
+    width queries into container queries (every screen is a `mk-screen` container), viewport units into
+    container units, and the safe-area insets into the frame's --mk-safe-* — so a 390px step gets its 390px
+    rules, dvh and insets, and a desktop step its own width's."""
+    def media(m):
+        q = re.sub(r"^\s*(only\s+)?screen\s+and\s+", "", m.group(1))
+        return f"@container mk-screen {q}{{" if re.fullmatch(r"(\s*(and\s+)?\((min|max)-width:[^)]*\)\s*)+", q) else m.group(0)
+    css = re.sub(r"@media\s+([^{]+)\{", media, css)
+    css = re.sub(r"(\d*\.?\d+)[dsl]?vh\b", r"\1cqh", css)
+    css = re.sub(r"(\d*\.?\d+)[dsl]?vw\b", r"\1cqw", css)
+    return re.sub(r"env\(\s*safe-area-inset-(top|bottom|left|right)\s*(,[^)]*)?\)", r"var(--mk-safe-\1, 0px)", css)
+
+
+def device_section(sid: str, device: str, body: str, hidden: bool) -> str:
+    d = PRESETS[device]
+    w = d["width"]
+    frame = (f'--mk-w:{w}px;--mk-h:{d["height"]}px;--mk-safe-top:{d["safe_top"]}px;'
+             f'--mk-safe-bottom:{d["safe_bottom"]}px;--mk-r:{d["radius"]}px')
+    body = re.sub(r'style="([^"]*)"', lambda m: f'style="{to_container_css(m.group(1))}"', body)
+    return (f'<section data-step="{sid}" data-device="{device}" data-mk-w="{w + 72}"{" hidden" if hidden else ""}>\n'
+            f'<div class="mk-device" data-device="{device}" data-camera="{d["camera"]}" style="{frame}"><div class="mk-screen">\n{body}\n</div>'
+            f'<div class="mk-home"></div></div>\n</section>')
+
+
 def fit_to_width(width: int, focus_x: int, min_zoom: float) -> str:
     """A capture reflows when its frame is narrower than the window it came from: the Flowpad display is about
     half a screen, so tabs shrink to icons and the screen reads as empty. Lay each screen out at the captured
@@ -127,15 +151,29 @@ def fit_to_width(width: int, focus_x: int, min_zoom: float) -> str:
     if not width:
         return ""
     return f"""
-<style>section[data-step]{{width:{width}px;min-height:100vh;position:relative}}html,body{{overflow:hidden}}</style>
+<style>section[data-step]{{width:{width}px;min-height:100vh;position:relative}}html,body{{overflow:hidden}}
+section[data-device]{{width:auto;min-height:0}}</style>
 <script>(() => {{
   // Captured apps lay out on position:fixed roots, which never scroll; a transform on the section both
   // anchors them to it and shifts the screen sideways onto focus_x when it is still wider than the frame.
-  const fit = () => {{ const z = Math.max({min_zoom}, Math.min(1, innerWidth / {width}));
-    document.querySelectorAll('section[data-step]').forEach((s) => {{ s.style.zoom = z; s.style.minHeight = `${{100 / z}}vh`;
+  const fit = () => document.querySelectorAll('section[data-step]').forEach((s) => {{
+      // a phone step is shown 1:1 in its frame; it only shrinks when the frame is narrower than the phone
+      const w = +s.dataset.mkW || {width}, z = Math.max(s.dataset.mkW ? 0.5 : {min_zoom}, Math.min(1, innerWidth / w));
+      s.style.zoom = z; if (s.dataset.mkW) return; s.style.minHeight = `${{100 / z}}vh`; s.style.minHeight = `${{100 / z}}vh`;
+      // zoom shrinks the app's own viewport heights too (#root / .h-screen at 100vh end at zoom x the frame and
+      // leave dead space under the screen) — whatever selector set them. Stretch every box that starts at the
+      // screen's top and ends at the shrunk height back to the frame.
+      s.querySelectorAll('[data-mk-fill]').forEach((e) => {{ e.style.removeProperty('height'); e.removeAttribute('data-mk-fill'); }});
+      if (z < 1) {{ const top = s.getBoundingClientRect().top, shrunk = innerHeight * z;
+        for (const e of s.querySelectorAll('*')) {{
+          const r = e.getBoundingClientRect();
+          if (r.top - top > 2) continue;
+          if (Math.abs(r.height - shrunk) < 2) {{ e.style.setProperty('height', `${{innerHeight / z}}px`, 'important'); e.setAttribute('data-mk-fill', ''); }}
+        }} }}
       // a screen whose subject sits elsewhere sets its own: mockStates may write screen.dataset.focusX
-      const d = Math.max(0, Math.min({width} * z - innerWidth, (+s.dataset.focusX || {focus_x}) * z - innerWidth / 2));
-      s.style.transform = d > 0 ? `translateX(${{-d / z}}px)` : ''; }}); }};
+      const d = Math.max(0, Math.min(w * z - innerWidth, (+s.dataset.focusX || {focus_x}) * z - innerWidth / 2));
+      s.style.transform = d > 0 ? `translateX(${{-d / z}}px)` : ''; }});
+  window.mockifyFit = fit;   // the journey bar calls it on every step: a hidden screen has no boxes to measure
   addEventListener('resize', fit); addEventListener('DOMContentLoaded', fit);
 }})();</script>"""
 
@@ -173,10 +211,16 @@ def main() -> None:
         if any(s[0] == sid for s in steps):
             fail(f"step {sid!r} given twice")
         steps.append((sid, src))
-    journey = load_row(a.row).get("journey", [])
+    row = load_row(a.row)
+    compiled, problems = mock_tree.check(row)   # a bad tree stops the build: nothing is built on a guess
+    if problems:
+        fail("the mock tree has problems (scripts/tree.py validate):\n  - " + "\n  - ".join(problems))
+    journey = compiled["screens"]        # the screens in DFS order, each with its persona and device resolved
+    devices = {j["id"]: j["device"] for j in journey}
+    personas = {j["id"]: j["persona"] for j in journey}
     planned, given = [j["id"] for j in journey], [s[0] for s in steps]
     if planned != given:
-        fail(f"--step ids {given} must be the journey's steps in order: {planned}")
+        fail(f"--step ids {given} must be the tree's screens in DFS order (tree.py show): {planned}")
 
     inline = Inliner(mock, a.origin)
     styles: dict[str, None] = {}   # captures share most of their styles: each block once, in order
@@ -184,7 +228,13 @@ def main() -> None:
     for n, (sid, src) in enumerate(steps):
         blocks, body = load(pathlib.Path(src))
         styles.update(dict.fromkeys(blocks))
-        parts.append(f'<section data-step="{sid}"{"" if n == 0 else " hidden"}>\n{body}\n</section>')
+        if devices[sid] in DEVICES:
+            section = device_section(sid, devices[sid], body, n > 0)
+        else:
+            section = f'<section data-step="{sid}"{"" if n == 0 else " hidden"}>\n{body}\n</section>'
+        if personas[sid]:
+            section = section.replace("<section ", f'<section data-persona="{personas[sid]}" ', 1)
+        parts.append(section)
     for tid, _, src in (t.partition("=") for t in a.template):
         blocks, body = load(pathlib.Path(src))
         styles.update(dict.fromkeys(blocks))
@@ -194,8 +244,18 @@ def main() -> None:
     css = f"<style>{app_css.read_text()}</style>" if app_css.is_file() else ""
     states = pathlib.Path(a.states).read_text() + STATES_RUNNER if a.states else ""
     bar = (HERE.parent / "assets" / "journey-bar.js").read_text()
+    walker = (HERE.parent / "assets" / "mock-tree.js").read_text()
+    config = json.dumps({"key": a.key, "project": a.project, "tree": compiled,
+                         "schemas": str(pathlib.Path(a.mock_dir).resolve().parents[1] / "data_schema"),
+                         "personas": row.get("personas") or [], "persona": row.get("persona") or "",
+                         "device": row.get("device") or "desktop"}, ensure_ascii=False).replace("</", "<\\/")
 
-    page_head = inline(css + "\n" + "\n".join(styles)) + fit_to_width(a.width, a.focus_x, a.min_zoom)
+    page_css = css + "\n" + "\n".join(styles)
+    if any(d in DEVICES for d in devices.values()):
+        # every screen answers its own size: a desktop step is a container at its captured width
+        page_css = (to_container_css(page_css) + f"<style>{FRAME_CSS.read_text()}</style>"
+                    + "<style>section[data-step]:not([data-device]){container-type:inline-size;container-name:mk-screen}</style>")
+    page_head = inline(page_css) + fit_to_width(a.width, a.focus_x, a.min_zoom)
     page_body = inline("\n".join(parts))
     html = f"""<!doctype html>
 <html {a.html_attrs}>
@@ -209,8 +269,9 @@ section[data-step] *,section[data-step] *::before,section[data-step] *::after{{a
 </head>
 <body>
 {page_body}
-<script>window.MOCKIFY = {{key: {json.dumps(a.key)}, project: {json.dumps(a.project)}, journey: {json.dumps(journey)}}}; window.MOCK_BAR_AT = "bottom";</script>
+<script>window.MOCKIFY = {config}; window.MOCK_BAR_AT = "bottom";</script>
 {f"<script>{states}</script>" if states else ""}
+<script>{walker}</script>
 <script>{bar}</script>
 </body></html>"""
     (mock / "index.html").write_text(html)

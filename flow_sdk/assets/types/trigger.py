@@ -75,6 +75,7 @@ def row_fields(spec: TriggerSpec, *, parent_type_id: str = "") -> dict:
         # "(TAG only)" because that is where they were implemented; nothing
         # about them is about the bus.
         "fire_once": spec.fire_once,
+        "message_tags": list(spec.message_tags),
         "max_fires_per_minute": spec.max_fires_per_minute,
         "confirm": spec.confirm or None,
         "runs_on": spec.place or None,

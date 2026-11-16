@@ -553,6 +553,8 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         # Launch-only, so they are stamped rather than passed: the headless
         # path must carry the same per-process MCP the PTY path does.
         options.mcp_config_json = context.mcp_config_json
+        options.mcp_strict = context.mcp_strict
+        options.browser_extension = context.browser_extension
         return options
 
     def _build_spawn(

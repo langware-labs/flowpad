@@ -9,7 +9,7 @@ Review judges the skill as written — it does not run it, and it does not edit
 anything; the report is the deliverable.
 
 A finding sourced from a run (a transcript, or an analyzer's per-asset findings
-fed into correct mode) is an **alleged hypothesis, not ground truth** — the
+fed into improve mode) is an **alleged hypothesis, not ground truth** — the
 analyzer can misread a trace, and a cited skill line can be stale. The same bar
 applies as to any review finding: it must cite a rubric rule or a verbatim
 run-evidence quote (see Stopping, below), and the cited skill location must
@@ -67,7 +67,7 @@ Therefore:
 
 ## The loop
 
-review(context) → CORRECT findings feed correct mode → correct applies them →
+review(context) → CORRECT findings feed improve mode → improve applies them →
 review again. Stop per the verdicts above; CONFLICTs go to the user, then one
 more cycle. On a re-review, fan out only over files edited since the prior
 pass (plus held-fix verification) and carry forward prior PASS verdicts for
@@ -96,5 +96,5 @@ untouched files — no edits means no new evidence.
 - <prior finding> — fix held / regressed
 
 ## What's good
-<patterns worth keeping, so a correct pass doesn't destroy them>
+<patterns worth keeping, so an improve pass doesn't destroy them>
 ```

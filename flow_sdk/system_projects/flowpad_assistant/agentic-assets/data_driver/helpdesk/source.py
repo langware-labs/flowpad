@@ -197,6 +197,7 @@ class HelpdeskSource(MessageSource):
         """One help-desk source per desk this login staffs: a hub project it holds a role on whose help
         desk is on. A ticket reaches its staff only through such a source (they are not in it), so a
         staffer never has to connect their own desk by hand. Returns how many were made."""
+        from flow_sdk.assets.creation import AssetPathCollisionError  # noqa: PLC0415
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
@@ -220,7 +221,13 @@ class HelpdeskSource(MessageSource):
                     await held.poll_now()
                 continue
             name = str(desk.get("display_name") or project.get("name") or desk_id)
-            await driver.create_source(driver.create_config(**{cls.identity_config_key: desk_id}), name=name).save()
+            config = driver.create_config(**{cls.identity_config_key: desk_id})
+            try:
+                await driver.create_source(config, name=name).save()
+            except AssetPathCollisionError:
+                # Two desks may share a name (a source's folder is named by it): the second is told apart by
+                # its id, or its staff would never receive its tickets.
+                await driver.create_source(config, name=f"{name} ({desk_id[:8]})").save()
             made += 1
         return made
 

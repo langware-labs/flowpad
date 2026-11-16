@@ -28,6 +28,7 @@ Most general first. A layer is present only when its scope applies and it has te
 | 7 | `AGENTS` | embedded agents: persona (`process_persona_path`) + layers | sessions with embedded sub-agents (vibe.md, standard.md, wizards…); suppressed for a CoS |
 | 8 | `AUTO_OPEN` | `agent_auto_open.auto_open_prompt_block` | sessions with `vibe` embedded |
 | 9 | `LANGUAGE` | `i18n.supported_locales.language_prompt_block` | the project has a non-English `locale` |
+| 10 | `SUBJECT` | `system_prompt.subject_layer` | app chats keyed to a local file (`target_typeid_str` = `compute_node-@local/<path>`, "Chat about this file") |
 
 `common.md` / `common_ui.md` ship with the wheel (the `system_projects/**/*`
 package-data glob). Their frontmatter (`id`, `title`) is stripped; a missing or empty

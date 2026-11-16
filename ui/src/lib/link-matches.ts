@@ -14,7 +14,7 @@ export interface LinkMatch {
 const URL_REGEX = /(https?|HTTPS?):[/]{2}[^\s"'!*{}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`(<>]/;
 const URL_TRAIL = /[:,.!?]+$/;
 const POSITION = String.raw`(?::\d+(?::\d+)?|#L\d+)`;
-const UUID = String.raw`[0-9a-f]{8}-[0-9a-f-]{27}`;
+export const UUID = String.raw`[0-9a-f]{8}-[0-9a-f-]{27}`;
 const ENTITY_REF = new RegExp(String.raw`^[a-z_]+-(?:@[\w.-]+|${UUID})$`, 'i');
 /** Text that ends the way a whole reference or its clause does: a position, an id, closing punctuation. */
 export const ENDS_WHOLE = new RegExp(String.raw`(?:${POSITION}|${UUID}|[,;!?)\]}])$`, 'i');
@@ -27,7 +27,7 @@ const RELATIVE_PATH = new RegExp(String.raw`^${WORD}+(?:[/\\]${SEGMENT}+)+[/\\]?
 /** What a test runner appends to the file it names: `tests/a.py::test_x`, `a.py::TestA::test_b[1]`. */
 const TEST_ID = /(?:::[\w[\].-]+)+$/;
 
-const RTL = String.raw`\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff`;
+export const RTL = String.raw`\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff`;
 export const HAS_RTL = new RegExp(`[${RTL}]`);
 // Prose wraps references in brackets: `(src/a.ts:49)`. Hebrew glues a prefix on with a hyphen: `ב-src/a.ts`.
 // Claude Code glues an attachment's label to its absolute path: `[image]/private/tmp/a.png`.

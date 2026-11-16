@@ -38,7 +38,6 @@ import json
 import os
 import shutil
 import time
-from decimal import Decimal
 from urllib.parse import urlparse
 
 import httpx
@@ -48,6 +47,7 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
 from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
 from flow_sdk.flowpad_types.enums import WorkerType
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 from tests.long_tests._transcript_helpers import assert_prompt_ok, fail_no_transcript, safe_exit
 from tests.test_settings import test_service_config
 
@@ -199,7 +199,7 @@ def _usage(hub: httpx.Client, typeid: str, by: str | None = None) -> dict:
 
 
 async def _answer(process: AgenticProcess, deadline_s: float = 240.0) -> str:
-    """Wait out the turn, then return its transcript as one lowercased blob.
+    """Wait for successful completion and return only the assistant's chat text.
 
     ``prompt()`` starts a turn and returns as soon as the worker is up -- the answer arrives later.
     ``driver.load_history`` is what the ``get-history`` action serves and is driver-supplied, so one
@@ -208,10 +208,19 @@ async def _answer(process: AgenticProcess, deadline_s: float = 240.0) -> str:
     deadline = time.monotonic() + deadline_s
     while time.monotonic() < deadline:
         fresh = await AgenticProcess.get_by_id(process.id) or process
-        if not is_turn_busy(fresh, fresh.fetch_worker_status()):
+        status = fresh.fetch_worker_status()
+        if not is_turn_busy(fresh, status):
+            assert status not in (WorkerStatus.ERROR, WorkerStatus.INTERRUPTED, WorkerStatus.INACTIVE, WorkerStatus.API_TIMEOUT), (
+                f"worker ended unsuccessfully: {status}"
+            )
             history = fresh.driver.load_history(fresh)
-            if history:
-                return json.dumps(history, default=str).lower()
+            answer = " ".join(
+                str(item.flow_value) for item in history or []
+                if (item.attributes or {}).get("role") == "assistant"
+                and (item.attributes or {}).get("element-type") == "chat"
+            )
+            if answer and status == WorkerStatus.COMPLETE:
+                return answer.lower()
         await asyncio.sleep(2.0)
     fail_no_transcript(deadline_s)
 
@@ -220,44 +229,41 @@ def _delta(before: dict, after: dict) -> dict:
     return {k: v - before[k] for k, v in after.items() if isinstance(v, (int, float))}
 
 
-def _price_bracket(model: str, delta: dict) -> tuple[int, int]:
-    """The cheapest and dearest those tokens could honestly cost, in micro-USD.
+_METERED_FIELDS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "cost_micro_usd")
 
-    Deliberately a BRACKET rather than a recomputed figure. Re-deriving the hub's exact charge means
-    reimplementing its pricing -- per-request rounding, the cache ``max`` normalisation, the
-    model-ref fallback chain -- and a second implementation of pricing inside a test is a machine for
-    producing false failures, which is exactly what it did here.
 
-    What is true regardless of implementation: cache only ever makes a token cheaper. So the charge
-    must sit between "every prompt token was a cache hit" and "none of them were". That still catches
-    a wrong model, a dropped counter, or an order-of-magnitude error -- the things worth catching.
+def _assert_model_accounting(delta: dict, before: dict, after: dict, expected: str) -> None:
+    """Attribute every charged token/dollar; permit only proven unbilled model-less requests.
+
+    The hub prefers the upstream's reported cost over its fallback price table. Its public usage
+    API exposes the booked cost, not that upstream receipt: recomputing a table-price bracket here
+    cannot verify the invoice. Instead reconcile the complete ledger against the exact model and
+    this fixture's $1 allocation. Provider-price conversion belongs to the hub's pricing tests.
     """
-    import genai_prices
-
-    # The same reconciliation the hub makes: OpenRouter is supposed to report ``input_tokens``
-    # inclusive of cache, but an Anthropic model served through it reports them EXCLUSIVE, so a
-    # sum would double-count and a bare input would miss most of the prompt. ``max`` is right
-    # either way, and using anything else here is what put this bracket below the real charge.
-    prompt = max(delta["input_tokens"], delta["cache_read_tokens"] + delta["cache_write_tokens"])
-
-    def price(cache_read: int, cache_write: int) -> int:
-        usage = genai_prices.Usage(
-            input_tokens=max(prompt, cache_read + cache_write),
-            cache_read_tokens=cache_read,
-            cache_write_tokens=cache_write,
-            output_tokens=delta["output_tokens"],
+    fields = (*_METERED_FIELDS, "requests", "errors", "fallbacks", "refusals", "estimated_requests", "unpriced_requests")
+    changes = {
+        slug: {field: totals.get(field, 0) - before.get(slug, {}).get(field, 0) for field in fields}
+        for slug, totals in after.items()
+    }
+    for field in fields:
+        assert sum(row[field] for row in changes.values()) == delta.get(field, 0), f"ledger mismatch: {field}"
+    charged = set()
+    for slug, row in changes.items():
+        assert all(value >= 0 for value in row.values()), f"negative ledger delta: {slug}"
+        if not any(row.values()):
+            continue
+        assert not any(row[field] for field in ("errors", "fallbacks", "refusals", "unpriced_requests")), (
+            f"unsuccessful or unpriced model usage: {slug}"
         )
-        calc = genai_prices.calc_price(usage, model_ref=model, provider_id="openrouter")
-        return int(Decimal(calc.total_price) * 1_000_000)
-
-    # Which of the two is actually larger is a property of the price table, not something to assume.
-    low, high = sorted(
-        (
-            price(0, 0),
-            price(delta["input_tokens"] + delta["cache_read_tokens"], delta["cache_write_tokens"]),
-        )
-    )
-    return low, high
+        if slug == "-":
+            assert not any(row[field] for field in _METERED_FIELDS), "model-less request charged tokens or cost"
+            assert row["requests"] == row["estimated_requests"], "unexplained model-less request"
+            continue
+        assert row["estimated_requests"] == 0, f"model usage was estimated: {slug}"
+        assert row["requests"] > 0 and row["cost_micro_usd"] > 0, f"model request not billed: {slug}"
+        charged.add(slug)
+    assert charged == {expected}, f"billed as {sorted(charged)}, expected {expected!r}"
+    assert 0 < delta["cost_micro_usd"] <= 1_000_000, "charge exceeds this fixture's $1 allocation"
 
 
 async def _settled_delta(hub: httpx.Client, typeid: str, before: dict, deadline_s: float = 30.0) -> dict:
@@ -314,15 +320,19 @@ async def test_worker_answers_through_the_endpoint_it_was_given(
         reach = json.dumps(
             {"env": auth.env, "config_overrides": auth.config_overrides, "provider": auth.provider_options}
         )
-        assert _entity_id(endpoint) in reach, (
+        points_at_endpoint = _entity_id(endpoint) in reach
+        del reach  # pytest assertion introspection must not serialize credential-bearing inputs
+        assert points_at_endpoint, (
             f"{binary}: spawn inputs do not point at the endpoint -- this turn would spend "
-            f"something else: {reach[:400]}"
+            f"something else (expected {endpoint}; credential-bearing inputs omitted)"
         )
 
         result = await process.prompt(PROMPT)
         assert_prompt_ok(result)
         answer = await _answer(process)
         assert EXPECTED in answer, f"{binary} did not answer through the endpoint: {answer[:600]}"
+        fresh = await AgenticProcess.get_by_id(process.id) or process
+        assert fresh.resolved_llm_endpoint_typeid == endpoint, "completed turn used a different or unproven source"
     finally:
         await asyncio.shield(safe_exit(process))
 
@@ -338,36 +348,17 @@ async def test_worker_answers_through_the_endpoint_it_was_given(
     # by 1 would satisfy "> 0" while meaning the accounting is broken.
     # Measured on the prompt, not on ``input_tokens`` alone: an Anthropic model served through
     # OpenRouter reports input EXCLUSIVE of cache (a claude turn is ~10 in + ~23k cache), so the
-    # same ``max`` reconciliation as ``_price_bracket`` is the honest size of the turn.
+    # ``max`` reconciliation is the honest size of the turn.
     prompt_tokens = max(delta["input_tokens"], delta["cache_read_tokens"] + delta["cache_write_tokens"])
     assert prompt_tokens >= 20, (
         f"{binary}: {prompt_tokens} prompt tokens ({delta['input_tokens']} in, "
         f"{delta['cache_read_tokens']} cache-read, {delta['cache_write_tokens']} cache-write) is not a real turn"
     )
 
-    # The charge must be what those tokens are actually worth. Recomputed from the same price table
-    # the hub bills from, so this catches a mis-priced model, a dropped cache field, or a rounding
-    # regression -- none of which a "cost > 0" check would notice.
-    # The charge must be defensible for the tokens that were counted -- see ``_price_bracket``.
-    low, high = _price_bracket(billed_as, delta)
-    slack = max(delta["requests"], 1)  # per-request rounding to micro-USD
-    assert low - slack <= delta["cost_micro_usd"] <= high + slack, (
-        f"{binary}: billed {delta['cost_micro_usd']}µ$, outside the {low}-{high}µ$ those tokens "
-        f"could cost ({delta['input_tokens']} in / {delta['output_tokens']} out / "
-        f"{delta['cache_read_tokens']} cache-read / {delta['cache_write_tokens']} cache-write "
-        f"of {billed_as})"
-    )
+    after_by_model = _usage(hub, endpoint, by="model")
+    _assert_model_accounting(delta, before_by_model, after_by_model, billed_as)
     print(
         f"\n  {binary:9s} {delta['requests']:2d} req  "
         f"{delta['input_tokens']:6d} in  {delta['output_tokens']:5d} out  "
         f"{delta['cache_read_tokens']:5d} cache  ${delta['cost_micro_usd'] / 1_000_000:.6f}  [{billed_as}]"
     )
-
-    # The slug IS the price lookup, so billing the wrong one silently bills the wrong amount.
-    after_by_model = _usage(hub, endpoint, by="model")
-    charged = {
-        slug
-        for slug, totals in after_by_model.items()
-        if totals.get("requests", 0) > before_by_model.get(slug, {}).get("requests", 0)
-    }
-    assert charged == {billed_as}, f"{binary}: billed as {sorted(charged)}, expected {billed_as!r}"

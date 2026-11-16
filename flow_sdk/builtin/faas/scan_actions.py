@@ -11,6 +11,7 @@ from pathlib import Path
 from flow_sdk import toplog
 from flow_sdk.builtin.faas import scan_indexer
 from flow_sdk.builtin.faas.project_list import (
+    _project_id_for_cwd,
     invalidate_project_list_cache,
 )
 from flow_sdk.builtin.faas.project_list import (
@@ -379,6 +380,7 @@ class ScanActionsMixin:
             guard_deletable,
             on_unavailable_volume,
             remove_from_harness,
+            trash_unrecorded_project,
         )
 
         request_info = get_current_request_info()
@@ -394,6 +396,9 @@ class ScanActionsMixin:
         if not isinstance(wanted, list) or not wanted:
             return ApiFailResponse(message="'project_ids' must be a non-empty list", status_code=400)
 
+        # The folder of each row, as the screen sent it. Only a folder the listing found with no
+        # Project row behind it needs it — its id is derived from its path, which is checked below.
+        sent_cwds = body.get("cwds") if isinstance(body.get("cwds"), dict) else {}
         index = await asyncio.to_thread(HarnessIndex.build)
         results: list[dict] = []
         for project_id in wanted:
@@ -402,7 +407,14 @@ class ScanActionsMixin:
                 # the 3-5s project listing just to look one up.
                 project = await Project.get_by_id(str(project_id))
                 if project is None:
-                    results.append({"project_id": project_id, "ok": False, "error": "Unknown project"})
+                    cwd = str(sent_cwds.get(project_id) or "")
+                    if not cwd or _project_id_for_cwd(cwd) != project_id:
+                        results.append({"project_id": project_id, "ok": False, "error": "Unknown project"})
+                        continue
+                    row = {"cwd": cwd, "name": Path(cwd).name}
+                    action = trash_unrecorded_project if permanent else remove_from_harness
+                    outcome = await asyncio.to_thread(action, row, index)
+                    results.append({"project_id": project_id, "ok": True, **outcome})
                     continue
                 row = {"cwd": project.fs_storage_mount_path or "", "name": project.name}
                 if permanent:
@@ -836,7 +848,7 @@ class ScanActionsMixin:
                     except Exception:
                         logging.debug(f"createProcess: skipping unparseable shared_context_entity {raw!r}")
                 if tids:
-                    process.add_shared_context_entities(*tids)
+                    process.add_shared_context_entities(*tids, via="user")  # what the launch was opened on
             await process.save(owner)
             if launch_title:
                 try:

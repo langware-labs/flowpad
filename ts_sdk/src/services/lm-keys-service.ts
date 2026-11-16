@@ -20,11 +20,14 @@ export interface LmApiKeySummary {
 export interface LmApiKeyValidation {
   valid: boolean;
   message?: string;
+  validation_stage?: 'configuration' | 'authentication' | 'invocation';
 }
 
 export interface LmModel {
   id: string;
   name: string;
+  formats?: ('chat' | 'messages' | 'responses' | 'embeddings')[];
+  catalog_source?: 'declared' | 'discovered';
 }
 
 /**
@@ -34,6 +37,29 @@ export interface LmModel {
  * are configured — there is no read-by-provider endpoint. In-process callers
  * (workers) read values via the Python `get_lm_api(provider)` SDK function.
  */
+/** What `saveEndpoint` may set on a local endpoint row (`LLMEndpointConfig` on the backend). */
+export interface LocalEndpointConfig {
+  name?: string;
+  base_url?: string;
+  tiers?: Record<string, string>;
+  /** Omission preserves the override; null clears it. */
+  default_model?: string | null;
+  limits?: Record<string, number | null>;
+  filters?: Record<string, unknown>;
+  vertex?: { project_id?: string; location?: string };
+}
+
+/** A device login's endpoint row as `GET lm_keys/device` returns it (`LLMEndpoint.to_wire`). */
+export interface DeviceEndpointWire {
+  id: string;
+  name: string;
+  kind: 'device';
+  harness: string;
+  /** Sizes (`sm`/`md`/`lg`) and custom names (any other key) → model. */
+  tiers: Record<string, string>;
+  invocable: false;
+}
+
 export class LmKeysService {
   private readonly base: string;
 
@@ -53,6 +79,15 @@ export class LmKeysService {
     return apiClient.post(this.base, { provider, key });
   }
 
+  /** Create or edit this machine's endpoint for a provider: store `key` (validated on store) and/or
+   *  write the row's fields. The same fields the hub page writes on a hub root. */
+  saveEndpoint(
+    provider: LMApiProvider,
+    body: { key?: string; config?: LocalEndpointConfig },
+  ): Promise<{ ok: true; endpoint_id: string } & Partial<LmApiKeyValidation>> {
+    return apiClient.post(this.base, { provider, ...body });
+  }
+
   /** Validate the stored key for a provider against the provider (a real network
    *  check). */
   testLmApi(provider: LMApiProvider): Promise<LmApiKeyValidation> {
@@ -62,6 +97,21 @@ export class LmKeysService {
   /** The provider's model catalog, for the mapping picker. */
   listModels(provider: LMApiProvider): Promise<LmModel[]> {
     return apiClient.get(`${this.base}/models/${encodeURIComponent(provider)}`);
+  }
+
+  /** One endpoint row per device-login harness (claude / codex / copilot subscriptions): no key,
+   *  only the model sizes and custom named models the user set on it (`kind: device`). */
+  listDeviceEndpoints(): Promise<DeviceEndpointWire[]> {
+    if (isHubOnly()) return Promise.resolve([]);
+    return apiClient.get(`${this.base}/device`);
+  }
+
+  /** Replace a device login's sizes and custom names (an empty value clears that entry). */
+  saveDeviceEndpoint(
+    harness: string,
+    config: { tiers: Record<string, string | null>; name?: string },
+  ): Promise<{ ok: true; endpoint_id: string }> {
+    return apiClient.post(`${this.base}/device`, { harness, config });
   }
 
   deleteLmApi(provider: LMApiProvider): Promise<{ ok: true }> {

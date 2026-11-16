@@ -1,0 +1,23 @@
+{
+  "type": "data_schema",
+  "id": "1e12202f-751f-4997-95cc-2229061e5148",
+  "name": "flowmap.outcome",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique in the map."
+    },
+    "title": {
+      "shape": "string",
+      "description": "What they have, in plain words."
+    },
+    "lane": {
+      "shape": "?float",
+      "description": "Layout hint: the column."
+    },
+    "row": {
+      "shape": "?int",
+      "description": "Layout hint: the row."
+    }
+  }
+}

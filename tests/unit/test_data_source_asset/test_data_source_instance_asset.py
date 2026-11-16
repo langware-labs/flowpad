@@ -469,3 +469,69 @@ async def test_public_access_is_private_row_policy_preserved_on_reindex(scope):
     assert row.open_to_all is True
     await DataSource.update_by_id(source.id, {"open_to_all": False})
     assert (await DataSource.get_by_id(str(source.id))).open_to_all is False
+
+
+class _OwesSetup(_Mailbox):
+    """A driver with a setup check of its own, as Gmail's IMAP login is."""
+
+    provider = "asset-mailbox-owes-setup-test"
+    #: What the check answers, when a test wants something other than "ready": a Verdict, or an error to raise.
+    answer: object = None
+
+    async def verify(self):
+        from flow_sdk.sources import Verdict
+
+        if isinstance(_OwesSetup.answer, Exception):
+            raise _OwesSetup.answer
+        return _OwesSetup.answer or Verdict(ready=True, detail="")
+
+
+async def test_an_update_carrying_new_does_not_park_an_active_source(scope):
+    """A client save sends the whole entity, and the TS model defaults `status` to 'new'. On a row that
+    exists, 'new' is no decision: an edit must not re-run the create rules and park it in setup."""
+    DataDriver.register(DataDriver.for_class(_OwesSetup, kind="datasource.test.asset"))
+    source = DataSource(name="mail", provider=_OwesSetup.provider, config={"address": "me@x.test"})
+    await source.save()
+    source.status, source.setup_detail, source.setup_needs = SourceStatus.ACTIVE.value, "", []  # what Verify writes
+    await source.save_runtime()
+
+    await DataSource.update_by_id(source.id, {"poll_interval_seconds": 600, "status": SourceStatus.NEW.value})
+
+    row = await DataSource.get_by_id(str(source.id))
+    assert (row.status, row.setup_detail) == (SourceStatus.ACTIVE.value, "")
+
+
+@pytest.mark.parametrize(
+    "verified, on_resume, lands",
+    [
+        (True, "ready", (SourceStatus.ACTIVE.value, "")),  # the Gmail case: verified, paused, resumed
+        (True, "refused", (SourceStatus.SETUP.value, "Google refused the app password.")),
+        (True, "silent", (SourceStatus.ACTIVE.value, "")),  # the provider did not answer: where it stood
+        (False, "silent", (SourceStatus.SETUP.value, "Finish setup, then press Verify.")),
+        (False, "ready", (SourceStatus.ACTIVE.value, "")),
+    ],
+)
+async def test_resume_returns_a_source_to_where_it_stood_and_asks_its_driver(scope, monkeypatch, verified, on_resume, lands):
+    """Pause then resume is not a fresh start: a source that passed its setup check does not owe it again."""
+    from flow_sdk.sources import Verdict
+    from flow_sdk.sources.errors import SourceUnavailable
+
+    answers = {
+        "ready": Verdict(ready=True, detail=""),
+        "refused": Verdict(ready=False, detail="Google refused the app password."),
+        "silent": SourceUnavailable("no answer"),
+    }
+    DataDriver.register(DataDriver.for_class(_OwesSetup, kind="datasource.test.asset"))
+    source = DataSource(name="mail", provider=_OwesSetup.provider, config={"address": "me@x.test"})
+    await source.save()
+    assert source.status == SourceStatus.SETUP.value
+    if verified:
+        await source.verify()
+
+    monkeypatch.setattr(_OwesSetup, "answer", answers[on_resume])
+    for _ in range(2):  # pausing and resuming again changes nothing
+        await source.set_enabled(False)
+        assert (await DataSource.get_by_id(str(source.id))).status == SourceStatus.DISABLED.value
+        await source.set_enabled(True)
+        row = await DataSource.get_by_id(str(source.id))
+        assert (row.status, row.setup_detail) == lands

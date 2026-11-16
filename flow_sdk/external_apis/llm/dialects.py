@@ -109,6 +109,7 @@ class ProviderDialect:
     #: ``{sm, md, lg, embedding}`` — the slugs used when nobody chose one.
     default_models: Mapping[str, str] = field(default_factory=dict)
     _parse_models: Callable[[Any], list[str]] = field(default=_parse_data_ids, repr=False)
+    client_factory: Callable[..., Any] | None = field(default=None, repr=False)
 
     def auth_headers(self, key: str, incoming: Mapping[str, str] | None = None) -> dict[str, str]:
         """Lower-cased header names; replaces whatever credential the caller sent."""
@@ -128,7 +129,21 @@ class ProviderDialect:
         return f"{root}/{sub_path.lstrip('/')}"
 
 
+def _vertex_client(**kwargs: Any) -> Any:
+    from flow_sdk.external_apis.llm.vertex import VertexClient
+
+    return VertexClient(**kwargs)
+
+
 DIALECTS: dict[LMApiProvider, ProviderDialect] = {
+    LMApiProvider.VERTEX: ProviderDialect(
+        provider=LMApiProvider.VERTEX,
+        default_base_url="https://aiplatform.googleapis.com/v1",
+        _auth=_bearer,
+        supports_embeddings=False,
+        client_factory=_vertex_client,
+        default_models={"sm": "google/gemini-3.1-flash-lite", "md": "google/gemini-3.5-flash", "lg": "google/gemini-3.1-pro-preview"},
+    ),
     LMApiProvider.OPENROUTER: ProviderDialect(
         provider=LMApiProvider.OPENROUTER,
         default_base_url="https://openrouter.ai/api",

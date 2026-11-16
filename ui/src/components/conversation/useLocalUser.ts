@@ -18,11 +18,12 @@ function notify() {
 }
 
 function cloudLocalUser(): LocalUser | null {
+  // The signed-in principal: a person, or the agent's Identity on its own box (its messages are its own).
   const cloudUser = cloudManager.currentUser;
   if (!cloudManager.isLoggedIn || !cloudUser?.id) return null;
   return {
     id: cloudUser.id ?? '',
-    name: cloudUser.name ?? cloudUser.email ?? '',
+    name: cloudUser.name ?? ('email' in cloudUser ? cloudUser.email : undefined) ?? '',
   };
 }
 

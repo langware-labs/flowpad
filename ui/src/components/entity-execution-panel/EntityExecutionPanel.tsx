@@ -41,6 +41,7 @@ import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { LinkScope } from '@src/components/links/LinkHandlersContext';
 import type { LinkSurface } from '@src/components/links/link-actions';
 import { ChatActivityLine } from './ChatActivityLine';
+import { EarlierHistoryButton } from './EarlierHistoryButton';
 import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
 import { useObservedTurn } from './hooks/useObservedTurn';
 import { useTurnActivity } from './hooks/useTurnActivity';
@@ -216,7 +217,7 @@ interface EntityExecutionPanelProps {
   modelSelectSlot?: (args: {
     value: string | null;
     disabled: boolean;
-    onChange: (value: string) => void | Promise<void>;
+    onChange: (value: string | null) => void | Promise<void>;
     activeProcess: AgenticProcess | null;
   }) => React.ReactNode;
   /** Optional worker control for surfaces that expose worker selection. */
@@ -575,33 +576,36 @@ export function EntityExecutionPanel({
 
   const activeModelValue = (activeProcess?.cli_config as Record<string, unknown> | undefined)?.model;
   const activeModel = typeof activeModelValue === 'string' && activeModelValue ? activeModelValue : null;
-  const effectiveModel = activeProcess ? (activeModel ?? defaultModel ?? null) : (pendingModel ?? defaultModel ?? null);
+  const effectiveModel = activeProcess ? activeModel : pendingModel;
   const effectiveWorkerType = activeProcess
     ? normalizeWorkerType(activeProcess.worker_type)
     : (pendingWorkerType ?? resolvedDefaultWorkerType);
 
   const handleModelChange = useCallback(
-    async (model: string) => {
+    async (model: string | null) => {
       if (activeProcess && modelSavePending) return;
       setPendingModel(model);
       if (!activeProcess) return;
 
       const previous = activeProcess.cli_config ?? {};
       const previousModel = typeof previous.model === 'string' && previous.model ? previous.model : null;
-      activeProcess.cli_config = { ...previous, model };
+      const next = { ...previous };
+      if (model) next.model = model;
+      else delete next.model;
+      activeProcess.cli_config = next;
       setModelSavePending(true);
       try {
         await activeProcess.save();
       } catch (err) {
         activeProcess.cli_config = previous;
-        setPendingModel(previousModel ?? defaultModel ?? null);
+        setPendingModel(previousModel);
         console.error('[EntityExecutionPanel] model save failed', err);
         notify.error({ title: t`Model not saved`, message: err instanceof Error ? err.message : String(err) });
       } finally {
         setModelSavePending(false);
       }
     },
-    [activeProcess, defaultModel, modelSavePending, t],
+    [activeProcess, modelSavePending, t],
   );
 
   const handleWorkerChange = useCallback(
@@ -987,6 +991,7 @@ export function EntityExecutionPanel({
       <LinkScope process={activeProcess} surface={linkSurface}>
         <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
           {showEmptyState && <div className="p-3 text-sm text-muted-foreground">{emptyStateText}</div>}
+          {activeProcess && <EarlierHistoryButton process={activeProcess} />}
           {activeProcess && <AgentIntroMessage agent={launchingAgent} />}
           {dense ? (
             <>
@@ -1240,7 +1245,7 @@ function ExecutionHistoryHeader({
                         e.stopPropagation();
                         onDeleteSession(p.id, title);
                       }}
-                      className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-data-[active=true]:opacity-60"
+                      className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-data-[active=true]:opacity-60 pointer-coarse:opacity-100"
                       title={t`Delete chat`}
                       data-testid={`entity-execution-history-delete-${p.id}`}
                     >

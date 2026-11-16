@@ -3,7 +3,7 @@
  * §tab project), one row per scenario. The backend's `resolve_tab_project` is the
  * same order; a row here and there must agree.
  */
-import { AgenticProcess, dataContext, Project, resolveTabProject, tabOwnerProject, TypeId, type TabProjectTarget } from '@sdk';
+import { AgenticProcess, dataContext, dataManager, Project, resolveTabProject, tabOwnerProject, TypeId, type TabProjectTarget } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { projectScope } from '@src/lib/scope-filter';
 import { ViewType } from '@src/types/ViewType';
@@ -16,8 +16,10 @@ const INNER = '44444444-4444-4444-8444-444444444444'; // /w/inner (nested mount)
 const ACTIVE = '55555555-5555-4555-8555-555555555555';
 const ASSET = '66666666-6666-4666-8666-666666666666';
 const PROC = '77777777-7777-4777-8777-777777777777';
+const FOLDER = '88888888-8888-5888-8888-888888888888'; // a non-project folder's derived id
 
 const MOUNTS: Record<string, string> = { '/w/inner': INNER, '/w': OUTER };
+const PROJECTS = new Set([OWN, URLP, OUTER, INNER, ACTIVE]);
 
 beforeEach(() => {
   // Deepest mount holding the path — the cached project list's answer.
@@ -27,6 +29,10 @@ beforeEach(() => {
       .find((m) => path === m || path?.startsWith(`${m}/`));
     return hit ? ({ id: MOUNTS[hit] } as Project) : null;
   });
+  // The project rows that exist; any other project id is a 404.
+  vi.spyOn(dataManager, 'getByTypeId').mockImplementation((typeId) =>
+    Promise.resolve(typeId.type === Project.type && PROJECTS.has(typeId.id) ? ({ id: typeId.id } as never) : null),
+  );
   vi.spyOn(dataContext, 'getContextEntity').mockReturnValue({ id: ACTIVE } as never);
 });
 afterEach(() => vi.restoreAllMocks());
@@ -49,6 +55,20 @@ interface Case {
 const CASES: Case[] = [
   { name: 'typeid asset → its own project', dock: typeidDoc, target: asset(OWN), want: OWN, owner: OWN },
   { name: 'vfs asset → its own project', dock: vfsDoc, target: asset(OWN), want: OWN, owner: OWN },
+  {
+    name: 'a stamp naming no project (a non-project folder) → its path decides',
+    dock: vfsDoc,
+    target: asset(FOLDER),
+    want: INNER,
+    owner: INNER,
+  },
+  {
+    name: 'a typeid asset stamped with a non-project folder id → global',
+    dock: typeidDoc,
+    target: asset(FOLDER),
+    want: null,
+    owner: null,
+  },
   {
     name: 'unminted file in a nested mount → the deepest project folder',
     dock: vfsDoc,

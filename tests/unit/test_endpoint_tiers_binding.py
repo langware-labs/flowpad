@@ -1,8 +1,8 @@
 """An LLM endpoint declares the model each size runs; a funded spawn runs exactly that.
 
 ``binding_for_candidate`` -> ``api_auth._slug_for``: a size (``sm``/``md``/``lg``, a harness's own word
-for one, or nothing -> ``preferences.llm.default_size``) reads ``Capability.model_map`` then
-``endpoint.tiers``; a size the endpoint does not declare is refused in words; anything else is a
+for one, or nothing -> endpoint default -> sm) reads ``endpoint.tiers`` (which may also
+declare custom names beside the sizes); a size the endpoint does not declare is refused in words; anything else is a
 named model and runs as named. Isolation copies tests/unit/test_api_auth_binding.py.
 """
 
@@ -30,22 +30,10 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     from flow_sdk.instance_settings import reset_instance_settings
 
     reset_instance_settings()
-    yield
+    from tests.utils.hub_proxy_fake import FakeHub
+
+    yield FakeHub().install_model_config_transport(monkeypatch)
     reset_instance_settings()
-
-
-@pytest.fixture(autouse=True)
-async def _reset_model_maps():
-    """``Capability.model_map`` persists into the shared session DB; leave none behind."""
-    yield
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.capability import Capability
-
-    for worker in ("claude", "opencode"):
-        cap = await Capability.get_by_kind(worker_capability_kind(worker))
-        if cap is not None and getattr(cap, "model_map", None):
-            cap.model_map = {}
-            await cap.save(notify=False)
 
 
 def _candidate(models: dict):
@@ -68,10 +56,15 @@ def _candidate(models: dict):
     return Candidate(endpoint, source)
 
 
-async def _bind(worker: str, tier: str | None, models: dict = TIERS):
+async def _bind(hub, worker: str, tier: str | None, models: dict = TIERS, *, default=None):
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
 
-    return await binding_for_candidate(worker, _candidate(models), tier=tier)
+    candidate = _candidate(models)
+    hub.on("GET", "llm_endpoint", action="model-config", answer={
+        "endpoint_typeid": candidate.source.endpoint_typeid, "tiers": models,
+        "default_model": default, "effective_default_model": models.get(default or "sm"),
+    })
+    return await binding_for_candidate(worker, candidate, tier=tier)
 
 
 def _claude_env(auth) -> dict:
@@ -81,70 +74,62 @@ def _claude_env(auth) -> dict:
     return _prompt_env(CLAUDE_API_AUTH_SPEC, auth)
 
 
-async def test_no_tier_runs_the_endpoints_md_slug(env) -> None:
-    auth = await _bind("claude", None)
-    assert _claude_env(auth)["ANTHROPIC_MODEL"] == TIERS["md"]
-    assert auth.model_slug == TIERS["md"]
+async def test_no_tier_runs_the_endpoints_sm_slug(env) -> None:
+    auth = await _bind(env, "claude", None)
+    assert _claude_env(auth)["ANTHROPIC_MODEL"] == TIERS["sm"]
+    assert auth.model_slug == TIERS["sm"]
 
 
-async def test_the_default_size_preference_picks_the_slug(env) -> None:
+async def test_the_endpoint_default_overrides_the_instance_preference(env) -> None:
     from flow_sdk.preferences import PREF_LLM_DEFAULT_SIZE, write_instance_pref
 
     assert write_instance_pref(PREF_LLM_DEFAULT_SIZE, "sm")
-    auth = await _bind("claude", None)
-    assert _claude_env(auth)["ANTHROPIC_MODEL"] == TIERS["sm"]
+    auth = await _bind(env, "claude", None, default="lg")
+    assert _claude_env(auth)["ANTHROPIC_MODEL"] == TIERS["lg"]
 
 
 async def test_a_size_reads_that_size(env) -> None:
-    auth = await _bind("claude", "lg")
+    auth = await _bind(env, "claude", "lg")
     assert auth.model_slug == TIERS["lg"]
 
 
 async def test_claudes_own_size_word_is_a_size(env) -> None:
-    auth = await _bind("claude", "haiku")
+    auth = await _bind(env, "claude", "haiku")
     assert auth.model_slug == TIERS["sm"]
 
 
 async def test_a_size_the_endpoint_does_not_declare_is_refused_in_words(env) -> None:
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
 
-    with pytest.raises(WorkerSpawnError, match="Model mismatch: this session needs the 'lg' model size"):
-        await _bind("claude", "lg", models={"sm": TIERS["sm"], "md": TIERS["md"]})
+    with pytest.raises(WorkerSpawnError, match="No text-generation model is configured for 'lg'"):
+        await _bind(env, "claude", "lg", models={"sm": TIERS["sm"], "md": TIERS["md"]})
 
 
 async def test_no_size_asked_and_none_declared_says_the_endpoint_declares_none(env) -> None:
     """Nobody asked for a size (the default one runs): the endpoint is what is missing, not a mismatch."""
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
 
-    with pytest.raises(WorkerSpawnError, match="declares no 'md' model"):
-        await _bind("claude", None, models={"sm": TIERS["sm"]})
+    with pytest.raises(WorkerSpawnError, match="no available default text-generation model"):
+        await _bind(env, "claude", None, models={"md": TIERS["md"]})
 
 
 async def test_a_named_model_passes_through(env) -> None:
-    auth = await _bind("claude", "someone/their-model-9")
+    auth = await _bind(env, "claude", "someone/their-model-9")
     assert auth.model_slug == "someone/their-model-9"
 
 
 async def test_opencode_spells_the_slug_with_its_provider_prefix(env) -> None:
-    auth = await _bind("opencode", "md")
+    auth = await _bind(env, "opencode", "md")
     assert auth.model_slug == f"openrouter/{TIERS['md']}"
     # Already prefixed: not doubled.
-    auth = await _bind("opencode", "md", models={"md": "openrouter/vendor/medium-2"})
+    auth = await _bind(env, "opencode", "md", models={"md": "openrouter/vendor/medium-2"})
     assert auth.model_slug == "openrouter/vendor/medium-2"
 
 
-async def test_a_capability_model_map_override_wins_over_the_endpoint(env) -> None:
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.capability import Capability
-    from flow_sdk.lm_api import LMApiProvider
-
-    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
-    # A hub endpoint is spent through the FLOWPAD binding, so that is the provider the map is keyed by.
-    cap.model_map = {LMApiProvider.FLOWPAD.value: {"md": "override/medium"}}
-    await cap.save(notify=False)
-
-    assert (await _bind("claude", "md")).model_slug == "override/medium"
-    assert (await _bind("claude", "sm")).model_slug == TIERS["sm"], "only the overridden size changes"
+async def test_a_custom_name_the_endpoint_declares_runs_its_model(env) -> None:
+    models = {**TIERS, "coding": "vendor/coder-7"}
+    assert (await _bind(env, "claude", "coding", models=models)).model_slug == "vendor/coder-7"
+    assert (await _bind(env, "claude", "sm", models=models)).model_slug == TIERS["sm"], "sizes are unaffected"
 
 
 def test_row_tiers_prefer_the_chain_expansion() -> None:

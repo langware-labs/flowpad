@@ -518,6 +518,24 @@ export function getOrCreateLocalMemberId(): string {
   }
 }
 
+export type SessionBrowser = 'agent' | 'extension';
+
+export interface BrowserStatus {
+  setting: SessionBrowser;
+  effective: SessionBrowser;
+  supports_extension: boolean;
+  agent: { up: boolean; pid: number | null; port: number | null; browser: string };
+  extension: {
+    installed: boolean;
+    device: string;
+    /** Browser profiles on this machine and whether the worker's extension is in each. */
+    profiles?: { id: string; browser: string; name: string; email: string | null; installed: boolean }[];
+    /** A browser's profile list exists but could not be read (macOS privacy). */
+    profiles_denied?: boolean;
+  };
+  last_use: { family: string; tool: string; url: string; at: string | null; failed: boolean } | null;
+}
+
 @registerEntity
 export class Project extends APIEntity<Project> {
   static type: string = 'project';
@@ -1238,6 +1256,19 @@ export class Project extends APIEntity<Project> {
     return this.post<{ env_files: string[] }>('set-env-files', { paths });
   }
 
+  /** The browser this project's agent sessions use — `agent` (Flowpad's own Chrome window)
+   *  or `extension` (the user's Chrome through Claude in Chrome). Written into the manifest. */
+  async setBrowser(browser: SessionBrowser): Promise<{ browser: SessionBrowser }> {
+    return this.post<{ browser: SessionBrowser }>('set-browser', { browser });
+  }
+
+  /** The project's browser, what is available, and — for a session — what it resolves to
+   *  and its last browser call. */
+  async browserStatus(processId?: string): Promise<BrowserStatus> {
+    const qs = processId ? `?process_id=${encodeURIComponent(processId)}` : '';
+    return this.get<BrowserStatus>(`browser-status${qs}`);
+  }
+
   /** The hub projects this desktop has never seen (`POST new-cloud-projects`), mirrored
    *  locally as file-less rows — each as the `?action=open` set-up link's params. */
   static async newFromHub(): Promise<NewCloudProjectLink[]> {
@@ -1258,20 +1289,23 @@ export class Project extends APIEntity<Project> {
   }
 
   /** Is this project ready here (`GET project/<id>/setup-requirements`)? Static: callers hold an id. */
-  /** Fetch the remotes of the clones Flowpad made, so each dependency's `behind` is current, then
-   *  tell every dependency listener. Git does the work off the backend's event loop; callers fire it
-   *  and go on (`void`). Never throws. */
+  /** Fetch the remotes of the clones Flowpad made, so each dependency's `behind` is current, and
+   *  tell the dependency listeners when that found something (a checkout behind its remote, or a
+   *  pull that failed). Fetching only ever moves `behind` up, so a clean answer changes nothing a
+   *  listener shows — announcing it anyway made every project open read its dependencies twice.
+   *  Git does the work off the backend's event loop; callers fire it and go on (`void`). Never throws. */
   static async checkDependencyUpdates(projectId: string): Promise<DependencyState[]> {
+    let dependencies: DependencyState[];
     try {
       const actionInfo = new ActionInfo('check-dependency-updates', Project.type, projectId, 'POST');
       const response = await dataManager.callAction<void, { dependencies: DependencyState[] }>(actionInfo);
-      return response?.dependencies ?? [];
+      dependencies = response?.dependencies ?? [];
     } catch (err) {
       console.warn('[project] dependency update check failed', err);
       return [];
-    } finally {
-      notifyDependenciesChanged(projectId);
     }
+    if (dependencies.some((dep) => (dep.behind ?? 0) > 0 || dep.pull_error)) notifyDependenciesChanged(projectId);
+    return dependencies;
   }
 
   static async setupRequirements(

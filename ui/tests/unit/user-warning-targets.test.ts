@@ -30,3 +30,21 @@ describe('OAuth warning targets', () => {
     expect(warning.targetPointer).toBe(CredentialsSubview.CONNECTIONS);
   });
 });
+
+describe('a failed hub request warning', () => {
+  it('says when it last failed and what to do, so an old one does not read as current', () => {
+    const ts = new Date(2026, 10, 13, 23, 35).getTime();
+    const { description } = createHubRequestFailedWarning({
+      method: 'POST',
+      path: '/api/v1/graph/compute_node/abc/ops/status',
+      statusCode: 0,
+      message: 'ReadTimeout',
+      action: 'Check your connection',
+      ts,
+    });
+
+    expect(description).toContain('POST /api/v1/graph/compute_node/abc/ops/status 0: ReadTimeout');
+    expect(description).toMatch(/Last failed \d+.35/);
+    expect(description).toMatch(/Check your connection\.$/);
+  });
+});

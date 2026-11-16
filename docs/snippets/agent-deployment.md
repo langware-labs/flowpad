@@ -18,7 +18,9 @@ copies it and may name another — stored on the row, never in git, with the age
 (`main_agent_overrides`). What a deployment places is its PARENT (a project), and what it serves is its
 endpoints' `subkind` (`system`, `admin`, `app`, `agent`, `service` — `service-endpoints.md`). The machine it runs on
 is a `ComputeNode` (a box): this computer hosts many deployments, a cloud box one. `identity` says who
-the box logs in as for it: `agent`, `user` (its owner) or `none`.
+the box logs in as for it: `agent` (the main agent's own identity, shared by its boxes), `deployment` (an
+identity of this placement alone), `user` (its owner) or `none`. A box signed in as an identity has a
+principal but no user: `get_principal()` / `currentPrincipal` name it, `get_user()` / `currentUser` are empty.
 
 A deployment is also where the agent ANSWERS. A running local deployment **is a process on this
 machine running the agent loop** (`python -m flow_sdk.builtin.agent_loop`, §7): plain SDK code in the

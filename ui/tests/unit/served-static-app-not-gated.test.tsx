@@ -36,7 +36,7 @@ const lifecycle = vi.hoisted(() => ({
     }) as unknown,
 }));
 vi.mock('@src/components/webapp-display/useAppLifecycle', () => ({ useAppLifecycle: (id: string | null) => lifecycle.of(id) }));
-vi.mock('@src/components/display-toolbar', () => ({ WebappDisplayToolbar: () => null }));
+vi.mock('@src/components/display-toolbar', () => ({ WebappDisplayToolbar: () => null, useDisplayChromeSlot: () => null }));
 
 const { AppDisplayViewer } = await import('@src/pages/flow-page/app-display-viewer');
 

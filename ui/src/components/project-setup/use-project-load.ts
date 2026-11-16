@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Project, TypeId, WebApp, type ProjectLoadResult } from '@sdk';
 import { claimAskRun, openQuestionOf } from '@src/components/ask/ask-claims';
 import { errorStatus } from '@src/lib/error-message';
+import { FIRST_RUN_BLOCK, firstRunFirst } from '@src/components/setup-incomplete/first-run-gate';
 import { SETUP_POLL_MS } from './use-setup-run';
 
 /** The `asset` a Load names for a web app: the one spelling of its typeid, or '' for no app. */
@@ -74,11 +75,18 @@ export function useProjectLoad(
       setMissing(false);
       try {
         await client.cancelQueries({ queryKey: projectLoadKey(projectId, display, asset) });
-        const next = await Project.load(projectId, {
-          approved,
-          ...(asset ? { asset } : {}),
-          ...(display ? { display } : {}),
-        });
+        const ask = () =>
+          Project.load(projectId, {
+            approved,
+            ...(asset ? { asset } : {}),
+            ...(display ? { display } : {}),
+          });
+        let next = await ask();
+        // First-run setup comes first: held for it, the wizard, then this load again — once. A setup about
+        // to be asked for waits on the wizard too (the backend lets it through once the wizard was closed).
+        if (next.blocked === FIRST_RUN_BLOCK) {
+          if (await firstRunFirst()) next = await ask();
+        } else if (next.state === 'setup_required') await firstRunFirst();
         // Only THIS (project, display, asset): a load of one app is not the answer for another app's gate.
         client.setQueryData(projectLoadKey(projectId, display, asset), next);
         await client.invalidateQueries({ queryKey: ['project-load-tree', projectId] });

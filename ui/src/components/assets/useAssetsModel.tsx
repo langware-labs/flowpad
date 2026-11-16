@@ -775,6 +775,9 @@ export function useAssetsModel() {
     handleScopeChange,
     navigateAsset,
     bulkActions,
+    // header "+": every visible type, empty ones included
+    visibleTypes,
+    handleNew,
     // dialogs
     newTypeTarget,
     newTypeDialogOpen,
