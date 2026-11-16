@@ -20,10 +20,12 @@ export function TagInput({
   tags,
   onAdd,
   onRemove,
+  hideTags = false,
 }: {
   tags: string[];
   onAdd: (tag: string) => void;
   onRemove: (tag: string) => void;
+  hideTags?: boolean;
 }) {
   const { t } = useLingui();
   const [input, setInput] = useState('');
@@ -56,7 +58,7 @@ export function TagInput({
   return (
     <Command shouldFilter={false} className="relative h-auto overflow-visible bg-transparent" data-testid="tag-input">
       <div className="flex flex-wrap items-center gap-1">
-        {tags.map((tag) => (
+        {!hideTags && tags.map((tag) => (
           <span key={tag} className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
             {tag}
             <button

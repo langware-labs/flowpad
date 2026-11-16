@@ -86,6 +86,8 @@ export interface ILLMEndpoint extends IEntity {
   enabled?: boolean;
   provider?: LLMEndpointProvider | string;
   base_url?: string;
+  readonly vertex?: { project_id: string; location: string };
+  readonly credential_kind?: 'api_key' | 'service_account';
   sources?: string[];
   filters?: Partial<LLMEndpointFilters>;
   limits?: Partial<LLMEndpointLimits>;
@@ -93,6 +95,8 @@ export interface ILLMEndpoint extends IEntity {
   credential_hint?: string;
   public?: boolean;
   tiers?: Partial<LLMEndpointTiers>;
+  default_model?: string | null;
+  readonly effective_default_model?: string | null;
   models?: string[];
 }
 
@@ -104,6 +108,8 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
   enabled: boolean = true;
   provider: LLMEndpointProvider | string = 'openrouter';
   base_url: string = '';
+  readonly vertex?: { project_id: string; location: string };
+  readonly credential_kind?: 'api_key' | 'service_account';
   /** Ordered typeids (`llm_endpoint-<uuid>`) — the fallback list. Non-empty ⇒ chain. */
   sources: string[] = [];
   filters: LLMEndpointFilters = { ...DEFAULT_LLM_FILTERS };
@@ -124,6 +130,9 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
   /** The model each size runs, as set on THIS endpoint (`null` = inherited; the resolved map is
    *  `expand.tiers` on a permissions read, and `effective_tiers` on the chain). */
   tiers: LLMEndpointTiers = { ...EMPTY_LLM_TIERS };
+  /** Own selector; null inherits. The resolved concrete model comes from the backend. */
+  default_model: string | null = null;
+  readonly effective_default_model?: string | null;
   /** Root only: the catalog this root offers. Empty = the provider's own listing. */
   models: string[] = [];
 
@@ -133,6 +142,8 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
     this.enabled = entity.enabled ?? this.enabled;
     this.provider = entity.provider ?? this.provider;
     this.base_url = entity.base_url ?? this.base_url;
+    this.vertex = entity.vertex;
+    this.credential_kind = entity.credential_kind;
     this.sources = entity.sources ?? this.sources;
     this.filters = { ...DEFAULT_LLM_FILTERS, ...(entity.filters ?? {}) };
     this.limits = { ...DEFAULT_LLM_LIMITS, ...(entity.limits ?? {}) };
@@ -140,12 +151,21 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
     this.credential_hint = entity.credential_hint ?? this.credential_hint;
     this.public = entity.public ?? this.public;
     this.tiers = { ...EMPTY_LLM_TIERS, ...(entity.tiers ?? {}) };
+    this.default_model = entity.default_model ?? null;
+    this.effective_default_model = entity.effective_default_model;
     this.models = entity.models ?? this.models;
   }
 
   /** The model each size resolves to down this endpoint's chain, from the hub's expansion. */
   get effectiveTiers(): LLMEndpointTiers {
     return { ...EMPTY_LLM_TIERS, ...(this.expand?.tiers ?? {}) };
+  }
+
+  /** Local wire field or hub expansion; absent on older servers, null when unavailable. */
+  get effectiveDefaultModel(): string | null | undefined {
+    return this.effective_default_model !== undefined
+      ? this.effective_default_model
+      : this.expand?.effective_default_model;
   }
 
   /** What this endpoint draws from, as bare ids (the form `id` takes): the hub's answer on a

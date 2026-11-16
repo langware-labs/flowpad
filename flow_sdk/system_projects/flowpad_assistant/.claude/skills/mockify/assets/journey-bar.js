@@ -17,50 +17,131 @@
     @media (prefers-reduced-motion:reduce){.mk-next{animation:none}}
     [data-dead]{opacity:.55;cursor:not-allowed!important}
     .mk-pick{outline:2px solid #6d28d9!important;outline-offset:2px!important}
-    html.mk-picking,html.mk-picking *{cursor:crosshair!important}`;
+    html.mk-picking,html.mk-picking *{cursor:crosshair!important}
+    [data-change].mk-off{display:none!important}
+    [data-change].mk-anchor{display:inline-block;width:1px;min-height:1em;vertical-align:middle}
+    [data-step] [data-change].mk-was{outline:2px solid #cf222e!important;outline-offset:3px!important;background-color:rgba(207,34,46,.09)!important;border-radius:4px}
+    .mk-roomy{margin-top:30px!important;margin-bottom:12px!important}
+    .mk-pin.mk-quiet{opacity:0;pointer-events:none}
+    .mk-off-chip{position:fixed;left:50%;transform:translateX(-50%);pointer-events:auto;cursor:pointer;background:#1F6FEB;color:#fff;font:700 12.5px system-ui,sans-serif;padding:6px 14px;border-radius:999px;box-shadow:0 4px 14px rgba(31,111,235,.45)}
+    .mk-off-chip.up{top:10px}.mk-off-chip.down{bottom:86px}
+    .mk-flash{animation:mk-flash 1.2s ease 1}@keyframes mk-flash{0%,100%{outline-color:#1F6FEB}30%,70%{outline-color:#f0b400;outline-width:4px}}.mk-pin{transition:opacity .12s}
+    .mk-removed{opacity:.5!important;outline:2px dashed #cf222e!important;outline-offset:3px!important;text-decoration:line-through!important;background-color:rgba(207,34,46,.09)!important}
+    html.mk-clean [data-mk-after]{outline:none!important;background-color:transparent!important;animation:none!important}
+    [data-mk-after]{outline:2px solid #1a7f37!important;outline-offset:3px!important;background-color:rgba(26,127,55,.11)!important;border-radius:6px;animation:mk-in .35s ease}
+    .mk-dl{position:fixed;pointer-events:auto;cursor:pointer;display:flex;align-items:center;justify-content:center;min-width:26px;height:22px;padding:0 4px;box-sizing:border-box;border-radius:11px;
+      font:800 11.5px/1 system-ui,sans-serif;color:#fff;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45)}
+    .mk-dl:hover{transform:scale(1.15)}
+    .mk-dl.old{background:#cf222e}.mk-dl.new{background:#1a7f37}.mk-dl.scr{width:auto;padding:0 7px;border-radius:11px}
+    .mk-dl.rej{box-shadow:0 0 0 2px #cf222e,0 1px 5px rgba(0,0,0,.45)}
+    .mk-dl.rej::after{content:'✕';position:absolute;right:-7px;top:-7px;width:13px;height:13px;border-radius:50%;background:#cf222e;color:#fff;font:800 8px/13px system-ui;text-align:center}
+    .mk-scr-tag{position:fixed;top:6px;left:50%;transform:translateX(-50%);pointer-events:none;padding:3px 12px;border-radius:999px;
+      font:800 11px/16px system-ui,sans-serif;letter-spacing:.06em;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+    .mk-scr-tag.existing{background:#57606a}.mk-scr-tag.new{background:#1a7f37}
+    @keyframes mk-in{from{opacity:0;transform:translateY(-4px)}}
+    .mk-pins{position:fixed;inset:0;pointer-events:none;z-index:2147483645}
+    .mk-pin{position:fixed;pointer-events:auto;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#fff;color:#1F6FEB;border:2px solid #1F6FEB;
+      font:800 12px/1 system-ui,sans-serif;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3);padding:0}
+    .mk-pin:hover{transform:scale(1.12)}.mk-pin{touch-action:none;user-select:none;cursor:grab}.mk-pin.rev{background:#1F6FEB;color:#fff}.mk-pin.on{box-shadow:0 0 0 4px rgba(31,111,235,.35),0 2px 8px rgba(0,0,0,.3)}
+    .mk-pin.scr{border-radius:8px;width:auto;padding:0 8px;margin-left:0}
+    .mk-hover{position:fixed;z-index:2147483646;width:300px;background:#1f2328;color:#f6f8fa;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.35);padding:10px 12px;font:12.5px/1.45 system-ui,sans-serif}
+    .mk-hover b{display:block;font-size:13.5px;margin:0 18px 4px 0}.mk-hover .mk-tags{display:flex;gap:5px;margin-bottom:6px}
+    .mk-hover .mk-tags span{font:700 10px ui-monospace,Menlo,monospace;color:#f6f8fa;background:rgba(255,255,255,.14);border-radius:5px;padding:1px 6px}
+    .mk-hover p{margin:0 0 8px;color:#c9d1d9}.mk-hover .mk-x{position:absolute;top:6px;right:8px;background:none;border:0;color:#8b949e;cursor:pointer;font-size:13px}
+    .mk-hover .mk-tg{display:flex;gap:4px;margin-bottom:6px}.mk-hover .mk-tg button{flex:1;height:28px;border-radius:7px;border:1.5px solid #484f58;background:transparent;color:#c9d1d9;font:700 12px system-ui;cursor:pointer}
+    .mk-hover .mk-tg .mk-ok.on{background:#1a7f37;border-color:#1a7f37;color:#fff}.mk-hover .mk-tg .mk-rj.on{background:#cf222e;border-color:#cf222e;color:#fff}
+    .mk-hover .mk-op{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}.mk-hover .mk-op button{border:1.5px solid #484f58;background:transparent;color:#c9d1d9;border-radius:999px;padding:3px 9px;font:12px system-ui;cursor:pointer}.mk-hover .mk-op .on{border-color:#a78bfa;color:#a78bfa;font-weight:700}
+    .mk-hover textarea{width:100%;box-sizing:border-box;min-height:46px;background:#0d1117;color:#f6f8fa;border:1.5px solid #484f58;border-radius:8px;padding:6px 8px;font:12.5px system-ui;resize:vertical}
+    .mk-hover .mk-row{display:flex;align-items:center;gap:8px;margin-top:6px}.mk-hover .mk-hint{flex:1;color:#8b949e;font-size:11px}
+    .mk-hover .mk-sv{height:28px;padding:0 14px;border-radius:999px;border:0;background:#a78bfa;color:#16181c;font-weight:800;cursor:pointer}.mk-hover .mk-sv:disabled{opacity:.4;cursor:default}
+    .mk-pin.rej{border-color:#cf222e;color:#cf222e}.mk-pin.rej.rev{background:#cf222e;color:#fff}
+    .mk-sub{position:absolute;right:-9px;top:-9px;width:18px;height:18px;border-radius:50%;border:2px solid #fff;font:800 9px/1 system-ui;display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;background:#1a7f37;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+    .mk-sub:hover{transform:scale(1.15)}.mk-sub.no{background:#cf222e}
+    .mk-sub.c::after{content:'';position:absolute;right:-4px;bottom:-4px;width:7px;height:7px;border-radius:50%;background:#f0b400;border:1.5px solid #fff}
+    @media (prefers-reduced-motion:reduce){[data-mk-after]{animation:none}}`;
   document.head.append(docStyle);
+  if ((store.get('view') || 'diff') !== 'diff') document.documentElement.classList.add('mk-clean');
 
-  let J = CFG.journey || [];       // the steps (from the mock row once loaded): {id, app, title, note?, expect?[], branch_of?, when?, decisions?[]}
+  // ── changes on today (v3): every screen is the product today; a step's `changes` are pinned on it ──
+  // In the screen: the today element carries data-change="<id>"; its suggested version is a
+  // <template data-change-after="<id>"> next to it (empty = the element goes). mode 'screen' changes open `to`.
+  const rev = {};                       // "<step>:<change>" → revealed
+  // diff (default): today in red AND the suggestion in green, side by side · today: the screen as it is · after: only the suggestion
+  let view = store.get('view') || 'diff';
+  const allMode = true;   // every change of an existing screen is shown; `view` says how
+  const pinMoved = store.get('pinMoved') || {};   // "<step>:<change>" → {dx, dy}: where the reviewer dragged a pin                  // Today | All is global: All reveals every change on every screen
+  const chPins = document.createElement('div');
+  chPins.className = 'mk-pins'; chPins.setAttribute('data-mockify', '');
+  document.body.append(chPins);
+  // a NEW screen (tag "new") is all new: it carries no change annotation. The tag never decides the walk.
+  const changesOf = (st) => (st && st.tag !== 'new' && st.changes) || [];
+  const isNew = (st) => !!st && st.tag === 'new';
+  const secOf = (st) => st && document.querySelector(`[data-step="${CSS.escape(st.id)}"]`);
+  function setRev(st, c, on) {
+    const sec = secOf(st); if (!sec || c.mode === 'screen') return;
+    rev[st.id + ':' + c.id] = on;
+    const q = CSS.escape(c.id);
+    sec.querySelectorAll(`[data-mk-after="${q}"]`).forEach((e) => e.remove());
+    const els = [...sec.querySelectorAll(`[data-change="${q}"]`)];
+    els.forEach((e) => e.classList.remove('mk-off', 'mk-removed', 'mk-was', 'mk-roomy'));
+    if (!on || view === 'today') return;
+    // one template per today element (a change may touch several: every cell of a column); empty = removal
+    const tpls = [...sec.querySelectorAll(`template[data-change-after="${q}"]`)];
+    if (!tpls.some((t) => t.innerHTML.trim())) { els.forEach((e) => { if (!e.classList.contains('mk-anchor')) e.classList.add(view === 'after' ? 'mk-off' : 'mk-removed'); }); return; }
+    // a block gets room above it for its diff label, so nothing it labels is covered
+    const roomy = (e) => { const d = getComputedStyle(e).display; if (/^(block|flex|grid|flow-root|list-item)$/.test(d)) e.classList.add('mk-roomy'); };
+    els.forEach((e) => { if (e.classList.contains('mk-anchor')) return; if (view === 'after') e.classList.add('mk-off'); else { e.classList.add('mk-was'); roomy(e); } });
+    tpls.forEach((tpl) => {
+      const frag = tpl.content.cloneNode(true);
+      const kids = [...frag.children];
+      kids.forEach((ch) => ch.setAttribute('data-mk-after', c.id));
+      tpl.after(frag);
+      if (view === 'diff') kids.forEach(roomy);
+    });
+  }
+  const isRev = (st, c) => !!rev[st.id + ':' + c.id];
+  // where a pin sits: the revealed version, else the today element, else a column at the left
+  function pinAt(sec, c, k) {
+    const q = CSS.escape(c.id);
+    const el = sec.querySelector(`[data-mk-after="${q}"]`) || [...sec.querySelectorAll(`[data-change="${q}"]`)].find((e) => e.getClientRects().length);
+    const r = el && el.getBoundingClientRect();
+    if (!r || (!r.width && !r.height && !el.classList.contains('mk-anchor'))) return { x: 22, y: 70 + k * 34 };
+    // the centre of what changed (of all its pieces, when it has several), kept on screen
+    const all = [...sec.querySelectorAll(`[data-mk-after="${q}"]`)].concat([...sec.querySelectorAll(`[data-change="${q}"]`)].filter((e) => e.getClientRects().length && !e.classList.contains('mk-off')))
+      .map((e) => e.getBoundingClientRect()).filter((b) => b.width || b.height);
+    const first = all[0] || r;
+    const cx = first.left + first.width / 2, cy = first.height < 44 ? first.top - 6 : first.top + Math.min(first.height / 2, 40);   // a small element: centred just above it, so it stays clickable
+    return { x: Math.max(16, Math.min(innerWidth - 16, cx)), y: Math.max(16, Math.min(innerHeight - 70, cy)) };
+  }
+
+  // The mock tree (assets/mock-tree.js, compiled by scripts/tree.py): the screens in DFS order. Next, Back, Restart,
+  // the hash, a data-next click and the screens list all move through window.mock -- the bar only paints.
+  const mock = window.mock;
+  if (!mock) { console.error('mockify: no window.mock -- build the page with build_mock.py (it inlines mock-tree.js and MOCKIFY.tree)'); return; }
+  const J = mock.screens;          // {id, app, title, tag, num, depth, via_kind, when, state, actions[], changes[], decisions[], note?, expect?[]}
   let cur = 0;
   const data = { sdk: null, mock: null, mocksDs: null, fbDs: null, rows: [], error: '' };
   const openRows = () => data.rows.filter((r) => r.input.status === 'open');
   const sentRows = () => data.rows.filter((r) => r.input.status !== 'open');
   const stepRows = () => data.rows.filter((r) => r.input.step === J[cur]?.id);
 
-  const isBranch = (s) => !!s.branch_of;
-  const find = (id) => J.findIndex((s) => s.id === id);   // -1 when there is no such step
-  const isRoot = (s) => !isBranch(s) || find(s.branch_of) < 0;   // a main step, or a branch off no known step
-  // Every screen in depth-first order, each with its number: main steps 1, 2, 3, the branches off step 1
-  // 1.1, 1.2, theirs 1.1.1. Next and Back walk this order, so no screen is out of reach and Next never stalls.
-  const tree = () => {
-    const order = [], num = {}, seen = new Set();
-    const visit = (i, label) => {
-      if (seen.has(i)) return;
-      seen.add(i); order.push(i); num[i] = label;
-      let k = 0;
-      J.forEach((s, c) => { if (s.branch_of === J[i].id && !seen.has(c)) visit(c, `${label}.${++k}`); });
-    };
-    let n = 0;
-    J.forEach((s, i) => { if (isRoot(s)) visit(i, String(++n)); });
-    J.forEach((_, i) => visit(i, String(++n)));   // a branch cycle still lands somewhere
-    return { order, num };
-  };
-  const step = (i, by, o = tree().order) => { const k = o[o.indexOf(i) + by]; return k === undefined ? i : k; };
-  // Where a screen goes on: its own `next` when that lies ahead, else the next screen depth-first.
-  // Next, its hint and the screen's glowing control all follow this one rule.
-  const onwardOf = (i) => {
-    const o = tree().order, n = J[i]?.next ? find(J[i].next) : -1;
-    return n >= 0 && o.indexOf(n) > o.indexOf(i) ? n : step(i, 1, o);
-  };
+  const isBranch = (s) => s.via_kind === 'branch' || s.via_kind === 'alt';
+  const find = (id) => mock.indexOf(id);   // -1 when there is no such screen
   const show = (id) => {
     document.querySelectorAll('[data-step]').forEach((el) => { el.hidden = el.dataset.step !== id; });
+    window.mockifyFit?.();   // build_mock's fit: the shown screen fills the frame
   };
-  const go = (i, record = true) => {
+  // Paint the screen the tree is on. Every move goes through window.mock; this is its one listener.
+  const paint = (record = true) => {
     if (!J.length) return;
-    cur = Math.min(J.length - 1, Math.max(0, i));
+    cur = mock.index;
     const id = J[cur].id;
+    if (open.startsWith('change:')) { open = ''; panel.hidden = true; }   // a change belongs to its screen
+    if (typeof hoverEl !== 'undefined' && mini) { mini = null; hoverEl.hidden = true; }
     if (record && location.hash.slice(1) !== id) history.pushState(null, '', '#' + id);
     show(id);
+    if (typeof nextIx !== 'undefined') nextIx = 0;
+    if (allMode) changesOf(J[cur]).forEach((c) => { if (!isRev(J[cur], c)) setRev(J[cur], c, true); });
     render();
     contrast();
   };
@@ -105,6 +186,10 @@
     .ico { height: 32px; min-width: 32px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: var(--mk-fg); }
     .ico:hover { background: var(--mk-soft); }
     .where { display: flex; flex-direction: column; box-sizing: border-box; flex: 0 0 272px; width: 272px; min-width: 0; padding: 0 6px; }
+    .stag { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 5px; font: 800 10px/16px system-ui, sans-serif; letter-spacing: .05em; color: #fff; vertical-align: 1px; }
+    .stag.ex { background: #57606a; } .stag.new { background: #1a7f37; }
+    .who { display: inline-block; max-width: 190px; vertical-align: bottom; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; padding: 0 6px; margin-right: 4px; border-radius: 9px; background: var(--mk-soft); font-size: 10px; line-height: 15px; white-space: nowrap; transition: background .3s, color .3s; }
+    .who.switch { background: var(--mk-accent); color: #fff; }
     .step { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
     .n { color: var(--mk-muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; display: flex; gap: 4px; min-width: 0; max-width: 260px; }
     .n .count { flex: none; }
@@ -117,6 +202,18 @@
     .ptools { display: flex; gap: 4px; margin: -2px 28px 8px 0; padding-bottom: 8px; border-bottom: 1px solid color-mix(in srgb, var(--mk-muted) 35%, transparent); }
     .ptools .tb.on { border-color: var(--mk-accent); color: var(--mk-accent); }
     [hidden] { display: none !important; }
+    .chg { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 4px 0 10px; border: 1.5px solid #1F6FEB; border-radius: 999px; color: #1F6FEB; font-weight: 700; }
+    .chg .cnt { font-weight: 700; color: #1F6FEB; }
+    .sw { display: inline-flex; border-radius: 999px; background: var(--mk-soft); padding: 2px; }
+    .sw button { height: 24px; padding: 0 9px; font-size: 12px; font-weight: 700; color: var(--mk-muted); }
+    .sw button.on { background: #1F6FEB; color: #fff; }
+    .vote { display: flex; gap: 6px; margin: 8px 0; } .vote button { flex: 1; height: 30px; border-radius: 8px; border: 1.5px solid var(--mk-muted); font-weight: 700; text-align: center; }
+    .vote .vy.on { background: #1a7f37; border-color: #1a7f37; color: #fff; } .vote .vn.on { background: #cf222e; border-color: #cf222e; color: #fff; }
+    .reveal { display: block; width: 100%; height: 32px; text-align: center; border: 1.5px solid #1F6FEB; color: #1F6FEB; font-weight: 700; margin: 8px 0 4px; }
+    .reveal.on { background: #1F6FEB; color: #fff; }
+    .crow { display: flex; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 8px; align-items: center; }
+    .crow:hover { background: var(--mk-soft); } .crow i { font-style: normal; flex: none; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #1F6FEB; color: #1F6FEB; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+    .crow small { margin-left: auto; font-weight: 700; } .crow small.yes { color: #1a7f37; } .crow small.no { color: #cf222e; }
     .min .hide-min { display: none !important; }
     @media (max-width: 900px) { .restart-label, .nav .lbl, .trail { display: none; } .step { max-width: 26vw; } .where { flex-basis: 26vw; width: 26vw; } .nav { padding: 0 10px; } }
     .panel { position: absolute; left: 0; width: min(420px, calc(100vw - 16px)); max-height: 70vh; overflow: auto; background: var(--mk-bg); color: var(--mk-fg);
@@ -158,6 +255,7 @@
     <button class="nav back hide-min" title="Previous screen (←)" aria-label="Back">‹ <span class="lbl">Back</span></button>
     <div class="where"><span class="step"></span><span class="n"></span></div>
     <button class="nav next hide-min" title="Next screen (→)" aria-label="Next"><span class="lbl">Next</span> ›</button>
+    <span class="chg hide-min" hidden><button class="cnt" title="Go to the next change on this screen"></button><span class="sw"><button class="sw-d on" title="Today (red) and the suggestion (green), side by side">Diff</button><button class="sw-t" title="The screen as it is today">Today</button><button class="sw-a" title="Only the suggestion">After</button></span></span>
     <span class="sep hide-min"></span>
     <button class="ico steps hide-min" title="All screens" aria-label="All screens">☰</button>
     <button class="execute" title="Send the comments so far to the session that builds this mock">▶ Execute <span class="exec-n"></span></button>
@@ -183,7 +281,7 @@
     $('.next').classList.remove('hint');
     if (!hints || !J.length) return;
     const screen = document.querySelector(`[data-step="${CSS.escape(J[cur].id)}"]`) || document.body;
-    const o = onwardOf(cur), onward = o !== cur ? J[o].id : null;
+    const onward = mock.canNext ? J[cur + 1].id : null;   // where Next goes: the next screen of the walk
     screen.querySelectorAll('[data-next]').forEach((el) => {
       if (el.closest('[hidden], [data-mockify]')) return;
       const to = el.dataset.next;
@@ -224,11 +322,12 @@
   });
   let open = '';
   let panelKey = '';   // what the open panel last drew: re-drawn only when this changes
-  const panelState = () => open === 'feedback'
+  const panelState = () => open.startsWith('change:') ? `c|${open}|${cur}|${data.rows.length}` : open === 'feedback'
     ? `f|${cur}|${!!data.fbDs}|${stepRows().map((r) => r.key + r.version).join()}`
     : open === 'save' ? `v|${data.mock?.version}` : open === 'send' ? `s|${data.rows.map((r) => r.key + r.version).join()}` : `${open}|${cur}|${J.length}`;
   const setPanel = (p) => { open = p; renderPanel(); };
   const NO_DRAFT = { text: '', decision: '', image: '', anchor: null, shot: '' };
+  const cdraft = {};   // "<step>:<change>" → { vote, choice, text } being written
   let draft = { ...NO_DRAFT };
   const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -265,25 +364,188 @@
     J.forEach((s, i) => { if (isBranch(s)) return; const last = out[out.length - 1]; if (!last || last.app !== s.app) out.push({ app: s.app, from: i }); });
     return out;
   }
+  // Whose screen this is, and on what: every screen says it; a switch between people is flashed.
+  const DEV = { desktop: '🖥', iphone: '📱 iPhone', android: '📱 Android' };
+  const mockIn = () => data.mock?.input || CFG;
+  function whoOf(s) {
+    const m = mockIn(), id = s.persona || m.persona || CFG.persona || '';
+    const p = (m.personas || CFG.personas || []).find((x) => x.id === id);
+    return { id, name: p?.name || '', label: p ? `👤 ${p.name} · ${p.role}` : '', device: DEV[s.device || m.device || CFG.device || 'desktop'] || s.device };
+  }
+  let lastWho = null;
   function render() {
+    if (allMode && J[cur]) changesOf(J[cur]).forEach((c) => { if (!isRev(J[cur], c)) setRev(J[cur], c, true); });
     if (!J.length) { $('.step').textContent = data.error || 'Loading the mock…'; $('.n').textContent = ''; return; }
-    const s = J[cur], tr = tree();
-    $('.step').textContent = (isBranch(s) ? '↳ ' : '') + s.title;
+    const s = J[cur];
+    $('.step').innerHTML = `<span class="stag ${isNew(s) ? 'new' : 'ex'}">${isNew(s) ? 'NEW' : 'EXISTING'}</span>` + esc((isBranch(s) ? '↳ ' : '') + s.title);
     const multi = multiApp();
     let on = -1; const cs = crumbs();
     cs.forEach((c, k) => { if (c.from <= cur && (!isBranch(s) || c.app === s.app)) on = k; });
     const trail = cs.map((c, k) => (k === on ? `<span class="on">${esc(c.app)}</span>` : esc(c.app))).join(' ▸ ');
-    $('.n').innerHTML = (multi ? `<span class="trail">${trail}</span><span class="count">·</span>` : '')
-      + `<span class="count">${J.some(isBranch) ? `${tr.num[cur]} · ` : ''}${tr.order.indexOf(cur) + 1} of ${J.length}</span>`;
-    $('.back').disabled = step(cur, -1, tr.order) === cur;
-    $('.next').disabled = onwardOf(cur) === cur;
+    const w = whoOf(s), switched = lastWho !== null && w.id !== lastWho;
+    lastWho = w.id;
+    const who = !w.label && w.device === DEV.desktop ? ''
+      : `<span class="who${switched ? ' switch' : ''}" title="${esc([w.label, w.device].filter(Boolean).join(' · '))} — whose screen this is, on what">${esc([w.label, w.device].filter(Boolean).join(' · '))}</span>`;
+    if (switched) setTimeout(() => $('.who')?.classList.remove('switch'), 1400);
+    $('.n').innerHTML = who + (multi ? `<span class="trail">${trail}</span><span class="count">·</span>` : '')
+      + `<span class="count">${J.some(isBranch) ? `${s.num} · ` : ''}${cur + 1} of ${J.length}</span>`;
+    $('.back').disabled = !mock.canBack;
+    $('.next').disabled = !mock.canNext;
     const nOpen = openRows().length;
     $('.exec-n').textContent = nOpen ? `(${nOpen})` : '';
     $('.execute').disabled = !nOpen || !data.mock?.input.session;
     if (open && panelState() !== panelKey) renderPanel();
     markHints();
     drawPins();
+    drawChanges();
   }
+  function latestVote(st, c) {
+    const r = data.rows.filter((x) => x.input.step === st.id && x.input.change === c.id).sort((a, b) => (a.input.created < b.input.created ? 1 : -1))[0];
+    return r ? r.input : null;
+  }
+  function drawChanges() {
+    const st = J[cur], cs = changesOf(st), sec = secOf(st);
+    $('.chg').hidden = !cs.length;   // the diff switch belongs to a screen that has changes (a NEW screen has none)
+    {
+      const nRev = cs.filter((c) => c.mode !== 'screen' && isRev(st, c)).length, nPlace = cs.filter((c) => c.mode !== 'screen').length;
+      $('.cnt').textContent = `${cs.length} change${cs.length === 1 ? '' : 's'}`;
+      $('.sw-d').classList.toggle('on', view === 'diff'); $('.sw-t').classList.toggle('on', view === 'today'); $('.sw-a').classList.toggle('on', view === 'after');
+    }
+    chPins.innerHTML = '';
+    if (!sec || bar.classList.contains('min')) return;
+    // changes out of view: a chip that says how many are above / below, and scrolls to the nearest
+    const els = cs.map((c) => changeEl(sec, c)).filter(Boolean);
+    const above = els.filter((e) => e.getBoundingClientRect().bottom < 0), below = els.filter((e) => e.getBoundingClientRect().top > innerHeight - 90);
+    [['up', above, '↑', 'above', above[above.length - 1]], ['down', below, '↓', 'below', below[0]]].forEach(([cls, list, arrow, word, to]) => {
+      if (!list.length) return;
+      const chip = document.createElement('div');
+      chip.className = 'mk-off-chip ' + cls;
+      chip.textContent = `${arrow} ${list.length} change${list.length === 1 ? '' : 's'} ${word}`;
+      chip.onclick = (e) => { e.stopPropagation(); flashTo(to); };
+      chPins.append(chip);
+    });
+    // every screen says what it is: EXISTING (the product today, its changes drawn as a diff) or NEW
+    const tag = document.createElement('div');
+    tag.className = 'mk-scr-tag ' + (isNew(st) ? 'new' : 'existing');
+    tag.textContent = isNew(st) ? 'NEW SCREEN' : cs.length ? `EXISTING · ${cs.length} change${cs.length === 1 ? '' : 's'}` : 'EXISTING';
+    chPins.append(tag);
+    // the diff labels: "− n today" on what goes, "+ n <title>" on what comes — always shown, never stacked
+    const placed = [];
+    // a coloured circle (red = today, green = the suggestion) with the change's number; the words are its tooltip
+    const label = (el, cls, text, tip, c, k, v) => {
+      const r = el && el.getBoundingClientRect();
+      if (!r || (!r.width && !r.height)) return;
+      const d = document.createElement('div');
+      d.className = 'mk-dl ' + cls + (v?.vote === 'no' ? ' rej' : '');
+      d.dataset.c = c.id; d.textContent = text;
+      d.title = tip + (c.note ? '\n' + c.note : '') + `\n${v?.vote === 'no' ? 'Rejected' : 'Approved'} — click to approve / reject or comment`;
+      chPins.append(d);
+      let x = Math.max(6, Math.min(innerWidth - d.offsetWidth - 6, r.left - 4)), y = Math.max(28, r.top - 26);
+      const hit = () => placed.find((q) => x < q.x + q.w + 6 && x + d.offsetWidth + 6 > q.x && y < q.y + 22 && y + 22 > q.y);
+      for (let g = 0, o; (o = hit()) && g < 12; g++) x = o.x + o.w + 8;   // beside the label already there, not on it
+      d.style.left = x + 'px'; d.style.top = y + 'px';
+      placed.push({ x, y, w: d.offsetWidth });
+      d.onclick = (e) => { e.stopPropagation(); if (mini?.c === c.id && !hoverEl.hidden) closeMini(); else openMini(st, c, k, d); };
+    };
+    if (view !== 'diff') return;   // Today and After are clean screens: only the Diff view is annotated
+    cs.forEach((c, k) => {
+      const v = latestVote(st, c), q = CSS.escape(c.id), n = k + 1;
+      const count = (list) => `${list.length} element${list.length === 1 ? '' : 's'}`;
+      const wasAll = [...sec.querySelectorAll(`[data-change="${q}"]`)].filter((e) => e.getClientRects().length && !e.classList.contains('mk-anchor'));
+      const nowAll = [...sec.querySelectorAll(`[data-mk-after="${q}"]`)];
+      const was = [...sec.querySelectorAll(`[data-change="${q}"]`)].find((e) => e.getClientRects().length && !e.classList.contains('mk-off') && !e.classList.contains('mk-anchor'));
+      const now = sec.querySelector(`[data-mk-after="${q}"]`);
+      if (c.mode === 'screen') {
+        const d0 = chPins.childElementCount;
+        label(now || was, 'new scr', `+${n} ↗`, `Change ${n} · opens a NEW screen — ${c.title}`, c, k, v);
+        const d = chPins.children[d0];
+        if (d && c.to) d.ondblclick = (e) => { e.stopPropagation(); closeMini(); window.mockifyGo(c.to); };
+        return;
+      }
+      if (was) label(was, 'old', `−${n}`, `Change ${n} · ${count(wasAll)} ${now ? 'replaced' : 'removed'} — ${c.title}`, c, k, v);
+      if (now) label(now, 'new', `+${n}`, `Change ${n} · ${count(nowAll)} ${was ? 'instead' : 'added'} — ${c.title}`, c, k, v);
+    });
+  }
+  // hovering a pin: a card with the change, its verdict (approved by default) and a comment
+  const hoverEl = document.createElement('div');
+  hoverEl.className = 'mk-hover'; hoverEl.hidden = true; hoverEl.setAttribute('data-mockify', '');
+  document.body.append(hoverEl);
+  let mini = null, shownAt = 0, hideT = 0;
+  const MIN_OPEN = 500;
+  function closeMini() { clearTimeout(hideT); mini = null; hoverEl.hidden = true; hot = ''; drawChanges(); }
+  function hideSoon() {
+    clearTimeout(hideT);
+    const wait = Math.max(MIN_OPEN - (Date.now() - shownAt), 0) + 250;
+    hideT = setTimeout(() => {
+      if (hoverEl.matches(':hover') || hoverEl.contains(document.activeElement) || (mini && mini.dirty)) return;
+      closeMini();
+    }, wait);
+  }
+  document.addEventListener('mousedown', (e) => { if (mini && !hoverEl.hidden && !e.composedPath().some((n) => n.classList && (n.classList.contains('mk-hover') || n.classList.contains('mk-sub')))) closeMini(); }, true);
+  function openMini(st, c, k, pin) {
+    clearTimeout(hideT);
+    if (mini && mini.c === c.id && !hoverEl.hidden) return;
+    const v = latestVote(st, c) || {};
+    mini = { st: st.id, c: c.id, vote: v.vote || 'yes', choice: v.choice || '', text: v.text && !/^(Yes|No|Approved|Rejected)$/.test(v.text) ? v.text : '', dirty: false };
+    const where = c.mode === 'screen' ? '<button class="mk-open" style="background:none;border:0;color:#7ee787;font:700 12px system-ui;cursor:pointer;padding:0">Open the new screen ↗</button>' : 'Red is today, green the suggestion';
+    hoverEl.innerHTML = `<button class="mk-x" title="Close">✕</button><b>${k + 1} · ${esc(c.title)}</b>`
+      + `<div class="mk-tags">${c.type ? `<span>${esc(c.type)}</span>` : ''}${(c.mode === 'screen' ? 'new screen' : 'in place') !== c.type ? `<span>${c.mode === 'screen' ? 'new screen' : 'in place'}</span>` : ''}</div>`
+      + (c.note ? `<p>${esc(c.note)}</p>` : '')
+      + `<div class="mk-tg"><button class="mk-ok">✓ Approved</button><button class="mk-rj">✕ Rejected</button></div>`
+      + (c.options && c.options.length ? `<div class="mk-op">${c.options.map((o) => `<button data-o="${esc(o)}">${esc(o)}</button>`).join('')}</div>` : '')
+      + `<textarea placeholder="Comment (optional)"></textarea><div class="mk-row"><span class="mk-hint">${where}</span><button class="mk-sv"${!data.fbDs || !data.mock ? ' disabled title="Feedback is off here"' : ''}>Save</button></div>`;
+    hoverEl.querySelector('textarea').value = mini.text;
+    const opener = hoverEl.querySelector('.mk-open');
+    if (opener) opener.onclick = (e) => { e.stopPropagation(); closeMini(); window.mockifyGo(c.to); };
+    const paint = () => { hoverEl.querySelector('.mk-ok').classList.toggle('on', mini.vote === 'yes'); hoverEl.querySelector('.mk-rj').classList.toggle('on', mini.vote === 'no');
+      hoverEl.querySelectorAll('.mk-op button').forEach((b) => b.classList.toggle('on', b.dataset.o === mini.choice)); };
+    paint();
+    hoverEl.hidden = false; shownAt = Date.now();
+    const r = (pin || chPins.children[k])?.getBoundingClientRect(), w = 300, h = hoverEl.offsetHeight;
+    hoverEl.style.left = (r ? Math.min(innerWidth - w - 8, Math.max(8, r.left)) : 20) + 'px';
+    hoverEl.style.top = (r ? (r.bottom + 6 + h < innerHeight - 70 ? r.bottom + 6 : Math.max(8, r.top - h - 6)) : 60) + 'px';
+    hoverEl.oninput = () => { mini.dirty = true; };
+    hoverEl.onclick = async (e) => {
+      const t = e.target;
+      if (t.closest('.mk-x')) { closeMini(); return; }
+      if (t.closest('.mk-ok')) { mini.vote = 'yes'; mini.dirty = true; paint(); return; }
+      if (t.closest('.mk-rj')) { mini.vote = 'no'; mini.dirty = true; paint(); return; }
+      const o = t.closest('[data-o]'); if (o) { mini.choice = mini.choice === o.dataset.o ? '' : o.dataset.o; mini.dirty = true; paint(); return; }
+      if (t.closest('.mk-sv')) {
+        mini.text = hoverEl.querySelector('textarea').value.trim();
+        const input = { mock: data.mock.ref, step: st.id, change: c.id, vote: mini.vote, text: mini.text || (mini.vote === 'yes' ? 'Approved' : 'Rejected'), status: 'open', created: new Date().toISOString() };
+        if (mini.choice) input.choice = mini.choice;
+        t.disabled = true;
+        try { await data.fbDs.append([{ key: `${CFG.key}-${st.id}-${c.id}-${Date.now().toString(36)}`, input }]); await refresh(); closeMini(); }
+        catch (err) { t.disabled = false; hoverEl.insertAdjacentHTML('beforeend', `<p style="color:#ff8a80">Not saved: ${esc(err?.message || err)}</p>`); }
+      }
+    };
+  }
+  function changeEl(sec, c) {
+    const q = CSS.escape(c.id);
+    return sec.querySelector(`[data-mk-after="${q}"]`) || [...sec.querySelectorAll(`[data-change="${q}"]`)].find((e) => e.getClientRects().length && !e.classList.contains('mk-off')) || null;
+  }
+  function flashTo(el) {
+    if (!el) return;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.remove('mk-flash'); void el.offsetWidth; el.classList.add('mk-flash');
+  }
+  let nextIx = 0;
+  // pins show only while their change (or the pin) is hovered; the change itself always carries a border
+  let hot = '', hotT = 0;
+  const setHot = (id) => { clearTimeout(hotT); if (hot === id) return; hot = id; chPins.querySelectorAll('.mk-pin').forEach((p) => p.classList.toggle('mk-quiet', p.dataset.c !== hot && !(mini?.c === p.dataset.c && !hoverEl.hidden))); };
+  const coolSoon = () => { clearTimeout(hotT); hotT = setTimeout(() => setHot(''), 350); };
+  document.addEventListener('mouseover', (e) => {
+    const t = e.target; if (!(t instanceof Element) || t.closest('[data-mockify]')) return;
+    const el = t.closest('[data-mk-after],[data-change]');
+    const sec = J[cur] && secOf(J[cur]);
+    if (!el || !sec || !sec.contains(el)) { if (hot) coolSoon(); return; }
+    const id = el.getAttribute('data-mk-after') || el.getAttribute('data-change');
+    if (changesOf(J[cur]).some((c) => c.id === id)) setHot(id);
+  });
+  let pinQueued = false;
+  const pinsSoon = () => { if (pinQueued) return; pinQueued = true; requestAnimationFrame(() => { pinQueued = false; drawChanges(); }); };
+  addEventListener('scroll', pinsSoon, true); addEventListener('resize', pinsSoon);
 
   function placePanel() {
     const r = host.getBoundingClientRect();
@@ -300,13 +562,33 @@
     if (!open) return;
     placePanel();
     if (open === 'steps') {
-      const multi = multiApp(), tr = tree();
-      panel.innerHTML = head() + '<h4>Screens</h4>' + tr.order.map((i) => {
-        const s = J[i];
-        const label = (isBranch(s) ? '↳ ' : '') + esc(isBranch(s) && s.when ? `${s.when} — ${s.title}` : s.title);
-        const num = tr.num[i];
-        return `<button class="row${isBranch(s) ? ' br' : ''}${i === cur ? ' on' : ''}" data-i="${i}"><span class="num">${num}</span>${label}${multi ? `<small>${esc(s.app)}</small>` : ''}</button>`;
+      const multi = multiApp();
+      const delta = (s) => { const up = J[find(s.parent)]; return Object.entries(s.state || {}).filter(([k, v]) => !up || up.state?.[k] !== v).map(([k, v]) => `${k}=${v}`).join(' '); };
+      panel.innerHTML = head() + '<h4>Screens</h4>' + J.map((s, i) => {
+        const sets = i ? delta(s) : '';
+        const label = (isBranch(s) ? '↳ ' : '') + esc(isBranch(s) && s.when ? `${s.when} — ${s.title}` : s.title)
+          + (isNew(s) ? ' <span class="stag new" style="margin:0 0 0 4px">NEW</span>' : '') + (sets ? ` <small style="opacity:.7">${esc(sets)}</small>` : '');
+        const num = s.num;
+        return `<button class="row${isBranch(s) ? ' br' : ''}${i === cur ? ' on' : ''}" data-i="${i}" style="padding-left:${8 + 14 * (s.depth || 0)}px"><span class="num">${num}</span>${label}${(() => { const t = [multi && s.app, whoOf(s).name].filter(Boolean).join(' · '); return t ? `<small>${esc(t)}</small>` : ''; })()}</button>`;
       }).join('') + `<button class="row hints-toggle" style="margin-top:6px">${hints ? '☑' : '☐'} Highlight the next step on each screen</button>`;
+      return;
+    }
+    if (open.startsWith('change:')) {
+      panel.classList.remove('wide');
+      const st = J[cur], cs = changesOf(st), k = cs.findIndex((c) => c.id === open.slice(7)), c = cs[k];
+      if (!c) { open = ''; panel.hidden = true; return; }
+      const v = latestVote(st, c) || {}, d = cdraft[st.id + ':' + c.id] || (cdraft[st.id + ':' + c.id] = { vote: v.vote || '', choice: v.choice || '', text: v.vote ? '' : '' });
+      const scr = c.mode === 'screen', on = isRev(st, c);
+      panel.innerHTML = head() + `<h4>Change ${k + 1} of ${cs.length}</h4><div style="font-weight:700;margin:0 2px 6px">${esc(c.title)}</div>`
+        + `<div class="chips">${c.type ? `<span class="chip">${esc(c.type)}</span>` : ''}<span class="chip">${scr ? 'new screen' : 'in place'}</span></div>`
+        + (c.note ? `<div class="note">${esc(c.note)}</div>` : '')
+        + `<button class="reveal${on ? ' on' : ''}">${scr ? 'Open the suggested screen →' : on ? 'Showing suggested · back to today' : 'Show suggested'}</button>`
+        + (c.options && c.options.length ? `<div class="chips">${c.options.map((o) => `<button class="chip opt${d.choice === o ? ' on' : ''}" data-o="${esc(o)}">${esc(o)}</button>`).join('')}</div>` : '')
+        + `<div class="vote"><button class="vy${d.vote === 'yes' ? ' on' : ''}" data-vote="yes">Yes</button><button class="vn${d.vote === 'no' ? ' on' : ''}" data-vote="no">No</button></div>`
+        + `<textarea class="ctext" placeholder="Comment (optional)"></textarea>`
+        + (v.vote ? `<div class="note" style="margin-top:6px">Saved: ${esc(v.vote)}${v.choice ? ' · ' + esc(v.choice) : ''}${v.text && !/^(Yes|No)$/.test(v.text) ? ' — ' + esc(v.text) : ''} (${esc(v.status)})</div>` : '')
+        + `<div class="actions"><button class="ico cprev" title="Previous change">‹</button><button class="ico cnext" title="Next change">›</button><button class="save csave"${!data.fbDs || !data.mock ? ' disabled title="Feedback is off here"' : ''}>Save</button></div>`;
+      $('.ctext').value = d.text || '';
       return;
     }
     if (open === 'save') {
@@ -349,6 +631,12 @@
     const s = J[cur] || {};
     const decisions = s.decisions || [];
     let html = head() + `<h4>Feedback · ${esc(s.title || '')}</h4>`;
+    if (changesOf(s).length) {
+      html += `<h4>Changes on this screen</h4>` + changesOf(s).map((c, k) => {
+        const v = latestVote(s, c);
+        return `<button class="crow" data-c="${esc(c.id)}"><i>${k + 1}</i><span>${esc(c.title)}</span><small class="${v?.vote === 'no' ? 'no' : 'yes'}">${v?.vote === 'no' ? 'rejected' : 'approved'}${v?.choice ? ' · ' + esc(v.choice) : ''}</small></button>`;
+      }).join('') + `<h4 style="margin-top:12px">A comment on the whole screen</h4>`;
+    }
     if (s.note) html += `<div class="note">${esc(s.note)}</div>`;
     if (s.expect && s.expect.length) html += `<div class="note"><b>Test checks</b>\n${s.expect.map((e) => '✓ ' + esc(e)).join('\n')}</div>`;
     if (!data.fbDs || !data.mock) {
@@ -527,8 +815,18 @@
       let projectId = CFG.project || null;
       if (!projectId) try { const { app } = await sdk.resolveAppHost(); projectId = app?.project_id || null; } catch { /* not an app endpoint */ }
       projectId = projectId || sdk.dataContext?.projectTypeId?.id || null;
-      const [[mocksDs], [fbDs]] = await Promise.all(['mockify.mock', 'mockify.feedback']
+      const forKinds = () => Promise.all(['mockify.mock', 'mockify.feedback']
         .map((kind) => sdk.Dataset.forKind(kind, projectId || undefined)));
+      let found;
+      try { found = await forKinds(); } catch (e) {
+        // After a backend restart the mock project's kinds are not loaded (the repo holds the same namespace):
+        // apply the mock project's data_schema folder once, the way `flow schema apply` does, and ask again.
+        if (!CFG.schemas) throw e;
+        await sdk.apiClient.post('/graph/compute_node/@local/fs-records/index', null,
+          { params: { type: 'data_schema', path: CFG.schemas, force: 'true' } });
+        found = await forKinds();
+      }
+      const [[mocksDs], [fbDs]] = found;
       if (!mocksDs || !fbDs) throw new Error('this project has no mocks / mock-feedback dataset (set MOCKIFY.project to the mock project id)');
       Object.assign(data, { sdk, mocksDs, fbDs });
       // Subscribe BEFORE the first read: a page opened before its row is put must still pick it up.
@@ -563,7 +861,6 @@
     if (row.input.mode === 'fast' && !(row.input.fast_reason || '').trim()) {
       throw new Error('fast mock without fast_reason — rebuild it in real mode (SKILL.md §2)');
     }
-    J = row.input.journey || [];
     if (changed) render();
   });
   // The mock's comments, once: the badge counts the open ones, the panel shows this screen's.
@@ -573,10 +870,7 @@
     render();
   });
   function finishBoot() {
-    cur = Math.max(0, find(location.hash.slice(1)));
-    if (J.length) show(J[cur].id);
-    render();
-    contrast();
+    if (!mock.go(location.hash.slice(1), 'hash')) paint(false);   // a deep link, else the root
   }
 
   async function saveFeedback() {
@@ -612,12 +906,15 @@
     const steps = J.filter((s) => byStep[s.id]);
     const out = [`# Feedback on mock "${m?.input.title || CFG.key}" (\`${CFG.key}\`)`, '',
       `${rows.length} comment(s) on ${steps.length} screen(s).`,
+      ...(J.some((x) => changesOf(x).length) ? [`Proposed changes: ${J.reduce((n, x) => n + changesOf(x).length, 0)}. A change with no row below is APPROVED (the default); act on every REJECTED one and every comment.`] : []),
       ...(m?.input.folder || CFG.folder ? [`Mock folder: \`${m?.input.folder || CFG.folder}\``] : []), ''];
     steps.forEach((s) => {
-      out.push(`## ${find(s.id) + 1}. ${s.title} — \`${s.id}\` (${s.app})`, '');
+      out.push(`## ${find(s.id) + 1}. ${s.title} — \`${s.id}\` (${[s.app, whoOf(s).label.slice(3)].filter(Boolean).join(' · ')})`, '');
       byStep[s.id].forEach((r) => {
         const i = r.input;
-        const where = [i.decision && `**${i.decision}**`, i.anchor && `on "${i.anchor.label}" \`${i.anchor.selector}\``].filter(Boolean).join(' · ');
+        const ch = i.change && changesOf(s).find((c) => c.id === i.change);
+        const where = [ch && `**change ${changesOf(s).indexOf(ch) + 1} · ${ch.title}**${i.vote ? ` — **${i.vote.toUpperCase()}**` : ''}${i.choice ? ` (picked: ${i.choice})` : ''}`,
+          i.decision && `**${i.decision}**`, i.anchor && `on "${i.anchor.label}" \`${i.anchor.selector}\``].filter(Boolean).join(' · ');
         out.push(`- ${where ? where + ' — ' : ''}${i.text.trim().replace(/\n/g, '\n  ')}`);
         if (i.screenshot) out.push(`  - image: \`${fileOf(r, 'screenshot')}\``);
         if (i.element_shot) out.push(`  - element: \`${fileOf(r, 'element_shot')}\``);
@@ -687,10 +984,29 @@
   }
 
   // ── controls ──
-  $('.back').onclick = () => go(step(cur, -1));
-  $('.next').onclick = () => go(onwardOf(cur));
-  $('.restart').onclick = () => { setPanel(''); go(0); };
+  $('.back').onclick = () => mock.back();
+  $('.next').onclick = () => mock.next();
+  $('.restart').onclick = () => { setPanel(''); mock.reset(); };
   $('.steps').onclick = () => setPanel(open === 'steps' ? '' : 'steps');
+  // the counter walks the screen's changes: each click scrolls to the next one and flashes it
+  $('.cnt').onclick = () => { const st = J[cur], sec = secOf(st), cs = changesOf(st); if (!sec || !cs.length) return;
+    nextIx = nextIx % cs.length; flashTo(changeEl(sec, cs[nextIx])); nextIx++; };
+  const setView = (v) => { view = v; store.set('view', v); document.documentElement.classList.toggle('mk-clean', v !== 'diff'); J.forEach((st) => changesOf(st).forEach((c) => setRev(st, c, true))); render(); };
+  $('.sw-d').onclick = () => setView('diff');
+  $('.sw-t').onclick = () => setView('today');
+  $('.sw-a').onclick = () => setView('after');
+  async function saveChange(st, c) {
+    const d = cdraft[st.id + ':' + c.id] || {};
+    d.text = ($('.ctext')?.value || '').trim();
+    if (!d.vote && !d.text && !d.choice) return;
+    const input = { mock: data.mock.ref, step: st.id, change: c.id, text: d.text || (d.vote === 'yes' ? 'Yes' : d.vote === 'no' ? 'No' : d.choice || ''),
+      status: 'open', created: new Date().toISOString() };
+    if (d.vote) input.vote = d.vote;
+    if (d.choice) input.choice = d.choice;
+    $('.csave').disabled = true;
+    try { await data.fbDs.append([{ key: `${CFG.key}-${st.id}-${c.id}-${Date.now().toString(36)}`, input }]); delete cdraft[st.id + ':' + c.id]; await refresh(); renderPanel(); }
+    catch (err) { panel.insertAdjacentHTML('beforeend', `<div class="msg">Not saved: ${esc(err?.message || err)}</div>`); $('.csave').disabled = false; }
+  }
   $('.execute').onclick = submitAll;
   $('.scope').onclick = () => setPicking(!picking);
   const minLabel = () => { const m = bar.classList.contains('min'), b = $('.min-btn'); b.textContent = m ? '+' : '–'; b.title = m ? 'Restore' : 'Minimise'; b.setAttribute('aria-label', b.title); };
@@ -703,6 +1019,21 @@
   panel.addEventListener('click', (e) => {
     const t = e.target;
     if (t.closest('.close')) { setPanel(''); return; }
+    const crow = t.closest('.crow'); if (crow) { const st = J[cur], k = changesOf(st).findIndex((c) => c.id === crow.dataset.c); setPanel(''); openMini(st, changesOf(st)[k], k); shownAt = Date.now() + 2500; return; }
+    if (open.startsWith('change:')) {
+      const st = J[cur], cs = changesOf(st), k = cs.findIndex((c) => c.id === open.slice(7)), c = cs[k], key = st.id + ':' + (c && c.id);
+      if (c) {
+        const d = cdraft[key] || (cdraft[key] = {});
+        if (t.closest('.ctext')) return;
+        d.text = $('.ctext')?.value || d.text;
+        if (t.closest('.reveal')) { if (c.mode === 'screen') { setPanel(''); window.mockifyGo(c.to); } else { setRev(st, c, !isRev(st, c)); renderPanel(); drawChanges(); } return; }
+        const vb = t.closest('[data-vote]'); if (vb) { d.vote = d.vote === vb.dataset.vote ? '' : vb.dataset.vote; renderPanel(); return; }
+        const ob = t.closest('.opt'); if (ob) { d.choice = d.choice === ob.dataset.o ? '' : ob.dataset.o; renderPanel(); return; }
+        if (t.closest('.cprev')) { setPanel('change:' + cs[(k - 1 + cs.length) % cs.length].id); return; }
+        if (t.closest('.cnext')) { setPanel('change:' + cs[(k + 1) % cs.length].id); return; }
+        if (t.closest('.csave')) { saveChange(st, c); return; }
+      }
+    }
     const tool = t.closest('.ptool');
     if (tool) { setPanel(tool.dataset.panel); return; }
     if (t.closest('.send-now')) { submitAll(); return; }
@@ -738,7 +1069,7 @@
     }
     if (t.closest('.hints-toggle')) { hints = !hints; store.set('hints', hints); markHints(true); renderPanel(); return; }
     const row = t.closest('[data-i]');
-    if (row) { setPanel(''); go(+row.dataset.i); return; }
+    if (row) { setPanel(''); mock.go(J[+row.dataset.i]?.id); return; }
     const chip = t.closest('[data-dec]');
     if (chip) { draft.decision = draft.decision === chip.dataset.dec ? '' : chip.dataset.dec; renderPanel(); return; }
     if (t.closest('.attach')) { $('.file').click(); return; }
@@ -773,11 +1104,12 @@
     if (e.key === 'ArrowRight' && !$('.next').disabled) $('.next').click();
     if (e.key === 'ArrowLeft' && !$('.back').disabled) $('.back').click();
   });
-  const fromHash = () => { const i = find(location.hash.slice(1)); if (i >= 0 && i !== cur) go(i, false); };
+  mock.onChange((_m, how) => paint(how !== 'hash'));   // a move the address bar made is not pushed back onto it
+  const fromHash = () => { const id = location.hash.slice(1); if (id !== J[cur]?.id) mock.go(id, 'hash'); };   // an unknown id moves nothing
   addEventListener('hashchange', fromHash);
   addEventListener('popstate', fromHash);
 
-  window.mockifyGo = (id) => { const i = find(id); if (i >= 0) go(i); else console.warn(`mockify: no step "${id}" in the journey`); };
+  window.mockifyGo = (id) => { if (!mock.go(id)) console.warn(`mockify: no screen "${id}" in the mock tree`); };
   render();
   boot();
   addEventListener('load', contrast);

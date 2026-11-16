@@ -21,10 +21,10 @@ from flow_sdk.schema.data_spec.automation_spec import AutomationCheck, CheckFind
 SPEC_FIELDS: frozenset[str] = frozenset({
     "name", "description", "trigger_type", "enabled", "project_id",
     "expr", "sched_trigger_type", "timezone",
-    "tag_pattern", "tag_target", "tag_scope", "max_fires_per_minute", "fire_once", "confirm",
+    "tag_pattern", "tag_target", "tag_scope", "message_tags", "max_fires_per_minute", "fire_once", "confirm",
     "watch_path", "recursive", "watch_glob", "ignore_patterns", "respect_gitignore",
     "hook_events", "mask", "actions", "instruction", "workdir",
-    "gate", "then",
+    "gate", "then", "max_runs", "expires_at",
 })
 
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, Loader2, Play } from 'lucide-react';
+import { ChevronRight, Forward, Loader2, Play } from 'lucide-react';
 import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_opener_types';
 import { cn } from '@src/lib/utils';
 import { useIsDev } from '@src/components/view-mode';
@@ -22,7 +22,7 @@ export const WORKER_ICON_BUTTON_CLASS =
 
 /** A message header's hover-revealed icon button (needs a `group` ancestor). */
 export const MESSAGE_ROW_ICON_BUTTON_CLASS =
-  'rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100';
+  'rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100';
 
 /** Row style for the `menu-list` variant — shared by the vendor rows, the
  *  "More…" reveal, the extra openers, and the footer funding chip's menus, so
@@ -262,10 +262,13 @@ export function QuickWorkerButton({
   onLaunch,
   testId,
   className,
+  labeled = false,
 }: {
   onLaunch: (worker: WorkerType) => void;
   testId?: string;
   className?: string;
+  /** "Forward to worker": the worker icon with a forward badge, and the words. */
+  labeled?: boolean;
 }) {
   const { t } = useLingui();
   const { rememberWorker } = useLastWorkerType();
@@ -283,12 +286,23 @@ export function QuickWorkerButton({
       title={label}
       aria-label={label}
       data-testid={testId}
-      className={cn(
-        MESSAGE_ROW_ICON_BUTTON_CLASS,
-        className,
-      )}
+      className={cn(labeled ? null : MESSAGE_ROW_ICON_BUTTON_CLASS, className)}
     >
-      <Icon className={cn('size-3', iconClassName)} />
+      {labeled ? (
+        <>
+          <span className="relative inline-flex">
+            <Icon className={cn('size-3.5', iconClassName)} />
+            <span className="absolute -bottom-1 -end-1.5 flex rounded-full bg-foreground p-px text-background ring-1 ring-background">
+              <Forward className="size-2 rtl:-scale-x-100" strokeWidth={3.5} />
+            </span>
+          </span>
+          {/* A phone row has room for one word; the title and aria-label keep the full name. */}
+          <span className="ms-1 whitespace-nowrap max-md:hidden">{t`Forward to worker`}</span>
+          <span className="ms-1 whitespace-nowrap md:hidden">{t`Worker`}</span>
+        </>
+      ) : (
+        <Icon className={cn('size-3', iconClassName)} />
+      )}
     </button>
   );
 }

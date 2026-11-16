@@ -362,6 +362,12 @@ async def conversation_add_message() -> ApiResponse:
         return ApiFailResponse(message=blocked)
     # The session that wrote this (the `flow` CLI inside a worker) — linked after the send, never sent.
     origin_process = str(body.pop("origin_process", "") or "").strip()
+    # `--on-reply`: the session waits for the reply to this message (builtin/reply_callbacks.py).
+    on_reply = str(body.pop("on_reply", "") or "").strip()
+    wait_seconds = body.pop("wait_seconds", None)
+    if on_reply and not origin_process:
+        return ApiFailResponse(message="Only a session can wait for a reply (--on-reply runs inside one).",
+                               status_code=422)
     response = await handle_add_message(
         body,
         request_info.someone_typeid,
@@ -376,6 +382,21 @@ async def conversation_add_message() -> ApiResponse:
             origin_process,
             request_info.someone_typeid,
         )
+    if on_reply and isinstance(response, ApiSuccessResponse) and isinstance(response.data, dict):
+        from datetime import timedelta  # noqa: PLC0415
+
+        from flow_sdk.builtin import reply_callbacks  # noqa: PLC0415
+
+        message_id = response.data.get("flow_message_id") or response.data.get("id")
+        try:
+            rule = await reply_callbacks.create(
+                origin_process, body["conversation_id"], str(message_id), on_reply,
+                timedelta(seconds=float(wait_seconds)) if wait_seconds else None,
+            )
+        except ValueError as exc:
+            response.data["waiting"] = {"error": str(exc)}
+        else:
+            response.data["waiting"] = {"trigger_id": rule.id, "until": rule.expires_at.isoformat()}
     return response
 
 

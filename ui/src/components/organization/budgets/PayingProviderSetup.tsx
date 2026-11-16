@@ -39,6 +39,7 @@ import { endpointIdFromTypeId } from '@src/components/llm-endpoints/llm-endpoint
 import {
   PROVIDERS,
   isProvider,
+  isVertexApiKey,
   keyShapeProblem,
   providerSpec,
   rootBaseUrl,
@@ -46,6 +47,7 @@ import {
 } from '@src/components/llm-endpoints/endpoint-catalog';
 import { useLlmEndpoint } from '@src/components/llm-endpoints/use-llm-endpoints';
 import { Button } from '@src/components/ui/button';
+import { Input } from '@src/components/ui/input';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { errorMessage } from '@src/lib/error-message';
@@ -191,12 +193,16 @@ function OrgKeyCreateForm({
   const { i18n } = useLinguiCore();
   const [providerId, setProviderId] = useState<ProviderSpec['id']>(PROVIDERS[0].id);
   const [key, setKey] = useState('');
+  const [project, setProject] = useState('');
   const [busy, setBusy] = useState(false);
   const setup = useSetPayingProvider();
   const switcher = useSwitchPayingProvider();
   const invalidate = useInvalidateBudgets();
   const switching = onSwitched !== undefined;
   const spec = PROVIDERS.find((p) => p.id === providerId) ?? PROVIDERS[0];
+  // A Vertex API key names no project (a service-account JSON does), and the root's URL must.
+  const needsProject = providerId === 'vertex' && isVertexApiKey(key);
+  const missingProject = needsProject && !project.trim();
 
   const submit = async () => {
     if (!key.trim() || busy) return;
@@ -208,9 +214,18 @@ function OrgKeyCreateForm({
       notify.error({ title: t`That key does not look right`, message: i18n._(badShape), id: 'org-root' });
       return;
     }
+    if (missingProject) {
+      notify.error({
+        title: t`Name the Google Cloud project`,
+        message: t`An API key does not say which project it belongs to.`,
+        id: 'org-root',
+      });
+      return;
+    }
     setBusy(true);
     try {
-      const request = { orgId, provider: providerId, baseUrl: rootBaseUrl(providerId, spec.defaultBaseUrl, key) };
+      const baseUrl = rootBaseUrl(providerId, spec.defaultBaseUrl, key, needsProject ? project : undefined);
+      const request = { orgId, provider: providerId, baseUrl };
       const created = switching ? await switcher.mutateAsync(request) : await setup.mutateAsync(request);
       try {
         await llmEndpointsService.setCredential(endpointIdFromTypeId(created.endpoint_id), key.trim());
@@ -263,9 +278,20 @@ function OrgKeyCreateForm({
             disabled={busy}
           />
         </div>
+        {needsProject && (
+          <Input
+            className="h-8 w-48"
+            value={project}
+            onChange={(e) => setProject(e.target.value)}
+            placeholder={t`Google Cloud project`}
+            aria-label={t`Google Cloud project`}
+            disabled={busy}
+            data-testid="org-root-vertex-project"
+          />
+        )}
         <Button
           size="sm"
-          disabled={busy || !key.trim()}
+          disabled={busy || !key.trim() || missingProject}
           onClick={() => void submit()}
           data-testid={switching ? 'org-root-switch' : 'org-root-activate'}
         >
@@ -277,6 +303,11 @@ function OrgKeyCreateForm({
           </Button>
         )}
       </div>
+      {needsProject && (
+        <p className="text-xs text-muted-foreground" data-testid="org-root-vertex-api-key-hint">
+          <Trans>API key: Gemini models only — upload the service-account JSON to reach Claude.</Trans>
+        </p>
+      )}
     </div>
   );
 }

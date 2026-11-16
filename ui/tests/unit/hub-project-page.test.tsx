@@ -14,14 +14,28 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ currentDock: h.currentDock, navigation: { openDock: h.openDock } }),
 }));
 vi.mock('@src/components/project-home/ProjectHome', () => ({
-  ProjectHome: ({ cloudContent }: { cloudContent?: React.ReactNode }) => (
-    <div data-testid="project-shell">{cloudContent}</div>
+  ProjectHome: ({
+    cloudContent,
+    spawnProjectId,
+    deploymentsPage,
+  }: {
+    cloudContent?: React.ReactNode;
+    spawnProjectId?: string;
+    deploymentsPage?: boolean;
+  }) => (
+    <div data-testid="project-shell" data-project={spawnProjectId} data-deployments={String(!!deploymentsPage)}>
+      {cloudContent}
+    </div>
   ),
 }));
 vi.mock('@src/components/assets/editor/AssetEditorRouter', () => ({
   AssetEditorRouter: ({ pointer, hubReflect }: { pointer: string; hubReflect?: boolean }) => (
     <div data-testid="asset-editor" data-pointer={pointer} data-hub-reflect={String(hubReflect)} />
   ),
+}));
+vi.mock('@sdk/react/hooks', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useProject: (typeId: { id: string }) => ({ project: { id: typeId.id } }),
 }));
 vi.mock('@src/components/graph-view/icons/iconRegistry', () => ({
   iconForType: () => (props: Record<string, unknown>) => <span {...props} />,
@@ -110,5 +124,14 @@ describe('HubProjectPage', () => {
         ],
       ),
     ).toEqual(['agent', 'markdown', 'skill']);
+  });
+
+  it("opens the project's Deployments page, not the asset editor", () => {
+    h.currentDock = { pointer: `${PROJECT_ID}/project-deployments` };
+    renderPage();
+    // Project Home draws its own Deployments page (as on the desk), for this project.
+    const shell = screen.getByTestId('project-shell');
+    expect([shell.getAttribute('data-deployments'), shell.getAttribute('data-project')]).toEqual(['true', PROJECT_ID]);
+    expect(screen.queryByTestId('asset-editor')).toBeNull();
   });
 });

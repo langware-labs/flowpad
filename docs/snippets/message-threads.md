@@ -11,7 +11,7 @@ source channel; what a channel can do is data on its conversation (`channel_spec
 
 Run as written by `tests/unit/test_message_threads_snippets.py`.
 
-## 1. Reply in a thread on Flowpad's own chat
+## 1. Reply and threads on Flowpad's own chat
 
 ```python
 from flow_sdk.builtin.conversation import Conversation
@@ -19,10 +19,13 @@ from flow_sdk.builtin.conversation import Conversation
 chat = await Conversation.get_one({"id": CONVERSATION_ID})
 question = (await chat.messages())[0]
 
-answer = await chat.send("Which home — 43 or 51?", reply_to=question)   # quotes it and opens its thread
+quoted = await chat.send("On it.", reply_to=question)                    # quotes it; stays in the timeline
+answer = await chat.send("Which home — 43 or 51?", in_thread=question)  # opens the thread rooted at it
 await chat.send("Snapshot taken.", in_thread=answer.thread_id)          # into that thread, quoting nobody
-print(answer.reply_to_id == question.id, answer.thread_root_id == question.id)   # True True
+print(quoted.thread_id is None, answer.thread_root_id == question.id)   # True True
 ```
+
+A reply only quotes. A thread opens only when you write into one.
 
 The thread is keyed by its first message. Only that message's id travels to the other members;
 each member's app files the reply into its own copy of the thread, so the quote and the thread

@@ -8,9 +8,11 @@ running discovery, probing a login -- is ``refresh.py``, an explicit action.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 
 from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
+from flow_sdk.core.capabilities.latest_version import update_state
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.flowpad_types.vendors import VENDORS, Vendor
 from flow_sdk.schema.data_spec.status_spec import (
@@ -89,6 +91,15 @@ def _version(cap) -> str:
     return match.group(0) if match else ""
 
 
+def _update_command(path: str, spec) -> str:
+    """How to update this CLI: Homebrew when brew installed it, else its own installer."""
+    parts = os.path.realpath(path).split(os.sep) if path else []
+    for root in ("Cellar", "Caskroom"):  # the brew package is the folder right under its root
+        if root in parts[:-1]:
+            return f"brew upgrade {parts[parts.index(root) + 1]}"
+    return str(getattr(spec, "install_command", "") or "")
+
+
 async def _harness(vendor: Vendor) -> HarnessStatusSpec:
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
@@ -108,14 +119,17 @@ async def _harness(vendor: Vendor) -> HarnessStatusSpec:
     install = harness_install(vendor.key)
     login = login_state(install, has_device_login, cap)
     signed_in = login is LoginState.SIGNED_IN
+    version = _version(cap) if install is InstallState.INSTALLED else ""
+    path = worker_executable(vendor.key) or ""
+    latest, update = update_state(vendor.capability_kind, version)
     return HarnessStatusSpec(
         kind=vendor.capability_kind,
         worker_type=vendor.key,
         label=vendor.label,
         icon=str(getattr(spec, "icon", "") or ""),
         install=install,
-        version=_version(cap) if install is InstallState.INSTALLED else "",
-        path=worker_executable(vendor.key) or "",
+        version=version,
+        path=path,
         login=login,
         login_checked_at=str(getattr(cap, "login_checked_at", "") or "") if login is not LoginState.N_A else "",
         login_message=str(getattr(cap, "login_message", "") or "") if login is not LoginState.N_A else "",
@@ -127,6 +141,9 @@ async def _harness(vendor: Vendor) -> HarnessStatusSpec:
         key_providers=key_providers,
         install_command=str(getattr(spec, "install_command", "") or ""),
         homepage_url=str(getattr(spec, "homepage_url", "") or ""),
+        latest_version=latest,
+        update=update,
+        update_command=_update_command(path, spec) if update != "none" else "",
     )
 
 
@@ -188,7 +205,7 @@ def hub_status() -> HubStatusSpec:
     user (``hub_ws_manager.verify_current_user``). A stored credential alone is not a
     sign-in -- it is ``OFFLINE`` until the hub confirms it, and ``REJECTED`` once it refuses.
     """
-    from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+    from flow_sdk.cli.app_config import get_principal  # noqa: PLC0415
     from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
     from flow_sdk.cloud_client.auth_state import current_login_status  # noqa: PLC0415
     from flow_sdk.cloud_client.auth_status import HubConnectionStatus, HubLoginStatus  # noqa: PLC0415
@@ -204,12 +221,11 @@ def hub_status() -> HubStatusSpec:
     if status == HubConnectionStatus.AUTH_REJECTED.value or current_login_status() is HubLoginStatus.LOGIN_FAILED:
         return HubStatusSpec(login=HubLogin.REJECTED, error=error)
     if hub_ws_manager.is_verified:
-        user = get_user() or {}
-        user_id = str(user.get("id") or "")
+        user = get_principal() or {}
         return HubStatusSpec(
             login=HubLogin.SIGNED_IN,
             email=str(user.get("email") or ""),
-            user_typeid=f"user-{user_id}" if user_id else "",
+            user_typeid=str(user.get("typeid") or ""),
         )
     if status in (HubConnectionStatus.CONNECTING.value, HubConnectionStatus.CONNECTED.value):
         return HubStatusSpec(login=HubLogin.SIGNING_IN)

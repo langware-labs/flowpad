@@ -17,7 +17,7 @@
  *     own context".
  */
 
-import { AgenticProcess, Conversation, FlowMessage, PROCESS_CALL_TYPE, RETURNED_VALUE_TYPE, Task, TypeId } from '@sdk';
+import { AgenticProcess, Conversation, FlowMessage, PROCESS_CALL_TYPE, PROMPT_RUN_SUMMARY_TYPE, RETURNED_VALUE_TYPE, Task, TypeId } from '@sdk';
 import { AttachmentType, attachmentDataString, isAttachmentMissing, type Attachment } from '@sdk/entities/flow-message';
 import { REPLY_MARKER_TYPE } from './attachment-plumbing';
 
@@ -200,6 +200,7 @@ export function buildSharedEntities(
         if (attached.type === REPLY_MARKER_TYPE) continue;
         // Nor is a prompt call or its answer: the value rides the header, never a row.
         if (attached.type === PROCESS_CALL_TYPE || attached.type === RETURNED_VALUE_TYPE) continue;
+        if (attached.type === PROMPT_RUN_SUMMARY_TYPE) continue;
         pushTypeId(attached, fm.id, fm, {
           downloaded: fm.body_downloaded ?? false,
           missing: isAttachmentMissing(fm, a),

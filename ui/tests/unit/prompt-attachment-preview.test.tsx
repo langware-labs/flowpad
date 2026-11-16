@@ -1,9 +1,9 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TypeId } from '@sdk';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import { useEntity } from '@sdk/react/hooks';
-import { PromptAttachmentPreview } from '@src/components/conversation/attachment-actions';
+import { PromptAttachmentPreview, PromptRequestAnswerContext } from '@src/components/conversation/attachment-actions';
 import { isImagePromptFileAttachment } from '@src/components/conversation/attachment-actions/prompt-attachment';
 
 vi.mock('@sdk/react/hooks', async (importOriginal) => {
@@ -27,6 +27,28 @@ describe('PromptAttachmentPreview', () => {
     render(<PromptAttachmentPreview attachments={[att]} messageId="fm-1" />);
     expect(screen.getByText('Prompt to run:')).toBeTruthy();
     expect(screen.getByText(/run the linter please/)).toBeTruthy();
+  });
+
+  it('a request the viewer still has to answer offers Run and Decline on the row and in the window', async () => {
+    const att: Attachment = { attachment_type: AttachmentType.PROMPT, data: 'run the linter please' };
+    render(<PromptAttachmentPreview attachments={[att]} messageId="fm-1" />);
+    expect(screen.queryByTestId('prompt-row-run')).toBeNull(); // any other prompt: no answer to give
+    cleanup();
+
+    const onRun = vi.fn(async () => {});
+    const onDecline = vi.fn(async () => {});
+    render(
+      <PromptRequestAnswerContext.Provider value={{ onRun, onDecline }}>
+        <PromptAttachmentPreview attachments={[att]} messageId="fm-1" />
+      </PromptRequestAnswerContext.Provider>,
+    );
+    await act(async () => fireEvent.click(screen.getByTestId('prompt-row-decline')));
+    expect(onDecline).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('prompt-dialog-run')).toBeNull();
+    fireEvent.click(screen.getByText(/run the linter please/)); // open "Prompt to run"
+    await act(async () => fireEvent.click(screen.getByTestId('prompt-dialog-run')));
+    expect(onRun).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('prompt-dialog-run')).toBeNull(); // answered: the window closes
   });
 
   it('renders an entity-backed prompt from prompt_preview (no download needed)', () => {

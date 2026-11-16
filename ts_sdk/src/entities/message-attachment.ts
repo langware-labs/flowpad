@@ -2,6 +2,7 @@ import { APIEntity, dataManager, registerEntity, type ReceiveShowTarget } from '
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
+import type { UploadFlowMessageResult } from './flow-message';
 
 /** null = staged only (downloaded, reviewable, NOT installed/indexed). */
 export type MessageAttachmentScope = 'user' | 'project' | null;
@@ -248,6 +249,11 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
   async reportShareMismatch(): Promise<void> {
     if (!this.id) throw new Error('reportShareMismatch requires this.id');
     await this.post<unknown>('report-share-mismatch');
+  }
+
+  /** A received `.flowmsg` file: stage what it carries, as an upload from project home does. */
+  async openFlowmsg(): Promise<UploadFlowMessageResult> {
+    return (await this.post<UploadFlowMessageResult>('open-flowmsg'))!;
   }
 
   /** Remove the installed copy (staged copy persists; chip reverts to staged). */

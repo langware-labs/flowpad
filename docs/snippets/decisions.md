@@ -55,7 +55,12 @@ result.endpoint            # 'api_endpoint-<id>' -- the one that answered
 ```
 
 A question refers to fields of `state` by name, in backticks. All questions go in ONE
-request: three questions are one round trip, not three. A spec is checked before any call --
+request: three questions are one round trip, not three. One spec asks at most `MAX_QUESTIONS`
+(6, `flow_sdk/schema/data_spec/decision_spec.py`), so N decisions are `ceil(N/6)` requests, and
+independent ones can also go out at once (`asyncio.gather`). Measured against Jev on 2026-11-10,
+10 one-question routing decisions: one by one 3.7–4.5 s (≈0.36 s each), two specs of 5 ≈0.7 s
+in sequence and ≈0.5 s together, 10 single specs together ≈0.65 s — same answers every way.
+A round trip, not the work, is the cost: batch or parallelise, never loop. A spec is checked before any call --
 a choice needs 2+ options, a score 2–10 levels, names are lower-case identifiers -- and
 `extra="forbid"` refuses a vendor's word (`criteria`, `noul`) on our side.
 

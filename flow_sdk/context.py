@@ -3,7 +3,9 @@
     project = await context.current_project()
 
 The same answer for a worker, a terminal and a script: the project whose folder contains the
-working directory, nearest folder first. ``None`` outside every project.
+working directory, nearest folder first. ``None`` outside every project — and always ``None`` in
+the backend server: its working directory is wherever it was launched (a dev checkout), not a project
+its background work belongs to.
 """
 from __future__ import annotations
 
@@ -15,11 +17,22 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.project import Project
 
 
+_IN_SERVER = False
+
+
+def mark_server_process() -> None:
+    """This process is the backend server: its working directory names no project."""
+    global _IN_SERVER
+    _IN_SERVER = True
+
+
 async def current_project(cwd: Optional[str] = None) -> Optional["Project"]:
     """The project whose mount holds ``cwd`` (default: the working directory), or ``None``.
 
     Asks the indexed mount lookup once per ancestor folder; it never scans every project.
     """
+    if cwd is None and _IN_SERVER:
+        return None
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import canonical_posix_path, is_valid_project_cwd  # noqa: PLC0415
 
@@ -34,4 +47,4 @@ async def current_project(cwd: Optional[str] = None) -> Optional["Project"]:
     return None
 
 
-__all__ = ["current_project"]
+__all__ = ["current_project", "mark_server_process"]

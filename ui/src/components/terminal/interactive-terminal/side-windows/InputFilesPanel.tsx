@@ -42,7 +42,10 @@ const RowAction: React.FC<RowActionProps> = ({ label, title = label, icon: Icon,
   <Button
     variant="ghost"
     size="sm"
-    className={cn('h-6 w-6 shrink-0 p-0 opacity-0 transition-opacity group-hover:opacity-100', className)}
+    className={cn(
+      'h-6 w-6 shrink-0 p-0 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100',
+      className,
+    )}
     aria-label={label}
     title={title}
     disabled={disabled}

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { FORM_ANSWERS_TYPE, MESSAGE_FORM_TYPE } from './message-form';
-import { FlowMessage, PROCESS_CALL_TYPE, RETURNED_VALUE_TYPE, TypeId, type HubClientErrorInfo } from '@sdk';
+import { FlowMessage, PROCESS_CALL_TYPE, PROMPT_RUN_SUMMARY_TYPE, RETURNED_VALUE_TYPE, TypeId, type HubClientErrorInfo } from '@sdk';
 import {
   AttachmentType,
   BodyStatus,
@@ -46,6 +46,8 @@ const STRUCTURAL_ATTACHMENT_TYPES = new Set([
   // A prompt call and its answer: the call card is their one rendering.
   PROCESS_CALL_TYPE,
   RETURNED_VALUE_TYPE,
+  // What a prompt request's run did: the request line's View run is its one rendering.
+  PROMPT_RUN_SUMMARY_TYPE,
   // A form on a message and its answers: the form / answers cards are their one rendering.
   MESSAGE_FORM_TYPE,
   FORM_ANSWERS_TYPE,

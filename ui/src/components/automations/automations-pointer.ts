@@ -34,6 +34,7 @@ export interface AutomationsRoute {
   /** A message rule's prefill: the channel (data source id) and the message it was started from. */
   source?: string | null;
   message?: string | null;
+  conversation?: string | null;
   /** A starter the new automation is prefilled from (`automation-recipes.ts`). */
   recipe?: string | null;
   tab?: AutomationTab | null;
@@ -62,6 +63,7 @@ export function automationsOptions(route: AutomationsRoute): Record<string, stri
   if (route.recipe) out.recipe = route.recipe;
   if (route.source) out.source = route.source;
   if (route.message) out.message = route.message;
+  if (route.conversation) out.conversation = route.conversation;
   if (route.tab && route.tab !== 'setup') out.tab = route.tab;
   if (route.run) out.run = route.run;
   if (route.status) out.status = route.status;
@@ -93,6 +95,7 @@ export function parseAutomationsRoute(
     recipe: o.recipe || null,
     source: o.source || null,
     message: o.message || null,
+    conversation: o.conversation || null,
     tab: o.tab === 'runs' ? 'runs' : null,
     run: o.run || null,
     status: oneOf(o.status, STATUSES),

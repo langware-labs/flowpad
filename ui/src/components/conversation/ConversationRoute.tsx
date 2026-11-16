@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FolderOpen, Loader2 } from 'lucide-react';
-import { Agent, Conversation, Project, type Task, TypeId } from '@sdk';
+import { ArrowLeft, EllipsisVertical, FolderOpen, Loader2 } from 'lucide-react';
+import { Agent, Conversation, Project, type Task, TypeId, isStaffTicket } from '@sdk';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -16,6 +16,11 @@ import {
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
+import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { PhoneMenuButton, TOUCH } from '@src/components/phone-shell/PhoneTopBar';
+import { useIsMobile } from '@src/hooks/use-mobile';
+import { initialsFromLabel } from './participant-display';
 import { ConversationPanel, EditableConversationTitle } from './ConversationPanel';
 import { ItOperationChip } from './ItOperationChip';
 import { ConversationHeaderSession } from './ConversationHeaderSession';
@@ -23,6 +28,7 @@ import { MembersAvatarStack } from './MembersAvatarStack';
 import { ConversationMembersLine } from './ConversationMembersLine';
 import { ConversationAutomationChip } from './ConversationAutomationChip';
 import { ChannelParticipants } from './ChannelParticipants';
+import { TicketHeaderSlot } from './ticket-header-slot';
 import { ConversationMarkChips } from './ChannelMessageExtras';
 import { applyProjectToConversation, applyProjectToTask, persistRemoteToLocalMapping } from './apply-project-choice';
 import { useConversation } from './useConversation';
@@ -133,6 +139,7 @@ export function ConversationRoute() {
   const { navigation, currentDock } = useDockNavigation();
   const { cloudUser } = useAuth();
   const hub = isHubOnly();
+  const isMobile = useIsMobile();
 
   // Hidden tabs are kept mounted by Radix Tabs (data-[state=inactive]:hidden),
   // so when the URL points at a different view this component still re-renders
@@ -156,6 +163,8 @@ export function ConversationRoute() {
 
   const scopeKey = agentId && conversationId ? `${agentId}:${conversationId}` : null;
   const [scopeDecision, setScopeDecision] = useState<{ key: string; allowed: boolean | null } | null>(null);
+  // Where a staff ticket's status is drawn in this header (before the title); the ticket page fills it.
+  const [ticketSlot, setTicketSlot] = useState<HTMLElement | null>(null);
   const scopeAllowed = !scopeKey ? true : scopeDecision?.key === scopeKey ? scopeDecision.allowed : null;
   useEffect(() => {
     let live = true;
@@ -245,17 +254,43 @@ export function ConversationRoute() {
   // the conversation's own click-to-rename title (same component as the panel
   // header) — a rename here saves with Hub-Reflect and fans out to every
   // member. Untitled conversations fall back to the generic "Conversation".
+  const staffTicket = isStaffTicket(conversation, cloudUser?.id);
+  const headerTools = (
+    <>
+      {/* Open-the-session / launch-a-worker — the conversation always shows
+          exactly one of the two (never neither). Logged-out skips it. */}
+      {!hub && cloudUser && conversation && <ConversationHeaderSession conversation={conversation} task={task} />}
+      {conversation?.id && <ConversationAutomationChip conversationId={String(conversation.id)} />}
+      {/* Roster fetch is pointless under the logged-out overlay — skip it. */}
+      {/* A channel's people are on the channel — no roster to fetch, nobody to invite. */}
+      {conversation?.isChannel ? (
+        <ChannelParticipants conversation={conversation} noChip={staffTicket} />
+      ) : (
+        cloudUser && convTypeId && <MembersAvatarStack typeId={convTypeId} showInviteButton />
+      )}
+    </>
+  );
   const header = (
-    <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b px-3 py-1.5">
-      <div className="flex min-w-0 items-center gap-2">
+    <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <button
           type="button"
           onClick={goBack}
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="touch-target rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           title={t`Back to stream inbox`}
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
+        <Avatar className="h-8 w-8 md:hidden">
+          <AvatarFallback className="text-xs">{initialsFromLabel(conversation?.title, 1)}</AvatarFallback>
+        </Avatar>
+        {/* A ticket, for its desk's staff: its status and its desk come first, then what it is about. */}
+        {staffTicket && (
+          <span className="flex shrink-0 items-center gap-1.5" data-testid="ticket-header-chips">
+            <span ref={setTicketSlot} className="flex items-center" />
+            {conversation?.isChannel && <ChannelParticipants conversation={conversation} chipOnly />}
+          </span>
+        )}
         <EditableConversationTitle
           conv={conversation ?? null}
           fallback={t`Conversation`}
@@ -264,25 +299,34 @@ export function ConversationRoute() {
         <ItOperationChip conv={conversation ?? null} />
         <ConversationMarkChips marks={conversation?.marks} />
       </div>
-      <div className="flex justify-center">
+      <div className="flex justify-center max-md:hidden">
         {/* A local project and a local worker are the desktop's; the hub page offers neither. */}
         {!hub && conversation && !conversationHasPrivateProject(conversation) && (
           <ConversationSetProjectButton conversation={conversation} task={task} />
         )}
       </div>
-      <div className="flex min-w-0 items-center justify-end gap-2">
-        {/* Open-the-session / launch-a-worker — the conversation always shows
-            exactly one of the two (never neither). Logged-out skips it. */}
-        {!hub && cloudUser && conversation && <ConversationHeaderSession conversation={conversation} task={task} />}
-        {conversation?.id && <ConversationAutomationChip conversationId={String(conversation.id)} />}
-        {/* Roster fetch is pointless under the logged-out overlay — skip it. */}
-        {/* A channel's people are on the channel — no roster to fetch, nobody to invite. */}
-        {conversation?.isChannel ? (
-          <ChannelParticipants conversation={conversation} />
-        ) : (
-          cloudUser && convTypeId && <MembersAvatarStack typeId={convTypeId} showInviteButton />
-        )}
-      </div>
+      {/* A phone has no room for the tools: they sit behind ⋮. Mounted in one place only — each tool fetches. */}
+      {isMobile ? (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className={TOUCH}
+              title={t`More`}
+              aria-label={t`More`}
+              data-testid="conversation-phone-menu"
+            >
+              <EllipsisVertical className="h-5 w-5" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="flex w-auto flex-col items-end gap-2 p-2">
+            {headerTools}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <div className="flex min-w-0 items-center justify-end gap-2">{headerTools}</div>
+      )}
+      <PhoneMenuButton />
     </div>
   );
 
@@ -322,21 +366,23 @@ export function ConversationRoute() {
   return (
     <div className="flex h-full flex-col">
       {header}
-      {!conversation.isChannel && convTypeId && <ConversationMembersLine typeId={convTypeId} />}
+      {!isMobile && !conversation.isChannel && convTypeId && <ConversationMembersLine typeId={convTypeId} />}
       <div className="flex min-h-0 flex-1 flex-col">
-        <ConversationPanel
-          task={task}
-          conversationId={conversationId}
-          senderName={senderName}
-          // Title + members stack live in the route header above — suppress
-          // the panel's own header row so the subject isn't rendered twice.
-          headerLabel={null}
-          selectedMessageId={messageId}
-          onMessageNavigate={handleMessageNavigate}
-          threadId={threadId}
-          onThreadNavigate={handleThreadNavigate}
-          agentId={agentId}
-        />
+        <TicketHeaderSlot.Provider value={ticketSlot}>
+          <ConversationPanel
+            task={task}
+            conversationId={conversationId}
+            senderName={senderName}
+            // Title + members stack live in the route header above — suppress
+            // the panel's own header row so the subject isn't rendered twice.
+            headerLabel={null}
+            selectedMessageId={messageId}
+            onMessageNavigate={handleMessageNavigate}
+            threadId={threadId}
+            onThreadNavigate={handleThreadNavigate}
+            agentId={agentId}
+          />
+        </TicketHeaderSlot.Provider>
       </div>
     </div>
   );

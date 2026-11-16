@@ -12,7 +12,7 @@ import { chatTargetForProject } from '@src/lib/chat-target';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
-import { VIBE_MODEL_DEFAULT, useVibeModelTier, type VibeModelChoice } from './vibe-model-select';
+import { type VibeModelChoice } from './vibe-model-select';
 import { SessionModelSelect } from './session-model-select';
 import { VibeWorkerSelect } from './vibe-worker-select';
 import { VibeDocChip } from './vibe-doc-chip';
@@ -55,10 +55,6 @@ export function VibeChatPane({
   const { project } = useAgentContext();
   const { navigation } = useDockNavigation();
   const defaultWorkerType = useDefaultWorkerType();
-  // The stored tier every build starts with. The home carries no picker, so this
-  // pane's picker is where it is set: a pick switches this session AND becomes
-  // the tier the next build (from the home or here) starts with.
-  const [vibeModelTier, setVibeModelTier] = useVibeModelTier();
   const { promptContext, consume } = useKeyedAssetPromptContext(workContext);
   // A vibe-only agent's session has no tabs and no surface switch: New / Recent
   // replace this session in place instead of opening a tab beside it.
@@ -205,7 +201,7 @@ export function VibeChatPane({
     }) => {
       setPendingWorkerSwitch({
         workerType,
-        model: model || VIBE_MODEL_DEFAULT,
+        model,
         sourceProcess: activeProcess,
         projectId,
         workdir,
@@ -224,7 +220,7 @@ export function VibeChatPane({
         projectId: pending.projectId,
         workdir: pending.workdir ?? undefined,
         navigation,
-        model: pending.model,
+        ...(pending.model ? { model: pending.model } : {}),
         workerType: pending.workerType,
         targetVfsPath: pending.sourceProcess.target_typeid_str ?? undefined,
       };
@@ -286,15 +282,11 @@ export function VibeChatPane({
         noPastSessionsLabel={t`No past builds`}
         defaultProjectId={project?.id ?? null}
         defaultWorkdir={project?.fs_storage_mount_path ?? null}
-        defaultModel={vibeModelTier}
         defaultWorkerType={defaultWorkerType}
         modelSelectSlot={({ value, disabled, onChange, activeProcess }) => (
           <SessionModelSelect
             value={value}
-            onChange={(next) => {
-              setVibeModelTier(next);
-              return onChange(next);
-            }}
+            onChange={onChange}
             disabled={disabled}
             activeProcess={activeProcess}
             workerType={defaultWorkerType}

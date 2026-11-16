@@ -171,15 +171,36 @@ export interface TeamBudgets {
   members: MemberBudget[];
 }
 
+/** An organization or team the caller holds a role on, and whether the hub would let them read its budgets. */
+export interface MyScope {
+  type: 'organization' | 'team';
+  id: string;
+  roles: string[];
+  can_read_budgets: boolean;
+}
+
+/** A member's budgets read is refused, and the screen shows the member card for it: sent quiet. */
+function budgetsRead(type: 'organization' | 'team', id: string) {
+  const info = hubAction('budgets', type, id, 'GET');
+  info.quiet = true;
+  return info;
+}
+
 export class BudgetsService {
+  /** Every org and team the caller is on, with `can_read_budgets` answered by the hub's own policy. */
+  async myScopes(): Promise<MyScope[]> {
+    const data = await dataManager.callAction<undefined, { scopes: MyScope[] }>(hubAction('scopes', 'token_plan', null, 'GET'));
+    return data.scopes;
+  }
+
   /** The organization's pool and one row per team in it. Admin on the org. */
   orgBudgets(orgId: string): Promise<OrgBudgets> {
-    return dataManager.callAction<undefined, OrgBudgets>(hubAction('budgets', 'organization', orgId, 'GET'));
+    return dataManager.callAction<undefined, OrgBudgets>(budgetsRead('organization', orgId));
   }
 
   /** One team's pool and one row per person drawing on it. Admin on the team. */
   teamBudgets(teamId: string): Promise<TeamBudgets> {
-    return dataManager.callAction<undefined, TeamBudgets>(hubAction('budgets', 'team', teamId, 'GET'));
+    return dataManager.callAction<undefined, TeamBudgets>(budgetsRead('team', teamId));
   }
 
   /**

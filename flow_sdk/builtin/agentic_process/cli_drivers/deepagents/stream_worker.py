@@ -99,6 +99,7 @@ class DeepAgentsCLIStreamWorker(JsonlTeeStreamWorker):
             # spell it the same way; the runner resumes when it has checkpointed the thread.
             session_id=self._session_id or context.resume_session_id or context.session_id,
             add_dirs=list(context.add_dirs or []),
+            disallowed_tools=list(context.disallowed_tools or []),
         )
         if opts.permission_mode not in SUPPORTED_PERMISSION_MODES:
             raise WorkerSpawnError(

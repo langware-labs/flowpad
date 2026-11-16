@@ -41,12 +41,15 @@ class DeepAgentsAgentOptions(AgentOptions):
         workdir: str | None = None,
         env_vars: dict[str, str] | None = None,
         add_dirs: list[str] | None = None,
+        disallowed_tools: list[str] | None = None,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
         self.model = model
         self.permission_mode = permission_mode
         self.add_dirs: list[str] = list(add_dirs or [])
+        #: The agent's deny rules; the runner's shell and file tools refuse what they name.
+        self.disallowed_tools: list[str] = list(disallowed_tools or [])
         # Claude-shaped ``--agents`` JSON for this launch. Launch-time only — never serialized.
         self.agents_json: dict = {}
 
@@ -98,13 +101,15 @@ class DeepAgentsAgentOptions(AgentOptions):
             flags.extend(["--memory-file", memory])
         if self.mcp_config_fragment:
             flags.extend(["--mcp-config", json.dumps(self.mcp_config_fragment, separators=(",", ":"))])
+        if self.disallowed_tools:
+            flags.extend(["--disallowed-tools", json.dumps(self.disallowed_tools, separators=(",", ":"))])
         if self.agents_json:
             flags.extend(["--agents-json", json.dumps(self.agents_json, separators=(",", ":"))])
         return flags
 
     # ── Serialisation ───────────────────────────────────────────────────────
     WORKER_TYPE = "deepagents"
-    SERIALIZED_FIELDS = ("session_id", "model", "permission_mode", "add_dirs")
+    SERIALIZED_FIELDS = ("session_id", "model", "permission_mode", "add_dirs", "disallowed_tools")
     _COERCE = {"add_dirs": lambda v: list(v or [])}
 
 

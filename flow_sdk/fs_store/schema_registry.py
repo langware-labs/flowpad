@@ -1164,6 +1164,14 @@ class SchemaRegistry:
             shape.__spec_tag__ = kind
 
     @classmethod
+    def unregister_kind(cls, kind: str) -> None:
+        """Unbind a kind whose definition is gone (a data schema folder deleted or re-tagged), so
+        a shape naming it fails to resolve instead of keeping the last class it compiled to."""
+        shape = cls._kinds.pop(kind, None)
+        if shape is not None and cls._kind_of_shape.get(id(shape), (None,))[0] is shape:
+            cls._kind_of_shape.pop(id(shape), None)
+
+    @classmethod
     def kind_for(cls, shape: Any) -> "str | None":
         """The kind a class is registered under, or None. Inverse of ``kind_type``."""
         cls._ensure_loaded()

@@ -9,7 +9,7 @@
 import type { MessageDescriptor } from '@lingui/core';
 import { describe, expect, it } from 'vitest';
 
-import { keyShapeProblem, rootBaseUrl } from '@src/components/llm-endpoints/endpoint-catalog';
+import { isVertexApiKey, keyShapeProblem, rootBaseUrl } from '@src/components/llm-endpoints/endpoint-catalog';
 
 /** A `msg` descriptor keeps its template in `message` (`"That looks like an {0} key…"`) and the
  *  interpolated values alongside it, so an assertion about WHICH provider was named reads the
@@ -109,6 +109,18 @@ describe('keyShapeProblem — Google Vertex AI', () => {
     expect(keyShapeProblem('vertex', JSON.stringify({ type: 'authorized_user' }))?.message).toMatch(/service-account/);
   });
 
+  it('accepts a Google Cloud API key too (Gemini + Model Garden through x-goog-api-key)', () => {
+    const bound = `AQ.${'A'.repeat(50)}`;
+    const classic = `AIza${'B'.repeat(35)}`;
+    expect(keyShapeProblem('vertex', bound)).toBeNull();
+    expect(keyShapeProblem('vertex', classic)).toBeNull();
+    expect(isVertexApiKey(bound)).toBe(true);
+    expect(isVertexApiKey(classic)).toBe(true);
+    expect(isVertexApiKey('AQ.short')).toBe(false);
+    expect(isVertexApiKey(`AQ.${'a'.repeat(20)} ${'b'.repeat(20)}`)).toBe(false);
+    expect(isVertexApiKey(VERTEX)).toBe(false);
+  });
+
   it('names Vertex when its JSON is pasted into another provider', () => {
     expect(said(keyShapeProblem('openrouter', VERTEX))).toContain('Google Vertex AI');
   });
@@ -119,6 +131,15 @@ describe('rootBaseUrl', () => {
     expect(rootBaseUrl('vertex', 'https://aiplatform.googleapis.com/v1', VERTEX)).toBe(
       'https://aiplatform.googleapis.com/v1/projects/acme-prod/locations/global',
     );
+  });
+
+  it('builds a Vertex URL from the typed project when the key is an API key', () => {
+    const apiKey = `AQ.${'A'.repeat(50)}`;
+    expect(rootBaseUrl('vertex', 'https://aiplatform.googleapis.com/v1', apiKey, ' my-proj ')).toBe(
+      'https://aiplatform.googleapis.com/v1/projects/my-proj/locations/global',
+    );
+    // The key file's own project wins over anything typed.
+    expect(rootBaseUrl('vertex', 'https://aiplatform.googleapis.com/v1', VERTEX, 'typed')).toContain('/acme-prod/');
   });
 
   it('keeps a URL that already names a project, and every other provider as given', () => {

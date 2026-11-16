@@ -54,6 +54,11 @@ function useFundingParams() {
   return { projectId };
 }
 
+/** A key, a login or a source changed what can pay: the funding record is read again. */
+export function invalidateLlmFunding(): void {
+  void lazyAssets.invalidate(LazyAsset.LlmFunding);
+}
+
 export function useLlmSources() {
   // Deliberately NOT `priority: 'background'`, though this read looks exactly like the
   // background widget that setting is for. `background` waits on `usePrimaryContentReady`,
@@ -67,7 +72,7 @@ export function useLlmSources() {
   // A device login finishing, a vendor sign-out or a key change all reach the UI as a
   // capability change, but none of them touch this asset. Without the re-read, whatever
   // reads it (the footer chip's no-source alert) keeps its old answer until a reload.
-  useEffect(() => capabilityManager.subscribe(() => void lazyAssets.invalidate(LazyAsset.LlmFunding)), []);
+  useEffect(() => capabilityManager.subscribe(invalidateLlmFunding), []);
   return { status: data ?? null, isLoading };
 }
 
@@ -94,6 +99,12 @@ export function useSelectSource() {
 }
 
 /** Harness kinds in display order, filtered to those the box actually reported. */
+/** "→ <the source a harness runs on now>", or why nothing can fund it — the resolver's answer. */
+export function resolvedLabel(status: LLMFundingStatus, kind: string, none: string): string {
+  const pick = status.resolved[kind];
+  return pick ? `→ ${pick.name}` : status.blocked[kind] || none;
+}
+
 export function harnessKinds(status: LLMFundingStatus | null | undefined): string[] {
   const known = new Set(Object.keys(status?.sources ?? {}));
   return HARNESS_CAPABILITY_KINDS.filter((kind) => known.has(kind));

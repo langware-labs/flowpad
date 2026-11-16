@@ -481,3 +481,26 @@ class TestReadingBackwards:
             after = await source.fetch(None)
         assert [i.origin.key for i in before.items] == [i.origin.key for i in after.items]
         assert before.resume_cursor == after.resume_cursor
+
+
+class TestTwoDesksOneName:
+    """A person may staff two desks that carry the same name: each still gets its own ticket source."""
+
+    async def test_each_desk_gets_its_own_source(self, monkeypatch):
+        import uuid  # noqa: PLC0415
+
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+        name = f"Support {uuid.uuid4().hex[:6]}"
+        first, second = str(uuid.uuid4()), str(uuid.uuid4())
+
+        async def walk(_type):
+            desk = {"enabled": True, "display_name": name}
+            return SimpleNamespace(rows=[{"id": first, "helpdesk": desk}, {"id": second, "helpdesk": desk}], complete=True)
+
+        monkeypatch.setattr(HubProxy, "walk", walk)
+        assert await HelpdeskSource.ensure_sources() == 2
+        for desk_id in (first, second):
+            held = await DataSource.find_for_account("helpdesk", "desk_project_id", desk_id)
+            assert held is not None, f"desk {desk_id} has no source: its staff would never get its tickets"
+        assert await HelpdeskSource.ensure_sources() == 0

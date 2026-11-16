@@ -76,6 +76,12 @@ describe('conversationFacets', () => {
     expect(f.kind).toBe('helpdesk');
   });
 
+  it('monitoring kind → monitoring facet and a Monitoring chip', () => {
+    const f = conversationFacets(makeInputs({ kind: ConversationKind.MONITORING }));
+    expect(f.kind).toBe('monitoring');
+    expect(chipsFor(f).map((c) => c.key)).toEqual(['monitoring']);
+  });
+
   it('archived_at after the latest pointer ts → archived', () => {
     const f = conversationFacets(
       makeInputs({

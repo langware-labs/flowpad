@@ -9,7 +9,7 @@ one of these values, it does not invent a fifth state.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -85,6 +85,12 @@ class HarnessStatusSpec(DataSpec):
     key_providers: tuple[str, ...] = ()
     install_command: str = ""
     homepage_url: str = ""
+    #: Newest published version, from the background update check (empty when unknown).
+    latest_version: str = ""
+    #: ``available``: a newer version is out. ``required``: a session failed because this one is too old.
+    update: Literal["none", "available", "required"] = "none"
+    #: The command that brings the CLI to the newest version.
+    update_command: str = ""
 
 
 class KeyStatusSpec(DataSpec):

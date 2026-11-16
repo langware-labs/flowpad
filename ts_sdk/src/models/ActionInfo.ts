@@ -47,6 +47,9 @@ export class ActionInfo {
   // This call starts something the server answers back to THIS tab (an OAuth
   // flow confirms in the screen that asked). Sends `X-Flow-Connection-Id`.
   private _carriesInitiator: boolean = false;
+  // The caller handles a hub refusal itself, so the desktop does not report it as a failed
+  // hub request. Sends `Flowpad-Quiet`.
+  private _quiet: boolean = false;
   // The browser finishes this request even if the page unloads first. For a
   // write the UI has already shown as done (an optimistic tab close): an
   // ordinary fetch is aborted by a reload between its preflight and its POST.
@@ -196,6 +199,14 @@ export class ActionInfo {
 
   public set hubReflect(value: boolean) {
     this._hubReflect = value;
+  }
+
+  public get quiet(): boolean {
+    return this._quiet;
+  }
+
+  public set quiet(value: boolean) {
+    this._quiet = value;
   }
 
   public get carriesInitiator(): boolean {

@@ -17,7 +17,7 @@
  * opener toolbar, the new-tab menu, spawn modals, and the close-shortcut label.
  */
 import { setTabFullScreen } from '@src/tabs/tab-full-screen';
-import { AgenticProcess, dataManager, Project, tabKey, tabManager, Tab, TypeId, uniqueTabsByDockKey } from '@sdk';
+import { AgenticProcess, dataManager, Project, tabKey, tabManager, Tab, TypeId } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TabStrip } from '@src/components/tabs/TabStrip';
@@ -26,16 +26,10 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { globalHomeDock, resumeDock } from '@src/tabs/project-entry';
 import { useTabCloser } from '@src/tabs/tab-close-request';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useTabStripItems } from '@src/tabs/tab-row-item';
+import { useStripTabs, useTabStripItems } from '@src/tabs/tab-row-item';
 import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
 import { closeTabsWithLifecycle, closeTabWithLifecycle } from '@src/tabs/tab-content-lifecycle';
-import {
-  useAllTabs,
-  useAncestorActiveTab,
-  useCurrentTabs,
-  useSyncContentTabNames,
-  useTabLifecycles,
-} from '@src/tabs/use-tab-manager';
+import { useSyncContentTabNames } from '@src/tabs/use-tab-manager';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useNavigation } from 'react-router';
@@ -55,29 +49,11 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   // One source: the global `tab` list, filtered to the strip's scope. `'project'`
   // = the active project's exact scope (the backend `filter_for_project` rule),
   // in the backend's global order (preserved by the filter).
-  const allTabs = useAllTabs();
+  const { tabs, allTabs, tabByKey, items: baseItems, urlActiveKey, activeKey, ancestor, select: handleSelect } =
+    useStripTabs(scope);
   // Keep content-tab chip labels in step with their backing entities (generic
   // entity → tab name mirror; process tabs are projected by the backend FSM).
   useSyncContentTabNames();
-  const currentTabs = useCurrentTabs();
-  const globalTabs = useMemo(() => uniqueTabsByDockKey(allTabs), [allTabs]);
-  // Optimistic close: drop `Closing` tabs from the WHOLE working set (not just
-  // the rendered items) — `baseItems`, `tabByKey`, and the mod+PgUp/PgDn cycling
-  // all derive from `tabs`, so a closing tab can't be re-selected mid-teardown.
-  useTabLifecycles();
-  const tabs = tabManager.lifecycle.excludeClosing(scope === 'all' ? globalTabs : currentTabs);
-  const baseItems = useTabStripItems(tabs);
-
-  // The URL's own key. Only mod+W still uses it directly — everything else wants
-  // `activeKey` below, the key of the chip actually ON SCREEN.
-  const urlActiveKey = currentDock?.tabHash ?? '';
-  // The URL can name a WORKSPACE CHILD, which this strip filters out
-  // (`topLevelTabsForProject`). Then the chip on screen is the child's ancestor —
-  // the vibe display — and without this the strip renders with nothing lit while
-  // a child surface fills the panel. Still exactly one active chip: the resolver
-  // returns null whenever the URL key already names a chip here.
-  const ancestor = useAncestorActiveTab(tabs, urlActiveKey);
-  const activeKey = ancestor ? tabKey(ancestor.parent) : urlActiveKey;
   // The child's own chip, built by the SAME mapper so it carries the live
   // overlay — a scope-keyed assets child would otherwise read as its frozen
   // "<project>'s Assets" name. Only its icon/title are borrowed, below.
@@ -95,14 +71,6 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     ],
     [tabs, ancestorChildTabs],
   );
-
-  const tabByKey = useMemo(() => {
-    const m = new Map<string, Tab>();
-    for (const t of tabs) {
-      m.set(tabKey(t), t);
-    }
-    return m;
-  }, [tabs]);
 
   // "Open Project" — the footer's project-name shortcut surfaced on the chip
   // menu as a distinguished (emphasized) header entry. Owner-injected so the
@@ -170,17 +138,6 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   const isCurrentTab = useCallback(
     (key: string) => key !== '' && (key === activeKey || key === pendingActiveKey),
     [activeKey, pendingActiveKey],
-  );
-
-  const handleSelect = useCallback(
-    (key: string) => {
-      const dock = resumeDock(tabByKey.get(key), allTabs);
-      if (!dock) return;
-      // A chip in the GLOBAL strip is a top-level tab: clicking it from inside a
-      // Vibe tab must not adopt it into that Vibe tab's workspace.
-      navigation.openDock(dock, undefined, { topLevel: true });
-    },
-    [tabByKey, navigation, allTabs],
   );
 
   const handleFullScreen = useCallback(

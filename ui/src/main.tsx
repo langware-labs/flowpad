@@ -17,6 +17,7 @@ import { router } from './router';
 import { NavigationActions } from '@src/navigation/NavigationActions';
 import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { reportError, startSentryReaction } from '@src/telemetry/sentry';
+import { trackKeyboardInset } from './components/phone-shell/keyboard-inset';
 import './styles/highlightjs.css';
 
 function defineGlobals() {
@@ -92,6 +93,7 @@ async function init() {
   // Resolve + activate the locale and set `<html lang/dir>` BEFORE first paint
   // so there's no flash of wrong-language / wrong-direction content.
   await initLocale();
+  trackKeyboardInset();
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>

@@ -57,14 +57,13 @@ export function GenericDisplayToolbar({ externalUrl, onOpenInTab, onAnnotate, hi
             </TooltipContent>
           </Tooltip>
         )}
-        <Tooltip>
+        {(isTab || externalUrl) && <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
               className="h-7 w-7"
               data-testid={isTab ? 'display-open-in-tab' : 'display-open-external'}
-              disabled={!isTab && !externalUrl}
               aria-label={isTab ? t`Open in a new tab` : t`Open externally`}
               title={isTab ? t`Open in a new tab` : t`Open externally`}
               onClick={() => {
@@ -82,7 +81,7 @@ export function GenericDisplayToolbar({ externalUrl, onOpenInTab, onAnnotate, hi
               <p><Trans>Open externally</Trans></p>
             )}
           </TooltipContent>
-        </Tooltip>
+        </Tooltip>}
       </TooltipProvider>
     </div>
   );

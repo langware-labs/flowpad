@@ -560,9 +560,13 @@ class DataSource(SetupSkippable, Entity):
         """
         if self.exist_in_db:  # placement happens once, at create; a poll's save never asks again
             return await super()._resolve_scope_project()
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
         from flow_sdk.stream_inbox.projection import owning_agent  # noqa: PLC0415
 
+        driver = DataDriver.loaded(self.provider or "")
+        if driver is not None and getattr(driver.cls, "principal_channel", False):
+            return None  # one principal's channel on this machine (its Tasks): never a project file
         agent = await owning_agent(self)
         if agent is not None and getattr(agent, "project_id", None):
             # A shipped agent's project is the SDK's own read-only tree: its channels land in the user
@@ -575,6 +579,7 @@ class DataSource(SetupSkippable, Entity):
             return scoped
         if getattr(self, "project_id", None):
             return await Project.get_by_id(str(self.project_id))
+        # A script or block run from a project folder; the server's cwd never counts (context.current_project).
         if agent is None and get_current_request_info() is None:
             from flow_sdk import context  # noqa: PLC0415
 
@@ -1227,6 +1232,12 @@ class DataSource(SetupSkippable, Entity):
             existing = await self._existing_account()
             if existing is not None:
                 return await self._adopt(existing, *args, **kwargs)
+        elif self.status == SourceStatus.NEW.value:
+            # NEW is where a row starts, never a decision a save makes: a client sends the whole entity and
+            # its model defaults ``status`` to NEW, which would re-run the create rules and park a working source.
+            stored = await type(self).get_by_id(str(self.id))
+            if stored is not None and stored.status != SourceStatus.NEW.value:
+                self.status, self.setup_detail, self.setup_needs = stored.status, stored.setup_detail, stored.setup_needs
         if not self.exist_in_db or self.status == SourceStatus.NEW.value or (self.config and self._driver() is None):
             # An authored source's folder loads on first use, so the create rules can ask its class — and so
             # can the file writer, which leaves out what the class declares private (``file_value``). A
@@ -1851,10 +1862,35 @@ class DataSource(SetupSkippable, Entity):
     @core_action.post(action_name="set_enabled")
     async def set_enabled_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/set_enabled — ``{"enabled": bool}``. Disabled stops polling."""
-        enabled = bool((await self._body()).get("enabled", True))
-        self.status = SourceStatus.ACTIVE.value if enabled else SourceStatus.DISABLED.value
-        await self.save_runtime()
-        return ApiSuccessResponse(data={"status": self.status})
+        await self.set_enabled(bool((await self._body()).get("enabled", True)))
+        return ApiSuccessResponse(
+            data={
+                "status": self.status,
+                "setup_detail": self.setup_detail,
+                "setup_needs": [n.model_dump() for n in self.setup_needs],
+            }
+        )
+
+    async def set_enabled(self, enabled: bool) -> None:
+        """Pause, or resume. Resuming is never a fresh start: a source that passed its setup check
+        before it was paused does not owe it again. It returns to where it stood (what the row still
+        says: words about a setup mean it was in setup), and a driver with a check of its own is asked
+        once (``verify``), so what it says now decides. A provider that does not answer leaves it there."""
+        if not enabled:
+            self.status = SourceStatus.DISABLED.value
+            await self.save_runtime()
+            return
+        if self.status == SourceStatus.ACTIVE.value:
+            return
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        driver = await DataDriver.find(self.provider or "")  # an authored driver loads on first use
+        owes_check = driver is not None and driver.has_setup
+        in_setup = owes_check and bool(self.setup_detail or self.setup_needs)
+        self.status = SourceStatus.SETUP.value if in_setup else SourceStatus.ACTIVE.value
+        verdict = await self.verify() if owes_check else None
+        if verdict is None or verdict.get("transient"):
+            await self.save_runtime()  # a verdict saved the row itself; no answer leaves it where it stood
 
     @core_action.get(action_name="setup_stages")
     async def setup_stages_action(self) -> ApiResponse:

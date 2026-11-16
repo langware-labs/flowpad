@@ -2,6 +2,7 @@ import { AgenticProcess, toplog } from '@sdk';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ChatActivityLine } from '@src/components/entity-execution-panel/ChatActivityLine';
+import { EarlierHistoryButton } from '@src/components/entity-execution-panel/EarlierHistoryButton';
 import { nearestGroup, TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
 import { useObservedTurn } from '@src/components/entity-execution-panel/hooks/useObservedTurn';
 import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
@@ -181,6 +182,7 @@ export function SimpleChatPane({ process, className, focusAt = null }: SimpleCha
             </div>
           ) : (
             <div className="w-full px-4 py-3">
+              <EarlierHistoryButton process={process} />
               <AgentIntroMessage agent={launchingAgent} />
               <TurnGroupsList
                 groups={turnGroups}

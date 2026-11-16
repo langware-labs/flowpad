@@ -58,7 +58,7 @@ const STATUS_TEXT: Record<RowState, { label: MessageDescriptor; dot: string; ton
   [InstallState.NotInstalled]: { label: msg`Not installed`, ...MUTED },
 };
 
-function statusTextFor(state: RowState): { label: string; dot: string; tone: string } {
+export function statusTextFor(state: RowState): { label: string; dot: string; tone: string } {
   const entry = STATUS_TEXT[state];
   return { ...entry, label: i18n._(entry.label) };
 }
