@@ -483,8 +483,8 @@ export class NavigationActions {
       return;
     }
     // `homePage`: ask for the project's home page, which the root's load
-    // redirect resolves (`project-home-page-redirect`) — closing a project's last
-    // tab and finishing a wizard ask. The Home button does not: it is Flowpad's home.
+    // redirect resolves (`project-home-page-redirect`) — the Home button, closing a
+    // project's last tab and finishing a wizard ask; with none declared, Flowpad's home.
     this.openDock(options?.homePage ? withHomePage(DockPointer.root()) : DockPointer.root());
   }
 
