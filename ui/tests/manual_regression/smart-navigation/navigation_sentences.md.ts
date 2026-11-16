@@ -76,7 +76,8 @@ test.describe.serial('navigation sentences', () => {
           .finally(() => p.close())
           .catch(() => undefined);
       page.on('popup', onPopup);
-      await page.getByTestId('top-nav-address').click();
+      // The address's own dead space opens ask mode; its middle can be a crumb (a long project name), which does not.
+      await page.getByTestId('top-nav-ask-hint').click();
       await page.getByTestId('top-nav-ask-input').fill(r.sentence);
       await page.getByTestId('top-nav-ask-input').press('Enter');
 

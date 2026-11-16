@@ -34,6 +34,7 @@ import { chromium, expect, test, type Browser, type Page } from '@playwright/tes
 import { assertPreconditions } from './helpers';
 import {
   HOST_PROJECT_ID,
+  openSessionCard,
   sessionCards as sessionCard,
   sendOpeningPrompt,
   setupLiveConversation,
@@ -94,7 +95,7 @@ test('live session: alice prompts → bob approves → reply only in the session
     await expectNoSessionRowsInThread(bob.page, promptText);
 
     // 6. the session view holds the exchange
-    await sessionCard(alice.page).first().click();
+    await openSessionCard(sessionCard(alice.page).first());
     await alice.page.waitForURL(/\/dock\/live_session\/[0-9a-f-]+/, { timeout: 5_000 });
     await expect(alice.page.getByTestId('live-session-title')).toContainText(marker.slice(0, 8), { timeout: 2_000 });
     await expect(alice.page.getByTestId('live-session-reply')).toHaveCount(1, { timeout: 2_000 });

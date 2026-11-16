@@ -11,19 +11,19 @@ import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
 import { gotoShell, addTerminalTab } from '../terminal/helpers';
 import { adjusted } from '../../adjustableTimeout';
+import { apiBase } from '../_shared/api';
 
 async function tabNames(page: import('@playwright/test').Page): Promise<string[]> {
-  // The tab is a <div> whose FIRST <span> is a decorative active-indicator bar
-  // (empty text); the label lives in a later <span>. Read the first span that
-  // actually has text rather than `querySelector('span')` (which grabs the
-  // empty indicator and gets filtered out, yielding an empty list).
-  return page.locator('[data-testid^="tab-shell|"]').evaluateAll((els) =>
-    els
-      .map((e) =>
-        [...e.querySelectorAll('span')].map((s) => (s.textContent || '').trim()).find(Boolean) || '',
-      )
-      .filter(Boolean),
-  );
+  // The strip drops every chip's title once chips are narrower than 64px (TabStrip density 'icon':
+  // ~18+ tabs on a 1280px page), so the label span is not always there. Read each chip's name off
+  // its Tab row instead, keyed by the chip's `data-terminal-target`.
+  const keys = await page
+    .locator('[data-testid^="tab-shell|"]')
+    .evaluateAll((els) => els.map((e) => e.getAttribute('data-terminal-target') || ''));
+  const res = await page.request.get(`${apiBase()}/api/v1/graph/tab/list_all`);
+  const tabs: Array<{ pointer: string; name: string | null }> = (await res.json()).data.tabs;
+  const byPointer = new Map(tabs.map((t) => [JSON.parse(t.pointer || '{}').pointer as string, t.name]));
+  return keys.map((k) => byPointer.get(k.split('|')[1]) || '').filter(Boolean);
 }
 
 test.describe('incremented tab names', () => {

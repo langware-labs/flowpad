@@ -199,7 +199,9 @@ const xtermPoint = async (page: Page, form: Form) => {
     await page.setViewportSize({ width: size.width, height: size.height * 2 });
     await still();
   }
-  return printedLinkPoint(page, pattern);
+  // Not Claude Code's input row (`❯ …`): it may hold the model's suggested next prompt — this very
+  // command as grey ghost text — and a click there is not a link.
+  return printedLinkPoint(page, pattern, '', /^\s*❯/);
 };
 
 const SURFACES: Surface[] = [

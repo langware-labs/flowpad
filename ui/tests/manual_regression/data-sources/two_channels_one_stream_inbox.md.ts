@@ -158,11 +158,14 @@ test('2. the stream inbox merges both sources, attributed', async ({ page }) => 
   await expect(rows.filter({ hasText: /Subject \d+/ }).first()).toBeVisible();
   // Every row wears ITS source's chip.
   // (Chips draw once each row's channel resolves: wait for all of them rather than sampling once.)
-  await expect(rows.locator('[data-chip-type="source"]')).toHaveCount(PAGE);
+  // Only this runbook's rows are judged: a shared instance's user holds other conversations (no channel, no chip).
+  const ours = rows.filter({ hasText: /slack message \d{3}|mail body \d{3}/ });
+  const onFirst = await ours.count();
+  await expect(ours.locator('[data-chip-type="source"]')).toHaveCount(onFirst);
   // The older page holds the rest: both sources, merged, are all 120.
   await page.getByTestId('stream-inbox-page-older').click();
-  await expect(rows).toHaveCount(2 * PER_SOURCE - PAGE);
-  await expect(rows.locator('[data-chip-type="source"]')).toHaveCount(2 * PER_SOURCE - PAGE);
+  await expect(ours).toHaveCount(2 * PER_SOURCE - onFirst);
+  await expect(ours.locator('[data-chip-type="source"]')).toHaveCount(2 * PER_SOURCE - onFirst);
 });
 
 test('3. a mark narrows to ONE source; × restores', async ({ page }) => {
@@ -188,11 +191,17 @@ test('3. a mark narrows to ONE source; × restores', async ({ page }) => {
   await expect(mailMark).toHaveAttribute('aria-pressed', 'false');
   await expect(slackMark).toHaveAttribute('aria-pressed', 'true');
   // The dimmed mark greys (the bar greys every unpressed glyph while filtering); the lit one does not.
+  // Other marks (Flowpad's own standard messages, Tasks...) stay lit and keep their rows: dim them too.
+  for (const other of await bar.locator('[data-testid="attached-channel"]:not([aria-label*="Support slack"]):not([aria-label*="Team mail"])').all()) {
+    await other.click();
+    await expect(other).toHaveAttribute('aria-pressed', 'false');
+  }
   await expect(mailMark.locator(':scope > :first-child')).toHaveCSS('filter', /grayscale/);
   await expect(slackMark.locator(':scope > :first-child')).toHaveCSS('filter', 'none');
   await expect(bar.getByTestId('attached-channels-clear')).toBeVisible();
 
-  await expect(rows).toHaveCount(slackOnPage);
+  // The marks narrow the QUERY (25cf9aed3), not the loaded page: the list is the Slack source's own 60 rows.
+  await expect(rows).toHaveCount(PER_SOURCE);
   for (const chip of await rows.locator('[data-chip-type="source"]').all()) await expect(chip).toHaveText('Slack');
   for (const sender of await rows.getByTestId('stream-inbox-row-sender').all()) await expect(sender).toHaveText('Bob');
   await expect(rows.filter({ hasText: /Subject \d+/ })).toHaveCount(0);

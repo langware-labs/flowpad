@@ -221,7 +221,7 @@ export async function sendCommand(page: Page, cmd: string) {
  * xterm.js renders into .xterm-rows which contains the text content.
  * We poll until the text appears.
  */
-export async function waitForOutput(page: Page, text: string, timeout = 15_000) {
+export async function waitForOutput(page: Page, text: string | RegExp, timeout = 15_000) {
   // First ensure the active panel exists (guards against brief re-render gaps on load/resize).
   await page
     .locator('[data-testid="terminal-panel"][data-active="true"]')
@@ -232,7 +232,8 @@ export async function waitForOutput(page: Page, text: string, timeout = 15_000) 
       .locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')
       .first()
       .textContent();
-    expect(content).toContain(text);
+    if (typeof text === 'string') expect(content).toContain(text);
+    else expect(content).toMatch(text);
   }).toPass({ timeout });
 }
 

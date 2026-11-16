@@ -21,9 +21,10 @@ export async function printLink(page: Page, shellId: string, link: string, osc =
 }
 
 /** The screen point of `text` (or the first match of a pattern) on its newest row. */
-export async function printedLinkPoint(page: Page, text: string | RegExp, host = '') {
+export async function printedLinkPoint(page: Page, text: string | RegExp, host = '', exclude?: RegExp) {
   // xterm renders spans, not anchors. Click the actual glyph's DOM position.
-  const rows = page.locator(`${host} .xterm-rows:visible > div`).filter({ hasText: text });
+  let rows = page.locator(`${host} .xterm-rows:visible > div`).filter({ hasText: text });
+  if (exclude) rows = rows.filter({ hasNotText: exclude });
   const row = rows.last();
   await expect(row).toBeVisible();
   const pattern = text instanceof RegExp ? text.source : null;

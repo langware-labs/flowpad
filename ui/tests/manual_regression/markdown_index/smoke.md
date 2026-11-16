@@ -15,8 +15,7 @@ incrementality.
 
 Pins the post-correction invariants:
 
-* `index.md.json` lives **inside the entity's record folder**, never in user docs.
-* User docs contain **only** `index.md` files (no sidecars, no cache dirs).
+* User docs contain only the generated `index.md` files plus exactly one `index.md.json` sidecar beside each of them (read by the panel, `GET /markdown-index/json` and parent folders); no other sidecars, no cache dirs.
 * Folder click follows Obsidian convention: `<folder>.md` wins over `index.md`.
 
 ## Prerequisites
@@ -32,7 +31,7 @@ Pins the post-correction invariants:
 > folder-tree docs viewer with Obsidian-style folder-note routing + Index side
 > panel). Run S1–S6, S8, S11 for the current pipeline.
 >
-> **LLM gate:** S5, S6, S11 (and S8's 9-file invariant, which depends on S5
+> **LLM gate:** S5, S6, S11 (and S8's 13-file invariant, which depends on S5
 > generating the `index.md` files) drive a real rebuild AgenticProcess that calls
 > Claude — they require `ANTHROPIC_API_KEY` in the backend env and skip
 > (live-claude dependency) when absent. The deterministic subset S1–S4 runs
@@ -96,13 +95,13 @@ Pins the post-correction invariants:
   * `find ${TMP_DOCS} -name 'index.md.json'` MUST return **nothing**.
   * Sidecar lives at `<records_data_root>/markdown_index/<entity_id>/index.md.json` and parses as valid JSON matching the entity's fields.
 
-### S8: User docs stay clean — no sidecars, no cache dirs
-* `find ${TMP_DOCS} -type f -name '*.json'` → MUST return **nothing**.
+### S8: User docs stay clean — only `index.md.json` sidecars, no cache dirs
+* `find ${TMP_DOCS} -type f -name '*.json'` → MUST return exactly one `index.md.json` beside each generated `index.md`, and nothing else.
 * `find ${TMP_DOCS} -type d -name '.markdown_index'` → MUST return **nothing**. (Regression guard against the deleted cache invention.)
 * `find ${TMP_DOCS} -type d -name '.cache'` → MUST return **nothing**.
 * `find ${TMP_DOCS} -type d -name '.flowpad'` → MUST return **nothing**.
 * Per-entity summary cache lives at `<records_data_root>/markdown_index/<entity_id>/file_summaries/` — assert that path contains ≥ 1 summary file after S5.
-* The only files under `${TMP_DOCS}/` must be the 5 user-authored `.md` from S2 + the 4 generated `index.md` from S6 = 9 total.
+* The only files under `${TMP_DOCS}/` must be the 5 user-authored `.md` from S2 + the 4 generated `index.md` from S6 + their 4 `index.md.json` sidecars = 13 total. (Changed 2026-11-13 by user decision, QA cycle qa-20261112-225208: the sidecar beside `index.md` is by design.)
 
 ### S9: Obsidian-style folder click — folder note wins, side panel renders  **[DEFERRED]**
 * Not yet implemented. The current `DocsViewer.tsx` is a flat per-process `.md` lister scoped to a single AgenticProcess — no folder tree, no Obsidian routing, no side panel mount point.

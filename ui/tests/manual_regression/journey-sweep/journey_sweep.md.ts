@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { apiBase } from '../_shared/api';
 import { selectViewMode } from '../_shared/view-mode';
 import { destroyVibeFixture, seedLastVibeChat, type VibeFixture } from '../vibe/_helpers';
 
@@ -95,6 +96,12 @@ async function buildOutsideVibe(): Promise<void> {
   await expect(page.locator('[data-tag="ViewModeChat"]:visible').first()).toBeVisible();
   await selectViewMode(page, 'standard');
   await expect(workspace()).toHaveCount(0);
+  // The switch records the session's mode with a save that is not awaited (`viewModeMemory.record`);
+  // leaving the page before it lands loses it, and the rail would reopen the build in Vibe.
+  const lastMode = async () =>
+    ((await (await page.request.get(`${apiBase()}/api/v1/graph/agentic_process/${fixture.processId}`)).json()).data ?? {})
+      .last_mode;
+  await expect.poll(lastMode, { message: 'the build remembers it was left outside Vibe' }).toBe('standard');
 }
 
 /** Start from the beginning, through the tray's own Start/Restart. */

@@ -147,8 +147,8 @@ async function userStreamInbox(page: Page) {
 
 test('1. the header line shows the user\'s channels as round marks', async ({ page }) => {
   const { bar, rows } = await userStreamInbox(page);
-  const line = page.getByTestId('stream-inbox-select-all-row');
-  await expect(line.getByTestId('attached-channels')).toHaveAttribute('data-owner', /^user-/);
+  // The user's channels sit at the far end of the top (verbs) row since 3dc7de55e, not on the header line.
+  await expect(bar).toHaveAttribute('data-owner', /^user-/);
 
   const marks = userMarksOf(bar);
   await expect(marks).toHaveCount(1);
@@ -229,14 +229,15 @@ test('3. the details popover is where on/off and delete live', async ({ page }) 
   await expect(mark).toHaveClass(/border-dashed/);
   await expect.poll(() => sourceStatus(sourceId)).toBe('disabled');
 
-  // On: a toast, and Slack owes a Verify — the "!" badge with the step under the name.
+  // On: a toast, and Slack owes a Verify — the step under its name. A source a person must act on
+  // leaves the marks for the one warnings chip (3dc7de55e), which counts it.
   await row.getByTestId('attached-channel-switch').click();
   await expect(
     page.locator('section[aria-label^="Notifications"] [data-sonner-toast]').filter({ hasText: 'Resumed — it polls on the next tick.' }),
   ).toBeVisible();
   await expect.poll(() => sourceStatus(sourceId)).toBe('setup');
-  await expect(mark).toHaveAttribute('data-state', 'parked');
-  await expect(mark).toContainText('!');
+  await expect(mark).toHaveCount(0);
+  await expect(bar.getByTestId('channel-warnings-chip')).toBeVisible();
   await expect(row.getByTestId('attached-channel-verify')).toHaveText('Setup required');
 
   // The Data Sources screen, from the (still open) list's footer; Verify there.
@@ -282,15 +283,16 @@ test('4. an agent\'s bar is its own', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 
-  // The stream inbox header line: the agent's own mark, parked on its Verify.
-  const line = page.getByTestId('stream-inbox-select-all-row');
-  const bar = line.getByTestId('attached-channels');
+  // The agent's own bar: its unverified source is not a mark but sits in the warnings chip,
+  // which lists it (3dc7de55e — a source a person must act on is never in both places).
+  const bar = agentBar;
   await expect(bar).toHaveAttribute('data-owner', `agent-${agentId}`);
-  const marks = bar.getByTestId('attached-channel');
-  await expect(marks).toHaveCount(1);
-  await expect(marks.first()).toHaveAttribute('aria-label', new RegExp(`^${AGENT_SOURCE}`));
-  await expect(marks.first()).toHaveAttribute('data-state', 'parked');
-  await expect(marks.first()).toContainText('!');
+  await expect(bar.getByTestId('attached-channel')).toHaveCount(0);
+  const warnings = bar.getByTestId('channel-warnings-chip');
+  await expect(warnings).toHaveText('1');
+  await warnings.click();
+  await expect(page.getByTestId('attached-channel-row').filter({ hasText: AGENT_SOURCE })).toHaveCount(1);
+  await page.keyboard.press('Escape');
   // The list renders — not the "no channel" empty state.
   await expect(page.getByTestId('agent-stream-inbox-view')).not.toContainText('No channel reaches this Agent yet');
 
