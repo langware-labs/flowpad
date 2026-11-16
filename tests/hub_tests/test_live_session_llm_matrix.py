@@ -1,5 +1,5 @@
-"""Live-session LLM matrix — every host worker runs the turn on ONE pure-direct
-OpenRouter endpoint (``z-ai/glm-5.3-flash``), no hub metering, no vendor account.
+"""Live-session LLM matrix — every host worker runs the turn on ONE hub endpoint:
+the host's own allowance on the LOCAL hub, funded by the hub's Vertex root.
 
 ``bob`` (raw HTTP, the GUEST) opens a session in a shared conversation and sends
 one prompt. ``alice`` (this process, the HOST) receives it over her real hub
@@ -7,39 +7,36 @@ WebSocket bridge, which routes it through ``process_inbound_prompt``; the host
 approves the session, and runs the turn on whichever CLI this
 row names — claude / codex / copilot / opencode.
 
-**Both sides are on the same direct endpoint.** The ``OPENROUTER_API_KEY`` is
-stored locally and its ``api_key`` ``LLMEndpoint`` is named on the host process
-itself (``ap.set_llm_endpoint``) — the resolver's hard rung, so it wins over any
-device login for THIS process without re-funding anything else on the box.
-Nothing here touches a native Anthropic/OpenAI/GitHub account or the hub's
-metered relay — the turn's wire is ``base_url = openrouter.ai`` verbatim.
+**The host process spends one named budget.** Alice's default allowance (minted
+by the hub's bootstrap, drawn on its Vertex-funded root) is named on the host
+process itself (``ap.set_llm_endpoint``) — the resolver's hard rung, so it wins
+over any device login for THIS process without re-funding anything else on the
+box. No provider key is read or stored on this box, and nothing here touches a
+native Anthropic/OpenAI/GitHub account.
 
-The one model differs only in how each CLI must NAME it: claude/codex/copilot take
-the bare slug ``z-ai/glm-5.3-flash`` (claude via the Anthropic-skin ``ANTHROPIC_MODEL``,
-which OpenRouter translates to GLM, tool use included); opencode namespaces its
-slugs, so it takes ``openrouter/z-ai/glm-5.3-flash``.
+The one model is the endpoint's ``sm`` size: each CLI asks for ``sm`` and the
+binding names it the way that CLI must (opencode namespaces its slugs).
 
 Proves, per harness:
-  1. naming the direct endpoint puts the SESSION worker in api-mode pointed at
-     ``openrouter.ai`` on the GLM slug — a free assertion on the spawn inputs,
-     before a token is spent;
+  1. naming the hub endpoint puts the SESSION worker in api-mode pointed at THAT
+     endpoint on its ``sm`` slug — a free assertion on the spawn inputs, before a
+     token is spent;
   2. a REAL turn through the unified-session gate comes back with the model's
      answer IN the session, and (session rule 4) NOT as a bubble in the thread.
 
 Gated on ``DEEP_TESTING`` (real CLIs, real tokens), a reachable local hub, a hub
-login, ``OPENROUTER_API_KEY``, a second guest identity (``BOB_EMAIL``/``BOB_PW``
-or the flowpad-app ``.env.local`` fallback). Skips a row when its CLI is absent.
+login, a second guest identity (``BOB_EMAIL``/``BOB_PW`` or the flowpad-app
+``.env.local`` fallback). Skips a row when its CLI is absent.
 
-    DEEP_TESTING=1 FLOWPAD_HUB_URL=http://localhost:8093 OPENROUTER_API_KEY=sk-or-... \
+    DEEP_TESTING=1 FLOWPAD_HUB_URL=http://localhost:8495 \
         BOB_EMAIL=bob@local.test BOB_PW=... \
-        uv run pytest tests/hub_tests/test_live_session_llm_matrix.py -v
+        uv run pytest tests/hub_tests/test_live_session_llm_matrix.py --long -v
 
 # do not increase timeout without approval
 """
 from __future__ import annotations
 
 import asyncio
-import os
 import shutil
 import time
 import uuid
@@ -57,19 +54,15 @@ from tests.test_settings import test_service_config
 pytestmark = [
     pytest.mark.skipif(
         not test_service_config.deep_testing,
-        reason="needs DEEP_TESTING: real CLIs, real OpenRouter tokens",
-    ),
-    pytest.mark.skipif(
-        not os.environ.get("OPENROUTER_API_KEY"),
-        reason="OPENROUTER_API_KEY is not set; the direct endpoint would have no credential",
+        reason="needs DEEP_TESTING: real CLIs, real tokens",
     ),
     pytest.mark.asyncio,
 ]
 
-SLUG = "z-ai/glm-5.3-flash"
+SIZE = "sm"
 
-#: ``(WorkerType, cli binary, model AS THAT CLI must name the one OpenRouter slug)``.
-#: One endpoint, one model; only the naming skin differs (see the module docstring).
+#: ``(WorkerType, cli binary, model the process asks for)``. One endpoint, one size: the
+#: binding turns ``sm`` into the endpoint's slug in each CLI's own spelling.
 def _worker(worker_type: WorkerType, binary: str, model: str):
     """One matrix row; a box without that CLI skips it at collection."""
     return pytest.param(
@@ -79,18 +72,18 @@ def _worker(worker_type: WorkerType, binary: str, model: str):
 
 
 WORKERS = [
-    _worker(WorkerType.CLAUDE_CODE, "claude", SLUG),
-    _worker(WorkerType.CODEX, "codex", SLUG),
-    _worker(WorkerType.COPILOT, "copilot", SLUG),
-    _worker(WorkerType.OPENCODE, "opencode", f"openrouter/{SLUG}"),
+    _worker(WorkerType.CLAUDE_CODE, "claude", SIZE),
+    _worker(WorkerType.CODEX, "codex", SIZE),
+    _worker(WorkerType.COPILOT, "copilot", SIZE),
+    _worker(WorkerType.OPENCODE, "opencode", SIZE),
 ]
 
 PROMPT = 'Reply with exactly the single word "pong" and nothing else.'
 EXPECTED = "pong"
 
 
-async def _direct_openrouter_endpoint():
-    """The LOCAL ``api_key`` endpoint for the stored OpenRouter key.
+async def _hosts_hub_allowance(email: str):
+    """The host's own default allowance on the hub (its root: the hub's Vertex funding).
 
     Per-PROCESS binding, deliberately: ``ap.set_llm_endpoint(...)`` is the
     sanctioned "spend this budget" seam (ladder rung 1, hard), so it beats any
@@ -99,11 +92,15 @@ async def _direct_openrouter_endpoint():
     on the machine and has to be undone in teardown, and a failure before that
     teardown leaves the shared DB poisoned for later tests.
     """
-    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
-    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
 
-    set_lm_api(os.environ["OPENROUTER_API_KEY"], LMApiProvider.OPENROUTER)
-    return await LLMEndpoint.ensure_for_secret(LMApiProvider.OPENROUTER.value)
+    await HubProxy.try_call("GET", "bootstrap")  # mints the default allowance on first contact
+    endpoints = await fetch_hub_llm_endpoints()
+    own = [e for e in endpoints if (e.name or "") == f"{email} default"]
+    if not own:
+        pytest.skip(f"the local hub offered the host no default allowance (it lists {len(endpoints)} endpoint(s))")
+    return own[0]
 
 
 @pytest.mark.timeout(600)  # real CLI + real network; do not increase without approval
@@ -131,8 +128,8 @@ async def test_session_turn_runs_direct_on_glm(
     hub = httpx.AsyncClient(timeout=10.0)
     bob = await guest_login(hub_base_url, hub)
 
-    # ── put the host box on the pure-direct OpenRouter endpoint ────────────────
-    endpoint = await _direct_openrouter_endpoint()
+    # ── the budget the host process spends: alice's hub allowance ─────────────
+    endpoint = await _hosts_hub_allowance(hub_login_payload["user"]["email"])
 
     # ── host: a project-mapped, shared conversation ───────────
     host_root = tmp_path / "host-project"
@@ -171,19 +168,20 @@ async def test_session_turn_runs_direct_on_glm(
     # touched, so no other process on this machine is re-funded by the test.
     await ap.set_llm_endpoint(endpoint)
 
-    # (1) FREE proof it is pure-direct, before a single token is spent: the spawn
-    # binding must exist (api mode, not a device login), be funded by the local
-    # api_key endpoint for openrouter (not the hub relay), and carry the GLM slug.
-    # Never interpolate ``auth.env`` into a message — it holds the provider key.
-    assert endpoint.kind == LLMEndpointKind.API_KEY, f"{binary}: funded by {endpoint.kind}, not a direct api_key endpoint"
-    assert endpoint.provider == "openrouter", f"{binary}: direct endpoint provider is {endpoint.provider!r}, not openrouter"
+    # (1) FREE proof of the funding, before a single token is spent: the spawn
+    # binding must exist (api mode, not a device login), point at THIS hub endpoint,
+    # and carry the endpoint's ``sm`` slug.
+    # Never interpolate ``auth.env`` into a message — it holds the hub token.
+    assert endpoint.kind == LLMEndpointKind.HUB, f"{binary}: funded by {endpoint.kind}, not a hub endpoint"
+    sized = (endpoint.tiers or {}).get(SIZE)
+    assert sized, f"{binary}: the hub endpoint reports no {SIZE!r} model ({endpoint.tiers!r})"
     auth = await resolve_worker_api_auth(ap)
     assert auth is not None, f"{binary}: api-mode did not bind — the turn would use device auth"
-    assert SLUG in (auth.model_slug or ""), f"{binary}: model slug is {auth.model_slug!r}, not the GLM slug"
-    # The RESOLVED binding, not the endpoint handed in: a pin the resolver misread once
-    # passed every check above and spawned against the hub relay with the local row's id.
+    assert (auth.model_slug or "").endswith(sized), f"{binary}: model slug is {auth.model_slug!r}, not {sized!r}"
+    # The RESOLVED binding, not the endpoint handed in: a pin the resolver misread
+    # would spawn against some other budget.
     wired = repr((auth.env, auth.config_overrides, auth.provider_options))
-    assert hub_base_url not in wired, f"{binary}: the spawn binding points at the hub relay, not openrouter"
+    assert endpoint.invoke_path() in wired, f"{binary}: the spawn binding does not point at the host's hub endpoint"
 
     # ── guest opens the session and sends ONE prompt ───────────────────────────
     hub_ws_bridge.install()
@@ -253,7 +251,7 @@ async def test_session_turn_runs_direct_on_glm(
         assert session is not None and session.host_process_id == procs[0].id
         assert session.approved_via == "manual"
 
-        print(f"\n  {binary:9s} → glm-5.3-flash direct: {answer[:60]!r}")
+        print(f"\n  {binary:9s} → {sized} via the hub: {answer[:60]!r}")
     finally:
         await hub.aclose()
         await asyncio.shield(safe_exit(ap))

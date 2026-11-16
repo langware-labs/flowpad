@@ -12,6 +12,12 @@ Doubly gated — skips cleanly unless BOTH hold:
   - ``DEEP_TESTING`` is enabled (``tests.test_settings.test_service_config``)
   - the vendor binary is on ``PATH`` (``shutil.which``)
 
+The harnesses with no vendor login of their own here (opencode, deepagents) run their turn
+funded the way a new Flowpad user's box funds them: through a LOCAL hub
+(``FLOWPAD_HUB_URL``), signed in as a brand-new user whose default allowance draws on the
+hub's Vertex-funded root, bound by the production ``binding_for_candidate``. No provider
+key is read or stored.
+
 We spawn the binary directly (not via ``…CLIStreamWorker``) because the worker
 resolves its executable through the backend's discovered harness capability,
 which isn't populated in a bare pytest process — ``shutil.which`` + the
@@ -144,44 +150,59 @@ _copilot = pytest.param(
     id="copilot",
 )
 # OpenCode's terminal is ``step_finish`` with ``part.reason == "stop"``; the same
-# event with ``reason == "tool-calls"`` is a continuation, not an ending. It needs
-# a provider key read straight from the environment (opencode resolves OpenRouter
-# with no config file at all), so the turn SKIPS rather than fails when none is
-# configured — an unauthenticated CLI is an environment fact, not a driver bug.
+# event with ``reason == "tool-calls"`` is a continuation, not an ending. Its device
+# login is signed out under the test HOME, so its turn is funded through the hub
+# (``hub_funding``); the hub binding moves only its OpenRouter provider's base URL.
 _opencode = pytest.param(
     "opencode", OpenCodeAgentOptions, {"step_finish"},
-    marks=pytest.mark.skipif(
-        shutil.which("opencode") is None or not os.environ.get("OPENROUTER_API_KEY"),
-        reason="opencode CLI not installed or no OPENROUTER_API_KEY",
-    ),
+    marks=pytest.mark.skipif(shutil.which("opencode") is None, reason="opencode CLI not installed"),
     id="opencode",
 )
 
 
 def _deepagents_options(**kwargs) -> DeepAgentsAgentOptions:
-    """The runner needs a session id (the driver preassigns one) and its funding in the env."""
+    """The runner needs a session id (the driver preassigns one); its funding rides ``env_vars``."""
     from flow_sdk.api.api_types.identifier import mint_uuid
 
-    return DeepAgentsAgentOptions(
-        session_id=mint_uuid(),
-        env_vars={
-            "FLOWPAD_DEEPAGENTS_BASE_URL": "https://openrouter.ai/api/v1",
-            "FLOWPAD_DEEPAGENTS_API_KEY": os.environ.get("OPENROUTER_API_KEY", ""),
-        },
-        **kwargs,
-    )
+    return DeepAgentsAgentOptions(session_id=mint_uuid(), **kwargs)
 
 
 # Our own runner over LangChain's deepagents: the stream is OURS, so "drift" here means the
 # engine changed the message shapes the runner translates. Its terminal is ``result``.
 _deepagents = pytest.param(
     "deepagents", _deepagents_options, {"result"},
-    marks=pytest.mark.skipif(
-        not worker_is_installed("deepagents") or not os.environ.get("OPENROUTER_API_KEY"),
-        reason="deepagents harness not installed or no OPENROUTER_API_KEY",
-    ),
+    marks=pytest.mark.skipif(not worker_is_installed("deepagents"), reason="deepagents harness not installed"),
     id="deepagents",
 )
+
+#: Harnesses with no vendor login to ride in this env: their turn spends the hub allowance.
+_HUB_FUNDED = frozenset({"opencode", "deepagents"})
+
+
+@pytest.fixture
+async def hub_funding(worker) -> dict:
+    """The options a hub-funded harness spawns with -- ``env_vars``, ``model``, opencode's
+    ``provider_options`` -- from the production binding for the box's chosen source; ``{}`` for a
+    harness that rides its own vendor login. SKIPs (via ``fund_worker_without_a_login``) when no
+    LOCAL hub funds this box."""
+    if worker not in _HUB_FUNDED:
+        return {}
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates, pick_llm_candidate
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind
+    from tests.long_tests.conftest import fund_worker_without_a_login
+
+    await fund_worker_without_a_login(worker, even_with_device_login=True)
+    chosen = pick_llm_candidate(await list_llm_candidates(worker))
+    assert chosen is not None and chosen.endpoint.kind == LLMEndpointKind.HUB, (
+        f"{worker}: funded through the hub, yet the box chose {chosen and chosen.endpoint.kind}"
+    )
+    auth = await binding_for_candidate(worker, (chosen.endpoint, chosen.source), tier="sm")
+    assert auth is not None and auth.env, f"{worker}: the hub endpoint produced no spawn binding"
+    funding: dict = {"env_vars": dict(auth.env), "model": auth.model_slug}
+    if auth.provider_options:
+        funding["provider_options"] = dict(auth.provider_options)
+    return funding
 
 
 @pytest.mark.parametrize("worker, options_cls, success_types", [_codex, _copilot, _opencode, _deepagents])
@@ -199,10 +220,19 @@ def test_version_smoke(worker, options_cls, success_types):
 
 @pytest.mark.parametrize("worker, options_cls, success_types", [_codex, _copilot, _opencode, _deepagents])
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_headless_turn_parses(worker, options_cls, success_types, tmp_path: Path):
-    _run_turn_and_parse(
-        worker,
-        options_cls(workdir=str(tmp_path / "work"), model=small_model_for(worker)),
-        tmp_path,
-        success_types=success_types,
-    )
+def test_headless_turn_parses(worker, options_cls, success_types, hub_funding, tmp_path: Path):
+    funding = dict(hub_funding)
+    provider_options = funding.pop("provider_options", None)
+    funding.setdefault("model", small_model_for(worker))
+    options = options_cls(workdir=str(tmp_path / "work"), **funding)
+    if provider_options:
+        # opencode reads its provider block from the per-process ``opencode.json`` only, which
+        # production writes through the assets channel; the smoke has no process, so a fresh id
+        # stands in for one -- without it the hub's base URL never reaches the CLI.
+        from types import SimpleNamespace
+
+        from flow_sdk.api.api_types.identifier import mint_uuid
+
+        options.provider_options = provider_options
+        options.apply_instruction_assets(SimpleNamespace(process_id=mint_uuid(), assets_dir=None))
+    _run_turn_and_parse(worker, options, tmp_path, success_types=success_types)

@@ -11,8 +11,8 @@ carried by the host:
 
 Per type, B must hold the asset at the sender's canonical place, indexed with the
 SAME id and the same shared props, filed under B's project — and the asset must be
-ALIVE on B: a real model turn (claude, haiku through B's own LLM endpoint, funded
-by an OpenRouter key via ``lm_keys`` → ``llm-endpoint/select``) has to use it. Each
+ALIVE on B: a real model turn (claude, haiku through a capped PUBLIC endpoint of the
+LOCAL hub funded by Vertex, bound the loginless way: ``flow llm user use <id> --hub``) has to use it. Each
 asset carries a per-run word that appears nowhere but in that asset, so an answer
 containing it cannot come from the prompt.
 
@@ -44,7 +44,6 @@ from pathlib import Path
 import httpx
 import pytest
 
-from tests.long_tests.conftest import _openrouter_key
 
 REPO = Path(__file__).resolve().parents[2]
 IMAGE = os.environ.get("FLOWPAD_DOCKER_IMAGE", "flowpad-backend:offline-share")
@@ -52,6 +51,9 @@ IMAGE = os.environ.get("FLOWPAD_DOCKER_IMAGE", "flowpad-backend:offline-share")
 #: external connector looks like.
 SHIPPED = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets"
 DRIVER = "telegram"
+#: Claude Haiku as the Vertex root serves it (the QA program funds models through Vertex).
+MODEL = os.environ.get("FLOWPAD_SHARE_MODEL", "claude-haiku-5-5")
+
 pytestmark = [pytest.mark.timeout(900)]  # two fresh containers + four model turns; do not increase without approval
 
 SENDER, RECEIVER = "/root/sender", "/root/receiver"
@@ -93,8 +95,11 @@ def _api(c: dict, method: str, route: str, **kw) -> dict:
 
 def _start(label: str) -> dict:
     name, port = f"flowpad-share-{label}-{uuid.uuid4().hex[:6]}", _free_port()
-    _sh("docker", "run", "-d", "--name", name, "-p", f"{port}:{port}", "-e", f"LOCAL_SERVER_PORT={port}",
-        "-e", "IS_SANDBOX=1", "-e", "MINIHUB_RELOAD=False", IMAGE)
+    # A throwaway box the host-side test calls over the port map: it holds no cookie-gate token,
+    # so the gate is off (FLOWPAD_COOKIE_GATE=off), as CI runs its test backends.
+    _sh("docker", "run", "-d", "--name", name, "-p", f"{port}:{port}", "--add-host=host.docker.internal:host-gateway",
+        "-e", f"LOCAL_SERVER_PORT={port}",
+        "-e", "IS_SANDBOX=1", "-e", "MINIHUB_RELOAD=False", "-e", "FLOWPAD_COOKIE_GATE=off", IMAGE)
     base = f"http://localhost:{port}"
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
@@ -113,9 +118,9 @@ def _start(label: str) -> dict:
 def machines():
     if shutil.which("docker") is None or _sh("docker", "info", check=False).returncode != 0:
         pytest.skip("docker is not available")
-    key = _openrouter_key()
-    if not key:
-        pytest.skip("OPENROUTER_API_KEY is not set (env or .env.local)")
+    from tests.long_tests._vertex_hub import public_endpoint_for_containers
+
+    endpoint_id, hub_in_container = public_endpoint_for_containers("offline share", cost_usd_total=2.0)
     # Always build: the image must be THIS tree (layer cache keeps a no-change rebuild quick).
     _sh("docker", "build", "-f", "docker/Dockerfile.flow-backend", "-t", IMAGE, ".", cwd=REPO)
     started: list[dict] = []
@@ -124,7 +129,7 @@ def machines():
         started.append(a)
         b = _start("b")
         started.append(b)
-        b["key"] = key
+        b["endpoint_id"], b["hub"] = endpoint_id, hub_in_container
         yield a, b
     finally:
         if not os.environ.get("FLOWPAD_OP_KEEP"):
@@ -271,24 +276,21 @@ def _index(c: dict, path: str) -> None:
 
 
 def _fund(c: dict) -> None:
-    """B's own LLM endpoint: the product's two routes, then haiku for every tier."""
-    r = httpx.post(f"{c['base']}/api/v1/graph/compute_node/@local/lm_keys",
-                   json={"provider": "openrouter", "key": c["key"]}, timeout=60)
-    assert r.status_code == 200 and (r.json().get("data") or {}).get("valid") is True, r.text[:300]
-    _api(c, "POST", "graph/compute_node/@local/llm-endpoint/select",
-         json={"harness": "claude", "kind": "api_key", "provider": "openrouter"})
+    """B's LLM: a public hub endpoint bound the loginless way, then haiku for every tier."""
+    bound = _cli(c, f"flow llm user use {c['endpoint_id']} claude --hub {c['hub']}")
+    assert bound["code"] == 0, bound["raw"][-800:]
     got = _py(c, '''
 import asyncio, json
 from flow_sdk.builtin.capability import Capability
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
 async def main():
     cap = await Capability.get_by_kind(worker_capability_kind("claude"))
-    cap.model_map = {"openrouter": {t: "anthropic/claude-haiku-4.5" for t in ("sm", "md", "lg")}}
+    cap.model_map = {"flowpad": {t: %r for t in ("sm", "md", "lg")}}
     await cap.save()
     print("RESULT " + json.dumps([cap.auth_mode, cap.api_provider]))
 asyncio.run(main())
-''')
-    assert got == ["api", "openrouter"], got
+''' % MODEL)
+    assert got == ["api", "flowpad"], got
 
 
 def _parse(transcript: str) -> tuple[list[dict], str, bool]:
@@ -345,7 +347,7 @@ def _turn(c: dict, process_id: str) -> dict:
 def _claude(c: dict, project_id: str, instruction: str) -> dict:
     proc = _api(c, "POST", "graph/agentic_process", json={
         "worker_type": "claude_code", "pty_mode": False, "workdir": RECEIVER, "project_id": project_id,
-        "name": "offline-share-alive", "cli_config": {"model": "anthropic/claude-haiku-4.5"},
+        "name": "offline-share-alive", "cli_config": {"model": MODEL},
     })
     _api(c, "POST", f"graph/agentic_process/{proc['id']}/execute", json={"instruction": instruction})
     return _turn(c, proc["id"])

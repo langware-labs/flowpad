@@ -22,7 +22,9 @@ fi
 if [[ "${BARE:-}" == "1" ]]; then
   IMAGE="${IMAGE:-flowpad-loginless:bare}"
   DOCKERFILE=tests/loginless_e2e/Dockerfile.bare
-  SECOND="flow process start \"$PROMPT\""
+  # A public endpoint publishes no size map to an anonymous box (FLOWPAD-2318), so LOGINLESS_BARE_MODEL
+  # may name the model it serves, as LOGINLESS_MODEL does for the snippet.
+  SECOND="flow process start ${LOGINLESS_BARE_MODEL:+--model $LOGINLESS_BARE_MODEL} \"$PROMPT\""
 else
   IMAGE="${IMAGE:-flowpad-loginless:test}"
   DOCKERFILE=tests/loginless_e2e/Dockerfile
@@ -50,6 +52,6 @@ ENDPOINT_ID="${ENDPOINT_ID:-$(HUB="$HUB" uv run python tests/loginless_e2e/make_
 echo "public endpoint: $ENDPOINT_ID" >&2
 
 # THE two commands. Nothing before them, nothing between them.
-docker run --rm --add-host=host.docker.internal:host-gateway -e LOGINLESS_MODEL "$IMAGE" sh -c "
+docker run --rm --add-host=host.docker.internal:host-gateway -e LOGINLESS_MODEL -e MATRIX_MODELS "$IMAGE" sh -c "
   flow llm user use $ENDPOINT_ID --hub $HUB_IN_CONTAINER &&
   $SECOND"

@@ -10,9 +10,10 @@ two commands (``tests/loginless_e2e/run.sh``) and an agent answers:
 and on a box with ONLY the wheel (no harness CLI), the CLI form: ``flow process start "<prompt>"``.
 
 Needs a hub YOU started for this, running code that knows ``public`` endpoints, plus docker and a
-real OpenRouter key (the endpoint still spends one -- only the BOX is credential-free):
+real provider behind the endpoint (only the BOX is credential-free): a Vertex root on the hub
+(``VERTEX_ROOT_ID``; the QA program's funding) or an OpenRouter key:
 
-    LOGINLESS_HUB_URL=http://localhost:8094 OPENROUTER_API_KEY=... \\
+    LOGINLESS_HUB_URL=http://localhost:8094 VERTEX_ROOT_ID=<root id> \\
         uv run pytest tests/long_tests/test_loginless_in_docker.py
 """
 
@@ -45,18 +46,22 @@ def rig() -> dict:
         pytest.skip("LOGINLESS_HUB_URL is not set (a hub started for this test)")
     if not re.match(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$", HUB):
         pytest.skip("refusing a non-local hub: this test creates an owner and a public budget on it")
-    if shutil.which("docker") is None or not _openrouter_key():
-        pytest.skip("needs docker and an OpenRouter key")
-    return {**os.environ, "HUB": HUB, "OPENROUTER_API_KEY": _openrouter_key()}
+    if shutil.which("docker") is None or not (_openrouter_key() or os.environ.get("VERTEX_ROOT_ID")):
+        pytest.skip("needs docker and a funded root: VERTEX_ROOT_ID (a Vertex root on the hub) or an OpenRouter key")
+    rig = {**os.environ, "HUB": HUB}
+    if _openrouter_key():
+        rig["OPENROUTER_API_KEY"] = _openrouter_key()
+    return rig
 
 
 def _owner() -> dict:
     """The auth header of the hub account ``make_public_endpoint.py`` created the budget with."""
-    token = requests.post(
-        f"{HUB}/api/v1/login/local",
-        json={"email": "loginless-owner@local.test", "password": "owner-pw-1234"},
-    ).json()["data"]["token"]
-    return {"Authorization": f"Bearer {token}"}
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("make_public_endpoint", REPO / "tests/loginless_e2e/make_public_endpoint.py")
+    maker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(maker)
+    return {"Authorization": f"Bearer {maker.owner_token(HUB)}"}
 
 
 def _run(rig: dict, **extra: str) -> subprocess.CompletedProcess:
@@ -143,6 +148,11 @@ def test_every_worker_answers_every_family_and_size_after_its_install_wizard(rig
     draws on a Vertex root first and OpenRouter for what Vertex cannot serve
     (``make_matrix_endpoint.py``; needs the Vertex service-account JSON on the host).
     """
+    if not _openrouter_key():
+        pytest.skip(
+            "the 60-cell matrix's entry chains an OpenRouter fallback for what Vertex cannot serve "
+            "(make_matrix_endpoint.py: codex's Responses wire, kimi/glm) -- no OpenRouter key here"
+        )
     done = _run(rig, MATRIX="1")
     lines = done.stdout.splitlines()
     wizards = [line for line in lines if line.startswith("WIZARD ")]
