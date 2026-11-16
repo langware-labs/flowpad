@@ -473,16 +473,6 @@ export function MessageBubble({
               />
             </span>
           )}
-          {!editing && messageSession && (
-            <span className="self-center">
-              <OpenSessionButton
-                onOpen={messageSession.onOpen}
-                name={messageSession.name}
-                title={t`Open the session started from this message`}
-                testIdPrefix={`message-${flowMessageId}`}
-              />
-            </span>
-          )}
         </div>
         {quoted && <QuotedMessage sender={quoted.sender} text={quoted.text} onJump={quoted.onJump} />}
         {flowMessage?.mark && <MessageMarkChip mark={flowMessage.mark} />}
@@ -505,7 +495,7 @@ export function MessageBubble({
           />
         )}
         {footer}
-        {!editing && (onReply || onForwardMessage || (flowMessageId && onLaunchWorker)) && (
+        {!editing && (onReply || onForwardMessage || messageSession || (flowMessageId && onLaunchWorker)) && (
           <div className="mt-1.5 flex items-center gap-1.5" data-testid="message-reply-forward">
             {onReply && (
               <button type="button" onClick={onReply} className={LABELED_ACTION_CLASS} data-testid="message-reply">
@@ -524,13 +514,24 @@ export function MessageBubble({
                 {t`Forward`}
               </button>
             )}
-            {flowMessageId && onLaunchWorker && (
-              <QuickWorkerButton
-                onLaunch={onLaunchWorker}
-                labeled
-                className={LABELED_ACTION_CLASS}
-                testId={`message-quick-worker-${flowMessageId}`}
+            {messageSession ? (
+              // Once a session was started from this message, the button opens it, named by its short description.
+              <OpenSessionButton
+                onOpen={messageSession.onOpen}
+                name={messageSession.name}
+                title={t`Open the session started from this message`}
+                testIdPrefix={`message-${flowMessageId}`}
               />
+            ) : (
+              flowMessageId &&
+              onLaunchWorker && (
+                <QuickWorkerButton
+                  onLaunch={onLaunchWorker}
+                  labeled
+                  className={LABELED_ACTION_CLASS}
+                  testId={`message-quick-worker-${flowMessageId}`}
+                />
+              )
             )}
           </div>
         )}

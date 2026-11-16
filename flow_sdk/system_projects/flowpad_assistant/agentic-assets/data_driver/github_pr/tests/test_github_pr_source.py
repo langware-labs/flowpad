@@ -187,9 +187,11 @@ class _FakeGithub:
         created_before = next((t[len("created:<"):] for t in terms if t.startswith("created:<")), None)
         owners = [t.split(":", 1)[1] for t in terms if t.startswith(("org:", "user:"))]
         who = ("bot" if "author:app/dependabot" in terms else "review-requested" if "review-requested:@me" in terms
+               else "mentions" if "mentions:@me" in terms
                else "author" if "author:@me" in terms else "assignee")
         matches = {"bot": lambda p: p["author"] == "dependabot[bot]", "review-requested": lambda p: self.me in p["reviewers"],
-                   "author": lambda p: p["author"] == self.me, "assignee": lambda p: p["assignee"] == self.me}[who]
+                   "author": lambda p: p["author"] == self.me,
+                   "mentions": lambda p: any(f"@{self.me}" in c["body"] for c in p["comments"]), "assignee": lambda p: p["assignee"] == self.me}[who]
         rows = [p for p in self.prs.values() if p["state"] == "open" and (not repos or p["repo"] in repos) and (since is None or p["updated_at"] >= since)
                 and (not owners or p["repo"].split("/")[0] in owners)
                 and (created_before is None or p["created_at"] < created_before) and matches(p)]
@@ -251,7 +253,7 @@ async def test_conformance(check, github):
 # ── reading ──────────────────────────────────────────────────────────────────
 
 
-async def test_comments_reviews_events_and_checks_are_one_conversation(github):
+async def test_only_the_chat_is_one_conversation_each_message_linking_back(github):
     gh = github.gh
     pr = gh.pr(PR, title="Speed up the indexer")
     gh.comment(PR, "looks good?", user="dana")
@@ -274,22 +276,11 @@ async def test_comments_reviews_events_and_checks_are_one_conversation(github):
     assert by_key[f"review-comment-{root['id'] + 1}"].data.in_reply_to.key == f"review-comment-{root['id']}"
     texts = {k: by_key[k].data.text for k in by_key}
     assert texts["review-55"] == "dana approved"
-    assert texts["event-71"] == "dana assigned you"
-    assert texts["commit-abc123"] == f"{ME} pushed 1 commit: Cache the walk"
+    assert set(by_key) == {"comment-1001", f"review-comment-{root['id']}", f"review-comment-{root['id'] + 1}", "review-55"}, (
+        "a push, CI, an assignment, a label or a pending review is not chat"
+    )
     assert "event-73" not in texts, "a merged event is the closed event's twin, never its own message"
-    assert texts[f"check-{pr['sha']}"] == "CI passed · 3 checks"
-    assert "review-56" not in by_key and "event-72" not in by_key, "a pending review or a label is not a message"
-    assert by_key["event-71"].data.sender.name == "dana"
     assert [i.data.sent_at for i in items] == sorted(i.data.sent_at for i in items)
-
-
-async def test_a_failing_check_says_how_many_and_a_running_one_says_nothing(github):
-    gh = github.gh
-    gh.pr("octo/app#1")["checks"] += [{"id": 1, "status": "completed", "conclusion": "failure", "completed_at": gh.tick()},
-                                      {"id": 2, "status": "completed", "conclusion": "success", "completed_at": gh.tick()}]
-    gh.pr("octo/app#2")["checks"] += [{"id": 3, "status": "in_progress"}]
-    items, _, _ = await _all(_source(github.base))
-    assert [i.data.text for i in items if i.origin.key.startswith("check-")] == ["CI failed · 1 of 2 checks"]
 
 
 async def test_paging_crosses_search_pages_and_slices_within_one(github, monkeypatch):
@@ -421,6 +412,17 @@ async def test_with_repos_set_the_bot_search_is_scoped_to_them(github):
     items, _, _ = await _all(_source(github.base, repos=["octo/deps"]))
     assert {i.data.conversation.key for i in items} == {"octo/deps#70"}
     assert not any(q == "/user/orgs" for _, q in gh.calls)
+
+
+async def test_a_pr_that_mentions_me_is_a_conversation_with_a_link_per_comment(github):
+    gh = github.gh
+    gh.pr("tzahi/ui#9", assignee="tzahi", reviewers=())
+    c = gh.comment("tzahi/ui#9", f"@{ME} can you confirm the policy?", user="tzahi")
+    gh.pr("tzahi/ui#10", assignee="tzahi", reviewers=())
+    gh.comment("tzahi/ui#10", "no mention here", user="tzahi")
+    items, _, _ = await _all(_source(github.base))
+    mine = [i for i in items if i.data.conversation.key.startswith("tzahi/")]
+    assert [(i.data.conversation.key, i.origin.key, i.origin.url) for i in mine] == [("tzahi/ui#9", f"comment-{c['id']}", c["html_url"])]
 
 
 async def test_the_assigned_filter_lists_only_prs_assigned_to_me(github):
@@ -715,14 +717,6 @@ async def test_a_review_is_marked_by_its_state_and_a_comment_is_not(github):
         "review-67": None,
     }
 
-
-async def test_ci_is_sent_by_the_check_app_else_ci(github):
-    gh = github.gh
-    gh.pr("octo/app#1")["checks"] += [{"id": 1, "status": "completed", "conclusion": "success", "completed_at": gh.tick(), "app": {"name": "GitHub Actions"}}]
-    gh.pr("octo/app#2")["checks"] += [{"id": 2, "status": "completed", "conclusion": "success", "completed_at": gh.tick()}]
-    items, _, _ = await _all(_source(github.base))
-    senders = {i.data.conversation.key: i.data.sender.name for i in items if i.origin.key.startswith("check-")}
-    assert senders == {"octo/app#1": "GitHub Actions", "octo/app#2": "CI"}
 
 
 def test_every_action_icon_resolves_in_the_icon_registry():
