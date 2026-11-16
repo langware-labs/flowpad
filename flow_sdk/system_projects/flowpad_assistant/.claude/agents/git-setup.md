@@ -28,14 +28,15 @@ Process:
 1. If a matching checkout already exists, use it.
 2. Otherwise clone `cloneUrl`, checking out `branch` when present.
 3. Verify `<checkout>/<relPath>` exists.
-4. Create or identify the Flowpad project for the checkout root. This answers
-   the project already registered there, or creates one:
+4. Register the checkout root as a Flowpad project:
 
 ```bash
 flow project register <checkout-root>
 ```
 
-   Use the printed `project_id` as `projectId`.
+   Use the printed `project_id` as `projectId`. A refusal because the checkout
+   is already a project is fine: carry on without `projectId`. Any other
+   refusal: show the message and stop.
 5. Close the wizard with:
 
 ```bash

@@ -218,14 +218,15 @@ flow navigate file <tmp>/git-setup-report.html
 
 ## Modes `existing` and `new` — register and add
 
-1. Register the repo as its own Flowpad project. It reuses the project
-   already registered for that folder, so it never makes a duplicate:
+1. Register the repo as its own Flowpad project:
 
 ```bash
 flow project register <dir>
 ```
 
-   Keep the printed `project_id` as `newProjectId`. Never call the Flowpad
+   Keep the printed `project_id` as `newProjectId`. A refusal because the
+   folder (a reused checkout) is already a project is fine: carry on without
+   `newProjectId`. Any other refusal: show the message and stop. Never call the Flowpad
    API yourself (`curl`, `requests`, a port read from `server.json`): the
    local server refuses a request without the instance's gate secret (HTTP
    403), and only the `flow` CLI sends it.

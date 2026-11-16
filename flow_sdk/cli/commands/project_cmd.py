@@ -326,16 +326,23 @@ def setup_project(
 
 @project_app.command("register")
 def register_project(
-    folder: Annotated[str, typer.Argument(help="The folder to register, e.g. a fresh clone.")],
+    folder: Annotated[str, typer.Argument(help="The project's folder.")],
 ) -> None:
-    """Register FOLDER as a Flowpad project and print its id. A folder that already is one answers that
-    project — never a duplicate. Goes through the CLI's gated transport, so it works on a gated instance."""
-    from flow_sdk.cli.commands._common import caller_abs_path, discover_port, ok, project_for_path  # noqa: PLC0415
+    """Register FOLDER as a Flowpad project, named after it, and print its id. The server's refusal is passed
+    through as is. Goes through the CLI's gated transport, so it works on a gated instance."""
+    from flow_sdk.cli.commands._common import (  # noqa: PLC0415
+        caller_abs_path,
+        discover_port,
+        graph_url,
+        ok,
+        post_graph_json,
+    )
+    from flow_sdk.cli.commands.dep_cmd import _refused  # noqa: PLC0415
 
     path = caller_abs_path(folder)
-    if not os.path.isdir(path):
-        fail(EXIT_INVALID_ARG, "NOT_A_FOLDER", f"{path} is not a folder")
-    ok({"project_id": project_for_path(discover_port(), path, create=True), "path": path})
+    body = {"type": "project", "name": os.path.basename(path.rstrip("\\/")) or path, "fs_storage_mount_path": path}
+    created = post_graph_json(graph_url(discover_port(), "project"), body, on_error=_refused)
+    ok({"project_id": created.get("id"), "path": path})
 
 
 @project_app.command("load")
