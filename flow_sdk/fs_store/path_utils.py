@@ -206,6 +206,25 @@ def _in_instance_user_dir(path: str, instances_root: str) -> bool:
     return len(parts) >= 3 and parts[1] in INSTANCE_USER_DIRS and all(parts[:3])
 
 
+def is_instance_user_content(path: Path | str) -> bool:
+    """Whether *path* is a project inside an instance's own user dir (``<instances>/<name>/workspace/<p>``).
+
+    Everything else under ``flow_home`` is Flowpad's state; these are real projects — never protected
+    from deletion as state, and walked by the indexer (``special_folders.classify_special_folder``)."""
+    keyed = _path_policy_key(path)
+    if keyed is None:
+        return False
+    flavour, candidate, _ = keyed
+    try:
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        raw = getattr(get_instance_settings(), "instances_root", None)
+    except Exception:
+        raw = None
+    instances = _root_key(raw, flavour) if raw else None
+    return bool(instances) and _in_instance_user_dir(candidate, instances)
+
+
 def _temp_root_keys(flavour: str) -> frozenset[str]:
     raw_roots = (
         tempfile.gettempdir(),
@@ -301,9 +320,7 @@ def _is_protected_keyed(path: Path | str, keyed: tuple[str, str, str] | None) ->
             value = getattr(settings, attr, None)
             if value:
                 internal_roots.append(value)
-    raw_instances = getattr(settings, "instances_root", None) if settings is not None else None
-    instances = _root_key(raw_instances, flavour) if raw_instances else None
-    if instances and _in_instance_user_dir(candidate, instances):
+    if is_instance_user_content(path):
         return False
     for raw_root in internal_roots:
         root = _root_key(raw_root, flavour)

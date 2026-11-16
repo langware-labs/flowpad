@@ -39,6 +39,8 @@ from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 
+from flow_sdk.fs_store.path_utils import is_instance_user_content
+
 # ── persisted per-folder state (preferences.json values) ─────────────────────
 STATE_ASK = "ask"      # default / missing — surface a consent request
 STATE_SKIP = "skip"    # user declined — never walk
@@ -200,7 +202,12 @@ def classify_special_folder(path: str | Path) -> SpecialFolder | None:
         return None
     # sf.path is pre-resolved in _special_folders_for_home, so this is a pure
     # in-memory containment check (is_relative_to covers ``== or under``).
-    return next((sf for sf in special_folders() if p.is_relative_to(sf.path)), None)
+    found = next((sf for sf in special_folders() if p.is_relative_to(sf.path)), None)
+    # A project inside an instance's own workspace (``<flow_home>/instances/<name>/workspace/<project>``)
+    # is a real project, not Flowpad's state — the same exemption ``is_protected_path`` makes.
+    if found is not None and found.category == "internal" and is_instance_user_content(p):
+        return None
+    return found
 
 
 def folder_state(category: str) -> str:
