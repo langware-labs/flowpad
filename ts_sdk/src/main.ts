@@ -19,6 +19,7 @@ import { ContextEntitiesEnum } from './FlowSync/context';
 import { getContextEntityFromLocalStorage, setContextEntityToLocalStorage } from './FlowSync/context-local-storage';
 import { cloudManager } from './services/cloud_login';
 import { privacyManager } from './services/privacy_mode';
+import { sentryInfoListener } from './services/sentry_info';
 import { ConnectionManager } from './websocket';
 import type { BootstrapInfo } from './models/BootstrapInfo';
 import { applyBootstrapUser } from './session-refresh';
@@ -246,6 +247,7 @@ export function asyncSdkInit(): Promise<void> {
         await Promise.all([
           run('cloud-listeners', () => cloudManager.startSubscriptions()),
           run('privacy-listeners', () => privacyManager.startSubscriptions()),
+          run('sentry-info-listener', () => sentryInfoListener.startSubscriptions()),
         ]);
         if (dataContext.user) await ConnectionManager.getInstance().connect();
       }),

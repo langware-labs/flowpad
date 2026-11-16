@@ -34,6 +34,15 @@ class PrivacyModeMessage(BaseMessage):
     privacy_mode: str  # "local" | "connected"
 
 
+class SentryInfoMessage(BaseMessage):
+    """Broadcast when this sandbox's browser error-reporting config changes (set, replaced,
+    cleared or expired), so every open client starts, reconfigures or stops Sentry without a
+    reload. ``None`` means off."""
+
+    message_type: str = WSMessageType.SENTRY_INFO_MSG.value
+    sentry_info: Optional[Dict[str, str]] = None
+
+
 class ToplogStateMessage(BaseMessage):
     """Broadcast when this instance's toplog state changes, so every open client
     updates its in-memory tag set live (no reload). See flow_sdk/toplog.py."""

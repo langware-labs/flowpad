@@ -16,6 +16,7 @@ import '@src/tabs/agentic-process-tab-adapter';
 import { router } from './router';
 import { NavigationActions } from '@src/navigation/NavigationActions';
 import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
+import { reportError, startSentryReaction } from '@src/telemetry/sentry';
 import './styles/highlightjs.css';
 
 function defineGlobals() {
@@ -80,6 +81,8 @@ async function init() {
   defineGlobals();
   bindNavigationTrace();
   bindUncaughtErrorTrace();
+  // Follows the bootstrap `initSdk` stores (and every later write) — it never fetches anything.
+  startSentryReaction();
   await initDesktopBackend(sdkConfig);
   // Seed toplog state + subscribe to live tag toggles. Without this the
   // frontend `toplog.log(...)` calls (incl. the `navigation` tag) are no-ops
@@ -98,6 +101,7 @@ async function init() {
             router={router}
             onError={(error) => {
               console.error('Error loading session:', error);
+              reportError(error, 'router');
               toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=router_on_error err:`, error);
             }}
           />

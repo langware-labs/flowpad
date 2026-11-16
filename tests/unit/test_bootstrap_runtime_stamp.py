@@ -113,3 +113,59 @@ async def test_hub_assignment_overrides_the_electron_flag(cached_payload):
         tab = await bootstrap_route._with_runtime(cached_payload, False)
         assert shell.data.runtime.kind == RuntimeKind.AGENT
         assert tab.data.runtime.kind == RuntimeKind.AGENT
+
+
+_SENTRY = {"dsn": "https://0123456789abcdef0123456789abcdef@o1.ingest.us.sentry.io/11", "environment": "staging"}
+
+
+@pytest.mark.parametrize(
+    ("assigned", "electron", "reports"),
+    [
+        (RuntimeKind.SANDBOX, False, True),
+        (RuntimeKind.AGENT, False, False),  # agent boxes stay off for now
+        (None, True, False),  # desktop
+        (None, False, False),  # local browser tab
+    ],
+)
+@pytest.mark.asyncio
+async def test_only_a_sandbox_reports_errors(cached_payload, assigned, electron, reports):
+    """`sentry_info` is stamped per request: the stored value on a sandbox, null everywhere else --
+    even when a value is stored, so a desktop can never start Sentry."""
+    from flow_sdk.instance_settings import runtime, sentry_info
+    from flow_sdk.schema.data_spec.sentry_info_spec import SentryInfo
+
+    with (
+        patch.object(runtime, "get_assigned_runtime", return_value=assigned),
+        patch.object(sentry_info, "get_sentry_info", return_value=SentryInfo(**_SENTRY)),
+    ):
+        stamped = (await bootstrap_route._with_runtime(cached_payload, electron)).data
+    assert (stamped.sentry_info == SentryInfo(**_SENTRY)) is reports
+    if not reports:
+        assert stamped.sentry_info is None
+
+
+def test_sentry_info_is_on_the_wire_as_an_explicit_null_and_never_cached(cached_payload):
+    """Off is an explicit `null` in the JSON (not a missing key), and a value stored after the
+    payload was cached shows up on the very next request -- no 30s wait."""
+    import time
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from flow_sdk.instance_settings import runtime, sentry_info
+    from flow_sdk.schema.data_spec.sentry_info_spec import SentryInfo
+
+    app = FastAPI()
+    app.include_router(bootstrap_route.router)
+    client = TestClient(app)
+    with (
+        patch.object(bootstrap_route, "_bootstrap_cache", cached_payload),
+        patch.object(bootstrap_route, "_bootstrap_cache_ts", time.monotonic()),
+        patch.object(runtime, "get_assigned_runtime", return_value=RuntimeKind.SANDBOX),
+    ):
+        with patch.object(sentry_info, "get_sentry_info", return_value=None):
+            off = client.get("/api/v1/graph/bootstrap").json()["data"]
+        with patch.object(sentry_info, "get_sentry_info", return_value=SentryInfo(**_SENTRY)):
+            on = client.get("/api/v1/graph/bootstrap").json()["data"]
+    assert "sentry_info" in off and off["sentry_info"] is None
+    assert on["sentry_info"] == _SENTRY

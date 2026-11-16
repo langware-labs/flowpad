@@ -35,7 +35,7 @@ import {
 } from './context-local-storage';
 import { EntityFactory } from './factory';
 import { EntityTypes } from '../schema/types';
-import type { DeferredInfo } from '../models/BootstrapInfo';
+import type { DeferredInfo, SentryInfo } from '../models/BootstrapInfo';
 
 /**
  * The class registered for an entity type.
@@ -163,6 +163,15 @@ class DataContext extends EventEmitter {
       this.bootstrapInfo = next;
     });
     this.emit(ContextEventType.CONTEXT_CHANGED);
+  }
+
+  /** Replace just the error-reporting slice, from a live `sentry_info_msg`. Same copy-on-write as
+   *  `applyInfo`, so observers of `bootstrapInfo` (the UI's Sentry reaction) see the change. */
+  applySentryInfo(info: SentryInfo | null): void {
+    if (!this.bootstrapInfo) return;
+    runInAction(() => {
+      this.bootstrapInfo = { ...this.bootstrapInfo, sentry_info: info };
+    });
   }
 
   // User warnings - displayed in the footer status line

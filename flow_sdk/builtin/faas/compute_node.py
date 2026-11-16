@@ -1784,6 +1784,27 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         except HubEndpointBindError as exc:
             return ApiFailResponse(message=str(exc), status_code=exc.status_code)
 
+    @action.all(action_name="sentry-info", methods=["get", "post"])
+    async def _sentry_info_action(self) -> ApiResponse:
+        """GET the browser error-reporting config and its freshness; POST ``sync`` to re-read it
+        from the hub. There is deliberately NO write: a body is never read, so no caller -- a
+        browser, a worker on the box -- can point this box's error reports anywhere but where its
+        hub says (``instance_settings/sentry_info.py``). The hub POSTs ``sync`` on workspace-ready."""
+        from flow_sdk.instance_settings.sentry_info import (  # noqa: PLC0415
+            sentry_info_status,
+            sync_sentry_info_from_hub,
+        )
+
+        request_info = get_current_request_info()
+        method = (request_info.request.method if request_info and request_info.request else "GET").upper()
+        sub_path = (request_info.sub_path or "").strip("/") if request_info else ""
+        if method == "GET" and not sub_path:
+            return ApiSuccessResponse(data=sentry_info_status())
+        if method == "POST" and sub_path == "sync":
+            outcome = await sync_sentry_info_from_hub()
+            return ApiSuccessResponse(data={"outcome": outcome.value, **sentry_info_status()})
+        return ApiFailResponse(message=f"Unknown sentry-info request {method} {sub_path!r}", status_code=404)
+
     @action.post(action_name="find-local-repo")
     async def _find_local_repo(self) -> ApiResponse:
         """Locate a local clone whose ``origin`` matches a GitOrigin.

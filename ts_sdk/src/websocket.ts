@@ -12,6 +12,7 @@ import {
 import { toplog } from './services/toplog';
 import { defineGlobal } from './utils/globals';
 import type { InstallRequest } from './models/project-manifest';
+import type { SentryInfo } from './models/BootstrapInfo';
 
 type MessageType =
   | 'data_op_msg'
@@ -28,6 +29,7 @@ type MessageType =
   | 'cloud_login_status_msg'
   | 'cloud_connection_status_msg'
   | 'privacy_mode_msg'
+  | 'sentry_info_msg'
   | 'toplog_state_msg'
   | 'status_changed_msg'
   | 'desktop_presence'
@@ -130,6 +132,11 @@ export interface CloudConnectionStatusMessage extends BaseMessage {
 export interface PrivacyModeMessage extends BaseMessage {
   message_type: 'privacy_mode_msg';
   privacy_mode: 'local' | 'connected';
+}
+
+export interface SentryInfoMessage extends BaseMessage {
+  message_type: 'sentry_info_msg';
+  sentry_info: SentryInfo | null;
 }
 
 export interface ToplogStateMessage extends BaseMessage {
@@ -733,6 +740,9 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'privacy_mode_msg') {
       return this.onPrivacyModeMessage(data as PrivacyModeMessage);
     }
+    if (data.message_type === 'sentry_info_msg') {
+      return this.onSentryInfoMessage(data as SentryInfoMessage);
+    }
     if (data.message_type === 'status_changed_msg') {
       // A status fact changed (harness install/login, a stored key, the hub login): a signal to
       // re-read `status` and `funding`, not a payload.
@@ -798,6 +808,10 @@ export class ConnectionManager extends EventEmitter {
 
   onPrivacyModeMessage(data: PrivacyModeMessage) {
     this.emit('on_privacy_mode_msg', data);
+  }
+
+  onSentryInfoMessage(data: SentryInfoMessage) {
+    this.emit('on_sentry_info_msg', data);
   }
 
   onToplogStateMessage(data: ToplogStateMessage) {
