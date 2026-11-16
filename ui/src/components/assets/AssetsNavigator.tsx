@@ -6,6 +6,7 @@ import { useAssetsModel } from './useAssetsModel';
 import { useLingui } from '@lingui/react/macro';
 import { useMemo } from 'react';
 import { NewOfTypeDialog } from '@src/components/quick-create';
+import { NewAssetMenu } from './NewAssetMenu';
 
 /**
  * Assets left-menu — the navigator (Zone B). The tree (asset types + markdown
@@ -40,13 +41,16 @@ export function AssetsNavigator() {
     header: {
       title: m.isProjectView ? t`Project assets` : t`Assets`,
       headerRight: (
-        <ScopeFilterIconBar
-          scope={m.scope}
-          currentProjectId={m.scopeProjectId}
-          currentProjectName={m.scopeProjectName}
-          onScopeChange={m.handleScopeChange}
-          showDependencies
-        />
+        <div className="flex items-center gap-1">
+          <NewAssetMenu types={m.visibleTypes} onNew={m.handleNew} />
+          <ScopeFilterIconBar
+            scope={m.scope}
+            currentProjectId={m.scopeProjectId}
+            currentProjectName={m.scopeProjectName}
+            onScopeChange={m.handleScopeChange}
+            showDependencies
+          />
+        </div>
       ),
     },
     wrapTree: (tree) => <AssetTypeCountsContext.Provider value={m.typeCounts}>

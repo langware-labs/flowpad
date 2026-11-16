@@ -109,6 +109,7 @@ async def test_a_folder_dependency_is_a_private_link_with_its_sidecar(tmp_path):
         "local": False,
         "cloned": False,
         "read_only": False,
+        "context_via": "static",  # a package folder is part of the project's structure
     }
     assert project.include_dirs == [ctx]
     assert project._context_payload()["include_dirs"] == [ctx]

@@ -76,6 +76,9 @@ def register_tag_trigger(trigger: "Trigger") -> None:
     from flow_sdk.tags import event_bus
 
     unregister_tag_trigger(trigger.id)
+    if trigger.message_tags:
+        # Message tag admission is durable and message-ordered, not bus fan-out.
+        return
     if not trigger.enabled or not trigger_runs_here(trigger):
         return
     problem = validate_tag_trigger(trigger.tag_pattern)
@@ -244,6 +247,17 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
     # recorded rather than silently dropped: "the rule is armed, the event
     # matched, and nothing happened" is the single most confusing non-fire in
     # the design, which is exactly what Automations › Runs exists to explain.
+    from flow_sdk.automations.lifecycle import may_run  # noqa: PLC0415
+
+    if not await may_run(trigger):
+        return  # ended (or just ended): its life is over, not a declined fire
+    if trigger.awaits_reply:
+        # A session waiting for a reply: every other message in the conversation passes silently.
+        from flow_sdk.builtin import reply_callbacks  # noqa: PLC0415
+
+        if not await reply_callbacks.is_reply(trigger, reply_callbacks.reply_of(event)):
+            return
+
     if trigger.fire_once and trigger.counter >= 1:
         _suppressed(trigger, "already_fired",
                     f"rule is fire-once and already fired at {trigger.last_run}", event)
@@ -423,7 +437,8 @@ async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Option
             **_cause_keys(event), **(gate.row() if gate else {}),
         })
     return {"event_id": execution.event_id, "agentic_process_id": execution.process_id,
-            "error": error, "duration_ms": execution.duration_ms}
+            "error": error, "duration_ms": execution.duration_ms,
+            "accepted": execution.accepted, "reason_code": reason_code}
 
 
 async def run_tag_test(trigger: "Trigger", event: "FlowEvent", event_id: Optional[str], *,

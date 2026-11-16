@@ -259,7 +259,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                   {renamingId !== c.id && (
                     <button
                       onClick={() => startRename(c)}
-                      className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                      className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 pointer-coarse:opacity-100"
                       aria-label={t`Rename ${c.displayName}`}
                       title={t`Rename context`}
                     >
@@ -268,7 +268,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                   )}
                   <button
                     onClick={() => setPendingDelete([c.id])}
-                    className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 pointer-coarse:opacity-100"
                     aria-label={t`Delete ${c.displayName}`}
                     title={t`Delete context`}
                   >

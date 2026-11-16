@@ -71,19 +71,19 @@ def delete_api_key() -> None:
 
 def is_logged_in() -> bool:
     """
-    Check if the user is logged in.
+    Check if this instance is signed in to the hub (as a person or an agent's Identity).
 
-    Uses the file-based user record rather than reading the OS keyring, so this
+    Uses the file-based principal record rather than reading the OS keyring, so this
     is safe to call at startup without triggering a keychain access prompt for
     the hub API key. The keyring is only consulted when the API key value is
     actually needed (``get_api_key``).
 
     Returns:
-        bool: True if a non-empty user record exists, False otherwise
+        bool: True if a principal record exists, False otherwise
     """
-    from flow_sdk.cli.app_config import get_user
+    from flow_sdk.cli.app_config import get_principal
 
-    return bool(get_user())
+    return bool(get_principal())
 
 
 def hub_auth_available() -> bool:
@@ -111,7 +111,7 @@ async def validate_api_key_async(api_key: str) -> dict:
         api_key: The API key to validate
 
     Returns:
-        dict: User information if valid (must contain "id" field)
+        dict: The principal the key signs in as (``id`` and ``type``: ``user`` or ``identity``)
 
     Raises:
         Exception: If API key is invalid or validation fails
@@ -120,8 +120,8 @@ async def validate_api_key_async(api_key: str) -> dict:
 
     config = ApiConfig.from_env()
     async with FlowpadClient(config, api_key=api_key) as client:
-        # get_user() raises on non-200 or if the body is missing 'id'.
-        return await client.get_user()
+        # get_principal() raises on non-200 or if the body names no principal.
+        return await client.get_principal()
 
 
 def validate_api_key(api_key: str) -> dict:

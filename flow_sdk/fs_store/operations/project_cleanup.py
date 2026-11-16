@@ -583,6 +583,28 @@ def remove_from_harness(row: dict[str, Any], index: HarnessIndex) -> dict[str, A
     return clear_harness_state(row, index)
 
 
+def trash_folder(cwd: str) -> Optional[str]:
+    """Move a project folder to the Trash; the mechanism used, or None when it is already gone."""
+    from flow_sdk.fs_store.path_utils import trash_path  # noqa: PLC0415
+
+    try:
+        return trash_path(cwd)
+    except FileNotFoundError:
+        return None
+
+
+def trash_unrecorded_project(row: dict[str, Any], index: HarnessIndex) -> dict[str, Any]:
+    """Remove a listed folder that has no Project row: guard it, clear its harness state, trash it.
+
+    The row-backed delete is ``Project._delete_with_children``; this is all that is left
+    of it when there is no record — no children, no row to delete.
+    """
+    guard_deletable(row["cwd"])
+    outcome = clear_harness_state(row, index)
+    mechanism = trash_folder(row["cwd"])
+    return {**outcome, "trashed": mechanism is not None, "mechanism": mechanism, "deleted_children": 0}
+
+
 __all__ = [
     "CleanupRefused",
     "HarnessIndex",
@@ -599,5 +621,7 @@ __all__ = [
     "has_harness_state",
     "has_visible_entry",
     "remove_from_harness",
+    "trash_folder",
+    "trash_unrecorded_project",
     "summarize",
 ]

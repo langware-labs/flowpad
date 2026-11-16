@@ -43,7 +43,7 @@ vi.mock('@src/components/webapp-display/AppLifecyclePanel', () => ({
     <p data-testid="lifecycle-panel">{l.record.state}</p>
   ),
 }));
-vi.mock('@src/components/display-toolbar', () => ({ WebappDisplayToolbar: () => null }));
+vi.mock('@src/components/display-toolbar', () => ({ WebappDisplayToolbar: () => null, useDisplayChromeSlot: () => null }));
 
 const { AppDisplayViewer } = await import('@src/pages/flow-page/app-display-viewer');
 

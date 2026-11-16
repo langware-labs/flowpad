@@ -129,3 +129,4 @@ async def test_a_screens_filter_is_offered_on_top_of_the_current_one():
     assert not any("trigger=" in k for k in navigator.options_for(await here_from(_ctx("/dock/automations/runs")), [])), "nothing to carry, nothing added"
     on_its_page = navigator.options_for(await here_from(_ctx(f"/dock/automations?trigger={trigger}")), [])
     assert not any("creating=" in k and "trigger=" in k for k in on_its_page), "a mode of the screen is no filter of it"
+

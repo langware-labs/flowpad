@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
+import { AgenticProcess, UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
 import { useHelpRequestDiagnosis } from '@src/components/conversation/use-help-request-diagnosis';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -11,6 +11,7 @@ import { useSetupIncompleteWarning } from '@src/components/setup-incomplete/use-
 import {
   diagnoseAndFix,
   notificationText,
+  notify,
   runAction,
   runCommand,
   useAlertStore,
@@ -34,6 +35,7 @@ import {
   Wifi,
   WifiOff,
   X,
+  ArrowUpCircle,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { create } from 'zustand';
@@ -51,6 +53,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Settings,
   Key,
   FolderX,
+  ArrowUpCircle,
 };
 
 // Map color names to Tailwind classes
@@ -92,7 +95,7 @@ const ALERT_COLOR: Record<NotificationLevel, keyof typeof colorMap> = {
 
 const ITEM_CLASS = 'group flex w-full items-start gap-2 rounded-md border p-3 transition-colors hover:bg-accent';
 const ICON_BTN_CLASS =
-  'flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100';
+  'flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 pointer-coarse:opacity-100';
 
 /** Copy-to-clipboard affordance, shared by derived warnings and logged alerts. */
 function CopyButton({ text }: { text: string }) {
@@ -190,19 +193,49 @@ function DiagnosisStatusLine({ conversationId }: { conversationId: string }) {
   );
 }
 
+/** Install on a worker-update warning: a session that carries the warning (which worker, from and to which
+ *  version, the command) and does the upgrade. It runs outside any project and opens as its own tab. */
+async function installHarnessUpdate(warning: UserWarning, failedTitle: string): Promise<void> {
+  try {
+    await AgenticProcess.launch({
+      scratch: true,
+      title: warning.message,
+      launchPrompt: `${warning.message}. ${warning.description ?? ''}\nUpgrade it on this machine now, then run its --version and tell me the version that is installed.`,
+    });
+  } catch (e: unknown) {
+    notify.error({
+      title: failedTitle,
+      message: e instanceof Error ? e.message : String(e),
+      forceToast: true,
+    });
+  }
+}
+
 const PRIMARY_BTN = 'rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90';
 const MUTED_BTN = 'rounded bg-muted px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80';
 
+/** A worker update: its one action is Install, and it has no page of its own to open. */
+const isHarnessUpdate = (warning: UserWarning) => warning.id.startsWith(WARNING_IDS.HARNESS_UPDATE);
+
+/** Informational: nothing is broken, so a diagnosis has nothing to find — listed, not counted. */
+const isInformational = (warning: UserWarning) => warning.diagnosable === false;
+
 /** An entry's Diagnose & fix: enabled until a diagnosis was started from it; then disabled, with the way to its
- *  conversation beside it. Dismiss stays on every entry, always — it is the only way an entry leaves. */
+ *  conversation beside it. An informational entry gets Review (its own destination) in its place. Dismiss stays
+ *  on every entry, always — it is the only way an entry leaves. */
 function DiagnoseButtons({
   conversationId,
   onDiagnose,
+  onReview,
+  ownAction,
   onDismiss,
   testId,
 }: {
   conversationId: string | undefined;
   onDiagnose: () => void;
+  onReview?: () => void;
+  /** The entry has its own button for what to do (Install), so neither Review nor Diagnose & fix is drawn. */
+  ownAction?: boolean;
   onDismiss: () => void;
   testId: string;
 }) {
@@ -210,16 +243,22 @@ function DiagnoseButtons({
   const { navigation } = useDockNavigation();
   return (
     <>
-      <button
-        type="button"
-        onClick={onDiagnose}
-        disabled={!!conversationId}
-        title={conversationId ? t`Already diagnosed — see the conversation` : undefined}
-        className={`${PRIMARY_BTN} disabled:cursor-not-allowed disabled:opacity-50`}
-        data-testid={testId}
-      >
-        <Trans>Diagnose &amp; fix</Trans>
-      </button>
+      {ownAction ? null : onReview ? (
+        <button type="button" onClick={onReview} className={PRIMARY_BTN} data-testid="warnings-popover-warning-review">
+          <Trans>Review</Trans>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onDiagnose}
+          disabled={!!conversationId}
+          title={conversationId ? t`Already diagnosed — see the conversation` : undefined}
+          className={`${PRIMARY_BTN} disabled:cursor-not-allowed disabled:opacity-50`}
+          data-testid={testId}
+        >
+          <Trans>Diagnose &amp; fix</Trans>
+        </button>
+      )}
       {conversationId && (
         <button
           type="button"
@@ -291,6 +330,8 @@ function WarningItem({ warning, onClick, onAction, onDiagnose, onDismiss }: Warn
           <DiagnoseButtons
             conversationId={conversationId}
             onDiagnose={() => onDiagnose(detail, 'warning', warning.id)}
+            onReview={isInformational(warning) ? onClick : undefined}
+            ownAction={isHarnessUpdate(warning)}
             onDismiss={onDismiss}
             testId="warnings-popover-warning-diagnose-fix"
           />
@@ -396,16 +437,27 @@ function AlertItem({
 }
 
 export function WarningsPopover() {
+  const { t } = useLingui();
   const { warnings: derivedWarnings } = useWarnings();
   const setupWarning = useSetupIncompleteWarning();
   const dismissedKeys = useDismissedWarnings((s) => s.keys);
   const dismissWarnings = useDismissedWarnings((s) => s.dismiss);
   const warnings = useMemo(
     () =>
-      [...derivedWarnings, ...(setupWarning ? [setupWarning] : [])].filter(
-        (w) => dismissedKeys.get(w.id) !== dismissKey(w),
-      ),
-    [derivedWarnings, setupWarning, dismissedKeys],
+      [...derivedWarnings, ...(setupWarning ? [setupWarning] : [])]
+        .filter((w) => dismissedKeys.get(w.id) !== dismissKey(w))
+        .map((w) =>
+          isHarnessUpdate(w)
+            ? {
+                ...w,
+                action: {
+                  label: t`Install`,
+                  onClick: () => void installHarnessUpdate(w, t`Could not start the install`),
+                },
+              }
+            : w,
+        ),
+    [derivedWarnings, setupWarning, dismissedKeys, t],
   );
   const alerts = useAlertStore((s) => s.alerts);
   const dismissAlert = useAlertStore((s) => s.dismiss);
@@ -427,6 +479,7 @@ export function WarningsPopover() {
 
   const handleWarningClick = useCallback(
     (warning: UserWarning) => {
+      if (isHarnessUpdate(warning)) return;
       if (warning.id === WARNING_IDS.SNIFFER_ACTIVE) {
         // Same command the startup toast's Disable button runs — one path,
         // one set of success/failure toasts.
@@ -454,6 +507,7 @@ export function WarningsPopover() {
   );
 
   const total = warnings.length + alerts.length;
+  const problemCount = warnings.filter((w) => !isInformational(w)).length + alerts.length;
 
   // Nothing to say — neither a live condition nor a logged alert.
   if (total === 0) {
@@ -478,15 +532,17 @@ export function WarningsPopover() {
           data-testid="warnings-popover-trigger"
         >
           <AlertTriangle className="h-4 w-4" />
-          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
-            {total}
-          </span>
+          {problemCount > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
+              {problemCount}
+            </span>
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent side="top" align="start" className="flex max-h-[70vh] w-96 flex-col p-2">
         <div className="flex items-center justify-between gap-2 px-1 pb-2">
           <p className="text-xs font-medium text-muted-foreground">
-            {total} {total === 1 ? 'Warning' : 'Warnings'}
+            {problemCount} {problemCount === 1 ? 'Warning' : 'Warnings'}
           </p>
           <button
             type="button"

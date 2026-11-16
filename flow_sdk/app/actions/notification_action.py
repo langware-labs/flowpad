@@ -415,7 +415,7 @@ async def _merge_shared_context_into_conversation(
     if not typeids:
         return
     try:
-        changed = conv.add_shared_context_entities(*typeids)
+        changed = conv.add_shared_context_entities(*typeids, via="user")  # what the sender attached
         if changed:
             await conv.save(someone_typeid)
         await conv._link_context_to_conversation(typeids, someone_typeid=someone_typeid)
@@ -971,8 +971,8 @@ async def handle_add_message(
     remote_worker_session_id = (body.get("remote_worker_session_id") or "").strip() or None
     sendable_kind = FlowMessageKind.sendable((body.get("kind") or "").strip() or None)
     message_kind = sendable_kind.value if sendable_kind else None
-    # Every prompt is a session turn, and a conversation holds ONE open session.
-    # A prompt WITHOUT a session id joins the conversation's open session; only
+    # Every prompt is a session turn, and a conversation holds ONE open session per
+    # guest. A prompt WITHOUT a session id joins the sender's open session; only
     # when there is none does it open a new one: the sender mints the id here
     # (uuid4; the host validates-on-adopt) and the opening proposal (reply
     # policy) rides the start marker on the carrier attachment. A prompt WITH a
@@ -991,7 +991,8 @@ async def handle_add_message(
     if reply_policy is None:
         return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
     if is_prompt_send and not remote_worker_session_id:
-        open_session = await RemoteWorkerSession.open_for_conversation(conversation_id)
+        me = (await User.current_sender_participant(None)).get("user_id") or None
+        open_session = await RemoteWorkerSession.open_for_conversation(conversation_id, me)
         if open_session is not None:
             remote_worker_session_id = open_session.id
     if is_prompt_send and not remote_worker_session_id:
@@ -1048,16 +1049,23 @@ async def handle_add_message(
     conv = await Conversation.get_one({"id": conversation_id})
     if not conv:
         return ApiFailResponse(message=f"Conversation not found: {conversation_id}")
-    # A reply quotes one message of THIS conversation and joins the thread rooted at it.
+    # A reply QUOTES one message of THIS conversation; it never opens a thread. It stays in the
+    # thread its parent is already in; only writing into a thread (``thread_root_id``) threads.
     thread_root_id: Optional[str] = None
     if reply_to_id or join_thread_of:
         from flow_sdk.stream_inbox.native_threads import thread_root_for_reply  # noqa: PLC0415
 
         anchor = reply_to_id or join_thread_of
-        thread_root_id = await thread_root_for_reply(conv.id, anchor)
-        if thread_root_id is None:
+        thread_root_id = await thread_root_for_reply(conv.id, anchor, open_new=not reply_to_id)
+        if thread_root_id is False:
             field = "reply_to_id" if reply_to_id else "thread_root_id"
             return ApiFailResponse(message=f"{field} {anchor} is not a message of this conversation", status_code=400)
+        if join_thread_of and not thread_root_id:
+            thread_root_id = await thread_root_for_reply(conv.id, join_thread_of)
+            if thread_root_id is False:
+                return ApiFailResponse(
+                    message=f"thread_root_id {join_thread_of} is not a message of this conversation", status_code=400
+                )
 
     # Merge the items being shared into THIS conversation's context (both the
     # conversation row and the items themselves), so a re-share into an existing
@@ -1385,17 +1393,16 @@ async def _start_live_session_locked(conversation_id: str, body: dict, someone_t
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
         return ApiFailResponse(message=f"Conversation not found: {conversation_id}", status_code=404)
-    open_session = await RemoteWorkerSession.open_for_conversation(conv.id)
+    sender = await User.current_sender_participant(None)
+    sender_id = sender.get("user_id") or None
+    sender_name = sender.get("name") or ""
+    open_session = await RemoteWorkerSession.open_for_conversation(conv.id, sender_id)
     if open_session is not None:
         return ApiSuccessResponse(data=open_session.model_dump(mode="json"))
 
     reply_policy = _reply_policy_of(body)
     if reply_policy is None:
         return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
-
-    sender = await User.current_sender_participant(None)
-    sender_id = sender.get("user_id") or None
-    sender_name = sender.get("name") or ""
     host_id, host_name, _ = _peer_of(conv, sender_id)
     if not host_id:
         return ApiFailResponse(

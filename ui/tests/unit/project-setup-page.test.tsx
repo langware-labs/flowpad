@@ -8,15 +8,20 @@ import { Project, type ProjectReadiness, type ProjectSetupRequirement } from '@s
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { openDock } = vi.hoisted(() => ({ openDock: vi.fn() }));
+const { openDockOnThisPage } = vi.hoisted(() => ({ openDockOnThisPage: vi.fn() }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ currentDock: null, navigation: { openDock } }),
+  useDockNavigation: () => ({ currentDock: null, navigation: { openDockOnThisPage } }),
   useCurrentDock: () => null,
 }));
 vi.mock('@src/components/credentials/use-credentials', () => ({
   useCredentials: () => ({ status: { credentials: [] }, templates: [], ready: true, refresh: vi.fn() }),
 }));
 vi.mock('@src/components/ask/AskForm', () => ({ AskForm: () => <div data-testid="ask-form" /> }));
+// The first-run wizard is not part of this page's tests: it has come and gone.
+vi.mock('@src/components/setup-incomplete/first-run-gate', () => ({
+  useFirstRunFirst: () => true,
+  pastFirstRun: (call: () => unknown) => call(),
+}));
 vi.mock('@src/components/ask/ask-claims', () => ({
   claimAskRun: () => () => {},
   openQuestionOf: async () => null,
@@ -116,6 +121,6 @@ describe('ProjectSetupPage', () => {
   it('Back goes to Project home by URL', async () => {
     render(<ProjectSetupPage projectId={PID} projectName="owed-demo" />);
     await userEvent.setup().click(screen.getByTestId('project-setup-back'));
-    expect(String(openDock.mock.calls[0][0].pointer)).toBe(PID);
+    expect(String(openDockOnThisPage.mock.calls[0][0].pointer)).toBe(PID);
   });
 });

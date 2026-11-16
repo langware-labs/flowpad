@@ -1,4 +1,4 @@
-import { ReactNode, useRef } from 'react';
+import { createContext, ReactNode, useContext, useRef } from 'react';
 import { GenericDisplayToolbar } from './GenericDisplayToolbar';
 
 interface DisplayToolbarProps {
@@ -24,6 +24,12 @@ interface DisplayToolbarProps {
    * exactly that, so the wrapper is unconditional and only the strip comes and goes.
    */
   hideStrip?: boolean;
+  /**
+   * The viewer below draws its own address bar (a web page, an app). Instead of a
+   * second strip stacked over it, the generic actions are handed to that bar
+   * through `useDisplayChromeSlot()` — one row per view.
+   */
+  viewerOwnsBar?: boolean;
   /** The viewer being displayed — fills the area below the strip. */
   children: ReactNode;
 }
@@ -41,9 +47,19 @@ export function DisplayToolbar({
   onAnnotate,
   historySlot,
   hideStrip = false,
+  viewerOwnsBar = false,
   children,
 }: DisplayToolbarProps) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const generic = (
+    <GenericDisplayToolbar
+      externalUrl={externalUrl}
+      onOpenInTab={onOpenInTab}
+      onAnnotate={onAnnotate ? () => contentRef.current && onAnnotate(contentRef.current) : undefined}
+      historySlot={historySlot}
+    />
+  );
+  const showStrip = !hideStrip && !viewerOwnsBar;
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -51,18 +67,23 @@ export function DisplayToolbar({
           slot (and the dirty editor its buffer) either way. Not the `hidden`
           attribute — Tailwind's `.flex` utility outranks preflight's
           `[hidden]{display:none}` in the cascade, so that never hid anything. */}
-      {!hideStrip && (
+      {showStrip && (
         <div className="flex h-9 shrink-0 items-center justify-between gap-1 border-b bg-muted/30 px-2">
           <div className="flex items-center gap-2">{perType}</div>
-          <GenericDisplayToolbar
-            externalUrl={externalUrl}
-            onOpenInTab={onOpenInTab}
-            onAnnotate={onAnnotate ? () => contentRef.current && onAnnotate(contentRef.current) : undefined}
-            historySlot={historySlot}
-          />
+          {generic}
         </div>
       )}
-      <div ref={contentRef} className="relative min-h-0 flex-1">{children}</div>
+      <div ref={contentRef} className="relative min-h-0 flex-1">
+        <DisplayChromeSlot.Provider value={!hideStrip && viewerOwnsBar ? generic : null}>{children}</DisplayChromeSlot.Provider>
+      </div>
     </div>
   );
+}
+
+const DisplayChromeSlot = createContext<ReactNode>(null);
+
+/** The display's generic actions (history, annotate) for a viewer that draws its
+ *  own bar; null outside a display or when the display strip is shown. */
+export function useDisplayChromeSlot(): ReactNode {
+  return useContext(DisplayChromeSlot);
 }

@@ -75,7 +75,7 @@ export function ReviewShell({
         className={cn(
           'sm:max-w-3xl',
           fullscreen &&
-            'h-screen max-h-screen w-screen max-w-none sm:max-w-none sm:rounded-none [&_[data-testid=staged-review]]:h-[calc(100vh-15rem)]',
+            'h-screen max-h-screen w-screen max-w-none sm:max-w-none sm:rounded-none [&_[data-testid=staged-review]]:h-[calc(100dvh-15rem)]',
         )}
         data-testid={testId}
       >
@@ -103,7 +103,7 @@ export function ReviewShell({
             <div
               className={cn(
                 'w-52 shrink-0 overflow-y-auto border-e border-border pe-2',
-                fullscreen ? 'max-h-[calc(100vh-15rem)]' : 'max-h-[55vh]',
+                fullscreen ? 'max-h-[calc(100dvh-15rem)]' : 'max-h-[55vh]',
               )}
             >
               {rows.map((row) => {

@@ -210,8 +210,11 @@ describe('data source matrix — TS SDK', () => {
           if (inbound) expect((await created.reply(String(inbound.id), 'matrix reply')).external_id).toBeTruthy();
         }
 
-        expect((await created.setEnabled(false)).status).toBe('disabled');
-        expect((await created.setEnabled(true)).status).toBe('active');
+        // The switch answers nothing: the row takes where the source landed.
+        await created.setEnabled(false);
+        expect(created.status).toBe('disabled');
+        await created.setEnabled(true);
+        expect(created.status).toBe('active');
       } finally {
         await Promise.all([created?.delete(), forget?.()]);
       }

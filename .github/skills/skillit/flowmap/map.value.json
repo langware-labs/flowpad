@@ -1,0 +1,314 @@
+{
+ "spec_kind": "flowmap.map",
+ "skill": "skillit",
+ "line": "Maps a skill, reviews it, traces what a run really did, and improves the skill from it.",
+ "source_hash": "e8c1627975ec3540",
+ "entries": [
+  {
+   "id": "e_map",
+   "name": "Map",
+   "say": [
+    "map this skill",
+    "skillit map"
+   ],
+   "gives": "The skill's map, built or refreshed"
+  },
+  {
+   "id": "e_review",
+   "name": "Review",
+   "say": [
+    "review this skill",
+    "audit this skill",
+    "skillit review"
+   ],
+   "gives": "The skill's issues, and whether it is correct"
+  },
+  {
+   "id": "e_trace",
+   "name": "Trace",
+   "say": [
+    "trace this run",
+    "skillit trace"
+   ],
+   "gives": "What the run really did, drawn on the map"
+  },
+  {
+   "id": "e_improve",
+   "name": "Improve",
+   "say": [
+    "improve this skill",
+    "fix this skill",
+    "skillit improve"
+   ],
+   "gives": "The skill, fixed from what the run showed"
+  }
+ ],
+ "steps": [
+  {
+   "id": "fresh",
+   "title": "Is the map up to date?",
+   "type": "code",
+   "takes": "The skill folder",
+   "gives": "Up to date — or what changed",
+   "source": "flowmap scripts/map_check.py stale",
+   "match": [
+    "map_check.py stale"
+   ]
+  },
+  {
+   "id": "read",
+   "title": "Read the skill the way it runs",
+   "type": "instructions",
+   "takes": "The skill folder",
+   "gives": "Every file it routes to, and the ones nothing reaches",
+   "source": "modes/map.md · step 2"
+  },
+  {
+   "id": "draw",
+   "title": "Write the map",
+   "type": "instructions",
+   "takes": "What the skill does",
+   "gives": "Its entries, blocks, links and outcomes",
+   "source": "flowmap SKILL.md · map",
+   "match": [
+    "flowmap/map.value.json"
+   ]
+  },
+  {
+   "id": "check",
+   "title": "Check the map",
+   "type": "code",
+   "takes": "The map",
+   "gives": "OK — or every broken link, by name",
+   "source": "flowmap scripts/map_check.py check · stamp",
+   "match": [
+    "map_check.py check",
+    "map_check.py stamp"
+   ]
+  },
+  {
+   "id": "walk",
+   "title": "Walk the skill's files",
+   "type": "instructions",
+   "takes": "The skill folder",
+   "gives": "The files to review",
+   "source": "modes/review.md · step 1"
+  },
+  {
+   "id": "judge",
+   "title": "Judge each file",
+   "type": "instructions",
+   "takes": "One file and the rulebook",
+   "gives": "A verdict per file",
+   "by": "one helper per file, all at once",
+   "source": "modes/review.md · step 2 · agents/skill-reviewer.md",
+   "match": [
+    "skill-reviewer"
+   ]
+  },
+  {
+   "id": "combine",
+   "title": "Combine the verdicts",
+   "type": "instructions",
+   "takes": "All the verdicts",
+   "gives": "Up to 5 findings and one verdict",
+   "source": "modes/review.md · step 3"
+  },
+  {
+   "id": "report",
+   "title": "Review report",
+   "type": "screen",
+   "takes": "The findings",
+   "gives": "The verdict and what to fix, in the chat",
+   "source": "modes/review.md · Report format"
+  },
+  {
+   "id": "lay",
+   "title": "Lay the run on the map",
+   "type": "code",
+   "takes": "A session and the map",
+   "gives": "Every frame: the block, its time, its cost",
+   "source": "flowmap scripts/trace.py",
+   "match": [
+    "trace.py"
+   ]
+  },
+  {
+   "id": "issues",
+   "title": "Find what the run exposed",
+   "type": "instructions",
+   "takes": "The run on the map",
+   "gives": "Up to 5 issues, each with its block and evidence",
+   "source": "modes/improve.md · From a run"
+  },
+  {
+   "id": "triage",
+   "title": "Sort the issues",
+   "type": "instructions",
+   "takes": "The issues",
+   "gives": "The ones to fix now; the rest wait",
+   "source": "modes/improve.md · step 1"
+  },
+  {
+   "id": "fix",
+   "title": "Fix one issue",
+   "type": "instructions",
+   "takes": "One issue and the skill",
+   "gives": "The skill, edited",
+   "by": "one helper per issue, one at a time",
+   "source": "modes/improve.md · step 2 · agents/skill-fixer.md",
+   "match": [
+    "skill-fixer"
+   ]
+  },
+  {
+   "id": "audit",
+   "title": "Audit the edit",
+   "type": "instructions",
+   "takes": "The edited files",
+   "gives": "Kept — or undone and queued again",
+   "source": "modes/improve.md · step 3"
+  },
+  {
+   "id": "show",
+   "title": "The map, or the run on it",
+   "type": "screen",
+   "takes": "A map or a run",
+   "gives": "The picture in Flowpad",
+   "source": "flowmap SKILL.md · show",
+   "match": [
+    "flow show file"
+   ]
+  },
+  {
+   "id": "creport",
+   "title": "Corrections report",
+   "type": "screen",
+   "takes": "What happened to each issue",
+   "gives": "One line per issue, in the chat",
+   "source": "modes/improve.md · Report format"
+  }
+ ],
+ "links": [
+  {
+   "from": "e_map",
+   "to": "fresh"
+  },
+  {
+   "from": "e_trace",
+   "to": "fresh"
+  },
+  {
+   "from": "e_improve",
+   "to": "fresh"
+  },
+  {
+   "from": "fresh",
+   "to": "read",
+   "label": "out of date"
+  },
+  {
+   "from": "read",
+   "to": "draw"
+  },
+  {
+   "from": "draw",
+   "to": "check"
+  },
+  {
+   "from": "check",
+   "to": "draw",
+   "label": "broken links",
+   "loop": true
+  },
+  {
+   "from": "check",
+   "to": "show",
+   "label": "a map"
+  },
+  {
+   "from": "check",
+   "to": "lay",
+   "label": "then trace"
+  },
+  {
+   "from": "fresh",
+   "to": "lay",
+   "label": "up to date"
+  },
+  {
+   "from": "lay",
+   "to": "show",
+   "label": "a run"
+  },
+  {
+   "from": "lay",
+   "to": "issues",
+   "label": "improving"
+  },
+  {
+   "from": "e_review",
+   "to": "walk"
+  },
+  {
+   "from": "walk",
+   "to": "judge"
+  },
+  {
+   "from": "judge",
+   "to": "combine"
+  },
+  {
+   "from": "combine",
+   "to": "report"
+  },
+  {
+   "from": "report",
+   "to": "o_verdict"
+  },
+  {
+   "from": "issues",
+   "to": "triage"
+  },
+  {
+   "from": "triage",
+   "to": "fix"
+  },
+  {
+   "from": "fix",
+   "to": "audit"
+  },
+  {
+   "from": "audit",
+   "to": "fix",
+   "label": "next issue",
+   "loop": true
+  },
+  {
+   "from": "audit",
+   "to": "creport"
+  },
+  {
+   "from": "creport",
+   "to": "o_improved"
+  },
+  {
+   "from": "show",
+   "to": "o_shown"
+  }
+ ],
+ "outcomes": [
+  {
+   "id": "o_verdict",
+   "title": "A verdict and the issues"
+  },
+  {
+   "id": "o_shown",
+   "title": "The map — or the run on it"
+  },
+  {
+   "id": "o_improved",
+   "title": "The skill, improved"
+  }
+ ]
+}

@@ -43,10 +43,14 @@ export interface LLMEndpointOffer {
   secret_name: string;
   /** `{sm, md, lg, embedding}` model slugs for this credential. */
   tiers: Record<string, string>;
+  default_model?: string | null;
+  effective_default_model?: string | null;
   /** False for a device login: the backend can never call it. */
   invocable: boolean;
   /** Where the provider is reached. Empty for a hub budget — the hub owns the URL. */
   base_url: string;
+  vertex?: { project_id: string; location: string };
+  credential_kind?: 'api_key' | 'service_account';
   /** What this endpoint lets through: the model allow/deny lists, the ceilings, the
    *  aliases a narrow wallet redirects with. */
   filters: LLMEndpointFilters;

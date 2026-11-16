@@ -1,7 +1,8 @@
 """Native (Flowpad-chat) threads through the real add_message action.
 
-A reply names the message it answers (``reply_to_id``); the sender derives the thread root,
-and the native-thread projector puts the root and every reply into ONE local MessageThread
+A reply names the message it answers (``reply_to_id``) and only quotes it. Writing into a
+thread (``thread_root_id``) opens or joins it; the native-thread projector puts the root and
+every message of it into ONE local MessageThread
 row keyed ``("flowpad", <root id>, <owner>, "")`` — the same row the feed packs and
 ``?thread=`` filters, exactly like a mailbox thread.
 """
@@ -32,8 +33,12 @@ async def _make_conversation(client) -> str:
     return resp.json()["data"]["conversation_id"]
 
 
-async def _send(client, conv_id: str, text: str, reply_to: str | None = None) -> dict:
-    body = {"text": text, **({"reply_to_id": reply_to} if reply_to else {})}
+async def _send(client, conv_id: str, text: str, reply_to: str | None = None, thread_root: str | None = None) -> dict:
+    body = {
+        "text": text,
+        **({"reply_to_id": reply_to} if reply_to else {}),
+        **({"thread_root_id": thread_root} if thread_root else {}),
+    }
     resp = await client.post(f"/api/v1/graph/conversation/{conv_id}/add_message", json=body)
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -42,14 +47,27 @@ async def _send(client, conv_id: str, text: str, reply_to: str | None = None) ->
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_reply_opens_a_thread_rooted_at_the_answered_message(bootstrapped_client, user, monkeypatch):
+async def test_reply_quotes_and_opens_no_thread(bootstrapped_client, user, monkeypatch):
+    logged_out(monkeypatch)
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    root = await _send(client, conv_id, "I dont understand these settings")
+    reply = await _send(client, conv_id, "Here is what they do", reply_to=root["flow_message_id"])
+
+    assert reply["reply_to_id"] == root["flow_message_id"], "the quote"
+    assert not reply["thread_root_id"] and not reply["thread_id"], "a reply stays in the timeline"
+    assert await MessageThread.get_all({"match": {"conversation_id": conv_id}}) == []
+    assert not (await FlowMessage.get_one({"id": root["flow_message_id"]})).thread_id
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_writing_into_a_thread_opens_it_rooted_at_that_message(bootstrapped_client, user, monkeypatch):
     logged_out(monkeypatch)
     client = bootstrapped_client
     conv_id = await _make_conversation(client)
     root = await _send(client, conv_id, "Please add the founding number")
-    reply = await _send(client, conv_id, "On it", reply_to=root["flow_message_id"])
+    reply = await _send(client, conv_id, "On it", thread_root=root["flow_message_id"])
 
-    assert reply["reply_to_id"] == root["flow_message_id"]
     assert reply["thread_root_id"] == root["flow_message_id"]
     assert reply["thread_id"], "the response carries the thread so the sender's bubble groups at once"
 
@@ -68,7 +86,7 @@ async def test_a_reply_to_a_reply_stays_in_the_roots_thread(bootstrapped_client,
     client = bootstrapped_client
     conv_id = await _make_conversation(client)
     root = await _send(client, conv_id, "root")
-    first = await _send(client, conv_id, "first", reply_to=root["flow_message_id"])
+    first = await _send(client, conv_id, "first", thread_root=root["flow_message_id"])
     second = await _send(client, conv_id, "second", reply_to=first["flow_message_id"])
 
     assert second["reply_to_id"] == first["flow_message_id"], "the quote is the exact message answered"
@@ -102,7 +120,7 @@ async def test_transcript_filters_to_one_thread_and_names_it(bootstrapped_client
     conv_id = await _make_conversation(client)
     root = await _send(client, conv_id, "snapshot request")
     await _send(client, conv_id, "unrelated")
-    reply = await _send(client, conv_id, "done", reply_to=root["flow_message_id"])
+    reply = await _send(client, conv_id, "done", thread_root=root["flow_message_id"])
 
     resp = await client.post(
         "/api/v1/graph/conversation-transcript", json={"conversation_id": conv_id, "thread": root["flow_message_id"]}
@@ -169,7 +187,7 @@ async def test_writing_into_an_open_thread_joins_it_without_quoting(bootstrapped
     client = bootstrapped_client
     conv_id = await _make_conversation(client)
     root = await _send(client, conv_id, "root")
-    first = await _send(client, conv_id, "first", reply_to=root["flow_message_id"])
+    first = await _send(client, conv_id, "first", thread_root=root["flow_message_id"])
     resp = await client.post(
         f"/api/v1/graph/conversation/{conv_id}/add_message",
         json={"text": "more", "thread_root_id": root["flow_message_id"]},

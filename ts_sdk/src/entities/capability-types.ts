@@ -102,7 +102,4 @@ export interface ICapability extends IEntity {
   auth_mode?: 'device' | 'api' | null;
   /** Chosen LMApiProvider value when auth_mode === 'api' (null → driver default). */
   api_provider?: string | null;
-  /** User overrides for the tier→model mapping, layered over the driver defaults:
-   *  {provider: {name: slug}} where name is a tier (sm/md/lg) or a custom option. */
-  model_map?: Record<string, Record<string, string>>;
 }

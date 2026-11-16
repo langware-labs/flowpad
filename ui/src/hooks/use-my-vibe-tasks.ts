@@ -25,6 +25,19 @@ export function openHelpTasks(tasks: Task[], myEmail: string | null): Task[] {
     .sort(byNewestTask);
 }
 
+/** Open help tasks someone else asked of me: assigned to me, reported by another person. */
+export function incomingHelpTasks(tasks: Task[], myEmail: string | null): Task[] {
+  return tasks
+    .filter(
+      (task) =>
+        !!myEmail &&
+        normalizeEmail(task.assignee) === myEmail &&
+        normalizeEmail(task.reporter) !== myEmail &&
+        isOpenTask(task),
+    )
+    .sort(byNewestTask);
+}
+
 /** Each open task with its conversation's waiting messages, and the total — what the button shows. */
 export function vibeTaskRows(
   open: Task[],
@@ -43,7 +56,11 @@ export function vibeTaskRows(
  * still open, each with its conversation's unread count. Live: a new reply, a read, or the helper
  * closing the task repaints it.
  */
-export function useMyVibeTasks(projectId: string | null): { rows: VibeTaskRow[]; unread: number } {
+export function useMyVibeTasks(projectId: string | null): {
+  rows: VibeTaskRow[];
+  incoming: VibeTaskRow[];
+  unread: number;
+} {
   const taskRequest = useMemo(
     () =>
       new QueryRequest({
@@ -57,11 +74,16 @@ export function useMyVibeTasks(projectId: string | null): { rows: VibeTaskRow[];
   const myEmail = useMyEmail();
 
   const open = useMemo(() => openHelpTasks(tasks, myEmail), [tasks, myEmail]);
+  const asked = useMemo(() => incomingHelpTasks(tasks, myEmail), [tasks, myEmail]);
   const conversationIds = useMemo(
-    () => open.map((task) => task.origin_conversation).filter((id): id is string => !!id),
-    [open],
+    () => [...open, ...asked].map((task) => task.origin_conversation).filter((id): id is string => !!id),
+    [open, asked],
   );
   const conversations = useEntityBatch<Conversation>(Conversation.type, conversationIds);
 
-  return useMemo(() => vibeTaskRows(open, conversations), [open, conversations]);
+  return useMemo(() => {
+    const mine = vibeTaskRows(open, conversations);
+    const theirs = vibeTaskRows(asked, conversations);
+    return { rows: mine.rows, incoming: theirs.rows, unread: mine.unread + theirs.unread };
+  }, [open, asked, conversations]);
 }

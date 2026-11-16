@@ -391,7 +391,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
                       <Trans>Diff</Trans>
                     </span>
                     <div
-                      className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-sm p-0 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+                      className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-sm p-0 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100 pointer-coarse:opacity-100"
                       onClick={(e) => {
                         e.stopPropagation();
                         setDiffTab(null);

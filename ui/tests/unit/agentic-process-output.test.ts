@@ -23,6 +23,29 @@ class WireUpdateProcess extends AgenticProcess {
 }
 
 describe('AgenticProcess.output terminal delivery', () => {
+  it('settles completion from the actual prompt response stream', async () => {
+    const process = new WireUpdateProcess({ id: PROCESS_ID, pty_mode: false });
+    process.applyWireUpdate({ busy: true, worker_status: WorkerStatus.COMPLETE });
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(
+          '<chat role="assistant" data-type="string">3</chat><end data-type="string"></end>',
+        ));
+        controller.close();
+      },
+    });
+    const transport = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ body });
+    try {
+      await process.prompt('Seven minus four?');
+      process.applyWireUpdate({ busy: false, worker_status: WorkerStatus.COMPLETE });
+      expect(process.completed).toBe(true);
+      await process.waitForComplete();
+      expect(process.flowDataStream.items.some((item) => item.content === '3')).toBe(true);
+    } finally {
+      transport.mockRestore();
+    }
+  });
+
   it('drains frames queued before COMPLETE while the consumer is paused', async () => {
     const process = new AgenticProcess({ id: PROCESS_ID, pty_mode: false });
     const iterator = process.output();

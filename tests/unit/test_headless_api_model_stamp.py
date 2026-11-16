@@ -52,7 +52,7 @@ async def test_headless_prompt_stamps_api_model(monkeypatch, tmp_path, worker_ty
 
     monkeypatch.setattr(driver_module, "apply_worker_secret_env", secret_env)
 
-    async def resolve(_process):
+    async def resolve(_process, **_kwargs):
         return WorkerApiAuth(env={}, model_slug=STAMPED_SLUG, config_overrides=[])
 
     monkeypatch.setattr(api_auth, "resolve_worker_api_auth", resolve)

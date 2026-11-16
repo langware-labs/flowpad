@@ -19,6 +19,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import re
 import shlex
 import sys
@@ -377,6 +378,65 @@ async def _stop_worker(ap) -> None:
 #: (``to-send/``) it writes with the shell. On the Windows VM a request run "fixed" the user's file
 #: with Write, though the supporter's own skill said to leave it alone.
 REPORT_ONLY_DENIED_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+#: The harness a run falls back to when claude cannot: it ships inside flowpad, so it is always there.
+FALLBACK_WORKER = "deepagents"
+#: Said instead of starting any agent as root: claude refuses full permissions there, and no other
+#: harness may run them on someone's machine either.
+ROOT_REFUSAL = (
+    "The diagnostic agent can't run as root — re-run `flow diagnose` as a normal user. Sending what the checks found."
+)
+
+
+def _harness(process) -> str:
+    """The process's harness as a driver key (``claude``, ``deepagents``)."""
+    from flow_sdk.builtin.agent import driver_key  # noqa: PLC0415
+
+    worker = process.worker_type
+    return driver_key(getattr(worker, "value", worker) or None)
+
+
+def _claude_shaper(worker_type: str):
+    """``(raw, index) -> [entry]`` in the claude transcript shape the renderer and ``_scan`` read.
+
+    A claude line passes as is; another harness's line goes through its own transcript parser,
+    so its narration shows and its ``report.py`` result is seen the same way.
+    """
+    if worker_type == "claude":
+        return lambda raw, _index: [raw]
+    from flow_sdk.transcript_analyzer.entries import (  # noqa: PLC0415
+        AssistantMessageEntry,
+        ToolResultEntry,
+        ToolUseEntry,
+    )
+    from flow_sdk.transcript_analyzer.parsers import get_parser_class  # noqa: PLC0415
+
+    parser = get_parser_class(worker_type)()
+
+    def shaped(raw: dict, index: int) -> list[dict]:
+        out = []
+        for entry in parser.feed(raw, index):
+            if isinstance(entry, AssistantMessageEntry) and entry.text:
+                block, role = {"type": "text", "text": entry.text}, "assistant"
+            elif isinstance(entry, ToolUseEntry):
+                block, role = {"type": "tool_use"}, "assistant"
+            elif isinstance(entry, ToolResultEntry):
+                block, role = {"type": "tool_result", "content": entry.tool_output}, "user"
+            else:
+                continue
+            out.append({"message": {"role": role, "content": [block]}})
+        return out
+
+    return shaped
+
+
+def _running_as_root() -> bool:
+    return hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+def _claude_could_not_run(reason: str | None) -> bool:
+    """The claude CLI itself failed (no transcript, or it exited before answering) -- not the LLM
+    budget, which every harness resolves the same way and so a fallback would hit too."""
+    return not reason or reason.startswith("claude exited")
 
 
 def _report_only(cli_config: dict | None) -> dict:
@@ -497,9 +557,19 @@ async def _run_diagnose(
         f"```json\n{_sweep_for_prompt(sweep)}\n```"
     ) + (f"\n\n{prompt_extra}" if prompt_extra else "")
 
-    ap = await _build_diagnose_process(**(process_options or {}))
-    if report_only:
-        ap.cli_config = _report_only(ap.cli_config)
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+        worker_executable,
+    )
+
+    async def _make_process(worker_type: str | None):
+        extra = {"worker_type": worker_type} if worker_type else {}
+        process = await _build_diagnose_process(**(process_options or {}), **extra)
+        if report_only:
+            process.cli_config = _report_only(process.cli_config)
+        return process
+
+    # No claude CLI on this machine (the usual case for someone being supported): start on the built-in one.
+    ap = await _make_process(None if worker_executable("claude") else FALLBACK_WORKER)
 
     # stream_transcript re-reads the transcript from the start on each call, so
     # track how many entries we've already printed and skip them on the re-stream
@@ -546,10 +616,12 @@ async def _run_diagnose(
     async def _consume() -> None:
         nonlocal rendered
         idx = 0
-        async for entry in ap.stream_transcript(timeout=transcript_timeout):
-            _scan(entry)
-            if idx >= rendered:
-                renderer.feed(entry)
+        as_claude = _claude_shaper(_harness(ap))  # fresh: the stream re-reads from the start
+        async for raw in ap.stream_transcript(timeout=transcript_timeout):
+            for entry in as_claude(raw, idx):
+                _scan(entry)
+                if idx >= rendered:
+                    renderer.feed(entry)
             idx += 1
         rendered = idx
 
@@ -604,7 +676,7 @@ async def _run_diagnose(
 
     async def _start_turn(text: str) -> bool:
         """Send one turn; the first one also proves the worker came up. False = gave up (emitted)."""
-        nonlocal started
+        nonlocal started, ap
         taken = await ap.send_turn(text)
         if not taken.ok:
             emit({"type": "error", "text": f"  ! The diagnostic agent did not take the prompt: {taken.detail}"})
@@ -616,6 +688,12 @@ async def _run_diagnose(
         if not await await_worker_started(ap, transcript_timeout):
             # The driver latches why the spawn failed (no LLM it can use, a missing CLI); say that.
             reason = getattr(ap, "start_failure", None)
+            if _harness(ap) != FALLBACK_WORKER and _claude_could_not_run(reason):
+                why = reason or "no transcript"
+                emit({"type": "status", "text": f"  Claude couldn't start ({why}) — retrying with the built-in agent."})
+                await _stop_worker(ap)
+                ap, started = await _make_process(FALLBACK_WORKER), False
+                return await _start_turn(text)
             emit(
                 {
                     "type": "error",
@@ -669,6 +747,9 @@ async def _run_diagnose(
         return 0
 
     try:
+        if _running_as_root():
+            emit({"type": "error", "text": f"  ! {ROOT_REFUSAL}"})
+            return await _answer_with_sweep()
         try:
             for n, step in enumerate(steps, 1):
                 if approve is not None and not approve(step):
@@ -1001,14 +1082,24 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
     sink, narration, done = _TerminalSink(), [], {}
 
     def emit(event: dict) -> None:
-        if event.get("type") == "narration":
-            narration.append(str(event.get("text") or ""))
+        # An error is the supporter's to read too: why the agent never ran (root, no budget) rides along.
+        if event.get("type") in ("narration", "error"):
+            narration.append(str(event.get("text") or "").strip())
         if event.get("type") == "done":
             done.update(event)
         sink(event)
 
     endpoint = brief.get("llm_endpoint_typeid") or ""
-    process_options = {"llm_endpoint_typeid": endpoint, "llm_endpoint_public": True} if endpoint else {}
+    # The budget's sizes come with the brief: a signed-out box has no listing to read them from.
+    process_options = (
+        {
+            "llm_endpoint_typeid": endpoint,
+            "llm_endpoint_public": True,
+            "llm_endpoint_tiers": dict(brief.get("llm_endpoint_tiers") or {}),
+        }
+        if endpoint
+        else {}
+    )
     # ``ignore_cleanup_errors``: on Windows a folder something still has open cannot be deleted,
     # and the delete runs BEFORE the send below -- a failed cleanup must not throw away a finished
     # diagnosis. A folder left behind in the OS temp dir is the lesser loss.

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import (
     build_config,
     opencode_config_path_for_process,
@@ -335,3 +337,55 @@ def test_the_pty_config_writer_is_unchanged_without_an_endpoint(tmp_path):
 
     assert options.config_path, "an MCP fragment alone must still produce a config"
     assert "provider" not in json.loads(Path(options.config_path).read_text())
+
+
+def test_bound_title_model_reaches_shared_stream_config_without_provider_redirect():
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import WorkerApiAuth, _apply_auth_to_options
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.stream_worker import _config_path_from_context
+
+    context = _context([])
+    model = "openrouter/openai/gpt-4o-mini"
+    _apply_auth_to_options(context, WorkerApiAuth(model_slug=model, endpoint_typeid="llm_endpoint-test"))
+    path = _config_path_from_context(context, "bound-title-stream")
+    assert path is not None
+    written = json.loads(Path(path).read_text())
+    assert written["small_model"] == written["agent"]["title"]["model"] == model
+    assert "provider" not in written
+    assert "bound_model" not in context.to_persistable_dict()
+
+
+def test_pty_final_binding_refreshes_config_generated_before_auth(tmp_path):
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import WorkerApiAuth, _apply_auth_to_options
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.cli import OpenCodeAgentOptions
+
+    options = OpenCodeAgentOptions(json_stream=False, workdir=str(tmp_path))
+    options.apply_instruction_assets(_assets(tmp_path, "bound-title-pty"))
+    model = "openrouter/openai/gpt-4o-mini"
+    _apply_auth_to_options(options, WorkerApiAuth(model_slug=model, endpoint_typeid="llm_endpoint-test"))
+    _, env = options.to_spawn_args()
+    written = json.loads(Path(env["OPENCODE_CONFIG"]).read_text())
+    assert written["small_model"] == written["agent"]["title"]["model"] == model
+    assert written["instructions"] == [str(tmp_path / "assets" / "AGENTS.md")]
+    assert "bound_model" not in options.to_json()
+
+
+def test_unbound_model_does_not_override_native_title_defaults():
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.stream_worker import _config_path_from_context
+
+    context = _context([])
+    context.model = "openrouter/openai/gpt-4o-mini"
+    assert _config_path_from_context(context, "unbound-title") is None
+
+
+@pytest.mark.asyncio
+async def test_driver_config_uses_cached_final_binding(tmp_path):
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import WorkerApiAuth
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.driver import OpenCodeDriver
+
+    process = AgenticProcess(worker_type="opencode", workdir=str(tmp_path))
+    model = "openrouter/openai/gpt-4o-mini"
+    process.__dict__["_spawn_api_auth"] = WorkerApiAuth(model_slug=model, endpoint_typeid="llm_endpoint-test")
+    path = await OpenCodeDriver()._write_config(process, None)
+    written = json.loads(path.read_text())
+    assert written["small_model"] == written["agent"]["title"]["model"] == model

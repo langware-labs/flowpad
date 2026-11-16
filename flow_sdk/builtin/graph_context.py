@@ -14,7 +14,7 @@ type-specific action code is needed.
 
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import ClassVar, Dict, List
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
@@ -23,6 +23,8 @@ from flow_sdk.schema.types import EntityType
 
 class GraphContext(Entity):
     type: str = APIField(default=EntityType.GRAPH_CONTEXT.value)
+    #: What a frozen context holds IS its context: each member can list the contexts it is in.
+    context_fields: ClassVar[dict[str, str]] = {"context_typeids": "member"}
 
     # Flat list of frozen typeid strings ("<type>-<id>") captured at snapshot time.
     context_typeids: List[str] = APIField(default_factory=list)

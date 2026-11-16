@@ -68,8 +68,9 @@ async def test_share_context_round_trips_data(bootstrapped_client):
     data = resp.json()["data"]
     assert data["ok"] is True
     assert data["shared_context_entities"] == [f"plan-{plan_id}"]
+    # Shared through the action: a person's doing, recorded beside the path.
     assert data["shared_context_entity_data"] == {
-        f"plan-{plan_id}": {"path": plan_path}
+        f"plan-{plan_id}": {"path": plan_path, "context_via": "user"}
     }
 
     reread = await bootstrapped_client.get(f"/api/v1/graph/task/{task['id']}")
@@ -77,7 +78,7 @@ async def test_share_context_round_trips_data(bootstrapped_client):
     body = reread.json()["data"]
     assert body["shared_context_entities"] == [f"plan-{plan_id}"]
     assert body["shared_context_entity_data"] == {
-        f"plan-{plan_id}": {"path": plan_path}
+        f"plan-{plan_id}": {"path": plan_path, "context_via": "user"}
     }
 
 

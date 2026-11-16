@@ -36,6 +36,18 @@
     "created": {
       "shape": "string",
       "description": "When it was written (ISO 8601)."
+    },
+    "change": {
+      "shape": "?string",
+      "description": "The change id (on `step`) the comment and vote are on."
+    },
+    "vote": {
+      "shape": "?string",
+      "description": "yes | no — the reviewer's verdict on the change."
+    },
+    "choice": {
+      "shape": "?string",
+      "description": "The alternative picked, for a change with options."
     }
   }
 }

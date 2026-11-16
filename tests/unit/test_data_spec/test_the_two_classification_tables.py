@@ -48,6 +48,7 @@ SHAPE_PACKAGES = (
     "flow_sdk.assets",
     "flow_sdk.blocks",
     "flow_sdk.builtin",
+    "flow_sdk.cloud_client",
     "flow_sdk.core",
     "flow_sdk.db",
     "flow_sdk.fs_store",

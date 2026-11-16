@@ -323,7 +323,7 @@ async def _write_request(
         await asyncio.to_thread(_hold, conv.id, context)
     chips = [*ask.context, *([str(task.typeid)] if task else [])]
     text = ask.text.strip()
-    asked_title = ask.title.strip()
+    asked_title = _task_base_title(ask)
     if task and asked_title and task.title != asked_title and text.startswith(asked_title):
         # The task took the next free title ("… (2)"): the message names the task it carries.
         text = task.title + text[len(asked_title) :]
@@ -623,6 +623,27 @@ async def _posted_diagnosis(conv, messages=None):
     return None, posted
 
 
+async def _diagnosis_worker(messages) -> str:
+    """The context worker that ran the request's diagnosis here: the record's own private link to its
+    process (``cross_link_entities`` in ``flow diagnose``'s runner). Private, so it never travels."""
+    from flow_sdk.app.actions.diagnose_action import recorded_diagnosis  # noqa: PLC0415
+
+    prefix = "flowpad_diagnosis-"
+    for fm in reversed(messages):
+        if _kind(fm) != FlowMessageKind.DIAGNOSIS.value:
+            continue
+        for a in fm.attachment or []:
+            ref = str(a.data)
+            if not ref.startswith(prefix):
+                continue
+            record = await recorded_diagnosis(ref[len(prefix):])
+            for tid in (record.private_context_entities if record is not None else None) or []:
+                if tid.type == "agentic_process":
+                    return tid.id
+        return ""
+    return ""
+
+
 @action.post(action_name="help-request-diagnosis", types=["conversation"])
 async def help_request_diagnosis() -> ApiResponse:
     """``POST /graph/conversation/<id>/help-request-diagnosis`` — what the diagnosis message offers: its
@@ -648,6 +669,7 @@ async def help_request_diagnosis() -> ApiResponse:
             "replied": reported and _desk_replied(messages),
             "desk": desk,
             "pass_on": pass_on,
+            "worker_process_id": await _diagnosis_worker(messages),
         }
     )
 
@@ -752,6 +774,12 @@ async def _task_of(conv_id: str) -> Optional[Task]:
     return rows[0] if rows else None
 
 
+def _task_base_title(ask: AskForHelpRequest) -> str:
+    """The title a request's task is asked under: its title, else its text's first line (the dialog sends no
+    title). The request message names the task only by comparing against this same base."""
+    return (ask.title or (ask.text.splitlines() or [""])[0]).strip()[:80]
+
+
 async def _write_task(ask: AskForHelpRequest, conv_id: str, someone) -> Task:
     """The task a person is asked to do, in the project the asker was in — under the title asked,
     or the next free one ("… (2)") when a task already has it."""
@@ -760,7 +788,7 @@ async def _write_task(ask: AskForHelpRequest, conv_id: str, someone) -> Task:
 
     project = await Project.get_by_id(ask.project_id) if ask.project_id else None
     mount = getattr(project, "fs_storage_mount_path", None) if project else None
-    base = (ask.title or ask.text.splitlines()[0]).strip()[:80] or "Help request"
+    base = _task_base_title(ask) or "Help request"
     recipient = ask.people[0]
     for n in range(1, 21):
         task = Task(
@@ -972,16 +1000,39 @@ async def help_recipients() -> ApiResponse:
                 kind=HelpRecipientKind.DESK, desk_project_id=adopted.queue_project_id, name="This project's help desk"
             ).model_dump(mode="json")
         )
-    default = await _hub_default_helpdesk()
-    reached = await get_info() is not None
+    # Three independent hub reads: asked together, the dialog waits for the slowest, not the sum.
+    default, info, my_desks = await asyncio.gather(_hub_default_helpdesk(), get_info(), _my_helpdesks())
+    reached = info is not None
     if default is not None and default.project_id not in {d["desk_project_id"] for d in desks}:
         desks.append(
             HelpRecipient(
                 kind=HelpRecipientKind.DESK, desk_project_id=default.project_id, name="Flowpad support"
             ).model_dump(mode="json")
         )
+    # The desks this person added themselves, like contacts: theirs in every project.
+    listed = {d["desk_project_id"] for d in desks}
+    for mine in my_desks:
+        if mine["id"] not in listed:
+            desks.insert(
+                len(desks) - (1 if default is not None else 0),
+                HelpRecipient(
+                    kind=HelpRecipientKind.DESK, desk_project_id=mine["id"], name=mine.get("display_name") or "Help desk"
+                ).model_dump(mode="json"),
+            )
     state = "known" if default is not None else ("not_configured" if reached else "unknown")
     return ApiSuccessResponse(data={"desks": desks, "default_state": state})
+
+
+async def _my_helpdesks() -> list[dict]:
+    """The help desks this login added on the hub (``my-helpdesks``); none when the hub cannot say."""
+    from flow_sdk.cli.app_config import get_principal  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+    me = str((get_principal() or {}).get("id") or "")
+    if not me:
+        return []
+    rows = await HubProxy.try_call("GET", BuiltinEntityType.USER, me, "helpdesks")
+    return [r for r in rows or [] if isinstance(r, dict) and r.get("id") and r.get("enabled")]
 
 
 async def _portal_queue_id(project_id: Optional[str]) -> Optional[str]:

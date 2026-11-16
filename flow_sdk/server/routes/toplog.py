@@ -1,6 +1,7 @@
 """Toplog routes — single owner under ``/api/v1/toplog/*``.
 
 * ``GET  /state``   — current ``{enabled, filter}``.
+* ``GET  /tags``    — the tag catalog: ``[{tag, description, default_on}]``.
 * ``POST /on``      — turn tags on. Body: ``{"tags": ["pty", ...]}``.
 * ``POST /off``     — turn tags off. Body: ``{"tags": ["pty", ...]}``.
 * ``POST /enable``  — flip the master switch on.
@@ -53,6 +54,12 @@ async def _tags(request: Request) -> list[str]:
 async def get_state():
     """Return the current toplog state for this instance."""
     return ApiSuccessResponse(data=toplog.state())
+
+
+@router.get("/tags")
+async def get_tags():
+    """Every catalogued tag with what it traces and whether a fresh boot turns it on."""
+    return ApiSuccessResponse(data=toplog.catalog())
 
 
 @router.post("/on")

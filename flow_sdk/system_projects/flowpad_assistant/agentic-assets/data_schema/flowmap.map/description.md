@@ -1,0 +1,1 @@
+The flowmap of one skill or agent: how you start it (entries), what it does (steps, each typed with what it takes and gives), how the steps lead to each other (links), and what you get (outcomes). It lives in the skill's own folder as `flowmap/map.value.json` and is drawn by the flowmap viewer.

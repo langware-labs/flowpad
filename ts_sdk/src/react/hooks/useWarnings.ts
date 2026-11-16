@@ -4,6 +4,7 @@ import {
   createCloudConnectionLostWarning,
   createCloudDisconnectedWarning,
   createHarnessLoginWarning,
+  createHarnessUpdateWarning,
   createHubRequestFailedWarning,
   createEmptyProjectsWarning,
   createNoComputeNodeWarning,
@@ -138,6 +139,8 @@ export function useWarnings() {
           path: lastHubError.path,
           statusCode: lastHubError.statusCode,
           message: lastHubError.message,
+          action: lastHubError.action,
+          ts: lastHubError.ts,
           onDismiss: () => cloudManager.clearLastHubError(),
         }),
       );
@@ -156,6 +159,10 @@ export function useWarnings() {
     // Assistants & keys modal (routed by id in the warnings popover).
     if (!noHarnessFound && unfundedReason) {
       warnings.push(createHarnessLoginWarning(unfundedReason));
+    }
+
+    for (const h of statusRecord?.harnesses ?? []) {
+      if (h.update === 'available' || h.update === 'required') warnings.push(createHarnessUpdateWarning(h));
     }
 
     // Sniffer hooks are live in the harness settings file — surface it for as
@@ -188,6 +195,7 @@ export function useWarnings() {
     lastHubError,
     noHarnessFound,
     unfundedReason,
+    statusRecord,
   ]);
 
   // Update context warnings when computed warnings change

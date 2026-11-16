@@ -56,7 +56,7 @@ export function deploymentRowState(d: {
 
 /** An issue: open errors and warnings both ask for you; resolved ones do not. */
 export function issueState(status: string | null | undefined, severity: string | null | undefined): ItemState {
-  if (status === 'resolved') return 'resolved';
+  if (status === 'resolved' || status === 'closed') return 'resolved';
   return severity === 'error' ? 'error' : 'attention';
 }
 

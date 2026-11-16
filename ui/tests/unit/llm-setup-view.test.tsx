@@ -20,9 +20,9 @@ vi.mock('@sdk', async (importOriginal) => {
   return { ...actual, llmSourcesService: { skip: h.skip } };
 });
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: { goBack: h.goBack, goHome: h.goHome }, windowMode: false }),
+  // `backOrHome` is the leave: back when there is history (as here), else Home.
+  useDockNavigation: () => ({ navigation: { backOrHome: h.goBack, goHome: h.goHome }, windowMode: false }),
 }));
-vi.mock('@src/navigation/history-position-store', () => ({ getHistoryPosition: () => ({ canGoBack: true }) }));
 vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
   useLlmSources: () => ({ status: h.status }),
   useFundingFollowsLogin: () => undefined,

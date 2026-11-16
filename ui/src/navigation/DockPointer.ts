@@ -3,7 +3,7 @@ import {
   automationsPointer,
   type AutomationsRoute,
 } from '@src/components/automations/automations-pointer';
-import { PROJECT_DEPLOY_MAIN_AGENT_PARAM, PROJECT_DEPLOYMENT_PARAM, pointerForWebUrl, webUrlFromPointer } from '@sdk';
+import { PROJECT_DEPLOY_MAIN_AGENT_PARAM, PROJECT_DEPLOYMENT_PARAM, UUID_SOURCE, pointerForWebUrl, webUrlFromPointer } from '@sdk';
 import {
   Agent,
   AgenticProcess,
@@ -331,6 +331,8 @@ export const CAPABILITY_PARAM = 'capability';
  */
 /** The Shell entity's type token — the `shell-` prefix on a shell TypeId. */
 const SHELL_TYPE = 'shell';
+/** A transcript file is named by its session's id: `<session id>.jsonl`. */
+const TRANSCRIPT_FILE = new RegExp(`(${UUID_SOURCE})\\.jsonl$`, 'i');
 
 export const START_COMMAND_PARAM = 'startCommand';
 
@@ -1454,6 +1456,11 @@ export class DockPointer implements IDockPointer {
     return new DockPointer(ViewType.HELPDESK, pointer, undefined, layout);
   }
 
+  /** A help desk itself, by its hub project id: its team's view, and where its invite link lands. */
+  static forDesk(deskId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.SUPPORT_DESK, deskId, undefined, layout);
+  }
+
   /**
    * Parse a helpdesk pointer. Returns nulls for anything absent or malformed —
    * never throws, so a hand-edited URL renders the portal root rather than
@@ -1523,6 +1530,20 @@ export class DockPointer implements IDockPointer {
    * `projectSegmentToTypeId`) that turn a `<type>-<id>`-or-bare-id segment into
    * a TypeId.
    */
+  /**
+   * The ClaudeSession a claude-transcript lens shows, in either address form: the bare
+   * session id, or a transcript FILE — which is named by its session's id. Null for
+   * any other dock. Unlike `targetTypeId` this covers the file form, for surfaces that
+   * only need to know WHICH session the page shows.
+   */
+  get transcriptSessionTypeId(): TypeId | null {
+    if (this.viewType !== ViewType.LENS || !this.pointer) return null;
+    const lens = DockPointer.parseLensPointer(this.pointer);
+    if (lens?.category !== 'claude' || lens.type !== 'transcript' || !lens.ref) return null;
+    const id = lens.ref.includes('/') || lens.ref.includes('%') ? TRANSCRIPT_FILE.exec(lens.ref)?.[1] : lens.ref;
+    return id ? DockPointer.tryTypeId(ClaudeSession.type, id) : null;
+  }
+
   private static tryTypeId(type: string, id?: string): TypeId | null {
     try {
       return id !== undefined ? new TypeId(type, id) : new TypeId(type);
@@ -2303,10 +2324,10 @@ export class DockPointer implements IDockPointer {
 
   /**
    * Create dock pointer for the user Preferences screen.
-   * @param category - Optional category whose tab should be active
+   * @param tab - Optional `<group>/<tab>` to open (`developer/trace-logging`); see `prefLayout.ts`
    */
-  static forPreferences(category?: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.PREFERENCES, category, {}, layout);
+  static forPreferences(tab?: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.PREFERENCES, tab, {}, layout);
   }
 
   /**
@@ -2646,6 +2667,9 @@ export class DockPointer implements IDockPointer {
     // ClaudeSession entity (id = session id). Surfacing it here puts lens on the
     // same entity rail as every other dock: the tab mint resolves the session's
     // name and the loader its project — no lens-special naming/project logic.
+    // A transcript addressed by FILE (a received one) is deliberately left without a
+    // target here — its session may have no row on this machine, and the tab mint and
+    // the loader's project resolution both read this. `transcriptSessionTypeId` names it.
     if (this.viewType === ViewType.LENS) {
       const lens = DockPointer.parseLensPointer(pointer);
       if (lens?.category === 'claude' && lens.type === 'transcript' && lens.ref && !lens.ref.includes('/')) {
@@ -2682,6 +2706,9 @@ export class DockPointer implements IDockPointer {
     // 'helpdesk' target — untitled and projectless. The article sub-pointer is
     // deliberately dropped: every article belongs to the one portal project, so
     // the tab stays on the portal (see `foldsPointer` in the viewer registry).
+    // A desk is a HUB project, usually not a row on this machine: its tab names no local entity (asking for
+    // the project here would fail the tab on a desk this computer has never seen).
+    if (this.viewType === ViewType.SUPPORT_DESK) return null;
     if (this.viewType === ViewType.HELPDESK) {
       const { projectId } = DockPointer.parseHelpdeskPointer(pointer);
       return projectId ? DockPointer.tryTypeId(Project.type, projectId) : null;

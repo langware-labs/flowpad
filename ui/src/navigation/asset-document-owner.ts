@@ -33,5 +33,6 @@ export async function assetDocumentAtOwner(dock: DockPointer): Promise<DockPoint
       owner = target ? await tabOwnerProject(dock, target as TabProjectTarget) : null;
     }
   }
-  return owner ? DockPointer.rebaseAssetsOntoProject(dock, owner) : null;
+  if (!owner) return null;
+  return DockPointer.rebaseAssetsOntoProject(dock, owner);
 }

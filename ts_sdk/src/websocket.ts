@@ -238,6 +238,8 @@ export interface RestApiMessage extends BaseMessage {
   // This call names its socket as the initiator (the HTTP path sends
   // X-Flow-Connection-Id). The handler already knows the connection id.
   carries_initiator?: boolean;
+  // `ActionInfo.quiet` (the HTTP path sends `Flowpad-Quiet`).
+  quiet?: boolean;
 }
 
 export interface ResponseMessage extends BaseMessage {

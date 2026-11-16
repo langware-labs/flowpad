@@ -1,12 +1,10 @@
-import { PrefKey, WorkerModelTier } from '@sdk';
-import { usePreference } from '@src/hooks/use-preference';
-import { useOptionalHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
+import { WorkerModelTier } from '@sdk';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@src/components/ui/select';
 import { cn } from '@src/lib/utils';
-import { useMemo } from 'react';
 import { useLingui } from '@lingui/react/macro';
 
-export const VIBE_MODEL_DEFAULT = WorkerModelTier.MD;
+export const VIBE_MODEL_DEFAULT = null;
+const ENDPOINT_DEFAULT_OPTION = '__endpoint_default__';
 
 const VIBE_MODEL_TIERS = [WorkerModelTier.SM, WorkerModelTier.MD, WorkerModelTier.LG] as const;
 
@@ -18,20 +16,18 @@ const TIER_ALIASES: Record<string, VibeModelTier> = {
   opus: WorkerModelTier.LG,
 };
 
-export function normalizeVibeModelTier(value: unknown): VibeModelTier {
+export function normalizeVibeModelTier(value: unknown): VibeModelChoice {
   if (value === WorkerModelTier.SM || value === WorkerModelTier.MD || value === WorkerModelTier.LG) {
     return value;
   }
   if (typeof value === 'string') {
-    return TIER_ALIASES[value] ?? VIBE_MODEL_DEFAULT;
+    return TIER_ALIASES[value] ?? (value || null);
   }
   return VIBE_MODEL_DEFAULT;
 }
 
-/** What the picker can emit: a tier, or a custom model NAME from the harness's
- *  `Capability.model_map`. Typing it `VibeModelTier` was a lie the component
- *  papered over with a cast — a custom name is legal and reaches `cli_config.model`. */
-export type VibeModelChoice = string;
+/** Null delegates to the endpoint; a tier, custom name, or concrete ID is an explicit choice. */
+export type VibeModelChoice = string | null;
 
 interface VibeModelSelectProps {
   value: unknown;
@@ -44,34 +40,12 @@ interface VibeModelSelectProps {
   availableSizes?: readonly string[] | null;
   /** A size the agent requires: the picker shows it and does not offer to leave it. */
   pinnedSize?: string | null;
+  /** Custom named models the endpoint funding this session declares beside its sizes (any
+   *  non-size `tiers` key, e.g. `coding`); offered after the sizes. */
+  customNames?: readonly string[];
 }
 
-/** Custom named model options defined for the default harness (its
- *  `Capability.model_map`, union of non-tier keys across providers).
- *
- *  Read from the app-wide `HarnessCapabilitiesProvider` rather than subscribing to
- *  the manager here: that provider exists precisely so each consumer does not add
- *  its own listener, and it already loads the capabilities this needs. Outside the
- *  app tree (isolated tests) there is no provider and the selector degrades to
- *  tier-only, which is the same "unknown means fail open" rule its consumers use. */
-function useCustomModelOptions(): string[] {
-  const harnesses = useOptionalHarnessCapabilities();
-  const snapshot = harnesses?.defaultHarness;
-  const kind = snapshot?.resolvedKind;
-  const map = kind ? (snapshot?.capabilities.find((c) => c.kind === kind)?.model_map ?? {}) : {};
-  return useMemo(() => {
-    const tiers = VIBE_MODEL_TIERS as readonly string[];
-    const names = new Set<string>();
-    for (const perProvider of Object.values(map)) {
-      for (const name of Object.keys(perProvider ?? {})) {
-        if (!tiers.includes(name)) names.add(name);
-      }
-    }
-    return [...names];
-    // Keyed on the map's content, not its identity: `useCapability` hands back a
-    // fresh object every render, so an identity dep would rebuild every time.
-  }, [JSON.stringify(map)]);
-}
+const NO_CUSTOM_NAMES: readonly string[] = [];
 
 export function VibeModelSelect({
   value,
@@ -82,17 +56,17 @@ export function VibeModelSelect({
   testId = 'vibe-model-select',
   availableSizes = null,
   pinnedSize = null,
+  customNames = NO_CUSTOM_NAMES,
 }: VibeModelSelectProps) {
   const { t } = useLingui();
-  const customOptions = useCustomModelOptions();
-  // A known custom name passes straight through to cli_config.model (the backend
-  // resolves it via the harness model_map); anything else normalizes to a tier.
-  const resolveValue = (v: unknown): string =>
-    typeof v === 'string' && customOptions.includes(v) ? v : normalizeVibeModelTier(v);
-  const selected = pinnedSize ? resolveValue(pinnedSize) : resolveValue(value);
+  // Concrete IDs and custom names stay explicit; null leaves resolution to the endpoint.
+  const resolveValue = (v: unknown): VibeModelChoice =>
+    typeof v === 'string' && customNames.includes(v) ? v : normalizeVibeModelTier(v);
+  const selected = (pinnedSize ? resolveValue(pinnedSize) : resolveValue(value)) ?? ENDPOINT_DEFAULT_OPTION;
   // A size the budget does not offer cannot be run: it is listed, so the person sees it exists, but not pickable.
   const offered = (tier: string) => !availableSizes || availableSizes.includes(tier);
   const labels: Record<string, string> = {
+    [ENDPOINT_DEFAULT_OPTION]: t`Endpoint default`,
     [WorkerModelTier.SM]: t`Fast`,
     [WorkerModelTier.MD]: t`Balanced`,
     [WorkerModelTier.LG]: t`Accurate`,
@@ -102,7 +76,7 @@ export function VibeModelSelect({
   return (
     <Select
       value={selected}
-      onValueChange={(next) => void onChange(resolveValue(next))}
+      onValueChange={(next) => void onChange(next === ENDPOINT_DEFAULT_OPTION ? null : resolveValue(next))}
       disabled={disabled || !!pinnedSize}
     >
       <SelectTrigger
@@ -121,6 +95,9 @@ export function VibeModelSelect({
         </div>
       </SelectTrigger>
       <SelectContent align="start" className="min-w-[7.75rem]">
+        <SelectItem value={ENDPOINT_DEFAULT_OPTION} data-testid="vibe-model-option-default" className="py-1 text-xs">
+          {labels[ENDPOINT_DEFAULT_OPTION]}
+        </SelectItem>
         {VIBE_MODEL_TIERS.map((tier) => (
           <SelectItem
             key={tier}
@@ -132,7 +109,7 @@ export function VibeModelSelect({
             {labels[tier]}
           </SelectItem>
         ))}
-        {customOptions.map((name) => (
+        {customNames.map((name) => (
           <SelectItem key={name} value={name} data-testid={`vibe-model-option-${name}`} className="py-1 text-xs">
             {name}
           </SelectItem>
@@ -140,17 +117,4 @@ export function VibeModelSelect({
       </SelectContent>
     </Select>
   );
-}
-
-/**
- * The Vibe build tier — one owner for the value every Vibe surface starts a build
- * with, persisted so a Fast choice survives a remount rather than silently
- * reverting to the pricier default.
- */
-export function useVibeModelTier(): [VibeModelChoice, (next: VibeModelChoice) => void] {
-  // `usePreference` already resolves an unset key to the registry default and
-  // returns a `useCallback`-stable setter; only an explicitly-stored empty string
-  // needs a fallback here.
-  const [stored, setStored] = usePreference<string>(PrefKey.VIBE_MODEL_TIER);
-  return [stored || VIBE_MODEL_DEFAULT, setStored];
 }

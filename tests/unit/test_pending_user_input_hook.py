@@ -86,3 +86,27 @@ async def test_other_tools_are_not_questions(tmp_path):
     with patch.object(AgenticProcess, "transcript_path", new_callable=PropertyMock, return_value=None):
         await process.on_hook(_hook(str(process.id), "Bash"))
         assert process.pending_user_input() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("no_side_effects")
+async def test_answered_question_stays_answered_after_the_session_keeps_working(tmp_path):
+    """The answer scrolls far up the transcript as work goes on; the worker is still working."""
+    process = AgenticProcess(id=mint_uuid(), worker_type="claude_code", status="running", pty_mode=True)
+    process.enable_pending_question_hook()
+    transcript = _transcript(tmp_path / "s.jsonl", answered=False)
+    work = json.dumps({"type": "assistant", "message": {"content": "x" * 1000}}, separators=(",", ":")) + "\n"
+
+    with (
+        patch.object(AgenticProcess, "transcript_path", new_callable=PropertyMock, return_value=transcript),
+        patch.object(AgenticProcess, "_discover_status_from_transcript", return_value=WorkerStatus.WORKING),
+    ):
+        await process.on_hook(_hook(str(process.id), "AskUserQuestion"))
+        assert process.fetch_worker_status() is WorkerStatus.PENDING_USER
+
+        _transcript(transcript, answered=True)  # answered in the terminal
+        assert process.fetch_worker_status() is WorkerStatus.WORKING
+
+        with transcript.open("a") as fh:
+            fh.write(work * 300)  # ~300 KB of later turns
+        assert process.fetch_worker_status() is WorkerStatus.WORKING

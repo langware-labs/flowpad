@@ -8,6 +8,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { NodeData } from './graph/graphEngine';
 import { tagGraphCodec } from './codecs';
 import { SubgraphView } from './SubgraphView';
+import { StreamInboxTags } from '@src/components/tags/StreamInboxTags';
+import { messageTagReturn } from '@src/components/tags/message-tag-navigation';
 
 export { tagGraphCodec } from './codecs';
 
@@ -69,7 +71,15 @@ export function TagGraphView() {
     [activeDock?.options?.render, navigation, tag],
   );
 
+  const returnPointer = messageTagReturn(activeDock?.options, 'picker');
   const shapeToggle = (
+    <div className="flex items-center gap-2">
+      {returnPointer && <button type="button" className="text-xs underline" data-testid="tag-view-back"
+        onClick={() => navigation.openDock(returnPointer)}><Trans>Back to tags</Trans></button>}
+      {tag && <button type="button" className="text-xs underline" data-testid="tag-view-messages"
+        onClick={() => navigation.openDock(DockPointer.forStreamInbox().withOption('tags', tag))}><Trans>View tagged messages</Trans></button>}
+      <button type="button" className="text-xs underline" data-testid="tag-view-manage"
+        onClick={() => navigation.openDock(DockPointer.forTagGraph(null, { carry: { ...activeDock?.options, origin_tag: tag ?? '', manage: 'stream_inbox' } }))}><Trans>Stream Inbox tags</Trans></button>
     <div className="graph-segmented-toggle" role="group" aria-label={t`Tag shape`}>
       <button
         type="button"
@@ -98,9 +108,11 @@ export function TagGraphView() {
         </span>
       </button>
     </div>
+    </div>
   );
 
   return (
+    activeDock?.options?.manage === 'stream_inbox' ? <StreamInboxTags /> :
     <SubgraphView
       projection="tag"
       codec={tagGraphCodec}

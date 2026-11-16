@@ -350,7 +350,10 @@ def test_user_use_never_touches_the_machines_harness_configs(recorder, tmp_path,
         result = runner.invoke(app, ["llm", "user", "use", "1"])
 
     assert result.exit_code == 0, result.output
-    assert list(tmp_path.rglob("*")) == []
+    # Flowpad's own home (``.flow``) may get the CLI-use stamp, depending on which test built the instance
+    # settings first; every other path under the patched home is a harness's config and must stay untouched.
+    flow_home = tmp_path / ".flow"
+    assert [p for p in tmp_path.rglob("*") if p != flow_home and flow_home not in p.parents] == []
     assert not [call for call in recorder.calls if call[1].endswith("/binding")]
 
 
@@ -554,7 +557,10 @@ def test_clearing_leaves_a_missing_or_foreign_file_alone(tmp_path, monkeypatch):
     spec = {"fmt": "json", "path": ".claude/settings.json", "merge": {"env": {"A": "1"}}}
 
     llm_cmd._remove_user_config("claude", spec)
-    assert list(tmp_path.rglob("*")) == []
+    # Flowpad's own home (``.flow``) may get the CLI-use stamp, depending on which test built the instance
+    # settings first; every other path under the patched home is a harness's config and must stay untouched.
+    flow_home = tmp_path / ".flow"
+    assert [p for p in tmp_path.rglob("*") if p != flow_home and flow_home not in p.parents] == []
 
     settings = tmp_path / ".claude/settings.json"
     settings.parent.mkdir(parents=True)
@@ -958,8 +964,13 @@ def _hub_answers(monkeypatch, status_code: int) -> list[tuple[str, dict]]:
     asked: list[tuple[str, dict]] = []
 
     def fake_get(url, headers=None, **_kwargs):
+        import httpx
+
         asked.append((url, headers or {}))
-        return type("Response", (), {"status_code": status_code})()
+        return httpx.Response(status_code, json={"status": "success", "data": {
+            "endpoint_typeid": OPEN, "tiers": {"sm": "vendor/small"},
+            "default_model": None, "effective_default_model": "vendor/small",
+        }})
 
     monkeypatch.setattr(llm_cmd.requests, "get", fake_get)
     return asked
@@ -976,7 +987,7 @@ def test_an_endpoint_id_the_box_never_heard_of_is_bound_as_public(recorder, monk
 
     assert result.exit_code == 0, result.output
     # Asked the hub FIRST, with no credential, about the one thing an anonymous caller may read.
-    assert [url for url, _ in asked] == [f"https://open.hub/api/v1/graph/llm_endpoint/{OPEN_ID}/models"]
+    assert [url for url, _ in asked] == [f"https://open.hub/api/v1/graph/llm_endpoint/{OPEN_ID}/model-config"]
     selects = [body for method, path, body in recorder.calls if method == "POST" and path.endswith("/select")]
     assert sorted(body["harness"] for body in selects) == ["claude", "codex"]
     for body in selects:

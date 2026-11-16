@@ -1,0 +1,1 @@
+One real run of a skill laid on its map: the frames it went through, in order, with the time and cost of each. Kept beside the session that ran, never in git; it carries a copy of the map it was traced against.

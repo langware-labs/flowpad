@@ -1,18 +1,31 @@
-import { useMemo, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { LifeBuoy, Plus } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
-import type { User } from '@sdk';
+import { myHelpDesks, staffedHelpDesks, type User } from '@sdk';
+import { useAuth } from '@sdk/react/hooks';
 import { ContactDialog } from '@src/components/conversation/ContactDialog';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { SegmentedControl } from '@src/components/ui/segmented-control';
+import { servedPage } from '@src/lib/hub-page-url';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { navigateTo } from '@src/notifications';
 import { ContactListBox, ContactRows, ContactsTitle } from './ContactRows';
 import { CreateContactsGroupDialog } from './CreateContactsGroupDialog';
+import { NewHelpDeskDialog } from './NewHelpDeskDialog';
 import { filterContacts, useContacts } from './use-contacts';
 import { filterGroups, useContactsGroups } from './use-contacts-groups';
 
-type Tab = 'people' | 'groups';
+type Tab = 'people' | 'groups' | 'desks';
+
+/** A help desk in the list: one this person answers on, or one they added to ask. */
+interface DeskRow {
+  id: string;
+  name: string;
+  mine: boolean;
+  on: boolean;
+}
 
 interface ContactsDialogProps {
   open: boolean;
@@ -30,6 +43,32 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
   const [creatingGroup, setCreatingGroup] = useState(false);
   const { contacts, refetch } = useContacts(excludeUserId, open);
   const { groups } = useContactsGroups(open);
+  const { cloudUser } = useAuth();
+  const [creatingDesk, setCreatingDesk] = useState(false);
+  const [desks, setDesks] = useState<DeskRow[]>([]);
+  const me = cloudUser?.id ?? null;
+  useEffect(() => {
+    if (!open || tab !== 'desks') return;
+    let current = true;
+    void Promise.all([staffedHelpDesks().catch(() => []), me ? myHelpDesks(me).catch(() => []) : []]).then(
+      ([staffed, added]) => {
+        if (!current) return;
+        const held = new Set(staffed.map((d) => d.id));
+        setDesks([
+          ...staffed.map((d) => ({ id: d.id, name: d.helpdesk?.display_name || d.name || '', mine: true, on: !!d.helpdesk?.enabled })),
+          ...added.filter((d) => !held.has(d.id)).map((d) => ({ id: d.id, name: d.display_name, mine: false, on: d.enabled })),
+        ]);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [open, tab, me]);
+  const openDesk = (deskId: string) => {
+    onOpenChange(false);
+    // On whichever page this app serves: the hub page, or the desktop.
+    navigateTo(DockPointer.forDesk(deskId).withPage(servedPage()).toUrl());
+  };
 
   const people = useMemo(() => filterContacts(contacts, query), [contacts, query]);
   const shownGroups = useMemo(() => filterGroups(groups, query), [groups, query]);
@@ -46,6 +85,7 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
             options={[
               ['people', t`People`],
               ['groups', t`Groups`],
+              ['desks', t`Help desks`],
             ]}
             value={tab}
             onChange={(next) => {
@@ -56,14 +96,47 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
             className="justify-self-start"
           />
 
-          <Input
-            placeholder={tab === 'people' ? t`Search by name or email` : t`Search groups`}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            data-testid="contacts-search"
-          />
+          {tab !== 'desks' && (
+            <Input
+              placeholder={tab === 'people' ? t`Search by name or email` : t`Search groups`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              data-testid="contacts-search"
+            />
+          )}
 
-          {tab === 'people' ? (
+          {tab === 'desks' ? (
+            <>
+              <ContactListBox empty={<Trans>No help desks yet. Create your own support line, or open a desk's link to add it.</Trans>}>
+                {desks.map((desk) => (
+                  <button
+                    key={desk.id}
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm hover:bg-muted/40"
+                    onClick={() => openDesk(desk.id)}
+                    data-testid={`contacts-desk-row-${desk.id}`}
+                  >
+                    <LifeBuoy className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                    <span className="flex-1 truncate">{desk.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {desk.mine ? desk.on ? <Trans>You answer · on</Trans> : <Trans>You answer · off</Trans> : <Trans>You can ask</Trans>}
+                    </span>
+                  </button>
+                ))}
+              </ContactListBox>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-fit justify-self-start"
+                onClick={() => setCreatingDesk(true)}
+                data-testid="contacts-new-desk"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <Trans>New help desk</Trans>
+              </Button>
+            </>
+          ) : tab === 'people' ? (
             <ContactRows contacts={people} testId="contacts" onOpen={setDetailFor} />
           ) : (
             <>
@@ -104,6 +177,7 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
       </Dialog>
 
       <CreateContactsGroupDialog open={creatingGroup} onOpenChange={setCreatingGroup} />
+      <NewHelpDeskDialog open={creatingDesk} onOpenChange={setCreatingDesk} onCreated={openDesk} />
       {detailFor && <ContactDialog open onClose={() => setDetailFor(null)} user={detailFor} />}
     </>
   );

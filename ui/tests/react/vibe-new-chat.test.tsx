@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
-import { VIBE_MODEL_DEFAULT } from '@src/pages/flow-page/vibe-model-select';
 
 const startVibe = vi.fn();
 
@@ -58,7 +57,7 @@ vi.mock('@src/pages/flow-page/vibe-recent-sessions', () => ({
 import { VibeNewChat } from '@src/pages/flow-page/vibe-new-chat';
 
 describe('VibeNewChat', () => {
-  it('submits the portable model tier and leaves worker resolution to the backend', async () => {
+  it('leaves model and worker resolution to the backend', async () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
@@ -69,11 +68,7 @@ describe('VibeNewChat', () => {
     await user.type(screen.getByLabelText('What would you like to work on?'), 'build a dashboard');
     await user.click(screen.getByTestId('session-input-submit'));
 
-    expect(startVibe).toHaveBeenCalledWith(
-      'build a dashboard',
-      undefined,
-      VIBE_MODEL_DEFAULT,
-    );
+    expect(startVibe).toHaveBeenCalledWith('build a dashboard', undefined);
   });
 
   it('carries no model picker — the tier is set in the chat pane, not on the home', () => {

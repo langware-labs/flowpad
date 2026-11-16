@@ -61,6 +61,24 @@ def describe_event(pattern: str, target: Optional[str] = None,
     return EventWhen(pattern=pattern, title=title, description=description, target=target or None)
 
 
+def life_words(trigger: Any) -> str:
+    """" · ran 2 of 4 · until 08:00" while it runs; " · done, ran 3 times" / " · expired" once it ended."""
+    from flow_sdk.automations import lifecycle  # noqa: PLC0415
+
+    if str(getattr(trigger, "sched_trigger_type", "")) == "date" and not getattr(trigger, "ended_reason", None):
+        return ""
+    state, runs, limit = lifecycle.status(trigger), int(trigger.counter or 0), lifecycle.run_limit(trigger)
+    if state == "done":
+        return f" · done, ran {runs} time{'s' if runs != 1 else ''}"
+    if state in ("expired", "cancelled"):
+        return f" · {state} after {runs} run{'s' if runs != 1 else ''}"
+    parts = [f"ran {runs} of {limit}" if limit else (f"ran {runs}" if runs else "")]
+    until = getattr(trigger, "expires_at", None)
+    if until:
+        parts.append(f"until {until.astimezone().strftime('%b %-d, %H:%M')}")
+    return "".join(f" · {p}" for p in parts if p)
+
+
 def describe_when(trigger: Any, catalog: Optional[dict[str, tuple[str, str]]] = None) -> WhenPart:
     from flow_sdk.automations.decision_subjects import for_pattern  # noqa: PLC0415
     from flow_sdk.automations.schedule import read_schedule, schedule_text  # noqa: PLC0415
@@ -68,7 +86,12 @@ def describe_when(trigger: Any, catalog: Optional[dict[str, tuple[str, str]]] = 
     kind = kind_of(trigger)
     if kind == "schedule":
         schedule = read_schedule(trigger.expr or "", trigger.sched_trigger_type, trigger.timezone)
-        return WhenPart(kind=kind, text=schedule_text(schedule), schedule=schedule)
+        return WhenPart(kind=kind, text=schedule_text(schedule) + life_words(trigger), schedule=schedule)
+    if kind == "event" and getattr(trigger, "awaits_reply", None):
+        event = describe_event(str(trigger.tag_pattern or ""), trigger.tag_target, catalog)
+        until = getattr(trigger, "expires_at", None)
+        when = f" · until {until.astimezone().strftime('%b %-d, %H:%M')}" if until else ""
+        return WhenPart(kind=kind, text=f"When the message is answered{when}", event=event)
     if kind == "event":
         event = describe_event(str(trigger.tag_pattern or ""), trigger.tag_target, catalog)
         subject = for_pattern(event.pattern)

@@ -539,7 +539,7 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         token_shape=TokenShape.CREDENTIAL_DICT,
         probe=OAuthProbeSpec(
             method="GET",
-            url="{hub}/current-user",
+            url="{hub}/current-principal",
             # The hub answers in its `{status, message, data}` envelope, so the
             # verdict is the envelope's own status and every other field is
             # addressed under `data.`. Reading the envelope rather than inferring
