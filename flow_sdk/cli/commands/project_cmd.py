@@ -335,7 +335,7 @@ def register_project(
     path = caller_abs_path(folder)
     if not os.path.isdir(path):
         fail(EXIT_INVALID_ARG, "NOT_A_FOLDER", f"{path} is not a folder")
-    ok({"project_id": project_for_path(discover_port(), path, create=True, hint=""), "path": path})
+    ok({"project_id": project_for_path(discover_port(), path, create=True), "path": path})
 
 
 @project_app.command("load")

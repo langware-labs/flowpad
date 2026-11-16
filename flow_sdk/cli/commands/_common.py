@@ -307,20 +307,19 @@ def data_source_create_path(port: int, project_id: "str | None" = None) -> str:
     return f"project/{project_id}/data_source" if project_id else "data_source"
 
 
-def project_for_path(port: int, cwd: str, *, create: bool, hint: str = "pass --project or cd into one") -> "str | None":
+def project_for_path(port: int, cwd: str, *, create: bool) -> "str | None":
     """The id of the project whose folder is ``cwd``, or ``None``.
 
     The natural key is the canonical mount path and it is QUERIED — the list
     route pushes the ``filter`` down as an indexed EQ — never scanned client
     side. ``create`` mints the project for a folder that has none, so a second
     run lands in the same project rather than a twin (``Project.find_by_cwd``'s
-    own upsert rule: find, else save-new). ``hint`` is the caller's way out
-    when ``cwd`` cannot be a project folder; empty states the refusal alone.
+    own upsert rule: find, else save-new).
     """
     from flow_sdk.fs_store.path_utils import canonical_posix_path, is_valid_project_cwd
 
     if not is_valid_project_cwd(cwd, include_temp=True):
-        fail(EXIT_INVALID_ARG, "INVALID_CWD", f"{cwd} cannot be a project folder" + (f"; {hint}" if hint else ""))
+        fail(EXIT_INVALID_ARG, "INVALID_CWD", f"{cwd} cannot be a project folder; pass --project or cd into one")
     canonical = canonical_posix_path(cwd)
     rows = get_graph_json(
         graph_url(port, "project"),
