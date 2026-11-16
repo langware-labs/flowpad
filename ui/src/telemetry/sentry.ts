@@ -7,8 +7,14 @@
  * started, restarted with the new DSN/environment, or closed — no reload.
  *
  * On only when ALL hold: the backend sent a valid `sentry_info`, the page is the hub or a sandbox
- * (a desktop's bootstrap always sends null), and privacy mode is not Local ("nothing may leave the
- * box"). The SDK is a lazy chunk (`./sentry-sdk`): a desktop never downloads it.
+ * (a desktop's bootstrap always sends null), privacy mode is not Local ("nothing may leave the
+ * box"), and the hub's origin is known and safe.
+ *
+ * The SDK is NOT part of this open-source bundle. It is loaded at runtime from the hub, at the fixed
+ * path `SDK_PATH` on the hub's own origin (the hub UI: its own origin; a sandbox, which runs this
+ * OSS wheel and cannot serve it: `desktop_info.cloud_app_url`). Nothing in `sentry_info` -- or any other
+ * config -- names a script URL, because a URL in config would run whatever script it points to. A
+ * desktop never loads it. A hub that cannot serve it (down, older) just leaves Sentry off.
  *
  * Privacy: no replay, no tracing, no breadcrumbs, no data collection (`dataCollection`, v11's
  * successor to `sendDefaultPii: false`; its `infer_ip: 'never'` is carried onto the wire by the
@@ -18,13 +24,19 @@
  * event. Any failure in here is swallowed: reporting must never affect the app.
  */
 
-import type { ErrorEvent, EventHint } from '@sentry/browser';
 import { comparer, reaction } from 'mobx';
 import { dataContext, privacyManager, type SentryInfo } from '@sdk';
+import {
+  SDK_CONTRACT,
+  SDK_GLOBAL,
+  SDK_PATH,
+  type SentryEventLike,
+  type SentryHintLike,
+  type SentrySdk,
+} from './sentry-contract';
 
 declare const __UI_VERSION__: string | undefined;
 
-type SentryModule = typeof import('./sentry-sdk');
 type RuntimeKindReported = 'hub' | 'sandbox';
 export type ErrorSite = 'router' | 'boundary';
 
@@ -32,6 +44,8 @@ export interface EffectiveConfig {
   dsn: string;
   environment: SentryInfo['environment'];
   runtimeKind: RuntimeKindReported;
+  /** The hub's SDK script: the hub's own origin + the fixed `SDK_PATH`. */
+  sdkUrl: string;
 }
 
 // Kept identical to `_DSN` in flow_sdk/schema/data_spec/sentry_info_spec.py (two runtimes, one rule): change both together.
@@ -56,6 +70,29 @@ export function isValidSentryInfo(value: unknown): value is SentryInfo {
   return typeof dsn === 'string' && DSN_RE.test(dsn) && typeof environment === 'string' && ENVIRONMENTS.has(environment);
 }
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Where the hub's SDK script is: the hub's origin + the fixed path, or `null` when the origin is
+ * unknown or not safe to run a script from (not https -- a local dev hub excepted -- or carrying
+ * credentials). The hub UI is served BY the hub, so its own origin is the hub; a sandbox learns its
+ * hub from the bootstrap (`desktop_info.cloud_app_url`, the hub's browser-app origin).
+ */
+export function sdkUrlFor(kind: RuntimeKindReported, bootstrap: unknown, pageOrigin: string): string | null {
+  const raw =
+    kind === 'hub' ? pageOrigin : (bootstrap as { desktop_info?: { cloud_app_url?: unknown } })?.desktop_info?.cloud_app_url;
+  if (typeof raw !== 'string') return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  const safe = url.protocol === 'https:' || (url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname));
+  if (!safe || url.username || url.password) return null;
+  return url.origin + SDK_PATH;
+}
+
 /** What Sentry should be running with right now, or `null` for off. Pure. */
 export function effectiveConfig(bootstrap: unknown, isLocal: boolean): EffectiveConfig | null {
   if (isLocal || !bootstrap || typeof bootstrap !== 'object') return null;
@@ -63,7 +100,9 @@ export function effectiveConfig(bootstrap: unknown, isLocal: boolean): Effective
   const kind = info.runtime?.kind;
   if (kind !== 'hub' && kind !== 'sandbox') return null;
   if (!isValidSentryInfo(info.sentry_info)) return null;
-  return { dsn: info.sentry_info.dsn, environment: info.sentry_info.environment, runtimeKind: kind };
+  const sdkUrl = sdkUrlFor(kind, bootstrap, window.location.origin);
+  if (!sdkUrl) return null;
+  return { dsn: info.sentry_info.dsn, environment: info.sentry_info.environment, runtimeKind: kind, sdkUrl };
 }
 
 // ── the sanitizer ─────────────────────────────────────────────────────────────────────
@@ -167,7 +206,7 @@ function passesDenyScan(event: unknown): boolean {
  * message, `extra`, `user`, `breadcrumbs`, headers, cookies, request data, other contexts — is
  * never copied. An event that is not an exception is dropped.
  */
-export function sanitizeEvent(event: ErrorEvent, hint?: EventHint): ErrorEvent | null {
+export function sanitizeEvent(event: SentryEventLike, hint?: SentryHintLike): SentryEventLike | null {
   const values = event.exception?.values;
   if (!Array.isArray(values) || values.length === 0) return null;
   const where = event.tags?.where;
@@ -181,7 +220,7 @@ export function sanitizeEvent(event: ErrorEvent, hint?: EventHint): ErrorEvent |
     level: event.level === 'fatal' ? 'fatal' : 'error',
     environment: event.environment,
     release: event.release,
-    exception: { values: values.slice(-MAX_EXCEPTIONS).map((v) => scrubException(v as Record<string, unknown>)) },
+    exception: { values: values.slice(-MAX_EXCEPTIONS).map((v) => scrubException(v)) },
     tags: {
       ...(runtimeKind === 'hub' || runtimeKind === 'sandbox' ? { runtime_kind: runtimeKind } : {}),
       ...(typeof where === 'string' && SITES.has(where) ? { where } : {}),
@@ -192,11 +231,11 @@ export function sanitizeEvent(event: ErrorEvent, hint?: EventHint): ErrorEvent |
     // Sentry must not infer the visitor's IP from the connection. Rebuilding `sdk` from name/version
     // alone used to drop it; it is set unconditionally so it can never be lost again.
     sdk: { ...(event.sdk ? { name: event.sdk.name, version: event.sdk.version } : {}), settings: { infer_ip: 'never' } },
-  } as ErrorEvent;
+  } as SentryEventLike;
   return passesDenyScan(out) ? out : null;
 }
 
-function safeSanitize(event: ErrorEvent, hint: EventHint): ErrorEvent | null {
+function safeSanitize(event: SentryEventLike, hint: SentryHintLike): SentryEventLike | null {
   // Local privacy means nothing may leave the machine. The lifecycle below reacts to the toggle
   // asynchronously (and `close` would still flush what is queued), so the decision is also taken
   // here, synchronously, at the moment an event would be sent. Events already on the wire cannot be
@@ -215,18 +254,64 @@ function safeSanitize(event: ErrorEvent, hint: EventHint): ErrorEvent | null {
 
 // ── lifecycle ─────────────────────────────────────────────────────────────────────────
 
-let sentry: SentryModule | null = null;
+let sentry: SentrySdk | null = null;
 let active: EffectiveConfig | null = null;
+/** What the lifecycle should be running NOW; a queued step whose config is no longer this is skipped. */
+let desired: EffectiveConfig | null = null;
 let queue: Promise<void> = Promise.resolve();
 let started = false;
 let stopReaction: (() => void) | null = null;
+/** Script URLs that already failed this page load, so a privacy toggle does not re-request a 404. */
+const failedLoads = new Set<string>();
 
-const loadSdk = (): Promise<SentryModule> => import('./sentry-sdk');
+function isSdk(candidate: unknown): candidate is SentrySdk {
+  const sdk = candidate as Partial<SentrySdk> | null | undefined;
+  return (
+    !!sdk &&
+    sdk.contract === SDK_CONTRACT &&
+    typeof sdk.init === 'function' &&
+    typeof sdk.getClient === 'function' &&
+    typeof sdk.captureException === 'function' &&
+    typeof sdk.globalHandlersIntegration === 'function' &&
+    typeof sdk.linkedErrorsIntegration === 'function' &&
+    typeof sdk.dedupeIntegration === 'function' &&
+    typeof sdk.eventFiltersIntegration === 'function'
+  );
+}
 
-/** Test seams: the module loader and a transport, so tests run the real SDK without a network. */
+/**
+ * Load the hub's SDK script. No request leaks where the page is (`no-referrer`: a sandbox's URL
+ * names the box). What came back must be the SDK AND speak this UI's contract: a hub that predates
+ * the route answers its SPA shell (HTML, 200) at that path, which never defines the global. No
+ * timeout is added -- a script that hangs just leaves Sentry off, and `applyConfig` re-checks the
+ * desired config once it returns.
+ */
+function loadHubSdk(url: string): Promise<SentrySdk> {
+  const present = (window as unknown as Record<string, unknown>)[SDK_GLOBAL];
+  if (isSdk(present)) return Promise.resolve(present);
+  return new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.async = true;
+    el.referrerPolicy = 'no-referrer';
+    el.onload = () => {
+      el.remove();
+      const loaded = (window as unknown as Record<string, unknown>)[SDK_GLOBAL];
+      if (isSdk(loaded)) resolve(loaded);
+      else reject(new Error('the hub did not answer the SDK this UI speaks'));
+    };
+    el.onerror = () => {
+      el.remove();
+      reject(new Error('the SDK script could not be loaded'));
+    };
+    el.src = url;
+    document.head.appendChild(el);
+  });
+}
+
+/** Test seams: the loader and a transport, so tests run an SDK without the hub or a network. */
 export const __testing = {
-  load: loadSdk,
-  transport: undefined as NonNullable<Parameters<SentryModule['init']>[0]>['transport'],
+  load: loadHubSdk,
+  transport: undefined as unknown,
   activeConfig: (): EffectiveConfig | null => active,
   settled: (): Promise<void> => queue,
   /** Back to a cold start: stops the reaction and its privacy listener, restores the seams. */
@@ -235,18 +320,23 @@ export const __testing = {
     stopReaction = null;
     sentry = null;
     active = null;
+    desired = null;
     queue = Promise.resolve();
     started = false;
-    __testing.load = loadSdk;
+    failedLoads.clear();
+    __testing.load = loadHubSdk;
     __testing.transport = undefined;
   },
 };
 
 function sameConfig(a: EffectiveConfig | null, b: EffectiveConfig | null): boolean {
-  return a?.dsn === b?.dsn && a?.environment === b?.environment && a?.runtimeKind === b?.runtimeKind;
+  return (
+    a?.dsn === b?.dsn && a?.environment === b?.environment && a?.runtimeKind === b?.runtimeKind && a?.sdkUrl === b?.sdkUrl
+  );
 }
 
 async function applyConfig(next: EffectiveConfig | null): Promise<void> {
+  if (!sameConfig(desired, next)) return; // a newer decision is queued right behind this one
   if (sameConfig(active, next)) return;
   if (active && sentry) {
     const previous = sentry.getClient();
@@ -257,9 +347,11 @@ async function applyConfig(next: EffectiveConfig | null): Promise<void> {
       /* closing is best-effort */
     }
   }
-  if (!next) return;
+  if (!next || failedLoads.has(next.sdkUrl)) return;
   try {
-    const mod = (sentry ??= await __testing.load());
+    const mod = (sentry ??= await __testing.load(next.sdkUrl));
+    // The script may have taken a while: the config can have changed (turned off, Local, another DSN).
+    if (!sameConfig(desired, next)) return;
     mod.init({
       dsn: next.dsn,
       environment: next.environment,
@@ -301,12 +393,14 @@ async function applyConfig(next: EffectiveConfig | null): Promise<void> {
     active = next;
   } catch (e) {
     active = null;
+    failedLoads.add(next.sdkUrl);
     console.debug('[sentry] not started', e instanceof Error ? e.name : typeof e);
   }
 }
 
 function reconcile(): void {
   const next = effectiveConfig(dataContext.bootstrapInfo, privacyIsLocal());
+  desired = next;
   queue = queue.then(() => applyConfig(next)).catch(() => undefined);
 }
 
@@ -324,6 +418,7 @@ export function startSentryReaction(): void {
         dataContext.bootstrapInfo?.sentry_info,
         dataContext.bootstrapInfo?.runtime?.kind,
         dataContext.bootstrapInfo?.privacy_mode,
+        dataContext.bootstrapInfo?.desktop_info?.cloud_app_url,
       ],
       reconcile,
       { fireImmediately: true, equals: comparer.structural },

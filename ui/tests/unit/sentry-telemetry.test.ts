@@ -15,6 +15,7 @@ import {
   sanitizeUrl,
   startSentryReaction,
 } from '@src/telemetry/sentry';
+import { realSdk } from './_real_sentry_sdk';
 
 const DSN_A = 'https://0123456789abcdef0123456789abcdef@o1.ingest.us.sentry.io/11';
 const DSN_B = 'https://fedcba9876543210fedcba9876543210@o1.ingest.us.sentry.io/22';
@@ -43,20 +44,25 @@ function setBootstrap(info: Record<string, unknown> | null) {
   });
 }
 
-const sandbox = (sentry_info: unknown) => ({ runtime: { kind: 'sandbox' }, sentry_info });
+const HUB = 'https://app.example.test';
+const sandbox = (sentry_info: unknown) => ({
+  runtime: { kind: 'sandbox' },
+  desktop_info: { cloud_app_url: HUB },
+  sentry_info,
+});
 const settle = async () => {
   for (let i = 0; i < 3; i++) await __testing.settled();
 };
 async function boom(message = 'boom') {
   reportError(new Error(message), 'boundary');
-  const { getClient } = await __testing.load();
-  await getClient()?.flush(1000);
+  await realSdk.getClient()?.flush(1000);
 }
 
 beforeEach(() => {
   sent = [];
   __testing.reset();
   __testing.transport = captureTransport as any;
+  __testing.load = () => Promise.resolve(realSdk); // the hub's script is not reachable here
   setBootstrap(null);
 });
 
@@ -99,10 +105,10 @@ describe('runtime configuration changes, without a reload', () => {
     expect(sent[0].event.tags).toEqual({ runtime_kind: 'sandbox', where: 'boundary' });
 
     // A live `sentry_info_msg` lands through `applySentryInfo`: same value, no restart.
-    const before = (await __testing.load()).getClient();
+    const before = realSdk.getClient();
     dataContext.applySentryInfo({ dsn: DSN_A, environment: 'staging' });
     await settle();
-    expect((await __testing.load()).getClient()).toBe(before);
+    expect(realSdk.getClient()).toBe(before);
 
     // A new DSN and environment: the next event goes only to B.
     dataContext.applySentryInfo({ dsn: DSN_B, environment: 'production' });
@@ -116,9 +122,8 @@ describe('runtime configuration changes, without a reload', () => {
     await settle();
     sent = [];
     await boom();
-    const mod = await __testing.load();
-    mod.captureException(new Error('after close'));
-    await mod.getClient()?.flush(500);
+    realSdk.captureException(new Error('after close'));
+    await realSdk.getClient()?.flush(500);
     expect(sent).toEqual([]);
   });
 
@@ -145,7 +150,7 @@ describe('runtime configuration changes, without a reload', () => {
     (privacyManager as any)._apply('local');
     expect(__testing.activeConfig()?.dsn).toBe(DSN_A);
     reportError(new Error('captured right after the user chose Local'), 'boundary');
-    await (await __testing.load()).getClient()?.flush(1000);
+    await realSdk.getClient()?.flush(1000);
     await settle();
     expect(sent).toEqual([]);
   });
@@ -223,7 +228,7 @@ describe('privacy-sensitive exception payloads', () => {
     // The handlers Sentry's globalHandlers integration installed -- what a browser invokes.
     (globalThis as any).onerror(prompt, 'https://9007-abc.e2b.app/assets/index-abc123.js?ticket=zzz', 10, 5, err);
     (globalThis as any).onunhandledrejection({ reason: { prompt, file: fileContents }, promise: Promise.resolve() });
-    await (await __testing.load()).getClient()?.flush(1000);
+    await realSdk.getClient()?.flush(1000);
     expect(sent.length).toBeGreaterThanOrEqual(2);
     const wire = JSON.stringify(sent.map((s) => s.event));
     for (const secret of [prompt.slice(0, 20), 'sk-live', 'ticket=', 'OPENAI_KEY', 'e2b.app']) {
@@ -300,8 +305,8 @@ describe('privacy-sensitive exception payloads', () => {
     setBootstrap(sandbox({ dsn: DSN_A, environment: 'staging' }));
     await settle();
     // Not an exception, so the sanitizer drops it; its text must not reach the log either.
-    (await __testing.load()).getClient()?.captureEvent({ message: prompt });
-    await (await __testing.load()).getClient()?.flush(1000);
+    (realSdk.getClient() as unknown as { captureEvent(e: object): void } | undefined)?.captureEvent({ message: prompt });
+    await realSdk.getClient()?.flush(1000);
     expect(sent).toEqual([]);
     const lines = debug.mock.calls.map((call) => call.join(' '));
     expect(lines.some((line) => line.includes('dropped by the sanitizer'))).toBe(true);

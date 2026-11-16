@@ -158,7 +158,13 @@ action") clears it; any other refusal, or an unreachable hub, keeps it; and a va
 re-confirmed for 7 days reads as `null` from the next bootstrap on (nothing is broadcast on expiry).
 A change broadcasts `sentry_info_msg` over the WebSocket. In the UI,
 `ui/src/telemetry/sentry.ts` follows `dataContext.bootstrapInfo` and starts, restarts or stops
-Sentry without a reload.
+Sentry without a reload. **The Sentry SDK is not in this repository's bundle**: the UI loads it at
+runtime, only once a valid `sentry_info` is present, from the hub's own origin at the fixed path
+`/api/v1/sentry-sdk/browser` (the hub UI: `location.origin`; a sandbox: the hub's origin from
+`desktop_info.cloud_app_url`, which must be https or a local dev host). The path is a constant
+(`ui/src/telemetry/sentry-contract.ts`); no config names a script URL. A hub that cannot serve it
+leaves Sentry off, and a desktop never requests it. The script defines `window.__FlowpadSentry` and
+states a `contract` number the UI checks before using it; the hub repo builds and serves it.
 
 **Rule: nothing on this path may walk a filesystem tree, parse files, or do
 unbounded per-file DB writes.** The frontend's `initSdk` awaits this endpoint
