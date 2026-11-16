@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from 'react';
-import { Info, Plus, X } from 'lucide-react';
+import { Info, Tag as TagIcon, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { QueryRequest, Tag, type FlowMessage } from '@sdk';
 import { useQuery } from '@tanstack/react-query';
@@ -139,7 +139,7 @@ function MessageTagStrip({ message, compact }: { message: FlowMessage; compact: 
               ) : tags.length > 3 ? (
                 `+${tags.length - 3}`
               ) : (
-                <Plus className="size-3" />
+                <TagIcon className="size-3" />
               )}
             </button>
           </PopoverTrigger>
