@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
-import { AlertTriangle, ChevronRight, CircleAlert, Loader2 } from 'lucide-react';
+import { AlertTriangle, CircleAlert, Loader2, Monitor } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Issue, type IssueManualStatus, type IssueReplyMeta, type IssueStatus } from '@sdk';
 import { isIssueActive } from '@sdk/entities/issue';
@@ -54,37 +54,19 @@ export function issueStandingText(reply: Pick<IssueReplyMeta, 'status' | 'opened
   return open ? t`${statusLabel(reply.status)} for ${open}` : statusLabel(reply.status);
 }
 
-function CardRow({
-  name,
-  label,
-  onOpen,
-  children,
-}: {
-  name: string;
-  label: string;
-  onOpen: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      className="flex w-full items-center gap-3 border-b border-border/40 px-3 py-1.5 text-start text-sm transition-colors last:border-b-0 hover:bg-accent/40"
-      onClick={onOpen}
-      data-testid={`issue-card-row-${name}`}
-    >
-      <span className="w-20 shrink-0 text-xs text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 truncate text-foreground">{children}</span>
-      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground rtl:-scale-x-100" aria-hidden="true" />
-    </button>
-  );
-}
+const STATUS_ACCENT: Record<IssueStatus, string> = {
+  open: 'before:bg-red-500',
+  seen: 'before:bg-amber-500',
+  in_progress: 'before:bg-sky-500',
+  resolved: 'before:bg-emerald-500',
+  closed: 'before:bg-muted-foreground/40',
+};
 
 /**
- * An issue's message in a Monitoring conversation: a card of what happened (each row opens the issue's own
- * page, the machine row what the fix names), then severity, title, status, how many times it happened, the fix,
- * and the manual moves (work on it, close it, reopen it). The hub updates the message itself, so the status
- * here follows `reply.status`; a click shows the new status at once. (The bubble does not mount this for the
- * "Resolved: …" follow-up the hub posts afterwards: that is a line of text alone.)
+ * An issue's message in a Monitoring conversation, as one card: a header (severity, title, ×count, status) that
+ * opens the issue's page, chips for the machine (opens what the fix names) and the cause, and a footer with how
+ * it stands, the fix and the manual moves (work on it, close it, reopen it). The hub updates the message itself,
+ * so the status follows `reply.status`; a click shows the new status at once.
  */
 export function IssueReplyLine({ reply }: { reply: IssueReplyMeta }) {
   const { navigation } = useDockNavigation();
@@ -119,108 +101,127 @@ export function IssueReplyLine({ reply }: { reply: IssueReplyMeta }) {
       const to = target ?? pointer;
       if (to) navigation.openDockOnThisPage(to);
     });
-  const line = (
-    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" data-testid="issue-reply-line">
-      <SeverityIcon
-        className={cn('h-3.5 w-3.5 shrink-0', reply.severity === 'warning' ? 'text-amber-500' : 'text-red-500')}
-        aria-label={reply.severity === 'warning' ? t`Warning` : t`Error`}
-      />
-      <span className="font-medium text-foreground" data-testid="issue-reply-title">
-        {reply.title}
-      </span>
-      <span
-        className={cn('inline-flex items-center rounded-full border px-2 py-0.5', STATUS_TONE[status])}
-        data-testid="issue-reply-status"
-        data-issue-status={status}
-      >
-        {statusLabel(status)}
-      </span>
-      {reply.count > 1 && (
-        <span className="text-muted-foreground" data-testid="issue-reply-count">
-          ×{reply.count}
-        </span>
-      )}
-      {active && reply.fix && pointer && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-6 px-2 text-xs"
-          onClick={() =>
-            void resolveFixPointer(reply).then((target) => navigation.openDockOnThisPage(target ?? pointer))
-          }
-          data-testid="issue-reply-fix"
-        >
-          {reply.fix.label}
-        </Button>
-      )}
-      {issueId && active && status !== 'in_progress' && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-xs"
-          disabled={busy}
-          onClick={() => void move('in_progress')}
-          data-testid="issue-reply-in-progress"
-        >
-          <Trans>Mark in progress</Trans>
-        </Button>
-      )}
-      {issueId && active && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-xs"
-          disabled={busy}
-          onClick={() => void move('closed')}
-          data-testid="issue-reply-close"
-        >
-          <Trans>Close</Trans>
-        </Button>
-      )}
-      {issueId && status === 'closed' && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-xs"
-          disabled={busy}
-          onClick={() => void move('open')}
-          data-testid="issue-reply-reopen"
-        >
-          <Trans>Reopen</Trans>
-        </Button>
-      )}
-      {busy && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-      {failed && (
-        <span className="text-red-600 dark:text-red-400">
-          <Trans>Could not update the issue.</Trans>
-        </span>
-      )}
-    </div>
+  const actionClass = 'h-7 rounded-md px-2.5 text-xs';
+  const MOVE_TEST_ID: Record<IssueManualStatus, string> = {
+    in_progress: 'issue-reply-in-progress',
+    closed: 'issue-reply-close',
+    open: 'issue-reply-reopen',
+  };
+  const moveButton = (to: IssueManualStatus, label: ReactNode) => (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={actionClass}
+      disabled={busy}
+      onClick={() => void move(to)}
+      data-testid={MOVE_TEST_ID[to]}
+    >
+      {label}
+    </Button>
   );
   return (
-    <>
-      <div
-        className="mt-1 max-w-xl overflow-hidden rounded-lg border border-border/60 bg-card"
-        data-testid="issue-card"
+    <div
+      className={cn(
+        'relative mt-1 max-w-xl overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm transition-opacity',
+        'before:absolute before:inset-y-0 before:start-0 before:w-1',
+        STATUS_ACCENT[status],
+        !active && 'opacity-80 hover:opacity-100',
+      )}
+      data-testid="issue-card"
+    >
+      <button
+        type="button"
+        onClick={openIssue}
+        className="group flex w-full items-start gap-3 px-4 pb-2 pt-3 text-start transition-colors hover:bg-accent/30"
+        data-testid="issue-card-row-what"
       >
-        <CardRow name="what" label={t`What`} onOpen={openIssue}>
-          {reply.detail || reply.title}
-        </CardRow>
-        {reply.machine && (
-          <CardRow name="machine" label={t`Machine`} onOpen={openMachine}>
-            {reply.machine}
-          </CardRow>
-        )}
-        {reply.cause && (
-          <CardRow name="cause" label={t`Cause`} onOpen={openIssue}>
-            <span className="font-mono text-xs">{reply.cause}</span>
-          </CardRow>
-        )}
-        <CardRow name="status" label={t`Status`} onOpen={openIssue}>
+        <SeverityIcon
+          className={cn('mt-0.5 h-4 w-4 shrink-0', reply.severity === 'warning' ? 'text-amber-500' : 'text-red-500')}
+          aria-label={reply.severity === 'warning' ? t`Warning` : t`Error`}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-semibold text-foreground" data-testid="issue-reply-title">
+              {reply.title}
+            </span>
+            {reply.count > 1 && (
+              <span
+                className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[10px] font-medium tabular-nums text-muted-foreground"
+                data-testid="issue-reply-count"
+                title={t`Happened ${reply.count} times`}
+              >
+                ×{reply.count}
+              </span>
+            )}
+          </div>
+          {reply.detail && reply.detail !== reply.title && (
+            <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{reply.detail}</p>
+          )}
+        </div>
+        <span
+          className={cn(
+            'inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium',
+            STATUS_TONE[status],
+          )}
+          data-testid="issue-reply-status"
+          data-issue-status={status}
+        >
+          {statusLabel(status)}
+        </span>
+      </button>
+
+      {(reply.machine || reply.cause) && (
+        <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2 ps-11">
+          {reply.machine && (
+            <button
+              type="button"
+              onClick={openMachine}
+              className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-xs text-foreground transition-colors hover:bg-accent"
+              data-testid="issue-card-row-machine"
+            >
+              <Monitor className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="truncate">{reply.machine}</span>
+            </button>
+          )}
+          {reply.cause && (
+            <span
+              className="min-w-0 max-w-full truncate rounded-md bg-muted/40 px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+              title={reply.cause}
+              data-testid="issue-card-row-cause"
+            >
+              {reply.cause}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div
+        className="flex flex-wrap items-center gap-1.5 border-t border-border/40 bg-muted/20 px-4 py-1.5 ps-11 text-xs"
+        data-testid="issue-reply-line"
+      >
+        <span className="me-auto text-muted-foreground" data-testid="issue-card-row-status">
           {issueStandingText({ ...reply, status })}
-        </CardRow>
+        </span>
+        {busy && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+        {failed && (
+          <span className="text-red-600 dark:text-red-400">
+            <Trans>Could not update the issue.</Trans>
+          </span>
+        )}
+        {active && reply.fix && pointer && (
+          <Button
+            size="sm"
+            className={actionClass}
+            onClick={openMachine}
+            data-testid="issue-reply-fix"
+          >
+            {reply.fix.label}
+          </Button>
+        )}
+        {issueId && active && status !== 'in_progress' && moveButton('in_progress', <Trans>Mark in progress</Trans>)}
+        {issueId && active && moveButton('closed', <Trans>Close</Trans>)}
+        {issueId && status === 'closed' && moveButton('open', <Trans>Reopen</Trans>)}
       </div>
-      {line}
-    </>
+    </div>
   );
 }
