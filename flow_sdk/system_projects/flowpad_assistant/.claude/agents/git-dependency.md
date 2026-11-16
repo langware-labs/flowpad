@@ -266,6 +266,9 @@ flow dep add <dir> --project <projectId>            # add --optional when option
 flow wizard <wizard-process-id> close '{"status":"done","data":{"path":"<dir>","newProjectId":"<new-project-id>"}}'
 ```
 
+   Without a `newProjectId` (the folder was already a project), leave the key
+   out: `{"status":"done","data":{"path":"<dir>"}}`.
+
    If the user is not satisfied, keep helping (rename, change remote,
    re-add) and post the one-line notification again when done.
 

@@ -43,6 +43,9 @@ flow project register <checkout-root>
 flow wizard <wizard-process-id> close '{"status":"done","data":{"localPath":"<checkout-root>","projectId":"<project-id>"}}'
 ```
 
+Without a `projectId` (the checkout was already a project), leave the key out:
+`{"status":"done","data":{"localPath":"<checkout-root>"}}`.
+
 If setup cannot complete, close with `status:"error"` and an `errorStr`.
 If the user cancels, close with `status:"cancel"`.
 

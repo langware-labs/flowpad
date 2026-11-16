@@ -3,7 +3,7 @@
     flow project setup              — walk through every connection and credential it needs
     flow project setup --dry-run    — only list them, and which already hold
     flow project setup --no-ai      — never hand a value to AI Assist
-    flow project register <dir>     — make <dir> a project (or answer the one already there)
+    flow project register <dir>     — make <dir> a project
 
 ``setup`` collects what the project needs (``builtin/project_setup``), compiles it into a wizard
 held in memory, and runs it HERE with the stock runner: each question is asked on this terminal
