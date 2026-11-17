@@ -22,6 +22,8 @@ describe('automations route', () => {
       { creating: 'message', source: 'ds-1', message: 'm-1' },
       '/dock/automations?creating=message&source=ds-1&message=m-1',
     ],
+    // A new message rule started from a tag carries the tag.
+    [{ creating: 'message', tag: 'inbox.billing' }, '/dock/automations?creating=message&tag=inbox.billing'],
     [{ place: 'runs', status: 'failed' }, '/dock/automations/runs?status=failed'],
     [{ place: 'bus', tag: 'app.ready' }, '/dock/automations/bus?tag=app.ready'],
   ] as const)('%o ↔ %s', (route, url) => {

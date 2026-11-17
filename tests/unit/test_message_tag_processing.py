@@ -315,7 +315,7 @@ async def test_request_provenance_requires_exact_running_claim(explicit_drain, m
     info = RequestInfo()
     info.request = request
     monkeypatch.setattr(methods, "get_current_request_info", lambda: info)
-    assert await processing._request_automation(message.id) == (message.id, entry.trigger_id, entry.run_id)
+    assert await processing._request_automation(message.id) == (message.id, entry.trigger_id, entry.run_id, entry.tag)
     assert await processing._request_automation(str(mint_uuid())) is None
 
     def completed(m, state):
@@ -537,3 +537,78 @@ async def test_catchup_then_live_create_classifies_once_and_duplicate_keeps_clai
     assert len(duplicate.message_processing.queue) == 1
     assert len(calls) == 1
     assert (await Trigger.get_by_id(trigger.id)).counter == 1
+
+
+@async_context
+async def test_classifier_is_the_first_queue_entry_and_its_switch_decides(explicit_drain, monkeypatch):
+    from flow_sdk.builtin.trigger import set_trigger_on
+    from flow_sdk.server.builtin_triggers import set_service_triggers
+
+    tag = f"qa.{mint_uuid()}"
+    answers = iter([tag, ""])  # the first message lands on the tag; the second fits none
+
+    async def definitions():
+        return [{"name": tag, "description": "test"}]
+
+    async def classify(*_args):
+        return ReturnedValue.satisfied(value=TagClassification(tag=next(answers)))
+
+    monkeypatch.setattr(processing, "ontology", definitions)
+    monkeypatch.setattr(processing, "classify", classify)
+    from flow_sdk.builtin.tag import Tag
+
+    await Tag(name=tag, stream_inbox=True).save()
+    await set_service_triggers()
+    classifier = await processing.classifier()
+    assert classifier.switchable and classifier.is_builtin
+    follower = await rule(tag)
+
+    async def arrive():
+        message = await FlowMessage(text="incoming", message_processing=MessageProcessing(
+            classification="pending", queue=processing._classifier_entry(classifier))).save()
+        await processing.process_message(message.id)
+        return await FlowMessage.get_by_id(message.id)
+
+    tagged = await arrive()
+    assert tagged.tags == [tag]
+    assert [(e.trigger_id, e.status) for e in tagged.message_processing.queue] == [
+        (classifier.id, "succeeded"), (follower.id, "succeeded")]
+
+    untagged = await arrive()  # "none of these": classified, no tag, nothing queued behind it
+    assert untagged.tags == [] and untagged.message_processing.classification == "succeeded"
+    assert [e.trigger_id for e in untagged.message_processing.queue] == [classifier.id]
+
+    await set_trigger_on(classifier, False)
+    await set_service_triggers()  # a restart re-seeds the rule: the person's switch stays off
+    assert not await processing.classifier_on()
+    answers = iter([tag])
+    skipped = await arrive()
+    assert skipped.tags == [] and skipped.message_processing.queue[0].status == "skipped"
+    await processing.classify_now(skipped.id)  # a person asks: it runs although the switch is off
+    await processing.process_message(skipped.id)
+    asked = await FlowMessage.get_by_id(skipped.id)
+    assert asked.tags == [tag] and asked.message_processing.queue[0].status == "succeeded"
+    await set_trigger_on(classifier, True)
+
+
+@async_context
+async def test_run_again_requeues_only_a_failed_entry_as_a_new_run(explicit_drain):
+    tag = f"qa.{mint_uuid()}"
+    calls = []
+
+    async def flaky(_trigger, _changes):
+        calls.append(processing.automation_assignment.get()[2])
+        if len(calls) == 1:
+            raise ValueError("first time fails")
+
+    await rule(tag, flaky)
+    message = await FlowMessage(text="incoming").save()
+    await processing.change_tags(message.id, add=[tag])
+    await processing.process_message(message.id)
+    entry = (await FlowMessage.get_by_id(message.id)).message_processing.queue[0]
+    assert entry.status == "failed"
+    assert await processing.run_again(message.id, entry.id) is not None
+    await processing.process_message(message.id)
+    again = (await FlowMessage.get_by_id(message.id)).message_processing.queue[0]
+    assert again.status == "succeeded" and again.id == entry.id and len(set(calls)) == 2
+    assert await processing.run_again(message.id, entry.id) is None  # nothing to run again

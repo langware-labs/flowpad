@@ -27,7 +27,7 @@ from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
-from flow_sdk.schema.data_spec.trigger_types import TriggerType
+from flow_sdk.schema.data_spec.trigger_types import MESSAGE_CLASSIFIER, TriggerType
 
 if TYPE_CHECKING:
     from flow_sdk.schema.data_spec.automation_spec import AutomationRun
@@ -422,8 +422,14 @@ class Trigger(ProjectedFields, Entity):
     @property
     def switchable(self) -> bool:
         """A person may turn it on or off here: every rule but Flowpad's own -- except the ones Flowpad ships
-        off (a ``trigger.json`` that is not ``recommended``, the Daily usage summary): those are an offer."""
-        return not self.is_builtin or (self.is_file_backed and not self.recommended)
+        off (a ``trigger.json`` that is not ``recommended``, the Daily usage summary): those are an offer --
+        and the message classifier, whose switch is the person's."""
+        return not self.is_builtin or (self.is_file_backed and not self.recommended) or self.is_message_classifier
+
+    @property
+    def is_message_classifier(self) -> bool:
+        """The seeded rule that stands for the message classifier (``stream_inbox/message_tags.py``)."""
+        return str(getattr(self, "uname", "") or "") == MESSAGE_CLASSIFIER
 
     #: RUNTIME STATE. `Persist.TRUE` puts these in the SHADOW record (under flow
     #: home, never the asset folder, never git) rather than leaving them to the
@@ -1135,6 +1141,17 @@ class Trigger(ProjectedFields, Entity):
             else:
                 out.append({"state": state.model_dump(mode="json"), "verdict": verdicts[sid].model_dump(mode="json"),
                             "decided_at": None, "agentic_process_id": None})
+        if self.message_tags:
+            # A tag rule is decided by the message's tags: the try list shows them, not a confidence.
+            from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+            from flow_sdk.db.drivers.query import ExpressionNode, QueryOp  # noqa: PLC0415
+
+            ids = [row["state"].get("message_id") for row in out if row["state"].get("message_id")]
+            found = await FlowMessage.get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids])), hydrate=False) if ids else []
+            tags = {str(m.id): list(m.tags or []) for m in found}
+            for row in out:
+                row["tags"] = tags.get(row["state"].get("message_id") or "", [])
         return out
 
     @classmethod

@@ -60,6 +60,7 @@ import { RunDetail } from './RunDetail';
 import { RunsList } from './RunsList';
 import { TestPanel } from './TestPanel';
 import { definitionFile, useAutomationOpen } from './use-automation-open';
+import { ClassifierPage } from './ClassifierPage';
 import { MessageRulePage } from './MessageRulePage';
 import { ThenLine, ThenSteps } from './ThenSteps';
 
@@ -68,6 +69,8 @@ import { ThenLine, ThenSteps } from './ThenSteps';
 export function AutomationPage({ route }: { route: AutomationsRoute }) {
   const triggerId = route.trigger ?? null;
   const triggerQuery = useAutomationTrigger(triggerId);
+  // The message classifier is Flowpad's own rule, with a page that only switches it and opens the tag tree.
+  if (triggerId && triggerQuery.data?.isMessageClassifier) return <ClassifierPage triggerId={triggerId} />;
   // A rule on messages arriving has its own two-box screen (docs/snippets/stream-inbox-automations.md).
   if (route.creating === 'message' || triggerQuery.data?.isMessageRule) return <MessageRulePage route={route} />;
   if (triggerId && triggerQuery.data === undefined && !triggerQuery.error) {

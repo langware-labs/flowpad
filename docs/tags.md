@@ -138,11 +138,21 @@ entity. Classification puts a message under ONE tag of a tree: the setting `root
 whose `description` is what it means — the instructions a person edits. The generic
 classifier is `flow_sdk/tags/classify.py`: `classify(value, root)` asks the Decision API
 one choice question and answers a `TagClassification` (`tags.classification`) holding
-the full dot name; it never writes. The Stream Inbox calls it with a `MessageContextSpec`
+the full dot name; it never writes. "None of these" is always an option: the answer is
+then OK with an empty tag and the message stays untagged. The Stream Inbox calls it with a `MessageContextSpec`
 (`stream_inbox.message.context`, the message for now). The optional Flowpad message
 vocabulary is enabled separately; it does not replace user tags or introduce a
 `labels` field. Tag definitions carry an optional `color` and a `stream_inbox`
 management marker; that marker does not restrict classifier eligibility.
+
+**The classifier is an automation.** One seeded rule, `builtin_message_classifier`
+("Classify incoming messages"), stands for it: it is listed first on the Automations
+screen, its switch (`set_trigger_on`, like every rule's) says whether arrivals are
+classified, and it cannot be deleted. It is never armed on the bus. It is the FIRST entry
+of each arriving message's queue (an entry with no `tag`), moved with
+`message_processing.classification`; it runs in-process and writes no run-history rows.
+`POST flow_message/<id>/classify-now` classifies one message on a person's request,
+whatever the switch says, and again after a failure.
 
 Only new incoming messages enter classification. Historical imports and reads do
 not backfill work, and outgoing/own-automation messages are excluded. A failed
@@ -158,7 +168,15 @@ not `Trigger.fire_once`, which limits the lifetime of a rule. Removing the last
 qualifying tag cancels queued work, not running work. A disabled/deleted rule is
 checked again before execution. A failed automation is recorded and the queue
 continues without automatic retries. Uncertain work after interruption is not
-silently replayed.
+silently replayed. A person can run a failed or interrupted entry again
+(`POST flow_message/<id>/rerun-automation` with `{"entry": <id>}`): the same entry goes
+back to queued with a new run id. Nothing else ever re-runs one.
+
+A message rule's `then` is one agent, one script, or a sequence (`steps` + `ops`). The
+rule page writes four step kinds: mark as read (the shipped block `mark-message-read`),
+run a script, run an agent with a prompt, and a bare prompt (run on the shipped
+`prompt-runner` agent). An inline agent step is handed the message and stamped with the
+run, exactly as the one-agent form is.
 
 `FlowMessage.message_processing` is server-owned, machine-private state carrying
 classification, assignment provenance, and queue history. Automation provenance
@@ -169,7 +187,8 @@ tag details and queue history are opened on demand.
 
 Read or update instance settings through
 `GET|POST /api/v1/graph/flow_message/classification-settings` using `enabled`,
-`include_flow_tags` and `root`. Ask where a message would land, without changing it,
+`include_flow_tags` and `root` (`enabled` is the classifier rule's switch, moved through
+`set_trigger_on`; the answer also carries its `trigger_id`). Ask where a message would land, without changing it,
 through `POST /api/v1/graph/flow_message/<id>/classify` (the tag editor's Try panel). Replace a message's tags atomically through
 `POST /api/v1/graph/flow_message/<id>/set-tags` with `{"tags": [...]}`.
 

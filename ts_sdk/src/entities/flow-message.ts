@@ -251,6 +251,8 @@ export interface MessageClassificationSettings {
   include_flow_tags: boolean;
   /** The tag tree messages are classified into. */
   root: string;
+  /** The classifier's own automation: `enabled` is its switch. */
+  trigger_id?: string | null;
 }
 
 /** Where a message lands (dry run): one full dot tag, or why there is none. */
@@ -500,8 +502,22 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   }
 
   async setTags(tags: string[]): Promise<void> {
-    const action = new ActionInfo('set-tags', FlowMessage.type, this.id ?? null, 'POST');
-    action.bodyParameters = { tags };
+    await this.tagAction('set-tags', { tags });
+  }
+
+  /** Classify this message now — whatever the classifier's switch says, and again after a failure. */
+  async classifyNow(): Promise<void> {
+    await this.tagAction('classify-now', {});
+  }
+
+  /** Run one failed or interrupted automation of this message's queue again (`entry` is its id). */
+  async rerunAutomation(entry: string): Promise<void> {
+    await this.tagAction('rerun-automation', { entry });
+  }
+
+  private async tagAction(name: string, body: Record<string, unknown>): Promise<void> {
+    const action = new ActionInfo(name, FlowMessage.type, this.id ?? null, 'POST');
+    action.bodyParameters = body;
     const result = await dataManager.callAction<unknown, { tags: string[]; message_processing?: MessageProcessing | null }>(action);
     if (result) dataManager.deepAssign(this, result);
   }

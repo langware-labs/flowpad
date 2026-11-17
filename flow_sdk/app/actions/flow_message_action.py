@@ -5059,22 +5059,28 @@ async def invitation_accept() -> ApiResponse:
 
 @action.all(action_name="classification-settings", types=["flow_message"], methods=["get", "post"])
 async def message_classification_settings() -> ApiResponse:
-    """Instance-owned incoming-message policy; omitted settings retain their value."""
-    from flow_sdk.stream_inbox.message_tags import save_settings, settings
+    """Instance-owned incoming-message policy; omitted settings retain their value. ``enabled`` is the
+    classifier automation's own switch, read and moved here for the tag screens."""
+    from flow_sdk.builtin.trigger import set_trigger_on
+    from flow_sdk.stream_inbox.message_tags import classifier, save_settings, settings
 
     info = get_current_request_info()
     if info is None:
         return ApiFailResponse(message="No request context available", status_code=400)
-    current = settings()
+    current, rule = settings(), await classifier()
     if info.request.method.upper() == "POST":
         body = await info.get_post_data()
         if not isinstance(body, dict) or set(body) - {"enabled", "include_flow_tags", "root"}:
             return ApiFailResponse(message="Expected enabled, include_flow_tags and/or root settings", status_code=400)
+        if "enabled" in body and rule is not None:
+            await set_trigger_on(rule, bool(body["enabled"]))
         try:
-            current = save_settings({**current.model_dump(mode="json"), **body})
+            current = save_settings({**current.model_dump(mode="json"),
+                                     **{k: v for k, v in body.items() if k != "enabled"}})
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-    return ApiSuccessResponse(data=current.model_dump(mode="json"))
+    return ApiSuccessResponse(data={**current.model_dump(mode="json"), "enabled": rule is None or bool(rule.enabled),
+                                    "trigger_id": str(rule.id) if rule is not None else None})
 
 
 @action.post(action_name="classify", types=["flow_message"])
@@ -5084,6 +5090,35 @@ async def message_classify(self: FlowMessage) -> ApiResponse:
 
     answer = await classify(self, await ontology())
     return ApiSuccessResponse(data=answer.model_dump(mode="json"))
+
+
+def _tag_state(message) -> dict:
+    processing = message.message_processing
+    return {"tags": list(message.tags or []),
+            "message_processing": processing.model_dump(mode="json") if processing is not None else None}
+
+
+@action.post(action_name="classify-now", types=["flow_message"])
+async def message_classify_now(self: FlowMessage) -> ApiResponse:
+    """A person asks for this message to be classified now, whatever the classifier's switch says."""
+    from flow_sdk.stream_inbox.message_tags import classify_now
+
+    return ApiSuccessResponse(data=_tag_state(await classify_now(str(self.id))))
+
+
+@action.post(action_name="rerun-automation", types=["flow_message"])
+async def message_rerun_automation(self: FlowMessage) -> ApiResponse:
+    """A person asks for one failed or interrupted automation of this message's queue to run again."""
+    from flow_sdk.stream_inbox.message_tags import run_again
+
+    info = get_current_request_info()
+    body = await info.get_post_data() if info is not None else None
+    if not isinstance(body, dict) or not isinstance(body.get("entry"), str):
+        return ApiFailResponse(message="Expected the queue entry's id", status_code=400)
+    message = await run_again(str(self.id), body["entry"])
+    if message is None:
+        return ApiFailResponse(message="Only a failed or interrupted automation can run again.", status_code=409)
+    return ApiSuccessResponse(data=_tag_state(message))
 
 
 @action.post(action_name="set-tags", types=["flow_message"])
@@ -5101,7 +5136,4 @@ async def message_set_tags(self: FlowMessage) -> ApiResponse:
         await self.set_tags(body["tags"])
     except ValueError as exc:
         return ApiFailResponse(message=str(exc), status_code=400)
-    return ApiSuccessResponse(data={
-        "tags": self.tags,
-        "message_processing": self.message_processing.model_dump(mode="json") if self.message_processing else None,
-    })
+    return ApiSuccessResponse(data=_tag_state(self))

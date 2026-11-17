@@ -39,10 +39,15 @@ async def test_no_decision_api_is_not_a_value(decision_double):
     assert answer.unavailable
 
 
-async def test_empty_and_single_trees_never_call():
+async def test_an_empty_tree_never_calls():
     assert (await classifier.choose(CONTEXT, {})).exit_code is ExitCode.NOT_APPLICABLE
-    only = await classifier.choose(CONTEXT, {"stream_inbox.support": "help"})
-    assert only.value.tag == "stream_inbox.support" and not only.ran
+
+
+async def test_none_of_these_is_an_answer_with_no_tag(decision_double):
+    decision_double["answers"] = {"tag": classifier.NONE}
+    answer = await classifier.choose(CONTEXT, {"stream_inbox.support": "help"})
+    assert answer.exit_code is ExitCode.OK and answer.has_value and answer.value.tag == ""
+    assert len(decision_double["invoked"]) == 1  # a single tag is still a question: it may not fit
 
 
 @async_context

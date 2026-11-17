@@ -48,6 +48,16 @@ describe('MessageTags compact cell', () => {
     expect(dock.withOption).toHaveBeenCalledWith('message_tags', 'm1:picker');
     expect(openDock).toHaveBeenCalled();
   });
+
+  it('says a failed automation on the row, only when one failed', () => {
+    cell(['stream_inbox.support.bug']);
+    expect(screen.queryByTestId('stream-inbox-row-failed')).toBeNull();
+    cleanup();
+    const queue = [{ id: 'e1', trigger_id: 't1', automation_name: 'Bug → open a ticket', tag: 'stream_inbox.support.bug', status: 'failed' }];
+    const message = { id: 'm1', conversation_id: 'c1', tags: ['stream_inbox.support.bug'], message_processing: { queue } };
+    render(<MessageTags message={message as unknown as FlowMessage} compact />);
+    expect(screen.getByTestId('stream-inbox-row-failed').getAttribute('title')).toBe('Bug → open a ticket failed');
+  });
 });
 
 describe('treeRows', () => {

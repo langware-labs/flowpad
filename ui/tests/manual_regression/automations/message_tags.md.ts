@@ -31,7 +31,7 @@ const executorControl = process.env.MOCK_MESSAGE_TAG_CONTROL_PORT || configuredF
 type Message = { id: string; text: string; conversation_id?: string; tags: string[]; message_processing?: {
   classification: string;
   assignments: Record<string, { source: string; trigger_id?: string; run_id?: string }>;
-  queue: Array<{ id: string; trigger_id: string; status: string; run_id?: string }>;
+  queue: Array<{ id: string; trigger_id: string; tag: string; status: string; run_id?: string }>;
 } };
 
 async function graph<T = Record<string, unknown>>(method: 'get' | 'post' | 'delete', route: string, data?: unknown): Promise<T> {
@@ -71,7 +71,7 @@ test.beforeAll(async () => {
     body = existing.text;
     conversationId = existing.conversation_id!;
     conversationURL = `/dock/conversation/${conversationId}`;
-    for (const entry of existing.message_processing!.queue) rules.push(await graph('get', `trigger/${entry.trigger_id}`));
+    for (const entry of ruleQueue(existing)) rules.push(await graph('get', `trigger/${entry.trigger_id}`));
     return;
   }
   await graph('post', 'flow_message/classification-settings', { enabled: true, include_flow_tags: false, root: prefix });
@@ -135,6 +135,8 @@ test.afterAll(async () => {
   if (doubles && doubles.exitCode === null) doubles.kill('SIGTERM');
   await api?.dispose();
 });
+/** The rules queued on a message — its queue without the classifier's own first entry (the one with no tag). */
+const ruleQueue = (m: Message) => (m.message_processing?.queue ?? []).filter((entry) => entry.tag);
 
 test('arrival classifies, updates mounted stream_inbox, and stays a single 36px row', async ({ page }, info) => {
   await page.goto('/dock/stream_inbox');
@@ -166,28 +168,28 @@ test('arrival classifies, updates mounted stream_inbox, and stays a single 36px 
   messageId = (await bubble.getAttribute('data-testid'))!.replace('message-bubble-', '');
   await expect.poll(async () => (await message()).message_processing?.classification).toBe('succeeded');
   expect(executorControl, 'the acceptance executor must expose its correlated release gate').toBeTruthy();
-  await expect.poll(async () => (await message()).message_processing?.queue.map((entry) => entry.status)).toEqual(['running', 'queued']);
+  await expect.poll(async () => ruleQueue(await message()).map((entry) => entry.status)).toEqual(['running', 'queued']);
   await expect.poll(async () => (await message()).tags).toContain(tagNames[3]);
   await expect(tags(page).locator(':scope > span > [data-message-tag]')).toHaveCount(3);
   await coverage.screen('message', page, info);
   await tags(page).getByTestId('message-automation-queue').click();
   await expect(page.getByTestId(`queue-entry-${rules[0].id}`)).toHaveAttribute('data-status', 'running');
   await expect(page.getByTestId(`queue-entry-${rules[1].id}`)).toHaveAttribute('data-status', 'queued');
-  const waitingEntry = (await message()).message_processing!.queue[1];
+  const waitingEntry = ruleQueue(await message())[1];
   await expect(page.getByTestId(`queue-history-${waitingEntry.id}`)).toHaveCount(0);
   await coverage.screen('queue', page, info);
   await coverage.action('queue', 'next', async () => {
-    const running = (await message()).message_processing!.queue[0];
+    const running = ruleQueue(await message())[0];
     expect((await api.post(`http://127.0.0.1:${executorControl}/release/${running.run_id}`)).status()).toBe(204);
-    await expect.poll(async () => (await message()).message_processing?.queue.map((entry) => entry.status)).toEqual(['succeeded', 'succeeded', 'running']);
+    await expect.poll(async () => ruleQueue(await message()).map((entry) => entry.status)).toEqual(['succeeded', 'succeeded', 'running']);
     await expect(page.getByTestId(`queue-entry-${rules[2].id}`)).toHaveAttribute('data-status', 'running');
   });
   await coverage.screen('chained', page, info);
   await coverage.action('chained', 'next', async () => {
-    const running = (await message()).message_processing!.queue[2];
+    const running = ruleQueue(await message())[2];
     expect((await api.post(`http://127.0.0.1:${executorControl}/release/${running.run_id}`)).status()).toBe(204);
-    await expect.poll(async () => (await message()).message_processing?.queue.map((entry) => entry.status)).toEqual(['succeeded', 'succeeded', 'succeeded']);
-    expect((await message()).message_processing!.queue).toHaveLength(3);
+    await expect.poll(async () => ruleQueue(await message()).map((entry) => entry.status)).toEqual(['succeeded', 'succeeded', 'succeeded']);
+    expect(ruleQueue(await message())).toHaveLength(3);
     await expect(page.getByTestId(`queue-entry-${rules[2].id}`)).toHaveAttribute('data-status', 'succeeded');
   });
   await coverage.screen('once', page, info);
@@ -237,12 +239,12 @@ test('message tag and automation links resolve exact entities; back/reload retai
     await expect(page).toHaveURL(new RegExp(`trigger=${rules[0].id}`));
   });
   await coverage.screen('automation', page, info);
-  const beforePreview = (await message()).message_processing!.queue;
+  const beforePreview = ruleQueue(await message());
   await coverage.action('automation', 'test', async () => {
     await page.getByTestId('message-rule-fast-test-run').click();
     await expect(page.getByTestId('message-rule-fast-test-verdict')).toHaveAttribute('data-verdict', 'yes');
   });
-  expect((await message()).message_processing!.queue).toEqual(beforePreview);
+  expect(ruleQueue(await message())).toEqual(beforePreview);
   await coverage.screen('automation-test', page, info);
   await coverage.action('automation-test', 'back', async () => {
     await page.getByTestId('message-rule-preview-back').click();
@@ -304,7 +306,7 @@ test('tag viewer filters stream_inbox by URL and clears through the existing fil
 
 test('manual reassignment uses the existing picker and does not rerun an automation', async ({ page }) => {
   await graph('post', `flow_message/${messageId}/set-tags`, { tags: tagNames.filter((name) => name !== tagNames[0]) });
-  const before = (await message()).message_processing!.queue;
+  const before = ruleQueue(await message());
   await openMessage(page);
   await picker(page);
   await page.getByTestId('message-tags-picker').getByRole('combobox').fill(tagNames[0]);
@@ -312,7 +314,7 @@ test('manual reassignment uses the existing picker and does not rerun an automat
   await expect.poll(async () => (await message()).tags).toContain(tagNames[0]);
   await expect(page.getByTestId('message-picker-tags').locator(`[data-message-tag="${tagNames[0]}"]`)).toBeVisible();
   expect((await message()).message_processing!.assignments[tagNames[0]].source).toBe('manual');
-  expect((await message()).message_processing!.queue).toEqual(before);
+  expect(ruleQueue(await message())).toEqual(before);
   await page.reload();
   await expect(page.getByTestId('message-tags-picker')).toBeVisible();
   await expect(page.getByTestId(`message-bubble-${messageId}`)).toContainText(body);
@@ -331,7 +333,7 @@ test('an unclassified arrival shows the crossed tag and allows manual correction
       return arrived?.message_processing?.classification;
     }).toBe('succeeded');
     expect(arrived!.tags).toEqual([]);
-    expect(arrived!.message_processing!.queue).toEqual([]);
+    expect(ruleQueue(arrived!)).toEqual([]);
     const row = streamInboxRow(page, arrived!.conversation_id);
     await expect(row).toBeVisible();
     expect((await row.boundingBox())!.height).toBe(36);
@@ -339,7 +341,8 @@ test('an unclassified arrival shows the crossed tag and allows manual correction
     await row.click();
     const bubble = page.getByTestId(`message-bubble-${arrived!.id}`);
     await expect(bubble).toContainText(text);
-    await expect(bubble.getByTestId('message-automation-queue')).toHaveCount(0);
+    // The queue holds the classifier's own entry only: it ran and no tag fitted.
+    await expect(bubble.getByTestId('message-automation-queue')).toHaveText('1');
     await bubble.getByTestId('message-tags-menu').click();
     const menu = page.getByTestId('message-tags-picker');
     await expect(menu).toContainText('No tags yet');
@@ -349,7 +352,7 @@ test('an unclassified arrival shows the crossed tag and allows manual correction
     await menu.getByRole('combobox').fill(tagNames[1]);
     await page.getByTestId(`tag-suggestion-${tagNames[1]}`).click();
     await expect.poll(async () => (await graph<Message>('get', `flow_message/${arrived!.id}`)).tags).toEqual([tagNames[1]]);
-    await expect.poll(async () => (await graph<Message>('get', `flow_message/${arrived!.id}`)).message_processing?.queue.map((entry) => entry.status)).toEqual(['succeeded']);
+    await expect.poll(async () => ruleQueue(await graph<Message>('get', `flow_message/${arrived!.id}`)).map((entry) => entry.status)).toEqual(['succeeded']);
     expect((await graph<Message>('get', `flow_message/${arrived!.id}`)).message_processing!.assignments[tagNames[1]].source).toBe('manual');
     await expect(bubble).toContainText(text);
   } finally {
@@ -363,7 +366,7 @@ test('FIFO chaining is visible, cycles are suppressed, exact rule and run links 
   await coverage.action('message', 'queue', async () => {
     await openQueue(page);
   });
-  const queue = (await message()).message_processing!.queue;
+  const queue = ruleQueue(await message());
   expect(queue.map((entry) => entry.trigger_id)).toEqual(rules.map((rule) => rule.id));
   expect(new Set(queue.map((entry) => entry.trigger_id)).size).toBe(3);
   for (const [index, screen] of ['automation', 'automation-today', 'automation-review'].entries()) {

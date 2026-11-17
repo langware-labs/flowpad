@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Tag as TagIcon } from 'lucide-react';
+import { ChevronDown, Plus, Tag as TagIcon, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataManager, FlowMessage, QueryFilter, QueryRequest, Tag, TypeId } from '@sdk';
@@ -11,6 +11,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
 import { Switch } from '@src/components/ui/switch';
+import { IfThenLine } from '@src/components/automations/IfThenLine';
+import { useAutomationWords } from '@src/components/automations/automation-words';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
@@ -20,6 +22,7 @@ import {
   tagChipStyle,
   treeRows,
   useClassificationSettings,
+  useTagAutomations,
 } from './MessageTags';
 import { TagOffIcon } from './TagOffIcon';
 
@@ -47,11 +50,14 @@ export function StreamInboxTags() {
   const queryClient = useQueryClient();
   const { data: tags = [], refetch } = useEntitiesQuery<Tag>(streamInboxTagsQuery);
   const { settings, root } = useClassificationSettings();
+  const rulesOf = useTagAutomations();
+  const words = useAutomationWords();
   const live = useMemo(() => tags.filter((tag) => !tag.deprecated && !tag.system), [tags]);
   const byName = useMemo(() => new Map(live.map((tag) => [tag.name ?? '', tag])), [live]);
   const rows = useMemo(() => treeRows([...byName.keys()], root), [byName, root]);
   const selected = options.node || null;
   const row = (selected && byName.get(selected)) || null;
+  const rules = selected ? rulesOf(selected) : [];
   const [error, setError] = useState<string | null>(null);
 
   // ── details: the selected node's draft ──
@@ -113,7 +119,11 @@ export function StreamInboxTags() {
   const message = useEntity<FlowMessage>(messageId ? new TypeId(FlowMessage.type, messageId) : null).data;
   const [runs, setRuns] = useState<Array<{ message: string; answer: MessageClassification }>>([]);
   const run = useMutation({
-    mutationFn: async () => await message!.classify(),
+    // Run asks about the tree as written: an edited meaning is saved first, so the answer is about it.
+    mutationFn: async () => {
+      if (dirty && row) await save.mutateAsync();
+      return await message!.classify();
+    },
     onSuccess: (answer) =>
       setRuns((all) => [...all.filter((r) => r.message === messageId).slice(-1), { message: messageId!, answer }]),
   });
@@ -218,14 +228,22 @@ export function StreamInboxTags() {
         </h1>
         {settings && (
           <>
-            <label className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-sm">
               <Switch
                 checked={settings.enabled}
                 onCheckedChange={(enabled) => void updateSettings({ enabled })}
+                aria-label={t`Classify arriving messages`}
                 data-testid="message-classification-enabled"
               />
-              <Trans>Classify arriving messages</Trans>
-            </label>
+              <button
+                type="button"
+                disabled={!settings.trigger_id}
+                data-testid="message-classifier-automation"
+                onClick={() => navigation.openDock(DockPointer.forAutomations({ trigger: settings.trigger_id }))}
+              >
+                <IfThenLine when={words.classifier.when} then={words.classifier.under(root)} />
+              </button>
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <Switch
                 checked={settings.include_flow_tags}
@@ -342,6 +360,53 @@ export function StreamInboxTags() {
                   </Button>
                 )}
               </div>
+              {row && (
+                <div className="border-t border-border pt-3" data-testid="stream-inbox-tag-then">
+                  <div className="mb-1.5 text-xs text-muted-foreground">
+                    <Trans>Then — when a message lands here</Trans>
+                  </div>
+                  {rules.length === 0 && (
+                    <p className="mb-2 text-sm text-muted-foreground">
+                      <Trans>Nothing yet.</Trans>
+                    </p>
+                  )}
+                  <ul className="mb-2 space-y-1">
+                    {rules.map(({ rule, from, inherited }) => (
+                      <li key={rule.id}>
+                        <button
+                          type="button"
+                          data-testid={`stream-inbox-tag-rule-${rule.id}`}
+                          onClick={() => navigation.openDock(DockPointer.forAutomations({ trigger: rule.id }))}
+                          className={cn(
+                            'flex w-full items-center gap-2 rounded px-2 py-1 text-start text-sm hover:bg-muted',
+                            !rule.enabled && 'opacity-60',
+                          )}
+                        >
+                          <Zap className="size-3.5 shrink-0" />
+                          <span className="truncate">{rule.name}</span>
+                          {inherited && (
+                            <span className="ms-auto shrink-0 text-xs text-muted-foreground">
+                              <Trans>from {from.split('.').at(-1)}</Trans>
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    data-testid="stream-inbox-tag-add-automation"
+                    onClick={() =>
+                      navigation.openDock(DockPointer.forAutomations({ creating: 'message', tag: selected }))
+                    }
+                  >
+                    <Zap className="size-3.5" />
+                    <Trans>Add automation</Trans>
+                  </Button>
+                </div>
+              )}
             </form>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -386,7 +451,19 @@ export function StreamInboxTags() {
             </>
           ) : (
             <>
-              <div className="rounded border border-border p-2 text-xs" data-testid="stream-inbox-tag-try-message">
+              <div
+                className="relative rounded border border-border p-2 text-xs"
+                data-testid="stream-inbox-tag-try-message"
+              >
+                <button
+                  type="button"
+                  data-testid="stream-inbox-tag-try-another"
+                  onClick={() => open({ pick: '1' })}
+                  className="absolute -top-2 end-2 inline-flex items-center gap-0.5 bg-background px-1 text-[10px] leading-[14px] text-primary"
+                >
+                  <Trans>Select message</Trans>
+                  <ChevronDown className="size-2.5" />
+                </button>
                 <b>{sender}</b>
                 <div className="truncate">{subject}</div>
               </div>
@@ -399,14 +476,6 @@ export function StreamInboxTags() {
                 >
                   ▶ {result ? <Trans>Rerun</Trans> : <Trans>Run</Trans>}
                 </Button>
-                <button
-                  type="button"
-                  className="text-xs underline"
-                  data-testid="stream-inbox-tag-try-another"
-                  onClick={() => open({ pick: '1' })}
-                >
-                  <Trans>Another message</Trans>
-                </button>
               </div>
               {run.isError && (
                 <p role="alert" className="mt-2 text-xs text-destructive">

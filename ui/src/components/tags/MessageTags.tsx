@@ -1,9 +1,10 @@
 import { forwardRef, useMemo, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from 'react';
-import { Tag as TagIcon, X } from 'lucide-react';
+import { Tag as TagIcon, X, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { FlowMessage, QueryRequest, Tag, tagIsWithin, tagTree } from '@sdk';
 import { useQuery } from '@tanstack/react-query';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { useAutomations } from '@src/hooks/automations/useAutomations';
 import { EntityChip, iconForEntity } from '@src/components/conversation/EntityChip';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -11,7 +12,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { errorMessage } from '@src/lib/error-message';
 import { TagInput } from './TagInput';
 import { TagOffIcon } from './TagOffIcon';
-import { messageTagContext } from './message-tag-navigation';
+import { messageTagContext, messageTagReturn } from './message-tag-navigation';
 
 export const streamInboxTagsQuery = new QueryRequest({ type: Tag.type, scope: [], name: 'tags:definitions' });
 export const classificationSettingsKey = ['tags', 'classification-settings'];
@@ -45,6 +46,20 @@ export function useClassificationSettings() {
   });
   // The tree a message is classified into; the server's default until the settings arrive.
   return { settings: query.data, root: query.data?.root ?? 'stream_inbox' };
+}
+
+/** The message rules a tag starts: its own, and the ones a parent tag hands down (a rule on a tag also
+ *  runs for every tag under it). Read from the automations list, shared with that screen's cache. */
+export function useTagAutomations() {
+  const { data = [] } = useAutomations({ poll: false });
+  return useMemo(() => {
+    const rules = data.filter((rule) => rule.when.event?.message_tags?.length);
+    return (tag: string) =>
+      rules.flatMap((rule) => {
+        const from = rule.when.event!.message_tags!.find((ruleTag) => tagIsWithin(tag, ruleTag));
+        return from ? [{ rule, from, inherited: from !== tag }] : [];
+      });
+  }, [data]);
 }
 
 /** A tag colour remains readable in both themes; text uses the app foreground. */
@@ -84,6 +99,9 @@ function useMessagePanel(message: FlowMessage) {
   return { navigation, isOpen, setOpen };
 }
 
+/** The queue statuses a person can act on with Run again. */
+const FAILED = ['failed', 'interrupted'];
+
 /** Projection only: assignment and queue decisions are owned by the message actions. */
 export function MessageTags({ message, compact = false }: { message: FlowMessage; compact?: boolean }) {
   return compact ? <TagCell message={message} /> : <MessageTagStrip message={message} />;
@@ -92,6 +110,8 @@ export function MessageTags({ message, compact = false }: { message: FlowMessage
 /** A Stream Inbox row's one tag cell: none → the crossed tag, one → its chip, more → the first + count.
  *  Every form opens the same quick menu. A row with no tags reads no definitions until it is opened. */
 function TagCell({ message }: { message: FlowMessage }) {
+  // Read without a hook: the failed chip mounts on the few rows that have one, not on every row.
+  const failed = (message.message_processing?.queue ?? []).find((entry) => FAILED.includes(entry.status));
   // One QuickMenu whatever the count: ticking the first tag must not remount the open menu.
   return (
     <span
@@ -99,10 +119,31 @@ function TagCell({ message }: { message: FlowMessage }) {
       className="flex shrink-0 items-center"
       onClick={(e) => e.stopPropagation()}
     >
+      {failed && <FailedAutomation message={message} name={failed.automation_name} />}
       <QuickMenu message={message}>
         <CellTrigger tags={message.tags ?? []} />
       </QuickMenu>
     </span>
+  );
+}
+
+/** A row whose message has an automation that failed says so; the chip opens that message's queue. */
+function FailedAutomation({ message, name }: { message: FlowMessage; name: string }) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  const back = messageTagReturn(messageTagContext(message), 'queue');
+  if (!back) return null;
+  return (
+    <button
+      type="button"
+      data-testid="stream-inbox-row-failed"
+      title={t`${name} failed`}
+      onClick={() => navigation.openDock(back)}
+      className="me-1 inline-flex h-6 items-center gap-1 rounded-full border border-dashed border-destructive/60 px-2 text-[11px] text-destructive hover:bg-destructive/10"
+    >
+      <Zap className="size-3" />
+      <Trans>failed</Trans>
+    </button>
   );
 }
 
@@ -230,9 +271,16 @@ function TagPicker({ message, onDone }: { message: FlowMessage; onDone: () => vo
   const definitions = useTagDefinitions();
   const colors = useTagColors();
   const { root } = useClassificationSettings();
+  const rulesOf = useTagAutomations();
   const { error, change } = useTagChange(message);
   const tags = message.tags ?? [];
   const processing = message.message_processing;
+  const [asking, setAsking] = useState(false);
+  const classifyNow = async () => {
+    setAsking(true);
+    await message.classifyNow().catch(() => undefined);
+    setAsking(false);
+  };
   // A tick shows at once; the message row catches up when the action answers.
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const mutate = async (name: string, remove: boolean) => {
@@ -286,14 +334,36 @@ function TagPicker({ message, onDone }: { message: FlowMessage; onDone: () => vo
                 />
                 <TagIcon className="size-3" style={{ color: colors.get(name) ?? undefined }} />
                 {name.split('.').at(-1)}
+                {rulesOf(name).some(({ rule }) => rule.enabled) && (
+                  <span
+                    className="ms-auto text-muted-foreground"
+                    title={t`Starts an automation`}
+                    data-testid={`message-tag-automation-${name}`}
+                  >
+                    <Zap className="size-3" />
+                  </span>
+                )}
               </label>
             </li>
           );
         })}
       </ul>
-      {processing?.classification === 'failed' && (
-        <p role="status" className="mt-2 text-xs text-muted-foreground">
-          {processing.classification_error || t`Classification failed. You can still assign tags.`}
+      {!tags.length && !message.outbound && ['skipped', 'failed'].includes(processing?.classification ?? 'skipped') && (
+        <p role="status" className="mt-2 text-xs text-muted-foreground" data-testid="message-unclassified">
+          {processing?.classification === 'failed'
+            ? processing.classification_error || t`Classification failed. You can still assign tags.`
+            : processing
+              ? t`The classifier was off when this arrived.`
+              : t`This message was not classified.`}{' '}
+          <button
+            type="button"
+            className="underline"
+            disabled={asking}
+            data-testid="message-classify-now"
+            onClick={() => void classifyNow()}
+          >
+            <Trans>Classify now</Trans>
+          </button>
         </p>
       )}
       {error && (
@@ -335,6 +405,7 @@ function MessageTagStrip({ message }: { message: FlowMessage }) {
   const { t } = useLingui();
   const { navigation, isOpen, setOpen } = useMessagePanel(message);
   const { error, change } = useTagChange(message);
+  const [rerunError, setRerunError] = useState<string | null>(null);
   const context = messageTagContext(message);
   const tags = message.tags ?? [];
   const queue = message.message_processing?.queue ?? [];
@@ -404,11 +475,26 @@ function MessageTagStrip({ message }: { message: FlowMessage }) {
                     }
                   />
                   <span className="float-end text-muted-foreground">{entry.status}</span>
-                  <div className="mt-1 text-muted-foreground">{entry.tag}</div>
+                  {entry.tag && <div className="mt-1 text-muted-foreground">{entry.tag}</div>}
                   {entry.error && (
                     <p role="status" className="mt-1">
                       {entry.error}
                     </p>
+                  )}
+                  {entry.tag && FAILED.includes(entry.status) && (
+                    <button
+                      type="button"
+                      className="me-3 mt-1 underline"
+                      data-testid={`queue-rerun-${entry.id}`}
+                      onClick={() =>
+                        void message
+                          .rerunAutomation(entry.id)
+                          .then(() => setRerunError(null))
+                          .catch((e) => setRerunError(errorMessage(e, t`Could not run it again`)))
+                      }
+                    >
+                      <Trans>Run again</Trans>
+                    </button>
                   )}
                   {entry.run_id && !['queued', 'cancelled', 'skipped'].includes(entry.status) && (
                     <button
@@ -428,9 +514,9 @@ function MessageTagStrip({ message }: { message: FlowMessage }) {
           </PopoverContent>
         </Popover>
       )}
-      {error && (
+      {(error || rerunError) && (
         <span role="alert" className="text-xs text-destructive">
-          {error}
+          {error || rerunError}
         </span>
       )}
     </span>

@@ -13,6 +13,7 @@ from functools import partial
 from typing import Callable
 
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.schema.data_spec.trigger_types import MESSAGE_CLASSIFIER as CLASSIFIER
 from flow_sdk.schema.data_spec.message_processing_spec import (
     MessageAutomationEntry, MessageClassificationSettings, MessageProcessing, TagAssignment,
 )
@@ -20,7 +21,8 @@ from flow_sdk.stream_inbox._locks import new_registry, single_flight
 from flow_sdk.tags.grammar import tag_is_within, to_tags
 
 logger = logging.getLogger(__name__)
-automation_assignment: ContextVar[tuple[str, str, str] | None] = ContextVar("message_tag_automation", default=None)
+#: The claim a running rule holds: (message id, trigger id, run id, the tag that queued it).
+automation_assignment: ContextVar[tuple[str, str, str, str] | None] = ContextVar("message_tag_automation", default=None)
 _drains = new_registry()
 _tasks: set[asyncio.Task] = set()
 _CONFIG = "message_classification"
@@ -42,7 +44,7 @@ async def enroll(message) -> None:
         agent = await Agent.get_by_id(sender.id)
         if agent is not None and (not agent.remote or str(agent.created_by or "").removeprefix("user-") in self_ids):
             return
-    message.message_processing = MessageProcessing(classification="pending")
+    message.message_processing = MessageProcessing(classification="pending", queue=_classifier_entry(await classifier()))
 
 
 async def enroll_live_existing(message_id: str):
@@ -70,10 +72,40 @@ async def enroll_live_existing(message_id: str):
         return message
 
 
+async def classifier():
+    """The classifier's own automation row; None before the first boot seeded it."""
+    from flow_sdk.builtin.trigger import Trigger
+
+    return await Trigger.get_by_uname(CLASSIFIER)
+
+
+async def classifier_on() -> bool:
+    rule = await classifier()
+    return rule is None or bool(rule.enabled)
+
+
+def _classifier_entry(rule) -> list[MessageAutomationEntry]:
+    """The classifier's place in a message's queue: first, with no tag of its own."""
+    if rule is None:
+        return []
+    return [MessageAutomationEntry(id=str(mint_uuid()), trigger_id=str(rule.id), automation_name=rule.name or "", tag="")]
+
+
+def _mark_classifier(state: MessageProcessing) -> None:
+    """The classifier's queue entry says what ``classification`` says — one fact, shown in the queue.
+    Called by the one writer (``_mutate``), so no change to ``classification`` can leave it behind."""
+    entry = next((e for e in state.queue if not e.tag), None)
+    if entry is not None:
+        entry.status = "queued" if state.classification == "pending" else state.classification
+        entry.error = state.classification_error
+
+
 def settings() -> MessageClassificationSettings:
     from flow_sdk.cli.app_config import get_config
 
-    return MessageClassificationSettings.model_validate(get_config(_CONFIG, {}))
+    stored = get_config(_CONFIG, {})
+    return MessageClassificationSettings.model_validate(
+        {k: v for k, v in stored.items() if k in MessageClassificationSettings.model_fields})
 
 
 def save_settings(value: dict) -> MessageClassificationSettings:
@@ -193,6 +225,7 @@ async def _mutate(message_id: str, change: Callable, *, wake_worker=False):
         tags = change(message, state)
         if inspect.isawaitable(tags):
             tags = await tags
+        _mark_classifier(state)
         values = {"tags": tags, "message_processing": state.model_dump(mode="json")}
         if values != before:
             await db.update_existing_data_fields(message_id, FlowMessage.get_type(), values)
@@ -227,7 +260,7 @@ async def change_tags(message_id: str, *, add=(), remove=(), replace=None,
     return await _mutate(message_id, change, wake_worker=True)
 
 
-async def _request_automation(message_id: str) -> tuple[str, str, str] | None:
+async def _request_automation(message_id: str) -> tuple[str, str, str, str] | None:
     """Attribute a worker's local CLI call only to its server-owned, active claim.
 
     A process header is a local-instance capability hint, not a remote identity.
@@ -261,7 +294,7 @@ async def _request_automation(message_id: str) -> tuple[str, str, str] | None:
         for entry in message.message_processing.queue:
             if (entry.status == "running" and entry.trigger_id == context.get("trigger_id")
                     and entry.run_id == context.get("run_id")):
-                return message_id, entry.trigger_id, entry.run_id
+                return message_id, entry.trigger_id, entry.run_id, entry.tag
     return None
 
 
@@ -288,12 +321,13 @@ async def classify(message, definitions: list[dict[str, str]]):
 async def _classify(message):
     from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
-    claimed = False
+    claimed = forced = False
 
     def claim(m, s):
-        nonlocal claimed
+        nonlocal claimed, forced
         if s.classification == "pending":
             s.classification, claimed = "running", True
+            forced, s.classification_forced = s.classification_forced, False
         return m.tags
 
     await _mutate(str(message.id), claim)
@@ -301,7 +335,7 @@ async def _classify(message):
         return
     error = ""
     tags = []
-    enabled = settings().enabled
+    enabled = forced or await classifier_on()
     try:
         definitions = await ontology() if enabled else []
         if definitions:
@@ -309,9 +343,9 @@ async def _classify(message):
             if answer.exit_code is not ExitCode.OK or not answer.has_value:
                 raise ValueError(answer.detail or "Classification returned no successful value.")
             tag = getattr(answer.value, "tag", None)
-            if tag not in {d["name"] for d in definitions}:
+            if tag and tag not in {d["name"] for d in definitions}:
                 raise ValueError("Classification returned a tag outside the configured ontology.")
-            tags = [tag]
+            tags = [tag] if tag else []  # "none of these" leaves the message untagged
     except Exception as exc:
         error = str(exc)
     async def finish(m, s):
@@ -353,7 +387,7 @@ async def preview(rule, *, state=None, text=None, message_id=None):
             answer = await classify(state or MessageState.from_text(text or ""), definitions)
             if answer.exit_code is not ExitCode.OK or not answer.has_value:
                 return DecisionVerdict.not_yet(answer.detail or "Classification unavailable.", ran=False)
-            tags = [answer.value.tag]
+            tags = [answer.value.tag] if answer.value.tag else []
         except Exception as exc:
             return DecisionVerdict.not_yet(str(exc), ran=False)
     tag = matching_tag(rule, tags)
@@ -380,7 +414,7 @@ async def process_message(message_id: str) -> None:
         state = message.message_processing
         if state.classification == "running" or any(e.status in {"running", "interrupted"} for e in state.queue):
             return
-        entry = next((e for e in state.queue if e.status == "queued"), None)
+        entry = next((e for e in state.queue if e.status == "queued" and e.tag), None)
         if entry is None:
             return
         # Use the existing rule lock as well as message FIFO: two messages must not
@@ -412,7 +446,7 @@ async def process_message(message_id: str) -> None:
             if not claimed:
                 continue
             cause = await message_event(message)
-            token = automation_assignment.set((message_id, entry.trigger_id, entry.run_id))
+            token = automation_assignment.set((message_id, entry.trigger_id, entry.run_id, entry.tag))
             try:
                 result = await tag_triggers._run_tag_fire(rule, cause, None, is_test=False, run_id=entry.run_id)
                 status = "failed" if result.get("error") else "succeeded" if result.get("accepted") else "skipped"
@@ -434,6 +468,38 @@ async def process_message(message_id: str) -> None:
                 return m.tags
 
             await _mutate(message_id, finish)
+
+
+async def classify_now(message_id: str):
+    """A person asks for this message to be classified now — whatever the switch says, and again
+    after a failure. A classification already under way is left alone."""
+    rule = await classifier()
+
+    def ask(m, s):
+        if s.classification in {"pending", "running"}:
+            return m.tags
+        s.classification, s.classification_error, s.classification_forced = "pending", "", True
+        if not any(not e.tag for e in s.queue):
+            s.queue[:0] = _classifier_entry(rule)
+        return m.tags
+
+    return await _mutate(message_id, ask, wake_worker=True)
+
+
+async def run_again(message_id: str, entry_id: str):
+    """A person asks for one failed or interrupted automation to run again on this message: a new
+    run, queued behind whatever is running. Nothing is ever replayed by itself."""
+    found = False
+
+    def requeue(m, s):
+        nonlocal found
+        entry = next((e for e in s.queue if e.id == entry_id and e.tag), None)
+        if entry is not None and entry.status in {"failed", "interrupted"}:
+            entry.status, entry.error, entry.run_id, found = "queued", "", str(mint_uuid()), True
+        return m.tags
+
+    message = await _mutate(message_id, requeue, wake_worker=True)
+    return message if found else None
 
 
 async def enrolled_messages() -> list:
