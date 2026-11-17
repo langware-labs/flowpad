@@ -5,7 +5,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 
 /**
  * Restore the last view on launch, the way an IDE reopens where you left off — and with no last
- * place (a first launch, or the user left from Home), open the Inbox: it is the first and default screen.
+ * place (a first launch, or the user left from Home), open the Stream Inbox: it is the first and default screen.
  *
  * The app launches at a BARE `/` — Electron loads the backend root, a browser
  * opens the address — while every in-app navigation to Home states its mode
@@ -88,7 +88,7 @@ export function endLaunch(): void {
 }
 
 /**
- * On a launch, the last place, else the Inbox; null (stay on Home) for any other home load. It takes
+ * On a launch, the last place, else the Stream Inbox; null (stay on Home) for any other home load. It takes
  * the bare launch URL's place (I7), so that URL is not left behind as a Back step.
  */
 export function lastPlaceRestoreRedirect(request: Request): Promise<Response | null> {

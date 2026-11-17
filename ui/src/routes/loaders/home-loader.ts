@@ -50,7 +50,7 @@ export async function loadHomePage(args: LoaderArgs) {
   const url = new URL(args.request.url);
 
   // Hub page has no desktop home. When the served backend serves only the hub
-  // (no `desk`), the index route lands on the hub's Inbox — the first and default screen.
+  // (no `desk`), the index route lands on the hub's Stream Inbox — the first and default screen.
   // Only the login callback's marker comes along, for App to read after this
   // redirect. GA4 receives this page's URL, and the rest of a root query can carry
   // the visitor's details: Auth0's verification link lands here with its own.
