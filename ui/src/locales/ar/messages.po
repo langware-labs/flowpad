@@ -2935,6 +2935,10 @@ msgstr "إضافة مستودع Git يعتمد عليه هذا المشروع."
 msgid "Add a machine"
 msgstr "إضافة جهاز"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Add a message channel"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add a message to send without it."
 msgstr "يلزم إضافة رسالة لإرساله بدونه."
@@ -14415,7 +14419,9 @@ msgstr "من"
 msgid "from {0}"
 msgstr "من {0}"
 
+#. placeholder {0}: origin.label
 #. placeholder {0}: row.task.reporter ?? ''
+#: src/components/ask/AskOrigin.tsx
 #: src/components/help/AskForHelpButton.tsx
 msgid "From {0}"
 msgstr ""
@@ -23089,6 +23095,10 @@ msgstr "علامات التبويب المفتوحة"
 #: src/components/conversation/task-it.tsx
 msgid "Open task"
 msgstr "فتح المهمة"
+
+#: src/components/contact-picker/ContactPicker.tsx
+msgid "Open team"
+msgstr ""
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
@@ -33190,6 +33200,15 @@ msgstr "هذه الميزانية غير متاحة لهذا الحساب"
 msgid "This can take up to a minute if it was asleep."
 msgstr "قد يستغرق هذا حتى دقيقة واحدة إذا كانت في وضع السكون."
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "This channel is already added"
+msgstr ""
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "This channel is already added but empty"
+msgstr ""
+
 #: src/components/inbound/InboundView.tsx
 msgid "This channel is not yours, or it is gone."
 msgstr "هذه القناة ليست لك، أو لم تعد موجودة."
@@ -35611,6 +35630,7 @@ msgstr "عرض صورة {title}"
 msgid "View Claude Code settings across user, project, and local scopes"
 msgstr "عرض إعدادات Claude Code على مستويات المستخدم والمشروع والنطاق المحلي"
 
+#: src/components/contact-picker/ContactPicker.tsx
 #: src/components/contact-picker/ContactRows.tsx
 msgid "View contact details"
 msgstr "عرض تفاصيل جهة الاتصال"

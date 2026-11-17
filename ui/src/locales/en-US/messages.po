@@ -2935,6 +2935,10 @@ msgstr "Add a git repository this project depends on."
 msgid "Add a machine"
 msgstr "Add a machine"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Add a message channel"
+msgstr "Add a message channel"
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add a message to send without it."
 msgstr "Add a message to send without it."
@@ -14415,7 +14419,9 @@ msgstr "From"
 msgid "from {0}"
 msgstr "from {0}"
 
+#. placeholder {0}: origin.label
 #. placeholder {0}: row.task.reporter ?? ''
+#: src/components/ask/AskOrigin.tsx
 #: src/components/help/AskForHelpButton.tsx
 msgid "From {0}"
 msgstr "From {0}"
@@ -23089,6 +23095,10 @@ msgstr "Open tabs"
 #: src/components/conversation/task-it.tsx
 msgid "Open task"
 msgstr "Open task"
+
+#: src/components/contact-picker/ContactPicker.tsx
+msgid "Open team"
+msgstr "Open team"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
@@ -33190,6 +33200,15 @@ msgstr "This budget is not available to you"
 msgid "This can take up to a minute if it was asleep."
 msgstr "This can take up to a minute if it was asleep."
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "This channel is already added"
+msgstr "This channel is already added"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "This channel is already added but empty"
+msgstr "This channel is already added but empty"
+
 #: src/components/inbound/InboundView.tsx
 msgid "This channel is not yours, or it is gone."
 msgstr "This channel is not yours, or it is gone."
@@ -35611,6 +35630,7 @@ msgstr "View {title} avatar"
 msgid "View Claude Code settings across user, project, and local scopes"
 msgstr "View Claude Code settings across user, project, and local scopes"
 
+#: src/components/contact-picker/ContactPicker.tsx
 #: src/components/contact-picker/ContactRows.tsx
 msgid "View contact details"
 msgstr "View contact details"

@@ -2935,6 +2935,10 @@ msgstr "הוספת מאגר Git שהפרויקט תלוי בו."
 msgid "Add a machine"
 msgstr "הוספת מכונה"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Add a message channel"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add a message to send without it."
 msgstr "הוסיפו הודעה כדי לשלוח בלי זה."
@@ -14415,7 +14419,9 @@ msgstr "מאת"
 msgid "from {0}"
 msgstr "מ-{0}"
 
+#. placeholder {0}: origin.label
 #. placeholder {0}: row.task.reporter ?? ''
+#: src/components/ask/AskOrigin.tsx
 #: src/components/help/AskForHelpButton.tsx
 msgid "From {0}"
 msgstr ""
@@ -23089,6 +23095,10 @@ msgstr "כרטיסיות פתוחות"
 #: src/components/conversation/task-it.tsx
 msgid "Open task"
 msgstr "פתיחת משימה"
+
+#: src/components/contact-picker/ContactPicker.tsx
+msgid "Open team"
+msgstr ""
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
@@ -33190,6 +33200,15 @@ msgstr "התקציב הזה אינו זמין עבורכם"
 msgid "This can take up to a minute if it was asleep."
 msgstr "זה עשוי להימשך עד דקה אם ה-Sandbox היה במצב שינה."
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "This channel is already added"
+msgstr ""
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "This channel is already added but empty"
+msgstr ""
+
 #: src/components/inbound/InboundView.tsx
 msgid "This channel is not yours, or it is gone."
 msgstr "הערוץ הזה לא שלך, או שהוא כבר לא קיים."
@@ -35611,6 +35630,7 @@ msgstr "הצגת התמונה של {title}"
 msgid "View Claude Code settings across user, project, and local scopes"
 msgstr "צפו בהגדרות Claude Code בין ההיקפים של משתמש, פרויקט, ומקומי"
 
+#: src/components/contact-picker/ContactPicker.tsx
 #: src/components/contact-picker/ContactRows.tsx
 msgid "View contact details"
 msgstr "הצגת פרטי איש קשר"
