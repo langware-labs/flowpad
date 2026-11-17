@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional
 
 from flow_sdk.core.flow_command import flow_command
 from flow_sdk.request_context.detached import add_detached_done_callback, create_detached_task
-from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+from flow_sdk.schema.data_spec.compute_op_spec import AskOriginSpec, ComputeOpSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec, ways
 from flow_sdk.schema.data_spec.project_setup_spec import (
@@ -262,11 +262,20 @@ def _from_row(row: "CredentialStatusRowSpec", roots: list[RootRef], project: "Pr
         typeid=row.typeid, kind=REQUIREMENT_PACK, name=row.name, title=row.title, setup=row.setup,
         help_url=row.help_url, setup_timeout_seconds=row.setup_timeout_seconds, **_why(row),
         vars=[_setup_var(v.env_var, v, login=v.login, present=v.present) for v in (must or row.vars)],
-        setup_choice=row.setup_choice, ways=dict(row.ways),
+        setup_choice=row.setup_choice, ways=dict(row.ways), origin=_origin(row, project),
         satisfied=row.state == "connected", used_by=_names(roots), required=bool(must),
         note="" if row.setup.strip() else "no setup instructions: AI Assist unavailable",
         skipped=row.setup_skipped, has_test=row.has_test, test_result=row.test_result, **always,
     )
+
+
+def _origin(row: "CredentialStatusRowSpec", project: "Project") -> AskOriginSpec:
+    """Where the credential ``row`` is declared: this project (its name), another project, or the user's own."""
+    pid = str(row.project_id or "")
+    if not pid:
+        return AskOriginSpec(label="Your credentials")
+    name = project.name if pid == str(project.id) else ""
+    return AskOriginSpec(label=name or "Project", project_id=pid, credential=row.typeid)
 
 
 def _refused(req: SetupRequirementSpec, roots: list[RootRef], refused: dict[str, str]) -> SetupRequirementSpec:
@@ -300,7 +309,7 @@ def _from_template(template: "Credential", roots: list[RootRef], project: "Proje
             _setup_var(name, var, login=var.login_command)
             for name, var in (template.vars or {}).items() if name in required
         ],
-        ways=dict(getattr(template, "ways", None) or {}),
+        ways=dict(getattr(template, "ways", None) or {}), origin=AskOriginSpec(label="Flowpad"),
         note="" if setup.strip() else "no setup instructions: AI Assist unavailable",
         **skip_always_of(project, roots),
     )
@@ -568,6 +577,7 @@ def compile_setup(
                         "prompt": f"How should Flowpad sign in to {req.title or req.name}?", "detail": req.needed_for,
                         "secret": True, "auto_continue": any(v.login for vs in offered.values() for v in vs),
                         "choices": [_way_choice(way, members, req.ways.get(way)) for way, members in offered.items()],
+                        "origin": req.origin,
                     },
                     "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
                     "completion_check": asked,

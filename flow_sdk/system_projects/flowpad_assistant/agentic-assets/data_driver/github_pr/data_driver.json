@@ -1,5 +1,6 @@
 {
   "schema": 1,
+  "featured": true,
   "name": "github_pr",
   "title": "GitHub PRs",
   "icon_name": "GitHub",

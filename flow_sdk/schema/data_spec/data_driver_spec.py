@@ -212,8 +212,9 @@ class DataDriverSpec(DataSpec):
     #: still poll, scripts still name it — without offering it to a person. A vendor
     #: reached through the cloud (AgentMail behind Agent Email) is unlisted.
     listed: bool = True
-    #: Drawn by default on a stream inbox's channel line, as a channel still to connect, until its owner
-    #: connects one. Any member of a group may declare it for the group.
+    #: An inbox channel: offered in an empty stream inbox and in its add dialog (a driver without it is not
+    #: offered there), and drawn by default on an agent's channel line until it connects one. Any member of a
+    #: group may declare it for the group.
     featured: bool = False
     #: The cloud creates the account for the owning agent: there is nothing to paste
     #: and no form, so the picker asks the cloud instead of saving a draft.

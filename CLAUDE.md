@@ -341,3 +341,8 @@ not a conversation result: there is no conversation to put it in, and the update
 It is raised only by `electron/main.js` when a downloaded or prepared update is ready (and on its 90-minute
 reminder), with id `update-ready` (one at a time), Restart / Later actions, and a top-bar indicator that keeps
 the update reachable after the toast closes. Don't use it as a precedent for other custom notifications.
+
+**Email rules are the hub's, never per-machine preferences.** Every system email has a kind (a dot path, hub
+`app/services/email_kinds.py`); muting is the hub `notification_rule` entity `{rule_key, muted}`, shown by ONE view,
+`NotificationsView` at `/dock/hub/notifications[/<rule key>]` (the mute link's target, on the hub and the
+desktop alike). Don't store email choices in `preferences.json`, and don't add a desk-only copy of the view.
