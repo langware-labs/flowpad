@@ -157,6 +157,10 @@ msgstr "…"
 msgid "…or a repository URL"
 msgstr "…or a repository URL"
 
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "./open-ticket.sh"
+msgstr "./open-ticket.sh"
+
 #: src/components/credentials/EnvLocalBlockedNotice.tsx
 msgid ".env.local is not ignored by git here, so a value written there would be committable. Add it to .gitignore first, or keep this credential in the encrypted vault."
 msgstr ".env.local is not ignored by git here, so a value written there would be committable. Add it to .gitignore first, or keep this credential in the encrypted vault."
@@ -1580,6 +1584,10 @@ msgstr "{n} skipped: unavailable."
 msgid "{name} avatar"
 msgstr "{name} avatar"
 
+#: src/components/tags/MessageTags.tsx
+msgid "{name} failed"
+msgstr "{name} failed"
+
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "{name} has no account to sign into — it runs on an LLM key or endpoint."
 msgstr "{name} has no account to sign into — it runs on an LLM key or endpoint."
@@ -2438,6 +2446,10 @@ msgstr "A call here spends"
 msgid "A capped sub-budget of yours, for an agent or app."
 msgstr "A capped sub-budget of yours, for an agent or app."
 
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "a command in the project folder"
+msgstr "a command in the project folder"
+
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "a credential"
 msgstr "a credential"
@@ -2528,6 +2540,14 @@ msgstr "A machine"
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "A member"
 msgstr "A member"
+
+#: src/components/automations/automation-words.ts
+msgid "a message arrives"
+msgstr "a message arrives"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "a message is tagged"
+msgstr "a message is tagged"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "a minute"
@@ -2654,6 +2674,10 @@ msgstr "a while ago"
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "a wizard name"
 msgstr "a wizard name"
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "a worker runs it"
+msgstr "a worker runs it"
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "A workspace is a folder of related projects. It starts empty."
@@ -2973,6 +2997,10 @@ msgstr "Add a source"
 msgid "Add a staff member by email"
 msgstr "Add a staff member by email"
 
+#: src/components/automations/MessageRulePage.tsx
+msgid "Add a step."
+msgstr "Add a step."
+
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Add a tag under {nodeName}"
 msgstr "Add a tag under {nodeName}"
@@ -3027,6 +3055,10 @@ msgstr "Add at least one email address."
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Add at least one variable"
 msgstr "Add at least one variable"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Add automation"
+msgstr "Add automation"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Add Bookmark"
@@ -3239,6 +3271,7 @@ msgid "Add source"
 msgstr "Add source"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "Add step"
 msgstr "Add step"
 
@@ -4150,6 +4183,10 @@ msgstr "Anchor time range"
 msgid "and {more} more"
 msgstr "and {more} more"
 
+#: src/components/automations/MessageRulePage.tsx
+msgid "and only if"
+msgstr "and only if"
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Annotate image"
 msgstr "Annotate image"
@@ -4214,8 +4251,8 @@ msgid "another machine"
 msgstr "another machine"
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Another message"
-msgstr "Another message"
+#~ msgid "Another message"
+#~ msgstr "Another message"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Another name…"
@@ -4712,8 +4749,8 @@ msgid "Ask Flowpad Assistant to change {displayName}"
 msgstr "Ask Flowpad Assistant to change {displayName}"
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "ask for a refund or dispute a charge"
-msgstr "ask for a refund or dispute a charge"
+#~ msgid "ask for a refund or dispute a charge"
+#~ msgstr "ask for a refund or dispute a charge"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
@@ -5178,6 +5215,7 @@ msgstr "Automation queue"
 
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/BusView.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/conversation/channel-attribution.tsx
@@ -6168,8 +6206,8 @@ msgid "Catalog unavailable. Enter a model ID explicitly."
 msgstr "Catalog unavailable. Enter a model ID explicitly."
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "Catch"
-msgstr "Catch"
+#~ msgid "Catch"
+#~ msgstr "Catch"
 
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Caught by"
@@ -6739,6 +6777,18 @@ msgstr "classification.json"
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Classify arriving messages"
 msgstr "Classify arriving messages"
+
+#: src/components/automations/automation-words.ts
+msgid "classify it"
+msgstr "classify it"
+
+#: src/components/automations/automation-words.ts
+msgid "classify it under {root}"
+msgstr "classify it under {root}"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Classify now"
+msgstr "Classify now"
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/terminal/interactive-terminal/PaneSelectorBar.tsx
@@ -7764,7 +7814,7 @@ msgstr "Confirm"
 msgid "Confirm deletion"
 msgstr "Confirm deletion"
 
-#: src/components/automations/MessageRulePage.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "confirm which charge is in question, explain the refund path, and draft the reply. Don’t send it."
 msgstr "confirm which charge is in question, explain the refund path, and draft the reply. Don’t send it."
 
@@ -8542,6 +8592,7 @@ msgid "Could not change enabled state"
 msgstr "Could not change enabled state"
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Could not change it"
 msgstr "Could not change it"
@@ -9228,6 +9279,10 @@ msgstr "Could not run {0}"
 #: src/components/automations/TestPanel.tsx
 msgid "Could not run it"
 msgstr "Could not run it"
+
+#: src/components/tags/MessageTags.tsx
+msgid "Could not run it again"
+msgstr "Could not run it again"
 
 #: src/components/conversation/use-it-reply-actions.ts
 msgid "Could not run it there"
@@ -11998,6 +12053,10 @@ msgstr "Each machine gets a new budget with nothing spent. The machine and its w
 msgid "Each machine is shut down and removed. This cannot be undone."
 msgstr "Each machine is shut down and removed. This cannot be undone."
 
+#: src/components/automations/ClassifierPage.tsx
+msgid "Each new incoming message gets one tag from your tag tree, or none when nothing fits. A tag can start automations."
+msgstr "Each new incoming message gets one tag from your tag tree, or none when nothing fits. A tag can start automations."
+
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
 msgstr "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
@@ -12146,6 +12205,10 @@ msgstr "Edit SubAgent Hook"
 #: src/components/tags/StreamInboxTags.tsx
 #~ msgid "Edit tag"
 #~ msgstr "Edit tag"
+
+#: src/components/automations/ClassifierPage.tsx
+msgid "Edit tags"
+msgstr "Edit tags"
 
 #: src/components/tags/MessageTags.tsx
 msgid "Edit tags…"
@@ -12339,6 +12402,7 @@ msgid "Enable/Disable hook"
 msgstr "Enable/Disable hook"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/entity-card/entity-card-rows.ts
@@ -13144,6 +13208,7 @@ msgstr "Extracting…"
 #: src/components/inbound/RouteCheck.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
+#: src/components/tags/MessageTags.tsx
 msgid "failed"
 msgstr "failed"
 
@@ -14448,7 +14513,9 @@ msgstr "from"
 msgid "From"
 msgstr "From"
 
+#. placeholder {0}: from.split('.').at(-1)
 #. placeholder {0}: item.sourceProjectName
+#: src/components/tags/StreamInboxTags.tsx
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "from {0}"
 msgstr "from {0}"
@@ -14703,6 +14770,10 @@ msgstr "Get your {label} messages here, and answer them from Flowpad."
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Get your messages here"
 msgstr "Get your messages here"
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "gets the message, can reply"
+msgstr "gets the message, can reply"
 
 #: src/journey/JourneyBadge.tsx
 msgid "Getting started — {stepsLeft} steps left"
@@ -15736,6 +15807,7 @@ msgstr "Idle"
 
 #: src/components/automations/IfThenGraphic.tsx
 #: src/components/automations/IfThenLine.tsx
+#: src/components/automations/MessageRulePage.tsx
 msgid "If"
 msgstr "If"
 
@@ -15971,8 +16043,12 @@ msgid "Included through this source's packages. Changes apply to new sessions."
 msgstr "Included through this source's packages. Changes apply to new sessions."
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
-msgstr "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
+#~ msgid "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
+#~ msgstr "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Includes the tags under it. Runs once per message."
+msgstr "Includes the tags under it. Runs once per message."
 
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Incoming"
@@ -16585,6 +16661,10 @@ msgstr "It also changes:"
 msgid "It answered without using any tool."
 msgstr "It answered without using any tool."
 
+#: src/components/automations/MessageRulePage.tsx
+msgid "it asks for a refund or disputes a charge"
+msgstr "it asks for a refund or disputes a charge"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
 msgstr "It can read your Slack channels."
@@ -16593,6 +16673,7 @@ msgstr "It can read your Slack channels."
 msgid "It cannot be removed from the project"
 msgstr "It cannot be removed from the project"
 
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "It did not work"
@@ -18465,6 +18546,10 @@ msgstr "Map this conversation to a local project first."
 msgid "Mark all read"
 msgstr "Mark all read"
 
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "Mark as read"
+msgstr "Mark as read"
+
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Mark Done"
 msgstr "Mark Done"
@@ -18472,6 +18557,10 @@ msgstr "Mark Done"
 #: src/components/conversation/IssueReplyLine.tsx
 msgid "Mark in progress"
 msgstr "Mark in progress"
+
+#: src/components/automations/automation-words.ts
+msgid "mark it as read"
+msgstr "mark it as read"
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Mark this task as Done?"
@@ -18878,8 +18967,8 @@ msgid "Messages list, events and settings"
 msgstr "Messages list, events and settings"
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "messages on"
-msgstr "messages on"
+#~ msgid "messages on"
+#~ msgstr "messages on"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Meta app › App settings › Basic. Checks every delivery came from Meta. Stored write-only."
@@ -19228,6 +19317,14 @@ msgstr "Mount Flowpad Assistant"
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Move {0} to {1}?"
 msgstr "Move {0} to {1}?"
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "Move step {number} down"
+msgstr "Move step {number} down"
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "Move step {number} up"
+msgstr "Move step {number} up"
 
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "Move the folder to the Trash and remove the project"
@@ -21202,6 +21299,10 @@ msgstr "No substantiated findings to apply for this skill."
 msgid "No such time zone."
 msgstr "No such time zone."
 
+#: src/components/automations/MessageRulePage.tsx
+msgid "no tag"
+msgstr "no tag"
+
 #: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "No tags"
@@ -22099,6 +22200,10 @@ msgstr "Nothing was launched. You can close this tab."
 msgid "Nothing would arrive for this, so it was not sent:"
 msgstr "Nothing would arrive for this, so it was not sent:"
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Nothing yet."
+msgstr "Nothing yet."
+
 #: src/components/automations/BusStream.tsx
 msgid "Nothing yet. Only some event families reach the app; the counts above cover every event."
 msgstr "Nothing yet. Only some event families reach the app; the counts above cover every event."
@@ -22243,6 +22348,7 @@ msgstr "oldest file on disk"
 msgid "oldest in Git history"
 msgstr "oldest in Git history"
 
+#: src/components/automations/MessageRulePage.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "on"
 msgstr "on"
@@ -23546,6 +23652,7 @@ msgstr "Operation failed"
 
 #: src/components/assets/DependencyChips.tsx
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+#: src/components/automations/MessageRulePage.tsx
 #: src/components/conversation/MessageFormCard.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "optional"
@@ -23587,6 +23694,10 @@ msgstr "Optional message to the members…"
 #: src/components/assets/editor/task/OwnerButton.tsx
 msgid "Optional message to the owner…"
 msgstr "Optional message to the owner…"
+
+#: src/components/automations/automation-words.ts
+msgid "or"
+msgstr "or"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Or copy an invite link"
@@ -24316,7 +24427,7 @@ msgid "Pick a tag to say when a message belongs there."
 msgstr "Pick a tag to say when a message belongs there."
 
 #: src/components/automations/blocks/ThenBlock.tsx
-#: src/components/automations/MessageRulePage.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "Pick an agent…"
 msgstr "Pick an agent…"
 
@@ -25155,6 +25266,7 @@ msgid "prompt"
 msgstr "prompt"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 #: src/components/conversation/AttachMenu.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/PromptRunSummaryDialog.tsx
@@ -26499,6 +26611,10 @@ msgstr "Remove rule"
 msgid "Remove service"
 msgstr "Remove service"
 
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "Remove step {number}"
+msgstr "Remove step {number}"
+
 #: src/components/tags/MessageTags.tsx
 msgid "Remove tag {name}"
 msgstr "Remove tag {name}"
@@ -27595,11 +27711,13 @@ msgid "run a script"
 msgstr "run a script"
 
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "Run a script"
 msgstr "Run a script"
 
 #: src/components/conversation/SessionCard.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/tags/MessageTags.tsx
 msgid "Run again"
 msgstr "Run again"
 
@@ -27612,6 +27730,7 @@ msgid "run an agent"
 msgstr "run an agent"
 
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "Run an agent"
 msgstr "Run an agent"
 
@@ -28243,6 +28362,10 @@ msgstr "Say what they should do."
 #: src/components/automations/MessageRulePage.tsx
 msgid "Say what to catch."
 msgstr "Say what to catch."
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Say which command to run."
+msgstr "Say which command to run."
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "says:"
@@ -28901,6 +29024,10 @@ msgstr "Select conversation"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Select every project"
 msgstr "Select every project"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Select message"
+msgstr "Select message"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Select parent folder"
@@ -29951,8 +30078,8 @@ msgid "Short-lived key for Open-in-FlowPad deep link"
 msgstr "Short-lived key for Open-in-FlowPad deep link"
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "should"
-msgstr "should"
+#~ msgid "should"
+#~ msgstr "should"
 
 #. placeholder {0}: '{permissionDecision: allow or deny}'
 #: src/components/hooks-view/HookEditor.tsx
@@ -31321,6 +31448,10 @@ msgstr "starting…"
 msgid "Starting…"
 msgstr "Starting…"
 
+#: src/components/tags/MessageTags.tsx
+msgid "Starts an automation"
+msgstr "Starts an automation"
+
 #: src/components/automations/PackageRow.tsx
 msgid "Starts when any of these happens"
 msgstr "Starts when any of these happens"
@@ -31418,6 +31549,10 @@ msgstr "Step {0} of {1}"
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Steps"
 msgstr "Steps"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Steps run in order. An agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered."
+msgstr "Steps run in order. An agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered."
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "Steps taken"
@@ -32229,8 +32364,8 @@ msgid "Thank you — sent."
 msgstr "Thank you — sent."
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "that"
-msgstr "that"
+#~ msgid "that"
+#~ msgstr "that"
 
 #: src/navigation/agentic-process-open.ts
 #: src/navigation/agentic-process-open.ts
@@ -32304,8 +32439,8 @@ msgid "The Agent bundle is not available."
 msgstr "The Agent bundle is not available."
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "The agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered."
-msgstr "The agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered."
+#~ msgid "The agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered."
+#~ msgstr "The agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered."
 
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 msgid "The agent has asked a question — answer it in the terminal."
@@ -32418,6 +32553,10 @@ msgstr "The changes did not finish"
 #: src/components/data-sources/use-source-verify.ts
 msgid "The check did not run."
 msgstr "The check did not run."
+
+#: src/components/tags/MessageTags.tsx
+msgid "The classifier was off when this arrived."
+msgstr "The classifier was off when this arrived."
 
 #: src/notifications/ingest.ts
 msgid "The cloud service returned an error. Please try again in a moment."
@@ -32734,6 +32873,10 @@ msgstr "The manifest was not changed."
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
 msgstr "The member tasks were created; {messageFailures} notification message(s) did not go through."
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "the message stops showing as new"
+msgstr "the message stops showing as new"
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "The message you came from — or paste any message"
@@ -33059,6 +33202,10 @@ msgstr "The worker exited immediately after launch, so auto-relaunch is paused. 
 #: src/components/automations/MessageRulePage.tsx
 msgid "Then"
 msgstr "Then"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Then — when a message lands here"
+msgstr "Then — when a message lands here"
 
 #: src/pages/entry/DesktopDownload.tsx
 msgid "Then install it:"
@@ -33626,6 +33773,10 @@ msgstr "This message carries no assets."
 #: src/components/conversation/MessageComposer.tsx
 msgid "This message is a prompt — {hostName} approves it, it runs once on their machine, you get its status"
 msgstr "This message is a prompt — {hostName} approves it, it runs once on their machine, you get its status"
+
+#: src/components/tags/MessageTags.tsx
+msgid "This message was not classified."
+msgstr "This message was not classified."
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "This message will also become a task"
@@ -34678,11 +34829,13 @@ msgid "Turn failed"
 msgstr "Turn failed"
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Turn off"
 msgstr "Turn off"
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Turn on"
 msgstr "Turn on"
@@ -36313,6 +36466,10 @@ msgstr "When a file changes"
 msgid "When a message arrives"
 msgstr "When a message arrives"
 
+#: src/components/automations/automation-words.ts
+msgid "When a message is tagged {tags}"
+msgstr "When a message is tagged {tags}"
+
 #: src/components/automations/KindGallery.tsx
 msgid "When a task changes"
 msgstr "When a task changes"
@@ -36329,8 +36486,8 @@ msgid "When an agent reports {events}"
 msgstr "When an agent reports {events}"
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "When any of these message tags is assigned"
-msgstr "When any of these message tags is assigned"
+#~ msgid "When any of these message tags is assigned"
+#~ msgstr "When any of these message tags is assigned"
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "When does a message belong here?"
