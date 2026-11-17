@@ -73,7 +73,14 @@ import {
   sourceForOrigin,
   useChannelAttribution,
 } from '@src/components/conversation/channel-attribution';
-import { AttachedChannelsBar, ConnectChannelPrompt, useAttachedChannels } from './AttachedChannelsBar';
+import {
+  addedChannels,
+  AttachedChannelsBar,
+  ConnectChannelPrompt,
+  ConversationProbe,
+  useAttachedChannels,
+} from './AttachedChannelsBar';
+import { needsPerson } from '@src/components/data-sources/source-attention';
 import {
   BUILT_IN_CHANNELS,
   FLOWPAD_CHANNEL,
@@ -826,6 +833,32 @@ export function StreamInboxView({
     builtInOffered,
     loading: channelsLoading,
   } = useAttachedChannels(channelsOwner);
+  // The bar draws a channel once it has delivered a conversation: an added channel with none yet is
+  // offered (disabled) in the empty list instead. A source a person must act on always shows (its warning).
+  const [withConversations, setWithConversations] = useState<ReadonlySet<string>>(() => new Set());
+  const onProbe = useCallback((id: string, has: boolean) => {
+    setWithConversations((prev) => {
+      if (prev.has(id) === has) return prev;
+      const next = new Set(prev);
+      if (has) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+  const barChannels = useMemo(
+    () => ownerChannels.filter((s) => needsPerson(s) || (!!s.id && withConversations.has(s.id))),
+    [ownerChannels, withConversations],
+  );
+  // Every added channel, for the add dialog and the empty list: disabled, saying whether it has delivered yet.
+  const addedTips = useMemo(
+    () =>
+      addedChannels(ownerChannels, specFor, (sources) =>
+        sources.some((s) => s.id && withConversations.has(s.id))
+          ? t`This channel is already added`
+          : t`This channel is already added but empty`,
+      ),
+    [ownerChannels, specFor, withConversations, t],
+  );
   const { attributionFor: attributionForOrigin } = useChannelAttribution();
   const attributionFor = useCallback(
     // The message's own source (origin_local) names WHICH source delivered it: two help desks share
@@ -1090,6 +1123,8 @@ export function StreamInboxView({
   // first and latest messages arrived. Latched, so a later batch (a new message) never unmounts them.
   const rowsReady = useRef(false);
   if (messagesSettled && !initialLoading) rowsReady.current = true;
+  // Rows mount only once their messages land; until then a non-empty page is still loading, never "empty".
+  const listLoading = initialLoading || (!rowsReady.current && sorted.length > 0);
   // The sessions automations started on the visible conversations' messages — one query, the newest per row.
   const conversationIds = useMemo(() => sorted.map((c) => c.id ?? '').filter(Boolean), [sorted]);
   const automationMarks = useConversationAutomationMarks(conversationIds);
@@ -1519,9 +1554,12 @@ export function StreamInboxView({
   const channelButtons = (
     <>
       {channelsOwner && !embedded ? (
-        <AttachedChannelsBar
+        <>
+          {ownerChannels.map((s) => s.id && <ConversationProbe key={s.id} sourceId={s.id} onResult={onProbe} />)}
+          <AttachedChannelsBar
           owner={channelsOwner}
-          rows={ownerChannels}
+          rows={barChannels}
+          added={addedTips}
           offers={channelOffers}
           builtInOffered={builtInOffered}
           specFor={specFor}
@@ -1530,6 +1568,7 @@ export function StreamInboxView({
           className="shrink-0"
           leading={invitesChip}
         />
+        </>
       ) : (
         invitesChip
       )}
@@ -1834,18 +1873,13 @@ export function StreamInboxView({
           </div>
         )}
 
-        {(initialLoading || (!rowsReady.current && sorted.length > 0)) && (
+        {listLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             <Trans>Loading…</Trans>
           </div>
         )}
 
-        {/* Rows mount only once their messages land (`rowsReady`); until then a non-empty page has
-            visibleCount 0 and must still read as loading, not as "No conversations". */}
-        {!initialLoading &&
-          (rowsReady.current || sorted.length === 0) &&
-          visibleCount === 0 &&
-          membershipPendingCount === 0 && (
+        {!listLoading && visibleCount === 0 && membershipPendingCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
               {searchActive || columnFilterActive
@@ -1878,7 +1912,9 @@ export function StreamInboxView({
                 // here answers a question nobody asked.
                 channelsOwner &&
                 channelFilter.size === 0 && (
-                  <ConnectChannelPrompt owner={channelsOwner} offers={channelChoices} title={t`Add a message channel`} />
+                  <ConnectChannelPrompt owner={channelsOwner} offers={channelChoices}
+                    added={addedTips}
+                    title={t`Add a message channel`} />
                 )
               ))}
             {!inArchivedView && !searchActive && !columnFilterActive && (
