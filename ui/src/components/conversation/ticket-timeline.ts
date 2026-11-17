@@ -14,6 +14,8 @@ interface SideFeed {
   items: TimelineItem[];
   /** This side has older messages it has not loaded. */
   hasOlder: boolean;
+  /** False while this side has not answered yet; absent means it has. */
+  loaded?: boolean;
 }
 
 interface TicketTimeline {
@@ -21,6 +23,9 @@ interface TicketTimeline {
   rowOf: Map<string, number>;
   /** Where the team wrote while the customer side was quiet: the row their run starts on, and how many notes. */
   teamRuns: { row: number; count: number }[];
+  /** Both sides have answered. Until then nothing is placed: drawn early, the side that answers later would
+   *  land between the other's rows and push every row after it down. */
+  ready: boolean;
 }
 
 export const timelineKey = (side: TicketSide, key: string) => `${side}:${key}`;
@@ -31,6 +36,7 @@ export const timelineKey = (side: TicketSide, key: string) => `${side}:${key}`;
  * loaded one: drawn, they would sit above messages that really came first.
  */
 export function ticketTimeline(customer: SideFeed, team: SideFeed): TicketTimeline {
+  if (customer.loaded === false || team.loaded === false) return { rowOf: new Map(), teamRuns: [], ready: false };
   const oldest = (feed: SideFeed) => (feed.hasOlder && feed.items.length ? feed.items[0].sortAt : -Infinity);
   const cut = Math.max(oldest(customer), oldest(team));
   const all = [
@@ -53,5 +59,5 @@ export function ticketTimeline(customer: SideFeed, team: SideFeed): TicketTimeli
     }
     previous = side;
   });
-  return { rowOf, teamRuns };
+  return { rowOf, teamRuns, ready: true };
 }
