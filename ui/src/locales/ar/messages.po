@@ -6026,6 +6026,7 @@ msgstr "إلغاء"
 msgid "Cancel reply"
 msgstr "إلغاء الرد"
 
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "Cancel request"
 msgstr "إلغاء الطلب"
