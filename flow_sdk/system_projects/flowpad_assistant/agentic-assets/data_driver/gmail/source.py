@@ -20,6 +20,7 @@ the message from All Mail by its key when handed an attachment the session never
 """
 from __future__ import annotations
 
+import base64
 import codecs
 import imaplib
 import re
@@ -153,9 +154,12 @@ class GmailSource(EmailAddressing, MessageSource):
 
     @property
     def address(self) -> str:
-        """The row's own address (so aliases are explicit), else the operator's ``GMAIL_ADDRESS``."""
+        """The row's own address (so aliases are explicit), else the operator's ``GMAIL_ADDRESS``, else
+        the Google account that signed in."""
         fallback = self.credentials.values.get("GMAIL_ADDRESS")
-        address = str(self.config.get("address") or (fallback.get_secret_value() if fallback else "")).strip()
+        address = str(
+            self.config.get("address") or (fallback.get_secret_value() if fallback else "") or self.credentials.identity
+        ).strip()
         if not address:
             raise Rejected("config.address or GMAIL_ADDRESS is required")
         return address
@@ -324,8 +328,11 @@ class GmailSource(EmailAddressing, MessageSource):
 
     # ── transport ───────────────────────────────────────────────────────────
     def _mailbox(self, host: Any = None) -> "Mailbox":
-        """The account and its app password. ``host`` is the server (default: the IMAP one)."""
+        """The account and how it logs in — the Google sign-in's token, else its app password. ``host`` is the
+        server (default: the IMAP one)."""
         host = str((self.config.get("imap_host") if host is None else host) or "")
+        if self.credentials.token is not None:
+            return Mailbox(self.address, "", host, token=self.credentials.token.get_secret_value())
         return Mailbox(self.address, self._password(), host)
 
     def _password(self) -> str:
@@ -364,11 +371,17 @@ class GmailSource(EmailAddressing, MessageSource):
 
 @dataclass(frozen=True)
 class Mailbox:
-    """One login: the account, its app password and where its server is (``""`` is Google's)."""
+    """One login: the account, its app password or Google sign-in token, and where its server is (``""`` is Google's)."""
 
     address: str
     password: str
     host: str = ""
+    #: A Google sign-in's access token: the login is XOAUTH2 instead of the app password.
+    token: str = ""
+
+    def xoauth2(self) -> bytes:
+        """The XOAUTH2 initial response IMAP and SMTP both take (Google's SASL format)."""
+        return f"user={self.address}\x01auth=Bearer {self.token}\x01\x01".encode()
 
 
 def endpoint(spec: str, default_host: str, default_port: int) -> tuple[str, int, bool]:
@@ -477,9 +490,12 @@ def mailbox_arg(name: str) -> str:
 
 
 def login(client: imaplib.IMAP4, account: Mailbox) -> None:
-    """Authenticate ``client`` as ``account`` with its app password."""
+    """Authenticate ``client`` as ``account`` with its sign-in token, else its app password."""
     try:
-        client.login(account.address, account.password)
+        if account.token:
+            client.authenticate("XOAUTH2", lambda _: account.xoauth2())
+        else:
+            client.login(account.address, account.password)
     except imaplib.IMAP4.abort:
         raise
     except imaplib.IMAP4.error as exc:
@@ -584,7 +600,13 @@ def check_login(account: Mailbox) -> None:
 
 def send_smtp(account: Mailbox, message: EmailMessage) -> None:
     with smtp_client(account.host) as client:
-        client.login(account.address, account.password)
+        if account.token:
+            client.ehlo()
+            code, said = client.docmd("AUTH", "XOAUTH2 " + base64.b64encode(account.xoauth2()).decode())
+            if code != 235:
+                raise smtplib.SMTPAuthenticationError(code, said)
+        else:
+            client.login(account.address, account.password)
         client.send_message(message)
 
 

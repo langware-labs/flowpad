@@ -68,6 +68,8 @@ export interface AskChoice {
    *  the choice's `value` — nothing typed, nothing stored. Empty: not this kind of way. */
   provider?: string;
   scopes?: string[];
+  /** The provider's scope group the sign-in is for (`gmail`); empty: the default. */
+  group?: string;
   /** A way of several values given together: one input per field, answered as newline-joined
    *  `<field.value>=<typed>` lines. Empty: the choice is one value (or a sign-in). */
   fields?: AskChoice[];

@@ -16,6 +16,7 @@ export function useProviderSignIn(
     onError,
     listen,
     source,
+    group,
   }: {
     onGranted: () => void;
     onNotFinished?: () => void;
@@ -23,6 +24,8 @@ export function useProviderSignIn(
     listen?: boolean;
     /** The data source this sign-in is for: the backend asks for its scope group and what it needs. */
     source?: string;
+    /** The provider's scope group to sign in to (`gmail`), when the caller knows it without a source. */
+    group?: string;
   },
 ) {
   const [connecting, setConnecting] = useState(false);
@@ -30,7 +33,7 @@ export function useProviderSignIn(
     if (!provider) return;
     setConnecting(true);
     try {
-      await oauthService.connect(provider, undefined, undefined, source ? { source } : {});
+      await oauthService.connect(provider, undefined, undefined, { ...(source ? { source } : {}), ...(group ? { group } : {}) });
     } catch (e: unknown) {
       setConnecting(false);
       onError(e);

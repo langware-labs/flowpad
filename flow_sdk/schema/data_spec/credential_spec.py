@@ -78,6 +78,8 @@ class CredentialVarSpec(DataSpec):
     #: oauth: the connection provider the grant is from, and the scopes it must cover.
     provider: str = ""
     scopes: list[str] = Field(default_factory=list)
+    #: oauth: the provider's scope group the grant is (``gmail``), each with its own token; empty — the default.
+    group: str = ""
     #: Where to get this particular value.
     help_url: str = ""
     #: ONE_OF: the way this variable belongs to. ONE_OF variables sharing a ``way`` are given together
@@ -126,8 +128,8 @@ class CredentialVarSpec(DataSpec):
             raise ValueError("login and check belong to a cli variable (kind: cli)")
         if self.is_oauth and not self.provider:
             raise ValueError("an oauth variable names its provider")
-        if not self.is_oauth and (self.provider or self.scopes):
-            raise ValueError("provider and scopes belong to an oauth variable (kind: oauth)")
+        if not self.is_oauth and (self.provider or self.scopes or self.group):
+            raise ValueError("provider, scopes and group belong to an oauth variable (kind: oauth)")
         if self.is_oauth and not self.is_one_of:
             raise ValueError("an oauth variable is one way of a ONE_OF group (required: ONE_OF)")
         if self.way and not self.is_one_of:

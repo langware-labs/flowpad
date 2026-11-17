@@ -391,6 +391,8 @@ class AskChoiceSpec(DataSpec):
     #: person's browser, then answers ``<value>`` — nothing typed, nothing stored.
     provider: str = ""
     scopes: list[str] = []
+    #: The provider's scope group the sign-in is for (``gmail``); empty — the default.
+    group: str = ""
     #: Several values this choice is given as, together — each one typed (or picked) like a value choice.
     fields: list["AskChoiceSpec"] = []
 
