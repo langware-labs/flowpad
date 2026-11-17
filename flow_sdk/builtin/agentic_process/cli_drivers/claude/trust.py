@@ -67,7 +67,8 @@ def trust_mounted_dirs(add_dirs: Sequence[str], dependency_dirs: Sequence[str]) 
         folder = Path(raw).expanduser().resolve()
         target = next((root for root in roots if root == folder or root in folder.parents), None)
         target = target or (folder if folder in dependencies else None)
-        if target and target not in wanted and not any(_trusted(f, projects) for f in (target, *target.parents)):
+        # The folder itself, never a trusted folder above it: that one does not cover a git repository inside it.
+        if target and target not in wanted and not _trusted(target, projects):
             wanted.append(target)
     if wanted:
         write_claude_flags(trust_folders=[str(f) for f in wanted])
