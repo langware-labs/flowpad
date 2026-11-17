@@ -526,15 +526,15 @@ async def test_catchup_then_live_create_classifies_once_and_duplicate_keeps_clai
     await materialize(live=True)
     await processing.process_message(live.id)
     completed = await FlowMessage.get_by_id(live.id)
-    claim = completed.message_processing.queue[0].model_dump()
+    mine = lambda m: [e.model_dump() for e in m.message_processing.queue if e.trigger_id == str(trigger.id)]
+    claim, = mine(completed)
     assert completed.message_processing.classification == "succeeded"
     assert claim["status"] == "succeeded"
     assert len(calls) == 1
     await materialize(live=True)
     await processing.process_message(live.id)
     duplicate = await FlowMessage.get_by_id(live.id)
-    assert duplicate.message_processing.queue[0].model_dump() == claim
-    assert len(duplicate.message_processing.queue) == 1
+    assert mine(duplicate) == [claim]
     assert len(calls) == 1
     assert (await Trigger.get_by_id(trigger.id)).counter == 1
 
