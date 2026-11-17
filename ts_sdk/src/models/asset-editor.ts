@@ -54,6 +54,7 @@ export enum AssetEditor {
   VIDEO = 'video',
   AUDIO = 'audio',
   PDF = 'pdf', // native browser render of a .pdf via <iframe>/<embed>
+  DOCX = 'docx', // a .docx, rendered read-only to HTML by mammoth
   ARCHIVE = 'archive', // a .zip, browsed as the folder it extracts to (a temp copy)
   // A `.value.json`: one DataSpec value carrying its own `spec_kind`, shown by that kind's
   // viewer (a diagnosis, an eval run) — the data-viewer registry, outside any host app.
@@ -153,6 +154,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.VIDEO]: [],
   [AssetEditor.AUDIO]: [],
   [AssetEditor.PDF]: [],
+  [AssetEditor.DOCX]: [],
   [AssetEditor.ARCHIVE]: [],
   [AssetEditor.VALUE]: [],
 };
@@ -193,6 +195,7 @@ export const PREVIEW_EDITORS: ReadonlySet<AssetEditor> = new Set([
   AssetEditor.VIDEO,
   AssetEditor.AUDIO,
   AssetEditor.PDF,
+  AssetEditor.DOCX,
   AssetEditor.ARCHIVE,
   AssetEditor.VALUE,
 ]);
@@ -306,6 +309,7 @@ const STATIC_EXT_TO_EDITOR: Record<string, AssetEditor> = {
   m4a: AssetEditor.AUDIO,
   ogg: AssetEditor.AUDIO,
   pdf: AssetEditor.PDF,
+  docx: AssetEditor.DOCX,
   zip: AssetEditor.ARCHIVE,
 };
 
