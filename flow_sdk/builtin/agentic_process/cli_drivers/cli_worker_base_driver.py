@@ -1062,7 +1062,7 @@ class AgentOptions:
     def add_env(self, key: str, value: str) -> None:
         self.env_vars[key] = value
 
-    def prepare_launch(self, workdir: "str | None") -> None:
+    def prepare_launch(self, workdir: "str | None", dependency_dirs: "Sequence[str]" = ()) -> None:
         """Adjust this argv for a real launch in ``workdir`` (a check the pure argv must not make). No-op here."""
 
     def apply_instruction_assets(self, assets: "Any") -> None:

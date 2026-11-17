@@ -9,16 +9,16 @@ Auto-injects CLAUDE_PROJECT_DIR from workdir.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from collections.abc import Sequence
 
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.trust import claude_trusts, trust_mounted_dirs
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
     quote_shell_arg,
     serialize_json_cli_value,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import CLAUDE_MODEL_TIERS
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.trust import claude_trusts
 from flow_sdk.config import PLATFORM_WIN32
 
 logger = logging.getLogger(__name__)
@@ -168,9 +168,11 @@ class ClaudeAgentOptions(AgentOptions):
                 return [comspec, "/c", resolved]
         return ["claude"]
 
-    def prepare_launch(self, workdir: str | None) -> None:
+    def prepare_launch(self, workdir: str | None, dependency_dirs: Sequence[str] = ()) -> None:
         """Claude exits on --worktree in a folder whose workspace trust it has not been given: launch it plainly
-        there so its own trust prompt shows (accepting it is the person's step); then Open in Worktree works."""
+        there so its own trust prompt shows (accepting it is the person's step); then Open in Worktree works.
+        The folders Flowpad mounts with --add-dir are trusted here, so they never stop the launch."""
+        trust_mounted_dirs(self.add_dirs, dependency_dirs)
         if self.worktree and not claude_trusts(workdir):
             logger.info("claude: %s is not trusted yet, launching without --worktree", workdir)
             self.worktree = False
