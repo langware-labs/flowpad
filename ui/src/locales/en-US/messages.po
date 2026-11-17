@@ -6158,7 +6158,6 @@ msgid "Caught by"
 msgstr "Caught by"
 
 #: src/components/conversation/DiagnosisMessageActions.tsx
-#: src/components/conversation/IssueReplyLine.tsx
 msgid "Cause"
 msgstr "Cause"
 
@@ -15027,6 +15026,11 @@ msgstr "Handling"
 msgid "Handlings — webapp_handlings.json"
 msgstr "Handlings — webapp_handlings.json"
 
+#. placeholder {0}: reply.count
+#: src/components/conversation/IssueReplyLine.tsx
+msgid "Happened {0} times"
+msgstr "Happened {0} times"
+
 #: src/components/items/IssueView.tsx
 msgid "Happened again"
 msgstr "Happened again"
@@ -18232,7 +18236,6 @@ msgstr "machine"
 
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/ItSendTable.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/hub/AddMachineDialog.tsx
@@ -31215,7 +31218,6 @@ msgstr "status"
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
-#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/ItSendTable.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
@@ -35923,7 +35925,6 @@ msgstr "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingS
 msgid "Welcome! Tell the user what this agent can do and how to start…"
 msgstr "Welcome! Tell the user what this agent can do and how to start…"
 
-#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "What"
 msgstr "What"
