@@ -16,6 +16,7 @@ from typing import ClassVar, Optional
 from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
+from flow_sdk.schema.data_spec.compute_op_spec import AskOriginSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialRequirement, CredentialVarKind, Requirement, is_valid_env_var
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialTestResultSpec, CredentialWaySpec, group_held
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -172,6 +173,9 @@ class SetupRequirementSpec(DataSpec):
     test_result: Optional[CredentialTestResultSpec] = None
     #: pack: why its values are wrong though present (a source's login was refused) — asked again, unchecked.
     rejected: str = ""
+    #: pack: the project that declares the credential (Flowpad's own for a shipped template) — the chip its
+    #: question shows, so the person sees where the ways offered come from.
+    origin: Optional[AskOriginSpec] = None
 
     @property
     def missing(self) -> list[SetupVarSpec]:

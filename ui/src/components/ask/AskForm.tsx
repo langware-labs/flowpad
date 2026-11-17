@@ -10,6 +10,7 @@ import { AskAssist, type AssistState } from './AskAssist';
 import { AskChoiceBlock } from './AskChoiceBlock';
 import { AskSkipButton, SKIPPED } from './AskSkipButton';
 import { AskItems, type AskItem } from './AskItems';
+import { AskOrigin } from './AskOrigin';
 import { AskValueInput } from './AskValueInput';
 import { type AskQuestion as Question, fieldsOf, hasChoicesOf, useKeepQuestionOpen } from './use-ask-question';
 import { useBackendText } from '@src/components/assets/editor/wizard/wizard-texts';
@@ -163,6 +164,7 @@ export function AskForm({
           {question.prompt}
         </h1>
         {showOp ? <p className="text-xs text-muted-foreground">{question.op}</p> : null}
+        {question.origin ? <AskOrigin origin={question.origin} /> : null}
       </div>
 
       {question.detail ? (

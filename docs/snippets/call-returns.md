@@ -179,6 +179,7 @@ class AskOp(ExeData):                         # compute_op.ask — a person
     auto_continue: bool                       # the check re-runs while open and closes it by itself; needs recheck + confirm, or choices
     choices: list[AskChoiceSpec]              # several ways to answer, the person picks one (a ONE_OF credential)
     verify: AskVerifySpec | None              # a check run on the answer before the step it names; None: only send
+    origin: AskOriginSpec | None              # where the asked-for credential is declared: a chip opening it there
 
 class Rung(DataSpec):                         # compute_op.rung — one further attempt, same shape as the op's own
     subkind: Literal[OpSubkind.CLI, OpSubkind.PROMPT, OpSubkind.AGENT]  # never ask

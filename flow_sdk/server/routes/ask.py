@@ -76,6 +76,8 @@ class AskRequest(BaseModel):
     labels: dict[str, str] = {}
     stage: Optional[dict] = None
     verify: Optional[dict] = None
+    #: Where the asked-for credential is declared (``AskOp.origin``): the chip beside the question.
+    origin: Optional[dict] = None
     #: The answer is a secret: the window masks it.
     secret: bool = False
     #: The answer is a file's content: the window offers a file picker and a paste box.
@@ -114,6 +116,7 @@ async def ask_for_another_process(body: AskRequest):
         labels=body.labels,
         stage=body.stage,
         verify=body.verify,
+        origin=body.origin,
         secret=body.secret,
         file=body.file,
         auto=body.auto,
