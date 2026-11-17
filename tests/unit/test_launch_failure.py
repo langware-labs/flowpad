@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import uuid
+from pathlib import Path
 from types import SimpleNamespace as NS
 
 import pytest
@@ -25,6 +26,7 @@ from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.schema.data_spec.llm_source_spec import LLMSource
 from tests.utils.fake_cli import patch_build_spawn
 
+ADD_DIR = " Adding a new directory:\n /x/assets\n This session hasn't worked here before. Is this a directory you created or one you trust?\n"
 TRUST = " Accessing workspace:\n C:\\Users\\qa\\proj\n Is this a project you created or one you trust?\n ❯ No, exit\n   Yes, I trust this folder\n"
 REFUSALS = {
     "not_installed": "not_installed",
@@ -80,12 +82,33 @@ def test_a_budget_without_the_model_size_is_not_an_install():
 def test_screens():
     for text, verdict in (
         (TRUST, "folder_not_trusted"),
+        (ADD_DIR, "folder_not_trusted"),
         (" Choose the text style that looks best", "first_run_setup"),
         ("Claude Code running in Bypass Permissions mode", "bypass_warning"),
         (TRUST + '│ ❯ Try "fix lint" │', "ready"),
         ("Welcome to Claude Code", None),
     ):
         assert screen.classify(text) == verdict
+
+
+def test_mounted_dirs_trusted_before_launch(monkeypatch, tmp_path):
+    import flow_sdk.config as config
+
+    home, data, assistant, dep, other = (tmp_path / n for n in ("home", "data", "assistant", "dep", "other"))
+    settings = NS(user_home=home, instance_dir=data, records_root=data / "records")
+    [monkeypatch.setattr(mod, "get_instance_settings", lambda: settings) for mod in (trust, claude_settings)]
+    monkeypatch.setattr(config, "instance_temp_dir", lambda *parts: tmp_path.joinpath("temp", *parts))
+    monkeypatch.setattr(config, "flowpad_assistant_project_root", lambda: assistant)
+    home.mkdir()
+    # A trusted folder above a dependency does not cover it: Claude still asks for a git repository inside it.
+    (home / ".claude.json").write_text(json.dumps({"projects": {str(tmp_path.resolve()): {"hasTrustDialogAccepted": True}}}))
+    sessions = data / "records" / "agentic_process"
+    project = data / "workspace" / "my-project"  # the person's own project, inside the instance folder
+    mounted = [assistant, sessions / "p1" / "execution" / "assets", dep, other, project]
+    trust.trust_mounted_dirs([str(p) for p in mounted], [str(dep)])
+    trusted = {Path(k) for k in json.loads((home / ".claude.json").read_text())["projects"]}
+    assert trusted == {p.resolve() for p in (tmp_path, sessions, assistant, dep)}  # product folders + the dependency
+    assert screen.trust_prompt_folder(ADD_DIR) == "/x/assets"
 
 
 def test_headless_turn_failure():

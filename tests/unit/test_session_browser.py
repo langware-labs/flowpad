@@ -1,6 +1,7 @@
 """The session browser: one rule picks it, the manifest stores it, the launch renders it."""
 
 import builtins
+import io
 import json
 import sys
 from pathlib import Path
@@ -12,6 +13,7 @@ from flow_sdk.builtin.agentic_process import browser_choice as bc
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessMcpRuntime
 from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import to_mcp_config_json
+from flow_sdk.core import agent_browser as ab
 from flow_sdk.core.agent_browser import mcp_spec
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
@@ -165,3 +167,62 @@ def test_last_browser_use_copilot(tmp_path):
     ]
     t.write_text("\n".join(json.dumps(r) for r in rows))
     assert bc.last_browser_use(t) == {"family": "agent", "tool": "browser_navigate", "url": "https://example.com", "at": "t1", "failed": True}
+
+
+class _FakeChild:
+    def __init__(self):
+        self.sent = []
+        self.stdin = self
+        self.stdout = iter(['{"jsonrpc":"2.0","id":"proxy-init","result":{}}\n'])
+
+    def write(self, s):
+        self.sent.append(json.loads(s))
+
+    def flush(self):
+        pass
+
+    def close(self):
+        pass
+
+    def wait(self):
+        return 0
+
+
+def _serve(monkeypatch, tmp_path, lines, ensure):
+    spawned = []
+    monkeypatch.setattr(ab, "_base_dir", lambda instance=None: tmp_path)
+    (tmp_path / "tools.json").write_text(json.dumps({"server": ab.PLAYWRIGHT_MCP, "tools": [{"name": "browser_navigate"}]}))
+    monkeypatch.setattr(ab, "ensure_running", ensure)
+    monkeypatch.setattr(ab, "_spawn_playwright", lambda port: spawned.append(_FakeChild()) or spawned[-1])
+    out = io.StringIO()
+    ab.serve(io.StringIO("".join(json.dumps(m) + "\n" for m in lines)), out)
+    return [json.loads(x) for x in out.getvalue().splitlines()], spawned
+
+
+_INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26"}}
+_CALL = {"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "browser_navigate", "arguments": {"url": "x"}}}
+
+
+def test_agent_browser_list_opens_no_window(monkeypatch, tmp_path):
+    def ensure():
+        raise AssertionError("no window before the first call")
+
+    replies, spawned = _serve(monkeypatch, tmp_path, [_INIT, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}], ensure)
+    assert replies[1]["result"]["tools"] == [{"name": "browser_navigate"}] and not spawned
+
+
+def test_agent_browser_first_call_starts_it_once(monkeypatch, tmp_path):
+    calls = []
+    ensure = lambda: calls.append(1) or ab.AgentBrowserStatus(up=True, port=1234)  # noqa: E731
+    _, spawned = _serve(monkeypatch, tmp_path, [_INIT, {**_CALL, "id": 3}, {**_CALL, "id": 4}], ensure)
+    assert calls == [1] and len(spawned) == 1
+    assert [m.get("id") for m in spawned[0].sent] == ["proxy-init", None, 3, 4]
+
+
+def test_agent_browser_start_failure_is_a_tool_error(monkeypatch, tmp_path):
+    def ensure():
+        raise ab.AgentBrowserError("NO_BROWSER: neither Chrome nor Edge is installed")
+
+    replies, _ = _serve(monkeypatch, tmp_path, [_INIT, {**_CALL, "id": 3}, {"jsonrpc": "2.0", "id": 5, "method": "ping"}], ensure)
+    assert replies[1]["result"]["isError"] and "NO_BROWSER" in replies[1]["result"]["content"][0]["text"]
+    assert replies[2] == {"jsonrpc": "2.0", "id": 5, "result": {}}  # still serving

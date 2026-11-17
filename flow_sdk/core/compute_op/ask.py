@@ -72,6 +72,8 @@ class Question:
     stage: Optional[dict] = None
     #: A check of the typed value the person can run before sending (``AskOp.verify``, as its JSON), or None.
     verify: Optional[dict] = None
+    #: Where the asked-for thing is declared (``AskOp.origin``, as its JSON), or None.
+    origin: Optional[dict] = None
     #: The answer is a secret: whoever draws the field masks it, and nothing echoes it.
     secret: bool = False
     #: The answer is a file's content: whoever draws the field offers a file picker and a paste box.
@@ -127,6 +129,7 @@ class Question:
             "labels": dict(self.labels),
             "stage": self.stage,
             "verify": self.verify,
+            "origin": self.origin,
             # The declared kind by NAME, when it is one.
             "kind": self.shape if isinstance(self.shape, str) else None,
             "fields": self.fields,
@@ -217,6 +220,7 @@ def open_question(
     labels: Optional[dict] = None,
     stage: Optional[dict] = None,
     verify: Optional[dict] = None,
+    origin: Optional[dict] = None,
     secret: bool = False,
     file: bool = False,
     auto: bool = False,
@@ -245,6 +249,7 @@ def open_question(
         labels=dict(labels or {}),
         stage=dict(stage) if stage else None,
         verify=dict(verify) if verify else None,
+        origin=dict(origin) if origin else None,
         secret=secret,
         file=file,
         auto=auto,
@@ -427,6 +432,7 @@ async def ask_person(
     labels: Optional[dict] = None,
     stage: Optional[dict] = None,
     verify: Optional[dict] = None,
+    origin: Optional[dict] = None,
     secret: bool = False,
     file: bool = False,
     auto: bool = False,
@@ -460,6 +466,7 @@ async def ask_person(
         labels=labels,
         stage=stage,
         verify=verify,
+        origin=origin,
         secret=secret,
         file=file,
         auto=auto,
@@ -528,6 +535,7 @@ async def ask_through_backend(
     labels: Optional[dict] = None,
     stage: Optional[dict] = None,
     verify: Optional[dict] = None,
+    origin: Optional[dict] = None,
     secret: bool = False,
     file: bool = False,
     auto: bool = False,
@@ -563,6 +571,7 @@ async def ask_through_backend(
         "labels": dict(labels or {}),
         "stage": stage,
         "verify": verify,
+        "origin": origin,
         "secret": secret,
         "file": file,
         "auto": auto,

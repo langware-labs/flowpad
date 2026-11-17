@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 
-_PROMPT = re.compile(r"(Yes, I trust this folder|Is this a project you created or one you trust)|(running in Bypass Permissions mode)"
+_PROMPT = re.compile(r"(Yes, I trust this folder|Is this a (?:project|directory) you created or one you trust)|(running in Bypass Permissions mode)"
                      r'|(Choose the text style that looks best|Select login method|Press Enter to continue)|(❯ (?:Try "|─{3,}))')
 _CODES = ("folder_not_trusted", "bypass_warning", "first_run_setup", "ready")
 # Headless only: a stderr line or an error result's text. Never TUI screen text — that is the transcript.
@@ -31,13 +31,14 @@ def classify_auth(item: str | dict) -> tuple[str, str] | None:  # headless strea
 
 
 def trust_prompt_folder(text: str) -> str | None:
-    found = re.findall(r"Accessing workspace:\s*\n\s*(\S[^\n]*)", text)
+    # The workspace prompt says "Accessing workspace:", the --add-dir one (Claude 2.1.326+) "Adding a new directory:".
+    found = re.findall(r"(?:Accessing workspace|Adding a new directory):\s*\n\s*(\S[^\n]*)", text)
     return found[-1].strip() if found else None
 
 
 async def apply_launch_fix(fix: str, folder: str | None) -> None:
     from flow_sdk.fs_store.operations.claude_settings import write_claude_flags  # noqa: PLC0415
 
-    await asyncio.to_thread(write_claude_flags, trust_folder=folder if fix == "trust_folder" else None,
+    await asyncio.to_thread(write_claude_flags, trust_folders=[folder] if fix == "trust_folder" and folder else [],
                             onboarding=fix == "finish_setup", bypass=fix == "accept_bypass")
 

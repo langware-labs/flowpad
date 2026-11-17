@@ -7,9 +7,11 @@ the ones made there are kept. Same files as the real-browser skill's ``browser.m
 session's ``browser`` MCP server reuse one window.
 
 A session whose browser is ``agent`` gets ONE MCP server, ``browser``, whose command
-is this module (``python -m flow_sdk.core.agent_browser``): it starts (or reuses) the
-window, then execs Playwright MCP attached to it over CDP. Starting it there, not at
-spawn, keeps the launch path free of a browser start.
+is this module (``python -m flow_sdk.core.agent_browser``): a small stdio proxy that
+answers ``initialize`` and ``tools/list`` itself (the tool list is cached per
+instance), and starts (or reuses) the window only on the FIRST ``tools/call`` — then
+pipes everything to Playwright MCP attached over CDP. A session that never browses
+never opens a window.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -148,18 +151,124 @@ def mcp_spec():
     return McpSpec(name=MCP_NAME, command=sys.executable, args=["-m", "flow_sdk.core.agent_browser", "mcp"])
 
 
-def _serve_mcp() -> None:
-    try:
-        running = ensure_running()
-    except AgentBrowserError as exc:
-        print(str(exc), file=sys.stderr)
-        sys.exit(2)
+def _spawn_playwright(port: int) -> subprocess.Popen:
     npx = shutil.which("npx")
     if not npx:
-        print("NEEDS_SETUP: npx (Node.js) is not installed", file=sys.stderr)
-        sys.exit(8)
-    os.execv(npx, [npx, "-y", PLAYWRIGHT_MCP, "--cdp-endpoint", f"http://127.0.0.1:{running.port}"])
+        raise AgentBrowserError("NEEDS_SETUP: npx (Node.js) is not installed")
+    return subprocess.Popen(
+        [npx, "-y", PLAYWRIGHT_MCP, "--cdp-endpoint", f"http://127.0.0.1:{port}"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1,
+    )
+
+
+def _send(stream, msg: dict) -> None:
+    stream.write(json.dumps(msg) + "\n")
+    stream.flush()
+
+
+def _reply(out, msg_id: object, result: dict) -> None:
+    _send(out, {"jsonrpc": "2.0", "id": msg_id, "result": result})
+
+
+def _error(out, msg_id: object, code: int, message: str) -> None:
+    _send(out, {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}})
+
+
+def _await_reply(child: subprocess.Popen, msg_id: object) -> dict:
+    for line in child.stdout:
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            continue
+        if msg.get("id") == msg_id:
+            return msg
+    raise AgentBrowserError("PLAYWRIGHT_MCP_EXITED: Playwright MCP closed before answering")
+
+
+def _handshake(child: subprocess.Popen, init: dict) -> None:
+    _send(child.stdin, {**init, "id": "proxy-init"})
+    _await_reply(child, "proxy-init")
+    _send(child.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+
+def _tools(init: dict) -> list:
+    """Playwright MCP's tool list, cached per instance. Probed against a port where
+    nothing listens: Playwright MCP connects on a tool call, not on list, so no window."""
+    cache = _base_dir() / "tools.json"
+    try:
+        cached = json.loads(cache.read_text())
+        if cached.get("server") == PLAYWRIGHT_MCP:
+            return cached["tools"]
+    except (OSError, ValueError, KeyError):
+        pass
+    child = _spawn_playwright(free_port())
+    try:
+        _handshake(child, init)
+        _send(child.stdin, {"jsonrpc": "2.0", "id": "probe-list", "method": "tools/list"})
+        tools = _await_reply(child, "probe-list")["result"]["tools"]
+    finally:
+        child.kill()
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps({"server": PLAYWRIGHT_MCP, "tools": tools}))
+    return tools
+
+
+def _start_playwright(init: dict, out) -> subprocess.Popen:
+    """The window (started or reused), then Playwright MCP on it, its replies piped to ``out``."""
+    child = _spawn_playwright(ensure_running().port)
+    _handshake(child, init)
+
+    def pump() -> None:
+        for line in child.stdout:
+            out.write(line)
+            out.flush()
+
+    threading.Thread(target=pump, daemon=True).start()
+    return child
+
+
+def serve(inp, out) -> None:
+    """The lazy proxy: no window and no Playwright until the first ``tools/call``."""
+    init: dict = {"jsonrpc": "2.0", "method": "initialize", "params": {}}
+    child: Optional[subprocess.Popen] = None
+    for line in inp:
+        if child is not None:
+            child.stdin.write(line)
+            child.stdin.flush()
+            continue
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            continue
+        method, msg_id = msg.get("method"), msg.get("id")
+        if method == "initialize":
+            init = {k: v for k, v in msg.items() if k != "id"}
+            version = (msg.get("params") or {}).get("protocolVersion", "2025-03-26")
+            _reply(out, msg_id, {"protocolVersion": version, "capabilities": {"tools": {}},
+                                 "serverInfo": {"name": MCP_NAME, "version": "1"}})
+        elif method == "tools/call":
+            try:
+                child = _start_playwright(init, out)
+            except (AgentBrowserError, OSError) as exc:
+                _reply(out, msg_id, {"isError": True, "content": [{"type": "text", "text": str(exc)}]})
+                continue
+            child.stdin.write(line)
+            child.stdin.flush()
+        elif msg_id is None:
+            continue  # a notification before the first call
+        elif method == "tools/list":
+            try:
+                _reply(out, msg_id, {"tools": _tools(init)})
+            except (AgentBrowserError, OSError) as exc:
+                _error(out, msg_id, -32603, str(exc))
+        elif method == "ping":
+            _reply(out, msg_id, {})
+        else:
+            _error(out, msg_id, -32601, f"{method} not supported")
+    if child is not None:
+        child.stdin.close()
+        child.wait()
 
 
 if __name__ == "__main__":
-    _serve_mcp()
+    serve(sys.stdin, sys.stdout)

@@ -2935,6 +2935,10 @@ msgstr "إضافة مستودع Git يعتمد عليه هذا المشروع."
 msgid "Add a machine"
 msgstr "إضافة جهاز"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Add a message channel"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add a message to send without it."
 msgstr "يلزم إضافة رسالة لإرساله بدونه."
@@ -6158,7 +6162,6 @@ msgid "Caught by"
 msgstr "اعتُرضت بواسطة"
 
 #: src/components/conversation/DiagnosisMessageActions.tsx
-#: src/components/conversation/IssueReplyLine.tsx
 msgid "Cause"
 msgstr ""
 
@@ -8892,6 +8895,10 @@ msgstr "تعذّر تحميل هذه المهمة. يُرجى المحاولة �
 msgid "Could not load usage."
 msgstr "تعذّر تحميل بيانات الاستخدام."
 
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Could not load your email rules."
+msgstr ""
+
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Could not load your token plan."
 msgstr "تعذّر تحميل خطة الرموز."
@@ -9715,6 +9722,10 @@ msgstr "تعذّر تحديد أوامر التشغيل لهذا المجلد"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Couldn’t resolve this process."
 msgstr "تعذر تحديد هذه العملية."
+
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Couldn't save. Try again."
+msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Couldn't set up the project"
@@ -12165,6 +12176,10 @@ msgstr "البريد › صندوق بريد Flowpad"
 msgid "Email {0}"
 msgstr "البريد {0}"
 
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Email notifications"
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Email or name"
 msgstr "البريد الإلكتروني أو الاسم"
@@ -12172,6 +12187,10 @@ msgstr "البريد الإلكتروني أو الاسم"
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Email or name to invite"
 msgstr "البريد الإلكتروني أو الاسم للدعوة"
+
+#: src/i18n/pref-labels.ts
+msgid "Email rules"
+msgstr ""
 
 #: src/hooks/use-allocate-agent-mailbox.ts
 msgid "Email settings could not be saved."
@@ -14400,7 +14419,9 @@ msgstr "من"
 msgid "from {0}"
 msgstr "من {0}"
 
+#. placeholder {0}: origin.label
 #. placeholder {0}: row.task.reporter ?? ''
+#: src/components/ask/AskOrigin.tsx
 #: src/components/help/AskForHelpButton.tsx
 msgid "From {0}"
 msgstr ""
@@ -15025,6 +15046,11 @@ msgstr "قيد المعالجة"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 msgid "Handlings — webapp_handlings.json"
+msgstr ""
+
+#. placeholder {0}: reply.count
+#: src/components/conversation/IssueReplyLine.tsx
+msgid "Happened {0} times"
 msgstr ""
 
 #: src/components/items/IssueView.tsx
@@ -18232,7 +18258,6 @@ msgstr "الجهاز"
 
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/ItSendTable.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/hub/AddMachineDialog.tsx
@@ -19169,6 +19194,19 @@ msgstr "رسائل"
 #: src/components/organization/budgets/MoneyBox.tsx
 msgid "Must be a number, or blank for no limit."
 msgstr "يجب إدخال رقم، أو ترك الحقل فارغاً لعدم وجود حد."
+
+#: src/components/notifications-view/NotificationsView.tsx
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Mute"
+msgstr ""
+
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "muted"
+msgstr ""
+
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Muted:"
+msgstr ""
 
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
 msgid "My assets only"
@@ -20224,6 +20262,10 @@ msgstr "لا توجد حواف"
 #: src/components/assets/editor/AssetEditorRouter.tsx
 msgid "No editor for: {editorName}"
 msgstr "لا يوجد محرر لـ: {editorName}"
+
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "No email rules. Every notification email is on."
+msgstr ""
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -22006,6 +22048,7 @@ msgstr "إشعار"
 
 #: src/i18n/pref-labels.ts
 #: src/notifications/feed/NotificationFeed.tsx
+#: src/types/ViewType.ts
 msgid "Notifications"
 msgstr "الإشعارات"
 
@@ -23052,6 +23095,10 @@ msgstr "علامات التبويب المفتوحة"
 #: src/components/conversation/task-it.tsx
 msgid "Open task"
 msgstr "فتح المهمة"
+
+#: src/components/contact-picker/ContactPicker.tsx
+msgid "Open team"
+msgstr ""
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
@@ -27401,6 +27448,7 @@ msgid "Rule: {0}"
 msgstr ""
 
 #: src/components/asset-counters/channel-project-counters.tsx
+#: src/components/notifications-view/NotificationsView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/ui/settings-pane.tsx
 msgid "Rules"
@@ -28253,6 +28301,7 @@ msgstr "الجدولة · {0}"
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
+#: src/components/notifications-view/NotificationsView.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Scope"
@@ -31215,7 +31264,6 @@ msgstr "الحالة"
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
-#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/ItSendTable.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
@@ -33152,6 +33200,15 @@ msgstr "هذه الميزانية غير متاحة لهذا الحساب"
 msgid "This can take up to a minute if it was asleep."
 msgstr "قد يستغرق هذا حتى دقيقة واحدة إذا كانت في وضع السكون."
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "This channel is already added"
+msgstr ""
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "This channel is already added but empty"
+msgstr ""
+
 #: src/components/inbound/InboundView.tsx
 msgid "This channel is not yours, or it is gone."
 msgstr "هذه القناة ليست لك، أو لم تعد موجودة."
@@ -33506,6 +33563,10 @@ msgstr "هذا الشهر"
 #: src/components/token-plan/MembersTable.tsx
 msgid "This month"
 msgstr "هذا الشهر"
+
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "This notification can't be found."
+msgstr ""
 
 #: src/components/ask/AskItems.tsx
 msgid "This one is required. Without it, setup will end unfinished."
@@ -34653,6 +34714,7 @@ msgstr "ضمن OAuth & Permissions أضيفوا نطاقات البوت channels
 
 #: src/components/conversation/task-it.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/notifications-view/NotificationsView.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Undo"
 msgstr "تراجع"
@@ -35568,6 +35630,7 @@ msgstr "عرض صورة {title}"
 msgid "View Claude Code settings across user, project, and local scopes"
 msgstr "عرض إعدادات Claude Code على مستويات المستخدم والمشروع والنطاق المحلي"
 
+#: src/components/contact-picker/ContactPicker.tsx
 #: src/components/contact-picker/ContactRows.tsx
 msgid "View contact details"
 msgstr "عرض تفاصيل جهة الاتصال"
@@ -35923,7 +35986,6 @@ msgstr "إشارة الترحيب المرجعية ومدخل الخلاصة، �
 msgid "Welcome! Tell the user what this agent can do and how to start…"
 msgstr "مرحباً! بيّنوا للمستخدم ما يستطيع هذا الوكيل فعله وكيف يبدأ…"
 
-#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "What"
 msgstr "الإجراء"

@@ -177,6 +177,7 @@ class ViewType(StrEnum):
     APP = "app"
     LLM_ENDPOINTS = "llm-endpoints"  # Hub LLM endpoints (roots + chains) - /dock/hub/llm-endpoints[/<id>[/<tab>]]
     TOKEN_PLAN = "token-plan"  # Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/<scope>]
+    NOTIFICATIONS = "notifications"  # Hub email rules - /dock/hub/notifications[/<rule key>] (the mute link's target)
     # DESK page: what funds this machine's harnesses. Every fact it renders is a box fact
     # (a device token, a stored key, the endpoint BINDING), so it has no hub half.
     LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/logins[/<worker>]|keys[/<id>]|endpoints[/<id>]] -- tab, then what is in focus (a bare <worker> = logins/<worker>)
@@ -739,6 +740,13 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         pages=("hub",),
         default_tab="me",
         subplaces=(("me", "Hub token plan > my budget"), ("team", "Hub token plan > team budget")),
+    ),
+    ViewType.NOTIFICATIONS: _m(
+        _OPT,
+        folds_pointer=True,
+        label="Notifications",
+        aliases=("email notifications", "mute emails", "unsubscribe"),
+        pages=("hub",),
     ),
     ViewType.LLM_SOURCES: _m(
         _OPT,

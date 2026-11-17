@@ -77,6 +77,15 @@ export function sourceConversationsRequest(sourceId: string): QueryRequest {
   return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match: sourceMatch(sourceId) }) });
 }
 
+/** Whether ONE source has delivered any conversation: a single row is enough to know. */
+export function sourceHasConversationRequest(sourceId: string): QueryRequest {
+  return new QueryRequest({
+    type: Conversation.type,
+    name: `stream-inbox:source-has:${sourceId}`,
+    query: new QueryFilter({ match: allOf([sourceMatch(sourceId), notDeleted()]), limit: 1 }),
+  });
+}
+
 /** `invites` lists every invite the user received (shares of machines, teams, projects, conversations),
  *  whatever became of it — the record of what was shared, each one openable. */
 export type StreamInboxViewMode = 'all' | 'unread' | 'archived' | 'invites';
@@ -103,7 +112,11 @@ export const BUILT_IN_CHANNELS: readonly string[] = [FLOWPAD_CHANNEL, DIAGNOSIS_
 /** A scope as a string: what keys a memo or a request on it. */
 export const scopeKey = (scope: ConversationScope) =>
   'owner' in scope
-    ? [scope.owner.toString(), [...(scope.sourceIds ?? [])].sort().join(','), [...(scope.channels ?? [])].sort().join(',')]
+    ? [
+        scope.owner.toString(),
+        [...(scope.sourceIds ?? [])].sort().join(','),
+        [...(scope.channels ?? [])].sort().join(','),
+      ]
         .join('|')
         .replace(/\|+$/, '')
     : scope.sourceId;
@@ -115,7 +128,8 @@ const scopeClauses = (scope: ConversationScope): ExpressionNode[] => {
   const picked: ExpressionNode[] = [];
   if (scope.sourceIds?.length)
     picked.push(new ExpressionNode({ op: '$IN', operands: ['channel_source_id', [...scope.sourceIds]] }));
-  if (scope.channels?.length) picked.push(new ExpressionNode({ op: '$IN', operands: ['channel', [...scope.channels]] }));
+  if (scope.channels?.length)
+    picked.push(new ExpressionNode({ op: '$IN', operands: ['channel', [...scope.channels]] }));
   // A Flowpad conversation with no channel stamped and no source behind it.
   if (scope.channels?.includes(FLOWPAD_CHANNEL))
     picked.push(

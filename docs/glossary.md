@@ -163,6 +163,9 @@ mechanism: [`ontology.md`](ontology.md).
   `--flow--` is never written.** An externally authored asset declares `ns` in its
   document and every kind its code mints is prefixed; a data driver that declares
   none is refused at load.
+- **Email kind** (2026-11-17) — the dot path naming what an email is about
+  (`notification.email.issue.budget_exhausted`). It is a NAME, not a schema. A mute rule's key is
+  the same path, optionally narrowed to one entity (`….deployment.id.<uuid>`); the longest prefix wins.
 - Don't reuse `kind` for a registry key. `Capability.kind` and `DataDriver.kind`
   hold a driver's own *name*, which is neither an ontology kind nor a subkind.
 

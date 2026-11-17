@@ -51,6 +51,8 @@ import {
   channelOffers,
   isListedChannel,
   isMessageDriverSpec,
+  messageChannelChoices,
+  choiceKey,
   sourcesQuery,
   useSourceSpecs,
 } from '@src/components/data-sources/use-source-specs';
@@ -68,7 +70,14 @@ import {
 } from '@src/components/data-sources/source-attention';
 import { openSourceSetup } from '@src/components/setup-wizard/source-setup-store';
 import { useSourcePull } from '@src/components/data-sources/source-parts';
-import { AUTOMATIONS_CHANNEL, channelKeyOf, DIAGNOSIS_CHANNEL, FLOWPAD_CHANNEL, ownerOf } from './channel-owner';
+import {
+  AUTOMATIONS_CHANNEL,
+  channelKeyOf,
+  sourceHasConversationRequest,
+  DIAGNOSIS_CHANNEL,
+  FLOWPAD_CHANNEL,
+  ownerOf,
+} from './channel-owner';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
 
 const EMPTY: DataSource[] = [];
@@ -98,12 +107,17 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
   );
   const forAgent = owner?.type === Agent.type;
   const offers = useMemo(
-    () => (ownerKey ? channelOffers(specs, rows, forAgent) : NO_OFFERS),
+    // Offered by default to an agent only (its own mailbox); a person's inbox offers channels in its empty list.
+    () => (ownerKey && forAgent ? channelOffers(specs, rows, forAgent) : NO_OFFERS),
     [specs, rows, ownerKey, forAgent],
+  );
+  const choices = useMemo(
+    () => (ownerKey ? messageChannelChoices(specs, forAgent) : NO_OFFERS),
+    [specs, ownerKey, forAgent],
   );
   const builtInOffered = useBuiltInEmailOffered(forAgent && offers.some((o) => o.spec.provisioned) ? owner : null);
   // Until both lists land, `rows` is empty for want of data, not for want of channels.
-  return { rows, specFor, offers, builtInOffered, loading: specsLoading || sourcesLoading };
+  return { rows, specFor, offers, choices, builtInOffered, loading: specsLoading || sourcesLoading };
 }
 
 /** Whether the hub can give this agent a provisioned channel (its built-in email): asked once, when one is on offer.
@@ -161,6 +175,9 @@ interface Props {
   specFor: SpecFor;
   /** Channels still to connect, drawn after the attached ones (`useAttachedChannels().offers`). */
   offers?: ChannelOffer[];
+  /** Channels already added, by choice key → why the add dialog draws them disabled. Absent: every
+   *  channel in `rows` is "already added". */
+  added?: ReadonlyMap<string, string>;
   /** Whether the hub can give an agent its built-in email (`useAttachedChannels().builtInOffered`). */
   builtInOffered?: boolean;
   /** Channel keys (`channelKeyOf`) the list is narrowed to; empty = everything. Absent with
@@ -181,6 +198,7 @@ export function AttachedChannelsBar({
   specFor,
   offers = NO_OFFERS,
   builtInOffered = true,
+  added,
   selected = NO_SELECTION,
   onSelectedChange,
   onMarkPress,
@@ -198,7 +216,11 @@ export function AttachedChannelsBar({
     const flagged = rows.filter(needsPerson);
     return { flagged, groups: groupChannels(rows.filter((s) => !flagged.includes(s))) };
   }, [rows]);
-  const attachedProviders = useMemo(() => new Set(rows.map((r) => r.provider)), [rows]);
+  const { t: tr } = useLingui();
+  const addedTips = useMemo(
+    () => added ?? addedChannels(rows, specFor, () => tr`This channel is already added`),
+    [added, rows, specFor, tr],
+  );
 
   // Every mark is lit (shown) by default. A click shows only that channel, or all again when it is
   // already the only one; ⌘/Ctrl-click adds or removes it. `selected` holds the lit ones while
@@ -365,12 +387,7 @@ export function AttachedChannelsBar({
         </PopoverContent>
       </Popover>
       {adding && (
-        <AddChannelDialog
-          owner={owner}
-          initial={adding.initial}
-          attached={attachedProviders}
-          onClose={() => setAdding(null)}
-        />
+        <AddChannelDialog owner={owner} initial={adding.initial} added={addedTips} onClose={() => setAdding(null)} />
       )}
       <ConfirmDialog
         open={!!deleting}
@@ -437,28 +454,47 @@ function ChannelWarningsChip({
   );
 }
 
-/** The add dialog as the channel line opens it: message drivers not already attached, on `initial` when a channel was picked. */
+/** Channels already added, by choice key (group, else driver name) → the tooltip their disabled tile shows. */
+export function addedChannels(
+  rows: DataSource[],
+  specFor: SpecFor,
+  tipFor: (sources: DataSource[]) => string,
+): Map<string, string> {
+  const byKey = new Map<string, DataSource[]>();
+  for (const s of rows) {
+    const spec = specFor(s.provider);
+    const key = spec ? choiceKey(spec) : s.provider;
+    byKey.set(key, [...(byKey.get(key) ?? []), s]);
+  }
+  return new Map([...byKey].map(([key, sources]) => [key, tipFor(sources)]));
+}
+
+/** The add dialog of a channel line and of the empty list — the same inbox channels (`messageChannelChoices`),
+ *  an added one drawn disabled with its reason. */
 function AddChannelDialog({
   owner,
   initial,
-  attached,
+  added,
   onClose,
 }: {
   owner: TypeId;
   initial?: DataDriver;
-  attached?: ReadonlySet<string>;
+  added?: ReadonlyMap<string, string>;
   onClose: () => void;
 }) {
-  const only = useCallback(
-    (spec: DataDriver) => isMessageDriverSpec(spec) && !(spec.name && attached?.has(spec.name)),
-    [attached],
+  const { specs } = useSourceSpecs();
+  const inbox = useMemo(
+    () => new Set(messageChannelChoices(specs, owner.type === Agent.type).map((c) => c.key)),
+    [specs, owner],
   );
+  const only = useCallback((spec: DataDriver) => inbox.has(choiceKey(spec)), [inbox]);
   return (
     <DataSourceDialog
       open
       onOpenChange={(next) => !next && onClose()}
       owner={owner}
       only={only}
+      added={added}
       initial={initial}
       variant="channel"
     />
@@ -664,35 +700,67 @@ function ChannelOfferMark({
 
 /** The channels still to connect, as the empty list offers them: one button each, and the add
  *  dialog it opens. Draws nothing when there is none to offer. */
-export function ConnectChannelPrompt({ owner, offers }: { owner: TypeId; offers: ChannelOffer[] }) {
+export function ConnectChannelPrompt({
+  owner,
+  offers,
+  title,
+  added,
+}: {
+  owner: TypeId;
+  offers: ChannelOffer[];
+  title?: string;
+  /** Channels already added, by choice key → the tooltip their disabled button shows. */
+  added?: ReadonlyMap<string, string>;
+}) {
   const { t } = useLingui();
   const [initial, setInitial] = useState<DataDriver | null>(null);
   if (offers.length === 0) return null;
   return (
     <div className="flex flex-col items-center gap-2" data-testid="connect-channel-prompt">
-      <span className="text-sm text-foreground">{t`Get your messages here`}</span>
+      <span className="text-sm text-foreground">{title ?? t`Get your messages here`}</span>
       <div className="flex flex-wrap justify-center gap-2">
         {offers.map((offer) => {
           const Glyph = lucideByName(offer.iconName);
           const { label } = offer;
+          const addedTip = added?.get(offer.key);
           return (
-            <Button
-              key={offer.key}
-              variant="outline"
-              size="sm"
-              onClick={() => setInitial(offer.spec)}
-              data-testid="connect-channel"
-              data-channel={offer.key}
-            >
-              <Glyph className="me-1.5 size-3.5" />
-              {t`Connect ${label}`}
-            </Button>
+            // A disabled button gets no hover, so the reason sits on its wrapper.
+            <span key={offer.key} title={addedTip}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={addedTip !== undefined}
+                onClick={() => setInitial(offer.spec)}
+                data-testid="connect-channel"
+                data-channel={offer.key}
+              >
+                <Glyph className="me-1.5 size-3.5" />
+                {t`Connect ${label}`}
+              </Button>
+            </span>
           );
         })}
       </div>
-      {initial && <AddChannelDialog owner={owner} initial={initial} onClose={() => setInitial(null)} />}
+      {initial && <AddChannelDialog owner={owner} initial={initial} added={added} onClose={() => setInitial(null)} />}
     </div>
   );
+}
+
+/** Reports whether one source has any conversation; draws nothing. One per source, as a hook cannot loop. */
+export function ConversationProbe({
+  sourceId,
+  onResult,
+}: {
+  sourceId: string;
+  onResult: (sourceId: string, has: boolean) => void;
+}) {
+  const request = useMemo(() => sourceHasConversationRequest(sourceId), [sourceId]);
+  const { data = [], isSuccess } = useEntitiesQuery(request);
+  const has = data.length > 0;
+  useEffect(() => {
+    if (isSuccess) onResult(sourceId, has);
+  }, [isSuccess, has, sourceId, onResult]);
+  return null;
 }
 
 /** The one list every channel panel shows: a header, a `ChannelRow` per source, an
