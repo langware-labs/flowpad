@@ -1,5 +1,5 @@
 import { isHubOnly } from '@src/navigation/hub-runtime';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Boxes,
   File as FileIcon,
@@ -45,6 +45,8 @@ import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-i
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { isMobile, submitOnEnter } from '@src/hooks/use-mobile';
+import type { ConversationParticipant } from '@sdk/entities/conversation';
+import { insertMention, mentionOptions, mentionQueryAt, mentionedIn, type MentionPick } from './mentions';
 
 interface MessageComposerProps {
   /** Conversation to append to. Falls back to the draft's `conversation_id`. */
@@ -104,6 +106,10 @@ interface MessageComposerProps {
   /** "Task it" on send: when set, the composer offers a toggle; a send with it on hands the sent
    *  message here (the same call the bubble's Task it makes). Plain conversation sends only. */
   onTaskIt?: (sent: TaskableMessage) => void;
+  /** The conversation's members: typing `@` offers them, and a send carries who was tagged. Unset (a channel
+   *  conversation, a live session) = no tags. `viewerId` is the person typing -- never offered. */
+  mentionable?: ConversationParticipant[] | null;
+  viewerId?: string | null;
 }
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -204,6 +210,8 @@ export function MessageComposer({
   onClearReply,
   threadTarget = null,
   onTaskIt,
+  mentionable = null,
+  viewerId = null,
 }: MessageComposerProps) {
   const { t } = useLingui();
   const ensureCloudLogin = useCloudLoginGate();
@@ -231,6 +239,33 @@ export function MessageComposer({
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // `@name`: the people picked from the list (what the send carries, while their `@Name` stays in the text), the
+  // tag being typed, and the highlighted row. Only the plain conversation box tags -- not a draft, a channel or a session.
+  const canMention = !!mentionable?.length && !isDraftMode && !channel && !liveSessionId;
+  const [picked, setPicked] = useState<MentionPick[]>([]);
+  const [mentionAt, setMentionAt] = useState<{ start: number; query: string } | null>(null);
+  const [mentionRow, setMentionRow] = useState(0);
+  const mentionRows = useMemo(
+    () => (canMention && mentionAt ? mentionOptions(mentionable, viewerId, mentionAt.query) : []),
+    [canMention, mentionAt, mentionable, viewerId],
+  );
+  const watchMention = (value: string, caret: number | null) => {
+    if (!canMention) return;
+    setMentionAt(mentionQueryAt(value, caret ?? value.length));
+    setMentionRow(0);
+  };
+  const pickMention = (person: MentionPick) => {
+    const textarea = textareaRef.current;
+    if (!mentionAt || !textarea) return;
+    const next = insertMention(text, mentionAt.start, textarea.selectionStart ?? text.length, person.name);
+    setText(next.text);
+    setPicked((prev) => (prev.some((p) => p.id === person.id) ? prev : [...prev, person]));
+    setMentionAt(null);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.selectionStart = textarea.selectionEnd = next.caret;
+    });
+  };
 
   // The session-start control lives on the plain conversation composer only:
   // inside a session view every send is already a turn of that session.
@@ -435,6 +470,8 @@ export function MessageComposer({
           if (!isPromptSend) {
             if (answering) extras.replyToId = answering;
             else if (threadTarget?.rootId) extras.threadRootId = threadTarget.rootId;
+            const tagged = canMention ? mentionedIn(trimmed, picked) : [];
+            if (tagged.length > 0) extras.mentions = tagged;
           }
           const sent = await sendReply(
             { conversationId: effectiveConversationId },
@@ -459,6 +496,8 @@ export function MessageComposer({
         setAssetRefs([]);
         setTaskItOn(false);
         setPromptCallOn(false);
+        setPicked([]);
+        setMentionAt(null);
       }
       // Your own send always brings you to the latest, even if you had scrolled up.
       scrollToLatest?.();
@@ -524,6 +563,23 @@ export function MessageComposer({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionRows.length > 0) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionRow((row) => (row + (e.key === 'ArrowDown' ? 1 : mentionRows.length - 1)) % mentionRows.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        pickMention(mentionRows[Math.min(mentionRow, mentionRows.length - 1)]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionAt(null);
+        return;
+      }
+    }
     if (submitOnEnter(e) && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       handleSend();
@@ -852,6 +908,35 @@ export function MessageComposer({
           </button>
         </div>
       )}
+      {mentionRows.length > 0 && (
+        <ul
+          role="listbox"
+          aria-label={t`Tag someone`}
+          data-testid="mention-list"
+          className="max-h-48 overflow-y-auto rounded-md border bg-popover p-1 text-sm shadow-md"
+        >
+          {mentionRows.map((person, i) => (
+            <li
+              key={person.id}
+              role="option"
+              aria-selected={i === mentionRow}
+              data-testid="mention-option"
+              // The textarea keeps focus: a click here must not blur it before the pick lands.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pickMention(person);
+              }}
+              onMouseEnter={() => setMentionRow(i)}
+              className={cn(
+                'cursor-pointer rounded px-2 py-1',
+                i === mentionRow ? 'bg-accent text-accent-foreground' : '',
+              )}
+            >
+              @{person.name}
+            </li>
+          ))}
+        </ul>
+      )}
       <div
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
@@ -881,8 +966,16 @@ export function MessageComposer({
         <textarea
           ref={textareaRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            watchMention(e.target.value, e.target.selectionStart);
+          }}
           onKeyDown={handleKeyDown}
+          onKeyUp={(e) => {
+            if (!['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key))
+              watchMention(e.currentTarget.value, e.currentTarget.selectionStart);
+          }}
+          onClick={(e) => watchMention(e.currentTarget.value, e.currentTarget.selectionStart)}
           onFocus={liftAboveKeyboard}
           onBlur={dropLift}
           onPaste={(e) => void handlePaste(e)}

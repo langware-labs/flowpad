@@ -31781,6 +31781,10 @@ msgstr "Tag Graph"
 msgid "Tag shape"
 msgstr "Tag shape"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Tag someone"
+msgstr "Tag someone"
+
 #: src/components/graph-view/TagGraphView.tsx
 msgid "Tag Tree"
 msgstr "Tag Tree"

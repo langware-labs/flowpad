@@ -82,16 +82,23 @@ async def notify_desktop(
 
 
 async def notify_message_arrival(
-    conversation_id: str, message_id: str, *, sender_name: str = "", text: str = "", fallback: str = ""
+    conversation_id: str,
+    message_id: str,
+    *,
+    sender_name: str = "",
+    text: str = "",
+    fallback: str = "",
+    mentioned: bool = False,
 ) -> None:
     """The one notification Flowpad raises for communication: a message arrived in a conversation.
     Results and next steps are messages; their arrival is announced here and nowhere else. The click
-    opens the same ``/conversation/<id>/message/<id>`` pointer an in-app bubble click does."""
+    opens the same ``/conversation/<id>/message/<id>`` pointer an in-app bubble click does. ``mentioned``: the
+    message tags the person this computer belongs to -- the title says so; it is still the one notification."""
     flat = " ".join((text or "").split())
     preview = (flat if len(flat) <= 80 else flat[:77] + "...") or fallback
     await notify_desktop(
         "message",
-        title=sender_name or "New message",
+        title=f"{sender_name or 'Someone'} mentioned you" if mentioned else sender_name or "New message",
         body=preview,
         click_target={"view_type": "conversation", "pointer": f"{conversation_id}/message/{message_id}"},
     )

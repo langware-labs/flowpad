@@ -37,6 +37,9 @@ export interface SendReplyExtras {
   /** Write into the thread of this message (an open thread's root) without quoting anyone.
    *  Ignored when `replyToId` is set — the answered message decides the thread then. */
   threadRootId?: string | null;
+  /** Hub user ids of the people tagged with `@name` in the text; the hub keeps those who may read the
+   *  conversation and tells them (an email, and a notification on their Flowpad). */
+  mentions?: string[];
 }
 
 /** Serialize shareConfig to the backend's snake_case share_config shape.
@@ -105,6 +108,7 @@ export async function sendReply(
     if (extras?.replyPolicy) form.append('reply_policy', extras.replyPolicy);
     if (extras?.replyToId) form.append('reply_to_id', extras.replyToId);
     if (extras?.threadRootId) form.append('thread_root_id', extras.threadRootId);
+    if (extras?.mentions?.length) form.append('mentions', JSON.stringify(extras.mentions));
     action.bodyParameters = form;
     // File sends are multipart — binary bodies only travel over REST.
     return sentReply(await dataManager.callAction(action));
@@ -120,6 +124,7 @@ export async function sendReply(
     if (extras?.replyPolicy) body.reply_policy = extras.replyPolicy;
     if (extras?.replyToId) body.reply_to_id = extras.replyToId;
     if (extras?.threadRootId) body.thread_root_id = extras.threadRootId;
+    if (extras?.mentions?.length) body.mentions = extras.mentions;
     action.bodyParameters = body;
     // REST, not the socket: only the local server answers REST frames over its WebSocket.
     return sentReply(await dataManager.callAction(action));

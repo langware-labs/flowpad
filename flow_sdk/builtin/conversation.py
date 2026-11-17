@@ -97,7 +97,9 @@ if TYPE_CHECKING:  # pragma: no cover
 # shared `ProjectedFields` mixin (one sentinel for every projected entity).
 _PROJECTION_SENTINEL = PROJECTION_SENTINEL
 
-_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "attachment_count", "is_unread", "unread_count", "archived"})
+_PROJECTED_FIELDS = frozenset(
+    {"message_ids", "message_count", "attachment_count", "is_unread", "unread_count", "archived"}
+)
 
 
 # Shared-context asset types the hub hosts as first-class nodes, so a share can
@@ -1300,6 +1302,7 @@ class Conversation(ProjectedFields, Entity):
         kind: Optional[str] = None,
         reply_to_id: Optional[str] = None,
         thread_root_id: Optional[str] = None,
+        mentions: Optional[list] = None,
     ) -> dict:
         """The hub ``add_message`` body for one message — also what a create carries as its
         ``first_message`` (``share``)."""
@@ -1334,6 +1337,9 @@ class Conversation(ProjectedFields, Entity):
             body["reply_to_id"] = reply_to_id
         if thread_root_id:
             body["thread_root_id"] = thread_root_id
+        # The people tagged: the hub keeps those who may read this conversation, and tells them.
+        if mentions:
+            body["mentions"] = mentions
         body["conversation_id"] = self.id
         return body
 

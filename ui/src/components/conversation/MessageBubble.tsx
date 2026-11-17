@@ -107,6 +107,8 @@ interface MessageBubbleProps {
   replyInThread?: boolean;
   /** Same sender as the message just above, moments later: no avatar or name; time and actions on hover. */
   continuation?: boolean;
+  /** The message tags the person reading it: a tinted edge, so it stands out in a long conversation. */
+  mentionsViewer?: boolean;
 }
 
 /**
@@ -309,6 +311,7 @@ export function MessageBubble({
   onReply,
   replyInThread,
   continuation = false,
+  mentionsViewer = false,
 }: MessageBubbleProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
@@ -388,8 +391,11 @@ export function MessageBubble({
     <div
       className={`group relative flex gap-2 rounded p-1 transition-colors ${continuation ? '-mt-3 pt-0' : ''} ${
         onSelect ? 'cursor-pointer' : ''
-      } ${isSelected ? 'bg-muted/30 ring-1 ring-ring/40 max-md:animate-[target-tint_2.4s_ease-out]' : ''}`}
+      } ${isSelected ? 'bg-muted/30 ring-1 ring-ring/40 max-md:animate-[target-tint_2.4s_ease-out]' : ''} ${
+        mentionsViewer ? 'border-s-2 border-primary bg-primary/5' : ''
+      }`}
       onClick={handleBubbleClick}
+      data-mentions-viewer={mentionsViewer || undefined}
       data-testid={flowMessageId ? `message-bubble-${flowMessageId}` : undefined}
     >
       <SenderTag

@@ -31781,6 +31781,10 @@ msgstr "رسم بياني للوسوم"
 msgid "Tag shape"
 msgstr "شكل الوسم"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Tag someone"
+msgstr ""
+
 #: src/components/graph-view/TagGraphView.tsx
 msgid "Tag Tree"
 msgstr "شجرة الوسوم"

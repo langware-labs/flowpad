@@ -89,11 +89,30 @@ def _fm_response_fields(fm: "FlowMessage", conv: "Conversation") -> dict:
         "reply_to_id": dumped.get("reply_to_id"),
         "thread_root_id": dumped.get("thread_root_id"),
         "thread_id": dumped.get("thread_id"),
+        "mentions": dumped.get("mentions") or [],
         "is_draft": bool(dumped.get("is_draft")),
         "conversation_id": conv.id,
         "message_count": conv.message_count,
         "flow_message_id": fm.id,
     }
+
+
+#: A message tags a handful of people (the hub's cap is the same).
+_MAX_MENTIONS = 20
+
+
+def _mentions_of(raw) -> list[str]:
+    """The hub user ids a send tags -- a list, or the JSON string a multipart send carries -- once each."""
+    if isinstance(raw, str):
+        try:
+            raw = _json.loads(raw)
+        except ValueError:
+            return []
+    ids: list[str] = []
+    for item in raw if isinstance(raw, list) else []:
+        if isinstance(item, str) and item.strip() and item.strip() not in ids:
+            ids.append(item.strip())
+    return ids[:_MAX_MENTIONS]
 
 
 def _build_reply_flow_message(
@@ -108,6 +127,7 @@ def _build_reply_flow_message(
     kind: Optional[str] = None,
     reply_to_id: Optional[str] = None,
     thread_root_id: Optional[str] = None,
+    mentions: Optional[list[str]] = None,
 ) -> "FlowMessage":
     """Build (but do not save) the FlowMessage entity for a conversation reply.
 
@@ -147,6 +167,7 @@ def _build_reply_flow_message(
             **({"kind": kind} if kind else {}),
             **({"reply_to_id": reply_to_id} if reply_to_id else {}),
             **({"thread_root_id": thread_root_id} if thread_root_id else {}),
+            **({"mentions": mentions} if mentions else {}),
             # The sender authored this message → it is read from their side. Without
             # this the sender's own outgoing message persists is_read=False and the
             # stream inbox row's unread facet (``!latestMessage.is_read``, which does NOT
@@ -532,8 +553,13 @@ async def link_origin_session(
         ):
             await conv.save(someone_typeid)
     except Exception as e:  # noqa: BLE001
-        logger.warning("[link_origin_session] %s → conversation %s failed (non-fatal): %s",
-                       process_id, conversation_id, e, exc_info=True)
+        logger.warning(
+            "[link_origin_session] %s → conversation %s failed (non-fatal): %s",
+            process_id,
+            conversation_id,
+            e,
+            exc_info=True,
+        )
 
 
 @action.post(action_name="index-plan-sessions", types=["conversation"])
@@ -549,15 +575,22 @@ async def index_plan_sessions(self: Conversation) -> ApiResponse:
     linked = 0
     if thread:
         # One pattern, not one per message: the few visible processes naming any message, narrowed below.
-        match = {"op": "$AND", "operands": [
-            {"op": "$EQ", "operands": ["visible", True]},
-            {"op": "$LIKE", "operands": ["shared_context_entities", "flow_message-"]},
-        ]}
+        match = {
+            "op": "$AND",
+            "operands": [
+                {"op": "$EQ", "operands": ["visible", True]},
+                {"op": "$LIKE", "operands": ["shared_context_entities", "flow_message-"]},
+            ],
+        }
         for proc in await AgenticProcess.get_all(QueryFilter.parse({"match": match}, AgenticProcess.get_type())):
             tid = TypeId(f"agentic_process-{proc.id}")
-            message_id = next((t.id for t in proc.shared_context_entities if t.type == "flow_message" and t.id in thread), None)
-            if message_id and not self.get_context_entry_data(tid) and self.add_shared_context_entities(
-                tid, data={**PLAN_ROLE, "message_id": message_id}
+            message_id = next(
+                (t.id for t in proc.shared_context_entities if t.type == "flow_message" and t.id in thread), None
+            )
+            if (
+                message_id
+                and not self.get_context_entry_data(tid)
+                and self.add_shared_context_entities(tid, data={**PLAN_ROLE, "message_id": message_id})
             ):
                 linked += 1
     self.plan_sessions_indexed_at = datetime.now(timezone.utc)
@@ -586,6 +619,7 @@ def message_header_kwargs(reply_fm: "FlowMessage") -> dict:
         "kind": sendable_kind.value if sendable_kind else None,
         "reply_to_id": reply_fm.reply_to_id or None,
         "thread_root_id": reply_fm.thread_root_id or None,
+        "mentions": reply_fm.mentions or None,
     }
 
 
@@ -1016,8 +1050,7 @@ async def handle_add_message(
             # fast path, never the guest's to claim before the host answered.
             next_status = (
                 RemoteWorkerSessionStatus.RUNNING
-                if existing_session.status
-                in (RemoteWorkerSessionStatus.IDLE, RemoteWorkerSessionStatus.ERROR)
+                if existing_session.status in (RemoteWorkerSessionStatus.IDLE, RemoteWorkerSessionStatus.ERROR)
                 and can_transition(existing_session.status, RemoteWorkerSessionStatus.RUNNING)
                 else None
             )
@@ -1033,6 +1066,7 @@ async def handle_add_message(
     # Writing INTO a thread without quoting anyone (the composer of an open thread): a message of
     # that thread — its root, normally. A reply_to_id, when given, decides the thread instead.
     join_thread_of = (body.get("thread_root_id") or "").strip() or None
+    mentions = _mentions_of(body.get("mentions"))
     if (
         not message
         and not prompt_text_preview
@@ -1097,7 +1131,7 @@ async def handle_add_message(
             message=(
                 f"Cannot send: {', '.join(minted)} was created moments ago and never used — a library "
                 "prompt is a file in the project, so a prompt made just to send would be saved there. "
-                "Send it inline instead: `flow conversation send <conv> \"<text>\" --prompt \"<prompt>\"` "
+                'Send it inline instead: `flow conversation send <conv> "<text>" --prompt "<prompt>"` '
                 "(or `prompt_text`). Nothing was sent."
             ),
             status_code=400,
@@ -1142,6 +1176,7 @@ async def handle_add_message(
         kind=message_kind,
         reply_to_id=reply_to_id,
         thread_root_id=thread_root_id,
+        mentions=mentions,
     )
 
     if start_settings is not None:
@@ -1210,6 +1245,8 @@ async def handle_add_message(
         and not remote_worker_session_id
         # So do replies: the WS body has no room for the quote / thread root.
         and not thread_root_id
+        # So do tags: the WS body is text-only, and the hub must read who was tagged.
+        and not mentions
     ):
         hub_response = await _try_send_reply_via_hub(
             conv_id=conv.id,
@@ -1431,7 +1468,9 @@ async def _start_live_session_locked(conversation_id: str, body: dict, someone_t
         someone_typeid,
         # Read on BOTH sides (the guest's session view shows it too): no "your".
         text=f"{sender_name or 'Your collaborator'} asks {host_name or 'the host'} for a live session",
-        marker_extra={SESSION_START_MARKER_KEY: SessionStartSettings(reply_policy=reply_policy).model_dump(exclude_none=True)},
+        marker_extra={
+            SESSION_START_MARKER_KEY: SessionStartSettings(reply_policy=reply_policy).model_dump(exclude_none=True)
+        },
     )
     return ApiSuccessResponse(data=session.model_dump(mode="json"))
 
