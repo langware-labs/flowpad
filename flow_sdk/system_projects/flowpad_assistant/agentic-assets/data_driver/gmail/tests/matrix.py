@@ -101,12 +101,12 @@ class _ImapHandler(socketserver.StreamRequestHandler):
                     elif sub.upper() == "FETCH":
                         uid_set, _, query = tail.partition(" ")
                         _, parts = state.uid("FETCH", uid_set, query)
-                        for meta, body in parts:
+                        for (meta, body), closing in zip(parts[::2], parts[1::2]):
                             # The fake answers as imaplib hands a literal back; the wire form is
-                            # `* n FETCH (... item {size}` + the literal + `)`.
+                            # `* n FETCH (... item {size}` + the literal + what closes it (`)`, or the flags).
                             number, _, items = meta.partition(b" (")
                             items = items.replace(b" BODY {", f" {_item(query)} {{".encode())
-                            self._send(b"* " + number + b" FETCH (" + items + CRLF + body + b")" + CRLF)
+                            self._send(b"* " + number + b" FETCH (" + items + CRLF + body + closing + CRLF)
                         self._ok(tag, "FETCH")
                     else:
                         self._send(f"{tag} BAD unsupported UID {sub}".encode() + CRLF)

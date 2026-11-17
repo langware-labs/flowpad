@@ -42,12 +42,13 @@ from flow_sdk.sources.protocols import (
     Listable,
     Openable,
     Reacting,
+    ReadMarking,
     StableHandle,
     Verdict,
     Verifiable,
     actions_of,
 )
-from flow_sdk.sources.values.items import FileItem, MessageData, MessageFileData, ReactionData, UserProfile
+from flow_sdk.sources.values.items import FileItem, MessageData, MessageFileData, ReactionData, ReadData, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import ChangePage
 from flow_sdk.sources.values.query import MessageQuery
@@ -145,16 +146,21 @@ class Pass:
     listed: Optional[frozenset] = None
     #: Reaction reports the pass found — applied to the messages they name, never stored as records.
     reactions: list = field(default_factory=list)
+    #: Read-state reports the pass found — applied to the messages they name, like ``reactions``.
+    reads: list = field(default_factory=list)
 
 
 #: Inbound files copied at once per message — enough to beat a provider's short-lived link.
 STAGE_CONCURRENCY = 4
 
 
-def split_reactions(items: list) -> tuple[list, list]:
-    """``(messages, reactions)``: a reaction report is applied to its message, never stored as a record."""
-    reactions = [item for item in items if isinstance(item.data, ReactionData)]
-    return [item for item in items if not isinstance(item.data, ReactionData)], reactions
+def split_reports(items: list) -> tuple[list, list, list]:
+    """``(messages, reactions, reads)``: a reaction or read-state report is applied to the message it
+    names, never stored as a record."""
+    messages, reactions, reads = [], [], []
+    for item in items:
+        (reactions if isinstance(item.data, ReactionData) else reads if isinstance(item.data, ReadData) else messages).append(item)
+    return messages, reactions, reads
 
 
 async def _write_stream(home: Path, opening: Any) -> None:
@@ -600,14 +606,14 @@ class DriverRuntime:
             return self._records(row, kept, None, moved_on=False)
 
     def _records(self, row: Any, items, cursor: Optional[str], *, moved_on: bool, listed: Optional[list] = None) -> Pass:
-        messages, reactions = split_reactions(items)
+        messages, reactions, reads = split_reports(items)
         kept = sorted(messages, key=lambda item: _when(item) or _EPOCH)
         envelopes = [envelope_of(item, data_source_id=str(row.id), provider=self.provider) for item in kept]
         stamps = [when for when in map(_when, kept) if when is not None]
         every = None
         if listed is not None:
             every = frozenset(envelope_of(item, data_source_id=str(row.id), provider=self.provider).external_id
-                              for item in split_reactions(listed)[0])
+                              for item in split_reports(listed)[0])
         return Pass(
             listed=every,
             items=envelopes,
@@ -618,6 +624,7 @@ class DriverRuntime:
             # stored (the last record may have just been removed outside).
             unchanged=not items and not moved_on and every is None,
             reactions=reactions,
+            reads=reads,
         )
 
     # ── files on messages ───────────────────────────────────────────────────
@@ -910,12 +917,15 @@ class DriverRuntime:
         reaction report is applied to the message it names, after the messages it came with."""
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
         from flow_sdk.stream_inbox.reactions import apply_reactions  # noqa: PLC0415
+        from flow_sdk.stream_inbox.reads import apply_reads  # noqa: PLC0415
 
-        messages, reactions = split_reactions([event.item for event in events if event.item is not None])
+        messages, reactions, reads = split_reports([event.item for event in events if event.item is not None])
         items = [envelope_of(item, data_source_id=str(row.id), provider=self.provider) for item in messages]
         report = await ingest_items(items) if items else None
         if reactions:
             await apply_reactions(row, reactions)
+        if reads:
+            await apply_reads(row, reads)
         if not items:
             return {"ingested": 0, "reactions": len(reactions)}
         return {
@@ -936,6 +946,19 @@ class DriverRuntime:
                 await source.unreact(target, emoji)  # type: ignore[attr-defined]
             else:
                 await source.react(target, emoji)  # type: ignore[attr-defined]
+
+    async def mark_read(self, row: Any, target: CloudOrigin, read: bool) -> bool:
+        """Set the owner's read state of ``target`` at the provider. Answers whether it was written:
+        ``False`` for a channel that cannot (not ``ReadMarking``) or a source whose setting says not to
+        (``writes_read_state``) — the read stays Flowpad's own. A provider's refusal raises."""
+        if not issubclass(self.cls, ReadMarking):
+            return False
+        source = await self.open(row, persona=True)
+        if not source.writes_read_state():  # type: ignore[attr-defined]
+            return False
+        async with source:
+            await source.mark_read(target, read)  # type: ignore[attr-defined]
+        return True
 
     async def act(self, row: Any, conversation: CloudOrigin, action: str, text: str = "", *, ended: bool = False) -> Optional[str]:
         """Run the channel's ``action`` on ``conversation`` (``ended``: whether it has ended). A message

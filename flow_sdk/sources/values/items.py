@@ -204,6 +204,13 @@ class MessageData(Payload):
     #: Chips for the whole conversation (its repository, the bot that opened it), as of this
     #: message; the projection puts them on ``Conversation.marks``. ``None`` keeps them, ``()`` clears them.
     conversation_marks: Optional[tuple[MessageMarkSpec, ...]] = None
+    #: Whether the account's owner has read it at the provider, as of this fetch. ``None``: the
+    #: provider does not say. A later change is a ``ReadData`` report, never a second message.
+    read: Optional[bool] = None
+
+    def stable_dump(self) -> dict:
+        """Without ``read``: who has read a message is state on it, never a change of the message."""
+        return {k: v for k, v in super().stable_dump().items() if k != "read"}
 
     @property
     def item_text(self) -> str:
@@ -284,6 +291,21 @@ class ReactionData(Payload):
 
 class ReactionItem(SourceItemSpec):
     data: Tagged[ReactionData]
+
+
+class ReadData(Payload):
+    """The account owner's read state of ``target`` changed at the provider: a change of state on a
+    message they RECEIVED, never a message of its own — not threaded, never wakes a turn. Not a
+    delivery receipt: that the other side read ours is a different fact and has no report."""
+
+    spec_kind: ClassVar[str] = "ingest.message.read"
+
+    target: CloudOrigin
+    read: bool
+
+
+class ReadItem(SourceItemSpec):
+    data: Tagged[ReadData]
 
 
 class RecordData(Payload):

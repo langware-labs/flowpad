@@ -40,8 +40,8 @@ from flow_sdk.sources.config import Sharing, SourceConfig, config_field
 from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejected, SourceUnavailable, Unsupported
 from flow_sdk.sources.families import MessageSource
-from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.files import FileSupport, check_files, chunked, kind_of, read_file
+from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import (
     EmailMessageData,
     FileItem,
@@ -49,6 +49,8 @@ from flow_sdk.sources.values.items import (
     MessageData,
     MessageFileData,
     MessageItem,
+    ReadData,
+    ReadItem,
     UserProfile,
 )
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -66,11 +68,16 @@ ALL_MAIL = "[Gmail]/All Mail"
 PAGE_LIMIT = 50
 
 _RESUME = "uid:"
-_FULL = "(UID X-GM-THRID RFC822)"
+_FULL = "(UID X-GM-THRID FLAGS RFC822)"
+#: What a flag change is read with: the flags, and the Message-ID that names the message here.
+_FLAGGED = "(UID FLAGS BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])"
+_SEEN = rb"\Seen"
 _DATED = "(UID BODY.PEEK[HEADER.FIELDS (DATE)])"
 _ROUTING = "(UID X-GM-THRID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM TO REPLY-TO SUBJECT)])"
 _UID_RE = re.compile(rb"\bUID\s+(\d+)\b", re.IGNORECASE)
 _THREAD_RE = re.compile(rb"\bX-GM-THRID\s+(\d+)\b", re.IGNORECASE)
+_FLAGS_RE = re.compile(rb"\bFLAGS\s+\(([^)]*)\)", re.IGNORECASE)
+_MODSEQ_RE = re.compile(rb"(\d+)")
 _UID_VALIDITY_RE = re.compile(rb"(?:UIDVALIDITY\s+)?(\d+)", re.IGNORECASE)
 
 
@@ -86,6 +93,8 @@ class FetchedMessage:
     uid: int
     thread_id: str
     raw: bytes
+    #: Whether the owner has read it (``\Seen``); ``None`` when the fetch did not ask for flags.
+    seen: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +102,10 @@ class Snapshot:
     uid_validity: str
     messages: tuple[FetchedMessage, ...]
     more: bool = False
+    #: The mailbox's change counter at this read (CONDSTORE ``HIGHESTMODSEQ``); 0 when the server keeps none.
+    modseq: int = 0
+    #: Messages whose flags changed since the counter the read was given: headers and ``seen`` only.
+    flagged: tuple[FetchedMessage, ...] = ()
 
 
 class LoginRefused(Exception):
@@ -106,6 +119,8 @@ class GmailConfig(SourceConfig):
     address: str = config_field("", sharing=Sharing.PRIVATE)
     imap_host: str = ""
     smtp_host: str = ""
+    #: Write a read / unread made in Flowpad to the mailbox. Off: Flowpad only follows Gmail.
+    mark_read_in_gmail: bool = False
 
 
 class GmailSource(EmailAddressing, MessageSource):
@@ -140,8 +155,10 @@ class GmailSource(EmailAddressing, MessageSource):
         return Verdict(ready=True, detail=f"Reading {mailbox.address}.")
 
     @classmethod
-    def resume_at(cls, uid_validity: str, last_uid: int) -> str:
-        return f"{_RESUME}{uid_validity}:{int(last_uid)}"
+    def resume_at(cls, uid_validity: str, last_uid: int, modseq: int = 0) -> str:
+        """Where the next read starts: after ``last_uid``, and — when the server counts changes —
+        with the flag changes made since ``modseq``."""
+        return f"{_RESUME}{uid_validity}:{int(last_uid)}" + (f":{int(modseq)}" if modseq else "")
 
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
@@ -187,14 +204,17 @@ class GmailSource(EmailAddressing, MessageSource):
             # One page of history, newest first: no cursor read or written, no `since` window.
             snapshot = await self._imap(list_before, self._mailbox(), query.before, limit)
             return ChangePage(items=tuple(self._item(snapshot.uid_validity, message) for message in snapshot.messages))
-        validity, floor = _decode(cursor)
+        validity, floor, modseq = _decode(cursor)
         since = query.since if cursor is None else None
-        snapshot = await self._imap(list_inbox, self._mailbox(), validity, floor, since, limit)
+        snapshot = await self._imap(list_inbox, self._mailbox(), validity, floor, since, limit, modseq)
         floor = floor if validity == snapshot.uid_validity else 0
         last = max((message.uid for message in snapshot.messages), default=floor)
-        token = self.resume_at(snapshot.uid_validity, last) if last else None
+        token = self.resume_at(snapshot.uid_validity, last, snapshot.modseq) if last else None
         return ChangePage(
-            items=tuple(self._item(snapshot.uid_validity, message) for message in snapshot.messages),
+            items=(
+                *(self._item(snapshot.uid_validity, message) for message in snapshot.messages),
+                *(self._read_item(snapshot.uid_validity, message) for message in snapshot.flagged),
+            ),
             next_cursor=token if snapshot.more and token else None,
             resume_cursor=token,
         )
@@ -215,13 +235,28 @@ class GmailSource(EmailAddressing, MessageSource):
         snapshot = await self._imap(find_reply_inbox, self._mailbox(), message_id)
         return self._item(snapshot.uid_validity, snapshot.messages[-1]) if snapshot.messages else None
 
+    def _read_item(self, uid_validity: str, fetched: FetchedMessage) -> ReadItem:
+        """A flag change as a read-state report on the message ``_item`` made of it (the same key)."""
+        message = BytesParser(policy=policy.default).parsebytes(fetched.raw, headersonly=True)
+        key = _key(uid_validity, fetched, str(message.get("Message-ID") or "").strip())
+        return ReadItem(origin=self.origin(f"{key}#read"), data=ReadData(target=self.origin(key), read=bool(fetched.seen)))
+
+    def writes_read_state(self) -> bool:
+        return self.config.get("mark_read_in_gmail") is True
+
+    async def mark_read(self, target: CloudOrigin, read: bool = True) -> None:
+        """Set or clear ``\\Seen`` on the message in the mailbox."""
+        self._require_writable()
+        if not await self._imap(store_seen, self._mailbox(), self._key_of(target), read):
+            raise NotFound("no such message in this mailbox", origin=target)
+
     def _item(self, uid_validity: str, fetched: FetchedMessage) -> MessageItem:
         message = BytesParser(policy=policy.default).parsebytes(fetched.raw)
         name, sender = parseaddr(str(message.get("From") or ""))
         message_id = str(message.get("Message-ID") or "").strip()
         replied = str(message.get("In-Reply-To") or "").strip()
         thread = fetched.thread_id.strip()
-        key = message_id or f"imap:{uid_validity}:{fetched.uid}"
+        key = _key(uid_validity, fetched, message_id)
         attachments, blobs = [], getattr(self, "_blobs", None)
         for index, (file_name, media_type, payload) in enumerate(message_attachments(message)):
             origin = self.origin(f"{key}#{index}")
@@ -239,6 +274,7 @@ class GmailSource(EmailAddressing, MessageSource):
             in_reply_to=self.origin(replied) if replied else None,
             recipients=tuple(UserProfile(origin=self.origin(addr), name=n or None, address=addr) for n, addr in pairs if addr),
             attachments=tuple(attachments),
+            read=fetched.seen,
             raw={
                 "imap_uid": fetched.uid, "uid_validity": uid_validity, "gmail_thread_id": thread, "message_id": message_id,
                 "in_reply_to": replied, "from": str(message.get("From") or ""), "to": str(message.get("To") or ""),
@@ -405,10 +441,18 @@ def smtp_client(host_spec: str = "") -> smtplib.SMTP:
     return smtplib.SMTP_SSL(host, port) if tls else smtplib.SMTP(host, port)
 
 
-def list_inbox(mailbox: Mailbox, saved_validity: str, floor: int, since: Optional[datetime], limit: int) -> Snapshot:
+def list_inbox(mailbox: Mailbox, saved_validity: str, floor: int, since: Optional[datetime], limit: int, modseq: int = 0) -> Snapshot:
+    """One page of new INBOX messages, and — given the change counter of the last read — the
+    messages whose flags changed since (read in Gmail, marked unread there)."""
     client, uid_validity = open_inbox(mailbox)
     try:
         floor = floor if saved_validity == uid_validity else 0
+        current = _highest_modseq(client)
+        flagged: tuple[FetchedMessage, ...] = ()
+        if modseq and current > modseq and saved_validity == uid_validity:
+            status, parts = client.uid("FETCH", "1:*", f"{_FLAGGED} (CHANGEDSINCE {modseq})")
+            _require_ok(status, "fetch changed flags")
+            flagged = _parse_fetched(parts)
         if floor:
             status, data = client.uid("SEARCH", None, f"UID {floor + 1}:*")
         elif since is not None:
@@ -418,7 +462,7 @@ def list_inbox(mailbox: Mailbox, saved_validity: str, floor: int, since: Optiona
         _require_ok(status, "search INBOX")
         # `UID n:*` answers the highest UID even when nothing is newer: filter, never trust.
         uids = [uid for uid in _uids(data) if uid > floor]
-        return Snapshot(uid_validity, _fetch_messages(client, uids[:limit]), more=len(uids) > limit)
+        return Snapshot(uid_validity, _fetch_messages(client, uids[:limit]), more=len(uids) > limit, modseq=current, flagged=flagged)
     finally:
         close_inbox(client)
 
@@ -437,16 +481,41 @@ def find_message(mailbox: Mailbox, message_id: str) -> Optional[FetchedMessage]:
     12k-message account) — then that search as the fallback."""
     client, _ = open_inbox(mailbox, ALL_MAIL)
     try:
-        status, data = client.uid("SEARCH", None, "ALL")
-        _require_ok(status, "list All Mail")
-        wanted = message_id.strip().casefold()
-        tail = [m for m in _fetch_message_parts(client, _uids(data)[-PAGE_LIMIT:], _ROUTING) if _message_id_of(m.raw) == wanted]
-        if tail:
-            return tail[-1]
-        status, data = client.uid("SEARCH", None, "HEADER", "Message-ID", message_id)
-        _require_ok(status, "search Message-ID")
-        found = _fetch_message_parts(client, _uids(data)[-1:], _ROUTING)
-        return found[-1] if found else None
+        return _locate(client, message_id)
+    finally:
+        close_inbox(client)
+
+
+def _locate(client: imaplib.IMAP4, message_id: str) -> Optional[FetchedMessage]:
+    status, data = client.uid("SEARCH", None, "ALL")
+    _require_ok(status, "list All Mail")
+    wanted = message_id.strip().casefold()
+    tail = [m for m in _fetch_message_parts(client, _uids(data)[-PAGE_LIMIT:], _ROUTING) if _message_id_of(m.raw) == wanted]
+    if tail:
+        return tail[-1]
+    status, data = client.uid("SEARCH", None, "HEADER", "Message-ID", message_id)
+    _require_ok(status, "search Message-ID")
+    found = _fetch_message_parts(client, _uids(data)[-1:], _ROUTING)
+    return found[-1] if found else None
+
+
+def store_seen(mailbox: Mailbox, message_key: str, read: bool) -> bool:
+    """Set (or clear) ``\\Seen`` on one message, named by the key ``_item`` gave it — the one write
+    this driver makes to a mailbox. ``False`` when the mailbox holds no such message."""
+    by_uid = message_key.startswith("imap:")
+    client, current = open_inbox(mailbox, INBOX if by_uid else ALL_MAIL, readonly=False)
+    try:
+        if by_uid:
+            validity, _, uid = message_key[len("imap:"):].rpartition(":")
+            uid = uid if validity == current and uid.isdigit() else ""
+        else:
+            found = _locate(client, message_key)
+            uid = str(found.uid) if found else ""
+        if not uid:
+            return False
+        status, _ = client.uid("STORE", uid, "+FLAGS" if read else "-FLAGS", "(\\Seen)")
+        _require_ok(status, "store the read flag")
+        return True
     finally:
         close_inbox(client)
 
@@ -504,12 +573,13 @@ def login(client: imaplib.IMAP4, account: Mailbox) -> None:
         raise LoginRefused(said.decode(errors="replace") if isinstance(said, bytes) else str(exc)) from exc
 
 
-def open_inbox(account: Mailbox, mailbox: str = INBOX) -> tuple[imaplib.IMAP4, str]:
-    """Authenticate and select ``mailbox`` read-only, cleaning up a partial open."""
+def open_inbox(account: Mailbox, mailbox: str = INBOX, *, readonly: bool = True) -> tuple[imaplib.IMAP4, str]:
+    """Authenticate and select ``mailbox`` — read-only unless a flag is to be stored — cleaning up a
+    partial open."""
     client = imap_client(account.host)
     try:
         login(client, account)
-        status, _ = client.select(mailbox_arg(mailbox), readonly=True)
+        status, _ = client.select(mailbox_arg(mailbox), readonly=readonly)
         _require_ok(status, f"select {mailbox}")
         return client, _uid_validity(client, mailbox)
     except Exception:
@@ -518,7 +588,7 @@ def open_inbox(account: Mailbox, mailbox: str = INBOX) -> tuple[imaplib.IMAP4, s
 
 
 def close_inbox(client: imaplib.IMAP4) -> None:
-    # The mailbox is always selected read-only, so CLOSE has nothing to commit; Gmail sometimes
+    # Nothing here deletes, so CLOSE has nothing to expunge (a stored flag is already kept); Gmail sometimes
     # stalls on it, and LOGOUT leaves the selected state and the connection in one round trip.
     try:
         client.logout()
@@ -575,18 +645,43 @@ def _fetch_message_parts(client: imaplib.IMAP4, uids: list[int], query: str) -> 
     uid_set = ",".join(str(uid) for uid in uids)
     status, parts = client.uid("FETCH", uid_set, query)
     _require_ok(status, f"fetch UIDs {uid_set}")
+    messages = _parse_fetched(parts)
+    if len(messages) != len(uids):
+        raise imaplib.IMAP4.error(f"fetch requested {len(uids)} message(s), returned {len(messages)}")
+    return messages
+
+
+def _parse_fetched(parts: Any) -> tuple[FetchedMessage, ...]:
+    """The messages of one FETCH response, by UID. A server may name an attribute before the
+    literal or after it, so each message's metadata is its opening line plus what follows the literal."""
+    parts = list(parts or [])
     messages: list[FetchedMessage] = []
-    for part in parts or []:
+    for index, part in enumerate(parts):
         if not isinstance(part, tuple) or len(part) < 2 or not isinstance(part[1], bytes):
             continue
         metadata = part[0] if isinstance(part[0], bytes) else str(part[0]).encode()
-        uid_match, thread_match = _UID_RE.search(metadata), _THREAD_RE.search(metadata)
+        after = parts[index + 1] if index + 1 < len(parts) else b""
+        metadata += b" " + after if isinstance(after, bytes) else b""
+        uid_match, thread_match, flags = _UID_RE.search(metadata), _THREAD_RE.search(metadata), _FLAGS_RE.search(metadata)
         if not uid_match:
             raise imaplib.IMAP4.error("fetch response carried no UID")
-        messages.append(FetchedMessage(int(uid_match.group(1)), thread_match.group(1).decode("ascii") if thread_match else "", part[1]))
-    if len(messages) != len(uids):
-        raise imaplib.IMAP4.error(f"fetch requested {len(uids)} message(s), returned {len(messages)}")
+        messages.append(FetchedMessage(
+            int(uid_match.group(1)), thread_match.group(1).decode("ascii") if thread_match else "", part[1],
+            seen=_SEEN.lower() in flags.group(1).lower().split() if flags else None,
+        ))
     return tuple(sorted(messages, key=lambda message: message.uid))
+
+
+def _key(uid_validity: str, fetched: FetchedMessage, message_id: str) -> str:
+    """What names a message here: its Message-ID, else its place in this INBOX."""
+    return message_id or f"imap:{uid_validity}:{fetched.uid}"
+
+
+def _highest_modseq(client: imaplib.IMAP4) -> int:
+    """The selected mailbox's change counter (CONDSTORE), 0 from a server that keeps none."""
+    _, values = client.response("HIGHESTMODSEQ")
+    match = _MODSEQ_RE.search(b" ".join(v for v in (values or []) if isinstance(v, bytes)))
+    return int(match.group(1)) if match else 0
 
 
 def check_login(account: Mailbox) -> None:
@@ -705,15 +800,16 @@ def _require_ok(status: Any, operation: str) -> None:
         raise imaplib.IMAP4.error(f"{operation} failed: {status}")
 
 
-def _decode(cursor: object) -> tuple[str, int]:
+def _decode(cursor: object) -> tuple[str, int, int]:
+    """``(uid_validity, last_uid, modseq)`` — ``modseq`` 0 for a cursor written before flags were followed."""
     if cursor is None:
-        return "", 0
+        return "", 0, 0
     if not isinstance(cursor, str):
         raise TypeError(f"cursor must be a string, got {type(cursor).__name__}")
-    validity, _, last = cursor[len(_RESUME):].rpartition(":") if cursor.startswith(_RESUME) else ("", "", "")
-    if not validity or not last.isdigit():
+    validity, last, modseq = (cursor[len(_RESUME):].split(":") + ["0"])[:3] if cursor.startswith(_RESUME) else ("", "", "")
+    if not validity or not last.isdigit() or not modseq.isdigit() or cursor.count(":") > 3:
         raise InvalidCursor("not a Gmail cursor")
-    return validity, int(last)
+    return validity, int(last), int(modseq)
 
 
 def _check_outgoing(data: object) -> None:

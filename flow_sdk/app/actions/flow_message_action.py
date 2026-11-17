@@ -58,6 +58,7 @@ from flow_sdk.stream_inbox.agent_scope import (
     resolve_local_stream_inbox_scope,
 )
 from flow_sdk.stream_inbox.hub_clock import adopt_hub_created_date, hub_adds_attachments, hub_created_drift
+from flow_sdk.stream_inbox.reads import write_back
 from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
@@ -2347,12 +2348,15 @@ async def handle_stream_inbox_update(fm_id: str, patch: dict, someone_typeid: st
     fm = await FlowMessage.get_one({"id": fm_id})
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    marked = "is_read" in patch and bool(patch["is_read"]) != bool(fm.is_read)
     if "is_read" in patch:
         fm.is_read = bool(patch["is_read"])
     if "is_archived" in patch:
         fm.is_archived = bool(patch["is_archived"])
     await fm.save(someone_typeid)
     stream_inbox.touch("stream-inbox-update")
+    if marked:
+        write_back([fm])
     return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read, "is_archived": fm.is_archived})
 
 
@@ -2715,9 +2719,12 @@ async def handle_stream_inbox_bulk_update(
     if allowed_flow_message_ids is not None:
         messages = [message for message in messages if message.id in allowed_flow_message_ids]
     count = 0
+    marked = []
     for fm in messages:
         changed = False
         if "is_read" in patch:
+            if bool(fm.is_read) != bool(patch["is_read"]):
+                marked.append(fm)
             fm.is_read = bool(patch["is_read"])
             changed = True
         if "is_archived" in patch:
@@ -2727,6 +2734,7 @@ async def handle_stream_inbox_bulk_update(
             await fm.save(someone_typeid)
             count += 1
     stream_inbox.touch("stream-inbox-bulk-update")
+    write_back(marked)
     return ApiSuccessResponse(data={"updated": count})
 
 

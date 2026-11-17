@@ -117,6 +117,9 @@ async def ingest_item(
             row, status = existing, "updated"
         if mark:
             row.sent_by_us = True
+        if existing is None and getattr(item.data, "read", None) is not None:
+            # Born with the provider's read state; after birth it moves only by a ``ReadData`` report.
+            row.read = bool(item.data.read)
         await row.save(owner, notify=(mode is IngestMode.INCREMENTAL))
 
     # ── emit ──────────────────────────────────────────────────────────────
