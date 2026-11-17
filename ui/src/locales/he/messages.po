@@ -19933,6 +19933,14 @@ msgstr ""
 msgid "No archived conversations"
 msgstr "אין שיחות מאורכבות"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Starred"
+msgstr "מסומנות בכוכב"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "No starred conversations"
+msgstr "אין שיחות מסומנות בכוכב"
+
 #: src/components/artifacts/artifacts-list.tsx
 msgid "No artifacts yet"
 msgstr "אין קבצים עדיין"

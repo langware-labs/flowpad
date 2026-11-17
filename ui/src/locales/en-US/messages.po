@@ -19933,6 +19933,14 @@ msgstr "No API keys on this machine yet."
 msgid "No archived conversations"
 msgstr "No archived conversations"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Starred"
+msgstr "Starred"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "No starred conversations"
+msgstr "No starred conversations"
+
 #: src/components/artifacts/artifacts-list.tsx
 msgid "No artifacts yet"
 msgstr "No artifacts yet"

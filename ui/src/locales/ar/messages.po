@@ -19933,6 +19933,14 @@ msgstr ""
 msgid "No archived conversations"
 msgstr "لا توجد محادثات مؤرشفة"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Starred"
+msgstr "المميّزة بنجمة"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "No starred conversations"
+msgstr "لا توجد محادثات مميّزة بنجمة"
+
 #: src/components/artifacts/artifacts-list.tsx
 msgid "No artifacts yet"
 msgstr "لا توجد ملفات حتى الآن"

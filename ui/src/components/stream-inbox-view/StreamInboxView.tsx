@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Search,
   SquarePen,
+  Star,
   Trash2,
   X,
   Zap,
@@ -18,6 +19,8 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
+import { useFavorites } from '@src/hooks/use-favorites';
+import { conversationFavoriteRef } from '@src/components/favorites/favorite-target';
 import { pullNow } from '@src/components/data-sources/source-parts';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { ContactsDialog } from '@src/components/contact-picker/ContactsDialog';
@@ -116,7 +119,7 @@ import { ConversationAttachmentsButton } from './ConversationAttachmentsButton';
 import { personName } from '@src/components/conversation/participant-display';
 
 /** Row actions on this machine's own state (read marks, archive): the hub page offers none. */
-const PER_MACHINE_ROW_ACTIONS = new Set(['toggle-read', 'archive', 'unarchive']);
+const PER_MACHINE_ROW_ACTIONS = new Set(['favorite', 'toggle-read', 'archive', 'unarchive']);
 
 /** What removing a conversation does for this viewer: a row that never reached the hub (``remote: false``
  *  — a hub row carries no flag) is deleted here; the hub's owner (``initiated_by``) deletes it for everyone;
@@ -260,6 +263,10 @@ interface ConversationListRowProps {
    *  to the stream inbox. */
   onUnarchive: (convId: string) => void;
   onToggleRead: (messageId: string, isRead: boolean) => void;
+  /** The conversation is a favorite — the list reads the favorites once and hands each row its answer. */
+  isFavorited?: boolean;
+  /** Star / unstar the conversation. Omitted: the row offers no star. */
+  onToggleFavorite?: (conv: Conversation) => void;
   /** Whether this row is currently ticked for a bulk (multi-select) action.
    *  Optional so the row can render standalone (e.g. in tests) without the
    *  multi-select host wiring. */
@@ -337,6 +344,8 @@ export const ConversationListRow = memo(function ConversationListRow({
   onArchive,
   onUnarchive,
   onToggleRead,
+  isFavorited,
+  onToggleFavorite,
   selected,
   onToggleSelect,
   selectMode,
@@ -691,7 +700,7 @@ export const ConversationListRow = memo(function ConversationListRow({
             {automationMark.name}
           </button>
         )}
-        <SourceChip attribution={attribution} className="me-1" />
+        <SourceChip attribution={attribution} className="me-1" expandOnHover />
         <ConversationMarkChips marks={conv.marks} />
         {/* Accepted is the normal ending — only an unanswered or refused share earns a chip. */}
         {latestMessage?.invite && latestMessage.invite.state !== 'accepted' && (
@@ -725,6 +734,8 @@ export const ConversationListRow = memo(function ConversationListRow({
           invitationId,
           accepting,
           deleteLabel,
+          isFavorited,
+          onToggleFavorite: onToggleFavorite && (() => onToggleFavorite(conv)),
           onAccept: () => void handleAccept(),
           onDecline: () => {
             if (conv.id && invitationId) {
@@ -1043,6 +1054,21 @@ export function StreamInboxView({
   // One PAGE, not the whole stream inbox: the view's latest N (`before` null = now, live) or the N older
   // than the dock URL's `before`. A body search lists its hits instead.
   const pageBefore = currentDock?.pageBefore ?? null;
+  // Starred conversations: the favorites, read ONCE for the list — each row is handed its answer, and
+  // the Starred view pages through exactly these ids.
+  const { favorites, toggleFavorite } = useFavorites();
+  // Keyed on the ids' string form: renaming or filing a favorite leaves the page query alone.
+  const starredKey = useMemo(
+    () =>
+      favorites
+        .filter((b) => b.data?.entity_type === Conversation.type && b.data?.entity_id)
+        .map((b) => String(b.data?.entity_id))
+        .sort()
+        .join(','),
+    [favorites],
+  );
+  const starredIds = useMemo(() => (starredKey ? starredKey.split(',') : []), [starredKey]);
+  const starredSet = useMemo(() => new Set(starredIds), [starredIds]);
   const ownerKey = channelsOwner?.toString() ?? '';
   // The channel marks narrow the QUERY to the picked marks' sources: a page is then rows of those
   // sources, and Older / Newer page through them, rather than the latest page thinned out in the browser.
@@ -1066,8 +1092,9 @@ export function StreamInboxView({
   const request = useMemo(() => {
     if (!scope) return null;
     if (searchActive) return conversationsByIdsRequest(scope, [...matchIds]);
-    return conversationsPageRequest(scope, viewMode, pageBefore);
-  }, [scope, searchActive, matchIds, viewMode, pageBefore]);
+    if (viewMode === 'starred' && !starredIds.length) return null;
+    return conversationsPageRequest(scope, viewMode, pageBefore, starredIds);
+  }, [scope, searchActive, matchIds, viewMode, pageBefore, starredIds]);
   const idleRequest = useMemo(() => new QueryRequest({ type: Conversation.type, name: 'stream-inbox:idle' }), []);
   const {
     data: conversations = [],
@@ -1208,6 +1235,10 @@ export function StreamInboxView({
   const rowArchive = useStableCallback(handleArchive);
   const rowUnarchive = useStableCallback(handleUnarchive);
   const rowToggleRead = useStableCallback(handleToggleRead);
+  const rowToggleFavorite = useStableCallback((conv: Conversation) => {
+    const ref = conversationFavoriteRef(conv);
+    if (ref) void toggleFavorite(ref);
+  });
   const setRowRef = useCallback((convId: string, el: HTMLDivElement | null) => {
     rowRefs.current.set(convId, el);
   }, []);
@@ -1503,6 +1534,7 @@ export function StreamInboxView({
 
   const inArchivedView = viewMode === 'archived';
   const inUnreadView = viewMode === 'unread';
+  const inStarredView = viewMode === 'starred';
   const inInvitesView = viewMode === 'invites';
   // Segmented view pill — All | Unread | Archived. Active mode is filled,
   // inactive is ghost.
@@ -1690,6 +1722,7 @@ export function StreamInboxView({
                 {desktopStreamInbox && (
                   <>
                     {renderViewPill('unread', t`Unread`, MailPlus)}
+                    {renderViewPill('starred', t`Starred`, Star)}
                     {renderViewPill('archived', t`Archived`, Archive)}
                   </>
                 )}
@@ -1741,7 +1774,7 @@ export function StreamInboxView({
                     </Button>
                     {/* Archive all archives every conversation regardless of read state;
                     hide it in the Archived view where it makes no sense. */}
-                    {!inUnreadView && (
+                    {!inUnreadView && !inStarredView && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1886,7 +1919,9 @@ export function StreamInboxView({
                 ? t`No matching conversations`
                 : inInvitesView
                   ? t`Nothing has been shared with you yet`
-                  : inArchivedView
+                  : inStarredView
+                    ? t`No starred conversations`
+                    : inArchivedView
                     ? t`No archived conversations`
                     : inUnreadView
                       ? channelFilter.size > 0
@@ -1901,6 +1936,7 @@ export function StreamInboxView({
             {!embedded &&
               !inArchivedView &&
               !inUnreadView &&
+              !inStarredView &&
               !searchActive &&
               !columnFilterActive &&
               (emptyHint ? (
@@ -1917,7 +1953,7 @@ export function StreamInboxView({
                     title={t`Add a message channel`} />
                 )
               ))}
-            {!inArchivedView && !searchActive && !columnFilterActive && (
+            {!inArchivedView && !inStarredView && !searchActive && !columnFilterActive && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
                 <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 <Trans>Check for new messages</Trans>
@@ -1951,6 +1987,8 @@ export function StreamInboxView({
               onArchive={rowArchive}
               onUnarchive={rowUnarchive}
               onToggleRead={rowToggleRead}
+              isFavorited={!!conv.id && starredSet.has(conv.id)}
+              onToggleFavorite={rowToggleFavorite}
               selected={!!conv.id && selectedIds.has(conv.id)}
               onToggleSelect={toggleSelect}
               selectMode={selectedCount > 0}
@@ -1967,7 +2005,7 @@ export function StreamInboxView({
             />
             );
           })}
-        {!initialLoading && !searchActive && scope && <StreamInboxPager scope={scope} view={viewMode} rows={sorted} />}
+        {!initialLoading && !searchActive && scope && <StreamInboxPager scope={scope} view={viewMode} rows={sorted} starredIds={starredIds} />}
       </div>
 
       {!agentId && <NewConversationDialog open={showNewConversation} onClose={() => setShowNewConversation(false)} />}
