@@ -1,0 +1,23 @@
+{
+  "type": "data_schema",
+  "id": "16b7522c-3c0c-4db0-bd27-dc1e19665cda",
+  "name": "flowmap.link",
+  "fields": {
+    "from": {
+      "shape": "string",
+      "description": "An entry or step id."
+    },
+    "to": {
+      "shape": "string",
+      "description": "A step or outcome id."
+    },
+    "label": {
+      "shape": "?string",
+      "description": "When it is taken, when that is a choice: a review, fails, next issue."
+    },
+    "loop": {
+      "shape": "?bool",
+      "description": "True for an arrow that goes back for another round (drawn dashed, on the side)."
+    }
+  }
+}

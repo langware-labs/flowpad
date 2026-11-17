@@ -6,11 +6,14 @@ hub: the process is funded by whatever the box resolves, exactly as on a signed-
 """
 
 import asyncio
+import os
 import tempfile
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
 from flow_sdk.flowpad_types.enums import WorkerType
+from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 PROMPT = 'Reply with exactly the single word "pong" and nothing else.'
 
@@ -19,23 +22,39 @@ async def main() -> None:
     process = await AgenticProcess(
         worker_type=WorkerType.CLAUDE_CODE,
         workdir=tempfile.mkdtemp(),
-        cli_config={"model": "sm", "permission_mode": "bypassPermissions"},
+        # A public endpoint publishes no size map to an anonymous box (FLOWPAD-2318 refuses an asked size the budget
+        # does not declare), so LOGINLESS_MODEL may name the model the endpoint serves; default stays the size.
+        cli_config={"model": os.environ.get("LOGINLESS_MODEL") or "sm", "permission_mode": "bypassPermissions"},
         pty_mode=False,  # print mode: one spawn, one turn, then done
         visible=False,
         load_flowpad_assistant=False,
     ).save()
     try:
-        await process.prompt(PROMPT)
+        result = await process.prompt(PROMPT)
+        if getattr(result, "status", None) == "FAIL":
+            raise RuntimeError("prompt was refused")
         # ``prompt()`` returning is the turn STARTING. The answer is in the history once the
         # turn is no longer busy.
         while True:
             fresh = await AgenticProcess.get_by_id(process.id) or process
-            if not is_turn_busy(fresh, fresh.fetch_worker_status()):
+            status = fresh.fetch_worker_status()
+            if not is_turn_busy(fresh, status):
+                if status in (WorkerStatus.ERROR, WorkerStatus.INTERRUPTED, WorkerStatus.INACTIVE, WorkerStatus.API_TIMEOUT):
+                    raise RuntimeError(f"turn did not succeed: {status}")
                 history = fresh.driver.load_history(fresh)
-                if history:
+                if status == WorkerStatus.COMPLETE:
+                    if not _last_answer(history or []):
+                        raise RuntimeError("completed turn has no assistant answer")
                     break
             await asyncio.sleep(2.0)
-        print(_last_answer(history))
+        bound = get_hub_llm_endpoint()
+        actual_source = fresh.resolved_llm_endpoint_typeid
+        if not actual_source or (bound is not None and actual_source != bound.endpoint_typeid):
+            raise RuntimeError("turn used a different or unproven endpoint")
+        answer = _last_answer(history)
+        if "pong" not in answer.lower():
+            raise RuntimeError("assistant did not supply the expected answer")
+        print(answer)
     finally:
         await process.exit()
 

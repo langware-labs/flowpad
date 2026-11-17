@@ -62,6 +62,17 @@ EXIT_INVALID_ARG = 2
 EXIT_ENTITY_NOT_FOUND = 4
 EXIT_CONNECTION_ERROR = 5
 
+_WHY: Optional[str] = None
+
+
+@show_app.callback()
+def _show_options(
+    why: Annotated[Optional[str], typer.Option("--why", help="Why you are showing this (logged under the flow_show toplog tag).")] = None,
+) -> None:
+    global _WHY
+    _WHY = why
+
+
 _PROCESS_HELP = "Target AgenticProcess id (defaults to the calling process via FLOWPAD_EXECUTION_SCOPE)."
 
 
@@ -83,6 +94,8 @@ def _post_show(process_opt: Optional[str], body: dict, extra: Optional[dict] = N
             _fail(EXIT_INVALID_ARG, "INVALID_ARG", message)
         _fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", message)
 
+    if _WHY:
+        body = {**body, "why": _WHY}
     data = _post_graph_json(url, body, timeout=5, on_error=_on_error)
     emit_navigate_result(data, {"process_id": process_id, **(extra or {})})
 

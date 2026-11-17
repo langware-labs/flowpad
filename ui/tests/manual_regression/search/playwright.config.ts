@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 import { apiOrigin } from '../_shared/api';
 
 // Propagate the shared instance-aware backend origin to Playwright workers.
@@ -16,8 +17,8 @@ process.env.API_URL ||= apiOrigin();
 export default defineConfig({
   testDir: '.',
   testMatch: '*.md.ts',
-  timeout: 60_000,
-  expect: { timeout: 15_000 },
+  timeout: adjusted(60_000),
+  expect: { timeout: adjusted(15_000) },
   fullyParallel: false,
   retries: 0,
   workers: 1,

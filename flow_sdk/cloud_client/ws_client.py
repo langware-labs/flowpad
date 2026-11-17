@@ -773,11 +773,11 @@ class HubWebSocketManager:
         return False
 
     async def verify_current_user(self, config: ApiConfig | None = None) -> dict[str, Any]:
-        """Verify hub WS auth by comparing hub current-user data to local cloud profile."""
+        """Verify hub WS auth by comparing the hub's principal for this socket to the local signed-in one."""
         from flow_sdk.api.messages import APIMessage, WSMessageType
-        from flow_sdk.cli.app_config import get_user
+        from flow_sdk.cli.app_config import get_principal
 
-        local_user = get_user() or {}
+        local_user = get_principal() or {}
         local_user_id = local_user.get("id")
         if not local_user_id:
             await self._set_state(
@@ -790,7 +790,7 @@ class HubWebSocketManager:
 
         try:
             async with connect_hub_websocket(config or self.config, connection_id=str(uuid.uuid4())) as websocket:
-                await websocket.send(APIMessage(action="current-user").model_dump_json())
+                await websocket.send(APIMessage(action="current-principal").model_dump_json())
                 # The hub's opening ``ws_ready_msg`` greeting is consumed by
                 # ``connect_hub_websocket``. The reply is the first frame that IS
                 # one: the hub may fan out pushes (a ``data_op_msg`` for a

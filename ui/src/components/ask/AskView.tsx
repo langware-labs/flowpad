@@ -2,7 +2,6 @@ import { useCallback } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Loader2 } from 'lucide-react';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { getHistoryPosition } from '@src/navigation/history-position-store';
 import { Button } from '@src/components/ui/button';
 import { AskChoiceBlock } from './AskChoiceBlock';
 import { AskSkipButton } from './AskSkipButton';
@@ -56,10 +55,7 @@ export default function AskView() {
   // the dock the way out is back to it — or home when this tab has no history
   // (a fresh load straight onto the question). Never a dead-end message: that
   // used to strand people until they restarted the app.
-  const leave = useCallback(() => {
-    if (getHistoryPosition().canGoBack) navigation.goBack();
-    else navigation.goHome();
-  }, [navigation]);
+  const leave = useCallback(() => navigation.backOrHome(), [navigation]);
 
   if (settledKind) {
     return (

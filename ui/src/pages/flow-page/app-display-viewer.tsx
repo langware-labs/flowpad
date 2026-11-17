@@ -11,15 +11,17 @@ import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { isTypeId, TypeId, WebApp } from '@sdk';
+import { Agent, isTypeId, TypeId, WebApp } from '@sdk';
 import { Loader2 } from 'lucide-react';
-import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
+import { externalUrl, OPEN_AGENT_MESSAGE, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
+import { agentDockById } from '@src/components/agents/use-agent-launcher';
 import { openExternal } from '@src/lib/open-external';
 import { isHubRelayed } from '@src/lib/hub-relayed';
 import { Button } from '@src/components/ui/button';
-import { ExternalLink, Pencil } from 'lucide-react';
+import { ExternalLink, Pencil, RotateCw } from 'lucide-react';
 import { AppInfoPopover } from '@src/components/webapp-display/AppInfoPopover';
 import { CopyButton } from '@src/components/ui/copy-button';
+import { useDisplayChromeSlot } from '@src/components/display-toolbar';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -105,6 +107,14 @@ export function guestNavigation(data: unknown, projectId?: string | null): DockP
   return tryParseDock(message.address);
 }
 
+/** The agent a guest app asks the host to open the chat of (`{type: 'flowpad:open-agent', agent}`), or null. */
+export function guestAgent(data: unknown): TypeId | null {
+  const message = data as { type?: unknown; agent?: unknown } | null;
+  if (message?.type !== OPEN_AGENT_MESSAGE || typeof message.agent !== 'string' || !isTypeId(message.agent)) return null;
+  const typeId = new TypeId(message.agent);
+  return typeId.type === Agent.type ? typeId : null;
+}
+
 /**
  * The outside page a guest app asks the host to open (`{type: 'flowpad:open-external', url}`, the
  * SDK's `openExternal`), or null. Only an absolute http(s) address: a guest never gets a
@@ -130,6 +140,7 @@ export function AppDisplayViewer({
   const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
   const { t } = useLingui();
+  const chromeSlot = useDisplayChromeSlot();
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
@@ -196,7 +207,14 @@ export function AppDisplayViewer({
       const dock = guestNavigation(event.data, project?.id);
       if (dock) return navigation.openDock(dock);
       const outside = guestExternalUrl(event.data);
-      if (outside) openExternal(outside);
+      if (outside) return openExternal(outside);
+      const agent = guestAgent(event.data);
+      const projectId = project?.id;
+      if (agent && projectId) {
+        void agentDockById(agent.toString(), projectId)
+          .then((dock) => dock && navigation.openDock(dock))
+          .catch((e) => console.warn('[app-display] open agent failed', e));
+      }
     };
     window.addEventListener('message', onGuest);
     return () => window.removeEventListener('message', onGuest);
@@ -254,7 +272,18 @@ export function AppDisplayViewer({
         >
           <ExternalLink className="size-4" />
         </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7 shrink-0"
+          data-testid="webapp-refresh"
+          title={t`Refresh`}
+          onClick={() => frameRef.current?.refresh()}
+        >
+          <RotateCw className="size-4" />
+        </Button>
         <AppInfoPopover display={appDisplay} lifecycle={lifecycle} />
+        {chromeSlot}
         {definition ? (
           <Button
             size="sm"

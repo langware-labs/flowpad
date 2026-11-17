@@ -109,6 +109,7 @@ VALID: dict[str, dict] = {
         "entries": [],
         "manifest_schema": 1,
         "home_page": "agent-2f0f4f1e-8a51-4c43-9b0a-6d5d3c1e7a42",
+        "browser": "extension",  # a closed set; anything else reads as the default
     },
     # a timestamp is normalised on read, so it has to be one going in
     "source_item": {"occurred_at": "2026-01-02T03:04:05+00:00"},

@@ -126,7 +126,7 @@ vi.mock('@sdk', async (importOriginal) => {
   return {
     ...actual,
     cloudManager: { login: h.login, logout: vi.fn(), cancelLogin: h.cancelLogin },
-    lmKeysService: { list: () => Promise.resolve([]), listModels: () => Promise.resolve([]), getMappings: () => Promise.resolve({}) },
+    lmKeysService: { list: () => Promise.resolve([]), listModels: () => Promise.resolve([]) },
     statusService: { refresh: () => Promise.resolve(record()) },
     capabilityManager: {
       getSnapshot: () => ({ capability: null, resolvedKind: h.resolvedKind }),
@@ -381,16 +381,10 @@ describe('Assistants & keys — one row per thing that can pay', () => {
     expect(h.openPage).toHaveBeenCalledWith(PageId.DESK, ViewType.LLM_SOURCES, 'endpoints');
   });
 
-  it('keeps the Mapping view open when the dialog is re-opened underneath you', async () => {
+  it('has no Mapping window: model sizes are set on the endpoint, device logins included', async () => {
     mount();
 
-    fireEvent.click(await screen.findByTestId('open-mapping'));
-    await screen.findByTestId('mapping-harness-select');
-
-    // `LlmSetupView` opens this modal from a mount effect, so anything that re-mounts it calls
-    // open() again. A redundant open() must never discard where the user navigated to.
-    openHarnessLoginModal();
-
-    await waitFor(() => expect(screen.queryByTestId('mapping-harness-select')).not.toBeNull());
+    await screen.findByTestId('harness-row-flowpad');
+    expect(screen.queryByTestId('open-mapping')).toBeNull();
   });
 });

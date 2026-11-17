@@ -751,6 +751,10 @@ class AgentTranscriptFile:
         """
         return self._sum_cost(self.usage, pricing)
 
+    def cost_of(self, entries: list[UsageEntry], pricing: dict[str, "ModelPricing"] | None = None) -> float:
+        """USD cost of any chosen usage entries (a window, plus a sub-agent's) — priced like the rest."""
+        return self._sum_cost(entries, pricing)
+
     def cost_deep(self, pricing: dict[str, "ModelPricing"] | None = None) -> float:
         """Whole-session cost including every stitched sub-agent (see :meth:`usage_deep`)."""
         return self._sum_cost(self.usage_deep(), pricing)

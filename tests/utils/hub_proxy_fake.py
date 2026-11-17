@@ -129,3 +129,32 @@ class FakeHub:
     def install(self, monkeypatch) -> "FakeHub":
         monkeypatch.setattr(HubProxy, "call", self.call)
         return self
+
+    def install_model_config_transport(self, monkeypatch) -> "FakeHub":
+        """Only replace HTTP metadata responses; keep parsing/resolution/binding real."""
+        import httpx
+
+        async def send(method, url, **kwargs):
+            request = httpx.Request(method, url)
+            parts = request.url.path.strip("/").split("/")
+            assert method == "GET" and parts[:4] == ["api", "v1", "graph", "llm_endpoint"]
+            assert len(parts) == 6 and parts[-1] == "model-config"
+            try:
+                data = await self.call(method, "llm_endpoint", parts[4], "model-config", **kwargs)
+                return httpx.Response(200, json={"status": "success", "data": data}, request=request)
+            except HubError as exc:
+                if exc.status_code <= 0:
+                    raise
+                return httpx.Response(exc.status_code, json={"status": "fail", "message": str(exc)}, request=request)
+
+        monkeypatch.setattr(HubProxy, "send", send)
+        return self
+
+
+def model_config_transport(monkeypatch, tiers, *, default_model=None, effective_default_model=None):
+    """One scripted model-config answer, independent of the endpoint's cached projection."""
+    hub = FakeHub().on("GET", "llm_endpoint", action="model-config", answer=lambda call: {
+        "endpoint_typeid": f"llm_endpoint-{call.entity_id}", "tiers": dict(tiers),
+        "default_model": default_model, "effective_default_model": effective_default_model,
+    })
+    return hub.install_model_config_transport(monkeypatch)

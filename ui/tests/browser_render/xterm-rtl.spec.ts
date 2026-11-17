@@ -7,6 +7,7 @@ import {
   FONT_FAMILY,
   FONT_SIZE_PX,
   applyRtlGridContract,
+  visualToLogical,
 } from '../../src/components/terminal/interactive-terminal/terminalConfig';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -242,4 +243,17 @@ test.describe('xterm row rendering — RTL', () => {
       macCodex: false,
     });
   });
+});
+
+/**
+ * Copying from a Claude Code terminal on Windows: the row paints right, but the buffer holds it
+ * pre-reversed, so a plain copy pastes the Hebrew backwards. visualToLogical gives back the sentence.
+ */
+test('a copy from a Claude Code terminal on Windows pastes the Hebrew in the order it was written', async ({ page }) => {
+  await paintRow(page, VISUAL_ROW, 'buffer-order');
+  const row = await page.evaluate(
+    () => [...document.querySelectorAll('.xterm-rows > div')].map((r) => r.textContent ?? '').find((t) => /[֐-׿]/.test(t))!.trim(),
+  );
+  expect(row).toBe(VISUAL_ROW);
+  expect(visualToLogical(row)).toBe(WORDS.join(' '));
 });

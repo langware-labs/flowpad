@@ -115,7 +115,14 @@ function ep(
   name: string,
   parents: string[],
   scopeKind: string,
-  o: { allocate?: boolean; mine?: boolean; left?: [number, number]; owner?: boolean; key?: boolean } = {},
+  o: {
+    allocate?: boolean;
+    mine?: boolean;
+    left?: [number, number];
+    owner?: boolean;
+    key?: boolean;
+    lifetime?: boolean;
+  } = {},
 ): LLMEndpoint {
   const e = new LLMEndpoint({ id, name, credential_hint: o.key ? '****e2da' : '' } as never);
   e.expand = {
@@ -128,12 +135,12 @@ function ep(
     remaining: o.left
       ? [
           {
-            key: 'cost_usd_per_month',
+            key: o.lifetime ? 'cost_usd_total' : 'cost_usd_per_month',
             limit: o.left[1],
             used: o.left[1] - o.left[0],
             remaining: o.left[0],
-            window: 'month',
-            resets_at: now + 86400,
+            window: o.lifetime ? 'total' : 'month',
+            resets_at: o.lifetime ? null : now + 86400,
           },
         ]
       : [],
@@ -185,6 +192,18 @@ describe('TokenPlanView', () => {
     expect(screen.getByTestId('consumption-requests').textContent).toContain('4');
     expect(screen.getByTestId(`breakdown-${ME_EP}`).textContent).toContain('Flowpad account');
     expect(screen.queryByTestId('show-all')).toBeNull();
+  });
+
+  it('never adds a lifetime cap to a monthly one: each window is stated on its own', async () => {
+    h.endpoints = [
+      ep(TEAM_EP, 'Team A', [FLOWPAD], 'team', { mine: true, left: [300, 300], lifetime: true }),
+      ep(ME_EP, 'default-alice', [FLOWPAD], 'user', { mine: true, left: [100, 100] }),
+    ];
+    renderView(undefined);
+    expect((await screen.findByTestId('summary-title')).textContent).toBe('All sources');
+    const headline = screen.getByTestId('budget-headline').textContent;
+    expect(headline).toBe('$300.00 left of $300.00 lifetime · $100.00 left of $100.00 this month');
+    expect(headline).not.toContain('$400.00');
   });
 
   it('a selected row keeps the same layout: its budget, its usage, what was allocated from it', async () => {

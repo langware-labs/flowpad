@@ -43,6 +43,9 @@ def test_validate_endpoint_resolver_covers_all_providers(lm_api) -> None:
 
     llm_endpoint.reset_cache()
     for provider in LMApiProvider:
+        if provider is LMApiProvider.VERTEX:
+            assert _validate_endpoint(provider) is None  # Explicit invocation, not a GET key probe.
+            continue
         if provider is LMApiProvider.FLOWPAD:
             assert _validate_endpoint(provider) is None
             continue

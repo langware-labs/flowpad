@@ -1,0 +1,41 @@
+{
+  "type": "data_schema",
+  "id": "570f1843-e9d0-4aed-864a-a3aec0092b99",
+  "name": "flowmap.run",
+  "fields": {
+    "skill": {
+      "shape": "string",
+      "description": "The skill that ran."
+    },
+    "session": {
+      "shape": "string",
+      "description": "The session it ran in."
+    },
+    "when": {
+      "shape": "string",
+      "description": "When it started (ISO time)."
+    },
+    "said": {
+      "shape": "?string",
+      "description": "What the person said to start it."
+    },
+    "seconds": {
+      "shape": "float",
+      "description": "The whole run's time, in seconds."
+    },
+    "cost": {
+      "shape": "float",
+      "description": "The whole run's cost, in USD."
+    },
+    "map": {
+      "shape": "flowmap.map",
+      "description": "The map the run was traced against."
+    },
+    "frames": {
+      "shape": [
+        "flowmap.run_frame"
+      ],
+      "description": "The run, frame by frame, in order."
+    }
+  }
+}

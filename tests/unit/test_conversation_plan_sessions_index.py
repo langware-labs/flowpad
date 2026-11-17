@@ -32,8 +32,8 @@ async def test_old_plan_sessions_are_linked_once_and_a_session_role_is_kept():
         return stored.get_context_entry_data(TypeId(type="agentic_process", id=proc.id))
 
     assert result["linked"] == 1 and stored.plan_sessions_indexed_at is not None
-    assert role(plan) == {**na.PLAN_ROLE, "message_id": m2}
-    assert role(own) == na.SESSION_ROLE
+    assert role(plan) == {**na.PLAN_ROLE, "message_id": m2, "context_via": "dynamic"}
+    assert role(own) == {**na.SESSION_ROLE, "context_via": "dynamic"}
     assert role(hidden) is None and role(elsewhere) is None
 
     # Stamped: a second call searches nothing, links nothing.

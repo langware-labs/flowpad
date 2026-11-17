@@ -6,7 +6,7 @@
  * agentic_process URL + a RUNNING process (session_id present, status=running),
  * which is the point at which the ProcessToolbar mounts in the Claude pane.
  */
-import { type Page, test, expect } from '@playwright/test';
+import { type Browser, type Page, test, expect } from '@playwright/test';
 import { selectViewMode, withViewMode } from '../_shared/view-mode';
 import { adjusted } from '../../adjustableTimeout';
 export { apiBase } from '../_shared/api';
@@ -204,4 +204,37 @@ export async function fetchProcess(page: Page, apiBaseUrl: string, processId: st
     },
     { base: apiBaseUrl, id: processId },
   );
+}
+
+/**
+ * Make Advanced the instance's LAST SELECTED mode, through the footer pill's own switch
+ * (`window.setView`, the one persisting path). A session opened without a stated mode, a conversation
+ * launch, a worktree sibling, opens on that mode's transport (8fbb4fd9a, `sessionOpenViewMode`), so a
+ * spec that asserts the PTY branch must not inherit Standard (which also SIGTERMs a just-spawned PTY via
+ * switch-mode). Pair with `restoreStandardMode` in afterAll.
+ */
+export async function selectAdvancedMode(page: Page): Promise<void> {
+  await page.evaluate(() => window.setView('advanced' as never));
+}
+
+/**
+ * Put Standard back as the last selected mode, the mode a QA instance is pinned to
+ * (`_pin_view_mode_for_qa`), waiting for the debounced preference write (InstancePreferences, 500 ms):
+ * closing the page before it lands leaves the instance in Advanced for the next runbook.
+ */
+export async function restoreStandardMode(browser: Browser, baseURL: string | undefined): Promise<void> {
+  const page = await browser.newPage({ baseURL });
+  try {
+    await dismissSetupModal(page);
+    await page.goto('/dock/desktop');
+    const saved = page
+      .waitForResponse((r) => r.url().includes('preferences.json') && r.request().method() !== 'GET', {
+        timeout: adjusted(15_000),
+      })
+      .catch(() => null);
+    await page.evaluate(() => window.setView('standard' as never));
+    await saved;
+  } finally {
+    await page.close();
+  }
 }

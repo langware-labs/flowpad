@@ -2,12 +2,12 @@
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _slug_for, driver_api_auth_spec
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
-from flow_sdk.builtin.agentic_process.cli_drivers.opencode.cli import OpenCodeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.cli import DeepAgentsAgentOptions
-from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _slug_for, driver_api_auth_spec
+from flow_sdk.builtin.agentic_process.cli_drivers.opencode.cli import OpenCodeAgentOptions
 from flow_sdk.schema.data_spec.llm_source_spec import LLMSource
 
 OPTIONS = dict(claude=ClaudeAgentOptions, codex=CodexAgentOptions,
@@ -38,7 +38,7 @@ def test_distinct_endpoint_sizes_reach_worker_model_flags(worker):
     spec = driver_api_auth_spec(worker)
     choices = []
     for size in SIZES:
-        selected = _slug_for(worker, spec, tiers, source, size, {})
+        selected = _slug_for(worker, spec, tiers, source, size)
         argv = OPTIONS[worker](model=selected, session_id=str(mint_uuid()))._emit_flags()
         emitted = _model_flags(argv)
         assert emitted == (spec.slug_prefix + tiers[size],)
@@ -48,43 +48,40 @@ def test_distinct_endpoint_sizes_reach_worker_model_flags(worker):
 
 @pytest.mark.parametrize("worker", ["codex", "copilot"])
 async def test_configured_device_sizes_reach_native_flags(worker):
-    from flow_sdk.builtin.capability import Capability
-    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    """The sizes set on the device login's own endpoint row are what a device spawn runs."""
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
-    cap = await Capability.get_by_kind(worker_capability_kind(worker))
-    original = dict(cap.model_map)
+    from flow_sdk.builtin.agentic_process.cli_drivers.device_endpoints import configure_device
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    row = await LLMEndpoint.ensure_device(worker)
+    original = dict(row.tiers)
     tiers = dict(zip(SIZES, ("small-model", "medium-model", "large-model")))
     endpoint = LLMEndpoint.device_projection(worker)
+    assert endpoint.id == row.id, "the stored row and the picker's device source are one typeid"
     candidate = (endpoint, LLMSource(endpoint_typeid=str(endpoint.typeid)))
     try:
-        cap.model_map = {"device": tiers}
-        await cap.save(notify=False)
+        await configure_device(worker, tiers)
         for tier in SIZES:
             auth = await binding_for_candidate(worker, candidate, tier=tier)
             argv = OPTIONS[worker](model=auth.model_slug)._emit_flags()
             assert _model_flags(argv) == (tiers[tier],)
     finally:
-        cap.model_map = original
-        await cap.save(notify=False)
+        await configure_device(worker, original)
 
 
 @pytest.mark.parametrize("worker", ["codex", "copilot"])
 async def test_unmapped_device_size_is_refused_before_spawn(worker):
-    from flow_sdk.builtin.capability import Capability
-    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind, WorkerSpawnError
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
-    cap = await Capability.get_by_kind(worker_capability_kind(worker))
-    original = dict(cap.model_map)
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
+    from flow_sdk.builtin.agentic_process.cli_drivers.device_endpoints import configure_device
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    row = await LLMEndpoint.ensure_device(worker)
+    original = dict(row.tiers)
     endpoint = LLMEndpoint.device_projection(worker)
     candidate = (endpoint, LLMSource(endpoint_typeid=str(endpoint.typeid)))
     try:
-        cap.model_map = {}
-        await cap.save(notify=False)
+        await configure_device(worker, {})
         with pytest.raises(WorkerSpawnError, match="has no device mapping"):
             await binding_for_candidate(worker, candidate, tier="sm")
         assert await binding_for_candidate(worker, candidate) is None
     finally:
-        cap.model_map = original
-        await cap.save(notify=False)
+        await configure_device(worker, original)

@@ -39,11 +39,11 @@ def flow_home(tmp_path, monkeypatch):
     root = tmp_path / "relocated" / "flowhome"
     (root / "instances" / "inst" / "records" / "project").mkdir(parents=True)
     monkeypatch.setattr(
-        sf_mod, "get_instance_settings", lambda: SimpleNamespace(flow_home=root), raising=False
+        sf_mod, "get_instance_settings", lambda: SimpleNamespace(flow_home=root, instances_root=root / "instances"), raising=False
     )
     monkeypatch.setattr(
         "flow_sdk.instance_settings.get_instance_settings",
-        lambda: SimpleNamespace(flow_home=root),
+        lambda: SimpleNamespace(flow_home=root, instances_root=root / "instances"),
     )
     sf_mod._special_folders_for_home.cache_clear()
     yield root
@@ -57,6 +57,7 @@ def flow_home(tmp_path, monkeypatch):
         "instances",                     # the instances dir
         "instances/inst",                # one instance root
         "instances/inst/records/project",  # deep inside the shadow tree
+        "instances/inst/workspace",      # a workspace root is not itself a project
     ],
 )
 def test_flow_home_is_never_walked(flow_home, rel):
@@ -76,6 +77,15 @@ def test_a_sibling_sharing_the_prefix_is_still_walked(flow_home):
     sibling = Path(str(flow_home) + "data")
     sibling.mkdir(parents=True)
     assert indexing_decision(sibling) is IndexDecision.WALK
+
+
+@pytest.mark.parametrize("user_dir", ["workspace", "workspaces/team", "home"])
+def test_a_project_in_an_instance_workspace_is_walked(flow_home, user_dir):
+    """A non-prod instance keeps its projects under ``<flow_home>/instances/<name>/workspace``
+    (``workspace_root``); they are real projects, so the indexer walks them."""
+    project = flow_home / "instances" / "inst" / user_dir / "course"
+    project.mkdir(parents=True)
+    assert indexing_decision(project) is IndexDecision.WALK
 
 
 def test_an_ordinary_project_is_still_walked(flow_home, tmp_path):

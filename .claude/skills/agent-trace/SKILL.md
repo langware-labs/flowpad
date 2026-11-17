@@ -25,11 +25,15 @@ Read `instructions-file` for accumulated learnings before starting; append new l
 **Never hardcode port numbers, and never expect the caller to hand you a URL.** As a spawned worker you inherit `FLOW_INSTANCE` — resolve the backend that spawned you from its `server.json`:
 
 ```bash
-API_URL="http://localhost:$(jq -r .port ~/.flow/instances/${FLOW_INSTANCE:-prod}/server.json)"
+INST=~/.flow/instances/${FLOW_INSTANCE:-prod}
+PORT=$(jq -r .port $INST/server.json)
+API_URL="http://localhost:$PORT"
+# The backend's cookie gate 403s any request without the per-install token.
+curl() { command curl -b "cookie-gate-$PORT=$(cat $INST/.cookie_gate)" "$@"; }
 OUT="${OUT:-/tmp/agent-trace}"   # .flow/skills/agent-trace/_results when run inside the flowpad repo
 ```
 
-If `server.json` is missing, that instance's backend isn't running — stop and report, don't guess ports.
+If `server.json` is missing, that instance's backend isn't running — stop and report, don't guess ports. A 403 "Forbidden" HTML page means the cookie-gate token was not sent — run every `curl` in the same shell as the `curl()` function above.
 
 ## Procedure
 

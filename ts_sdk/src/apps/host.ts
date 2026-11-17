@@ -77,6 +77,18 @@ export function navigateHost(target: { address: string } | { typeid: string }): 
   postToHost({ type: 'flowpad:navigate', ...target });
 }
 
+/** The message an app sends to have the host open an agent's chat (`openAgentChat`). */
+export const OPEN_AGENT_MESSAGE = 'flowpad:open-agent';
+
+/**
+ * Ask the host to open `agent`'s chat in this app's project: its last chat, else a new one — the same as
+ * the agent's tile. For a page that cannot reach the API itself (served behind an app door, where only the
+ * host holds the user's session); `Agent.openChat` + `navigateHost` does the same where it can.
+ */
+export function openAgentChat(agent: string): void {
+  postToHost({ type: OPEN_AGENT_MESSAGE, agent });
+}
+
 /** Whether a host frames this page. A page opened on its own has no one to ask. */
 export function hasHost(): boolean {
   return window.parent != null && window.parent !== window;

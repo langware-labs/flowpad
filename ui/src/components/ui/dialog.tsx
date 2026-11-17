@@ -60,6 +60,9 @@ const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.C
           // every row renders wider than the dialog's painted box. Pinning the
           // track min to 0 keeps rows inside the panel so their own truncate wins.
           'fixed left-[50%] top-[50%] isolate z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] transform-gpu grid-cols-[minmax(0,1fr)] gap-4 border bg-background p-6 shadow-lg duration-200 will-change-transform data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg',
+          // A phone (below md): a bottom sheet — full width, at most 90% of the visible height, its body
+          // scrolling, clear of the home bar. `!w-full`: some dialogs size themselves with an inline width.
+          'max-md:left-0 max-md:top-[calc(var(--vvt)+var(--vvh))] max-md:max-h-[calc(var(--vvh)*0.9)] max-md:!w-full max-md:!max-w-none max-md:-translate-y-full max-md:translate-x-0 max-md:overflow-y-auto max-md:rounded-t-xl max-md:pb-[calc(1.5rem+var(--sab))] max-md:data-[state=closed]:zoom-out-100 max-md:data-[state=open]:zoom-in-100 max-md:data-[state=closed]:slide-out-to-bottom max-md:data-[state=closed]:slide-out-to-left-0 max-md:data-[state=open]:slide-in-from-bottom max-md:data-[state=open]:slide-in-from-left-0',
           className,
         )}
         {...props}

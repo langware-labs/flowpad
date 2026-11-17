@@ -60,7 +60,8 @@ export async function smartAskOrOpen(text: string, handlers: Handlers): Promise<
       await cloudManager.login();
       // A box with stored credentials signs in with no page to show: without this, "Log in"
       // looked like it did nothing.
-      const who = cloudManager.currentUser?.email;
+      const me = cloudManager.currentUser;
+      const who = me && 'email' in me ? me.email : me?.name;
       notify.success({ id: SIGNIN_ASK_ID, title: who ? t`Signed in as ${who}` : t`Signed in` });
     } catch (error) {
       // Cancelled, superseded or failed: the request still runs, as a plain ask. A failure says so.

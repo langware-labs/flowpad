@@ -180,6 +180,9 @@ async def run_headless_turn(
             except Exception:
                 logger.exception("%s: worker error", log_prefix)
             finally:
+                from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import cleanup
+
+                cleanup(process)
                 turns.discard()
                 unregister_prompt_worker(process.id, worker)
                 if on_turn_finally is not None:
@@ -194,6 +197,9 @@ async def run_headless_turn(
         task = asyncio.create_task(_run_turn(), name=f"{driver.name}-{process.id[:8]}")
         register_prompt_task(process.id, task, on_done=process.notify_updated)
     except BaseException:
+        from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import cleanup
+
+        cleanup(process)
         # _run_turn never took ownership of the slot — release it here so the
         # next turn is not permanently rejected with a 409.
         turns.discard()

@@ -537,9 +537,32 @@ for (const surface of SURFACES) {
     });
 
     test('detects exactly the links, and nothing that is not one', async () => {
-      test.skip(surface.item === null, 'a terminal has no DOM links; each click below proves detection');
+      if (surface.item === null) {
+        // A terminal draws spans, not anchors: detection is the link provider turning the pointer
+        // into a hand over the glyph (what a person sees). Every printed kind is hovered — a link
+        // must light it, and a non-link (k17) must not, which no click test below can show.
+        const screen = page.locator('.xterm-screen:visible').last();
+        for (const kind of kinds) {
+          // The glyph of the link itself (k16 prints it inside RTL prose); a non-link, its printed text.
+          const point = await printedLinkPoint(page, kind.link() ?? kind.text().replace(/`/g, ''));
+          await page.mouse.move(point.x, point.y);
+          if (kind.link()) {
+            await expect(screen, `${kind.key} is a link`).toHaveClass(/xterm-cursor-pointer/);
+          } else {
+            // Resolution is async, so absence is sampled across a settle window, not read once.
+            for (let i = 0; i < 10; i++) {
+              await expect(screen, `${kind.key} is not a link`).not.toHaveClass(/xterm-cursor-pointer/, { timeout: 100 });
+              await page.waitForTimeout(100);
+            }
+          }
+          // Off the text again, so the next hover starts from no link.
+          await page.mouse.move(0, 0);
+          await expect(screen).not.toHaveClass(/xterm-cursor-pointer/);
+        }
+        return;
+      }
       for (const kind of kinds) {
-        const item = surface.item!(page, kind);
+        const item = surface.item(page, kind);
         const link = kind.link();
         if (link) await expect(item.locator(`[data-link="${link}"]`)).toHaveCount(1);
         else await expect(item.locator('[data-link^="/dock"]')).toHaveCount(0);

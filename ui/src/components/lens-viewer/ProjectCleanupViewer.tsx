@@ -287,16 +287,23 @@ const CleanupRow = memo(function CleanupRow({ item, selected, onToggle, computeN
 });
 
 interface Props {
-  /** Optional project id to focus — passed by the picker's info icon. */
-  focusProjectId?: string;
+  /** Optional focus from the lens ref: a project id (the picker's info icon) to
+   *  start selected, or a verdict (a footer warning, e.g. `orphaned`) whose tab
+   *  to open. */
+  focus?: string;
 }
 
-export function ProjectCleanupViewer({ focusProjectId }: Props) {
+const isVerdict = (value: string | undefined): value is CleanupVerdict =>
+  TABS.some((spec) => spec.verdict === value);
+
+export function ProjectCleanupViewer({ focus }: Props) {
+  const focusVerdict = isVerdict(focus) ? focus : undefined;
+  const focusProjectId = focusVerdict ? undefined : focus;
   const { t, i18n } = useLingui();
   const { computeNode } = useAgentContext();
   const [items, setItems] = useState<ProjectCleanupItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<CleanupVerdict>('empty');
+  const [tab, setTab] = useState<CleanupVerdict>(focusVerdict ?? 'empty');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirming, setConfirming] = useState<'harness' | 'delete' | null>(null);
   const [outcome, setOutcome] = useState<CleanupApplyResponse | null>(null);
@@ -388,23 +395,29 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
     setOutcome(null);
   }, []);
 
+  // The lens can already be open when the warning is clicked: a new verdict ref
+  // still moves it to that tab.
+  useEffect(() => {
+    if (focusVerdict) switchTab(focusVerdict);
+  }, [focusVerdict, switchTab]);
+
   const apply = useCallback(
     async (kind: 'harness' | 'delete') => {
       if (!computeNode?.id) return;
       // Clearing harness history runs over the rows that HAVE one, not the whole
       // selection — sending the rest would collect a refusal per row and report
       // failures for projects the dialog never claimed it would touch.
-      const ids =
-        kind === 'harness'
-          ? selectedWithHarness.map((item) => item.project_id)
-          : selectedRows.map((item) => item.project_id);
-      if (ids.length === 0) return;
+      const rows = (kind === 'harness' ? selectedWithHarness : selectedRows).map((item) => ({
+        project_id: item.project_id,
+        cwd: item.cwd,
+      }));
+      if (rows.length === 0) return;
       setBusy(true);
       try {
         const result =
           kind === 'delete'
-            ? await deleteProjectsPermanently(computeNode.id, ids)
-            : await removeProjectsFromHarness(computeNode.id, ids);
+            ? await deleteProjectsPermanently(computeNode.id, rows)
+            : await removeProjectsFromHarness(computeNode.id, rows);
         setOutcome(result);
         setSelected(new Set());
         await load();

@@ -30,7 +30,8 @@ import { TabTipBodyContext, TabTooltipName } from '@src/components/tabs/TabToolt
 import { TabFavoriteStar } from '@src/components/tabs/TabFavoriteStar';
 import type { FavoriteRef } from '@src/hooks/use-favorites';
 import type { Annotation } from '@sdk';
-import { notesByTarget, useAllNotes, type NoteTarget } from '@src/hooks/use-entity-notes';
+import { notesByTarget, useNotesAndMarks, type NoteTarget } from '@src/hooks/use-entity-notes';
+import { noteColor, notePaperStyle } from '@src/components/notes/note-palette';
 import { TabNoteButton, TabNotesBadge, TabNotesPopover, type TabNotesView } from '@src/components/notes/TabNotes';
 import { useLocaleInfo } from '@src/contexts/locale-context';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -39,9 +40,11 @@ import { animateGlow } from '@src/lib/animate-glow';
 import { chipSizing } from '@src/components/tabs/close-freeze';
 import { useCloseFreeze } from '@src/components/tabs/use-close-freeze';
 import { consumeTabHighlight, TAB_HIGHLIGHT_MS, useTabHighlights } from '@src/tabs/tab-highlight';
-import { ExternalLink, Maximize2, X, type LucideIcon } from 'lucide-react';
+import { ExternalLink, Maximize2, Plus, X, type LucideIcon } from 'lucide-react';
+import { StickyNoteShape } from '@src/components/notes/StickyNoteShape';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
+import { toplog } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 
 /**
@@ -214,6 +217,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
   const { dir } = useLocaleInfo();
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // When each chip first mounted — the click trace reports how long it had been on screen.
+  const chipMountedAt = useRef<Record<string, number>>({});
   const highlights = useTabHighlights();
   // Close-in-place: a mouse close holds every tab's width until the pointer leaves.
   const stripRef = useRef<HTMLDivElement>(null);
@@ -236,8 +241,10 @@ export const TabStrip: React.FC<TabStripProps> = ({
 
   // Sticky notes: ONE query for every chip, grouped by the entity each sits on,
   // and ONE popover (compose / list / note) anchored to the chip that opened it.
-  const allNotes = useAllNotes(items.some((i) => i.notes));
+  const { notes: allNotes, marks } = useNotesAndMarks(items.some((i) => i.notes));
   const notesFor = useMemo(() => notesByTarget(allNotes), [allNotes]);
+  // A colour-only save marks the tab: its chip takes the note's paper, text in the note's ink.
+  const marksFor = useMemo(() => notesByTarget(marks), [marks]);
   const [notesView, setNotesView] = useState<TabNotesView | null>(null);
   const notesItem = notesView ? items.find((i) => i.key === notesView.key) : undefined;
 
@@ -479,11 +486,18 @@ export const TabStrip: React.FC<TabStripProps> = ({
     </button>
   );
 
-  const renderButtonOverlay = (key: string, isActive: boolean, isDisabled: boolean, closable: boolean) => (
+  const renderButtonOverlay = (
+    key: string,
+    isActive: boolean,
+    isDisabled: boolean,
+    closable: boolean,
+    tinted = false,
+  ) => (
     <div
       className={`absolute end-0.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded transition-opacity ${
-        isActive ? 'bg-background opacity-100' : 'bg-muted opacity-0 group-hover:opacity-100'
-      }`}
+        // A coloured tab has no theme surface under the button: it sits on the tab's own paper.
+        isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100'
+      } ${tinted ? '' : isActive ? 'bg-background' : 'bg-muted'}`}
     >
       {closable && (
         <button
@@ -517,6 +531,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
     const showStar = !!item.favorite && !isEditing && isActive;
     const noteTarget = !isEditing ? item.notes : null;
     const chipNotes = (noteTarget && notesFor.get(noteTarget.typeId.toString())) || NO_NOTES;
+    const mark = item.notes ? marksFor.get(item.notes.typeId.toString())?.[0] : undefined;
+    const tint = mark && !isDisabled && !hasError ? noteColor(mark.data?.color) : null;
 
     // Chrome model: equal flex share for every chip — all tabs stay visible and
     // shrink in lockstep; the strip never scrolls. Inline style (not Tailwind
@@ -530,8 +546,12 @@ export const TabStrip: React.FC<TabStripProps> = ({
       <div
         ref={(node) => {
           tabRefs.current[key] = node;
+          if (node) chipMountedAt.current[key] ??= performance.now();
+          else delete chipMountedAt.current[key];
         }}
-        style={sizing}
+        // A colored chip carries a border in its note's fold shade; the selected one is 3px all round.
+        style={tint ? { ...sizing, ...notePaperStyle(tint), borderColor: tint.fold, ...(isActive && { borderWidth: 3 }) } : sizing}
+        data-tab-color={tint?.token}
         // `border-t-2` on EVERY state, colored only when active: the accent has
         // to follow the `rounded-t-lg` curve, and a border does that natively.
         // It used to be an absolutely-positioned 2px bar, which `overflow-hidden`
@@ -557,9 +577,17 @@ export const TabStrip: React.FC<TabStripProps> = ({
                   'cursor-pointer border-transparent text-muted-foreground hover:bg-foreground/5 hover:text-foreground'
         } ${dragKey === key ? 'opacity-60' : ''}`}
         onPointerDown={(e) => startDrag(e, key, isDisabled)}
-        onClick={() => {
+        onClick={(e) => {
           if (isDisabled) return;
           if (justDraggedRef.current) return; // a drag just ended — don't navigate
+          if (toplog.isOn(['tab_switch', 'flow_show'])) {
+            const r = e.currentTarget.getBoundingClientRect();
+            const age = Math.round(performance.now() - (chipMountedAt.current[key] ?? performance.now()));
+            toplog.log(
+              ['tab_switch', 'flow_show'],
+              `chip click key=${key} trusted=${e.isTrusted} detail=${e.detail} at=${Math.round(e.clientX)},${Math.round(e.clientY)} chip=${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)} on_screen_ms=${age}`,
+            );
+          }
           onSelect(key);
         }}
         data-testid={item.testId}
@@ -631,7 +659,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           </span>
         )}
 
-        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable)}
+        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable, !!tint)}
         {item.guestNote && (
           <span
             aria-hidden
@@ -677,7 +705,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 {displayTitle && (
                   <div className="px-3 py-1.5">
                     <div className="flex items-center gap-1">
-                      <TabTooltipName name={displayTitle} className={tipBody ? undefined : 'font-normal'} />
+                      <TabTooltipName name={displayTitle} className={tipBody ? undefined : 'text-base font-normal'} />
                       {onFullScreen &&
                         renderCardAction(
                           key,
@@ -711,10 +739,19 @@ export const TabStrip: React.FC<TabStripProps> = ({
                     </span>
                     <button
                       type="button"
-                      className="rounded px-1.5 py-0.5 text-foreground hover:bg-muted"
+                      className="flex items-center rounded px-1.5 py-0.5 text-foreground hover:bg-muted"
+                      title={chipNotes.length ? undefined : t`Add note`}
+                      aria-label={chipNotes.length ? undefined : t`Add note`}
                       onClick={() => setNotesView({ key, mode: chipNotes.length ? 'list' : 'compose' })}
                     >
-                      {chipNotes.length > 0 ? t`Show notes` : t`+ Add note`}
+                      {chipNotes.length ? (
+                        t`Show notes`
+                      ) : (
+                        <>
+                          <Plus size={11} strokeWidth={2.5} />
+                          <StickyNoteShape size={14} />
+                        </>
+                      )}
                     </button>
                   </div>
                 )}
@@ -795,6 +832,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           view={notesView}
           target={notesItem.notes}
           notes={notesFor.get(notesItem.notes.typeId.toString()) ?? NO_NOTES}
+          mark={marksFor.get(notesItem.notes.typeId.toString())?.[0]}
           anchor={tabRefs.current[notesView.key] ?? null}
           onView={setNotesView}
           onClose={() => setNotesView(null)}

@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react/macro';
 import { ProcessKind } from '@sdk';
-import { MessageSquare } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import React, { createContext, useContext, useLayoutEffect, useMemo, useState } from 'react';
 import { useInRouterContext } from 'react-router';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
@@ -55,7 +55,7 @@ function ViewerChatToggle({ count }: { count: number }) {
       data-active={on ? 'true' : 'false'}
       className={`relative h-7 gap-1 px-1.5 ${on ? 'bg-primary/15 text-primary' : 'text-muted-foreground'}`}
     >
-      <MessageSquare className="h-3.5 w-3.5" />
+      <Sparkles className="h-3.5 w-3.5" />
       {count > 0 && (
         <span className="text-[10px] tabular-nums" data-testid="viewer-chat-count">
           {count}

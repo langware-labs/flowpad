@@ -28,7 +28,7 @@ CONTEXT = {"help_request.value.json", "screen.value.json"}
 DIAGNOSIS = "diagnosis.value.json"
 
 
-async def _call(fn, body: dict, conv_id: str | None = None):
+async def _call(fn, body: dict, conv_id: str | None = None, *, settle: bool = True):
     from flow_sdk.app.actions import ask_for_help_action as afh
     from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user
@@ -41,7 +41,7 @@ async def _call(fn, body: dict, conv_id: str | None = None):
     )
     with patch.object(afh, "get_current_request_info", return_value=request):
         answer = await fn()
-    while afh._DIAGNOSING:  # the diagnosis runs after the request is written; then it is delivered
+    while settle and afh._DIAGNOSING:  # the diagnosis runs after the request is written; then it is delivered
         await asyncio.gather(*list(afh._DIAGNOSING))
     return answer
 
@@ -105,10 +105,50 @@ async def test_a_person_gets_one_request_with_its_diagnosis_and_context(hub_sess
     assert response.data["shared"] and response.data["context_shared"], response.data
 
     row, diagnosis = await _ready_on_hub(base, bob_token, body["conversation_id"], n=2)
-    assert (row.get("text") or "").strip() == body["text"]
+    # The request names the diagnosis it carries on its last line (ask_for_help_action.diagnosis_line).
+    assert (row.get("text") or "").strip() == f'{body["text"]}\n\n{afh.diagnosis_line(diagnosing=True, attached=False)}'
     assert CONTEXT <= _names(row), _names(row)
     assert CONTEXT <= await _body_files(base, bob_token, row["id"])
     assert DIAGNOSIS in await _body_files(base, bob_token, diagnosis["id"])
+
+
+async def test_asking_again_never_runs_a_second_diagnosis(hub_session, task_storage, bob_token, monkeypatch):  # noqa: F811
+    """The first answer was lost, so the person presses Send again -- while the diagnosis runs, and after it is
+    done. The helper still gets the request and ONE diagnosis, and the diagnosis ran once."""
+    from flow_sdk.app.actions import ask_for_help_action as afh
+    from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisSpec
+    from tests.hub_tests.conftest import _resolve_identities
+
+    release, runs = asyncio.Event(), []
+
+    async def held_diagnosis(_ask):
+        runs.append(_ask.conversation_id)
+        await release.wait()
+        return DiagnosisSpec(title="Nothing wrong found"), None
+
+    monkeypatch.setattr(afh, "_diagnose", held_diagnosis)
+    base = hub_session["base_url"]
+    _, helper = _resolve_identities()
+    body = {
+        "conversation_id": str(uuid.uuid4()),
+        "recipients": [{"kind": "person", "email": helper}],
+        "text": f"asked twice {uuid.uuid4().hex[:6]}",
+    }
+
+    await _call(afh.ask_for_help, body, settle=False)
+    again = await _call(afh.ask_for_help, body, settle=False)
+    await asyncio.sleep(0)  # a diagnosis this Send started has begun by now
+    assert len(runs) == 1, "Send again while the diagnosis runs started a second diagnosis"
+    assert again.data["diagnosing"], "the first diagnosis is still running"
+    release.set()
+    await asyncio.gather(*list(afh._DIAGNOSING))
+    after = await _call(afh.ask_for_help, body)
+    assert len(runs) == 1, "Send again after the diagnosis was done started a second diagnosis"
+    assert not after.data["diagnosing"], "the diagnosis is done"
+
+    await _ready_on_hub(base, bob_token, body["conversation_id"], n=2)
+    rows = await _hub_messages(base, bob_token, body["conversation_id"])
+    assert len(rows) == 2, [(r.get("text") or "")[:60] for r in rows]  # the request and its one diagnosis
 
 
 async def test_a_desk_ticket_is_one_request_with_its_context(hub_session, task_storage, bob_token, desk):  # noqa: F811
@@ -125,7 +165,8 @@ async def test_a_desk_ticket_is_one_request_with_its_context(hub_session, task_s
     assert response.data["shared"], response.data
 
     row, diagnosis = await _ready_on_hub(base, bob_token, body["conversation_id"], n=2)
-    assert (row.get("text") or "").strip() == body["text"]
+    # The request names the diagnosis it carries on its last line (ask_for_help_action.diagnosis_line).
+    assert (row.get("text") or "").strip() == f'{body["text"]}\n\n{afh.diagnosis_line(diagnosing=True, attached=False)}'
     # A desk agent opens a ticket once they pick it up -- then its attachments are theirs to read.
     await _hub(base, bob_token, "POST", f"/graph/conversation/{body['conversation_id']}/pickup", json={})
     assert CONTEXT <= await _body_files(base, bob_token, row["id"])

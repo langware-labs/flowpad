@@ -237,4 +237,13 @@ describe('Trigger automation methods', () => {
     expect(parseTarget('ds-1')).toEqual([null, null]);
     expect(parseTarget(null)).toEqual([null, null]);
   });
+
+  it('tag rules reuse the message trigger and do not create an empty decision gate', () => {
+    const fields = messageRuleFields({ catch: '', message_tags: ['support.refund'], agent: 'a', prompt: 'p' });
+    expect(fields.tag_pattern).toBe('stream_inbox.*.message.projected');
+    expect(fields.message_tags).toEqual(['support.refund']);
+    expect(fields.gate).toBeNull();
+    expect(fields.name).toBe('support.refund → an agent');
+    expect(messageRuleFields({ catch: 'urgent', message_tags: ['support'], agent: 'a', prompt: 'p' }).gate).toEqual({ sentence: 'urgent' });
+  });
 });

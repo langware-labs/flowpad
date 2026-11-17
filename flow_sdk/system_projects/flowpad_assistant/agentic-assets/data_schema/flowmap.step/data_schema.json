@@ -1,0 +1,47 @@
+{
+  "type": "data_schema",
+  "id": "7f510df9-076c-49ec-9ed3-baf011e10836",
+  "name": "flowmap.step",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique in the map; links and run frames name it."
+    },
+    "title": {
+      "shape": "string",
+      "description": "What it does, in a few plain words: Check the tree."
+    },
+    "type": {
+      "shape": "enum:instructions|code|screen",
+      "description": "instructions: the assistant reads and follows it; code: a script runs; screen: something the person sees, reads or clicks."
+    },
+    "takes": {
+      "shape": "string",
+      "description": "Its input, in plain words."
+    },
+    "gives": {
+      "shape": "string",
+      "description": "Its output, in plain words."
+    },
+    "by": {
+      "shape": "?string",
+      "description": "Who does it when it is not the assistant itself: one helper per file, all at once."
+    },
+    "source": {
+      "shape": "string",
+      "description": "Where it is written: a file and section (SKILL.md · Phase 1) or a script (scripts/tree.py validate)."
+    },
+    "match": {
+      "shape": "?[string]",
+      "description": "How a run is recognised as being in this step: substrings of a tool call (a script name, a file path, a command, a tool name)."
+    },
+    "lane": {
+      "shape": "?float",
+      "description": "Layout hint: the column. Absent = automatic."
+    },
+    "row": {
+      "shape": "?int",
+      "description": "Layout hint: the row. Absent = automatic."
+    }
+  }
+}

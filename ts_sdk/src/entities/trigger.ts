@@ -87,6 +87,7 @@ export const isMessagePattern = (pattern: string | null | undefined): boolean =>
 /** What a rule on messages arriving needs: the sentence, the channels, the agent and its prompt. */
 export interface MessageRule {
   catch: string;
+  message_tags?: string[];
   /** Data source ids (bare or `data_source:`-prefixed). Empty = any channel. */
   sources?: string[];
   /** `agent-<uuid>`, or the bare uuid. */
@@ -103,11 +104,12 @@ export function messageRuleFields(rule: MessageRule, agentName = ''): Partial<IT
   const sentence = rule.catch.trim().replace(/\.$/, '');
   const capitalised = `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}`;
   return {
-    name: rule.name || `${capitalised} → ${agentName || 'an agent'}`,
+    name: rule.name || `${capitalised || (rule.message_tags ?? []).join(', ')} → ${agentName || 'an agent'}`,
     trigger_type: 'tag',
     tag_pattern: MESSAGE_PROJECTED,
     tag_scope: (rule.sources ?? []).map((id) => targetOf('data_source', parseTarget(id)[1] ?? id)),
-    gate: { sentence },
+    gate: sentence ? { sentence } : null,
+    ...(rule.message_tags !== undefined ? { message_tags: rule.message_tags } : {}),
     then: { run_agent: { agent: rule.agent && !rule.agent.startsWith('agent-') ? `agent-${rule.agent}` : rule.agent, prompt: rule.prompt.trim() } },
     enabled: rule.enabled ?? true,
     ...(rule.project_id !== undefined ? { project_id: rule.project_id } : {}),
@@ -115,6 +117,7 @@ export function messageRuleFields(rule: MessageRule, agentName = ''): Partial<IT
 }
 
 export interface ITrigger extends IEntity {
+  message_tags?: string[];
   name: string;
   description?: string;
   trigger_type?: 'hook' | 'schedule' | 'fsop' | 'tag';
@@ -214,6 +217,7 @@ export interface Trigger extends EntityMerge<ITrigger> {}
  */
 @registerEntity
 export class Trigger extends APIEntity<Trigger> implements ITrigger {
+  message_tags: string[] = [];
   static type: string = 'trigger';
 
   name: string = '';
@@ -259,6 +263,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
 
   constructor(entity: Partial<ITrigger> = {}) {
     super(entity);
+    this.message_tags = entity.message_tags ?? [];
     this.name = entity.name || '';
     this.description = entity.description;
     this.trigger_type = entity.trigger_type || 'hook';

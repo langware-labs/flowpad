@@ -69,6 +69,8 @@ class OpenCodeAgentOptions(AgentOptions):
         # Remembered by ``apply_process_mcp`` for the deferred fallback write in
         # ``_sync_config_env``. Launch-time only — never serialized.
         self._config_process_id = ""
+        self._config_assets_dir: Any = None
+        self.bound_model: str | None = None
         # ``opencode.json`` ``provider`` fragment for a turn spending a hub LLMEndpoint,
         # stamped by ``apply_worker_api_auth``. Runtime-resolved like ``config_path``, so it
         # is set on every spawn path rather than persisted -- a stale baseURL would point a
@@ -134,12 +136,15 @@ class OpenCodeAgentOptions(AgentOptions):
             return
         from .config_gen import config_for_assets_dir
 
+        self._config_process_id = process_id
+        self._config_assets_dir = assets_dir
         config = config_for_assets_dir(
             process_id,
             assets_dir,
             self.mcp_config_fragment,
             self.add_dirs,
             provider=self.provider_options or None,
+            bound_model=self.bound_model,
         )
         if config is not None:
             self.config_path = str(config)
@@ -182,10 +187,9 @@ class OpenCodeAgentOptions(AgentOptions):
         same reason: the value is runtime-resolved, so it must be applied on
         every spawn path rather than baked into the persisted options.
         """
-        if not self.config_path:
-            # Servers and/or mounted roots but no instruction assets — the
-            # fallback ``apply_process_mcp`` deferred to here.
-            self._regenerate_config(self._config_process_id)
+        if self._config_process_id:
+            # Assets may have generated this file before the final API binding arrived.
+            self._regenerate_config(self._config_process_id, self._config_assets_dir)
         if self.config_path:
             self.env_vars["OPENCODE_CONFIG"] = self.config_path
 

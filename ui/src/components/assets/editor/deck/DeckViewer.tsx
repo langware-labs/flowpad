@@ -7,6 +7,7 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { entityReloadKey } from '@src/utils/entity-reload-key';
+import { browserOpenable, OpenInBrowserButton } from '@src/lib/open-in-browser';
 import { AssetCollisionBadge } from '../AssetCollisionUI';
 
 /**
@@ -34,6 +35,8 @@ interface DeckViewerProps {
 
 export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
   const [html, setHtml] = useState<string | null>(null);
+  // The deck's html file when it is on this machine's disk: it opens in the system browser.
+  const [browserRef, setBrowserRef] = useState<FSRef | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Read from deck.json on disk (the DB entity does not project these — the
   // metadata-derived fields only populate via from_fs_ref; the viewer computes
@@ -74,6 +77,7 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
         ]);
         if (cancelled) return;
         setHtml(text);
+        setBrowserRef(browserOpenable(ref));
         setNumSlides(Array.isArray(manifest?.slides) ? manifest.slides.length : null);
         if (manifest && typeof manifest.template === 'string' && manifest.template) {
           setTemplateVpath(fsRef.resolve(manifest.template).vpath);
@@ -152,14 +156,22 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
               </span>
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={openInNewTab}
-            title={t`Open in a new browser tab`}
-            className="rounded p-1.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
-          >
-            <ExternalLink className="h-4 w-4" />
-          </button>
+          {browserRef ? (
+            <OpenInBrowserButton
+              fileRef={browserRef}
+              testId="deck-open-browser"
+              className="rounded p-1.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={openInNewTab}
+              title={t`Open in a new browser tab`}
+              className="rounded p-1.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void deckAreaRef.current?.requestFullscreen?.()}

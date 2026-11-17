@@ -40,6 +40,12 @@ ALLOWED: dict[str, str] = {
     "flow_sdk/system_projects/flowpad_assistant/.claude/skills/chartit/templates/c4/check_c4.py": (
         "walks only the project's agentic-assets/data_schema folder, whose kinds nest, to list them"
     ),
+    "flow_sdk/system_projects/flowpad_assistant/.claude/skills/flowmap/scripts/map_check.py": (
+        "hashes only the one skill folder it maps, pruning node_modules, .git and hidden dirs on every level"
+    ),
+    "flow_sdk/system_projects/flowpad_assistant/.claude/skills/flowmap/scripts/trace.py": (
+        "walks a transcript's spawn tree in memory (entry.walk()), never the filesystem"
+    ),
     "flow_sdk/system_projects/flowpad_assistant/.claude/skills/cred-scan/scripts/cred_scan.py": (
         "prunes dependency/build/cache dirs and nested repos on every level; must read the "
         "gitignored .env files (keys only), so gitignore_walk cannot serve it"

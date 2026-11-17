@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Callable
 
 from flow_sdk.cli.auth.secrets import delete_secret, get_secrets, read_secret, write_secret
+from flow_sdk.external_apis.llm.dialects import DIALECTS
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.credential_contract import LM_SECRET_PREFIX as _PREFIX
 
@@ -64,7 +65,13 @@ def set_lm_api(key: str, provider: LMApiProvider | str) -> None:
     provider = LMApiProvider(provider)
     if provider is LMApiProvider.FLOWPAD:
         raise ValueError("flowpad is bound by the hub login; there is no key to store")
-    write_secret(_sod_name(provider), key)
+    if provider is LMApiProvider.VERTEX:
+        from flow_sdk.external_apis.llm.vertex import service_account
+
+        service_account(key)
+        write_secret(_sod_name(provider), key, safe_hint="Service account configured")
+    else:
+        write_secret(_sod_name(provider), key)
     mark_key_rejected(provider.value, None)  # a replaced/removed key is not the refused one
     from flow_sdk.core.status.push import publish_status_changed  # noqa: PLC0415
 
@@ -148,13 +155,9 @@ async def delete_lm_api(provider: LMApiProvider | str) -> None:
 # Cheap "is this key accepted" probes: a single authenticated GET that returns
 # 200 for a valid key and 401 for a bad one — no completion, no token spend. Each
 # entry is (url, build_headers(key)) for that provider's account API.
-_VALIDATE_ENDPOINTS: dict[str, tuple[str, Callable[[str], dict[str, str]]]] = {
-    LMApiProvider.OPENROUTER.value: ("https://openrouter.ai/api/v1/key", _bearer),
-    LMApiProvider.ANTHROPIC.value: (
-        "https://api.anthropic.com/v1/models",
-        lambda key: {"x-api-key": key, "anthropic-version": "2023-06-01"},
-    ),
-    LMApiProvider.OPENAI.value: ("https://api.openai.com/v1/models", _bearer),
+_VALIDATE_ENDPOINTS = {
+    provider.value: (dialect.url_for(dialect.key_probe_path), dialect.auth_headers)
+    for provider, dialect in DIALECTS.items() if dialect.client_factory is None
 }
 
 
@@ -166,7 +169,7 @@ def _validate_endpoint(provider: LMApiProvider) -> tuple[str, Callable[[str], di
     return _VALIDATE_ENDPOINTS.get(provider.value)
 
 
-async def validate_lm_api(provider: LMApiProvider | str, key: str | None = None) -> dict:
+async def validate_lm_api(provider: LMApiProvider | str, key: str | None = None, *, configuration_only: bool = False) -> dict:
     """Check a key for *provider* against the provider (a real network call).
     Returns ``{"valid": bool, "message": str}`` — never raises. Pass *key* to
     validate an in-hand value (e.g. right after ``set_lm_api`` on the save path),
@@ -176,6 +179,24 @@ async def validate_lm_api(provider: LMApiProvider | str, key: str | None = None)
         key = get_lm_api(provider)
     if not key:
         return {"valid": False, "message": "No key configured"}
+
+    if provider is not LMApiProvider.FLOWPAD:
+        from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+        from flow_sdk.external_apis.llm.errors import LLMError
+
+        local = await LLMEndpoint.find_by_secret(_sod_name(provider)) or LLMEndpoint(provider=provider.value)
+        local._explicit_api_key = key
+        if provider is LMApiProvider.VERTEX and configuration_only:
+            from flow_sdk.external_apis.llm.vertex import canonical_config
+
+            canonical_config(local.base_url, credential=key)
+            return {"validation_stage": "configuration", "message": "Configuration saved. Test to verify model access."}
+        try:
+            probe = await local.client().probe()
+            return {"valid": probe.ok, "status": probe.status, "message": probe.message,
+                    "validation_stage": "invocation" if provider is LMApiProvider.VERTEX else "authentication"}
+        except LLMError as exc:
+            return {"valid": False, "status": exc.status, "message": exc.message}
 
     endpoint = _validate_endpoint(provider)
     if endpoint is None:
@@ -199,11 +220,9 @@ async def validate_lm_api(provider: LMApiProvider | str, key: str | None = None)
 
 # Model-catalog endpoints (for the mapping picker). OpenRouter's is public; the
 # vendor-direct ones need the stored key. Each returns a provider's model list.
-_MODELS_ENDPOINTS: dict[str, tuple[str, bool]] = {
-    # (url, needs_key)
-    LMApiProvider.OPENROUTER.value: ("https://openrouter.ai/api/v1/models", False),
-    LMApiProvider.ANTHROPIC.value: ("https://api.anthropic.com/v1/models", True),
-    LMApiProvider.OPENAI.value: ("https://api.openai.com/v1/models", True),
+_MODELS_ENDPOINTS = {
+    provider.value: (dialect.url_for(dialect.models_probe_path), dialect.models_probe_needs_key)
+    for provider, dialect in DIALECTS.items() if dialect.client_factory is None
 }
 
 
@@ -221,6 +240,11 @@ async def list_provider_models(provider: LMApiProvider | str) -> list[dict]:
     the mapping picker. Never raises — returns ``[]`` on any failure (e.g. a
     vendor-direct provider with no stored key)."""
     provider = LMApiProvider(provider)
+    if provider is not LMApiProvider.FLOWPAD:
+        from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+
+        local = await LLMEndpoint.find_by_secret(_sod_name(provider)) or LLMEndpoint(provider=provider.value)
+        return [model.model_dump(exclude_none=True) for model in await local.client().model_catalog()]
     endpoint = _models_endpoint(provider)
     if endpoint is None:
         return []

@@ -71,6 +71,11 @@ class HubInfo(BaseModel):
     helpdesk_portal_git_url: Optional[str] = None
 
 
+class ReleaseNotesFile(BaseModel):
+    version: str
+    path: str  # absolute path of releases/<version>/RELEASE_NOTES.md on this machine
+
+
 class VersionCheckResponse(BaseModel):
     pypi: PypiInfo
     latest_release: Optional[ReleaseInfo] = None
@@ -82,6 +87,8 @@ class VersionCheckResponse(BaseModel):
     #: ``pypi``: it holds whether or not the PyPI fetch succeeded, and says
     #: nothing about the registry. ``None`` for a source checkout.
     installed_at: Optional[str] = None
+    #: The SDK versions whose release notes ship with this install, newest first.
+    release_notes: list[ReleaseNotesFile] = []
 
 
 class InstallVersionRequest(BaseModel):
@@ -115,6 +122,16 @@ def _hub_info_from_raw(hub_raw: dict[str, Any] | None) -> Optional[HubInfo]:
         deployed_at=_optional_str(hub_raw.get("deployed_at")),
         generated_at=_optional_str(hub_raw.get("generated_at")),
     )
+
+
+def _release_notes() -> list[ReleaseNotesFile]:
+    """Every ``releases/<version>/RELEASE_NOTES.md`` shipped with the running SDK, newest first."""
+    from flow_sdk.config import flowpad_assistant_project_root
+
+    root = flowpad_assistant_project_root() / "releases"
+    notes = [f for f in root.glob("*/RELEASE_NOTES.md") if string2semver(f.parent.name)]
+    notes.sort(key=lambda f: _cmp_key(string2semver(f.parent.name)), reverse=True)
+    return [ReleaseNotesFile(version=f.parent.name, path=str(f)) for f in notes]
 
 
 def _installed_at() -> Optional[str]:
@@ -261,12 +278,19 @@ async def check_version(refresh: bool = False) -> ApiSuccessResponse[VersionChec
         github_error=github_error,
         hub=hub_info,
         installed_at=_installed_at(),
+        release_notes=_release_notes(),
     )
     # Only cache when both upstreams succeeded — keeps a transient outage from
     # pinning a broken response for 5 minutes.
     if pypi_info.error is None and github_error is None:
         _cache["v1"] = (time.monotonic(), resp)
     return ApiSuccessResponse(data=resp)
+
+
+@router.get("/api/v1/version/release-notes", response_model=ApiSuccessResponse[list[ReleaseNotesFile]])
+async def list_release_notes():
+    """The shipped release notes alone — a local listing, without the PyPI / GitHub / hub calls of ``check``."""
+    return ApiSuccessResponse(data=_release_notes())
 
 
 @router.post("/api/v1/version/install", response_model=ApiSuccessResponse[InstallVersionResponse])

@@ -440,13 +440,18 @@ class OpenCodeDriver:
         """
         from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth  # noqa: PLC0415
 
-        auth = await resolve_worker_api_auth(process)
+        auth = (
+            process.__dict__["_spawn_api_auth"]
+            if "_spawn_api_auth" in process.__dict__
+            else await resolve_worker_api_auth(process)
+        )
         return config_for_assets_dir(
             process.id,
             getattr(instruction_assets, "assets_dir", None),
             dict(self.prepare_process_mcp(process.resolved_mcp_servers()).config_fragment),
             list(process.resolved_add_dirs or []),
             provider=dict(auth.provider_options) if auth and auth.provider_options else None,
+            bound_model=auth.model_slug if auth and auth.endpoint_typeid else None,
         )
 
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:

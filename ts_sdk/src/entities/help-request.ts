@@ -142,13 +142,26 @@ export interface HelpRequestDiagnosis {
   desk: string;
   /** A dependency with no desk: Flowpad support passes it on to this. */
   pass_on: string;
+  /** The context worker that ran the diagnosis on this machine; '' when none. */
+  worker_process_id: string;
 }
 
 export async function helpRequestDiagnosis(conversationId: string): Promise<HelpRequestDiagnosis> {
   const action = new ActionInfo('help-request-diagnosis', 'conversation', conversationId, 'POST');
   action.bodyParameters = {};
   const res = await dataManager.callAction<unknown, HelpRequestDiagnosis>(action);
-  return res ?? { diagnosing: false, diagnosis: null, reportable: false, reported: false, replied: false, desk: '', pass_on: '' };
+  return (
+    res ?? {
+      diagnosing: false,
+      diagnosis: null,
+      reportable: false,
+      reported: false,
+      replied: false,
+      desk: '',
+      pass_on: '',
+      worker_process_id: '',
+    }
+  );
 }
 
 /** An action body: the request itself, or — with files — a multipart form carrying it in ``request``. */

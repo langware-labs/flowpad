@@ -42,7 +42,7 @@ async def test_resolve_or_mint_session_adopts_guest_id_and_reuses_row(bootstrapp
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_emit_prompt_completion(bootstrapped_client, user):
-    att = await _emit_prompt_completion(
+    [att] = await _emit_prompt_completion(
         "BANANA", prompt_id="p1", session_id="rws1", host_process_id="ap1", source_session_id="sess1",
     )
     assert att["attachment_type"] == "type_id"

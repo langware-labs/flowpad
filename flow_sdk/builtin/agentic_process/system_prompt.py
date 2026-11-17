@@ -18,6 +18,7 @@ Order (each layer present only when its scope applies and it has text):
 ``AGENTS``          persona / embedded agents (vibe.md, standard.md, wizards…)
 ``AUTO_OPEN``       what a vibe session's ``auto_open`` already showed
 ``LANGUAGE``        the project's ``# Language`` directive (non-English locale)
+``SUBJECT``         the file an app chat was opened about (``target_typeid_str``)
 ==================  ===============================================================
 """
 from __future__ import annotations
@@ -58,6 +59,7 @@ class LayerKey(StrEnum):
     AUTO_OPEN = "auto_open"
     LANGUAGE = "language"
     CREDENTIALS = "credentials"
+    SUBJECT = "subject"
 
 
 class PromptLayer(DataSpec):
@@ -151,9 +153,25 @@ async def compose_layers(process: "AgenticProcess", agents: dict | None = None) 
         (LayerKey.AUTO_OPEN, auto_open),
         (LayerKey.LANGUAGE, await _language_layer(process)),
         (LayerKey.CREDENTIALS, await _credentials_layer(process)),
+        (LayerKey.SUBJECT, subject_layer(process.target_typeid_str) if is_app_launch(data) else ""),
     )
     stripped = ((key, text.strip()) for key, text in candidates)
     return [PromptLayer(key=key, text=text) for key, text in stripped if text]
+
+
+def subject_layer(target: str | None) -> str:
+    """Name the file a chat is about ("Chat about this file"), so "this doc" resolves —
+    whether or not the file has an entity row (most project files have none)."""
+    from flow_sdk.api.api_types.vfs_path import VFSPath  # noqa: PLC0415
+    from flow_sdk.builtin.agent_auto_open import LOCAL_COMPUTE_NODE  # noqa: PLC0415
+
+    vfs = VFSPath(target) if target else None
+    if not vfs or vfs.typeid != LOCAL_COMPUTE_NODE:
+        return ""
+    return (
+        f"# The file this chat is about\n\nThe user opened this chat from the file `/{vfs.entity_subpath.lstrip('/')}`. "
+        '"This doc", "this file" or "the page" means that file unless they say otherwise.'
+    )
 
 
 async def _credentials_layer(process: "AgenticProcess") -> str:

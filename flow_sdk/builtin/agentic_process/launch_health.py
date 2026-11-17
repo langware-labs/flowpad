@@ -66,6 +66,7 @@ class LaunchErrorCode(StrEnum):
     BUDGET_NOT_READY = "budget_not_ready"
     CLI_CRASHED = "cli_crashed"
     PINNED_SOURCE_UNAVAILABLE = "pinned_source_unavailable"
+    CLI_OUTDATED = "cli_outdated"
 
 
 #: code → (health, card fix); unlisted codes read as unknown. Then LLMSourceRefusal → code (else signed_out).
@@ -73,7 +74,7 @@ CODE_TABLE = {c: ("transient_error" if f in ("wait", "retry") else "config_error
     ("folder_not_trusted", "trust_folder"), ("first_run_setup", "finish_setup"), ("bypass_warning", "accept_bypass"),
     ("signed_out", "connect"), ("not_authenticated", "connect"), ("key_rejected", "replace_key"), ("budget_not_ready", "wait"),
     ("not_installed", "install"), ("cli_crashed", "reinstall"), ("pinned_source_unavailable", "ask_owner"),
-    ("model_unavailable", "ask_owner"), ("unknown", "retry"))}
+    ("cli_outdated", "reinstall"), ("model_unavailable", "ask_owner"), ("unknown", "retry"))}
 SERVER_FIXES = ("trust_folder", "finish_setup", "accept_bypass")  # done by the driver's apply_launch_fix
 BLOCKING_CODES = {code for code, (_, fix) in CODE_TABLE.items() if fix in SERVER_FIXES}  # prompts on screen
 CLI_CRASHES: dict[str, str] = {}  # worker_type → stderr of a CLI the last login probe saw crash
@@ -186,6 +187,12 @@ class LaunchError(Exception):
         # or whose exe vanished after discovery — both need a human.
         if name == "WorkerSpawnError" or "no " in lowered and "installation discovered" in lowered:
             return cls.config(LaunchErrorCode.NOT_INSTALLED, text, worker_type)
+        from flow_sdk.core.capabilities.latest_version import note_session_error  # noqa: PLC0415
+        from flow_sdk.flowpad_types.vendors import VENDORS  # noqa: PLC0415
+
+        kind = next((v.capability_kind for v in VENDORS if v.key == worker_type), "")
+        if note_session_error(kind, text):  # also marks the CLI for update
+            return cls.config(LaunchErrorCode.CLI_OUTDATED, text, worker_type)
         if "command not found" in lowered:
             return cls.config(LaunchErrorCode.NOT_INSTALLED, text, worker_type)
         if name == "LLMSourceError":  # the top refusal names the card; a rejected key outranks it

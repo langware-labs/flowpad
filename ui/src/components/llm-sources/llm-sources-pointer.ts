@@ -21,6 +21,19 @@ import type { NavigationActions } from '@src/navigation/NavigationActions';
 /** The box-wide sections the pointer may name instead of a harness. Mirrored in
  *  `dock_address.py` (`LLM_SOURCES` subplaces) and the contract fixture. */
 export const LLM_SOURCES_SECTIONS = ['keys', 'endpoints'] as const;
+
+/** The page's three tabs, in order: the assistants' own logins, this machine's API keys, the hub's
+ *  endpoints. `keys` and `endpoints` are the sections above, so their links keep working. */
+export const LLM_SOURCES_TABS = ['logins', ...LLM_SOURCES_SECTIONS] as const;
+export type LlmSourcesTab = (typeof LLM_SOURCES_TABS)[number];
+
+/** `<tab>[/<rest>]` → the tab and what is below it (an assistant, or `<endpoint id>[/<tab>]`).
+ *  A bare worker (`claude`, the page's old pointer) is that assistant on the Logins tab; empty is Logins. */
+export function parseLlmSourcesTab(pointer?: string | null): { tab: LlmSourcesTab; rest: string } {
+  const [first = '', ...more] = (pointer ?? '').split('/').filter(Boolean);
+  if ((LLM_SOURCES_TABS as readonly string[]).includes(first)) return { tab: first as LlmSourcesTab, rest: more.join('/') };
+  return { tab: 'logins', rest: first };
+}
 export type LlmSourcesSection = (typeof LLM_SOURCES_SECTIONS)[number];
 
 export function isLlmSourcesSection(pointer: string | undefined): pointer is LlmSourcesSection {

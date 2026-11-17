@@ -30,6 +30,7 @@ from .journeys import router as journeys_router
 from .kinds import router as kinds_router
 from .markdown_index import router as markdown_index_router
 from .navigate import router as navigate_router
+from .network_errors import router as network_errors_router
 from .privacy import router as privacy_router
 from .project import router as project_router
 from .pty_stream import router as pty_stream_router
@@ -100,6 +101,7 @@ __all__ = [
     "graph_workflows_router",
     "agents_router",
     "journeys_router",
+    "network_errors_router",
     "git_router",
     "worldview_router",
 ]
