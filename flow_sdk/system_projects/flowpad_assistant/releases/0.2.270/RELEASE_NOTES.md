@@ -18,5 +18,5 @@ source_hash: 99eca4b243af5625
 
 - **Agent browser** — the window opens on the session's first browser action, not when the session starts, and stays up on Windows.
 - **Setup** — the choose-one-way question shows where each credential comes from.
-- **Stream Inbox** — no empty state flashes while rows load, and an empty inbox offers every message channel, the same ones as the **+** dialog.
+- **Stream Inbox** — no empty state flashes while rows load, and an empty Stream Inbox offers every message channel, the same ones as the **+** dialog.
 - **Contact picker** — person and team rows have an open icon.

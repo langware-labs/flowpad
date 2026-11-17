@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const guard = vi.hoisted(() => ({ allow: true }));
 vi.mock('@src/services/privacy-guard', () => ({ guardCloudAction: () => guard.allow }));
 vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => () => Promise.resolve({ ok: true }) }));
+// The picker's team rows open the organization screen through the dock; these tests stay in the chips.
+vi.mock('@src/components/organization/tabs/org-route', () => ({ useOrgRoute: () => ({ openTeam: vi.fn() }) }));
 
 import { Task } from '@sdk/entities/task';
 import { TaskChips, type TaskPeople } from '@src/components/conversation/task-it';
