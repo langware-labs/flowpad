@@ -51,7 +51,7 @@ test.beforeAll(async () => {
   expect(process.env.FLOW_INSTANCE, 'set a disposable FLOW_INSTANCE').toMatch(/^tags-rig-/);
   api = await apiContext();
   // Arrivals are tagged here by hand, so the row states are exactly the mock's.
-  await graph('post', 'flow_message/classification-settings', { enabled: false, include_flow_tags: false, root: 'inbox' });
+  await graph('post', 'flow_message/classification-settings', { enabled: false, include_flow_tags: false, root: 'stream_inbox' });
   for (const [name, color, description] of TREE) await graph('post', 'tag', { name, color, description, stream_inbox: true });
   doubles = spawn('uv', ['run', 'python', 'tests/e2e/channel_doubles.py', '--backend', apiOrigin(), '--channels', 'telegram'], {
     cwd: REPO_ROOT,
@@ -127,8 +127,8 @@ test('quick menu on many tags: see them, remove one with ✕, tick it back', asy
   await expect(selected.locator('[data-message-tag]')).toHaveCount(3);
   await selected.getByRole('button', { name: 'Remove tag stream_inbox.urgent', exact: true }).click();
   await expect.poll(() => tagsOf('many')).not.toContain('stream_inbox.urgent');
-  await expect(picker(page).getByTestId('message-tag-option-inbox.urgent')).not.toBeChecked();
-  await picker(page).getByTestId('message-tag-option-inbox.urgent').check();
+  await expect(picker(page).getByTestId('message-tag-option-stream_inbox.urgent')).not.toBeChecked();
+  await picker(page).getByTestId('message-tag-option-stream_inbox.urgent').check();
   await expect.poll(() => tagsOf('many')).toContain('stream_inbox.urgent');
   await expect(selected.locator('[data-message-tag]')).toHaveCount(3);
   // Reload keeps the menu open: it lives in the URL.
@@ -142,10 +142,10 @@ test('quick menu on no tags: says so, ticking tags the message, unticking clears
   await page.goto('/dock/stream_inbox');
   await cell(page, 'none').click();
   await expect(picker(page)).toContainText('No tags yet');
-  await picker(page).getByTestId('message-tag-option-inbox.sales.intro').check();
+  await picker(page).getByTestId('message-tag-option-stream_inbox.sales.intro').check();
   await expect.poll(() => tagsOf('none')).toEqual(['stream_inbox.sales.intro']);
   await expect(cell(page, 'none')).toHaveText('intro');
-  await picker(page).getByTestId('message-tag-option-inbox.sales.intro').uncheck();
+  await picker(page).getByTestId('message-tag-option-stream_inbox.sales.intro').uncheck();
   await expect.poll(() => tagsOf('none')).toEqual([]);
   await expect(cell(page, 'none')).toHaveAttribute('aria-label', 'No tags — add one');
 });
@@ -157,16 +157,16 @@ test('Edit tags… opens the editor on this message; add a sub-tag; Run lands on
   await expect(page.getByTestId('stream-inbox-tags-page')).toBeVisible();
   await expect(page.getByTestId('stream-inbox-tag-try-message')).toContainText(`many-${stamp}`);
 
-  await page.getByTestId('stream-inbox-tag-add-inbox.support').click();
+  await page.getByTestId('stream-inbox-tag-add-stream_inbox.support').click();
   await page.getByTestId('stream-inbox-tag-child-name').fill('Chargeback');
   await expect(page.getByText('stream_inbox.support.chargeback')).toBeVisible();
   await page.getByTestId('stream-inbox-tag-child-save').click();
-  await expect(page.getByTestId('stream-inbox-tag-row-inbox.support.chargeback')).toBeVisible();
-  await expect(page).toHaveURL(/node=inbox\.support\.chargeback/);
+  await expect(page.getByTestId('stream-inbox-tag-row-stream_inbox.support.chargeback')).toBeVisible();
+  await expect(page).toHaveURL(/node=stream_inbox\.support\.chargeback/);
 
   await page.getByTestId('stream-inbox-tag-try-run').click();
   await expect(page.getByTestId('stream-inbox-tag-try-landed')).toHaveText('stream_inbox.support.refund');
-  await expect(page.getByTestId('stream-inbox-tag-row-inbox.support.refund').getByTestId('stream-inbox-tag-lands')).toBeVisible();
+  await expect(page.getByTestId('stream-inbox-tag-row-stream_inbox.support.refund').getByTestId('stream-inbox-tag-lands')).toBeVisible();
   await expect(page.getByTestId('stream-inbox-tag-try-current')).toContainText('billing');
   expect(await tagsOf('many'), 'Run is a dry run').not.toContain('stream_inbox.support.refund');
 });
@@ -175,7 +175,7 @@ test('edit instructions marks the result stale; Rerun moves it and shows where i
   await page.goto(`/dock/tag/graph?manage=stream_inbox&message=${arrived.many.id}&conversation=${arrived.many.conversation_id}`);
   await page.getByTestId('stream-inbox-tag-try-run').click();
   await expect(page.getByTestId('stream-inbox-tag-try-landed')).toHaveText('stream_inbox.support.refund');
-  await page.getByTestId('stream-inbox-tag-row-inbox.support.billing').click();
+  await page.getByTestId('stream-inbox-tag-row-stream_inbox.support.billing').click();
   await page.getByTestId('stream-inbox-tag-swatch-#ef4444').click();
   await page.getByTestId('stream-inbox-tag-description').fill('Charged twice: they want the money back');
   await expect(page.getByTestId('stream-inbox-tag-unsaved')).toBeVisible();
