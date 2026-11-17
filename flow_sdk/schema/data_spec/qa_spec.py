@@ -52,7 +52,6 @@ class QATestCaseSpec(_QAChildDocument):
     main_file: ClassVar[str | None] = "qa_test_case.json"
 
     phase_id: str = ""
-    test_file_id: str = ""
     commit_sha: Optional[str] = None
     removed: bool = False
     assigned_by: str = "mapper"
@@ -78,7 +77,6 @@ class QAIterationSpec(_QAChildDocument):
     main_file: ClassVar[str | None] = "qa_iteration.json"
 
     label: str = ""
-    cycle_id: str = ""
     order: int = 0
     status: str = "running"
     commit_sha: Optional[str] = None
@@ -95,7 +93,6 @@ class QATestExecutionSpec(_QAChildDocument):
     main_file: ClassVar[str | None] = "qa_test_execution.json"
 
     cycle_id: str = ""
-    iteration_id: str = ""
     phase_id: str = ""
     test_file_id: str = ""
     test_case_id: Optional[str] = None

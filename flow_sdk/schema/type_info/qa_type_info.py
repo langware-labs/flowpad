@@ -37,7 +37,7 @@ QA_TEST_FILE = TypeInfo(
 QA_TEST_CASE = TypeInfo(
     type_name=EntityType.QA_TEST_CASE, icon="ListChecks", api_visible=False,
     family="qa_test_case", asset_spec=QATestCaseSpec, **_DOCUMENT,
-    natural_key=("test_file_id", "name"), indexes=(("test_file_id", "name"),),
+    natural_key=("parent_type_id", "name"), indexes=(("parent_type_id", "name"),),
 )
 QA_CYCLE = TypeInfo(
     type_name=EntityType.QA_CYCLE, icon="RefreshCw", api_visible=True,
@@ -47,12 +47,12 @@ QA_CYCLE = TypeInfo(
 QA_ITERATION = TypeInfo(
     type_name=EntityType.QA_ITERATION, icon="Repeat", api_visible=True,
     family="qa_iteration", asset_spec=QAIterationSpec, **_DOCUMENT,
-    natural_key=("cycle_id", "order"), indexes=(("cycle_id", "order"),),
+    natural_key=("parent_type_id", "order"), indexes=(("parent_type_id", "order"),),
 )
 QA_TEST_EXECUTION = TypeInfo(
     type_name=EntityType.QA_TEST_EXECUTION, icon="Play", api_visible=False,
     family="qa_test_execution", asset_spec=QATestExecutionSpec, **_DOCUMENT,
-    # One attempt at one test case in one iteration. Its leading ``iteration_id`` also serves "an iteration's executions".
-    natural_key=("iteration_id", "test_file_id", "test_name", "attempt"),
-    indexes=(("iteration_id", "test_file_id", "test_name", "attempt"),),
+    # One attempt at one test case in one iteration (its parent). Its leading ``parent_type_id`` also serves "an iteration's executions".
+    natural_key=("parent_type_id", "test_file_id", "test_name", "attempt"),
+    indexes=(("parent_type_id", "test_file_id", "test_name", "attempt"),),
 )

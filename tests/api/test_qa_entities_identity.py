@@ -30,16 +30,17 @@ async def test_a_retried_create_lands_on_the_same_row_under_a_minted_uuid4(boots
     (cycle_id,) = cycle_ids
     assert uuid.UUID(cycle_id).version == 4, "minted, not derived from the natural key"
 
-    iteration_id = await _create(bootstrapped_client, "qa_iteration", {"cycle_id": cycle_id, "order": 1, "label": "i01"})
-    assert await _create(bootstrapped_client, "qa_iteration", {"cycle_id": cycle_id, "order": 1, "label": "i01"}) == iteration_id
-    assert await _create(bootstrapped_client, "qa_iteration", {"cycle_id": cycle_id, "order": 2, "label": "i02"}) != iteration_id
+    in_cycle = f"qa_cycle-{cycle_id}"
+    iteration_id = await _create(bootstrapped_client, "qa_iteration", {"parent_type_id": in_cycle, "order": 1, "label": "i01"})
+    assert await _create(bootstrapped_client, "qa_iteration", {"parent_type_id": in_cycle, "order": 1, "label": "i01"}) == iteration_id
+    assert await _create(bootstrapped_client, "qa_iteration", {"parent_type_id": in_cycle, "order": 2, "label": "i02"}) != iteration_id
 
-    attempt = {"cycle_id": cycle_id, "iteration_id": iteration_id, "test_file_id": "f1", "test_name": "test_login", "status": "fail"}
+    attempt = {"cycle_id": cycle_id, "parent_type_id": f"qa_iteration-{iteration_id}", "test_file_id": "f1", "test_name": "test_login", "status": "fail"}
     first = await _create(bootstrapped_client, "qa_test_execution", {**attempt, "attempt": 1})
     assert await _create(bootstrapped_client, "qa_test_execution", {**attempt, "attempt": 1}) == first
     second = await _create(bootstrapped_client, "qa_test_execution", {**attempt, "attempt": 2, "status": "pass"})
     assert second != first
-    assert len(await QATestExecution.get_all({"iteration_id": iteration_id})) == 2
+    assert len(await QATestExecution.get_all({"parent_type_id": f"qa_iteration-{iteration_id}"})) == 2
 
 
 async def test_a_test_file_is_one_row_per_repository_whatever_its_phase(bootstrapped_client):
