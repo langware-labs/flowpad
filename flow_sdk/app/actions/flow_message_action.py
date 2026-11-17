@@ -5072,8 +5072,10 @@ async def message_classification_settings() -> ApiResponse:
         body = await info.get_post_data()
         if not isinstance(body, dict) or set(body) - {"enabled", "include_flow_tags", "root"}:
             return ApiFailResponse(message="Expected enabled, include_flow_tags and/or root settings", status_code=400)
+        if not isinstance(body.get("enabled", False), bool):
+            return ApiFailResponse(message="enabled must be true or false", status_code=400)
         if "enabled" in body and rule is not None:
-            await set_trigger_on(rule, bool(body["enabled"]))
+            await set_trigger_on(rule, body["enabled"])
         try:
             current = save_settings({**current.model_dump(mode="json"),
                                      **{k: v for k, v in body.items() if k != "enabled"}})
